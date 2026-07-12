@@ -2250,7 +2250,7 @@ mod tests {
             email: None,
             created_at: rfc3339(OffsetDateTime::now_utc()),
             active: true,
-            password_hash: None,
+            password_hash: Some(crate::attestation::hash_secret("Teste-Forte7!X").unwrap()),
             attestation_key: None,
             secret_source: SecretSource::Password,
             recovery_hash: None,

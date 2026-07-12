@@ -1,3 +1,5 @@
+mod common;
+
 use std::io::{Cursor, Read, Write};
 use std::str::FromStr;
 use std::sync::Arc;
@@ -34,6 +36,8 @@ use chancela_signing::{
     XadesLevel, build_asic_e_manifest, sha256_content_digest, sign_asic_e, sign_asic_e_multi,
     sign_asic_s, sign_asic_s_xades, sign_detached_cades,
 };
+
+use common::{TEST_PASSWORD, password_hash};
 
 const OID_SHA256_WITH_RSA: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.113549.1.1.11");
 const SHA256_DIGEST_INFO_PREFIX: [u8; 19] = [
@@ -185,7 +189,7 @@ async fn owner_session(state: &AppState) -> String {
             email: None,
             created_at,
             active: true,
-            password_hash: None,
+            password_hash: Some(password_hash()),
             attestation_key: None,
             secret_source: Default::default(),
             recovery_hash: None,
@@ -198,7 +202,9 @@ async fn owner_session(state: &AppState) -> String {
             .method("POST")
             .uri("/v1/session")
             .header("content-type", "application/json")
-            .body(Body::from(json!({ "user_id": uid.0 }).to_string()))
+            .body(Body::from(
+                json!({ "user_id": uid.0, "password": TEST_PASSWORD }).to_string(),
+            ))
             .expect("request builds"),
     )
     .await;

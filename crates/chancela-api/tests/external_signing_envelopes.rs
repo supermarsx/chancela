@@ -1,9 +1,13 @@
+mod common;
+
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
 use chancela_api::{AppState, router};
 use serde_json::{Value, json};
 use tower::ServiceExt;
 use uuid::Uuid;
+
+use common::TEST_PASSWORD;
 
 struct TempDir(std::path::PathBuf);
 
@@ -63,8 +67,12 @@ async fn bootstrap(state: &AppState) -> String {
             .uri("/v1/users")
             .header("content-type", "application/json")
             .body(Body::from(
-                json!({ "username": "amelia.marques", "display_name": "Amelia Marques" })
-                    .to_string(),
+                json!({
+                    "username": "amelia.marques",
+                    "display_name": "Amelia Marques",
+                    "password": TEST_PASSWORD,
+                })
+                .to_string(),
             ))
             .unwrap(),
     )
@@ -78,7 +86,9 @@ async fn bootstrap(state: &AppState) -> String {
             .method("POST")
             .uri("/v1/session")
             .header("content-type", "application/json")
-            .body(Body::from(json!({ "user_id": uid }).to_string()))
+            .body(Body::from(
+                json!({ "user_id": uid, "password": TEST_PASSWORD }).to_string(),
+            ))
             .unwrap(),
     )
     .await;

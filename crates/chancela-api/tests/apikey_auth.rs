@@ -1,3 +1,5 @@
+mod common;
+
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -16,6 +18,8 @@ use time::format_description::well_known::Rfc3339;
 use tokio::sync::RwLock;
 use tower::ServiceExt;
 use uuid::Uuid;
+
+use common::{TEST_PASSWORD, password_hash};
 
 fn seeded_state() -> AppState {
     AppState {
@@ -89,7 +93,7 @@ async fn seed_owner(state: &AppState) -> UserId {
             .format(&Rfc3339)
             .unwrap_or_default(),
         active: true,
-        password_hash: None,
+        password_hash: Some(password_hash()),
         attestation_key: None,
         secret_source: Default::default(),
         recovery_hash: None,
@@ -102,7 +106,10 @@ async fn seed_owner(state: &AppState) -> UserId {
 async fn open_session(state: &AppState, uid: UserId) -> String {
     let (status, body) = send(
         state.clone(),
-        post_json("/api/v1/session", json!({ "user_id": uid.0 })),
+        post_json(
+            "/api/v1/session",
+            json!({ "user_id": uid.0, "password": TEST_PASSWORD }),
+        ),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "session opens: {body}");
@@ -114,7 +121,11 @@ async fn bootstrap_owner_session(state: &AppState) -> (UserId, String) {
         state.clone(),
         post_json(
             "/api/v1/users",
-            json!({ "username": "owner", "display_name": "Owner" }),
+            json!({
+                "username": "owner",
+                "display_name": "Owner",
+                "password": TEST_PASSWORD,
+            }),
         ),
     )
     .await;
@@ -444,7 +455,10 @@ async fn api_key_is_not_an_interactive_session_for_session_or_self_service_route
         with_session(
             post_json(
                 &format!("/api/v1/users/{owner}/secret"),
-                json!({ "password": "Inicial-Forte7!" }),
+                json!({
+                    "password": "Inicial-Forte7!",
+                    "current_password": TEST_PASSWORD,
+                }),
             ),
             &token,
         ),

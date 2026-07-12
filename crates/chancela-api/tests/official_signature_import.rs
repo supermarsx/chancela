@@ -1,6 +1,8 @@
 //! Official Autenticacao.gov handoff import: the operator signs the sealed PDF outside Chancela and
 //! imports the resulting signed PDF back as technical evidence only.
 
+mod common;
+
 use std::str::FromStr;
 use std::time::Duration as StdDuration;
 
@@ -28,6 +30,8 @@ use chancela_cades::{
 use chancela_core::ActId;
 use chancela_pades::{SignOptions, sign_pdf, validate_pdf_signature};
 use time::format_description::well_known::Rfc3339;
+
+use common::{TEST_PASSWORD, password_hash};
 
 const OID_SHA256_WITH_RSA: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.113549.1.1.11");
 const SHA256_DIGEST_INFO_PREFIX: [u8; 19] = [
@@ -231,7 +235,7 @@ async fn bootstrap(state: &AppState) -> (String, String) {
         email: None,
         created_at,
         active: true,
-        password_hash: None,
+        password_hash: Some(password_hash()),
         attestation_key: None,
         secret_source: Default::default(),
         recovery_hash: None,
@@ -250,7 +254,9 @@ async fn open_session(state: &AppState, user_id: &str) -> String {
             .method("POST")
             .uri("/v1/session")
             .header("content-type", "application/json")
-            .body(Body::from(json!({ "user_id": user_id }).to_string()))
+            .body(Body::from(
+                json!({ "user_id": user_id, "password": TEST_PASSWORD }).to_string(),
+            ))
             .unwrap(),
     )
     .await;
@@ -1267,7 +1273,11 @@ async fn official_import_requires_signing_permission() {
             "POST",
             "/v1/users",
             &owner,
-            json!({ "username": "leitor.user", "display_name": "Leitor" }),
+            json!({
+                "username": "leitor.user",
+                "display_name": "Leitor",
+                "password": TEST_PASSWORD,
+            }),
         ),
     )
     .await;

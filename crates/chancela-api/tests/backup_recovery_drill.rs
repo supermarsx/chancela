@@ -1,3 +1,5 @@
+mod common;
+
 use std::path::{Path, PathBuf};
 
 use axum::body::{Body, to_bytes};
@@ -9,6 +11,8 @@ use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 use tower::ServiceExt;
 use uuid::Uuid;
+
+use common::{TEST_PASSWORD, password_hash};
 
 const DRILL_PATH: &str = "/v1/backup/recovery-drills";
 
@@ -83,7 +87,7 @@ async fn seed_owner_session(state: &AppState, username: &str) -> String {
                 .format(&Rfc3339)
                 .unwrap_or_default(),
             active: true,
-            password_hash: None,
+            password_hash: Some(password_hash()),
             attestation_key: None,
             secret_source: Default::default(),
             recovery_hash: None,
@@ -92,7 +96,10 @@ async fn seed_owner_session(state: &AppState, username: &str) -> String {
     );
     let (status, body) = send(
         state.clone(),
-        post_json("/v1/session", json!({ "user_id": uid.0 })),
+        post_json(
+            "/v1/session",
+            json!({ "user_id": uid.0, "password": TEST_PASSWORD }),
+        ),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "session opens: {body}");

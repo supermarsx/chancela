@@ -52,6 +52,7 @@ use chancela_csc::rest::{
 use chancela_csc::{CscAuthorization, CscConfig, CscError, CscTransport};
 use chancela_pades::validate_pdf_signature;
 use chancela_signing::{StaticTrustPolicy, TrustPolicy, TrustedListStatus};
+use common::TEST_PASSWORD;
 use common::tsa_http::MockTsaServer;
 use uuid::Uuid;
 
@@ -407,8 +408,12 @@ async fn bootstrap(state: &AppState) -> String {
             .uri("/v1/users")
             .header("content-type", "application/json")
             .body(Body::from(
-                json!({ "username": "amelia.marques", "display_name": "Amélia Marques" })
-                    .to_string(),
+                json!({
+                    "username": "amelia.marques",
+                    "display_name": "Amélia Marques",
+                    "password": TEST_PASSWORD,
+                })
+                .to_string(),
             ))
             .unwrap(),
     )
@@ -425,7 +430,11 @@ async fn create_user(state: &AppState, token: &str, username: &str) -> String {
             "POST",
             "/v1/users",
             token,
-            json!({ "username": username, "display_name": username }),
+            json!({
+                "username": username,
+                "display_name": username,
+                "password": TEST_PASSWORD,
+            }),
         ),
     )
     .await;
@@ -440,7 +449,9 @@ async fn open_session(state: &AppState, user_id: &str) -> String {
             .method("POST")
             .uri("/v1/session")
             .header("content-type", "application/json")
-            .body(Body::from(json!({ "user_id": user_id }).to_string()))
+            .body(Body::from(
+                json!({ "user_id": user_id, "password": TEST_PASSWORD }).to_string(),
+            ))
             .unwrap(),
     )
     .await;
@@ -1185,7 +1196,11 @@ async fn remote_endpoints_403_for_role_without_signing_perm() {
             "POST",
             "/v1/users",
             &owner,
-            json!({ "username": "leitor.user", "display_name": "Leitor" }),
+            json!({
+                "username": "leitor.user",
+                "display_name": "Leitor",
+                "password": TEST_PASSWORD,
+            }),
         ),
     )
     .await;

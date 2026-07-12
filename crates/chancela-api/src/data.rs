@@ -1,6 +1,6 @@
 //! Destructive **data-management** endpoints (t54-E3, plan §2.11): the server side of the "Gestão de
 //! Dados" settings area. Two operations, each gated by a **type-to-confirm phrase** AND **step-up
-//! re-auth** (for a credentialed acting user a session alone is never enough; a passwordless user
+//! re-auth** (for a credentialed acting user a session alone is never enough; a legacy no-hash user
 //! with no recovery phrase has nothing stronger than their self session — see [`require_step_up`])
 //! — the two independent confirmations that make these the highest-bar operations in the app:
 //!
@@ -67,9 +67,9 @@ pub struct ReAuth {
 /// - The acting user has NO password but HAS a recovery phrase → they must supply+pass the phrase.
 /// - The acting user has NEITHER a password NOR a recovery phrase → a valid **authenticated self
 ///   session** already IS the strongest proof they can offer; there is nothing further to prove, so
-///   the session satisfies step-up and this returns `Ok`. This is the t69 lockout fix: a
-///   passwordless operator with no recovery phrase must never be `403`'d for lacking a credential
-///   they never set, or a passwordless-only instance whose chain breaks could never be recovered
+///   the session satisfies step-up and this returns `Ok`. This is the t69 lockout fix: a legacy
+///   no-hash operator with no recovery phrase must never be `403`'d for lacking a credential
+///   they never set, or a legacy no-hash-only instance whose chain breaks could never be recovered
 ///   (the degraded gate exempts recovery, but step-up would otherwise block it).
 ///
 /// A session with a wrong proof, or a *credentialed* acting user who supplies no proof, is still
@@ -78,7 +78,7 @@ pub struct ReAuth {
 ///
 /// **Scope:** this only relaxes the acting user's OWN self re-auth. It does NOT touch the cross-user
 /// authorization path ([`crate::users`] `authorize_secret_op` / `verify_cross_user_proof`): resetting
-/// ANOTHER user's credential when the target is passwordless stays refused (t52 hole stays closed).
+/// ANOTHER user's credential when the target is legacy no-hash stays refused (t52 hole stays closed).
 /// RBAC (`require_permission`) at each call site remains the primary who-may gate — step-up is
 /// defense-in-depth layered on top of it, never a substitute.
 pub(crate) async fn require_step_up(

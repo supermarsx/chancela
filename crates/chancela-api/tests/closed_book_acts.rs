@@ -1,3 +1,5 @@
+mod common;
+
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
 use chancela_api::{AppState, router};
@@ -5,6 +7,8 @@ use chancela_core::{ActId, ActState};
 use serde_json::{Value, json};
 use tower::ServiceExt;
 use uuid::Uuid;
+
+use common::TEST_PASSWORD;
 
 struct TempDir(std::path::PathBuf);
 
@@ -66,8 +70,12 @@ async fn bootstrap(state: &AppState) -> String {
             .uri("/v1/users")
             .header("content-type", "application/json")
             .body(Body::from(
-                json!({ "username": "closed.book.owner", "display_name": "Closed Book Owner" })
-                    .to_string(),
+                json!({
+                    "username": "closed.book.owner",
+                    "display_name": "Closed Book Owner",
+                    "password": TEST_PASSWORD,
+                })
+                .to_string(),
             ))
             .expect("request builds"),
     )
@@ -81,7 +89,9 @@ async fn bootstrap(state: &AppState) -> String {
             .method("POST")
             .uri("/v1/session")
             .header("content-type", "application/json")
-            .body(Body::from(json!({ "user_id": user_id }).to_string()))
+            .body(Body::from(
+                json!({ "user_id": user_id, "password": TEST_PASSWORD }).to_string(),
+            ))
             .expect("request builds"),
     )
     .await;

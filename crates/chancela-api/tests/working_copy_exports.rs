@@ -1,3 +1,5 @@
+mod common;
+
 use std::collections::BTreeMap;
 use std::io::{Cursor, Read};
 
@@ -7,6 +9,8 @@ use chancela_api::{AppState, router};
 use serde_json::{Value, json};
 use tower::ServiceExt;
 use uuid::Uuid;
+
+use common::TEST_PASSWORD;
 
 struct TempDir(std::path::PathBuf);
 
@@ -86,8 +90,12 @@ async fn bootstrap(state: &AppState) -> String {
             .uri("/v1/users")
             .header(header::CONTENT_TYPE, "application/json")
             .body(Body::from(
-                json!({ "username": "working.copy.owner", "display_name": "Working Copy Owner" })
-                    .to_string(),
+                json!({
+                    "username": "working.copy.owner",
+                    "display_name": "Working Copy Owner",
+                    "password": TEST_PASSWORD,
+                })
+                .to_string(),
             ))
             .expect("request builds"),
     )
@@ -101,7 +109,9 @@ async fn bootstrap(state: &AppState) -> String {
             .method("POST")
             .uri("/v1/session")
             .header(header::CONTENT_TYPE, "application/json")
-            .body(Body::from(json!({ "user_id": user_id }).to_string()))
+            .body(Body::from(
+                json!({ "user_id": user_id, "password": TEST_PASSWORD }).to_string(),
+            ))
             .expect("request builds"),
     )
     .await;

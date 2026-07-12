@@ -3,9 +3,9 @@
 //! Chancela is a local-first, single-operator / small-office app on loopback. User profiles serve
 //! two purposes: **attribution** (DAT-10 — identify *who* performed each mutation so the audit
 //! ledger names a real person instead of the fixed `"api"` fallback) and, since t41,
-//! **access control** — every domain mutation requires a valid session, and users may hold an
-//! optional argon2id sign-in secret (t29). This is no longer a passwordless, authorization-free
-//! surface: an operator signs in before doing any work.
+//! **access control** — every domain mutation requires a valid session, and users hold an argon2id
+//! sign-in verifier (t29). This is a password-required surface: an operator signs in before doing
+//! any work.
 //!
 //! **Security (t41):** all user-mutation endpoints require a valid session via the fallible
 //! [`CurrentActor`] extractor. `create_user` is the one exception: it allows a **bootstrap** call
@@ -143,6 +143,7 @@ pub struct CreateUser {
     pub display_name: Option<String>,
     #[serde(default)]
     pub email: Option<String>,
+    pub password: String,
 }
 
 #[derive(Deserialize)]
@@ -283,14 +284,6 @@ pub async fn create_user(
     attestor: CurrentAttestor,
     Json(req): Json<CreateUser>,
 ) -> Result<(StatusCode, Json<UserView>), ApiError> {
-    let username = validate_username(&req.username)?;
-    let display_name = req
-        .display_name
-        .map(|d| d.trim().to_owned())
-        .filter(|d| !d.is_empty())
-        .unwrap_or_else(|| username.clone());
-    let email = crate::email::normalize_optional_email(req.email, "email")?;
-
     let (session_username, is_bootstrap) = {
         let user_count = state.users.read().await.len();
         if user_count == 0 {
@@ -310,11 +303,30 @@ pub async fn create_user(
     };
     // RBAC (t64-E3): first-run bootstrap (zero users) stays unauthenticated; every subsequent create
     // requires `user.manage` at Global. Resolve the manually-extracted session into an actor so the
-    // gate composes with the same principal seam as every other endpoint.
+    // gate composes with the same principal seam as every other endpoint. This intentionally runs
+    // before password policy/hash work for non-bootstrap requests.
     if !is_bootstrap {
         let actor = CurrentActor::from_session_username(session_username.clone());
         require_permission(&state, &actor, Permission::UserManage, Scope::Global).await?;
     }
+
+    let username = validate_username(&req.username)?;
+    let display_name = req
+        .display_name
+        .map(|d| d.trim().to_owned())
+        .filter(|d| !d.is_empty())
+        .unwrap_or_else(|| username.clone());
+    let email = crate::email::normalize_optional_email(req.email, "email")?;
+    validate_secret(&req.password)?;
+    crate::password_policy::enforce(
+        &req.password,
+        &username,
+        crate::password_policy::ALLOW_WEAK_PASSWORDS,
+    )?;
+    let seed = state.verifier_seed.read().await.clone();
+    let password_hash = attestation::hash_secret_with_seed(&req.password, &seed)?;
+
+    let has_authenticated_actor = session_username.is_some();
     let request_actor = session_username.unwrap_or_else(|| "api".to_owned());
 
     let user = {
@@ -328,9 +340,10 @@ pub async fn create_user(
             )));
         }
         // Bootstrap rule (t64 §5): the first user on a fresh install (no users existed yet) is
-        // Owner@Global; every subsequent user is Gestor@Global. Determined under the write lock so
-        // exactly one bootstrap Owner can ever be minted.
-        let bootstrap = users.is_empty();
+        // Owner@Global; every subsequent user is Gestor@Global. Re-check under the write lock so
+        // a stale unauthenticated bootstrap request cannot create the second user after another
+        // first-run request wins the race.
+        let bootstrap = bootstrap_state_for_insert(&users, is_bootstrap, has_authenticated_actor)?;
         let user = User {
             id: UserId(Uuid::new_v4()),
             username,
@@ -340,7 +353,7 @@ pub async fn create_user(
                 .format(&Rfc3339)
                 .unwrap_or_default(),
             active: true,
-            password_hash: None,
+            password_hash: Some(password_hash),
             attestation_key: None,
             secret_source: SecretSource::default(),
             recovery_hash: None,
@@ -369,6 +382,20 @@ pub async fn create_user(
     Ok((StatusCode::CREATED, Json(UserView::from(&user))))
 }
 
+fn bootstrap_state_for_insert(
+    users: &HashMap<UserId, User>,
+    initial_bootstrap: bool,
+    has_authenticated_actor: bool,
+) -> Result<bool, ApiError> {
+    if users.is_empty() {
+        return Ok(true);
+    }
+    if initial_bootstrap && !has_authenticated_actor {
+        return Err(ApiError::Unauthorized("sessão requerida".to_owned()));
+    }
+    Ok(false)
+}
+
 fn validate_secret(secret: &str) -> Result<(), ApiError> {
     let len = secret.chars().count();
     if len < MIN_SECRET_LEN {
@@ -382,6 +409,52 @@ fn validate_secret(secret: &str) -> Result<(), ApiError> {
         )));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn stored_user(username: &str) -> User {
+        User {
+            id: UserId(Uuid::new_v4()),
+            username: username.to_owned(),
+            display_name: username.to_owned(),
+            email: None,
+            created_at: OffsetDateTime::now_utc()
+                .format(&Rfc3339)
+                .unwrap_or_default(),
+            active: true,
+            password_hash: None,
+            attestation_key: None,
+            secret_source: SecretSource::default(),
+            recovery_hash: None,
+            role_assignments: vec![crate::roles::bootstrap_assignment(true)],
+        }
+    }
+
+    #[test]
+    fn create_user_stale_unauthenticated_bootstrap_is_rejected_at_insert_recheck() {
+        let empty = HashMap::new();
+        assert_eq!(
+            bootstrap_state_for_insert(&empty, true, false).unwrap(),
+            true
+        );
+
+        let mut users = HashMap::new();
+        let owner = stored_user("owner");
+        users.insert(owner.id, owner);
+
+        let err = bootstrap_state_for_insert(&users, true, false).unwrap_err();
+        assert!(matches!(
+            err,
+            ApiError::Unauthorized(message) if message == "sessão requerida"
+        ));
+        assert_eq!(
+            bootstrap_state_for_insert(&users, false, true).unwrap(),
+            false
+        );
+    }
 }
 
 fn verify_current(user: &User, provided: Option<&str>) -> Result<(), ApiError> {
@@ -816,13 +889,13 @@ pub async fn set_secret(
     Ok(Json(UserView::from(&user)))
 }
 
-/// `DELETE /v1/users/{id}/secret` — remove the sign-in secret. **t41 H2:** argon2 outside lock.
+/// `DELETE /v1/users/{id}/secret` — password removal is retired. The endpoint remains only to
+/// return a clear error after the same authorization checks; callers must replace via `POST`.
 ///
-/// **t51 authorization.** Self-service is unchanged (no-op when passwordless, else prove the current
-/// password). A cross-user removal follows the same rule as [`set_secret`]: valid proof or a uniform
-/// `403`. The self no-op short-circuit is applied ONLY for self — for a cross-user caller the
-/// authorization runs first (constant-work), so a passwordless/keyless target is refused with `403`
-/// (matrix #10) rather than leaking its state via a `200` no-op.
+/// **t51 authorization.** Self-service still proves the current password when one exists; cross-user
+/// removal follows the same proof/RBAC rule as [`set_secret`]. Authorized requests return `409`
+/// without clearing `password_hash` or the attestation key, so this path cannot create live
+/// no-password users.
 pub async fn remove_secret(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<Uuid>,
@@ -853,55 +926,16 @@ pub async fn remove_secret(
     match decision {
         SecretAuthz::SelfService => {
             let s = snapshot.as_ref().ok_or(ApiError::NotFound)?;
-            if s.password_hash.is_none() {
-                return Ok(Json(UserView::from(s))); // self no-op: nothing to remove.
+            if s.password_hash.is_some() {
+                verify_current(s, req.current_password.as_deref())?;
             }
-            verify_current(s, req.current_password.as_deref())?;
         }
         SecretAuthz::CrossUser(_) => {}
     }
-    let consume_recovery = matches!(decision, SecretAuthz::CrossUser(ProofKind::Recovery));
-
-    let user = {
-        let mut users = state.users.write().await;
-        let user = users.get_mut(&uid).ok_or(ApiError::NotFound)?;
-        user.password_hash = None;
-        user.attestation_key = None;
-        user.secret_source = SecretSource::default();
-        if consume_recovery {
-            user.recovery_hash = None; // single-use.
-        }
-        user.clone()
-    };
-
-    match decision {
-        SecretAuthz::CrossUser(kind) => {
-            let justification = format!(
-                "sign-in secret removed {} (attestation key cascaded)",
-                kind.describe()
-            );
-            record_user_event(
-                &state,
-                &user,
-                "user.secret.reset",
-                &justification,
-                &actor,
-                &attestor,
-            )
-            .await?;
-        }
-        SecretAuthz::SelfService => {
-            record_user_update(
-                &state,
-                &user,
-                "sign-in secret removed (attestation key cascaded)",
-                &actor,
-                &attestor,
-            )
-            .await?;
-        }
-    }
-    Ok(Json(UserView::from(&user)))
+    Err(ApiError::Conflict(
+        "não é permitido remover a palavra-passe; defina uma nova palavra-passe em alternativa"
+            .to_owned(),
+    ))
 }
 
 /// `POST /v1/users/{id}/attestation-key` — generate or rotate the attestation key. **t41 H2.**
@@ -1076,7 +1110,7 @@ pub async fn issue_recovery(
     }
 
     if let SecretAuthz::SelfService = decision {
-        // Self-service: prove the current password when the account has one (no-op if passwordless).
+        // Self-service: prove the current password when the account has one (legacy no-hash has none).
         let s = snapshot.as_ref().ok_or(ApiError::NotFound)?;
         verify_current(s, req.current_password.as_deref())?;
     }

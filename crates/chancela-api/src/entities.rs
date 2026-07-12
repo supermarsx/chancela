@@ -507,7 +507,7 @@ mod tests {
                 .format(&Rfc3339)
                 .unwrap_or_default(),
             active: true,
-            password_hash: None,
+            password_hash: Some(crate::attestation::hash_secret("Teste-Forte7!X").unwrap()),
             attestation_key: None,
             secret_source: Default::default(),
             recovery_hash: None,

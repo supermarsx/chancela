@@ -3,6 +3,8 @@
 //! The PKCS#12 signer is generated in-process (no checked-in keys, no OS store, no network). The
 //! endpoints are local/technical: they produce or validate a signature and persist nothing.
 
+mod common;
+
 use std::str::FromStr;
 use std::time::Duration as StdDuration;
 
@@ -25,6 +27,8 @@ use x509_cert::time::Validity;
 use chancela_api::{AppState, User, UserId, router};
 use chancela_authz::{OWNER_ROLE_ID, RoleAssignment, RoleCatalog, Scope};
 use time::format_description::well_known::Rfc3339;
+
+use common::{TEST_PASSWORD, password_hash};
 
 const PASSWORD: &str = "correct horse battery staple";
 const FRIENDLY_NAME: &str = "xades signing identity";
@@ -70,7 +74,7 @@ async fn owner_session(state: &AppState) -> String {
             email: None,
             created_at,
             active: true,
-            password_hash: None,
+            password_hash: Some(password_hash()),
             attestation_key: None,
             secret_source: Default::default(),
             recovery_hash: None,
@@ -83,7 +87,9 @@ async fn owner_session(state: &AppState) -> String {
             .method("POST")
             .uri("/v1/session")
             .header("content-type", "application/json")
-            .body(Body::from(json!({ "user_id": uid.0 }).to_string()))
+            .body(Body::from(
+                json!({ "user_id": uid.0, "password": TEST_PASSWORD }).to_string(),
+            ))
             .expect("request builds"),
     )
     .await;

@@ -3,6 +3,8 @@
 //! The PFX is generated in-process: no checked-in private keys, no OS certificate store, and no
 //! network. The API must persist only the signed PDF plus public evidence labels.
 
+mod common;
+
 use std::str::FromStr;
 use std::time::Duration as StdDuration;
 
@@ -29,6 +31,8 @@ use chancela_authz::{OWNER_ROLE_ID, RoleAssignment, RoleCatalog, Scope};
 use chancela_core::ActId;
 use chancela_pades::validate_pdf_signature;
 use time::format_description::well_known::Rfc3339;
+
+use common::{TEST_PASSWORD, password_hash};
 
 const PASSWORD: &str = "correct horse battery staple";
 const FRIENDLY_NAME: &str = "local advanced signing identity";
@@ -90,7 +94,7 @@ async fn bootstrap(state: &AppState) -> (String, String) {
         email: None,
         created_at,
         active: true,
-        password_hash: None,
+        password_hash: Some(password_hash()),
         attestation_key: None,
         secret_source: Default::default(),
         recovery_hash: None,
@@ -109,7 +113,9 @@ async fn open_session(state: &AppState, user_id: &str) -> String {
             .method("POST")
             .uri("/v1/session")
             .header("content-type", "application/json")
-            .body(Body::from(json!({ "user_id": user_id }).to_string()))
+            .body(Body::from(
+                json!({ "user_id": user_id, "password": TEST_PASSWORD }).to_string(),
+            ))
             .unwrap(),
     )
     .await;

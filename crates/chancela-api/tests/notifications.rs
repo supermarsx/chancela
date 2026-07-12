@@ -1,3 +1,5 @@
+mod common;
+
 use std::path::PathBuf;
 
 use axum::body::{Body, to_bytes};
@@ -6,6 +8,8 @@ use chancela_api::{AppState, UserId, router};
 use serde_json::{Value, json};
 use tower::ServiceExt;
 use uuid::Uuid;
+
+use common::TEST_PASSWORD;
 
 struct TempDir {
     dir: PathBuf,
@@ -77,6 +81,7 @@ async fn create_user(state: &AppState, token: Option<&str>, username: &str) -> U
         json!({
             "username": username,
             "display_name": username,
+            "password": TEST_PASSWORD,
         }),
     );
     let req = match token {
@@ -91,7 +96,10 @@ async fn create_user(state: &AppState, token: Option<&str>, username: &str) -> U
 async fn open_session(state: &AppState, user_id: UserId) -> String {
     let (status, body) = send(
         state.clone(),
-        post_json("/v1/session", json!({ "user_id": user_id.0 })),
+        post_json(
+            "/v1/session",
+            json!({ "user_id": user_id.0, "password": TEST_PASSWORD }),
+        ),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "session opens: {body}");

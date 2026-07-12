@@ -23,6 +23,7 @@ use chancela_signing::{
     sign_pdf_pades, timestamp_pdf_with_url,
 };
 use chancela_store::{StoredDocument, StoredSignedDocument};
+use common::TEST_PASSWORD;
 use common::tsa_http::MockTsaServer;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -119,7 +120,12 @@ async fn bootstrap(state: &AppState) -> String {
             .uri("/v1/users")
             .header(header::CONTENT_TYPE, "application/json")
             .body(Body::from(
-                json!({ "username": "archive.owner", "display_name": "Archive Owner" }).to_string(),
+                json!({
+                    "username": "archive.owner",
+                    "display_name": "Archive Owner",
+                    "password": TEST_PASSWORD,
+                })
+                .to_string(),
             ))
             .expect("request builds"),
     )
@@ -133,7 +139,9 @@ async fn bootstrap(state: &AppState) -> String {
             .method("POST")
             .uri("/v1/session")
             .header(header::CONTENT_TYPE, "application/json")
-            .body(Body::from(json!({ "user_id": user_id }).to_string()))
+            .body(Body::from(
+                json!({ "user_id": user_id, "password": TEST_PASSWORD }).to_string(),
+            ))
             .expect("request builds"),
     )
     .await;
@@ -611,7 +619,8 @@ async fn reader_token_without_book_export(state: &AppState, owner_token: &str) -
             owner_token,
             json!({
                 "username": format!("archive.reader.{}", Uuid::new_v4()),
-                "display_name": "Archive Reader"
+                "display_name": "Archive Reader",
+                "password": TEST_PASSWORD,
             }),
         ),
     )
@@ -634,7 +643,9 @@ async fn reader_token_without_book_export(state: &AppState, owner_token: &str) -
             .method("POST")
             .uri("/v1/session")
             .header(header::CONTENT_TYPE, "application/json")
-            .body(Body::from(json!({ "user_id": user_id }).to_string()))
+            .body(Body::from(
+                json!({ "user_id": user_id, "password": TEST_PASSWORD }).to_string(),
+            ))
             .expect("request builds"),
     )
     .await;

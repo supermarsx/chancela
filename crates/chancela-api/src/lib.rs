@@ -1919,6 +1919,8 @@ mod tests {
     use tower::ServiceExt; // for `oneshot`
     use uuid::Uuid;
 
+    const DEFAULT_TEST_PASSWORD: &str = "Teste-Forte7!X";
+
     /// Send one request through a fresh router and return (status, parsed JSON body).
     /// Does NOT auto-seed a session — used by [`send`] and [`auth_token`] internally, and by
     /// tests that check auth rejection (401 without a session).
@@ -1934,6 +1936,14 @@ mod tests {
             serde_json::from_slice(&bytes).expect("body is JSON")
         };
         (status, value)
+    }
+
+    async fn send_status(state: AppState, req: Request<Body>) -> StatusCode {
+        router(state)
+            .oneshot(req)
+            .await
+            .expect("router responds")
+            .status()
     }
 
     /// Like [`send_raw`] but auto-seeds a session token for requests that don't carry one (t41:
@@ -2818,7 +2828,8 @@ mod tests {
     /// Seed a test user + session directly into the state (bypassing the API) and return the
     /// token (t41: all mutation endpoints require auth). This avoids creating `user.created`
     /// ledger events and extra users in lists — the test's own mutations are the only ones
-    /// recorded. The user is passwordless and active.
+    /// recorded. The user has non-empty test credential material, but the session is seeded
+    /// directly because these tests are not exercising sign-in.
     async fn auth_token(state: &AppState) -> String {
         use crate::users::{User, UserId};
         use chancela_authz::{OWNER_ROLE_ID, RoleAssignment, RoleCatalog, Scope};
@@ -2843,7 +2854,7 @@ mod tests {
                 .format(&Rfc3339)
                 .unwrap_or_default(),
             active: true,
-            password_hash: None,
+            password_hash: Some("direct-session-test-password-hash".to_owned()),
             attestation_key: None,
             secret_source: Default::default(),
             recovery_hash: None,
@@ -8267,7 +8278,7 @@ mod tests {
                 .format(&Rfc3339)
                 .unwrap_or_default(),
             active: true,
-            password_hash: None,
+            password_hash: Some(crate::attestation::hash_secret(DEFAULT_TEST_PASSWORD).unwrap()),
             attestation_key: None,
             secret_source: Default::default(),
             recovery_hash: None,
@@ -8335,17 +8346,24 @@ mod tests {
             state.clone(),
             post_json(
                 "/v1/users",
-                json!({ "username": "amelia.marques", "display_name": "Amélia Marques" }),
+                json!({
+                    "username": "amelia.marques",
+                    "display_name": "Amélia Marques",
+                    "password": DEFAULT_TEST_PASSWORD,
+                }),
             ),
         )
         .await;
         assert_eq!(status, StatusCode::CREATED);
         let first_id = first["id"].as_str().unwrap().to_owned();
 
-        // Sign in as the (passwordless) first user to get a session, then create a second user.
+        // Sign in as the first user to get a session, then create a second user.
         let (status, sess) = send_raw(
             state.clone(),
-            post_json("/v1/session", json!({ "user_id": first_id })),
+            post_json(
+                "/v1/session",
+                json!({ "user_id": first_id, "password": DEFAULT_TEST_PASSWORD }),
+            ),
         )
         .await;
         assert_eq!(status, StatusCode::OK);
@@ -8354,7 +8372,10 @@ mod tests {
         let (status, _second) = send_raw(
             state.clone(),
             with_session(
-                post_json("/v1/users", json!({ "username": "bruno.dias" })),
+                post_json(
+                    "/v1/users",
+                    json!({ "username": "bruno.dias", "password": DEFAULT_TEST_PASSWORD }),
+                ),
                 &token,
             ),
         )
@@ -9384,7 +9405,7 @@ mod tests {
                 .format(&Rfc3339)
                 .unwrap_or_default(),
             active: true,
-            password_hash: None,
+            password_hash: Some("direct-session-test-password-hash".to_owned()),
             attestation_key: None,
             secret_source: Default::default(),
             recovery_hash: None,
@@ -9703,7 +9724,10 @@ mod tests {
     async fn create_user(state: &AppState, username: &str) -> String {
         let (status, user) = send(
             state.clone(),
-            post_json("/v1/users", json!({ "username": username })),
+            post_json(
+                "/v1/users",
+                json!({ "username": username, "password": DEFAULT_TEST_PASSWORD }),
+            ),
         )
         .await;
         assert_eq!(status, StatusCode::CREATED, "user created");
@@ -9714,7 +9738,10 @@ mod tests {
     async fn open_session(state: &AppState, user_id: &str) -> String {
         let (status, s) = send_raw(
             state.clone(),
-            post_json("/v1/session", json!({ "user_id": user_id })),
+            post_json(
+                "/v1/session",
+                json!({ "user_id": user_id, "password": DEFAULT_TEST_PASSWORD }),
+            ),
         )
         .await;
         assert_eq!(status, StatusCode::OK, "session opened");
@@ -9729,7 +9756,11 @@ mod tests {
             state.clone(),
             post_json(
                 "/v1/users",
-                json!({ "username": "amelia.marques", "display_name": "Amélia Marques" }),
+                json!({
+                    "username": "amelia.marques",
+                    "display_name": "Amélia Marques",
+                    "password": DEFAULT_TEST_PASSWORD,
+                }),
             ),
         )
         .await;
@@ -9768,10 +9799,111 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn create_user_requires_password_and_persists_hardened_hash() {
+        let state = AppState::default();
+        let password = "Criar-Forte7!X";
+        let (status, user) = send_raw(
+            state.clone(),
+            post_json(
+                "/v1/users",
+                json!({ "username": "amelia.marques", "password": password }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+        assert_eq!(user["has_secret"], true);
+        assert!(user.get("password_hash").is_none());
+
+        let uid = crate::users::UserId(Uuid::parse_str(user["id"].as_str().unwrap()).unwrap());
+        let stored = state
+            .users
+            .read()
+            .await
+            .get(&uid)
+            .and_then(|u| u.password_hash.as_deref().map(ToOwned::to_owned))
+            .expect("stored password hash");
+        assert!(stored.starts_with(crate::attestation::HARDENED_VERIFIER_PREFIX));
+        assert!(stored.contains("$argon2id$"));
+        assert!(!stored.contains(password));
+    }
+
+    #[tokio::test]
+    async fn create_user_rejects_missing_or_weak_password_with_policy_errors() {
+        let status = send_status(
+            AppState::default(),
+            post_json("/v1/users", json!({ "username": "amelia.marques" })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+
+        let (status, body) = send_raw(
+            AppState::default(),
+            post_json(
+                "/v1/users",
+                json!({ "username": "amelia.marques", "password": "" }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(body["error"].as_str().expect("error").contains("at least"));
+
+        for (password, expected_rule) in [("abcdefgh", "length"), ("Password123!", "not_common")] {
+            let (status, body) = send_raw(
+                AppState::default(),
+                post_json(
+                    "/v1/users",
+                    json!({ "username": "amelia.marques", "password": password }),
+                ),
+            )
+            .await;
+            assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+            let codes: Vec<&str> = body["failed_rules"]
+                .as_array()
+                .expect("failed_rules")
+                .iter()
+                .map(|f| f["code"].as_str().expect("code"))
+                .collect();
+            assert!(codes.contains(&expected_rule), "codes: {codes:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn create_user_rejects_unauthenticated_non_bootstrap_before_password_policy() {
+        let state = AppState::default();
+        let (status, _) = send_raw(
+            state.clone(),
+            post_json(
+                "/v1/users",
+                json!({ "username": "amelia.marques", "password": DEFAULT_TEST_PASSWORD }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+
+        let (status, body) = send_raw(
+            state,
+            post_json(
+                "/v1/users",
+                json!({ "username": "bruno.dias", "password": "abcdefgh" }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        assert_eq!(body["error"], "sessão requerida");
+        assert!(
+            body.get("failed_rules").is_none(),
+            "password policy details must not run before auth: {body}"
+        );
+    }
+
+    #[tokio::test]
     async fn create_user_defaults_display_name_to_username() {
         let (status, user) = send(
             AppState::default(),
-            post_json("/v1/users", json!({ "username": "auditor" })),
+            post_json(
+                "/v1/users",
+                json!({ "username": "auditor", "password": DEFAULT_TEST_PASSWORD }),
+            ),
         )
         .await;
         assert_eq!(status, StatusCode::CREATED);
@@ -9788,7 +9920,8 @@ mod tests {
                 json!({
                     "username": "amelia.marques",
                     "display_name": "Amélia Marques",
-                    "email": "  Amelia.Marques@Example.PT "
+                    "email": "  Amelia.Marques@Example.PT ",
+                    "password": DEFAULT_TEST_PASSWORD
                 }),
             ),
         )
@@ -9803,7 +9936,10 @@ mod tests {
 
         let (status, no_email) = send(
             state,
-            post_json("/v1/users", json!({ "username": "bruno.dias" })),
+            post_json(
+                "/v1/users",
+                json!({ "username": "bruno.dias", "password": DEFAULT_TEST_PASSWORD }),
+            ),
         )
         .await;
         assert_eq!(status, StatusCode::CREATED);
@@ -9818,7 +9954,10 @@ mod tests {
         for bad in ["", "Amelia", "has space", "a@b"] {
             let (status, body) = send(
                 AppState::default(),
-                post_json("/v1/users", json!({ "username": bad })),
+                post_json(
+                    "/v1/users",
+                    json!({ "username": bad, "password": DEFAULT_TEST_PASSWORD }),
+                ),
             )
             .await;
             assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "rejects {bad:?}");
@@ -9833,7 +9972,10 @@ mod tests {
         // The same username again is a conflict (uniqueness is case-insensitive).
         let (status, body) = send(
             state,
-            post_json("/v1/users", json!({ "username": "amelia.marques" })),
+            post_json(
+                "/v1/users",
+                json!({ "username": "amelia.marques", "password": DEFAULT_TEST_PASSWORD }),
+            ),
         )
         .await;
         assert_eq!(status, StatusCode::CONFLICT);
@@ -9952,7 +10094,10 @@ mod tests {
         let missing = Uuid::new_v4();
         let (status, _) = send_raw(
             AppState::default(),
-            post_json("/v1/session", json!({ "user_id": missing })),
+            post_json(
+                "/v1/session",
+                json!({ "user_id": missing, "password": DEFAULT_TEST_PASSWORD }),
+            ),
         )
         .await;
         assert_eq!(status, StatusCode::UNAUTHORIZED);
@@ -11253,7 +11398,10 @@ mod tests {
     async fn make_user(state: &AppState, username: &str) -> String {
         let (status, u) = send(
             state.clone(),
-            post_json("/v1/users", json!({ "username": username })),
+            post_json(
+                "/v1/users",
+                json!({ "username": username, "password": DEFAULT_TEST_PASSWORD }),
+            ),
         )
         .await;
         assert_eq!(status, StatusCode::CREATED);
@@ -11287,7 +11435,10 @@ mod tests {
             with_session(
                 post_json(
                     &format!("/v1/users/{id}/secret"),
-                    json!({ "password": "Segur0-Chave7!" }),
+                    json!({
+                        "password": "Segur0-Chave7!",
+                        "current_password": DEFAULT_TEST_PASSWORD,
+                    }),
                 ),
                 &self_tok,
             ),
@@ -11339,31 +11490,42 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn secret_gates_session_and_rejects_wrong_password() {
+    async fn create_session_requires_password_for_hashed_user() {
         let state = AppState::default();
         let id = make_user(&state, "amelia.marques").await;
-        // t51: self-service session so setting one's own secret is authorized (not a cross-user op).
         let self_tok = open_session(&state, &id).await;
 
-        // Passwordless: the view says so and sign-in needs no password.
         let (_, view) = send(state.clone(), get(&format!("/v1/users/{id}"))).await;
-        assert_eq!(view["has_secret"], false);
+        assert_eq!(view["has_secret"], true);
         assert_eq!(view["has_attestation_key"], false);
         assert!(view.get("attestation_key_fingerprint").is_none());
-        let (status, _) = send(
+
+        let status = send_status(
             state.clone(),
             post_json("/v1/session", json!({ "user_id": id })),
         )
         .await;
-        assert_eq!(status, StatusCode::OK);
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
 
-        // Set a secret — no current_password needed the first time (self-service).
+        let (status, body) = send(
+            state.clone(),
+            post_json("/v1/session", json!({ "user_id": id, "password": "nope" })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        assert!(body["error"].is_string());
+        state.signin_backoff.write().await.clear();
+
+        // Change the password — current_password is required for a credentialed self-service user.
         let (status, view) = send(
             state.clone(),
             with_session(
                 post_json(
                     &format!("/v1/users/{id}/secret"),
-                    json!({ "password": "Cavalo-Certo9!" }),
+                    json!({
+                        "password": "Cavalo-Certo9!",
+                        "current_password": DEFAULT_TEST_PASSWORD,
+                    }),
                 ),
                 &self_tok,
             ),
@@ -11372,7 +11534,7 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert_eq!(view["has_secret"], true);
 
-        // Now the password is required: wrong → 401, right → 200.
+        // Now the new password is required: wrong → 401, right → 200.
         let (status, body) = send(
             state.clone(),
             post_json("/v1/session", json!({ "user_id": id, "password": "nope" })),
@@ -11395,6 +11557,46 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn create_session_rejects_legacy_no_hash_user_409() {
+        let state = AppState::default();
+        let id = make_user(&state, "legacy.user").await;
+        {
+            let uid = UserId(Uuid::parse_str(&id).expect("uuid"));
+            let mut users = state.users.write().await;
+            let user = users.get_mut(&uid).expect("user exists");
+            user.password_hash = None;
+        }
+
+        let (_, view) = send(state.clone(), get(&format!("/v1/users/{id}"))).await;
+        assert_eq!(view["has_secret"], false);
+        let session_count_before = state.sessions.read().await.len();
+        let (status, body) = send_raw(
+            state.clone(),
+            post_json(
+                "/v1/session",
+                json!({ "user_id": id, "password": DEFAULT_TEST_PASSWORD }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert!(
+            body["error"]
+                .as_str()
+                .expect("error")
+                .contains("não configurada")
+        );
+        assert!(
+            body.get("token").is_none(),
+            "legacy no-hash rejection must not return a session token: {body}"
+        );
+        assert_eq!(
+            state.sessions.read().await.len(),
+            session_count_before,
+            "legacy no-hash rejection must not insert a session"
+        );
+    }
+
+    #[tokio::test]
     async fn password_and_recovery_verifiers_persist_hardened_and_secret_free() {
         let tmp = TempDir::new();
         let state = AppState::with_data_dir(tmp.dir.clone());
@@ -11402,7 +11604,10 @@ mod tests {
 
         let (status, first_view) = send_raw(
             state.clone(),
-            post_json("/v1/users", json!({ "username": "amelia.marques" })),
+            post_json(
+                "/v1/users",
+                json!({ "username": "amelia.marques", "password": DEFAULT_TEST_PASSWORD }),
+            ),
         )
         .await;
         assert_eq!(status, StatusCode::CREATED, "bootstrap user");
@@ -11412,7 +11617,10 @@ mod tests {
         let (status, second_view) = send_raw(
             state.clone(),
             with_session(
-                post_json("/v1/users", json!({ "username": "bruno.dias" })),
+                post_json(
+                    "/v1/users",
+                    json!({ "username": "bruno.dias", "password": DEFAULT_TEST_PASSWORD }),
+                ),
                 &first_token,
             ),
         )
@@ -11427,7 +11635,7 @@ mod tests {
                 with_session(
                     post_json(
                         &format!("/v1/users/{user_id}/secret"),
-                        json!({ "password": password }),
+                        json!({ "password": password, "current_password": DEFAULT_TEST_PASSWORD }),
                     ),
                     token,
                 ),
@@ -11557,7 +11765,10 @@ mod tests {
             with_session(
                 post_json(
                     &format!("/v1/users/{id}/secret"),
-                    json!({ "password": "Segur0-Chave7!" }),
+                    json!({
+                        "password": "Segur0-Chave7!",
+                        "current_password": DEFAULT_TEST_PASSWORD,
+                    }),
                 ),
                 &self_tok,
             ),
@@ -11601,7 +11812,12 @@ mod tests {
     async fn attestation_key_requires_a_secret_and_verifies_the_current_one() {
         let state = AppState::default();
         let id = make_user(&state, "carla").await;
-        let self_tok = open_session(&state, &id).await; // t51: self-service key/secret ops.
+        {
+            let uid = UserId(Uuid::parse_str(&id).expect("uuid"));
+            let mut users = state.users.write().await;
+            users.get_mut(&uid).expect("user exists").password_hash = None;
+        }
+        let self_tok = seed_session(&state, &id).await; // t51: self-service key/secret ops.
         // No secret → 409 (self-service precondition; requester == target).
         let (status, _) = send(
             state.clone(),
@@ -11743,12 +11959,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn passwordless_mutation_has_no_attestation() {
+    async fn mutation_without_attestation_key_has_no_attestation() {
         let state = AppState::default();
         let id = make_user(&state, "eva").await;
         let (_, sess) = send(
             state.clone(),
-            post_json("/v1/session", json!({ "user_id": id })),
+            post_json(
+                "/v1/session",
+                json!({ "user_id": id, "password": DEFAULT_TEST_PASSWORD }),
+            ),
         )
         .await;
         let token = sess["token"].as_str().expect("token").to_owned();
@@ -11779,7 +11998,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn removing_the_secret_cascades_the_attestation_key() {
+    async fn removing_the_secret_is_rejected_and_preserves_the_attestation_key() {
         let state = AppState::default();
         let id = make_user(&state, "fabio").await;
         let self_tok = open_session(&state, &id).await; // t51: self-service credential ops.
@@ -11788,7 +12007,10 @@ mod tests {
             with_session(
                 post_json(
                     &format!("/v1/users/{id}/secret"),
-                    json!({ "password": "Segur0-Chave7!" }),
+                    json!({
+                        "password": "Segur0-Chave7!",
+                        "current_password": DEFAULT_TEST_PASSWORD,
+                    }),
                 ),
                 &self_tok,
             ),
@@ -11819,8 +12041,9 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::UNAUTHORIZED);
-        // Correct → 200; both the secret and the (now unrecoverable) key are cleared.
-        let (status, view) = send(
+        // Correct proof still cannot remove the password; replacing it via POST is supported.
+        let before = stored_user(&state, &id).await;
+        let (status, body) = send(
             state.clone(),
             with_session(
                 body_json(
@@ -11832,9 +12055,17 @@ mod tests {
             ),
         )
         .await;
-        assert_eq!(status, StatusCode::OK);
-        assert_eq!(view["has_secret"], false);
-        assert_eq!(view["has_attestation_key"], false);
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert!(
+            body["error"]
+                .as_str()
+                .expect("error")
+                .contains("defina uma nova palavra-passe"),
+            "clear replacement guidance: {body}"
+        );
+        let after = stored_user(&state, &id).await;
+        assert_eq!(after.password_hash, before.password_hash);
+        assert_eq!(after.attestation_key, before.attestation_key);
     }
 
     #[tokio::test]
@@ -11847,7 +12078,10 @@ mod tests {
             with_session(
                 post_json(
                     &format!("/v1/users/{id}/secret"),
-                    json!({ "password": "Velho-Codigo3!" }),
+                    json!({
+                        "password": "Velho-Codigo3!",
+                        "current_password": DEFAULT_TEST_PASSWORD,
+                    }),
                 ),
                 &self_tok,
             ),
@@ -11965,7 +12199,10 @@ mod tests {
             with_session(
                 post_json(
                     &format!("/v1/users/{id}/secret"),
-                    json!({ "password": "Segur0-Chave7!" }),
+                    json!({
+                        "password": "Segur0-Chave7!",
+                        "current_password": DEFAULT_TEST_PASSWORD,
+                    }),
                 ),
                 &self_tok,
             ),
@@ -12046,7 +12283,7 @@ mod tests {
         }
         // The account is untouched — no weak secret was set.
         let (_, view) = send(state, get(&format!("/v1/users/{id}"))).await;
-        assert_eq!(view["has_secret"], false);
+        assert_eq!(view["has_secret"], true);
     }
 
     #[tokio::test]
@@ -12102,7 +12339,10 @@ mod tests {
             with_session(
                 post_json(
                     &format!("/v1/users/{id}/secret"),
-                    json!({ "password": "Segur0-Chave7!" }),
+                    json!({
+                        "password": "Segur0-Chave7!",
+                        "current_password": DEFAULT_TEST_PASSWORD,
+                    }),
                 ),
                 &tok,
             ),
@@ -12181,7 +12421,10 @@ mod tests {
         // "test.actor" pollutes the roster this way.
         let (status, amelia) = send_raw(
             state.clone(),
-            post_json("/v1/users", json!({ "username": "amelia.marques" })),
+            post_json(
+                "/v1/users",
+                json!({ "username": "amelia.marques", "password": DEFAULT_TEST_PASSWORD }),
+            ),
         )
         .await;
         assert_eq!(status, StatusCode::CREATED);
@@ -12190,24 +12433,23 @@ mod tests {
         let (status, _) = send_raw(
             state.clone(),
             with_session(
-                post_json("/v1/users", json!({ "username": "bruno" })),
-                &token,
-            ),
-        )
-        .await;
-        assert_eq!(status, StatusCode::CREATED);
-        // Give amelia a secret so has_secret is exercised on both true and false.
-        send_raw(
-            state.clone(),
-            with_session(
                 post_json(
-                    &format!("/v1/users/{id}/secret"),
-                    json!({ "password": "Cavalo-Certo9!" }),
+                    "/v1/users",
+                    json!({ "username": "bruno", "password": DEFAULT_TEST_PASSWORD }),
                 ),
                 &token,
             ),
         )
         .await;
+        assert_eq!(status, StatusCode::CREATED);
+        {
+            let mut users = state.users.write().await;
+            let bruno = users
+                .values_mut()
+                .find(|u| u.username == "bruno")
+                .expect("bruno created");
+            bruno.password_hash = None;
+        }
 
         // Still signed out on this call → onboarding no longer required, both users listed.
         let (status, roster) = send_raw(state.clone(), get("/v1/session/roster")).await;
@@ -12238,7 +12480,7 @@ mod tests {
                 "roster user must not carry {forbidden}: {amelia}"
             );
         }
-        // A passwordless user reads has_secret:false so the UI knows not to prompt.
+        // A legacy no-hash user reads has_secret:false, but POST /v1/session still rejects it.
         let bruno = users
             .iter()
             .find(|u| u["username"] == "bruno")
@@ -12251,7 +12493,10 @@ mod tests {
         let state = fresh_state().await;
         let (status, u) = send_raw(
             state.clone(),
-            post_json("/v1/users", json!({ "username": "amelia.marques" })),
+            post_json(
+                "/v1/users",
+                json!({ "username": "amelia.marques", "password": DEFAULT_TEST_PASSWORD }),
+            ),
         )
         .await;
         assert_eq!(status, StatusCode::CREATED);
@@ -12260,7 +12505,10 @@ mod tests {
         let (status, bruno) = send_raw(
             state.clone(),
             with_session(
-                post_json("/v1/users", json!({ "username": "bruno" })),
+                post_json(
+                    "/v1/users",
+                    json!({ "username": "bruno", "password": DEFAULT_TEST_PASSWORD }),
+                ),
                 &token,
             ),
         )
@@ -12296,7 +12544,10 @@ mod tests {
         let state = fresh_state().await;
         let (status, u) = send_raw(
             state.clone(),
-            post_json("/v1/users", json!({ "username": "amelia.marques" })),
+            post_json(
+                "/v1/users",
+                json!({ "username": "amelia.marques", "password": DEFAULT_TEST_PASSWORD }),
+            ),
         )
         .await;
         assert_eq!(status, StatusCode::CREATED);
@@ -12325,7 +12576,10 @@ mod tests {
         let (status, u2) = send_raw(
             state.clone(),
             with_session(
-                post_json("/v1/users", json!({ "username": "bruno" })),
+                post_json(
+                    "/v1/users",
+                    json!({ "username": "bruno", "password": DEFAULT_TEST_PASSWORD }),
+                ),
                 &token,
             ),
         )
@@ -12369,7 +12623,10 @@ mod tests {
             with_session(
                 post_json(
                     &format!("/v1/users/{id}/secret"),
-                    json!({ "password": "Segur0-Chave7!" }),
+                    json!({
+                        "password": "Segur0-Chave7!",
+                        "current_password": DEFAULT_TEST_PASSWORD,
+                    }),
                 ),
                 &self_tok,
             ),
@@ -12449,7 +12706,7 @@ mod tests {
     // "amelia.marques" (target) and "bruno" (the other operator); never real names.
 
     /// Seed a self-service session for an existing user directly into state (works regardless of
-    /// whether the user has a password — unlike `open_session`, which signs in passwordless).
+    /// whether the user has a password — unlike `open_session`, which exercises password sign-in).
     async fn seed_session(state: &AppState, user_id: &str) -> String {
         let uid = UserId(Uuid::parse_str(user_id).expect("uuid"));
         let token = Uuid::new_v4().to_string();
@@ -13190,15 +13447,15 @@ mod tests {
         ));
     }
 
-    /// Set `target`'s first password as a self-service op (open a session as the target).
+    /// Change `target`'s default test password as a self-service op.
     async fn give_target_password(state: &AppState, target_id: &str, password: &str) {
-        let self_tok = open_session(state, target_id).await;
+        let self_tok = seed_session(state, target_id).await;
         let (status, _) = send(
             state.clone(),
             with_session(
                 post_json(
                     &format!("/v1/users/{target_id}/secret"),
-                    json!({ "password": password }),
+                    json!({ "password": password, "current_password": DEFAULT_TEST_PASSWORD }),
                 ),
                 &self_tok,
             ),
@@ -13227,12 +13484,19 @@ mod tests {
             .expect("user present")
     }
 
+    async fn clear_password_hash(state: &AppState, id: &str) {
+        let uid = UserId(Uuid::parse_str(id).expect("uuid"));
+        let mut users = state.users.write().await;
+        users.get_mut(&uid).expect("user present").password_hash = None;
+    }
+
     #[tokio::test]
-    async fn t51_cross_user_set_on_passwordless_target_is_403() {
+    async fn t51_cross_user_set_on_legacy_no_hash_target_is_403() {
         // Matrix #7: the closed hole — a signed-in operator setting a FIRST password on a
-        // passwordless account is now refused, never silently set.
+        // legacy no-hash account is refused, never silently set.
         let state = AppState::default();
         let target = make_user(&state, "amelia.marques").await;
+        clear_password_hash(&state, &target).await;
         let bruno = make_user(&state, "bruno").await;
         let bruno_tok = open_session(&state, &bruno).await;
 
@@ -13254,7 +13518,7 @@ mod tests {
                 .expect("error")
                 .contains("não autorizado")
         );
-        // The target is untouched — still passwordless.
+        // The target is untouched — still legacy no-hash.
         let (_, view) = send(state.clone(), get(&format!("/v1/users/{target}"))).await;
         assert_eq!(view["has_secret"], false);
     }
@@ -13400,7 +13664,8 @@ mod tests {
     #[tokio::test]
     async fn t51_cross_user_remove_and_key_ops_enforce_the_same_rule() {
         // Adjacent-op parity (§5): remove-secret and the attestation-key ops all refuse a
-        // no-proof cross-user caller (matrix #10/#12), and accept a correct-password one (#9/#11).
+        // no-proof cross-user caller (matrix #10/#12). A correct-password delete-secret request is
+        // authorized, then refused with 409 so passwordless users cannot be created.
         let state = AppState::default();
         let target = make_user(&state, "amelia.marques").await;
         give_target_password(&state, &target, "Corrente-Ok3!X").await;
@@ -13467,8 +13732,9 @@ mod tests {
         .await;
         assert_eq!(s, StatusCode::OK);
 
-        // Correct-password cross-user remove-secret → 200 and cascades the key (matrix #9).
-        let (s, view) = send(
+        // Correct-password cross-user remove-secret → 409 and preserves the password/key.
+        let before = stored_user(&state, &target).await;
+        let (s, body) = send(
             state.clone(),
             with_session(
                 body_json(
@@ -13480,9 +13746,16 @@ mod tests {
             ),
         )
         .await;
-        assert_eq!(s, StatusCode::OK);
-        assert_eq!(view["has_secret"], false);
-        assert_eq!(view["has_attestation_key"], false);
+        assert_eq!(s, StatusCode::CONFLICT);
+        assert!(
+            body["error"]
+                .as_str()
+                .expect("error")
+                .contains("defina uma nova palavra-passe")
+        );
+        let after = stored_user(&state, &target).await;
+        assert_eq!(after.password_hash, before.password_hash);
+        assert_eq!(after.attestation_key, before.attestation_key);
     }
 
     #[tokio::test]
@@ -15193,7 +15466,7 @@ mod tests {
         assert_eq!(status, StatusCode::OK, "export reachable while degraded");
     }
 
-    // --- t69: passwordless self-step-up (the lockout fix) -----------------------------------------
+    // --- t69: legacy no-hash self-step-up (the lockout fix) ---------------------------------------
 
     /// Corrupt the in-memory ledger's tail self-hash so the chain no longer verifies (mirrors the
     /// `try_append` test's break). Used to drive a *real* re-anchor repair (→ 200) rather than the
@@ -15212,13 +15485,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn t69_passwordless_owner_recovers_while_degraded_without_stepup() {
-        // t69 lockout fix: a PASSWORDLESS Owner (no password, no recovery phrase) on a DEGRADED
-        // instance can still drive the recovery/destructive plane with a session ONLY — a valid self
-        // session IS the strongest proof they can offer, so step-up must not 403 them. Without this
-        // fix an all-passwordless instance whose chain breaks could never be recovered by anyone.
+    async fn t69_legacy_no_hash_owner_recovers_while_degraded_without_stepup() {
+        // t69 lockout fix: a legacy no-hash Owner (no password, no recovery phrase) that already
+        // has a session on a DEGRADED instance can still drive the recovery/destructive plane with
+        // the session only. POST /v1/session no longer creates such a session; this is test-only
+        // legacy-state coverage.
         let state = persistent_state();
-        let owner = make_user(&state, "amelia.marques").await; // Owner@Global, passwordless
+        let owner = make_user(&state, "amelia.marques").await;
+        clear_password_hash(&state, &owner).await;
         let token = seed_session(&state, &owner).await;
         seed_entity_and_book(&state, &token).await;
 
@@ -15241,7 +15515,7 @@ mod tests {
         assert_eq!(
             status,
             StatusCode::CONFLICT,
-            "passwordless Owner reaches reanchor (no step-up 403): {body}"
+            "legacy no-hash Owner reaches reanchor (no step-up 403): {body}"
         );
 
         // Data reset (backend_domain) with the correct confirm phrase and NO reauth → 200. Step-up
@@ -15261,10 +15535,10 @@ mod tests {
         assert_eq!(
             status,
             StatusCode::OK,
-            "passwordless Owner completes a domain reset without step-up: {resp}"
+            "legacy no-hash Owner completes a domain reset without step-up: {resp}"
         );
 
-        // The type-to-confirm phrase is STILL enforced (a passwordless user is not waved through the
+        // The type-to-confirm phrase is STILL enforced (a no-hash user is not waved through the
         // second confirmation): a wrong phrase is a 422, never a silent wipe.
         let (status, _) = send(
             state.clone(),
@@ -15281,16 +15555,17 @@ mod tests {
         assert_eq!(
             status,
             StatusCode::UNPROCESSABLE_ENTITY,
-            "type-to-confirm phrase still required for a passwordless user"
+            "type-to-confirm phrase still required for a legacy no-hash user"
         );
     }
 
     #[tokio::test]
-    async fn t69_passwordless_owner_reanchors_a_broken_chain_and_discloses() {
-        // The real repair: a passwordless Owner with a genuinely broken chain re-anchors it with a
-        // session only (no step-up) → 200; the disclosure is recorded and the chain verifies again.
+    async fn t69_legacy_no_hash_owner_reanchors_a_broken_chain_and_discloses() {
+        // The real repair: a legacy no-hash Owner with a genuinely broken chain re-anchors it with
+        // a session only (no step-up) → 200; the disclosure is recorded and the chain verifies again.
         let state = persistent_state();
         let owner = make_user(&state, "amelia.marques").await;
+        clear_password_hash(&state, &owner).await;
         let token = seed_session(&state, &owner).await;
         seed_entity_and_book(&state, &token).await;
 
@@ -15311,7 +15586,7 @@ mod tests {
         assert_eq!(
             status,
             StatusCode::OK,
-            "passwordless Owner re-anchors a broken chain without step-up: {resp}"
+            "legacy no-hash Owner re-anchors a broken chain without step-up: {resp}"
         );
         // Re-anchor DISCLOSES (never erases): the permanent, chained disclosure is present.
         assert!(
@@ -15324,10 +15599,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn t69_passwordless_leitor_is_403_by_rbac_not_a_stepup_bypass() {
-        // The relaxation is SELF-step-up ONLY; RBAC stays the primary gate. A PASSWORDLESS Leitor
+    async fn t69_legacy_no_hash_leitor_is_403_by_rbac_not_a_stepup_bypass() {
+        // The relaxation is SELF-step-up ONLY; RBAC stays the primary gate. A legacy no-hash Leitor
         // (lacks ledger.recover / data.wipe) is refused with a PERMISSION 403 — never waved through
-        // by the passwordless step-up carve-out. (`require_permission` runs before `require_step_up`.)
+        // by the no-hash step-up carve-out. (`require_permission` runs before `require_step_up`.)
         use chancela_authz::{LEITOR_ROLE_ID, RoleAssignment, Scope};
         let state = persistent_state();
         let leitor = seed_user(
@@ -15389,7 +15664,7 @@ mod tests {
     async fn t69_credentialed_user_step_up_is_unchanged() {
         // The carve-out is ONLY for a user who holds NO credential. A user WITH a password must still
         // prove it: session-only and wrong-password both 403; the correct password proceeds (here to
-        // a real 200 repair). Guards against the passwordless relaxation leaking to credentialed users.
+        // a real 200 repair). Guards against the legacy no-hash relaxation leaking to credentialed users.
         let state = persistent_state();
         let token = user_with_password(&state, "amelia.marques", "Recuperar-Base7!").await;
         seed_entity_and_book(&state, &token).await;
@@ -15448,12 +15723,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn t69_cross_user_passwordless_target_stays_refused() {
+    async fn t69_cross_user_legacy_no_hash_target_stays_refused() {
         // The t52 hole stays CLOSED: the self-step-up relaxation must NOT be mistaken for reopening
-        // cross-user resets against a passwordless TARGET. A signed-in operator setting a first
-        // password on ANOTHER passwordless user is still a uniform 403, and the target is untouched.
+        // cross-user resets against a legacy no-hash TARGET. A signed-in operator setting a first
+        // password on ANOTHER no-hash user is still a uniform 403, and the target is untouched.
         let state = AppState::default();
-        let target = make_user(&state, "amelia.marques").await; // passwordless target
+        let target = make_user(&state, "amelia.marques").await;
+        clear_password_hash(&state, &target).await;
         let bruno = make_user(&state, "bruno").await;
         let bruno_tok = open_session(&state, &bruno).await;
 
@@ -15471,7 +15747,7 @@ mod tests {
         assert_eq!(
             status,
             StatusCode::FORBIDDEN,
-            "cross-user passwordless-target still refused: {body}"
+            "cross-user legacy-no-hash target still refused: {body}"
         );
         assert!(
             body["error"]
@@ -15483,7 +15759,7 @@ mod tests {
         let (_, view) = send(state.clone(), get(&format!("/v1/users/{target}"))).await;
         assert_eq!(
             view["has_secret"], false,
-            "target untouched (still passwordless)"
+            "target untouched (still legacy no-hash)"
         );
     }
 

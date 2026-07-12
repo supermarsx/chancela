@@ -11,7 +11,7 @@
 //!   permanent re-anchor disclosure + the live `degraded` flag).
 //! - `POST /v1/ledger/recovery/reanchor` `{ reason, reauth, actor? }` → [`ReanchorResponse`]
 //!   (`{ record, integrity }`). Requires **step-up re-auth** (the acting user's password OR a
-//!   recovery phrase — for a credentialed user a valid session alone is `403`; a passwordless user
+//!   recovery phrase — for a credentialed user a valid session alone is `403`; a legacy no-hash user
 //!   with no recovery phrase is satisfied by their self session, see
 //!   [`require_step_up`](crate::data::require_step_up)), mirroring the destructive wipes: re-anchor
 //!   rebuilds the chain hashes and is the most evidence-sensitive op. `422` empty reason; `409` when

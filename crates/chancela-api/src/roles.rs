@@ -798,7 +798,7 @@ mod tests {
             email: None,
             created_at: created_at.to_owned(),
             active: true,
-            password_hash: None,
+            password_hash: Some("test-password-hash".to_owned()),
             attestation_key: None,
             secret_source: SecretSource::Password,
             recovery_hash: None,

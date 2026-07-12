@@ -1,19 +1,20 @@
 //! Session endpoints (contract §2.8, extended by plan t29 §4.2/§4.4/§4.5): mint, inspect, and
-//! drop an opaque actor token, now honouring optional per-user passwords.
+//! drop an opaque actor token, requiring the per-user password verifier.
 //!
 //! A session maps an opaque token to a [`SessionEntry`] — the user, plus (when the user signed in
 //! with a password and holds an attestation key) the **decrypted signing key** held in memory for
-//! the life of the session. The UI mints one with `POST /v1/session {user_id, password?}`, sends
+//! the life of the session. The UI mints one with `POST /v1/session {user_id, password}`, sends
 //! the returned token as the `X-Chancela-Session` header on every subsequent request, and the
 //! [`CurrentActor`](crate::actor::CurrentActor) /
 //! [`CurrentAttestor`](crate::actor::CurrentAttestor) extractors resolve it.
 //!
 //! **Security (t41):** sessions carry a 24h [`expires_at`](SessionEntry::expires_at) and the
 //! [`CurrentActor`](crate::actor::CurrentActor) extractor rejects expired/missing tokens with
-//! `401`. Sign-in failures (unknown user, inactive user, wrong password) all return a uniform
-//! `401 "credenciais inválidas"` — no user enumeration via distinct status codes. The backoff
-//! speed-bump holds its write lock across the argon2 verify so concurrent requests cannot all
-//! read "no backoff" and then each spend ~100 ms in argon2.
+//! `401`. Sign-in failures (unknown user, inactive user, wrong password) return
+//! `401 "credenciais inválidas"`; a legacy user with no password verifier returns a state-specific
+//! rejection and never mints a session. The backoff speed-bump holds its write lock across the
+//! argon2 verify so concurrent requests cannot all read "no backoff" and then each spend ~100 ms in
+//! argon2.
 
 use axum::Json;
 use axum::extract::State;
@@ -56,8 +57,7 @@ pub(crate) fn backoff_secs(fails: u32) -> i64 {
 #[derive(Deserialize)]
 pub struct CreateSession {
     pub user_id: Uuid,
-    #[serde(default)]
-    pub password: Option<String>,
+    pub password: String,
 }
 
 #[derive(Serialize)]
@@ -216,52 +216,44 @@ pub async fn create_session(
         }
     };
 
-    let unlocked_key = match user.password_hash.clone() {
-        None => None,
-        Some(stored) => {
-            let now = OffsetDateTime::now_utc();
-            let seed = state.verifier_seed.read().await.clone();
-            let mut backoff = state.signin_backoff.write().await;
-            let entry = backoff.entry(uid).or_insert(Backoff {
-                fails: 0,
-                next_allowed_at: now,
-            });
-            if now < entry.next_allowed_at {
-                let ms = (entry.next_allowed_at - now).whole_milliseconds();
-                let remaining = ((ms + 999) / 1000).max(1);
-                return Err(ApiError::TooManyRequests(format!(
-                    "demasiadas tentativas — tente novamente em {remaining} s"
-                )));
-            }
-            let verification = req
-                .password
-                .as_deref()
-                .map(|p| verify_secret_with_seed(p, &stored, &seed))
-                .unwrap_or(crate::attestation::SecretVerification {
-                    verified: false,
-                    needs_upgrade: false,
-                });
-            if !verification.verified {
-                entry.fails += 1;
-                entry.next_allowed_at = now + Duration::seconds(backoff_secs(entry.fails));
-                return Err(ApiError::Unauthorized("credenciais inválidas".to_owned()));
-            }
-            drop(backoff);
-            state.signin_backoff.write().await.remove(&uid);
-            let password = req.password.as_deref().unwrap_or_default();
-            if verification.needs_upgrade {
-                let upgraded = hash_secret_with_seed(password, &seed)?;
-                if let Some(updated) =
-                    upgrade_password_hash_after_signin(&state, uid, &stored, upgraded).await?
-                {
-                    user = updated;
-                }
-            }
-            match &user.attestation_key {
-                Some(blob) => Some(blob.unlock(password)?),
-                None => None,
-            }
+    let Some(stored) = user.password_hash.clone() else {
+        return Err(ApiError::Conflict(
+            "palavra-passe não configurada para este utilizador".to_owned(),
+        ));
+    };
+    let now = OffsetDateTime::now_utc();
+    let seed = state.verifier_seed.read().await.clone();
+    let mut backoff = state.signin_backoff.write().await;
+    let entry = backoff.entry(uid).or_insert(Backoff {
+        fails: 0,
+        next_allowed_at: now,
+    });
+    if now < entry.next_allowed_at {
+        let ms = (entry.next_allowed_at - now).whole_milliseconds();
+        let remaining = ((ms + 999) / 1000).max(1);
+        return Err(ApiError::TooManyRequests(format!(
+            "demasiadas tentativas — tente novamente em {remaining} s"
+        )));
+    }
+    let verification = verify_secret_with_seed(&req.password, &stored, &seed);
+    if !verification.verified {
+        entry.fails += 1;
+        entry.next_allowed_at = now + Duration::seconds(backoff_secs(entry.fails));
+        return Err(ApiError::Unauthorized("credenciais inválidas".to_owned()));
+    }
+    drop(backoff);
+    state.signin_backoff.write().await.remove(&uid);
+    if verification.needs_upgrade {
+        let upgraded = hash_secret_with_seed(&req.password, &seed)?;
+        if let Some(updated) =
+            upgrade_password_hash_after_signin(&state, uid, &stored, upgraded).await?
+        {
+            user = updated;
         }
+    };
+    let unlocked_key = match &user.attestation_key {
+        Some(blob) => Some(blob.unlock(&req.password)?),
+        None => None,
     };
 
     let token = Uuid::new_v4().to_string();

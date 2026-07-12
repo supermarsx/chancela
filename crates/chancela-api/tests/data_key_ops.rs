@@ -1,3 +1,5 @@
+mod common;
+
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -15,6 +17,8 @@ use time::format_description::well_known::Rfc3339;
 use tokio::sync::RwLock;
 use tower::ServiceExt;
 use uuid::Uuid;
+
+use common::{TEST_PASSWORD, password_hash};
 
 const PREFLIGHT_PATH: &str = "/v1/data/key-rotation/preflight";
 const EXECUTE_PATH: &str = "/v1/data/key-rotation";
@@ -72,7 +76,7 @@ async fn seed_user(state: &AppState, username: &str, role_id: RoleId) -> UserId 
             .format(&Rfc3339)
             .unwrap_or_default(),
         active: true,
-        password_hash: None,
+        password_hash: Some(password_hash()),
         attestation_key: None,
         secret_source: Default::default(),
         recovery_hash: None,
@@ -85,7 +89,10 @@ async fn seed_user(state: &AppState, username: &str, role_id: RoleId) -> UserId 
 async fn open_session(state: &AppState, uid: UserId) -> String {
     let (status, body) = send(
         state.clone(),
-        post_json("/v1/session", json!({ "user_id": uid.0 })),
+        post_json(
+            "/v1/session",
+            json!({ "user_id": uid.0, "password": TEST_PASSWORD }),
+        ),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "session opens: {body}");

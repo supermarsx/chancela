@@ -49,6 +49,7 @@ use chancela_signing::{
 };
 use chancela_smartcard::token::{LABEL_AUTH_CERT, LABEL_SIGNATURE_CERT};
 use chancela_smartcard::{CertUsage, CryptoToken, SmartcardError, TokenCertificate};
+use common::TEST_PASSWORD;
 use common::tsa_http::MockTsaServer;
 
 const OID_SHA256_WITH_RSA: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.113549.1.1.11");
@@ -269,8 +270,12 @@ async fn bootstrap(state: &AppState) -> (String, String) {
             .uri("/v1/users")
             .header("content-type", "application/json")
             .body(Body::from(
-                json!({ "username": "amelia.marques", "display_name": "Amélia Marques" })
-                    .to_string(),
+                json!({
+                    "username": "amelia.marques",
+                    "display_name": "Amélia Marques",
+                    "password": TEST_PASSWORD,
+                })
+                .to_string(),
             ))
             .unwrap(),
     )
@@ -288,7 +293,9 @@ async fn open_session(state: &AppState, user_id: &str) -> String {
             .method("POST")
             .uri("/v1/session")
             .header("content-type", "application/json")
-            .body(Body::from(json!({ "user_id": user_id }).to_string()))
+            .body(Body::from(
+                json!({ "user_id": user_id, "password": TEST_PASSWORD }).to_string(),
+            ))
             .unwrap(),
     )
     .await;
@@ -420,7 +427,11 @@ async fn ltv_execute_403_for_role_without_signing_perm() {
             "POST",
             "/v1/users",
             &owner,
-            json!({ "username": "leitor.user", "display_name": "Leitor" }),
+            json!({
+                "username": "leitor.user",
+                "display_name": "Leitor",
+                "password": TEST_PASSWORD,
+            }),
         ),
     )
     .await;

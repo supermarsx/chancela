@@ -177,7 +177,7 @@ pub fn read_session_token(parts: &Parts) -> Option<&str> {
 /// A session gains an unlocked [`SigningKey`](p256::ecdsa::SigningKey) only when the user signed
 /// in with the correct password **and** has an attestation key (plan t29 §4.4). This infallible
 /// extractor exposes that key (with the actor's username) to a mutating handler so it can sign the
-/// event it just appended. Absent/unknown/expired token, a passwordless or key-less session, or
+/// event it just appended. Absent/unknown/expired token, a legacy no-hash or key-less session, or
 /// an inactive user all yield "no signer" — never an error.
 #[derive(Clone, Default)]
 pub struct CurrentAttestor {

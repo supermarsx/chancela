@@ -1,3 +1,5 @@
+mod common;
+
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode, header};
 use base64::Engine;
@@ -11,6 +13,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 use tower::ServiceExt;
+
+use common::TEST_PASSWORD;
 
 static COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -113,7 +117,12 @@ async fn bootstrap(state: &AppState) -> String {
             .uri("/v1/users")
             .header(header::CONTENT_TYPE, "application/json")
             .body(Body::from(
-                json!({ "username": "paper.owner", "display_name": "Paper Owner" }).to_string(),
+                json!({
+                    "username": "paper.owner",
+                    "display_name": "Paper Owner",
+                    "password": TEST_PASSWORD,
+                })
+                .to_string(),
             ))
             .expect("request builds"),
     )
@@ -127,7 +136,9 @@ async fn bootstrap(state: &AppState) -> String {
             .method("POST")
             .uri("/v1/session")
             .header(header::CONTENT_TYPE, "application/json")
-            .body(Body::from(json!({ "user_id": user_id }).to_string()))
+            .body(Body::from(
+                json!({ "user_id": user_id, "password": TEST_PASSWORD }).to_string(),
+            ))
             .expect("request builds"),
     )
     .await;

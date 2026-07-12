@@ -1266,6 +1266,8 @@ mod tests {
 
     use crate::{User, UserId, router};
 
+    const TEST_PASSWORD: &str = "Teste-Forte7!X";
+
     const MINIMAL_PDF: &[u8] = b"%PDF-1.7
 1 0 obj
 << /Type /Catalog >>
@@ -1332,7 +1334,7 @@ startxref
                 email: None,
                 created_at,
                 active: true,
-                password_hash: None,
+                password_hash: Some(crate::attestation::hash_secret(TEST_PASSWORD).unwrap()),
                 attestation_key: None,
                 secret_source: Default::default(),
                 recovery_hash: None,
@@ -1345,7 +1347,9 @@ startxref
                 .method("POST")
                 .uri("/v1/session")
                 .header("content-type", "application/json")
-                .body(Body::from(json!({ "user_id": uid.0 }).to_string()))
+                .body(Body::from(
+                    json!({ "user_id": uid.0, "password": TEST_PASSWORD }).to_string(),
+                ))
                 .expect("request builds"),
         )
         .await;

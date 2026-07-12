@@ -1,3 +1,5 @@
+mod common;
+
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -17,6 +19,8 @@ use time::{Date, Month, OffsetDateTime};
 use tokio::sync::{Barrier, RwLock};
 use tower::ServiceExt;
 use uuid::Uuid;
+
+use common::{TEST_PASSWORD, password_hash};
 
 const PROCESSORS_FILE: &str = "privacy-processors.json";
 const DPIAS_FILE: &str = "privacy-dpias.json";
@@ -107,6 +111,7 @@ async fn bootstrap_owner(state: &AppState) -> (UserId, String) {
             json!({
                 "username": "owner",
                 "display_name": "Owner",
+                "password": TEST_PASSWORD,
             }),
         ),
     )
@@ -122,7 +127,9 @@ async fn open_session(state: &AppState, uid: UserId) -> String {
         .method("POST")
         .uri("/v1/session")
         .header("content-type", "application/json")
-        .body(Body::from(json!({ "user_id": uid.0 }).to_string()))
+        .body(Body::from(
+            json!({ "user_id": uid.0, "password": TEST_PASSWORD }).to_string(),
+        ))
         .expect("request builds");
     let (status, body) = send(state.clone(), req).await;
     assert_eq!(status, StatusCode::OK, "session opens: {body}");
@@ -139,7 +146,7 @@ async fn insert_user(state: &AppState, id: UserId, username: &str, role: RoleAss
             .format(&Rfc3339)
             .unwrap_or_default(),
         active: true,
-        password_hash: None,
+        password_hash: Some(password_hash()),
         attestation_key: None,
         secret_source: Default::default(),
         recovery_hash: None,
