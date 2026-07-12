@@ -26,6 +26,7 @@ import {
   type LocalDglabInterchangeManifest,
   type PaperBookImportView,
   type PaperBookOcrConversionDossierView,
+  type PaperBookOcrConversionExecutionArtifactView,
   type PaperBookOcrDraftView,
   type PaperBookOcrRunView,
 } from '../../api/types';
@@ -723,6 +724,49 @@ describe('BookDetailPage — paper-book preserved imports', () => {
     };
   }
 
+  function conversionExecutionArtifact(
+    importId: string,
+    draftId: string,
+    overrides: Partial<PaperBookOcrConversionExecutionArtifactView> = {},
+  ): PaperBookOcrConversionExecutionArtifactView {
+    return {
+      artifact_id: 'abababab-abab-4aba-8aba-abababababab',
+      import_id: importId,
+      draft_id: draftId,
+      dossier_id: null,
+      source_text_digest: '99'.repeat(32),
+      source_page_spans: [{ start_page: 1, end_page: 3 }],
+      source_review_status: 'accepted',
+      source_reviewed_at: '2026-07-10T10:00:00Z',
+      source_reviewed_by: 'paper.reviewer',
+      target_act_id: '77777777-7777-4777-8777-777777777777',
+      target_act_state: 'Draft',
+      mutable_draft_act_created: true,
+      created_at: '2026-07-10T11:30:00Z',
+      created_by: 'paper.owner',
+      artifact_notice:
+        'Reviewed OCR conversion execution evidence for mutable draft promotion only. It does not create canonical minutes, legal text, a canonical document, a signed document, an archive package, PDF/A, PDF/UA, signatures, seals, or archive certification.',
+      reviewed_conversion_execution_artifact: true,
+      non_canonical: true,
+      canonical_conversion_claimed: false,
+      canonical_minutes_claimed: false,
+      canonical_act_created: false,
+      canonical_document_created: false,
+      signed_document_created: false,
+      archive_package_created: false,
+      archive_certification_claimed: false,
+      pdfa_created: false,
+      pdfua_created: false,
+      signature_created: false,
+      seal_created: false,
+      legal_validity_claimed: false,
+      source_extracted_text_in_artifact: false,
+      source_extracted_text_in_ledger_event: false,
+      legal_notice: 'Historical paper-book package preserved as non-canonical evidence only.',
+      ...overrides,
+    };
+  }
+
   it('lists preserved paper-book import metadata and downloads retained package bytes', async () => {
     const preserved: PaperBookImportView = {
       import_id: '11111111-1111-4111-8111-111111111111',
@@ -944,6 +988,12 @@ describe('BookDetailPage — paper-book preserved imports', () => {
       legal_validity_claimed: false,
       legal_notice: 'Historical paper-book package preserved as non-canonical evidence only.',
     };
+    const rawArtifactText = 'raw OCR text from a malformed promotion artifact must stay hidden';
+    const artifact = conversionExecutionArtifact(preserved.import_id, createdDraft.draft_id, {
+      artifact_id: '66666666-6666-4666-8666-666666666666',
+      target_act_id: '77777777-7777-4777-8777-777777777777',
+      source_page_spans: [{ start_page: 1, end_page: 2 }],
+    });
     let drafts: PaperBookOcrDraftView[] = [];
     const { fn, calls } = bookDetailFetch((url, method) => {
       if (url === '/v1/books/paper-import?book_ref=book-1' && method === 'GET') {
@@ -1012,6 +1062,7 @@ describe('BookDetailPage — paper-book preserved imports', () => {
               seal_metadata: null,
               retifies: null,
             },
+            conversion_execution_artifact: { ...artifact, extracted_text: rawArtifactText },
             draft_act_created: true,
             act_state: 'Draft',
             notice:
@@ -1020,8 +1071,13 @@ describe('BookDetailPage — paper-book preserved imports', () => {
             ocr_text_in_ledger_event: false,
             non_canonical: true,
             authoritative_text_claimed: false,
+            canonical_conversion_claimed: false,
             canonical_minutes_claimed: false,
+            canonical_act_created: false,
             canonical_document_created: false,
+            signed_document_created: false,
+            archive_package_created: false,
+            archive_certification_claimed: false,
             pdfa_created: false,
             signature_created: false,
             seal_created: false,
@@ -1101,9 +1157,11 @@ describe('BookDetailPage — paper-book preserved imports', () => {
         'Rascunho de ata criado sem documento canónico, PDF/A, assinatura ou selo.',
       ),
     ).toBeTruthy();
-    expect((await screen.findByRole('link', { name: 'abrir ata' })).getAttribute('href')).toBe(
-      '/atas/77777777-7777-4777-8777-777777777777',
-    );
+    expect(
+      (await screen.findAllByRole('link', { name: 'abrir ata' })).some(
+        (link) => link.getAttribute('href') === '/atas/77777777-7777-4777-8777-777777777777',
+      ),
+    ).toBe(true);
     const actDraftCall = calls.find(
       (call) =>
         call.url ===
@@ -1111,10 +1169,27 @@ describe('BookDetailPage — paper-book preserved imports', () => {
         call.method === 'POST',
     );
     expect(actDraftCall).toBeTruthy();
+    const artifactRegion = await screen.findByRole('region', {
+      name: 'Evidência de execução de conversão revista 66666666-6666-4666-8666-666666666666',
+    });
+    expect(
+      within(artifactRegion).getByText('Evidência de promoção para rascunho mutável'),
+    ).toBeTruthy();
+    expect(within(artifactRegion).getByText('Promoção para rascunho mutável')).toBeTruthy();
+    expect(within(artifactRegion).getByText(/ata mutável criada:\s*sim/i)).toBeTruthy();
+    expect(within(artifactRegion).getByText(/conversão canónica:\s*não/i)).toBeTruthy();
+    expect(within(artifactRegion).getByText(/arquivo legal\/pacote:\s*não/i)).toBeTruthy();
+    expect(within(artifactRegion).getByText(/certificação de arquivo:\s*não/i)).toBeTruthy();
+    expect(within(artifactRegion).getByText(/PDF\/UA:\s*não/i)).toBeTruthy();
+    expect(within(artifactRegion).getByText(/No artefacto:\s*não/i)).toBeTruthy();
+    expect(screen.queryByText(rawArtifactText)).toBeNull();
     expect(screen.getAllByText(/PDF\/A: não/i).length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText(/assinatura: não/i).length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText(/selo: não/i).length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText(/validade legal: não/i).length).toBeGreaterThanOrEqual(1);
+    expect(
+      calls.some((call) => /\/(document|signature|seal|archive)(\/|$)/.test(call.url)),
+    ).toBe(false);
   });
 
   it('creates a metadata-only conversion dossier for an accepted OCR draft on operator action', async () => {
@@ -1220,8 +1295,15 @@ describe('BookDetailPage — paper-book preserved imports', () => {
       draft_id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
       extracted_text: 'Texto OCR auxiliar visível apenas na área do rascunho.',
     });
+    const dossierId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+    const artifact = conversionExecutionArtifact(preserved.import_id, draft.draft_id, {
+      artifact_id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+      dossier_id: dossierId,
+      target_act_id: '12121212-1212-4121-8121-121212121212',
+    });
     const dossier = conversionDossier(preserved.import_id, draft.draft_id, {
-      dossier_id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+      dossier_id: dossierId,
+      conversion_execution_artifacts: [artifact],
     });
     const { fn, calls } = bookDetailFetch((url, method) => {
       if (url === '/v1/books/paper-import?book_ref=book-1' && method === 'GET') {
@@ -1260,11 +1342,27 @@ describe('BookDetailPage — paper-book preserved imports', () => {
     expect(within(summary).getByText(/pacote de arquivo:\s* não/i)).toBeTruthy();
     expect(within(summary).getByText(/PDF\/UA: não/i)).toBeTruthy();
     expect(within(summary).getByText(/validade legal: não/i)).toBeTruthy();
-    expect(screen.getByText('dddddddd-dddd-4ddd-8ddd-dddddddddddd')).toBeTruthy();
-    expect(screen.getByText(/Digest da fonte OCR/i)).toBeTruthy();
+    const artifactRegion = await screen.findByRole('region', {
+      name: 'Evidência de execução de conversão revista eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+    });
+    expect(within(artifactRegion).getByText('Evidência revista')).toBeTruthy();
+    expect(within(artifactRegion).getByText('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee')).toBeTruthy();
+    expect(within(artifactRegion).getByText(dossierId)).toBeTruthy();
+    expect(within(artifactRegion).getByText(/ata mutável criada:\s*sim/i)).toBeTruthy();
+    expect(within(artifactRegion).getByText(/minutas canónicas:\s*não/i)).toBeTruthy();
+    expect(within(artifactRegion).getByText(/arquivo legal\/pacote:\s*não/i)).toBeTruthy();
+    expect(within(artifactRegion).getByText(/certificação de arquivo:\s*não/i)).toBeTruthy();
+    expect(within(artifactRegion).getByText(/assinatura:\s*não/i)).toBeTruthy();
+    expect(within(artifactRegion).getByText(/selo:\s*não/i)).toBeTruthy();
+    expect(within(artifactRegion).getByText(/No artefacto:\s*não/i)).toBeTruthy();
+    expect(screen.getAllByText(dossierId).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText(/Digest da fonte OCR/i).length).toBeGreaterThanOrEqual(1);
     expect(screen.queryByRole('button', { name: /Criar dossier de conversão/i })).toBeNull();
     expect(
       calls.some((call) => call.url.endsWith('/conversion-dossier') && call.method === 'POST'),
+    ).toBe(false);
+    expect(
+      calls.some((call) => /\/(document|signature|seal|archive)(\/|$)/.test(call.url)),
     ).toBe(false);
   });
 

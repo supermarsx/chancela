@@ -39,6 +39,7 @@ import type {
   PaperBookImportReport,
   PaperBookImportView,
   PaperBookOcrConversionDossierView,
+  PaperBookOcrConversionExecutionArtifactView,
   PaperBookOcrDraftCanonicalDraftResponse,
   PaperBookOcrDraftReviewPatchStatus,
   PaperBookOcrDraftView,
@@ -254,6 +255,12 @@ function paperBookOcrPageSpanListLabel(
 
 function paperBookOcrDossierPageSpansLabel(dossier: PaperBookOcrConversionDossierView): string {
   return paperBookOcrPageSpanListLabel(dossier.source_page_spans);
+}
+
+function paperBookOcrArtifactPageSpansLabel(
+  artifact: PaperBookOcrConversionExecutionArtifactView,
+): string {
+  return paperBookOcrPageSpanListLabel(artifact.source_page_spans);
 }
 
 function noClaimLabel(value: boolean): string {
@@ -511,6 +518,124 @@ function PaperBookOcrDraftReviewForm({
   );
 }
 
+function PaperBookOcrConversionExecutionArtifactPanel({
+  artifact,
+}: {
+  artifact: PaperBookOcrConversionExecutionArtifactView;
+}) {
+  return (
+    <section
+      className="stack--tight"
+      aria-label={`Evidência de execução de conversão revista ${artifact.artifact_id}`}
+    >
+      <div className="row-wrap">
+        <Badge tone={artifact.reviewed_conversion_execution_artifact ? 'ok' : 'warn'}>
+          Evidência revista
+        </Badge>
+        <Badge tone={artifact.mutable_draft_act_created ? 'neutral' : 'warn'}>
+          Promoção para rascunho mutável
+        </Badge>
+        <Badge tone="warn">Não canónico</Badge>
+      </div>
+      <InlineWarning tone="info" title="Evidência de promoção para rascunho mutável">
+        <p>{artifact.artifact_notice}</p>
+        <p>{artifact.legal_notice}</p>
+      </InlineWarning>
+      <dl className="deflist deflist--tight">
+        <div>
+          <dt>Artefacto</dt>
+          <dd>
+            <span className="mono">{artifact.artifact_id}</span>
+          </dd>
+        </div>
+        <div>
+          <dt>Rascunho OCR aceite</dt>
+          <dd>
+            <span className="mono">{artifact.draft_id}</span>
+          </dd>
+        </div>
+        <div>
+          <dt>Dossier associado</dt>
+          <dd>
+            {artifact.dossier_id ? <span className="mono">{artifact.dossier_id}</span> : '—'}
+          </dd>
+        </div>
+        <div>
+          <dt>Ata mutável de destino</dt>
+          <dd>
+            <Link to={`/atas/${artifact.target_act_id}`}>abrir ata</Link> ·{' '}
+            <span className="mono">{artifact.target_act_id}</span> · estado{' '}
+            {artifact.target_act_state} · ata mutável criada:{' '}
+            {noClaimLabel(artifact.mutable_draft_act_created)}
+          </dd>
+        </div>
+        <div>
+          <dt>Digest da fonte OCR</dt>
+          <dd>
+            {artifact.source_text_digest ? (
+              <span className="mono">{artifact.source_text_digest}</span>
+            ) : (
+              '—'
+            )}
+          </dd>
+        </div>
+        <div>
+          <dt>Páginas da fonte</dt>
+          <dd>{paperBookOcrArtifactPageSpansLabel(artifact)}</dd>
+        </div>
+        <div>
+          <dt>Revisão de origem</dt>
+          <dd>
+            {paperBookOcrReviewStatusLabel(artifact.source_review_status)}
+            {artifact.source_reviewed_at ? (
+              <>
+                {' '}
+                em{' '}
+                <time className="mono" dateTime={artifact.source_reviewed_at}>
+                  {artifact.source_reviewed_at}
+                </time>{' '}
+                por {artifact.source_reviewed_by ?? '—'}
+              </>
+            ) : null}
+          </dd>
+        </div>
+        <div>
+          <dt>Criado</dt>
+          <dd>
+            <time className="mono" dateTime={artifact.created_at}>
+              {artifact.created_at}
+            </time>{' '}
+            por {artifact.created_by}
+          </dd>
+        </div>
+        <div>
+          <dt>Flags sem reivindicação</dt>
+          <dd>
+            conversão canónica: {noClaimLabel(artifact.canonical_conversion_claimed)} · minutas
+            canónicas: {noClaimLabel(artifact.canonical_minutes_claimed)} · ata canónica:{' '}
+            {noClaimLabel(artifact.canonical_act_created)} · documento canónico:{' '}
+            {noClaimLabel(artifact.canonical_document_created)} · documento assinado:{' '}
+            {noClaimLabel(artifact.signed_document_created)} · arquivo legal/pacote:{' '}
+            {noClaimLabel(artifact.archive_package_created)} · certificação de arquivo:{' '}
+            {noClaimLabel(artifact.archive_certification_claimed)} · PDF/A:{' '}
+            {noClaimLabel(artifact.pdfa_created)} · PDF/UA:{' '}
+            {noClaimLabel(artifact.pdfua_created)} · assinatura:{' '}
+            {noClaimLabel(artifact.signature_created)} · selo: {noClaimLabel(artifact.seal_created)}{' '}
+            · validade legal: {noClaimLabel(artifact.legal_validity_claimed)}
+          </dd>
+        </div>
+        <div>
+          <dt>Texto OCR bruto</dt>
+          <dd>
+            No artefacto: {noClaimLabel(artifact.source_extracted_text_in_artifact)} · no evento de
+            ledger: {noClaimLabel(artifact.source_extracted_text_in_ledger_event)}
+          </dd>
+        </div>
+      </dl>
+    </section>
+  );
+}
+
 function PaperBookOcrConversionDossierPanel({
   draft,
   dossier,
@@ -612,6 +737,20 @@ function PaperBookOcrConversionDossierPanel({
             </dd>
           </div>
         </dl>
+        {dossier.conversion_execution_artifacts?.length ? (
+          <div
+            className="stack--tight"
+            aria-label={`Evidências de execução de conversão revista do dossier ${dossier.dossier_id}`}
+          >
+            <p className="card__label">Evidência de execução de conversão revista</p>
+            {dossier.conversion_execution_artifacts.map((artifact) => (
+              <PaperBookOcrConversionExecutionArtifactPanel
+                key={artifact.artifact_id}
+                artifact={artifact}
+              />
+            ))}
+          </div>
+        ) : null}
       </section>
     );
   }
@@ -1089,6 +1228,11 @@ function PaperBookOcrDraftPanel({ row }: { row: PaperBookImportView }) {
                         legal:{' '}
                         {createdActDrafts[draft.draft_id].legal_validity_claimed ? 'sim' : 'não'}
                       </p>
+                    ) : null}
+                    {createdActDrafts[draft.draft_id]?.conversion_execution_artifact ? (
+                      <PaperBookOcrConversionExecutionArtifactPanel
+                        artifact={createdActDrafts[draft.draft_id].conversion_execution_artifact}
+                      />
                     ) : null}
                     {createActDraft.error ? <ErrorNote error={createActDraft.error} /> : null}
                     <GateButton
