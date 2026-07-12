@@ -189,6 +189,8 @@ pub struct AccessibilityReport {
     pub table_semantics: TableSemanticsReport,
     /// Local structural-depth/topology facts for the writer's bounded tagged-PDF profile.
     pub structure_depth: StructureDepthReport,
+    /// Local marked-content and artifact-scope facts for the writer's bounded tagged-PDF profile.
+    pub marked_content: MarkedContentCoverageReport,
     /// Local decorative-layout artifact marking facts.
     pub artifact_marking: ArtifactMarkingReport,
     /// Explicit non-text alternate/decorative accounting supplied by the caller.
@@ -272,6 +274,27 @@ pub struct StructureDepthReport {
     /// Row and cell roles are scoped inside the expected table/row ancestry.
     pub row_and_cell_roles_are_table_scoped: bool,
     /// The emitted topology is complete for the writer's local bounded profile.
+    pub complete_for_local_profile: bool,
+}
+
+/// Local marked-content coverage facts for the bounded tagged-PDF profile.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MarkedContentCoverageReport {
+    /// Structure elements expected under the writer's local profile, including the document root.
+    pub structure_element_count: usize,
+    /// Leaf structure elements expected to carry marked-content references.
+    pub marked_leaf_element_count: usize,
+    /// Table header/data cell leaves expected to carry marked-content references.
+    pub table_cell_marked_leaf_count: usize,
+    /// Layout-only drawing scopes expected to be emitted as `/Artifact BMC`.
+    pub artifact_scope_count: usize,
+    /// Semantic leaf elements are expected to have one or more page-local `/MCID` references.
+    pub semantic_leaves_have_marked_content: bool,
+    /// Marked semantic content is expected to be addressable through the parent tree.
+    pub parent_tree_maps_page_mcids: bool,
+    /// Layout artifacts are expected to be BMC scopes without `/MCID` entries.
+    pub artifacts_are_marked_without_mcid: bool,
+    /// The marked-content profile is complete for this writer's local bounded structure.
     pub complete_for_local_profile: bool,
 }
 
@@ -369,7 +392,7 @@ impl AccessibilityReport {
             .join(",");
 
         format!(
-            "{{\"version\":7,\
+            "{{\"version\":8,\
 \"pdf_ua_claimed\":{pdf_ua_claimed},\
 \"metadata\":{{\
 \"title\":{{\"value\":{title},\"source_present\":{title_present},\"fallback_used\":{title_fallback}}},\
@@ -392,6 +415,7 @@ impl AccessibilityReport {
 \"role_map\":{{\"present\":{role_map_present},\"required_custom_roles\":[{required_roles}],\"missing_custom_roles\":[{missing_roles}],\"standard_targets_only\":{standard_role_targets},\"complete\":{role_map_complete}}},\
 \"tables\":{{\"key_value_table_count\":{kv_table_count},\"vote_table_count\":{vote_table_count},\"key_value_tables_have_table_semantics\":{kv_tables_semantic},\"vote_tables_have_table_semantics\":{vote_tables_semantic},\"vote_table_headers_tagged\":{vote_headers_tagged},\"complete\":{table_semantics_complete}}},\
 \"structure_depth\":{{\"bounded_local_profile\":{bounded_local_profile},\"max_depth\":{max_depth},\"top_level_semantic_block_count\":{top_level_count},\"table_count\":{depth_table_count},\"table_row_count\":{table_row_count},\"table_cell_count\":{table_cell_count},\"document_root_children_are_top_level_semantic_blocks\":{root_children_top_level},\"tables_contain_rows_only\":{tables_rows_only},\"rows_contain_header_or_data_cells_only\":{rows_cells_only},\"row_and_cell_roles_are_table_scoped\":{row_cell_scoped},\"complete_for_local_profile\":{depth_complete}}},\
+\"marked_content\":{{\"structure_element_count\":{marked_structure_count},\"marked_leaf_element_count\":{marked_leaf_count},\"table_cell_marked_leaf_count\":{marked_table_cell_count},\"artifact_scope_count\":{marked_artifact_scope_count},\"semantic_leaves_have_marked_content\":{semantic_leaves_marked},\"parent_tree_maps_page_mcids\":{parent_tree_maps_mcids},\"artifacts_are_marked_without_mcid\":{artifacts_without_mcid},\"complete_for_local_profile\":{marked_complete}}},\
 \"artifact_marking\":{{\"layout_artifacts_marked\":{artifact_layout_marked},\"known_layout_artifact_count\":{artifact_count},\"header_rule_artifact_count\":{header_artifacts},\"horizontal_rule_artifact_count\":{rule_artifacts},\"vote_table_rule_artifact_count\":{vote_rule_artifacts},\"signature_line_artifact_count\":{signature_artifacts}}}\
 }},\
 \"non_text_content\":{{\"model_supplied\":{non_text_model_supplied},\"all_non_text_content_accounted_for\":{non_text_all_accounted},\"text_alternative_count\":{text_alt_count},\"decorative_artifact_count\":{decorative_count},\"known_decorative_block_count\":{known_decorative_count},\"writer_owned_decorative_artifacts_accounted_for\":{writer_decorative_accounted},\"missing_decorative_artifacts\":[{missing_decorative}],\"invalid_text_alternative_count\":{invalid_text_alts},\"invalid_decorative_artifact_count\":{invalid_decorative},\"complete\":{non_text_complete}}},\
@@ -446,6 +470,14 @@ impl AccessibilityReport {
             rows_cells_only = self.structure_depth.rows_contain_header_or_data_cells_only,
             row_cell_scoped = self.structure_depth.row_and_cell_roles_are_table_scoped,
             depth_complete = self.structure_depth.complete_for_local_profile,
+            marked_structure_count = self.marked_content.structure_element_count,
+            marked_leaf_count = self.marked_content.marked_leaf_element_count,
+            marked_table_cell_count = self.marked_content.table_cell_marked_leaf_count,
+            marked_artifact_scope_count = self.marked_content.artifact_scope_count,
+            semantic_leaves_marked = self.marked_content.semantic_leaves_have_marked_content,
+            parent_tree_maps_mcids = self.marked_content.parent_tree_maps_page_mcids,
+            artifacts_without_mcid = self.marked_content.artifacts_are_marked_without_mcid,
+            marked_complete = self.marked_content.complete_for_local_profile,
             artifact_layout_marked = self.artifact_marking.layout_artifacts_marked,
             artifact_count = self.artifact_marking.known_layout_artifact_count,
             header_artifacts = self.artifact_marking.header_rule_artifact_count,
@@ -478,6 +510,7 @@ pub fn report<'a>(input: impl Into<AccessibilityInput<'a>>) -> AccessibilityRepo
     let table_semantics = table_semantics(input.doc);
     let structure_depth = structure_depth(input.doc);
     let artifact_marking = artifact_marking(input.doc);
+    let marked_content = marked_content_coverage(&structure_depth, &artifact_marking);
     let non_text_content = non_text_content(input.doc, input.alt_text_model, &artifact_marking);
     let alt_text_model_present = non_text_content.model_supplied && non_text_content.complete;
 
@@ -532,6 +565,7 @@ pub fn report<'a>(input: impl Into<AccessibilityInput<'a>>) -> AccessibilityRepo
         role_map,
         table_semantics,
         structure_depth,
+        marked_content,
         artifact_marking,
         non_text_content,
         alt_text_model_present,
@@ -858,6 +892,38 @@ fn structure_depth(doc: &DocumentModel) -> StructureDepthReport {
         tables_contain_rows_only,
         rows_contain_header_or_data_cells_only,
         row_and_cell_roles_are_table_scoped,
+        complete_for_local_profile,
+    }
+}
+
+fn marked_content_coverage(
+    structure_depth: &StructureDepthReport,
+    artifact_marking: &ArtifactMarkingReport,
+) -> MarkedContentCoverageReport {
+    let table_container_count = structure_depth.table_count;
+    let non_table_leaf_count = structure_depth
+        .top_level_semantic_block_count
+        .saturating_sub(table_container_count);
+    let marked_leaf_element_count = non_table_leaf_count + structure_depth.table_cell_count;
+    let structure_element_count = 1
+        + structure_depth.top_level_semantic_block_count
+        + structure_depth.table_row_count
+        + structure_depth.table_cell_count;
+    let semantic_leaves_have_marked_content = structure_depth.complete_for_local_profile;
+    let parent_tree_maps_page_mcids = structure_depth.complete_for_local_profile;
+    let artifacts_are_marked_without_mcid = artifact_marking.layout_artifacts_marked;
+    let complete_for_local_profile = semantic_leaves_have_marked_content
+        && parent_tree_maps_page_mcids
+        && artifacts_are_marked_without_mcid;
+
+    MarkedContentCoverageReport {
+        structure_element_count,
+        marked_leaf_element_count,
+        table_cell_marked_leaf_count: structure_depth.table_cell_count,
+        artifact_scope_count: artifact_marking.known_layout_artifact_count,
+        semantic_leaves_have_marked_content,
+        parent_tree_maps_page_mcids,
+        artifacts_are_marked_without_mcid,
         complete_for_local_profile,
     }
 }

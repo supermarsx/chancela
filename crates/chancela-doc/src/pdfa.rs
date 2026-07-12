@@ -18,8 +18,8 @@ use crate::{DocError, accessibility, layout, selfcheck, xmp};
 
 pub use crate::accessibility::{
     AccessibilityInput, AccessibilityMetadata, AccessibilityReport, AltTextModel,
-    ArtifactMarkingReport, DecorativeArtifact, HeadingHierarchyReport, MetadataValue,
-    NonTextContentReport, PdfUaBlocker, RoleMapCoverageReport, TableSemanticsReport,
+    ArtifactMarkingReport, DecorativeArtifact, HeadingHierarchyReport, MarkedContentCoverageReport,
+    MetadataValue, NonTextContentReport, PdfUaBlocker, RoleMapCoverageReport, TableSemanticsReport,
     TextAlternative,
 };
 

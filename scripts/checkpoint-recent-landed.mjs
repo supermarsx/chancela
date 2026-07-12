@@ -1844,6 +1844,11 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-doc/src/accessibility.rs",
+    "pub struct MarkedContentCoverageReport",
+    "PDF accessibility marked-content coverage report",
+  );
+  assertFileContains(
+    "crates/chancela-doc/src/accessibility.rs",
     "complete_for_local_profile",
     "PDF accessibility bounded topology completeness marker",
   );
@@ -1874,13 +1879,18 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-doc/src/tests.rs",
-    "\\\"version\\\":7",
-    "PDF accessibility report JSON v7 coverage",
+    "\\\"version\\\":8",
+    "PDF accessibility report JSON v8 coverage",
   );
   assertFileContains(
     "crates/chancela-doc/src/tests.rs",
     "\\\"structure_depth\\\":{",
     "PDF accessibility JSON structural-depth marker",
+  );
+  assertFileContains(
+    "crates/chancela-doc/src/tests.rs",
+    "\\\"marked_content\\\":{",
+    "PDF accessibility JSON marked-content marker",
   );
   assertFileContains(
     "crates/chancela-doc/src/tests.rs",
@@ -7249,8 +7259,13 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "accessibility report JSON version 7, structural-depth evidence",
-    "CI/E2E hardening plan PDF accessibility v7 structural-depth marker",
+    "accessibility report JSON version 8, structural-depth evidence",
+    "CI/E2E hardening plan PDF accessibility v8 structural-depth marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "marked-content coverage counts",
+    "CI/E2E hardening plan PDF accessibility marked-content marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -9299,8 +9314,8 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "PDF accessibility report JSON\n  version 7 now includes writer-owned decorative-artifact evidence",
-    "spec coverage PDF accessibility report v7 marker",
+    "PDF accessibility report JSON\n  version 8 now includes bounded marked-content coverage counts",
+    "spec coverage PDF accessibility report v8 marked-content marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",

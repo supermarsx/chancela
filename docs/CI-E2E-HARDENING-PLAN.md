@@ -851,8 +851,8 @@ settingsDefaults.test.ts contracts.test.ts`.
   TSA hash behavior, and labelled `Registos TSA` result grouping without making
   live trust-network calls.
 - Current working-tree PDF accessibility checks: focused document tests pin
-  accessibility report JSON version 7, structural-depth evidence, bounded local
-  topology facts, and
+  accessibility report JSON version 8, structural-depth evidence,
+  marked-content coverage counts, bounded local topology facts, and
   `writer_owned_decorative_artifacts_accounted_for` for writer-owned decorative
   rule artifacts emitted as PDF artifacts. The default fixture no longer reports
   `no_alt_text_model` for only writer-owned decorative artifacts, page breaks
@@ -1458,8 +1458,9 @@ settingsDefaults.test.ts contracts.test.ts`.
   concurrent duplicate guard, queued review status/id/time UI surfacing, and
   false destructive/full-erasure markers, plus PAdES DSS caller validation-time, malformed-time refusal, VRI
   `/TU`, document-timestamp local renewal planning, and monitor-state markers,
-  plus PDF accessibility JSON version 7, structural-depth evidence,
-  writer-owned decorative-artifact accounting, bounded topology self-check,
+  plus PDF accessibility JSON version 8, structural-depth evidence,
+  marked-content coverage counts, writer-owned decorative-artifact accounting,
+  bounded topology self-check,
   `LimitedTaggedStructure`, no-PDF/UA/no-`pdfuaid` markers, plus all-family
   agenda-item template IDs/counts/rendering markers,
   CSC quota template IDs/Pending-law-reference markers, CSC

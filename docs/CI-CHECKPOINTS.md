@@ -316,8 +316,8 @@ structured registry chronology graph markers plus richer frontend chronology
 visualization markers as source-linked technical evidence only, not a legal
 registry certificate, DRE verification, registry/provider authority verification,
 or an authority-approved graph, mapped PDF inter-word space,
-PDF/UA blocker-decomposition markers, PDF accessibility report JSON v7,
-`writer_owned_decorative_artifacts_accounted_for`, reduced default-fixture
+PDF/UA blocker-decomposition markers, PDF accessibility report JSON v8,
+marked-content coverage counts, `writer_owned_decorative_artifacts_accounted_for`, reduced default-fixture
 `limited_tagged_structure` blocker lists, exhaustive `DocumentBlock`
 non-text-accounting coverage, ASiC structural profile-shape,
 manifest/signature diagnostic, blocker-ID, `technical_validation`,
