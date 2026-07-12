@@ -1014,10 +1014,21 @@ Implementation checkpoints covered here:
   through the desktop/local CC path. The UI submits optional transient PIN
   evidence only to `POST /v1/signature/cc/batch-sign`, renders per-document
   signed/error results, reports the server-returned authentication mode/events,
-  and displays request/operator-declared signer-capacity evidence. This is local
-  CC batch UI evidence only; it is not CMD batch signing, CSC/QTSP remote batch
-  signing, provider-certified remote batch signing, SCAP-verified
-  representative authority, or legal-capacity proof.
+  and displays request/operator-declared signer-capacity evidence. Focused
+  route-stubbed Playwright proof in
+  `apps/web/e2e/local-cc-batch-signing.spec.ts` covers the mounted local
+  browser path, optional transient PIN request/clear/no-storage behavior, blank
+  PIN omission, per-document result rendering, `single_auth` /
+  `per_document_auth` accounting, declared signer-capacity evidence, and the
+  route boundary. This is local CC batch UI evidence only and route-stubbed
+  local browser proof only; it is not live Autenticacao.gov/CC middleware, card
+  reader, PKCS#11, hardware, CMD, CSC/QTSP, SCAP, TSA/TSL, or provider
+  execution, and it is not qualified batch signing, legal/qualified/
+  provider-certified batch, provider-certified remote batch, single
+  OTP/PIN/SAD authorization for multiple remote documents, CMD multiple-sign,
+  CSC/QTSP multi-hash/SAD batch, SCAP-verified representative authority,
+  legal-capacity proof, trust-list/provider validation, legal
+  validity/effect/sufficiency, or act finalization/legal signing acceptance.
 - Current worktree keeps Signatures/Documents/CI **PARTIAL**: the
   `chancela-signing` core exposes a public helper seam for repeated
   per-document remote-session orchestration over the existing
@@ -1825,10 +1836,19 @@ behavior, legal disposal, or legal-effect claims.
   through the desktop/local CC path and `POST /v1/signature/cc/batch-sign`. It
   can submit an optional transient PIN, shows per-document signed/error results,
   reports server-returned `single_auth` or `per_document_auth` accounting, and
-  renders declared signer-capacity evidence. This is UI and technical evidence
-  for the local CC path only; it is not CMD batch signing, CSC/QTSP remote batch
-  signing, provider-certified remote batch signing, SCAP-verified
-  representative-authority proof, or legal-capacity proof.
+  renders declared signer-capacity evidence. Focused route-stubbed Playwright
+  proof in `apps/web/e2e/local-cc-batch-signing.spec.ts` covers the mounted UI
+  path, request shape, PIN clear/no-storage, blank PIN omission, per-document
+  results, auth accounting, declared signer-capacity evidence, and provider
+  boundary. This is UI and technical evidence for the local CC path only and
+  route-stubbed local browser proof only; it is not live Autenticacao.gov/CC
+  middleware, card reader, PKCS#11, hardware, CMD, CSC/QTSP, SCAP, TSA/TSL, or
+  provider execution, qualified batch signing, legal/qualified/
+  provider-certified batch, provider-certified remote batch, single
+  OTP/PIN/SAD authorization for multiple remote documents, CMD multiple-sign,
+  CSC/QTSP multi-hash/SAD batch, SCAP-verified representative-authority proof,
+  legal-capacity proof, trust-list/provider validation, legal
+  validity/effect/sufficiency, or act finalization/legal signing acceptance.
 - **Core repeated remote-session orchestration seam:** `chancela-signing`
   exposes public core-only helpers and report types for repeated per-document
   remote sessions over the existing `RemoteSigningSource` initiate/confirm
@@ -3134,10 +3154,20 @@ behavior, legal disposal, or legal-effect claims.
   authority approval, or legal-capacity verification.
 - The local CC batch-signing UI accepts optional transient PIN submission and
   displays per-document results, authentication mode/events, and declared
-  capacity evidence for sealed acts only. It is local/co-located Cartao de
-  Cidadao batch UI evidence, not CMD batch signing, CSC/QTSP remote batch
-  signing, provider-certified remote batch signing, SCAP-verified
-  representative authority, or legal-capacity proof.
+  capacity evidence for sealed acts only. Focused route-stubbed Playwright
+  proof covers the mounted local browser path, optional transient PIN
+  submission and PIN clear/no-storage, blank PIN omission, per-document results,
+  server-returned `single_auth` or `per_document_auth` accounting, declared
+  signer-capacity evidence, and the route boundary to
+  `POST /v1/signature/cc/batch-sign`. It is local/co-located Cartao de Cidadao
+  batch UI evidence and route-stubbed local browser proof only, not live
+  Autenticacao.gov/CC middleware, card reader, PKCS#11, hardware, CMD,
+  CSC/QTSP, SCAP, TSA/TSL, or provider execution, CMD batch signing, CSC/QTSP
+  remote batch signing, provider-certified remote batch signing, single
+  OTP/PIN/SAD authorization for multiple remote documents, SCAP-verified
+  representative authority, legal-capacity proof, trust-list/provider
+  validation, legal validity/effect/sufficiency, or act finalization/legal
+  signing acceptance.
 - The core repeated remote-session helper orchestrates repeated per-document
   remote sessions over the existing `RemoteSigningSource` initiate/confirm
   one-digest flow. Each document still opens and confirms its own remote

@@ -2738,9 +2738,34 @@ function assertCheckpointMap() {
     "web CC batch signing route/current-act reset coverage",
   );
   assertFileContains(
+    "apps/web/e2e/local-cc-batch-signing.spec.ts",
+    "Focused browser proof for the local/co-located CC batch-signing UI.",
+    "web CC batch signing focused Playwright proof marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/local-cc-batch-signing.spec.ts",
+    "POST /v1/signature/cc/batch-sign",
+    "web CC batch signing browser route marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/local-cc-batch-signing.spec.ts",
+    "optional transient PIN request/clear/no-storage behavior",
+    "web CC batch signing browser PIN boundary marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/local-cc-batch-signing.spec.ts",
+    "route-stubbed local browser proof only",
+    "web CC batch signing browser no-live-provider boundary marker",
+  );
+  assertFileContains(
     "SPEC-COVERAGE.md",
     "CC batch UI evidence only",
     "spec coverage local CC batch signing no-claim marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "route-stubbed local browser proof only",
+    "spec coverage local CC batch signing browser proof boundary marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -2748,9 +2773,19 @@ function assertCheckpointMap() {
     "CI/E2E hardening local CC batch signing no-claim marker",
   );
   assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "route-stubbed Playwright proof",
+    "CI/E2E hardening local CC batch signing browser proof marker",
+  );
+  assertFileContains(
     "docs/CI-CHECKPOINTS.md",
     "local CC batch-signing UI markers for BatchSigningPanel",
     "CI checkpoints local CC batch signing marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "route-stubbed local browser proof only",
+    "CI checkpoints local CC batch signing browser proof boundary marker",
   );
   assertFileContains(
     "crates/chancela-signing/src/batch.rs",
@@ -5024,8 +5059,8 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/documents/ActDocumentPanel.test.tsx",
-    "expect(within(receipt).queryByText('Revisto em')).toBeNull();",
-    "imported-document review receipt pending hides reviewed-at marker",
+    "expect(within(receipt).getByText('Revisto em')).toBeTruthy();",
+    "imported-document review receipt pending reviewed-at placeholder marker",
   );
   assertFileContains(
     "apps/web/src/features/documents/ActDocumentPanel.test.tsx",

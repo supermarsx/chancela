@@ -1479,7 +1479,23 @@ settingsDefaults.test.ts contracts.test.ts`.
   markers, plus local CC BatchSigningPanel UI, `useCcBatchSign`,
   `/v1/signature/cc/batch-sign`, transient PIN clear/no-storage and route-reset
   tests, per-document result rendering, auth-mode reporting, declared capacity
-  evidence display, and local-CC-only boundary copy markers, plus
+  evidence display, local-CC-only boundary copy markers, and focused
+  route-stubbed Playwright proof in
+  `apps/web/e2e/local-cc-batch-signing.spec.ts` for the mounted
+  local/co-located Cartao de Cidadao batch-signing UI,
+  `POST /v1/signature/cc/batch-sign`, optional transient PIN request/clear/
+  no-storage behavior, blank PIN omission, per-document results,
+  server-returned `single_auth` or `per_document_auth` accounting, declared
+  signer-capacity evidence, and the no-live-provider route boundary. This is
+  local CC batch UI evidence only and route-stubbed local browser proof only:
+  no live Autenticacao.gov/CC middleware, card reader, PKCS#11, hardware, CMD,
+  CSC/QTSP, SCAP, TSA/TSL, or provider execution; no live CC batch signing,
+  qualified batch signing, legal/qualified/provider-certified batch,
+  provider-certified remote batch, single OTP/PIN/SAD authorization for
+  multiple remote documents, CMD multiple-sign, CSC/QTSP multi-hash/SAD batch,
+  SCAP-verified representative authority, legal-capacity proof,
+  trust-list/provider validation, legal validity/effect/sufficiency, or act
+  finalization/legal signing acceptance, plus
   `chancela-signing` repeated remote-session helper/types/tests for per-document
   `RemoteSigningSource` initiate/confirm activation and core-only no-batch-claim
   boundary markers, plus pending-session provider identity bridge markers for

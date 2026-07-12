@@ -63,7 +63,22 @@ compact validator-report actions, template provenance UI, release clean-source
 provenance gating, local CC batch-signing UI markers for BatchSigningPanel,
 `useCcBatchSign`, `POST /v1/signature/cc/batch-sign`, optional transient PIN
 clearing/no-storage, per-document results, auth-mode reporting, declared
-signer-capacity evidence display, and local-CC-only no-claim boundary copy,
+signer-capacity evidence display, local-CC-only no-claim boundary copy, and
+focused route-stubbed Playwright proof in
+`apps/web/e2e/local-cc-batch-signing.spec.ts` for the mounted
+local/co-located Cartao de Cidadao batch-signing UI, optional transient PIN
+request/clear/no-storage behavior, blank PIN omission, per-document results,
+server-returned `single_auth` or `per_document_auth` accounting, declared
+signer-capacity evidence, and the no-live-provider route boundary. This is
+local CC batch UI evidence only and route-stubbed local browser proof only:
+no live Autenticacao.gov/CC middleware, card reader, PKCS#11, hardware, CMD,
+CSC/QTSP, SCAP, TSA/TSL, or provider execution; no live CC batch signing,
+qualified batch signing, legal/qualified/provider-certified batch,
+provider-certified remote batch, single OTP/PIN/SAD authorization for multiple
+remote documents, CMD multiple-sign, CSC/QTSP multi-hash/SAD batch,
+SCAP-verified representative authority, legal-capacity proof,
+trust-list/provider validation, legal validity/effect/sufficiency, or act
+finalization/legal signing acceptance,
 `chancela-signing` core repeated per-document remote-session orchestration
 markers for `RemoteSigningSource` initiate/confirm one-digest flow,
 per-document activation, helper/types/tests, core-only no-API/no-web boundary,
