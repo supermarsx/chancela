@@ -12,6 +12,7 @@ external-signing workflow-only envelope UI, workflow reminder policy, and
 structured platform-log forwarded-ingest/failure-audit slices, plus data-status
 sidecar classification, read-only local DGLAB interchange manifest API
 scaffolding and BookDetail JSON download,
+raw-byte per-book import preflight operator preview,
 richer Ata editor AI statement-source provenance rendering, explicit external-validator raw
 report upload UI guardrails, the raw external-validator raw-report byte download
 API, the MCP workflow provenance and draft-vs-signed comparison review aids,
@@ -310,6 +311,18 @@ test operating checklist for driving Chancela toward release confidence.
   ZIP sidecar member, import flow, package validation change, persisted package
   bytes, ledger event, disposal path, legal archival certification,
   PDF/A/PAdES/PDF-UA certification, authority approval, or legal archive claim.
+- The current per-book import preflight slice exposes raw-byte `POST
+  /v1/books/import/preflight?policy=...` as a preview-only import step. It
+  checks the bundle evidence currently available before import and current
+  collision state, returns operator preview fields without `import_id`, and the
+  store/API tests pin no `ledger.imported`, no `imported_books`, no retained
+  imported bundle bytes, and no live-record mutation. The web recovery panel
+  requires selected file -> preflight preview -> explicit confirm import, and
+  ignores stale preflight responses when the selected file or policy changes.
+  Treat this as operator-safety preview coverage only: no legal archive
+  certification, no DGLAB/legal acceptance, no production signed-import
+  validation beyond existing import checks, and no final protection from
+  concurrent confirm-time collision or IO/persistence failure.
 - The current paper-book OCR conversion-dossier slice exposes the existing
   API/store flow on BookDetail: accepted OCR drafts can create/list
   non-canonical metadata-only dossiers, existing dossiers render without a
@@ -700,6 +713,7 @@ apps/web`: passed after dashboard formatting and the CompliancePanel
   module landed; `cargo test -p chancela-api redaction --lib --locked`,
   `cargo test -p chancela-api --test privacy retention --locked`,
   `cargo test -p chancela-api --test paper_import --locked`,
+  `cargo test -p chancela-api --locked books_import_preflight`,
   `cargo test -p chancela-api router_walk_every_route_is_classified --locked`,
   and `cargo test -p chancela-api --test external_signing_envelopes --locked`
   passed after route classification and parser-detail assertion repair.

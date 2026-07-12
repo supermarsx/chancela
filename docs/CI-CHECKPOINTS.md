@@ -34,7 +34,8 @@ assurance, MCP resource/prompt coverage including workflow provenance review
 guidance and draft-vs-signed comparison review guidance, web fixtures, ASiC
 inspect `technical_validation` and structural diagnostic markers, registry chronology
 graph markers, PDF writer spacing and PDF/UA blocker-decomposition markers,
-archive timestamp append markers,
+archive timestamp append markers, raw-byte per-book import preflight markers for
+no-mutation operator previews,
 paper-book OCR API/UI markers including accepted OCR draft to mutable draft-act
 creation plus focused paper-book OCR review browser workflow markers,
 retention duplicate review-only request guards, queued-review status surfacing,
@@ -83,6 +84,11 @@ It intentionally reuses existing test surfaces:
   `cargo test -p chancela-api --test archive_package --locked`
   including the read-only local DGLAB interchange manifest endpoint and
   `book.export@Book` gate.
+- API per-book import preflight:
+  `cargo test -p chancela-api --locked books_import_preflight`
+  including raw-byte `POST /v1/books/import/preflight?policy=...`, current
+  pre-import evidence/collision preview, no `import_id`, no `ledger.imported`,
+  no `imported_books`, and no retained imported bundle bytes.
 - Archive readability/ZK caveat metadata:
   `cargo test -p chancela-archive --locked readability_caveat`
   including manifest-only defaults, old v1 conservative defaults, unknown-field
@@ -233,7 +239,8 @@ manifest/signature diagnostic, blocker-ID, `technical_validation`,
 `validate_asic_container`, `AsicValidationReport`, `AsicSignatureValidation`,
 and `AsicArchiveTimestampValidation` markers, local paper-book OCR
 API/UI/contract markers, accepted OCR draft to mutable draft-act
-API/UI/refusal markers,
+API/UI/refusal markers, per-book import preflight route/no-mutation/API tests,
+web preview-confirm flow markers, stale file/policy response guards,
 focused paper-book OCR review browser workflow markers,
 caller-supplied archive timestamp append API markers, dashboard current-work
 summary caps/hidden-count markers, registered-entity single-line table and
@@ -314,7 +321,9 @@ or legal validity, production B-LT/B-LTA, SCAP verification, representative
 authority, live provider validity, canonical OCR conversion, imported-document
 OCR, imported-document conversion, imported-document PDF/A replacement, imported-document
 signed-PDF creation or signature validation, imported-document seal/PDF-UA, imported-document
-legal acceptance, raw external-validator legal/trust/certification validation,
+legal acceptance, per-book import preflight legal archive certification, DGLAB/legal acceptance,
+production signed-import validation beyond existing confirm checks, confirm-time collision/IO
+finality, raw external-validator legal/trust/certification validation,
 trust-list legal validity, hostile DNS/rebinding proof, production qualified trust,
 provider approval, live provider readiness, DGLAB certification, full release
 hardening, raw MCP report-byte exposure,

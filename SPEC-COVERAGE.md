@@ -2596,6 +2596,15 @@ behavior, legal disposal, or legal-effect claims.
   distinguishes additional evidence families for retained bytes, metadata-only records, and signed
   PDF/PAdES structural status. These are preservation/evidence classifications, not legal
   acceptance of non-canonical files or production signed-import validation.
+- **Per-book import preflight:** `POST /v1/books/import/preflight?policy=...` accepts raw bundle
+  bytes and returns a non-mutating operator preview for the current collision policy. The preview
+  verifies the available pre-import bundle evidence and collision state, exposes review fields such
+  as entity/book ids, source instance, digest, manifest/file counts, verdict, findings, and next
+  step, and intentionally omits `import_id`. API/store coverage pins that preflight does not stage
+  the bundle, append `ledger.imported`, persist `imported_books`, retain imported bundle bytes, or
+  mutate live records. The web recovery flow now separates file selection, preflight preview, and
+  explicit confirm import; stale preview responses for an older file or policy are ignored and
+  cannot enable confirmation for a different request.
 - **Dashboard reminders:** `GET /v1/dashboard` includes advisory annual-calendar reminders from
   encoded profile calendar presets. Commercial SA/Lda-like entities, associations, foundations, and
   cooperatives are covered where a profile preset defines a fiscal-year offset; unsupported or stale
@@ -2697,7 +2706,8 @@ behavior, legal disposal, or legal-effect claims.
   `recent-landed` job pin the cross-cutting recent work: paper import API tests including
   canonical-conversion preflight markers, archive package and DocTimeStamp evidence tests, local
   PKCS#12 API signing tests, multi-signature PAdES renewal-plan API tests, bounded retention execution tests, Settings retention policy list/create/patch/dry-run UI markers and non-destructive payload assertions, privacy breach/transfer review-receipt tests, TSL XML-DSig hardening tests including bounded same-document `URI="#id"` fragment markers and raw P-256 ECDSA-SHA256 `r||s` signature markers, trust/import/static hardening markers for unsafe TSL/TSA URL refusal, scoped test-only loopback, import fail-closed cache preservation, `/v1/books/import` body limits, security headers, and CC signing invalid-TSL refusal, MCP
-  resource/prompt tests, API dashboard reminder policy/default/source-toggle/window/year-boundary
+  per-book raw-byte import preflight route/no-mutation/API tests and web preview-confirm stale-guard
+  markers, resource/prompt tests, API dashboard reminder policy/default/source-toggle/window/year-boundary
   tests, web contract/client/settings-default/dashboard/ferramentas/signing/i18n/trust tests,
   external-signing envelope UI/link-safety tests,
   backup recovery-drill receipt API tests plus Data Management, restore-modal, and contract
@@ -2820,8 +2830,9 @@ behavior, legal disposal, or legal-effect claims.
   structure trees/tagging/role maps/marked artifacts, broader OCR execution/review
   operations and reviewed canonical/legal conversion beyond the
   operator-configured local auxiliary OCR draft path, metadata-only accepted-draft
-  conversion dossiers, bounded mutable drafting aid where present, and preflight
-  evidence for preserved legacy DOC and historical paper-book evidence, official DGLAB
+  conversion dossiers, bounded mutable drafting aid where present, per-book import preflight preview
+  beyond current operator-safety evidence, and preflight evidence for preserved legacy DOC and
+  historical paper-book evidence, official DGLAB
   interchange/certification, actual physical deletion, broader disposal/retention policy
   automation, GDPR erasure linkage, legal acceptance/certification, and long-term signature evidence
   packaging/renewal execution beyond the implemented sidecars, archive package
@@ -3033,6 +3044,12 @@ behavior, legal disposal, or legal-effect claims.
   data, prove off-site custody, certify RPO/RTO or production backup policy,
   prove backup encryption custody, establish disaster-recovery readiness, provide
   legal archive acceptance, or certify data-lifecycle compliance.
+- Per-book import preflight is an operator-safety preview only. It does not create or certify a
+  legal archive, provide official DGLAB acceptance or legal acceptance, stage or retain imported
+  bundles, create an `import_id`, add `ledger.imported`, persist `imported_books`, or validate a
+  production signed import beyond the existing bundle import checks. A later confirmation can still
+  fail because of concurrent collision changes, IO/persistence errors, or stricter confirm-time
+  checks.
 - Archive readability/ZK caveat metadata is manifest-only conservative status.
   It includes no decryption keys or materials, no connector/import proof, no
   custody proof, no ZK repository guarantee, no GDPR-obligation removal, and no

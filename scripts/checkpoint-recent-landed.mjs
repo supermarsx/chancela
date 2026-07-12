@@ -46,6 +46,13 @@ const checks = [
     ],
   },
   {
+    name: "API per-book import preflight tests",
+    command: [
+      "cargo",
+      ["test", "-p", "chancela-api", "--locked", "books_import_preflight"],
+    ],
+  },
+  {
     name: "archive local DGLAB interchange API/scaffold tests",
     command: [
       "cargo",
@@ -1024,6 +1031,106 @@ function assertCheckpointMap() {
     "crates/chancela-api/tests/archive_package.rs",
     "archive_package_reports_embedded_doc_timestamp_evidence_without_b_lta_claim",
     "archive package DocTimeStamp evidence coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "/v1/books/import/preflight",
+    "API per-book import preflight route marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/authz.rs",
+    '("/v1/books/import/preflight", RouteClass::Gated)',
+    "API per-book import preflight route classification marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/bundles.rs",
+    "`POST /v1/books/import/preflight?policy=refuse|quarantine_copy`",
+    "API per-book import preflight raw-byte endpoint doc marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/bundles.rs",
+    "import and returns a no-mutation preview with no `import_id`",
+    "API per-book import preflight no-import-id doc marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/bundles.rs",
+    "Preflight did not append ledger.imported, store an imported_books record",
+    "API per-book import preflight no-mutation preview marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/bundles.rs",
+    "Operator-safety preview only: not legal archive certification, not production signed-import validation beyond existing checks, and not DGLAB/legal acceptance.",
+    "API per-book import preflight no-overclaim marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/src/recovery.rs",
+    "It never inserts `imported_books` rows and never appends `ledger.imported`.",
+    "store per-book import preflight no imported_books or ledger marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "assert_import_preflight_did_not_mutate",
+    "API per-book import preflight no-mutation helper marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "books_import_preflight_valid_bundle_summarizes_without_mutation",
+    "API per-book import preflight valid coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "books_import_preflight_tampered_bundle_reports_quarantine_without_mutation",
+    "API per-book import preflight tampered coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "books_import_preflight_collision_refuse_blocks_without_mutation",
+    "API per-book import preflight collision coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    'preview.get("import_id").is_none()',
+    "API per-book import preflight no import_id assertion marker",
+  );
+  assertFileContains(
+    "apps/web/src/api/client.ts",
+    "preflightImportBook: (bytes: ArrayBuffer | Blob, policy: CollisionPolicy = 'refuse')",
+    "web client per-book import preflight raw bytes marker",
+  );
+  assertFileContains(
+    "apps/web/src/api/hooks.ts",
+    "Read-only preflight for a book bundle import (`POST /v1/books/import/preflight`, t54).",
+    "web hook per-book import preflight no-mutation marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/LivrosIntegridadeSection.tsx",
+    "importPreflightPreview.policy === importPolicy",
+    "web per-book import preflight policy-gated confirm marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/LivrosIntegridadeSection.tsx",
+    "if (!isCurrentImportRequest(generation, file, policy)) return;",
+    "web per-book import preflight stale response guard marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/LivrosIntegridadeSection.test.tsx",
+    "preflights a selected bundle before confirm import and shows the honest final verdict",
+    "web per-book import preflight preview-confirm coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/LivrosIntegridadeSection.test.tsx",
+    "clears a stale book import preflight when a different file is selected",
+    "web per-book import preflight stale selected-file coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/LivrosIntegridadeSection.test.tsx",
+    "ignores a deferred import preflight when the policy changes before it resolves",
+    "web per-book import preflight stale policy coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/LivrosIntegridadeSection.test.tsx",
+    "ignores a deferred import preflight when a different file is selected before it resolves",
+    "web per-book import preflight deferred stale file coverage",
   );
   assertFileContains(
     "crates/chancela-archive/src/lib.rs",
@@ -6694,6 +6801,41 @@ function assertCheckpointMap() {
     "docs/CI-E2E-HARDENING-PLAN.md",
     "`/v1/books/import` has route-level and handler-level body limits and rejects oversized bodies before staging",
     "CI/E2E hardening plan books import body limit marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "The current per-book import preflight slice exposes raw-byte `POST",
+    "CI/E2E hardening plan per-book import preflight marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "no `ledger.imported`, no `imported_books`, no retained",
+    "CI/E2E hardening plan per-book import preflight no-mutation marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "API per-book import preflight:",
+    "CI checkpoints per-book import preflight lane marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "web preview-confirm flow markers, stale file/policy response guards",
+    "CI checkpoints web import preflight stale guard marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Per-book import preflight",
+    "spec coverage per-book import preflight checkpoint marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "explicit confirm import; stale preview responses for an older file or policy are ignored",
+    "spec coverage per-book import preflight stale guard marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Per-book import preflight is an operator-safety preview only",
+    "spec coverage per-book import preflight no-overclaim marker",
   );
   assertFileContainsNormalized(
     "docs/CI-E2E-HARDENING-PLAN.md",
