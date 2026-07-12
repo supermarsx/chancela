@@ -2282,7 +2282,7 @@ mod decompression_bound_tests {
     fn bounded_read_rejects_a_member_over_the_per_member_ceiling() {
         // The reader would yield 200 bytes; the per-member ceiling is 64, so it is rejected without
         // materializing the whole payload, and it does not count toward the running total.
-        let data = vec![0x5au8; 200];
+        let data = [0x5au8; 200];
         let mut consumed = 0u64;
         let err = read_zip_member_bounded(
             "bomb",
@@ -2306,8 +2306,8 @@ mod decompression_bound_tests {
     #[test]
     fn bounded_read_rejects_once_the_running_total_is_exceeded() {
         // Two members, each within the per-member ceiling, that together cross the total ceiling.
-        let first = vec![1u8; 40];
-        let second = vec![2u8; 40];
+        let first = [1u8; 40];
+        let second = [2u8; 40];
         let mut consumed = 0u64;
         read_zip_member_bounded(
             "first",
