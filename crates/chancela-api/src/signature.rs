@@ -468,7 +468,17 @@ pub struct SignedInfo {
 pub struct PendingInfo {
     pub session_id: String,
     pub masked_phone: String,
+    pub provider_id: String,
+    pub family: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub activation_hint: Option<String>,
     pub expires_at: String,
+}
+
+struct PendingProviderInfo {
+    provider_id: String,
+    family: String,
+    activation_hint: Option<String>,
 }
 
 /// Technical evidence profile observed for the signed act.
@@ -4204,6 +4214,7 @@ pub async fn get_signature_status(
     if let Some(pending) = find_pending_for_act(&state, act_id).await {
         // A pending session that has already expired is reported as unsigned (not pending).
         if OffsetDateTime::now_utc() < pending.expires_at {
+            let provider = pending_provider_info(&pending);
             return Ok(Json(SignatureStatusView {
                 status: "pending",
                 finalization: finalization_status(sealed, false, require_qualified),
@@ -4212,6 +4223,9 @@ pub async fn get_signature_status(
                 pending: Some(PendingInfo {
                     session_id: pending.session_id,
                     masked_phone: pending.masked_phone,
+                    provider_id: provider.provider_id,
+                    family: provider.family,
+                    activation_hint: provider.activation_hint,
                     expires_at: rfc3339(pending.expires_at),
                 }),
                 evidence: signature_evidence_status(None),
@@ -4227,6 +4241,25 @@ pub async fn get_signature_status(
         pending: None,
         evidence: signature_evidence_status(None),
     }))
+}
+
+fn pending_provider_info(pending: &PendingCmdSession) -> PendingProviderInfo {
+    if let Ok(session) = serde_json::from_str::<RemoteSignSession>(&pending.session_json) {
+        let provider_id = session.provider_id;
+        let activation_hint =
+            (provider_id != CMD_PROVIDER_ID).then(|| pending.masked_phone.clone());
+        return PendingProviderInfo {
+            family: family_label(&provider_id).to_owned(),
+            provider_id,
+            activation_hint,
+        };
+    }
+
+    PendingProviderInfo {
+        provider_id: CMD_PROVIDER_ID.to_owned(),
+        family: FAMILY_CMD.to_owned(),
+        activation_hint: None,
+    }
 }
 
 /// `GET /v1/acts/{id}/document/signed` — the SIGNED PDF bytes (`application/pdf`); `404` until the

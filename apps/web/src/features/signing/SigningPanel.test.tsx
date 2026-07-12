@@ -263,6 +263,66 @@ describe('SigningPanel — gating', () => {
 });
 
 describe('SigningPanel — two-phase flow', () => {
+  it('restores an older CMD pending session without provider metadata through the dedicated confirm path', async () => {
+    let signed = false;
+    let cmdConfirmCalled = false;
+    let remoteConfirmCalled = false;
+    const pendingStatus: SignatureStatusView = {
+      status: 'pending',
+      finalization: 'finalizado',
+      require_qualified_for_seal: false,
+      pending: {
+        session_id: 'sess-cmd',
+        masked_phone: '+351 9••••678',
+        expires_at: '2026-07-06T10:05:00Z',
+      },
+      evidence: evidence('Unsigned', false, [
+        'not_configured',
+        'lt_not_implemented',
+        'lta_not_implemented',
+      ]),
+    };
+
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      const method = init?.method ?? 'GET';
+      if (url.endsWith('/signature/providers')) return json([]);
+      if (url.endsWith('/signature') && method === 'GET') {
+        return json(signed ? signedStatus : pendingStatus);
+      }
+      if (url.includes('/signature/remote/')) {
+        remoteConfirmCalled = true;
+        return json({ error: 'wrong endpoint' }, 500);
+      }
+      if (url.includes('/signature/cmd/confirm')) {
+        cmdConfirmCalled = true;
+        signed = true;
+        return json({
+          document_id: 'doc-1',
+          act_id: 'act-1',
+          family: 'ChaveMovelDigital',
+          evidentiary_level: 'Qualified',
+          trusted_list_status: 'Granted',
+          signed_at: '2026-07-06T10:00:05Z',
+          signed_pdf_digest: signedStatus.signed!.signed_pdf_digest,
+          timestamp_token: false,
+          finalization: 'finalizado_qualificado',
+        });
+      }
+      return emptyInviteList(url, method) ?? Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(<SigningPanel act={sealedAct} />);
+
+    fireEvent.change(await screen.findByLabelText('Código SMS (OTP)'), {
+      target: { value: '999888' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar assinatura' }));
+
+    await waitFor(() => expect(cmdConfirmCalled).toBe(true));
+    expect(remoteConfirmCalled).toBe(false);
+  });
+
   it('walks initiate → OTP → confirm and toasts success', async () => {
     let signed = false;
     vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
@@ -1573,6 +1633,72 @@ describe('SigningPanel — CSC QTSP providers', () => {
       ),
     ).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Descarregar PDF assinado' })).toBeTruthy();
+  });
+
+  it('restores a reloaded CSC pending session through the generic remote confirm path', async () => {
+    let signed = false;
+    let remoteConfirmCalled = false;
+    let cmdConfirmCalled = false;
+    const pendingStatus: SignatureStatusView = {
+      status: 'pending',
+      finalization: 'finalizado',
+      require_qualified_for_seal: false,
+      pending: {
+        session_id: 'sess-csc',
+        masked_phone: 'confirme com o código de ativação enviado',
+        provider_id: 'multicert',
+        family: 'QualifiedCertificate',
+        activation_hint: 'confirme com o código de ativação enviado',
+        expires_at: '2026-07-06T10:05:00Z',
+      },
+      evidence: evidence('Unsigned', false, [
+        'not_configured',
+        'lt_not_implemented',
+        'lta_not_implemented',
+      ]),
+    };
+
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      const method = init?.method ?? 'GET';
+      if (url.endsWith('/signature/providers')) {
+        return json([provider('multicert', 'Multicert', 'QualifiedCertificate', true)]);
+      }
+      if (url.includes('/signature/cmd/confirm')) {
+        cmdConfirmCalled = true;
+        return json({ error: 'wrong endpoint' }, 500);
+      }
+      if (url.includes('/signature/remote/multicert/confirm')) {
+        remoteConfirmCalled = true;
+        signed = true;
+        return json({
+          document_id: 'doc-1',
+          act_id: 'act-1',
+          provider_id: 'multicert',
+          family: 'QualifiedCertificate',
+          evidentiary_level: 'Qualified',
+          trusted_list_status: 'Granted',
+          signed_at: '2026-07-06T10:00:05Z',
+          signed_pdf_digest: cscSignedStatus.signed!.signed_pdf_digest,
+          timestamp_token: false,
+          finalization: 'finalizado_qualificado',
+        });
+      }
+      if (url.endsWith('/signature') && method === 'GET') {
+        return json(signed ? cscSignedStatus : pendingStatus);
+      }
+      return emptyInviteList(url, method) ?? Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(<SigningPanel act={sealedAct} />);
+
+    fireEvent.change(await screen.findByLabelText('Código de autorização'), {
+      target: { value: '445566' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar assinatura' }));
+
+    await waitFor(() => expect(remoteConfirmCalled).toBe(true));
+    expect(cmdConfirmCalled).toBe(false);
   });
 
   it('gates a CSC QTSP action with signing.perform (disable-with-explanation)', async () => {

@@ -660,6 +660,16 @@ async fn csc_generic_round_trip_produces_a_validating_signed_pdf() {
     )
     .await;
     assert_eq!(view["status"], "pending");
+    assert_eq!(view["pending"]["provider_id"], CSC_PROVIDER_ID);
+    assert_eq!(view["pending"]["family"], "QualifiedCertificate");
+    assert_eq!(
+        view["pending"]["activation_hint"],
+        "confirme com o código de ativação enviado"
+    );
+    assert_eq!(
+        view["pending"]["masked_phone"],
+        "confirme com o código de ativação enviado"
+    );
 
     // Phase 2: confirm.
     let (status, done) = send(

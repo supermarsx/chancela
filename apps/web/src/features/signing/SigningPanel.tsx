@@ -62,10 +62,12 @@ import type {
   ExternalSigningOrderPolicy,
   LocalSignatureLevel,
   OfficialSignatureImportGuardrail,
+  PendingSignatureInfo,
   SealAppearanceBody,
   Settings,
   SignatureEvidenceStatus,
   SignatureFamily,
+  SignatureProviderView,
   UpdateExternalSigningEnvelopeEvidenceBody,
   XadesPackaging,
   XadesSignResponse,
@@ -778,6 +780,19 @@ type SigningProvider = { id: string; kind: 'cmd' | 'csc'; label: string };
 
 /** The built-in CMD provider descriptor (its labels are fixed; `label` is unused for CMD). */
 const CMD_PROVIDER: SigningProvider = { id: CMD_PROVIDER_ID, kind: 'cmd', label: 'CMD' };
+
+function providerFromPending(
+  pending: PendingSignatureInfo,
+  availableProviders: SignatureProviderView[],
+): SigningProvider {
+  if (!pending.provider_id || pending.provider_id === CMD_PROVIDER_ID) return CMD_PROVIDER;
+  const provider = availableProviders.find((p) => p.id === pending.provider_id);
+  return {
+    id: pending.provider_id,
+    kind: 'csc',
+    label: provider?.label ?? pending.provider_id,
+  };
+}
 
 /**
  * The active step of the local flow (server-authoritative status backs the rest). CMD and CSC
@@ -2115,18 +2130,19 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
   }
 
   // Adopt a server-known pending session (e.g. after a reload mid-flow) into the OTP step, but
-  // only from the neutral «view» step so a deliberate restart is never snapped back. The status
-  // view does not carry the provider, so an adopted session is driven as CMD (its dedicated path).
+  // only from the neutral «view» step so a deliberate restart is never snapped back. Older status
+  // responses lack provider metadata and therefore keep the legacy CMD restore path.
   useEffect(() => {
     if (step.kind === 'view' && data?.status === 'pending' && data.pending) {
+      const provider = providerFromPending(data.pending, providers.data ?? []);
       setStep({
         kind: 'otp',
-        provider: CMD_PROVIDER,
+        provider,
         sessionId: data.pending.session_id,
-        hint: data.pending.masked_phone,
+        hint: data.pending.activation_hint ?? data.pending.masked_phone,
       });
     }
-  }, [data, step.kind]);
+  }, [data, providers.data, step.kind]);
 
   if (!sealed) return null;
 

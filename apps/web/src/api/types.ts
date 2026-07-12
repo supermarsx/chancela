@@ -3827,6 +3827,10 @@ export interface SignedSignatureInfo {
 export interface PendingSignatureInfo {
   session_id: string;
   masked_phone: string;
+  /** Additive provider metadata; absent on older servers. */
+  provider_id?: string;
+  family?: string;
+  activation_hint?: string;
   expires_at: string;
 }
 
