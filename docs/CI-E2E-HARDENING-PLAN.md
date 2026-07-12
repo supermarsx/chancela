@@ -566,6 +566,13 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
   local CC batch UI evidence only: not CMD batch signing, not CSC/QTSP remote
   batch signing, not provider-certified remote batch signing, and not
   SCAP-verified representative authority or legal-capacity proof.
+- `chancela-signing` core exposes repeated per-document remote-session
+  orchestration helpers over the existing `RemoteSigningSource`
+  initiate/confirm one-digest flow. Each document still opens and confirms its
+  own remote session/activation. This is core-only: no API route, no web UI;
+  not provider-certified remote batch, not single OTP/PIN/SAD authorizing
+  multiple documents, not CMD multiple-sign, not CSC/QTSP multi-hash/SAD batch,
+  and not SCAP/legal-capacity proof.
 - Trust policy rejects unknown, withdrawn, stale, or invalid TSL states before
   signing.
 - TSA diagnostics use offline fixtures in CI and do not make live timestamp
@@ -1341,7 +1348,10 @@ settingsDefaults.test.ts contracts.test.ts`.
   markers, plus local CC BatchSigningPanel UI, `useCcBatchSign`,
   `/v1/signature/cc/batch-sign`, transient PIN clear/no-storage and route-reset
   tests, per-document result rendering, auth-mode reporting, declared capacity
-  evidence display, and local-CC-only boundary copy markers, plus ASiC inspect
+  evidence display, and local-CC-only boundary copy markers, plus
+  `chancela-signing` repeated remote-session helper/types/tests for per-document
+  `RemoteSigningSource` initiate/confirm activation and core-only no-batch-claim
+  boundary markers, plus ASiC inspect
   route/base64/fixity/
   malformed-ZIP/unsafe-path checks, bounded profile/member/manifest/signature
   diagnostics, `technical_validation` from `validate_asic_container` across

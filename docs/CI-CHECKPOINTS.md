@@ -56,6 +56,11 @@ provenance gating, local CC batch-signing UI markers for BatchSigningPanel,
 `useCcBatchSign`, `POST /v1/signature/cc/batch-sign`, optional transient PIN
 clearing/no-storage, per-document results, auth-mode reporting, declared
 signer-capacity evidence display, and local-CC-only no-claim boundary copy,
+`chancela-signing` core repeated per-document remote-session orchestration
+markers for `RemoteSigningSource` initiate/confirm one-digest flow,
+per-document activation, helper/types/tests, core-only no-API/no-web boundary,
+and no provider-certified remote batch / single OTP/PIN/SAD / CMD
+multiple-sign / CSC/QTSP multi-hash/SAD / SCAP/legal-capacity claim,
 seeded role drift diagnostics, archive readability/ZK caveat
 metadata, template family/channel rule guards, MCP trust-catalog filter
 discoverability, redacted external-validator report summary tools, external
@@ -213,7 +218,10 @@ evidence markers with `not_checked_by_scap` and
 BatchSigningPanel, `useCcBatchSign`, `POST /v1/signature/cc/batch-sign`,
 transient PIN clear/no-storage tests, route/current-act reset behavior,
 per-document result rendering, auth-mode reporting, and declared-capacity
-evidence display, dashboard subtab markers,
+evidence display, `chancela-signing` repeated remote-session helper/types/tests
+for one `RemoteSigningSource::initiate` and one
+`RemoteSigningSource::confirm` per document plus per-document activation
+no-claim copy, dashboard subtab markers,
 dashboard/notification icon-only markers, template law-reference UI markers,
 password-required account creation/session API and web markers,
 structured registry chronology graph markers, mapped PDF inter-word space,
@@ -323,8 +331,11 @@ paper-book canonical act/document/archive-package creation, paper-book PDF/A/PDF
 paper-book signature/seal creation, paper-book OCR/conversion behavior, legal
 effect for mutable draft acts created from accepted OCR drafts, CMD batch
 signing, CSC/QTSP remote batch signing, provider-certified remote batch signing,
-SCAP-verified representative authority, legal-capacity proof, or legal effect
-for local CC batch UI evidence. The Arquivo markers prove bounded UI/API paging and
+single OTP/PIN/SAD authorizing multiple documents, CMD multiple-sign,
+CSC/QTSP multi-hash/SAD batch, SCAP-verified representative authority,
+legal-capacity proof, API/web coverage for the core-only repeated
+remote-session helper, or legal effect for local CC batch UI evidence. The
+Arquivo markers prove bounded UI/API paging and
 filtered export behavior only; they do not prove persistent-store boot-time SQL
 paging or turn non-PDF/A exports into preserved evidence. The external invite
 signed-PDF markers prove act-scoped technical signed evidence and the linked

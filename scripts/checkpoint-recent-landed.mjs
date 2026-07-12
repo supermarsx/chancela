@@ -2506,6 +2506,96 @@ function assertCheckpointMap() {
     "CI checkpoints local CC batch signing marker",
   );
   assertFileContains(
+    "crates/chancela-signing/src/batch.rs",
+    "pub enum RemoteBatchAuthMode",
+    "signing core repeated remote-session auth-mode type marker",
+  );
+  assertFileContains(
+    "crates/chancela-signing/src/batch.rs",
+    "pub struct RemoteBatchPendingDocument",
+    "signing core repeated remote-session pending type marker",
+  );
+  assertFileContains(
+    "crates/chancela-signing/src/batch.rs",
+    "pub struct RemoteBatchConfirmDocument<'a>",
+    "signing core repeated remote-session confirm type marker",
+  );
+  assertFileContains(
+    "crates/chancela-signing/src/batch.rs",
+    "pub fn initiate_remote_pdf_batch_repeated_sessions",
+    "signing core repeated remote-session PDF initiate helper marker",
+  );
+  assertFileContains(
+    "crates/chancela-signing/src/batch.rs",
+    "pub fn initiate_remote_prepared_batch_repeated_sessions",
+    "signing core repeated remote-session prepared initiate helper marker",
+  );
+  assertFileContains(
+    "crates/chancela-signing/src/batch.rs",
+    "pub fn confirm_remote_pdf_batch_repeated_sessions",
+    "signing core repeated remote-session confirm helper marker",
+  );
+  assertFileContains(
+    "crates/chancela-signing/src/batch.rs",
+    "RemoteSigningSource::initiate`] once, producing one [`RemoteSignSession`] per document",
+    "signing core repeated remote-session one-digest initiate no-batch marker",
+  );
+  assertFileContains(
+    "crates/chancela-signing/src/batch.rs",
+    "Always [`RemoteBatchAuthMode::PerDocumentActivation`] for this seam",
+    "signing core repeated remote-session per-document activation marker",
+  );
+  assertFileContains(
+    "crates/chancela-signing/src/lib.rs",
+    "confirm_remote_pdf_batch_repeated_sessions, initiate_remote_pdf_batch_repeated_sessions",
+    "signing core repeated remote-session public export marker",
+  );
+  assertFileContains(
+    "crates/chancela-signing/tests/batch.rs",
+    "remote_repeated_batch_opens_and_confirms_one_session_per_pdf",
+    "signing core repeated remote-session happy-path coverage",
+  );
+  assertFileContains(
+    "crates/chancela-signing/tests/batch.rs",
+    "remote_repeated_batch_prepare_failure_is_per_document",
+    "signing core repeated remote-session prepare isolation coverage",
+  );
+  assertFileContains(
+    "crates/chancela-signing/tests/batch.rs",
+    "remote_repeated_batch_confirm_failure_is_per_document",
+    "signing core repeated remote-session confirm isolation coverage",
+  );
+  assertFileContains(
+    "crates/chancela-signing/tests/batch.rs",
+    "remote_repeated_batch_pending_records_do_not_store_activation_secrets",
+    "signing core repeated remote-session secret-free pending coverage",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Core repeated remote-session orchestration seam",
+    "spec coverage repeated remote-session seam marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "core-only: no API route, no web UI",
+    "spec coverage repeated remote-session core-only no-claim marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "provider-certified remote batch, not single OTP/PIN/SAD authorizing multiple\n  documents, not CMD multiple-sign, not CSC/QTSP multi-hash/SAD batch, and not\n  SCAP/legal-capacity proof",
+    "spec coverage repeated remote-session remote-batch no-claim marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Each document still opens and confirms its\n  own remote session/activation",
+    "CI/E2E hardening repeated remote-session per-document marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "core-only no-API/no-web boundary",
+    "CI checkpoints repeated remote-session core-only marker",
+  );
+  assertFileContains(
     "crates/chancela-api/src/signature.rs",
     "multi_signature_local_renewal_plan",
     "signature status multi-signature renewal-plan field",
