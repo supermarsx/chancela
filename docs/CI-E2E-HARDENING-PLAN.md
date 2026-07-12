@@ -25,6 +25,8 @@ dispatch-evidence recording with dashboard reminder surfacing,
 document-bundle/archive generated dispatch-evidence metadata preservation,
 imported-document review receipt UI, trust catalog identifier-match explanations,
 password-required account creation/session hardening,
+route-stubbed richer entity chronology visualization over existing structured
+graph evidence as source-linked technical visualization evidence only,
 plus local ASiC inspection endpoint and ASiC ZIP decompression-bound coverage,
 plus release workflow static
 assurance for the unsigned/local-only trust posture and production-package

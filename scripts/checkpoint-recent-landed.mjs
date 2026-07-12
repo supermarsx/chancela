@@ -5471,6 +5471,21 @@ function assertCheckpointMap() {
     "entity chronology graph UI coverage",
   );
   assertFileContains(
+    "apps/web/src/features/entities/entities.test.tsx",
+    "chronology-rail__item",
+    "entity chronology visual rail unit coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/entities/entities.test.tsx",
+    "Encosto Estratégico->Certidão",
+    "entity chronology Mermaid-derived path unit coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/entities/EntityChronologyPanel.tsx",
+    "function GraphPathSummary",
+    "entity chronology richer visualization UI marker",
+  );
+  assertFileContains(
     "crates/chancela-api/src/chronology.rs",
     "pub graph: ChronologyGraphBundle",
     "API entity chronology structured graph response field",
@@ -7019,8 +7034,13 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/e2e/chronology-and-pdf-validator.spec.ts",
-    "entity detail loads route-stubbed chronology rows and exposes copyable Mermaid source",
-    "entity chronology browser coverage",
+    "entity detail loads route-stubbed chronology rows, visualization paths, and copyable Mermaid source",
+    "entity chronology visualization browser coverage",
+  );
+  assertFileContains(
+    "apps/web/e2e/chronology-and-pdf-validator.spec.ts",
+    "Cronologia Browser E2E -> Certidão permanente",
+    "entity chronology browser visualization path marker",
   );
   assertFileContains(
     "apps/web/e2e/chronology-and-pdf-validator.spec.ts",

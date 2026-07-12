@@ -1,9 +1,13 @@
 import { useMemo, useState } from 'react';
 import { ApiError } from '../../api/client';
 import { useEntityChronology } from '../../api/hooks';
-import type { EntityChronologyMermaid, EntityChronologyView } from '../../api/types';
+import type {
+  EntityChronologyEvent,
+  EntityChronologyMermaid,
+  EntityChronologyView,
+} from '../../api/types';
 import { useT, type TFunction } from '../../i18n';
-import { Button, Card, EmptyState, ErrorNote, Icon, Loading, useToast } from '../../ui';
+import { Badge, Button, Card, EmptyState, ErrorNote, Icon, Loading, useToast } from '../../ui';
 
 type MermaidKey = keyof EntityChronologyMermaid;
 
@@ -21,6 +25,108 @@ function graphText(view: EntityChronologyView, key: MermaidKey): string {
 
 function actorsText(actors: string[], t: TFunction) {
   return actors.length > 0 ? actors.join(', ') : t('entities.chronology.none');
+}
+
+function mermaidNodeLabel(value: string): string {
+  const trimmed = value.trim().replace(/;$/, '').replace(/:::[\w-]+$/, '').trim();
+  const bracket = trimmed.match(/\[\s*"?([^"\]]+)"?\s*\]/);
+  if (bracket?.[1]) return bracket[1].trim();
+  const paren = trimmed.match(/\(\s*"?([^")]+)"?\s*\)/);
+  if (paren?.[1]) return paren[1].trim();
+  const brace = trimmed.match(/\{\s*"?([^"}]+)"?\s*\}/);
+  if (brace?.[1]) return brace[1].trim();
+  return trimmed.replace(/^["']|["']$/g, '').trim();
+}
+
+function mermaidPathRows(value: string): { from: string; to: string }[] {
+  const lines = value
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const nodeLabels = new Map<string, string>();
+
+  for (const line of lines) {
+    const declaration = line.match(
+      /^([A-Za-z_][\w-]*)\s*(\[[^\]]+\]|\([^)]+\)|\{[^}]+\})\s*;?$/,
+    );
+    if (declaration?.[1] && declaration[2]) {
+      nodeLabels.set(declaration[1], mermaidNodeLabel(declaration[2]));
+    }
+  }
+
+  function endpointLabel(endpoint: string): string {
+    const trimmed = endpoint.trim().replace(/;$/, '');
+    return nodeLabels.get(trimmed) ?? mermaidNodeLabel(trimmed);
+  }
+
+  return lines.flatMap((line) => {
+    if (/^(graph|flowchart|timeline|sequenceDiagram|classDiagram|stateDiagram)/i.test(line)) {
+      return [];
+    }
+
+    const arrow = line.match(/^(.+?)\s*(?:-->|---|-.->|==>)\s*(?:\|(.+?)\|\s*)?(.+)$/);
+    if (arrow?.[1] && arrow[3]) {
+      const to = endpointLabel(arrow[3]);
+      const edgeLabel = arrow[2] ? mermaidNodeLabel(arrow[2]) : '';
+      return [
+        {
+          from: endpointLabel(arrow[1]),
+          to: edgeLabel ? `${to} (${edgeLabel})` : to,
+        },
+      ];
+    }
+
+    const timeline = line.match(/^(.+?)\s*:\s*(.+)$/);
+    if (timeline?.[1] && timeline[2]) {
+      return [{ from: mermaidNodeLabel(timeline[1]), to: mermaidNodeLabel(timeline[2]) }];
+    }
+
+    return [];
+  });
+}
+
+function ChronologyVisualTimeline({
+  events,
+  t,
+}: {
+  events: EntityChronologyEvent[];
+  t: TFunction;
+}) {
+  if (events.length === 0) return null;
+
+  return (
+    <ol className="chronology-rail" aria-label={t('entities.chronology.title')}>
+      {events.map((event, index) => (
+        <li
+          className="chronology-rail__item"
+          key={`${event.source_inscription}-${event.kind}-${event.date ?? index}`}
+        >
+          <span className="chronology-rail__marker" aria-hidden="true">
+            {index + 1}
+          </span>
+          <div className="chronology-rail__body">
+            <div className="chronology-rail__head">
+              {event.date ? (
+                <time className="mono" dateTime={event.date}>
+                  {event.date}
+                </time>
+              ) : (
+                <span className="muted">{t('entities.chronology.none')}</span>
+              )}
+              <Badge tone="accent">
+                {t('entities.chronology.sourceInscription', {
+                  inscription: event.source_inscription,
+                })}
+              </Badge>
+              <code className="mono">{event.kind}</code>
+            </div>
+            <p>{event.description}</p>
+            <p className="muted">{actorsText(event.actors, t)}</p>
+          </div>
+        </li>
+      ))}
+    </ol>
+  );
 }
 
 function ChronologyTimeline({ view, t }: { view: EntityChronologyView; t: TFunction }) {
@@ -68,6 +174,40 @@ function ChronologyTimeline({ view, t }: { view: EntityChronologyView; t: TFunct
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function GraphPathSummary({
+  graphs,
+  t,
+}: {
+  graphs: { key: MermaidKey; label: string; value: string }[];
+  t: TFunction;
+}) {
+  return (
+    <div className="chronology-graph-grid">
+      {graphs.map((graph) => {
+        const paths = mermaidPathRows(graph.value);
+        return (
+          <section className="chronology-graph-card" key={graph.key} aria-label={graph.label}>
+            <h4>{graph.label}</h4>
+            {paths.length > 0 ? (
+              <ul className="chronology-paths">
+                {paths.map((path, index) => (
+                  <li key={`${path.from}-${path.to}-${index}`}>
+                    <span>{path.from}</span>
+                    <span>-&gt;</span>
+                    <span>{path.to}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="muted">{t('entities.chronology.graph.empty')}</p>
+            )}
+          </section>
+        );
+      })}
     </div>
   );
 }
@@ -166,6 +306,10 @@ export function EntityChronologyPanel({ entityId }: { entityId: string }) {
     <Card title={t('entities.chronology.title')}>
       <div className="stack">
         <p className="muted">{t('entities.chronology.boundary')}</p>
+
+        <ChronologyVisualTimeline events={chronology.data.events} t={t} />
+
+        <GraphPathSummary graphs={graphs} t={t} />
 
         <ChronologyTimeline view={chronology.data} t={t} />
 

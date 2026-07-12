@@ -292,7 +292,10 @@ no-claim copy, pending-session provider bridge markers for `PendingInfo`,
 dashboard subtab markers,
 dashboard/notification icon-only markers, template law-reference UI markers,
 password-required account creation/session API and web markers,
-structured registry chronology graph markers, mapped PDF inter-word space,
+structured registry chronology graph markers plus richer frontend chronology
+visualization markers as source-linked technical evidence only, not a legal
+registry certificate, DRE verification, registry/provider authority verification,
+or an authority-approved graph, mapped PDF inter-word space,
 PDF/UA blocker-decomposition markers, PDF accessibility report JSON v7,
 `writer_owned_decorative_artifacts_accounted_for`, reduced default-fixture
 `limited_tagged_structure` blocker lists, exhaustive `DocumentBlock`

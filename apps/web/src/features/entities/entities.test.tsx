@@ -571,11 +571,19 @@ describe('EntityDetailPage', () => {
                 source_inscription: '1',
                 actors: ['Maria Silva'],
               },
+              {
+                date: null,
+                kind: 'RegistryNote',
+                description: 'Averbamento sem data normalizada',
+                source_inscription: '2',
+                actors: [],
+              },
             ],
             mermaid: {
-              shareholders: 'graph TD\n  Maria[Maria Silva] --> Quota[Quota EUR 5000]',
+              shareholders:
+                'graph LR\n  Entidade[Encosto Estratégico]\n  Maria[Maria Silva]\n  Entidade -->|"Quota EUR 5000"| Maria',
               organs: 'timeline\n  2020 : Gerência',
-              relationships: 'graph LR\n  Entidade --> Registo',
+              relationships: 'graph LR\n  Entidade[Encosto Estratégico] --> Registo[Certidão]',
             },
           }),
         );
@@ -583,7 +591,7 @@ describe('EntityDetailPage', () => {
       return fn(input, init);
     }) as typeof fetch);
 
-    renderWithProviders(
+    const { container } = renderWithProviders(
       <Routes>
         <Route path="/entidades/:id" element={<EntityDetailPage />} />
       </Routes>,
@@ -591,12 +599,25 @@ describe('EntityDetailPage', () => {
     );
 
     expect(await screen.findByText('Cronologia e grafo')).toBeTruthy();
-    expect(await screen.findByText('Constituição de sociedade')).toBeTruthy();
-    expect(screen.getByText('Maria Silva')).toBeTruthy();
-    expect(screen.getByText('Insc. 1')).toBeTruthy();
+    expect((await screen.findAllByText('Constituição de sociedade')).length).toBeGreaterThan(1);
+    expect(screen.getAllByText('Maria Silva').length).toBeGreaterThan(1);
+    expect(screen.getAllByText('Insc. 1').length).toBeGreaterThan(1);
+    const railItems = container.querySelectorAll('.chronology-rail__item');
+    expect(railItems).toHaveLength(2);
+    expect(railItems[0]?.textContent).toContain('1');
+    expect(railItems[0]?.textContent).toContain('Constitution');
+    expect(railItems[1]?.textContent).toContain('Averbamento sem data normalizada');
+    expect(railItems[1]?.textContent).toContain('—');
+    expect(railItems[1]?.textContent).toContain('Insc. 2');
+    const pathRows = [...container.querySelectorAll('.chronology-paths li')].map(
+      (row) => row.textContent ?? '',
+    );
+    expect(pathRows).toContain('Encosto Estratégico->Maria Silva (Quota EUR 5000)');
+    expect(pathRows).toContain('2020->Gerência');
+    expect(pathRows).toContain('Encosto Estratégico->Certidão');
     expect(
       (screen.getByLabelText('Código Mermaid: Sócios e quotas') as HTMLTextAreaElement).value,
-    ).toContain('Maria[Maria Silva] --> Quota[Quota EUR 5000]');
+    ).toContain('Entidade -->|"Quota EUR 5000"| Maria');
     expect(
       (screen.getByLabelText('Código Mermaid: Órgãos sociais') as HTMLTextAreaElement).value,
     ).toContain('timeline');
