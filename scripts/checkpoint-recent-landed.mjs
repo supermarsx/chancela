@@ -4351,18 +4351,18 @@ function assertCheckpointMap() {
     "API condominium absent-owner communication template marker",
   );
   assertFileContains(
-    "crates/chancela-api/src/documents.rs",
-    'communication.event_payload["dispatch_evidence_status"]["status"]',
+    "crates/chancela-api/src/lib.rs",
+    'communication["dispatch_evidence_status"]["status"]',
     "API condominium absent-owner pending dispatch status marker",
   );
   assertFileContains(
-    "crates/chancela-api/src/documents.rs",
-    'communication.event_payload["dispatch_evidence_status"]["evidence_attached"]',
+    "crates/chancela-api/src/lib.rs",
+    '"x-chancela-dispatch-evidence-attached"',
     "API condominium absent-owner false dispatch evidence marker",
   );
   assertFileContains(
-    "crates/chancela-api/src/documents.rs",
-    'communication.event_payload["dispatch_evidence_status"]["dispatch_completed"]',
+    "crates/chancela-api/src/lib.rs",
+    '"x-chancela-dispatch-completed"',
     "API condominium absent-owner false dispatch completion marker",
   );
   assertFileContains(
