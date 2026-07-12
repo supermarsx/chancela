@@ -982,6 +982,26 @@ Implementation checkpoints covered here:
   `verification_status: "not_checked_by_scap"` and
   `status_scope: "declared_capacity_evidence_only"`; it is not SCAP,
   representative-authority, qualified-signature, or legal-capacity verification.
+- Current worktree keeps Signatures/Documents/UX/CI **PARTIAL**: focused
+  route-stubbed Playwright coverage now pins the official signed-PDF handoff
+  import browser path at `apps/web/e2e/official-signed-handoff.spec.ts`. The
+  proof reaches the sealed-act signing UI, opens the official handoff import
+  form, requires guardrail acknowledgement before import is enabled, submits
+  only signed PDF bytes plus client-declared trace context only
+  (`provider`/`source`/`filename`) and the required guardrail IDs, and renders
+  the imported technical evidence result. It also pins collecting no PIN, OTP,
+  CAN, credential, token, password, passphrase, or private-key material and
+  visible copy that the flow stores technical signed-PDF evidence only and does
+  not perform trust-list validation, claim qualified status, or complete legal
+  signing acceptance. Static checkpoint
+  markers include the API acknowledgement notice:
+  `Official handoff import stores technical signed-PDF evidence only;
+  acknowledgements record guardrails and do not claim trust-list,
+  qualified-signature, or legal completion.` This is local browser proof with
+  route stubs only; it is not live Autenticacao.gov/CC/CMD/CSC/QTSP execution,
+  provider-backed signing, trust-list/provider validation, qualified-signature
+  status, legal validity/effect/sufficiency, act finalization, or legal
+  signing acceptance.
 - Current worktree keeps Signatures/Trust/UX **PARTIAL**: the web signing panel
   now has a local/co-located Cartao de Cidadao batch-signing UI for sealed acts
   through the desktop/local CC path. The UI submits optional transient PIN

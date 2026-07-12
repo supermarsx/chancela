@@ -2214,6 +2214,41 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
+    "Official signed-PDF handoff browser proof",
+    "CI checkpoints official signed-PDF browser lane marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "client-declared trace context only",
+    "CI checkpoints official signed-PDF client-declared marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "collecting no PIN, OTP, CAN, credential, token, password, passphrase, or\n  private-key material",
+    "CI checkpoints official signed-PDF no-secret marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "does not perform\n  trust-list validation, claim qualified status, or complete legal signing\n  acceptance",
+    "CI checkpoints official signed-PDF no-claim marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Current working-tree official signed-PDF handoff browser checks",
+    "CI/E2E hardening plan official signed-PDF browser marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "e2e/official-signed-handoff.spec.ts",
+    "CI/E2E hardening plan official signed-PDF command marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "technical signed-PDF\n  evidence only",
+    "CI/E2E hardening plan official signed-PDF technical-only marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
     "imported-document review receipt UI",
     "CI checkpoints imported-document receipt lane marker",
   );
@@ -3621,6 +3656,56 @@ function assertCheckpointMap() {
     "crates/chancela-api/tests/official_signature_import.rs",
     "official_import_requires_guardrail_acknowledgement_without_artifact_or_event",
     "official signature import guardrail acknowledgement regression coverage",
+  );
+  assertFileContains(
+    "apps/web/e2e/official-signed-handoff.spec.ts",
+    "official signed-PDF handoff import is technical evidence only in the browser",
+    "official signed-PDF handoff browser proof spec marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/official-signed-handoff.spec.ts",
+    "`/v1/acts/${ACT_ID}/signature/official/import`",
+    "official signed-PDF handoff browser import route marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/official-signed-handoff.spec.ts",
+    "official_import_preserves_uploaded_signed_pdf_as_technical_evidence",
+    "official signed-PDF handoff browser preserve guardrail marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/official-signed-handoff.spec.ts",
+    "official_import_trust_validation_not_performed",
+    "official signed-PDF handoff browser trust guardrail marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/official-signed-handoff.spec.ts",
+    "official_import_qualified_status_not_claimed",
+    "official signed-PDF handoff browser qualified guardrail marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/official-signed-handoff.spec.ts",
+    "official_import_legal_status_not_claimed",
+    "official signed-PDF handoff browser legal guardrail marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/official-signed-handoff.spec.ts",
+    "official_import_no_secret_factor_collected",
+    "official signed-PDF handoff browser no-secret guardrail marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/official-signed-handoff.spec.ts",
+    "Official handoff import stores technical signed-PDF evidence only; acknowledgements record guardrails and do not claim trust-list, qualified-signature, or legal completion.",
+    "official signed-PDF handoff browser API notice marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/official-signed-handoff.spec.ts",
+    "expectNoCredentialInputs",
+    "official signed-PDF handoff browser no credential inputs marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/official-signed-handoff.spec.ts",
+    "expectNoPositiveClaimText",
+    "official signed-PDF handoff browser no positive legal/trust claim marker",
   );
   assertFileContains(
     "crates/chancela-api/src/data_status.rs",
@@ -8796,6 +8881,26 @@ function assertCheckpointMap() {
     "SPEC-COVERAGE.md",
     "no provider calls, trust-list checks, QES/qualified status,\n  legal validity, provider completion, act finalization, or full envelope legal\n  completion is claimed",
     "spec coverage external invite no provider/legal completion marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "route-stubbed Playwright coverage now pins the official signed-PDF handoff\n  import browser path",
+    "spec coverage official signed-PDF browser proof marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "client-declared trace context only",
+    "spec coverage official signed-PDF client-declared marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "collecting no PIN, OTP,\n  CAN, credential, token, password, passphrase, or private-key material",
+    "spec coverage official signed-PDF no-secret marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "does\n  not perform trust-list validation, claim qualified status, or complete legal\n  signing acceptance",
+    "spec coverage official signed-PDF no-claim marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",

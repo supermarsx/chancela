@@ -223,6 +223,17 @@ It intentionally reuses existing test surfaces:
   `cargo test -p chancela-api --locked customized_seeded_platform_admin_reports_missing_defaults_without_granting_them`
 - API official signed-PDF handoff guardrail acknowledgement:
   `cargo test -p chancela-api --test official_signature_import --locked official_import_requires_guardrail_acknowledgement_without_artifact_or_event`
+- Official signed-PDF handoff browser proof:
+  `npm run test:browser --workspace apps/web -- e2e/official-signed-handoff.spec.ts`
+  pins the sealed-act browser path for importing a PDF already signed outside
+  Chancela as technical signed-PDF evidence only. The route-stubbed proof checks
+  the guardrail acknowledgement gate, exact required guardrail IDs,
+  client-declared trace context only (`provider`/`source`/`filename`),
+  collecting no PIN, OTP, CAN, credential, token, password, passphrase, or
+  private-key material, no live provider/trust/signing route calls, the imported
+  evidence result display, and copy stating that Chancela does not perform
+  trust-list validation, claim qualified status, or complete legal signing
+  acceptance.
 - TSL XML-DSig hardening: `cargo test -p chancela-tsl --locked`
 - API trust/import/static hardening markers: the static map pins
   `outbound_url_policy_rejects_reserved_ipv4_zero_eight`,
@@ -260,6 +271,13 @@ It intentionally reuses existing test surfaces:
 The script also performs a cheap static map before running commands. That map
 asserts the expected test files, fixture markers, data key preflight markers,
 official-signature/imported-document guardrail acknowledgement markers,
+official signed-PDF handoff browser proof markers for
+`apps/web/e2e/official-signed-handoff.spec.ts`, the route-stubbed
+`/v1/acts/${ACT_ID}/signature/official/import` path, the exact official import
+guardrail IDs, the API acknowledgement notice, client-declared trace context
+only, no PIN/OTP/CAN/credential/token/password/passphrase/private-key
+collection, and no trust-list, qualified-status, or legal-signing-acceptance
+claim copy,
 written-resolution evidence status/binding markers, declared signer-capacity
 evidence markers with `not_checked_by_scap` and
 `declared_capacity_evidence_only`, local CC batch-signing UI markers for

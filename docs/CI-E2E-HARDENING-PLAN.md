@@ -1214,6 +1214,21 @@ settingsDefaults.test.ts contracts.test.ts`.
   signing, PIN/OTP/passphrase collection, provider calls, trust-list checks,
   QES/qualified status, legal validity, provider completion, act finalization,
   full envelope legal completion, or public token exposure.
+- Current working-tree official signed-PDF handoff browser checks: focused
+  route-stubbed Playwright proof is `npm run test:browser --workspace apps/web
+  -- e2e/official-signed-handoff.spec.ts`. It pins the sealed-act browser UI for
+  importing a PDF already signed outside Chancela as technical signed-PDF
+  evidence only, requires guardrail acknowledgement before import, asserts the
+  exact official import guardrail IDs and client-declared trace context only
+  (`provider`/`source`/`filename`), verifies collecting no PIN, OTP, CAN,
+  credential, token, password, passphrase, or private-key material, rejects live
+  provider/trust/signing route calls, and checks the imported evidence result
+  plus no-claim copy that Chancela does not perform trust-list validation, claim
+  qualified status, or complete legal signing acceptance. Treat this as local
+  browser proof only, not live
+  Autenticacao.gov/CC/CMD/CSC/QTSP execution, provider-backed signing,
+  trust-list/provider validation, qualified-signature status, legal
+  validity/effect/sufficiency, act finalization, or legal signing acceptance.
 - Current working-tree ASiC inspection/decompression checks: focused `cargo
   test -p chancela-api --test asic_signature_validation --locked` coverage pins
   `POST /v1/signature/asic/inspect`, base64 ASiC ZIP envelopes with optional
