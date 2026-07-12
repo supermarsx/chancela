@@ -2233,11 +2233,78 @@ async fn cc_sign_rejects_malformed_visible_seal_geometry() {
     assert_no_signed_artifact_or_event(&state, &token, &act_id).await;
 }
 
-/// A well-formed *visible* seal is honestly rejected on the single-shot Cartão de Cidadão path (the
-/// `chancela-signing` CC wrapper does not yet carry the appearance seam), with a clear `422` — never
-/// silently dropped, and nothing signed.
+/// The seal-options round-trip: a well-formed *visible* seal reaches the Cartão de Cidadão signing
+/// path (`sign_pdf_cc_with_appearance`) and lands on the requested page. The produced PDF still
+/// validates (SIG-24) and carries a real widget `/Rect` (`[x, y, x+w, y+h]`) plus an `/AP` appearance
+/// stream — not the invisible `[0 0 0 0]` default. Whole-number coordinates serialize without a
+/// decimal point, so the `/Rect` numbers appear verbatim in the signed bytes.
 #[tokio::test]
-async fn cc_sign_rejects_visible_seal_not_yet_available_on_cc_path() {
+async fn cc_sign_places_visible_seal_on_requested_page() {
+    let dir = TempDir::new();
+    let card = CcTestCard::cc_v1();
+    let issuer = card.issuer_cert_der.clone();
+    let factory = provider_factory(card, Some(issuer));
+    let state = state_at(&dir.0, Some(factory), true, true);
+    let (token, _uid) = bootstrap(&state).await;
+    let act_id = seal_an_act(&state, &token).await;
+
+    let (status, done) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/cc/sign"),
+            &token,
+            json!({
+                "capacity": "Administrador",
+                "seal": {
+                    "invisible": false,
+                    "page": 0,
+                    "x": 72.0,
+                    "y": 700.0,
+                    "w": 180.0,
+                    "h": 48.0,
+                    "template": { "kind": "signed_by", "heading": "Assinado por", "name": "Amélia Marques", "date": "2026-07-12" }
+                }
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "cc sign with visible seal: {done}");
+
+    // The signed artifact validates and carries the requested visible seal.
+    let (status, signed_pdf) = send_bytes(
+        &state,
+        get_req(&format!("/v1/acts/{act_id}/document/signed"), &token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let report = validate_pdf_signature(&signed_pdf).expect("sealed signed PDF must validate");
+    assert!(report.covers_whole_file_except_contents);
+
+    let pdf_text = String::from_utf8_lossy(&signed_pdf);
+    // Real /Rect [72 700 252 748] on the requested page (72+180, 700+48) — not the invisible default.
+    assert!(
+        pdf_text.contains("72 700 252 748"),
+        "the signed PDF carries the requested seal /Rect"
+    );
+    // An /AP appearance stream is present (the invisible default emits none).
+    assert!(
+        pdf_text.contains("/AP"),
+        "the signed PDF carries an /AP appearance stream"
+    );
+
+    let (_, view) = send(
+        &state,
+        get_req(&format!("/v1/acts/{act_id}/signature"), &token),
+    )
+    .await;
+    assert_eq!(view["status"], "signed");
+}
+
+/// An out-of-range seal page is refused with a clear `422` from the PAdES layer (never a panic), and
+/// nothing is signed.
+#[tokio::test]
+async fn cc_sign_rejects_out_of_range_seal_page() {
     let dir = TempDir::new();
     let card = CcTestCard::cc_v1();
     let issuer = card.issuer_cert_der.clone();
@@ -2255,12 +2322,12 @@ async fn cc_sign_rejects_visible_seal_not_yet_available_on_cc_path() {
             json!({
                 "seal": {
                     "invisible": false,
-                    "page": 0,
-                    "x": 72.0,
-                    "y": 700.0,
-                    "w": 180.0,
-                    "h": 48.0,
-                    "template": { "kind": "signed_by", "heading": "Assinado por", "name": "Amélia Marques", "date": "2026-07-12" }
+                    "page": 999,
+                    "x": 10.0,
+                    "y": 10.0,
+                    "w": 100.0,
+                    "h": 40.0,
+                    "template": { "kind": "name_date", "name": "Amélia Marques", "date": "2026-07-12" }
                 }
             }),
         ),
@@ -2269,14 +2336,7 @@ async fn cc_sign_rejects_visible_seal_not_yet_available_on_cc_path() {
     assert_eq!(
         status,
         StatusCode::UNPROCESSABLE_ENTITY,
-        "visible seal on CC path → honest 422: {err}"
-    );
-    assert!(
-        err["error"]
-            .as_str()
-            .unwrap_or_default()
-            .contains("selo visível ainda não está disponível"),
-        "honest not-yet-available message: {err}"
+        "out-of-range seal page → 422 (no panic): {err}"
     );
     assert_no_signed_artifact_or_event(&state, &token, &act_id).await;
 }

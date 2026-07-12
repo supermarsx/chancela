@@ -63,7 +63,7 @@ use chancela_signing::{
     RemoteSignSession, RemoteSigningSource, SignerProvider, SmartcardProvider,
     TimestampTrustDecision, TimestampTrustPolicy, TimestampTrustReport, TrustPolicy,
     TrustedListStatus, TslTrustPolicy, attach_pdf_dss, attach_pdf_revocation_evidence, cmd_confirm,
-    cmd_initiate, sign_pdf_pades, validate_timestamp_trust,
+    cmd_initiate, validate_timestamp_trust,
 };
 use chancela_signing::{Pkcs12IdentitySelector, Pkcs12SigningSource, SoftCertificateError};
 use chancela_smartcard::Pkcs11Token;
@@ -777,10 +777,9 @@ pub struct LocalPkcs12SignRequest {
     /// Actor override for attribution.
     #[serde(default)]
     pub actor: Option<String>,
-    /// Optional visible-seal appearance (t67-e9). See [`SealAppearanceRequest`]. **Note:** the local
-    /// PKCS#12 path signs through the `chancela-signing` `sign_pdf_pades` wrapper, which does not yet
-    /// expose the seal seam, so a *visible* seal here is rejected with a clear 4xx; absent / invisible
-    /// is the normal path. (Threading is a follow-up once the wrapper carries an appearance.)
+    /// Optional visible-seal appearance (t67-e9). See [`SealAppearanceRequest`]. Threaded to the
+    /// `sign_pdf_pades_with_appearance` seam, so a visible seal is baked into the signed revision on
+    /// the requested page. Absent / invisible keeps the invisible locked widget.
     #[serde(default)]
     pub seal: Option<SealAppearanceRequest>,
 }
@@ -1889,10 +1888,9 @@ pub struct CcSignRequest {
     /// `Serialize`/`Debug`, so it cannot leak through this DTO). Absent = protected-auth at the reader.
     #[serde(default)]
     pub pin: Option<String>,
-    /// Optional visible-seal appearance (t67-e9). See [`SealAppearanceRequest`]. **Note:** the
-    /// single-shot Cartão de Cidadão path signs through the `chancela-signing` CC wrapper, which does
-    /// not yet expose the seal seam, so a *visible* seal here is rejected with a clear 4xx; absent /
-    /// invisible is the normal path. (Threading is a follow-up once the wrapper carries an appearance.)
+    /// Optional visible-seal appearance (t67-e9). See [`SealAppearanceRequest`]. Threaded to the CC
+    /// prepare/sign/embed seam (`sign_pdf_cc_with_appearance`), so a visible seal is baked into the
+    /// signed revision on the requested page. Absent / invisible keeps the invisible locked widget.
     #[serde(default)]
     pub seal: Option<SealAppearanceRequest>,
 }
@@ -2071,16 +2069,10 @@ pub async fn sign_cc_signature(
         ));
     }
 
-    // Visible seals are not yet available on the single-shot Cartão de Cidadão path: it signs through
-    // the `chancela-signing` CC wrapper, which does not expose e3's appearance seam. Validate the spec
-    // anyway (so a malformed one still yields a precise 422), then reject a valid *visible* seal
-    // honestly rather than silently dropping it. Absent / invisible is the normal path.
-    if seal_appearance_from_request(req.seal)?.is_some() {
-        return Err(ApiError::Unprocessable(
-            "o selo visível ainda não está disponível na assinatura com Cartão de Cidadão"
-                .to_owned(),
-        ));
-    }
+    // Optional visible seal (t67-e9): validated up-front and, when present, baked into the prepared
+    // revision by the CC prepare/sign/embed seam, so the `/ByteRange` the card signs already covers
+    // it. Absent / invisible keeps the invisible locked widget.
+    let appearance = seal_appearance_from_request(req.seal)?;
 
     // Resolve the act's sealed unsigned document, refusing a not-sealed act (signing is post-seal).
     {
@@ -2131,6 +2123,16 @@ pub async fn sign_cc_signature(
         contact_info: None,
     };
 
+    // Validate the visible-seal placement against this PDF up-front, so a bad page/geometry is a clean
+    // 422 (the CC signing wrapper would otherwise surface it as a generic 500). Only runs when a seal
+    // is requested; the real placement happens inside `run_cc_sign` on the blocking worker.
+    if appearance.is_some() {
+        prepare_signature_with_appearance(&unsigned.pdf_bytes, &opts, appearance.as_ref())
+            .map_err(|e| {
+                ApiError::Unprocessable(format!("não foi possível preparar o selo visível: {e}"))
+            })?;
+    }
+
     // Drive the card on `spawn_blocking` — the PKCS#11/PC/SC FFI and the human-paced PIN entry at
     // the reader both block, and must not stall the axum async runtime. The transient PIN (if any)
     // is consumed here and zeroized on return.
@@ -2141,6 +2143,7 @@ pub async fn sign_cc_signature(
         signing_time,
         opts,
         pin,
+        appearance,
     )
     .await?;
 
@@ -2475,6 +2478,7 @@ async fn run_cc_sign(
     signing_time: OffsetDateTime,
     opts: SignOptions,
     pin: Option<Zeroizing<String>>,
+    appearance: Option<SealAppearance>,
 ) -> Result<CcSignedPdf, ApiError> {
     let policy_factory = state.cmd_trust_policy.clone();
     let provider_factory = state.cc_provider.clone();
@@ -2486,13 +2490,15 @@ async fn run_cc_sign(
         };
         // The transient PIN (borrowed, never copied) is presented to `C_Login` when `Some`; `None`
         // is exactly the protected-authentication path. It is dropped/zeroized when this task ends.
-        chancela_signing::cc::sign_pdf_cc_with_pin(
+        // The optional visible seal (t67-e9) is baked into the prepared revision by the CC seam.
+        chancela_signing::cc::sign_pdf_cc_with_appearance(
             provider.as_ref(),
             &pdf,
             signing_time,
             &opts,
             Some(policy.as_mut()),
             pin.as_ref(),
+            appearance.as_ref(),
         )
         .map_err(map_cc_signing_error)
     })
@@ -3939,15 +3945,10 @@ pub async fn sign_local_pkcs12_signature(
         ));
     }
 
-    // Visible seals are not yet available on the local PKCS#12 path: it signs through the
-    // `chancela-signing` `sign_pdf_pades` wrapper, which does not expose e3's appearance seam.
-    // Validate the spec (precise 422 on a malformed one) and reject a valid *visible* seal honestly.
-    if seal_appearance_from_request(req.seal)?.is_some() {
-        return Err(ApiError::Unprocessable(
-            "o selo visível ainda não está disponível na assinatura local com certificado PKCS#12"
-                .to_owned(),
-        ));
-    }
+    // Optional visible seal (t67-e9): validated up-front and, when present, baked into the prepared
+    // revision by the `sign_pdf_pades_with_appearance` seam. Absent / invisible keeps the invisible
+    // locked widget.
+    let appearance = seal_appearance_from_request(req.seal)?;
 
     {
         let acts = state.acts.read().await;
@@ -4012,6 +4013,16 @@ pub async fn sign_local_pkcs12_signature(
         location: None,
         contact_info: None,
     };
+
+    // Validate the visible-seal placement against this PDF up-front, so a bad page/geometry is a clean
+    // 422 (the local-signing wrapper would otherwise surface it as a generic 500). Only runs when a
+    // seal is requested; the real placement happens inside the blocking sign task.
+    if appearance.is_some() {
+        prepare_signature_with_appearance(&unsigned.pdf_bytes, &opts, appearance.as_ref())
+            .map_err(|e| {
+                ApiError::Unprocessable(format!("não foi possível preparar o selo visível: {e}"))
+            })?;
+    }
     let unsigned_pdf = unsigned.pdf_bytes.clone();
 
     let (signed_pdf, identity) = tokio::task::spawn_blocking(move || {
@@ -4021,7 +4032,13 @@ pub async fn sign_local_pkcs12_signature(
             &selector,
         )?;
         let identity = source.identity().clone();
-        let signed_pdf = sign_pdf_pades(&source, &unsigned_pdf, signing_time, &opts)?;
+        let signed_pdf = chancela_signing::pipeline::sign_pdf_pades_with_appearance(
+            &source,
+            &unsigned_pdf,
+            signing_time,
+            &opts,
+            appearance.as_ref(),
+        )?;
         Ok::<_, chancela_signing::SigningError>((signed_pdf, identity))
     })
     .await

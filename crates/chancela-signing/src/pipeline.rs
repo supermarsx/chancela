@@ -14,9 +14,9 @@ use chancela_cades::{assemble_cades_b, signed_attributes_digest};
 use chancela_pades::archive_timestamp::add_doc_timestamp_revision_with;
 use chancela_pades::renewal::{LtvRenewalExecution, execute_ltv_renewal};
 use chancela_pades::{
-    DocTimeStampReport, DssEvidence, DssReport, SignOptions, add_dss_revision,
+    DocTimeStampReport, DssEvidence, DssReport, SealAppearance, SignOptions, add_dss_revision,
     add_dss_revision_with_validation_time, add_signature_timestamp, inspect_doc_timestamps,
-    inspect_dss, sign_pdf,
+    inspect_dss, sign_pdf_with_appearance,
 };
 use chancela_tsa::{HttpTsaTransport, Timestamp, TimestampRequest, TsaClient, TsaTransport};
 
@@ -110,8 +110,27 @@ pub fn sign_pdf_pades(
     signing_time: OffsetDateTime,
     options: &SignOptions,
 ) -> Result<Vec<u8>, SigningError> {
+    // The invisible-widget path: exactly `sign_pdf_pades_with_appearance` with `appearance = None`,
+    // kept byte-identical to before the t67-e9 seal addition
+    // (`sign_pdf_with_appearance(.., None, ..)` == the old `sign_pdf`).
+    sign_pdf_pades_with_appearance(provider, pdf, signing_time, options, None)
+}
+
+/// Sign an existing PDF, producing a PAdES-B-B signed PDF with an optional **visible seal** (t67-e9).
+///
+/// Identical to [`sign_pdf_pades`] but for the extra `appearance` parameter, threaded to e3's
+/// [`sign_pdf_with_appearance`] seam: when `appearance` is `Some`, the signature widget gains a real
+/// `/Rect` on the requested page and an `/AP /N` appearance stream (covered by the `/ByteRange` the
+/// CMS attests); `None` keeps the invisible, locked default. The CMS assembly is unchanged.
+pub fn sign_pdf_pades_with_appearance(
+    provider: &dyn SignerProvider,
+    pdf: &[u8],
+    signing_time: OffsetDateTime,
+    options: &SignOptions,
+    appearance: Option<&SealAppearance>,
+) -> Result<Vec<u8>, SigningError> {
     let cert_der = provider.signing_certificate_der()?;
-    sign_pdf(pdf, options, |byterange_digest: &[u8; 32]| {
+    sign_pdf_with_appearance(pdf, options, appearance, |byterange_digest: &[u8; 32]| {
         let signed_attrs_digest =
             signed_attributes_digest(byterange_digest, &cert_der, signing_time)
                 .map_err(cades_err)?;

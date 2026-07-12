@@ -29,7 +29,10 @@ use time::OffsetDateTime;
 use zeroize::Zeroizing;
 
 use chancela_cades::{assemble_cades_b, signed_attributes_digest};
-use chancela_pades::{SignOptions, embed_signature, prepare_signature, validate_pdf_signature};
+use chancela_pades::{
+    SealAppearance, SignOptions, embed_signature, prepare_signature_with_appearance,
+    validate_pdf_signature,
+};
 
 use crate::policy::TrustPolicy;
 use crate::provider::SignerProvider;
@@ -115,6 +118,30 @@ pub fn sign_pdf_cc_with_pin(
     policy: Option<&mut dyn TrustPolicy>,
     pin: Option<&Zeroizing<String>>,
 ) -> Result<CcSignedPdf, SigningError> {
+    // The invisible-widget path: exactly `sign_pdf_cc_with_appearance` with `appearance = None`, kept
+    // as the stable seam so existing callers are byte-identical to before the t67-e9 seal addition
+    // (`prepare_signature_with_appearance(.., None)` == the old `prepare_signature`).
+    sign_pdf_cc_with_appearance(provider, pdf, signing_time, options, policy, pin, None)
+}
+
+/// Sign `pdf` with a Cartão de Cidadão, optionally presenting a transient **in-app PIN** and placing
+/// an optional **visible seal** appearance (t67-e9).
+///
+/// Identical to [`sign_pdf_cc_with_pin`] but for the extra `appearance` parameter, threaded to e3's
+/// [`prepare_signature_with_appearance`] seam: when `appearance` is `Some`, the signature widget
+/// gains a real `/Rect` on the requested page and an `/AP /N` appearance stream (baked into the
+/// prepared bytes, so the `/ByteRange` the CMS attests already covers the seal); `None` keeps the
+/// invisible, locked default. The trusted-list gate, PIN handling, CAdES assembly, and post-sign
+/// validation are all unchanged — this only chooses which prepare entry point is used.
+pub fn sign_pdf_cc_with_appearance(
+    provider: &dyn SignerProvider,
+    pdf: &[u8],
+    signing_time: OffsetDateTime,
+    options: &SignOptions,
+    policy: Option<&mut dyn TrustPolicy>,
+    pin: Option<&Zeroizing<String>>,
+    appearance: Option<&SealAppearance>,
+) -> Result<CcSignedPdf, SigningError> {
     // 1. Trusted-list gate on the CC issuer (SIG-11/23), fail-closed — identical semantics to
     //    `cmd_initiate` and `sign_slot`: a qualified signature must not be trusted, nor even
     //    started at the reader, unless its issuer is currently granted.
@@ -136,9 +163,10 @@ pub fn sign_pdf_cc_with_pin(
     // build the signed attributes, and recorded in the outcome as signer evidence.
     let signing_cert_der = provider.signing_certificate_der()?;
 
-    // 2. Prepare → card sign_digest → assemble CAdES-B → embed (the t57-S2 F5 seam, reused). No
-    //    two-phase suspend is needed: CC is a single blocking call (plan §2).
-    let prepared = prepare_signature(pdf, options).map_err(pades_err)?;
+    // 2. Prepare (with the optional visible seal) → card sign_digest → assemble CAdES-B → embed (the
+    //    t57-S2 F5 seam, reused). No two-phase suspend is needed: CC is a single blocking call.
+    let prepared =
+        prepare_signature_with_appearance(pdf, options, appearance).map_err(pades_err)?;
     let signed_attrs_digest =
         signed_attributes_digest(prepared.byterange_digest(), &signing_cert_der, signing_time)
             .map_err(cades_err)?;
