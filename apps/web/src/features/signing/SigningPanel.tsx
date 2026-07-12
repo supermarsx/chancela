@@ -72,6 +72,7 @@ import type {
 } from '../../api/types';
 import { OFFICIAL_SIGNATURE_IMPORT_GUARDRAIL_IDS } from '../../api/types';
 import { ApiError, api } from '../../api/client';
+import { BatchSigningPanel } from './BatchSigningPanel';
 import { ScapAttributePicker } from './ScapAttributePicker';
 import { SealDesigner } from './seal-designer';
 import { signatureFamilyLabels } from '../../api/labels';
@@ -2997,6 +2998,7 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
                       </GateButton>
                     </ProviderChoice>
                   )}
+                  {ccBlocked ? null : <BatchSigningPanel currentAct={act} bookScope={bookScope} />}
                   <ProviderChoice
                     title={t('signing.provider.pkcs12.title')}
                     description={t('signing.provider.pkcs12.description')}

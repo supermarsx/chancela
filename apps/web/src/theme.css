@@ -1319,6 +1319,10 @@ a.btn.btn--iconOnly {
   background: color-mix(in srgb, var(--text-muted) 8%, transparent);
 }
 
+.signing-provider--batch {
+  display: block;
+}
+
 .signing-provider__copy {
   min-width: 0;
 }
