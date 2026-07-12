@@ -2369,8 +2369,8 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "retention due-candidate explicit evidence-state enum markers,\nduplicate-review, queued-status, prior-execution projection, projected-row\nduplicate-action suppression, eligible bounded archive/no-action\n`execute_supported` UI markers",
-    "CI checkpoints retention prior projection static marker",
+    "retention due-candidate explicit evidence-state enum markers,\nduplicate-review, queued-status, prior bounded evidence suppression,\nactive/suppressed candidate count fields, suppression-summary copy, eligible\nbounded archive/no-action `execute_supported` UI markers",
+    "CI checkpoints retention bounded suppression static marker",
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
@@ -6714,7 +6714,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-12 from the current CI configuration and head `5fe98f9`",
+    "Updated 2026-07-12 from the current CI configuration and head `c3e450d`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
@@ -7549,7 +7549,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current retention evidence checks through `8f3310b`",
+    "Current retention evidence checks through `c3e450d`",
     "CI/E2E hardening plan retention due-candidates checks marker",
   );
   assertFileContains(
@@ -7574,13 +7574,18 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Due-candidate\n  reads can also project prior safe bounded `executed` archive/no-action\n  evidence",
-    "CI/E2E hardening plan retention prior projection marker",
+    "Due-candidate\n  reads can also derive prior safe bounded `executed` archive/no-action\n  evidence",
+    "CI/E2E hardening plan retention bounded suppression marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "canonical bounded\n  `prior_execution.next_step` text",
-    "CI/E2E hardening plan retention prior canonical next-step marker",
+    "from the active candidate list by derived evidence only: `candidate_count`\n  reports active unsuppressed rows, `suppressed_candidate_count` and\n  `suppressed_by_bounded_evidence_count` report bounded-evidence omissions",
+    "CI/E2E hardening plan retention suppression count marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "optional `suppression_summary` explains that execution history remains\n  queryable for review",
+    "CI/E2E hardening plan retention suppression summary marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -7614,7 +7619,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `5fe98f9b883ad4029ad43e87b99fba3be5233240`",
+    "implementation snapshot `c3e450d0c0e4ab4a58bb39202b5d7e0c86c13947`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -8254,18 +8259,18 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Due-candidate reads can also project prior safe bounded\n  `executed` archive/no-action evidence",
-    "spec coverage retention prior bounded projection marker",
+    "Due-candidate reads also derive prior safe bounded `executed`\n  archive/no-action evidence",
+    "spec coverage retention bounded suppression marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Candidate evidence states are explicit:\n  `review_queued`, `blocked`, `bounded_archive_recorded`, `bounded_no_action_recorded`, and\n  `prior_bounded_evidence_available`",
-    "spec coverage retention prior projection canonical text marker",
+    "evidence states are explicit:\n  `review_queued`, `blocked`, `bounded_archive_recorded`, `bounded_no_action_recorded`, and\n  `prior_bounded_evidence_available`",
+    "spec coverage retention evidence-state text marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Projected prior bounded archive/no-action executions on due-candidate rows are\n  read-only internal evidence projections",
-    "spec coverage retention prior projection no-overclaim marker",
+    "Safe prior bounded archive/no-action executions can suppress active\n  due-candidate rows only as read-only internal evidence projections",
+    "spec coverage retention bounded suppression no-overclaim marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",

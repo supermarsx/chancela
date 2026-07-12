@@ -1,6 +1,6 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-12 through committed implementation snapshot `5fe98f9b883ad4029ad43e87b99fba3be5233240`,
+*Updated 2026-07-12 through committed implementation snapshot `c3e450d0c0e4ab4a58bb39202b5d7e0c86c13947`,
 refreshing the `cfcb3d9` baseline, the prior `4566715` coverage point,
 and the `c66ea3f`/`5fcaedd` checkpoint snapshot
 with commits through the prior snapshot:
@@ -114,7 +114,7 @@ for the unsigned/local-only trust posture plus production package
 manifest-required validation, plus MCP workflow provenance review prompt/resource
 guidance and draft-vs-signed comparison review aid, dashboard guest
 recent-events redaction, generated-document by-id download routing,
-retention due-candidate prior bounded execution projection, automatic
+retention due-candidate prior bounded execution suppression, automatic
 condominium absent-owner communication generation with pending dispatch
 evidence status, generated dispatch-evidence preservation indexes, and
 dashboard reminder surfacing, settings.read-gated raw
@@ -130,7 +130,12 @@ password-required account creation/session hardening, followed by `b5cb40e`
 paper-book OCR conversion execution artifact store/API evidence, `1743b25`
 contracts/fixtures for canonical-draft and conversion-dossier artifact shapes,
 and `5fe98f9` BookDetail reviewed conversion execution evidence and no-claim
-UI rendering.
+UI rendering, followed by `a5cb4ef` paper OCR conversion execution evidence
+documentation, `73f62e5` retention due-candidate suppression by safe bounded
+archive/no-action evidence, `75f47f3` contract coverage for `candidate_count`,
+`suppressed_candidate_count`, `suppressed_by_bounded_evidence_count`, and
+optional `suppression_summary`, `d1b6772` Settings suppression-summary
+rendering, and `c3e450d` retention suppression checkpoint markers.
 Earlier coverage text remains prior snapshot context. All top-level spec areas remain **PARTIAL**.
 This is an implementation and test coverage snapshot, not a legal certification,
 not production CMD approval, not DRE verification promotion, not full PDF/UA
@@ -673,13 +678,12 @@ Implementation checkpoints covered here:
   duplicate guard, and add no extra execution record or ledger event.
   Due-candidate GET remains read-only while surfacing existing queued review
   status/id/time, and Settings shows queued review status/id/time instead of
-  posting again. Due-candidate reads can also project safe prior bounded
+  posting again. Due-candidate reads can also derive safe prior bounded
   `executed` archive/no-action evidence for the same candidate and policy,
   requiring internal bounded-executor evidence, acted targets, and false
-  destructive-disposal/full-erasure flags; the projection is read-only,
-  side-effect free, uses canonical bounded `prior_execution.next_step` text
-  instead of persisted free-form text, and Settings shows bounded evidence while
-  suppressing duplicate review actions only for projected rows. This is
+  destructive-disposal/full-erasure flags; suppression is read-only,
+  side-effect free, reports active/suppressed candidate counts plus optional
+  summary text, and leaves execution history queryable for review. This is
   non-destructive review/scanner UI evidence only: it does not dispose, erase,
   delete, anonymize, redact, mutate legal holds or retention policies, resolve
   candidates, approve legal disposal, or perform legal completion.
@@ -2078,6 +2082,15 @@ behavior, legal disposal, or legal-effect claims.
   blocked, bounded archive/no-action, and prior bounded evidence paths. The
   records remain review/evidence artifacts; no retention execution,
   anonymization, deletion, disposal approval, or GDPR erasure is performed.
+- **Retention due-candidate suppression evidence:** safe bounded archive/no-action
+  execution records now suppress future active due-candidate rows by derived
+  evidence only. `candidate_count` reports the active unsuppressed count, while
+  `suppressed_candidate_count`, `suppressed_by_bounded_evidence_count`, and
+  optional `suppression_summary` expose why bounded-evidence rows were omitted.
+  GET remains non-mutating, execution history remains queryable for review, and
+  no persisted `resolved` flag, physical deletion, anonymization, GDPR erasure,
+  legal disposal completion, policy/legal-hold mutation, or candidate disposal
+  execution is claimed.
 - **Tighter tagged-PDF self-checks:** local structural checks now validate
   standard RoleMap targets, struct-element role mapping, and marked-content scope
   rules in addition to the earlier ParentTree/MCID/MCR checks. This is regression
@@ -2435,13 +2448,16 @@ behavior, legal disposal, or legal-effect claims.
   requests for the same candidate/policy reuse the existing `awaiting_review` execution, including
   concurrent duplicate guards, without adding another execution record or ledger event; the
   due-candidate GET remains read-only and the UI shows queued review status/id/time instead of
-  posting again. Due-candidate reads can also project prior safe bounded
-  `executed` archive/no-action evidence for the same candidate/policy without
-  writing records or audit events, only when the internal result keeps
+  posting again. Due-candidate reads also derive prior safe bounded `executed`
+  archive/no-action evidence for the same candidate/policy without writing
+  records or audit events, only when the internal result keeps
   `bounded_executor: true`, acted targets, and false destructive/full-erasure
-  flags; projected `prior_execution.next_step` is canonical bounded text, not
-  persisted free-form text, and the UI suppresses duplicate review actions only
-  for projected rows. Candidate evidence states are explicit:
+  flags. Such evidence suppresses future active due-candidate rows by derived
+  evidence only: `candidate_count` is the active unsuppressed count,
+  `suppressed_candidate_count` and `suppressed_by_bounded_evidence_count` expose
+  bounded-evidence omissions, and optional `suppression_summary` explains that
+  omitted candidates remain reviewable through execution history. Candidate
+  evidence states are explicit:
   `review_queued`, `blocked`, `bounded_archive_recorded`, `bounded_no_action_recorded`, and
   `prior_bounded_evidence_available`. This is retention register, dry-run, due-candidate
   scanner, review-request, bounded archive/no-action evidence, and execution-history evidence only:
@@ -3189,9 +3205,12 @@ behavior, legal disposal, or legal-effect claims.
   `bounded_no_action_recorded`, `prior_bounded_evidence_available`) describe
   non-destructive evidence posture only. Duplicate `review_only` requests reuse
   queued `awaiting_review` evidence and queued-review status surfacing only.
-  Projected prior bounded archive/no-action executions on due-candidate rows are
-  read-only internal evidence projections gated by false destructive/full-erasure
-  flags and canonical bounded next-step text; they are not retention execution,
+  Safe prior bounded archive/no-action executions can suppress active
+  due-candidate rows only as read-only internal evidence projections gated by
+  false destructive/full-erasure flags. The `candidate_count`,
+  `suppressed_candidate_count`, `suppressed_by_bounded_evidence_count`, and
+  optional `suppression_summary` fields describe active/suppressed evidence
+  posture; they are not a persisted `resolved` flag, retention execution,
   candidate resolution, anonymization, redaction completion, physical deletion,
   policy or legal-hold mutation, legal disposal approval, legal disposal
   completion, or GDPR erasure.

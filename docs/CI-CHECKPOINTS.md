@@ -42,8 +42,9 @@ and focused paper-book OCR review browser workflow markers,
 retention explicit evidence-state markers (`review_queued`, `blocked`,
 `bounded_archive_recorded`, `bounded_no_action_recorded`,
 `prior_bounded_evidence_available`), duplicate review-only request guards,
-queued-review status surfacing, prior bounded execution projection, and eligible
-bounded archive/no-action evidence UI,
+queued-review status surfacing, prior bounded execution suppression, and eligible
+bounded archive/no-action evidence UI, plus active/suppressed candidate counts
+and suppression-summary copy for safe bounded evidence omissions,
 retained-export cleanup preview-token/manifest gating, forwarded platform-log sanitized
 accepted/denied/rejected/suppressed audit markers, post-act template
 sealed-provenance lint, all-family standalone agenda-item templates,
@@ -128,9 +129,11 @@ It intentionally reuses existing test surfaces:
 - API bounded retention execution:
   `cargo test -p chancela-api --test privacy --locked retention_`
   including explicit non-destructive evidence states, due-candidate prior
-  bounded archive/no-action projection, bounded archive/no-action
+  bounded archive/no-action suppression, active `candidate_count`,
+  `suppressed_candidate_count`, `suppressed_by_bounded_evidence_count`,
+  optional `suppression_summary`, bounded archive/no-action
   `execute_supported` records, safe internal evidence gating, non-mutating GET
-  behavior, and canonical `prior_execution.next_step` text.
+  behavior, and queryable execution history without a persisted `resolved` flag.
 - API dashboard guest event redaction:
   `cargo test -p chancela-api --locked dashboard_recent_events_redacts_guest_feed_but_keeps_owner_and_reader_feed`
   including guest `recent_events: []`, retained Owner/Leitor recent events, and
@@ -279,10 +282,11 @@ metadata API durability markers, the settings.read raw metadata and raw-report
 byte download
 route/tests, Settings privacy retention-policy list/create/patch/dry-run UI,
 retention due-candidate explicit evidence-state enum markers,
-duplicate-review, queued-status, prior-execution projection, projected-row
-duplicate-action suppression, eligible bounded archive/no-action
-`execute_supported` UI markers, ineligible review-only/badge paths, locale keys,
-and non-destructive payload assertions, Ferramentas
+duplicate-review, queued-status, prior bounded evidence suppression,
+active/suppressed candidate count fields, suppression-summary copy, eligible
+bounded archive/no-action `execute_supported` UI markers, ineligible
+review-only/badge paths, locale keys, and non-destructive payload assertions,
+Ferramentas
 panel/client/i18n markers including compact validator-report actions,
 imported-document review-depth/receipt markers for metadata-derived summaries,
 neutral missing-preservation copy, pending/reviewed states, no-claim OCR/
@@ -342,9 +346,10 @@ switching, user creation, and E2E helpers all submit passwords. These markers
 are not SSO, legal identity proof, tenant model, email verification, credential
 recovery completion, or broad Playwright-browser-suite proof.
 Static markers are deletion/rename guards only; the retention archive/no-action
-markers pin explicit non-destructive evidence states and bounded evidence UI
-copy/payload shape, not physical deletion, anonymization, GDPR erasure, or
-legal disposal completion.
+markers pin explicit non-destructive evidence states, bounded evidence UI
+copy/payload shape, active/suppressed candidate counts, and suppression-summary
+copy, not physical deletion, anonymization, GDPR erasure, legal disposal
+completion, persisted resolution, or candidate disposal execution.
 They do not certify legal validity, legal retention schedules or approvals,
 retention deletion or anonymization/redaction execution, retention execution
 completion, destructive GDPR erasure, full erasure, template legal effect, DRE
