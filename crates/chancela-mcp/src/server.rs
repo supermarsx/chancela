@@ -12,6 +12,7 @@
 //! forwards it through the [`ApiBridge`] with the configured key. Authorization is entirely
 //! server-side (the key's principal); this layer never re-checks it.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::{BufRead, Write};
 
 use serde_json::{Value, json};
@@ -340,7 +341,7 @@ impl<T: HttpTransport> McpServer<T> {
                     "uri": MCP_DRAFT_SIGNED_COMPARISON_REVIEW_RESOURCE_URI,
                     "name": "draft_signed_comparison_review",
                     "title": "Draft-Signed Comparison Review",
-                    "description": "Read-only static draft-vs-signed comparison review aid. Contains no secrets, performs no bridge or provider calls, and makes no legal-validity, source-certification, external-validation, signature-qualification, provider, or trust claims.",
+                    "description": "Read-only draft-vs-signed comparison review resource. Without arguments it returns static guidance; with draft/signed arguments it returns a deterministic local comparison report. Contains no secrets, performs no bridge, API, AI, or provider calls, and makes no legal-validity, source-certification, external-validation, signature-qualification, provider, or trust claims.",
                     "mimeType": "application/json",
                     "annotations": {
                         "audience": ["user", "assistant"],
@@ -372,24 +373,40 @@ impl<T: HttpTransport> McpServer<T> {
                 );
             }
         };
-        if uri == MCP_DRAFT_SIGNED_COMPARISON_REVIEW_RESOURCE_URI
-            && (params.len() != 1 || !params.contains_key("uri"))
-        {
-            return JsonRpcResponse::error(
-                id,
-                codes::INVALID_PARAMS,
-                "draft-signed comparison resource accepts only uri",
-            );
-        }
+        let draft_signed_arguments = if uri == MCP_DRAFT_SIGNED_COMPARISON_REVIEW_RESOURCE_URI {
+            if params.keys().any(|key| key != "uri" && key != "arguments") {
+                return JsonRpcResponse::error(
+                    id,
+                    codes::INVALID_PARAMS,
+                    "draft-signed comparison resource accepts only uri or uri plus arguments",
+                );
+            }
+            match params.get("arguments") {
+                Some(arguments) => Some(arguments),
+                None => None,
+            }
+        } else {
+            None
+        };
         let payload = match uri {
             MCP_STATUS_RESOURCE_URI => self.status_resource_payload(),
             MCP_SPEC_09_COVERAGE_RESOURCE_URI => self.spec_09_coverage_resource_payload(),
             MCP_WORKFLOW_PROVENANCE_REVIEW_RESOURCE_URI => {
                 self.workflow_provenance_review_resource_payload()
             }
-            MCP_DRAFT_SIGNED_COMPARISON_REVIEW_RESOURCE_URI => {
-                self.draft_signed_comparison_review_resource_payload()
-            }
+            MCP_DRAFT_SIGNED_COMPARISON_REVIEW_RESOURCE_URI => match draft_signed_arguments {
+                Some(arguments) => match draft_signed_comparison_report_payload(arguments) {
+                    Ok(payload) => payload,
+                    Err(message) => {
+                        return JsonRpcResponse::error(
+                            id,
+                            codes::INVALID_PARAMS,
+                            format!("invalid draft-signed comparison arguments: {message}"),
+                        );
+                    }
+                },
+                None => self.draft_signed_comparison_review_resource_payload(),
+            },
             _ => {
                 return JsonRpcResponse::error_with_data(
                     id,
@@ -542,7 +559,7 @@ impl<T: HttpTransport> McpServer<T> {
                     WORKFLOW_PROVENANCE_REVIEW_PROMPT_NAME,
                     DRAFT_SIGNED_COMPARISON_REVIEW_PROMPT_NAME,
                 ],
-                "purpose": "static_offline_human_review_guidance_only",
+                "purpose": "offline_human_review_guidance_plus_deterministic_local_draft_signed_metadata_comparison",
                 "ai_01_claimed": false,
                 "ai_02_claimed": false,
                 "full_ai_mcp_completion_claimed": false,
@@ -1078,6 +1095,377 @@ fn tool_success_text(outcome: &ApiOutcome) -> String {
         return binary_payload_text(outcome);
     }
     outcome.raw.clone()
+}
+
+#[derive(Debug, Clone, Copy)]
+struct DraftSignedFieldSpec {
+    category: &'static str,
+    field: &'static str,
+    draft_paths: &'static [&'static str],
+    signed_paths: &'static [&'static str],
+}
+
+#[derive(Debug, Clone, Copy)]
+struct LocatedValue<'a> {
+    path: &'static str,
+    value: &'a Value,
+}
+
+const DRAFT_SIGNED_FIELD_SPECS: &[DraftSignedFieldSpec] = &[
+    DraftSignedFieldSpec {
+        category: "identifiers",
+        field: "act_id",
+        draft_paths: &["act_id", "id", "draft.id", "draft_id"],
+        signed_paths: &["act_id", "source_act_id", "draft_act_id", "id"],
+    },
+    DraftSignedFieldSpec {
+        category: "identifiers",
+        field: "entity_id",
+        draft_paths: &["entity_id", "entity.id"],
+        signed_paths: &["entity_id", "entity.id"],
+    },
+    DraftSignedFieldSpec {
+        category: "identifiers",
+        field: "book_id",
+        draft_paths: &["book_id", "book.id"],
+        signed_paths: &["book_id", "book.id"],
+    },
+    DraftSignedFieldSpec {
+        category: "identifiers",
+        field: "document_id",
+        draft_paths: &["document_id", "rendered_document_id", "artifact_id"],
+        signed_paths: &["document_id", "signed_document_id", "artifact_id"],
+    },
+    DraftSignedFieldSpec {
+        category: "identifiers",
+        field: "signature_bundle_id",
+        draft_paths: &["signature_bundle_id"],
+        signed_paths: &["signature_bundle_id", "signature.bundle_id"],
+    },
+    DraftSignedFieldSpec {
+        category: "identifiers",
+        field: "manifest_id",
+        draft_paths: &["manifest_id", "archive_manifest_id"],
+        signed_paths: &["manifest_id", "archive_manifest_id"],
+    },
+    DraftSignedFieldSpec {
+        category: "digests",
+        field: "content_digest",
+        draft_paths: &[
+            "content_digest",
+            "payload_digest",
+            "draft_digest",
+            "canonical_text_digest",
+        ],
+        signed_paths: &[
+            "content_digest",
+            "payload_digest",
+            "signed_content_digest",
+            "canonical_text_digest",
+        ],
+    },
+    DraftSignedFieldSpec {
+        category: "digests",
+        field: "document_digest",
+        draft_paths: &[
+            "document_digest",
+            "rendered_document_digest",
+            "artifact_digest",
+        ],
+        signed_paths: &[
+            "document_digest",
+            "signed_document_digest",
+            "signed_pdf_digest",
+            "artifact_digest",
+        ],
+    },
+    DraftSignedFieldSpec {
+        category: "digests",
+        field: "manifest_digest",
+        draft_paths: &["manifest_digest", "manifest_sha256"],
+        signed_paths: &["manifest_digest", "manifest_sha256"],
+    },
+    DraftSignedFieldSpec {
+        category: "lifecycle",
+        field: "status",
+        draft_paths: &["status", "state", "lifecycle_status"],
+        signed_paths: &["status", "state", "lifecycle_status", "signature_status"],
+    },
+    DraftSignedFieldSpec {
+        category: "lifecycle",
+        field: "version",
+        draft_paths: &["version", "draft_version"],
+        signed_paths: &["version", "signed_version"],
+    },
+    DraftSignedFieldSpec {
+        category: "timestamps",
+        field: "created_at",
+        draft_paths: &["created_at", "draft_created_at"],
+        signed_paths: &["created_at", "draft_created_at"],
+    },
+    DraftSignedFieldSpec {
+        category: "timestamps",
+        field: "approved_at",
+        draft_paths: &["approved_at"],
+        signed_paths: &["approved_at"],
+    },
+    DraftSignedFieldSpec {
+        category: "timestamps",
+        field: "rendered_at",
+        draft_paths: &["rendered_at"],
+        signed_paths: &["rendered_at"],
+    },
+    DraftSignedFieldSpec {
+        category: "timestamps",
+        field: "signed_at",
+        draft_paths: &["signed_at"],
+        signed_paths: &["signed_at", "signing_time"],
+    },
+    DraftSignedFieldSpec {
+        category: "artifact_references",
+        field: "artifact_ref",
+        draft_paths: &["artifact_ref", "artifact_uri", "document_uri", "download"],
+        signed_paths: &[
+            "artifact_ref",
+            "artifact_uri",
+            "signed_artifact_uri",
+            "download",
+        ],
+    },
+    DraftSignedFieldSpec {
+        category: "provenance",
+        field: "source_record_id",
+        draft_paths: &["source_record_id", "source.id"],
+        signed_paths: &["source_record_id", "source.id"],
+    },
+    DraftSignedFieldSpec {
+        category: "provenance",
+        field: "ledger_event_id",
+        draft_paths: &["ledger_event_id", "event_id"],
+        signed_paths: &["ledger_event_id", "signature_event_id", "event_id"],
+    },
+    DraftSignedFieldSpec {
+        category: "provenance",
+        field: "actor",
+        draft_paths: &["actor", "created_by"],
+        signed_paths: &["actor", "signed_by", "signer_id"],
+    },
+];
+
+fn draft_signed_comparison_report_payload(arguments: &Value) -> Result<Value, String> {
+    let args = arguments
+        .as_object()
+        .ok_or_else(|| "arguments must be an object".to_string())?;
+    let draft = args
+        .get("draft")
+        .filter(|value| value.is_object())
+        .ok_or_else(|| "draft must be an object".to_string())?;
+    let signed = args
+        .get("signed")
+        .filter(|value| value.is_object())
+        .ok_or_else(|| "signed must be an object".to_string())?;
+    let case_id = args.get("case_id").and_then(Value::as_str);
+
+    let mut status_counts = BTreeMap::from([
+        ("different".to_string(), 0usize),
+        ("matched".to_string(), 0usize),
+        ("missing_draft".to_string(), 0usize),
+        ("missing_signed".to_string(), 0usize),
+        ("unknown".to_string(), 0usize),
+    ]);
+    let comparisons = DRAFT_SIGNED_FIELD_SPECS
+        .iter()
+        .map(|spec| {
+            let comparison = compare_draft_signed_field(spec, draft, signed);
+            let status = comparison["status"]
+                .as_str()
+                .unwrap_or("unknown")
+                .to_string();
+            *status_counts.entry(status).or_insert(0) += 1;
+            comparison
+        })
+        .collect::<Vec<_>>();
+    let (compared_draft_paths, compared_signed_paths) = compared_draft_signed_paths();
+
+    Ok(json!({
+        "kind": "chancela_mcp_draft_signed_comparison_report",
+        "schema_version": 1,
+        "case_id": case_id,
+        "source": "local_mcp_deterministic_comparator",
+        "offline": true,
+        "local_json_only": true,
+        "deterministic": true,
+        "bridge_calls": false,
+        "api_calls": false,
+        "ai_provider_calls": false,
+        "signature_validation_performed": false,
+        "trust_validation_performed": false,
+        "claims": {
+            "legal_validity": false,
+            "legal_effect": false,
+            "provider": false,
+            "provider_completion": false,
+            "notarization": false,
+            "trust": false,
+            "trust_validation": false,
+            "external_validation": false,
+            "signature_validity": false,
+            "qualified_signature": false,
+            "signature_qualification": false,
+            "archive_certification": false,
+            "source_certification": false
+        },
+        "comparison_summary": status_counts,
+        "field_results": comparisons,
+        "unmapped_fields": {
+            "draft": unmapped_scalar_fields(draft, "draft", &compared_draft_paths),
+            "signed": unmapped_scalar_fields(signed, "signed", &compared_signed_paths)
+        },
+        "operator_boundaries": [
+            "This is a deterministic local metadata comparison over caller-supplied JSON only.",
+            "Missing and unknown fields are reported without inferring completion.",
+            "Digest, status, timestamp, and reference matches or differences are technical review signals only.",
+            "No legal validity, trust validation, signature validity, qualified signature status, provider completion, or notarization is claimed."
+        ]
+    }))
+}
+
+fn compare_draft_signed_field(spec: &DraftSignedFieldSpec, draft: &Value, signed: &Value) -> Value {
+    let draft_value = first_located_value(draft, spec.draft_paths);
+    let signed_value = first_located_value(signed, spec.signed_paths);
+    let status = match (draft_value, signed_value) {
+        (Some(draft), Some(signed))
+            if is_unknown_comparison_value(draft.value)
+                || is_unknown_comparison_value(signed.value) =>
+        {
+            "unknown"
+        }
+        (Some(draft), Some(signed)) if draft.value == signed.value => "matched",
+        (Some(_), Some(_)) => "different",
+        (Some(_), None) => "missing_signed",
+        (None, Some(_)) => "missing_draft",
+        (None, None) => "unknown",
+    };
+
+    json!({
+        "category": spec.category,
+        "field": spec.field,
+        "status": status,
+        "draft": comparison_side(draft_value),
+        "signed": comparison_side(signed_value),
+    })
+}
+
+fn comparison_side(value: Option<LocatedValue<'_>>) -> Value {
+    match value {
+        Some(located) => json!({
+            "path": located.path,
+            "present": true,
+            "unknown": is_unknown_comparison_value(located.value),
+            "value": located.value,
+        }),
+        None => json!({
+            "path": Value::Null,
+            "present": false,
+            "unknown": true,
+            "value": Value::Null,
+        }),
+    }
+}
+
+fn first_located_value<'a>(
+    root: &'a Value,
+    paths: &'static [&'static str],
+) -> Option<LocatedValue<'a>> {
+    paths
+        .iter()
+        .find_map(|path| value_at_dotted_path(root, path).map(|value| LocatedValue { path, value }))
+}
+
+fn value_at_dotted_path<'a>(root: &'a Value, path: &str) -> Option<&'a Value> {
+    let mut current = root;
+    for segment in path.split('.') {
+        current = current.as_object()?.get(segment)?;
+    }
+    Some(current)
+}
+
+fn is_unknown_comparison_value(value: &Value) -> bool {
+    match value {
+        Value::Null => true,
+        Value::String(value) => matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "" | "unknown" | "not_known" | "not known" | "not_available" | "not available" | "n/a"
+        ),
+        _ => false,
+    }
+}
+
+fn compared_draft_signed_paths() -> (BTreeSet<String>, BTreeSet<String>) {
+    let mut draft_paths = BTreeSet::new();
+    let mut signed_paths = BTreeSet::new();
+    for spec in DRAFT_SIGNED_FIELD_SPECS {
+        for path in spec.draft_paths {
+            draft_paths.insert((*path).to_owned());
+        }
+        for path in spec.signed_paths {
+            signed_paths.insert((*path).to_owned());
+        }
+    }
+    (draft_paths, signed_paths)
+}
+
+fn unmapped_scalar_fields(
+    root: &Value,
+    side: &str,
+    compared_paths: &BTreeSet<String>,
+) -> Vec<Value> {
+    let mut fields = Vec::new();
+    collect_unmapped_scalar_fields(root, side, "", compared_paths, &mut fields);
+    fields
+}
+
+fn collect_unmapped_scalar_fields(
+    value: &Value,
+    side: &str,
+    path: &str,
+    compared_paths: &BTreeSet<String>,
+    out: &mut Vec<Value>,
+) {
+    match value {
+        Value::Object(map) => {
+            let mut keys = map.keys().collect::<Vec<_>>();
+            keys.sort();
+            for key in keys {
+                let child_path = if path.is_empty() {
+                    key.to_string()
+                } else {
+                    format!("{path}.{key}")
+                };
+                collect_unmapped_scalar_fields(&map[key], side, &child_path, compared_paths, out);
+            }
+        }
+        Value::Array(values) => {
+            for (index, child) in values.iter().enumerate() {
+                collect_unmapped_scalar_fields(
+                    child,
+                    side,
+                    &format!("{path}[{index}]"),
+                    compared_paths,
+                    out,
+                );
+            }
+        }
+        _ if !path.is_empty() && !compared_paths.contains(path) => {
+            out.push(json!({
+                "side": side,
+                "path": path,
+                "value": value,
+                "comparison_status": "unmapped",
+            }));
+        }
+        _ => {}
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2207,24 +2595,201 @@ mod tests {
     }
 
     #[test]
-    fn resources_read_draft_signed_comparison_review_rejects_arguments_and_extra_params() {
+    fn resources_read_draft_signed_comparison_report_accepts_arguments_and_is_deterministic_without_http_or_secret()
+     {
+        let server = McpServer::from_config(&enabled_cfg(), MockTransport::new(200, "{}")).unwrap();
+        let params_a = json!({
+            "uri": MCP_DRAFT_SIGNED_COMPARISON_REVIEW_RESOURCE_URI,
+            "arguments": {
+                "case_id": "case-7",
+                "draft": {
+                    "id": "act-7",
+                    "book_id": "book-7",
+                    "entity_id": "ent-7",
+                    "state": "Draft",
+                    "version": 3,
+                    "rendered_document_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "artifact_ref": "drafts/act-7.pdf",
+                    "source_record_id": "unknown",
+                    "reviewer_note": "caller local note",
+                    "signed_pdf_digest": "draft-side-wrong-alias"
+                },
+                "signed": {
+                    "source_act_id": "act-7",
+                    "book_id": "book-7",
+                    "entity_id": "ent-7",
+                    "signature_status": "signed",
+                    "signed_version": 3,
+                    "signed_document_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                    "signed_artifact_uri": "signed/act-7.pdf",
+                    "signing_time": "2026-07-10T10:00:00Z",
+                    "source_record_id": "src-7",
+                    "draft_digest": "signed-side-wrong-alias",
+                    "signature": {
+                        "bundle_id": "sig-7"
+                    }
+                }
+            }
+        });
+        let params_b = json!({
+            "arguments": {
+                "signed": {
+                    "signature": {
+                        "bundle_id": "sig-7"
+                    },
+                    "source_record_id": "src-7",
+                    "draft_digest": "signed-side-wrong-alias",
+                    "signing_time": "2026-07-10T10:00:00Z",
+                    "signed_artifact_uri": "signed/act-7.pdf",
+                    "signed_document_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                    "signed_version": 3,
+                    "signature_status": "signed",
+                    "entity_id": "ent-7",
+                    "book_id": "book-7",
+                    "source_act_id": "act-7"
+                },
+                "draft": {
+                    "reviewer_note": "caller local note",
+                    "source_record_id": "unknown",
+                    "signed_pdf_digest": "draft-side-wrong-alias",
+                    "artifact_ref": "drafts/act-7.pdf",
+                    "rendered_document_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "version": 3,
+                    "state": "Draft",
+                    "entity_id": "ent-7",
+                    "book_id": "book-7",
+                    "id": "act-7"
+                },
+                "case_id": "case-7"
+            },
+            "uri": MCP_DRAFT_SIGNED_COMPARISON_REVIEW_RESOURCE_URI
+        });
+
+        let response_a = server
+            .handle(&req("resources/read", 54, params_a))
+            .unwrap()
+            .result
+            .unwrap();
+        let response_b = server
+            .handle(&req("resources/read", 55, params_b))
+            .unwrap()
+            .result
+            .unwrap();
+        let text_a = response_a["contents"][0]["text"].as_str().unwrap();
+        let text_b = response_b["contents"][0]["text"].as_str().unwrap();
+        assert_eq!(text_a, text_b, "report output must be deterministic");
+        assert!(!text_a.contains("chk_ab12cd_secretsecret"));
+        assert!(!text_a.contains("secretsecret"));
+        assert!(!text_a.contains("\"legal_validity\": true"));
+        assert!(!text_a.contains("\"signature_validity\": true"));
+        assert!(!text_a.contains("\"provider_completion\": true"));
+
+        let report: Value = serde_json::from_str(text_a).unwrap();
+        assert_eq!(
+            report["kind"],
+            json!("chancela_mcp_draft_signed_comparison_report")
+        );
+        assert_eq!(report["case_id"], json!("case-7"));
+        assert_eq!(
+            report["source"],
+            json!("local_mcp_deterministic_comparator")
+        );
+        assert_eq!(report["offline"], json!(true));
+        assert_eq!(report["local_json_only"], json!(true));
+        assert_eq!(report["deterministic"], json!(true));
+        assert_eq!(report["bridge_calls"], json!(false));
+        assert_eq!(report["api_calls"], json!(false));
+        assert_eq!(report["ai_provider_calls"], json!(false));
+        assert_eq!(report["signature_validation_performed"], json!(false));
+        assert_eq!(report["trust_validation_performed"], json!(false));
+        assert_eq!(report["claims"]["legal_validity"], json!(false));
+        assert_eq!(report["claims"]["source_certification"], json!(false));
+        assert_eq!(report["claims"]["provider"], json!(false));
+        assert_eq!(report["claims"]["trust"], json!(false));
+        assert_eq!(report["claims"]["external_validation"], json!(false));
+        assert_eq!(report["claims"]["signature_qualification"], json!(false));
+
+        let field_results = report["field_results"].as_array().unwrap();
+        let field = |name: &str| {
+            field_results
+                .iter()
+                .find(|field| field["field"] == json!(name))
+                .unwrap_or_else(|| panic!("missing field {name}: {report}"))
+        };
+        assert_eq!(field("act_id")["status"], json!("matched"));
+        assert_eq!(field("document_digest")["status"], json!("different"));
+        assert_eq!(field("status")["status"], json!("different"));
+        assert_eq!(field("artifact_ref")["status"], json!("different"));
+        assert_eq!(field("signed_at")["status"], json!("missing_draft"));
+        assert_eq!(field("manifest_id")["status"], json!("unknown"));
+        assert_eq!(field("source_record_id")["status"], json!("unknown"));
+        assert_eq!(field("source_record_id")["draft"]["unknown"], json!(true));
+        assert_eq!(
+            report["comparison_summary"]["different"],
+            json!(3),
+            "digest/status/reference differences are counted: {report}"
+        );
+        assert!(
+            report["unmapped_fields"]["draft"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|field| field["path"] == json!("reviewer_note")
+                    && field["comparison_status"] == json!("unmapped")),
+            "unmapped caller fields should be represented honestly: {report}"
+        );
+        assert!(
+            report["unmapped_fields"]["draft"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|field| field["path"] == json!("signed_pdf_digest")
+                    && field["comparison_status"] == json!("unmapped")),
+            "signed-only aliases on the draft side should remain visible as unmapped: {report}"
+        );
+        assert!(
+            report["unmapped_fields"]["signed"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|field| field["path"] == json!("draft_digest")
+                    && field["comparison_status"] == json!("unmapped")),
+            "draft-only aliases on the signed side should remain visible as unmapped: {report}"
+        );
+        assert!(server.bridge_recorded().is_empty());
+    }
+
+    #[test]
+    fn resources_read_draft_signed_comparison_report_rejects_bad_arguments_and_extra_params() {
         let server = McpServer::from_config(&enabled_cfg(), MockTransport::new(200, "{}")).unwrap();
 
-        for params in [
-            json!({
-                "uri": MCP_DRAFT_SIGNED_COMPARISON_REVIEW_RESOURCE_URI,
-                "arguments": {}
-            }),
-            json!({
-                "uri": MCP_DRAFT_SIGNED_COMPARISON_REVIEW_RESOURCE_URI,
-                "cursor": "ignored"
-            }),
-        ] {
-            let resp = server.handle(&req("resources/read", 54, params)).unwrap();
-            let error = resp.error.unwrap();
-            assert_eq!(error.code, codes::INVALID_PARAMS);
-            assert!(error.message.contains("accepts only uri"));
-        }
+        let bad_arguments = server
+            .handle(&req(
+                "resources/read",
+                56,
+                json!({
+                    "uri": MCP_DRAFT_SIGNED_COMPARISON_REVIEW_RESOURCE_URI,
+                    "arguments": { "draft": {}, "signed": null }
+                }),
+            ))
+            .unwrap();
+        let error = bad_arguments.error.unwrap();
+        assert_eq!(error.code, codes::INVALID_PARAMS);
+        assert!(error.message.contains("signed must be an object"));
+
+        let extra_param = server
+            .handle(&req(
+                "resources/read",
+                57,
+                json!({
+                    "uri": MCP_DRAFT_SIGNED_COMPARISON_REVIEW_RESOURCE_URI,
+                    "cursor": "ignored"
+                }),
+            ))
+            .unwrap();
+        let error = extra_param.error.unwrap();
+        assert_eq!(error.code, codes::INVALID_PARAMS);
+        assert!(error.message.contains("uri plus arguments"));
 
         assert!(server.bridge_recorded().is_empty());
     }

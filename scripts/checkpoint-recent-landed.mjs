@@ -679,7 +679,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "the browser suite is not\n  exhaustive",
+    "the browser suite is not exhaustive",
     "CI/E2E hardening plan browser-suite non-exhaustive auth caveat",
   );
   assertFileContains(
@@ -2189,7 +2189,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "MCP resource/prompt coverage including workflow provenance review\nguidance and draft-vs-signed comparison review guidance",
+    "MCP resource/prompt coverage including workflow provenance review",
     "CI checkpoints MCP review-aids lane marker",
   );
   assertFileContains(
@@ -2329,12 +2329,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "MCP draft-vs-signed comparison review prompt/resource/no-call/no-claim\nmarkers",
-    "CI checkpoints static MCP draft-signed comparison marker",
+    "MCP draft-vs-signed comparison review prompt/resource plus deterministic\nlocal comparison report/no-call/no-claim markers",
+    "CI checkpoints MCP draft-signed deterministic report marker",
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "dashboard guest `recent_events: []` redaction and no-permission-grant\nmarkers",
+    "dashboard guest\n`recent_events: []` redaction and no-permission-grant\nmarkers",
     "CI checkpoints static dashboard guest redaction marker",
   );
   assertFileContains(
@@ -4244,8 +4244,28 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-mcp/src/server.rs",
-    "resources_read_draft_signed_comparison_review_rejects_arguments_and_extra_params",
-    "MCP draft-signed comparison review resource rejects args coverage",
+    "resources_read_draft_signed_comparison_report_accepts_arguments_and_is_deterministic_without_http_or_secret",
+    "MCP draft-signed comparison deterministic report coverage",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    "resources_read_draft_signed_comparison_report_rejects_bad_arguments_and_extra_params",
+    "MCP draft-signed comparison report invalid args coverage",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    '"kind": "chancela_mcp_draft_signed_comparison_report"',
+    "MCP draft-signed deterministic comparison report payload marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    '"source": "local_mcp_deterministic_comparator"',
+    "MCP draft-signed local deterministic comparator marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    '"ai_provider_calls": false',
+    "MCP draft-signed no AI provider call marker",
   );
   assertFileContains(
     "crates/chancela-mcp/src/server.rs",
@@ -7309,7 +7329,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "false AI-01/full\n  AI/MCP completion flags",
+    "deterministic local comparison report mode",
+    "CI/E2E hardening plan MCP draft-signed deterministic report marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "false AI-01/full AI/MCP completion flags",
     "CI/E2E hardening plan MCP draft-signed no completion marker",
   );
   assertFileContains(
@@ -8424,8 +8449,8 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "accepts only `uri` with\n  no arguments or extra params",
-    "spec coverage MCP draft-signed comparison rejects args marker",
+    "deterministic local comparison report\n  over caller-supplied identifiers",
+    "spec coverage MCP draft-signed deterministic report marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
@@ -8434,8 +8459,8 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "not AI completion, MCP completion, automated\n  comparison, source certification",
-    "spec coverage MCP draft-signed no completion/comparison marker",
+    "technical comparison signal only with human review still required",
+    "spec coverage MCP draft-signed technical signal only marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
@@ -9279,7 +9304,10 @@ function assertFileExists(relativePath, label) {
 
 function assertFileContains(relativePath, needle, label) {
   assertFileExists(relativePath, label);
-  const body = readFileSync(join(repoRoot, relativePath), "utf8");
+  const body = readFileSync(join(repoRoot, relativePath), "utf8").replaceAll(
+    "\r\n",
+    "\n",
+  );
   assert.ok(
     body.includes(needle),
     `${label} missing expected marker ${needle}`,

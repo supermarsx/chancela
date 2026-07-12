@@ -257,9 +257,12 @@ It intentionally reuses existing test surfaces:
   headers on API responses plus static SPA fallback/assets including CSP
   `frame-ancestors 'none'`.
 - MCP resource/prompt coverage: `cargo test -p chancela-mcp --locked`
-  including the no-argument draft-signed comparison prompt/resource, closed
-  resource params, no bridge/API/provider calls, no secrets, and false
-  legal/source/trust/external-validation/signature-qualification claims.
+  including the no-argument draft-signed comparison prompt/resource, the
+  deterministic local comparison report for `arguments.draft` and
+  `arguments.signed`, closed extra resource params, no
+  bridge/API/AI-provider/hidden-provider calls, no secrets, and false
+  legal/source/provider/trust/external-validation/signature-qualification
+  claims.
 - Template catalog metadata/semantic lint:
   `cargo test -p chancela-templates --locked`
 - Web client/contract/books/dashboard/document/entity/Ferramentas/notification/recovery/settings/signing/templates/i18n/subnav
@@ -342,8 +345,9 @@ markers plus BookDetail JSON-save markers,
 release clean-source provenance gate markers, seeded role drift API/UI markers,
 archive readability/ZK caveat markers, template `FamilyChannelMismatch` markers,
 MCP trust-catalog structured-filter and redacted external-validator summary
-markers, MCP draft-vs-signed comparison review prompt/resource/no-call/no-claim
-markers, dashboard guest `recent_events: []` redaction and no-permission-grant
+markers, MCP draft-vs-signed comparison review prompt/resource plus deterministic
+local comparison report/no-call/no-claim markers, dashboard guest
+`recent_events: []` redaction and no-permission-grant
 markers, generated-document by-id route, dispatch-evidence route, `act.read`/
 `document.generate` gates, durable/in-memory, canonical Ata preservation,
 absent-owner communication auto-generation, dispatch-evidence store,
@@ -421,7 +425,7 @@ provider approval, live provider readiness, DGLAB certification, full release
 hardening, raw MCP report-byte exposure,
 auto-role reconciliation, permission grants, archive custody/decryption material,
 AI-01/full AI completion, MCP draft-signed legal/source/trust/external
-certification, generated-document signing, bundle readiness, template legal
+certification or signed-artifact validity, generated-document signing, bundle readiness, template legal
 review, threshold correctness, law verification, provider execution, registry
 filing, legal-effect claims, mail/email/SMS/provider sending, provider
 dispatch-sent proof, dispatch completion from operator evidence, delivery proof,

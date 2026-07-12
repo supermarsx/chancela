@@ -230,14 +230,20 @@ test operating checklist for driving Chancela toward release confidence.
   certification, trust validation, or provider/legal assurance.
 - The current MCP draft-vs-signed comparison slice adds the static
   `draft_signed_comparison_review_checklist` prompt and
-  `chancela://mcp/draft-signed-comparison-review` resource. The resource accepts
-  only `uri` with no args or extra params, contains local JSON only, exposes no
-  secrets, makes no bridge/API/provider calls, and keeps legal/source/provider/
-  trust/external-validation/archive-certification/signature-qualification flags
-  false. The spec-09 resource keeps AI-01 and full AI/MCP completion false.
-  Treat this as review guidance only, not automated comparison, legal validity,
-  source certification, trust validation, external validation, signature
-  qualification, provider assurance, or AI/MCP completion.
+  `chancela://mcp/draft-signed-comparison-review` resource. With no arguments
+  the resource returns static review guidance; with `arguments.draft` and
+  `arguments.signed` objects it returns a deterministic local comparison report
+  over caller-supplied metadata, IDs, digests, lifecycle/status fields,
+  artifact references, timestamps, and provenance fields. It exposes no
+  secrets, makes no bridge/API/AI-provider/hidden-provider calls, and keeps
+  `legal_validity: false`, `source_certification: false`, `provider: false`,
+  `trust: false`, `external_validation: false`, and
+  `signature_qualification: false`. The spec-09 resource keeps AI-01 and full
+  AI/MCP completion false. Treat this as technical comparison signal only with
+  human review still required, not legal validity, source certification, trust
+  validation, external validation, signature validation, signature
+  qualification, provider assurance, signed-artifact certification, or AI/MCP
+  completion.
 - The current dashboard guest redaction slice returns `recent_events: []` from
   `GET /v1/dashboard` for guest/minimal redaction callers, while Owner and
   `Leitor` sessions keep recent events. Guest still lacks `GET /v1/ledger/events`.
@@ -1028,14 +1034,17 @@ settingsDefaults.test.ts contracts.test.ts`.
   `cargo test -p chancela-mcp --locked` coverage pins the static
   `draft_signed_comparison_review_checklist` prompt, the
   `chancela://mcp/draft-signed-comparison-review` resource, local-json/static
-  flags, no arguments or extra resource params, no bridge/API/provider calls, no
-  secrets, document-identifier, digest, text/version, mismatch-triage, and
-  human-review-note category coverage, false legal/source/provider/trust/
-  external-validation/signature-qualification claim flags, and false AI-01/full
-  AI/MCP completion flags in the spec-09 resource. This is review guidance only:
-  no automated comparison, no AI or MCP completion claim, no legal validity, no
-  source certification, no provider assurance, no trust validation, no external
-  validation, and no signature qualification.
+  guidance mode, deterministic local comparison report mode for
+  `arguments.draft` and `arguments.signed`, changed digest/status/reference
+  detection, missing/unknown/unmapped field reporting, no extra resource params,
+  no bridge/API/AI-provider/hidden-provider calls, no secrets, false
+  legal/source/provider/trust/external-validation/signature-qualification claim
+  flags, and false AI-01/full AI/MCP completion flags in the spec-09 resource.
+  This is technical comparison signal only with human review still required: no
+  AI or MCP completion claim, no legal validity, no source certification, no
+  provider assurance, no trust validation, no external validation, no signature
+  validation, no qualified signature status, and no signed-artifact
+  certification.
 - Current working-tree dashboard guest recent-events redaction checks: focused
   `cargo test -p chancela-api --locked dashboard_recent_events_redacts_guest_feed_but_keeps_owner_and_reader_feed`
   coverage pins `recent_events: []` for guest/minimal dashboard readers, Owner
@@ -1397,8 +1406,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   `apps/web/e2e/first-launch-onboarding.spec.ts` via `npm run test:browser
   --workspace apps/web -- e2e/session.spec.ts e2e/first-launch-onboarding.spec.ts`.
   Treat the static/unit/focused markers as the pinned slice, not broad
-  Playwright-browser-suite or browser-matrix proof; the browser suite is not
-  exhaustive.
+  Playwright-browser-suite or browser-matrix proof; the browser suite is not exhaustive.
 - Current checkpoint metadata/static checks through `869e02f`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
