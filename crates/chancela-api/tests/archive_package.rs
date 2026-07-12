@@ -60,6 +60,13 @@ struct SealedAct {
     document_id: String,
 }
 
+struct SealedCondominiumAbsentOwnerAct {
+    book_id: String,
+    act_id: String,
+    ata_document_id: String,
+    communication_document_id: String,
+}
+
 async fn send(state: &AppState, req: Request<Body>) -> (StatusCode, Value) {
     let resp = router(state.clone())
         .oneshot(req)
@@ -256,6 +263,193 @@ async fn seal_act(state: &AppState, token: &str) -> SealedAct {
         act_id,
         document_id,
     }
+}
+
+async fn seal_condominium_absent_owner_act(
+    state: &AppState,
+    token: &str,
+) -> SealedCondominiumAbsentOwnerAct {
+    let (status, entity) = send(
+        state,
+        json_req(
+            "POST",
+            "/v1/entities",
+            token,
+            json!({
+                "name": "Condominio Alameda Um",
+                "nipc": "503004642",
+                "seat": "Lisboa",
+                "kind": "Condominio"
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "entity: {entity}");
+    let entity_id = entity["id"].as_str().expect("entity id").to_owned();
+
+    let (status, book) = send(
+        state,
+        json_req(
+            "POST",
+            "/v1/books",
+            token,
+            json!({
+                "entity_id": entity_id,
+                "kind": "Condominio",
+                "purpose": "livro de atas",
+                "opening_date": "2026-01-15",
+                "required_signatories": ["Administrador"]
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "book: {book}");
+    let book_id = book["id"].as_str().expect("book id").to_owned();
+
+    let (status, act) = send(
+        state,
+        json_req(
+            "POST",
+            "/v1/acts",
+            token,
+            json!({
+                "book_id": book_id,
+                "title": "Ata da assembleia de condóminos",
+                "channel": "Physical"
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "act: {act}");
+    let act_id = act["id"].as_str().expect("act id").to_owned();
+
+    let (status, body) = send(
+        state,
+        json_req(
+            "PATCH",
+            &format!("/v1/acts/{act_id}"),
+            token,
+            json!({
+                "meeting_date": "2026-03-30",
+                "meeting_time": "10:00",
+                "place": "Hall do prédio",
+                "agenda": [{ "number": 1, "text": "Orçamento anual" }],
+                "attendance_reference": "Folha de presenças",
+                "deliberations": "Aprovado o orçamento anual.",
+                "deliberation_items": [{
+                    "agenda_number": 1,
+                    "text": "Aprovado o orçamento anual.",
+                    "vote": { "type": "Recorded", "em_favor": 600, "contra": 0, "abstencoes": 0 },
+                    "statements": []
+                }],
+                "attendees": [
+                    {
+                        "name": "Fração A",
+                        "quality": "CondoOwner",
+                        "presence": "InPerson",
+                        "weight": { "Permilage": 600 }
+                    },
+                    {
+                        "name": "Fração B",
+                        "quality": "CondoOwner",
+                        "presence": "Absent",
+                        "weight": { "Permilage": 400 }
+                    }
+                ]
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "patch act: {body}");
+
+    for to in [
+        "Review",
+        "Convened",
+        "Deliberated",
+        "TextApproved",
+        "Signing",
+    ] {
+        let (status, body) = send(
+            state,
+            json_req(
+                "POST",
+                &format!("/v1/acts/{act_id}/advance"),
+                token,
+                json!({ "to": to }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "advance to {to}: {body}");
+    }
+
+    let (status, sealed) = send(
+        state,
+        json_req("POST", &format!("/v1/acts/{act_id}/seal"), token, json!({})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "seal: {sealed}");
+    let ata_document_id = sealed["document"]["id"]
+        .as_str()
+        .expect("ata document id")
+        .to_owned();
+    assert_eq!(
+        sealed["document"]["template_id"],
+        "condominio-ata-assembleia/v1"
+    );
+
+    let (status, generated_docs) = send(
+        state,
+        get_req(&format!("/v1/acts/{act_id}/documents/generated"), token),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "generated documents: {generated_docs}"
+    );
+    let communication_document_id = generated_docs
+        .as_array()
+        .expect("generated documents")
+        .iter()
+        .find(|doc| doc["template_id"].as_str() == Some("condominio-comunicacao-ausentes/v1"))
+        .and_then(|doc| doc["id"].as_str())
+        .unwrap_or_else(|| panic!("absent-owner communication missing: {generated_docs}"))
+        .to_owned();
+
+    SealedCondominiumAbsentOwnerAct {
+        book_id,
+        act_id,
+        ata_document_id,
+        communication_document_id,
+    }
+}
+
+async fn record_absent_owner_dispatch_evidence(
+    state: &AppState,
+    token: &str,
+    document_id: &str,
+    operator_note: &str,
+) -> Value {
+    let (status, body) = send(
+        state,
+        json_req(
+            "POST",
+            &format!("/v1/documents/generated/{document_id}/dispatch-evidence"),
+            token,
+            json!({
+                "actor": "archive.operator",
+                "dispatched_at": "2026-04-01T10:00:00Z",
+                "channel": "RegisteredLetter",
+                "reference": "RR123456789PT",
+                "recipients": ["Fração B"],
+                "evidence_reference": "archive:dispatch-proof-1",
+                "operator_note": operator_note
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "dispatch evidence: {body}");
+    body
 }
 
 async fn archive_package_bytes(state: &AppState, book_id: &str, token: &str) -> Vec<u8> {
@@ -1686,6 +1880,250 @@ async fn local_dglab_interchange_manifest_is_deterministic_read_only_and_not_pac
         }),
         "local DGLAB manifest must not be a ZIP member: {:?}",
         members.keys().collect::<Vec<_>>()
+    );
+}
+
+#[tokio::test]
+async fn archive_package_indexes_generated_absent_owner_dispatch_evidence_metadata_only() {
+    let dir = TempDir::new();
+    let state = AppState::with_data_dir(&dir.0);
+    let token = bootstrap(&state).await;
+    let sealed = seal_condominium_absent_owner_act(&state, &token).await;
+    let note = "unique archive preservation note 2026-07-12T12:35:12Z idempotency sentinel";
+    let evidence = record_absent_owner_dispatch_evidence(
+        &state,
+        &token,
+        &sealed.communication_document_id,
+        note,
+    )
+    .await;
+    assert_eq!(
+        evidence["dispatch_evidence_status"]["status"],
+        "operator_evidence_covered"
+    );
+    let idempotency_key = evidence["evidence"]["idempotency_key"]
+        .as_str()
+        .expect("dispatch evidence idempotency key");
+
+    let before_ledger = ledger_events(&state, &token).await;
+    let first = archive_package_bytes(&state, &sealed.book_id, &token).await;
+    let second = archive_package_bytes(&state, &sealed.book_id, &token).await;
+    assert_eq!(
+        first, second,
+        "generated-dispatch evidence packaging remains deterministic"
+    );
+    let after_ledger = ledger_events(&state, &token).await;
+    assert_eq!(
+        before_ledger, after_ledger,
+        "archive package export must read dispatch evidence without appending events"
+    );
+
+    let manifest = validate_package(&first).expect("archive package validates");
+    assert!(
+        manifest
+            .document_ids
+            .iter()
+            .any(|id| id.to_string() == sealed.ata_document_id),
+        "canonical Ata document id remains in manifest.document_ids"
+    );
+    assert!(
+        manifest
+            .document_ids
+            .iter()
+            .all(|id| id.to_string() != sealed.communication_document_id),
+        "generated communication metadata sidecar must not promote its id into manifest.document_ids"
+    );
+    let sidecar_path = format!(
+        "evidence/generated-dispatch/{}.json",
+        sealed.communication_document_id
+    );
+    let sidecar_file = manifest
+        .files
+        .iter()
+        .find(|file| file.path == sidecar_path)
+        .expect("generated dispatch sidecar in manifest");
+    assert_eq!(sidecar_file.role, PackageFileRole::EvidenceReport);
+    assert_eq!(sidecar_file.content_type, "application/json");
+    assert_eq!(
+        sidecar_file.act_id.map(|id| id.to_string()).as_deref(),
+        Some(sealed.act_id.as_str())
+    );
+    assert_eq!(sidecar_file.document_id, None);
+
+    let members = zip_members(&first);
+    assert!(
+        !members.contains_key(&format!(
+            "documents/{}.pdf",
+            sealed.communication_document_id
+        )),
+        "generated communication proof/PDF bytes are not added by this metadata-only slice"
+    );
+    let sidecar = member_json(&members, &sidecar_path);
+    assert_eq!(
+        sidecar["evidence_kind"],
+        "generated_document_dispatch_evidence_metadata"
+    );
+    assert_eq!(
+        sidecar["metadata_schema"],
+        "chancela-generated-document-dispatch-evidence-metadata/v1"
+    );
+    assert_eq!(sidecar["status_scope"], "technical_metadata_only");
+    assert_eq!(
+        sidecar["generated_document_id"],
+        sealed.communication_document_id
+    );
+    assert_eq!(sidecar["act_id"], sealed.act_id);
+    assert_eq!(sidecar["template_id"], "condominio-comunicacao-ausentes/v1");
+    assert_eq!(
+        sidecar["generated_document_download"],
+        format!(
+            "/v1/documents/generated/{}",
+            sealed.communication_document_id
+        )
+    );
+    assert_eq!(
+        sidecar["dispatch_evidence_status"]["status"],
+        "operator_evidence_covered"
+    );
+    assert_eq!(
+        sidecar["dispatch_evidence_status"]["dispatch_completed"],
+        false
+    );
+    assert_eq!(
+        sidecar["dispatch_evidence_status"]["completion_basis"],
+        "none"
+    );
+    assert_eq!(
+        sidecar["coverage"]["required_recipients"],
+        json!(["Fração B"])
+    );
+    assert_eq!(
+        sidecar["coverage"]["recorded_recipients"],
+        json!(["Fração B"])
+    );
+    assert_eq!(sidecar["coverage"]["missing_recipients"], json!([]));
+    assert_eq!(sidecar["coverage"]["all_required_recipients_covered"], true);
+    for flag in [
+        "sending_performed_by_chancela",
+        "delivery_confirmed",
+        "dispatch_completed",
+        "legal_notice_completion_claimed",
+        "legal_sufficiency_claimed",
+        "provider_execution_claimed",
+        "registry_filing_claimed",
+        "bundle_readiness_claimed",
+        "dglab_certification_claimed",
+        "legal_archive_acceptance_claimed",
+        "proof_bytes_included",
+        "operator_note_included",
+    ] {
+        assert_eq!(sidecar[flag], false, "{flag} must remain false");
+    }
+
+    let record = &sidecar["records"].as_array().expect("records")[0];
+    assert_eq!(record["dispatched_at"], "2026-04-01T10:00:00Z");
+    assert!(
+        record["recorded_at"]
+            .as_str()
+            .is_some_and(|ts| !ts.is_empty())
+    );
+    assert_eq!(record["channel"], "RegisteredLetter");
+    assert_eq!(record["reference"], "RR123456789PT");
+    assert_eq!(record["evidence_reference"], "archive:dispatch-proof-1");
+    assert_eq!(record["imported_document_id"], Value::Null);
+    assert_eq!(record["recipients"], json!(["Fração B"]));
+    assert_eq!(record["dispatch_completed"], false);
+    assert_eq!(record["completion_basis"], "none");
+    assert_eq!(record["bytes_included"], false);
+    assert_eq!(record["operator_note_included"], false);
+    assert!(
+        record.get("idempotency_key").is_none(),
+        "note-derived idempotency key must stay out of archive sidecar records: {record}"
+    );
+
+    let evidence_index = member_json(&members, "evidence/index.json");
+    let generated_dispatch = &evidence_index["generated_dispatch_evidence"];
+    assert_eq!(
+        generated_dispatch["evidence_kind"],
+        "generated_document_dispatch_evidence_metadata"
+    );
+    assert_eq!(
+        generated_dispatch["metadata_schema"],
+        "chancela-generated-document-dispatch-evidence-metadata/v1"
+    );
+    assert_eq!(
+        generated_dispatch["indexed_path_prefix"],
+        "evidence/generated-dispatch/"
+    );
+    assert_eq!(
+        generated_dispatch["indexed_path_pattern"],
+        "evidence/generated-dispatch/{document_id}.json"
+    );
+    assert_eq!(
+        generated_dispatch["attachment_status"],
+        "generated_dispatch_evidence_metadata_attached"
+    );
+    assert_eq!(
+        generated_dispatch["attachments"],
+        json!([{
+            "generated_document_id": sealed.communication_document_id.clone(),
+            "act_id": sealed.act_id.clone(),
+            "template_id": "condominio-comunicacao-ausentes/v1",
+            "path": sidecar_path.clone(),
+            "content_type": "application/json",
+            "generated_document_download": format!(
+                "/v1/documents/generated/{}",
+                sealed.communication_document_id
+            ),
+            "dispatch_evidence_status": {
+                "status": "operator_evidence_covered",
+                "required": true,
+                "evidence_attached": true,
+                "dispatch_completed": false,
+                "completion_basis": "none",
+                "required_recipients": ["Fração B"],
+                "recorded_recipients": ["Fração B"],
+                "missing_recipients": [],
+                "note": "operator-recorded dispatch evidence covers all absent recipients, but no sending, delivery, legal notice completion, or legal sufficiency is claimed"
+            },
+            "proof_bytes_included": false,
+            "operator_note_included": false
+        }])
+    );
+    assert!(
+        evidence_index["documents"]
+            .as_array()
+            .expect("canonical document entries")
+            .iter()
+            .any(|entry| entry["document_id"] == sealed.ata_document_id),
+        "canonical Ata remains the package document: {evidence_index}"
+    );
+    assert!(
+        evidence_index["documents"]
+            .as_array()
+            .expect("canonical document entries")
+            .iter()
+            .all(|entry| entry["document_id"] != sealed.communication_document_id),
+        "generated communication is referenced as dispatch metadata, not canonical PDF: {evidence_index}"
+    );
+
+    let sidecar_text = String::from_utf8_lossy(members.get(&sidecar_path).expect("sidecar bytes"));
+    let index_text = String::from_utf8_lossy(members.get("evidence/index.json").expect("index"));
+    assert!(
+        !sidecar_text.contains(note)
+            && !sidecar_text.contains("\"operator_note\":")
+            && !index_text.contains(note)
+            && !index_text.contains("\"operator_note\":"),
+        "free-form operator notes are excluded from preservation output"
+    );
+    assert!(
+        !sidecar_text.contains(idempotency_key)
+            && !sidecar_text.contains("\"idempotency_key\":")
+            && !sidecar_text.contains("\"fingerprint\":")
+            && !index_text.contains(idempotency_key)
+            && !index_text.contains("\"idempotency_key\":")
+            && !index_text.contains("\"fingerprint\":"),
+        "note-derived stable identifiers are excluded from preservation output"
     );
 }
 

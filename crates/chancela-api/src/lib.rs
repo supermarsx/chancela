@@ -4936,6 +4936,194 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn document_bundle_indexes_generated_absent_owner_dispatch_evidence_without_replacing_ata()
+     {
+        let tmp = TempDir::new();
+        let (state, _entity_id, book_id) =
+            entity_and_open_book_in_state(AppState::with_data_dir(tmp.dir.clone()), "Condominio")
+                .await;
+        let act_id = draft_condominium_absent_owner_act(&state, &book_id).await;
+
+        let (status, sealed) = send(
+            state.clone(),
+            post_json(&format!("/v1/acts/{act_id}/seal"), json!({})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "condo seal: {sealed}");
+        let ata_document_id = sealed["document"]["id"].as_str().expect("ata document id");
+        assert_eq!(
+            sealed["document"]["template_id"],
+            "condominio-ata-assembleia/v1"
+        );
+
+        let token = auth_token(&state).await;
+        let (status, generated_docs) = send_raw(
+            state.clone(),
+            with_session(
+                get(&format!("/v1/acts/{act_id}/documents/generated")),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "generated docs: {generated_docs}");
+        let communication = generated_docs
+            .as_array()
+            .expect("generated docs array")
+            .iter()
+            .find(|doc| {
+                doc["template_id"].as_str()
+                    == Some(crate::documents::CONDOMINIUM_ABSENT_OWNER_COMMUNICATION_TEMPLATE_ID)
+            })
+            .unwrap_or_else(|| panic!("absent-owner communication missing: {generated_docs}"));
+        let communication_id = communication["id"]
+            .as_str()
+            .expect("communication document id");
+        assert_ne!(communication_id, ata_document_id);
+
+        let note = "unique bundle preservation note 2026-07-12T12:34:56Z idempotency sentinel";
+        let (status, evidence) = send_raw(
+            state.clone(),
+            with_session(
+                post_json(
+                    &format!("/v1/documents/generated/{communication_id}/dispatch-evidence"),
+                    json!({
+                        "actor": "operator.bundle",
+                        "dispatched_at": "2026-04-01T10:00:00Z",
+                        "channel": "RegisteredLetter",
+                        "reference": "RR123456789PT",
+                        "recipients": ["Fração B"],
+                        "evidence_reference": "archive:dispatch-proof-1",
+                        "operator_note": note
+                    }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "dispatch evidence: {evidence}");
+        let idempotency_key = evidence["evidence"]["idempotency_key"]
+            .as_str()
+            .expect("dispatch evidence idempotency key");
+
+        let (status, bundle) = send_raw(
+            state,
+            with_session(get(&format!("/v1/acts/{act_id}/document/bundle")), &token),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "bundle: {bundle}");
+        assert_eq!(bundle["document"]["id"], ata_document_id);
+        assert_eq!(
+            bundle["document"]["template_id"],
+            "condominio-ata-assembleia/v1"
+        );
+        assert_eq!(
+            bundle["validation_report"]["evidence_index"]["document_id"],
+            ata_document_id
+        );
+        assert_eq!(
+            bundle["validation_report"]["evidence_index"]["bundle_paths"]["canonical_pdf_download"],
+            format!("/v1/acts/{act_id}/document")
+        );
+
+        let generated_dispatch =
+            bundle["validation_report"]["evidence_index"]["generated_dispatch_evidence"]
+                .as_array()
+                .expect("generated dispatch evidence index");
+        assert_eq!(
+            generated_dispatch.len(),
+            1,
+            "one absent-owner generated communication is indexed: {bundle}"
+        );
+        let entry = &generated_dispatch[0];
+        assert_eq!(
+            entry["evidence_kind"],
+            "generated_document_dispatch_evidence_metadata"
+        );
+        assert_eq!(
+            entry["metadata_schema"],
+            "chancela-generated-document-dispatch-evidence-metadata/v1"
+        );
+        assert_eq!(entry["status_scope"], "technical_metadata_only");
+        assert_eq!(entry["generated_document_id"], communication_id);
+        assert_eq!(entry["act_id"], act_id);
+        assert_eq!(
+            entry["template_id"],
+            crate::documents::CONDOMINIUM_ABSENT_OWNER_COMMUNICATION_TEMPLATE_ID
+        );
+        assert_eq!(
+            entry["generated_document_download"],
+            format!("/v1/documents/generated/{communication_id}")
+        );
+        assert_eq!(
+            entry["dispatch_evidence_status"]["status"],
+            "operator_evidence_covered"
+        );
+        assert_eq!(
+            entry["dispatch_evidence_status"]["dispatch_completed"],
+            false
+        );
+        assert_eq!(
+            entry["dispatch_evidence_status"]["completion_basis"],
+            "none"
+        );
+        assert_eq!(
+            entry["coverage"]["required_recipients"],
+            json!(["Fração B"])
+        );
+        assert_eq!(
+            entry["coverage"]["recorded_recipients"],
+            json!(["Fração B"])
+        );
+        assert_eq!(entry["coverage"]["missing_recipients"], json!([]));
+        assert_eq!(entry["coverage"]["all_required_recipients_covered"], true);
+        assert_eq!(entry["sending_performed_by_chancela"], false);
+        assert_eq!(entry["delivery_confirmed"], false);
+        assert_eq!(entry["legal_notice_completion_claimed"], false);
+        assert_eq!(entry["legal_sufficiency_claimed"], false);
+        assert_eq!(entry["provider_execution_claimed"], false);
+        assert_eq!(entry["registry_filing_claimed"], false);
+        assert_eq!(entry["bundle_readiness_claimed"], false);
+        assert_eq!(entry["dglab_certification_claimed"], false);
+        assert_eq!(entry["legal_archive_acceptance_claimed"], false);
+        assert_eq!(entry["proof_bytes_included"], false);
+        assert_eq!(entry["operator_note_included"], false);
+
+        let record = &entry["records"].as_array().expect("records")[0];
+        assert_eq!(record["dispatched_at"], "2026-04-01T10:00:00Z");
+        assert!(
+            record["recorded_at"]
+                .as_str()
+                .is_some_and(|ts| !ts.is_empty())
+        );
+        assert_eq!(record["channel"], "RegisteredLetter");
+        assert_eq!(record["reference"], "RR123456789PT");
+        assert_eq!(record["evidence_reference"], "archive:dispatch-proof-1");
+        assert_eq!(record["imported_document_id"], serde_json::Value::Null);
+        assert_eq!(record["recipients"], json!(["Fração B"]));
+        assert_eq!(record["bytes_included"], false);
+        assert_eq!(record["operator_note_included"], false);
+        assert!(
+            record.get("idempotency_key").is_none(),
+            "note-derived idempotency key must stay out of preservation records: {record}"
+        );
+
+        let evidence_index_text =
+            serde_json::to_string(&bundle["validation_report"]["evidence_index"])
+                .expect("evidence index serializes");
+        assert!(
+            !evidence_index_text.contains(note)
+                && !evidence_index_text.contains("\"operator_note\":"),
+            "operator notes stay out of preservation evidence: {evidence_index_text}"
+        );
+        assert!(
+            !evidence_index_text.contains(idempotency_key)
+                && !evidence_index_text.contains("\"idempotency_key\":")
+                && !evidence_index_text.contains("\"fingerprint\":"),
+            "note-derived stable identifiers stay out of preservation evidence: {evidence_index_text}"
+        );
+    }
+
+    #[tokio::test]
     async fn document_bundle_validation_report_flags_signed_document_inconsistency() {
         let (state, _entity_id, book_id) = entity_and_open_book("SociedadeAnonima").await;
         let act_id = draft_fill_and_advance(&state, &book_id).await;

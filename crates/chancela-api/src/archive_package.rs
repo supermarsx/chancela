@@ -63,6 +63,9 @@ const DOC_TIMESTAMP_INSPECTION_UNAVAILABLE: &str = "inspection_unavailable";
 const RENEWAL_POLICY_NOT_CONFIGURED: &str = "not_configured";
 const RENEWAL_POLICY_MANUAL_REVIEW: &str = "manual_review";
 const ARCHIVE_EVIDENCE_INDEX_PATH: &str = "evidence/index.json";
+const GENERATED_DISPATCH_EVIDENCE_ARCHIVE_PATH_PREFIX: &str = "evidence/generated-dispatch/";
+const GENERATED_DISPATCH_EVIDENCE_ARCHIVE_PATH_PATTERN: &str =
+    "evidence/generated-dispatch/{document_id}.json";
 #[derive(Clone)]
 struct PackageDocument {
     owner_kind: &'static str,
@@ -279,6 +282,7 @@ struct ArchiveEvidenceIndex {
     documents: Vec<ArchiveDocumentEvidenceIndexEntry>,
     package_evidence: ArchivePackageEvidenceIndexEntry,
     external_validator_reports: ExternalValidatorReportEvidenceIndex,
+    generated_dispatch_evidence: GeneratedDispatchEvidenceArchiveIndex,
 }
 
 #[derive(Serialize)]
@@ -325,6 +329,30 @@ struct ExternalValidatorReportEvidenceAttachmentIndex {
     sha256: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     raw_report: Option<ExternalValidatorRawReportAttachmentIndex>,
+}
+
+#[derive(Serialize)]
+struct GeneratedDispatchEvidenceArchiveIndex {
+    evidence_kind: &'static str,
+    metadata_schema: &'static str,
+    indexed_path_prefix: &'static str,
+    indexed_path_pattern: &'static str,
+    attachment_status: &'static str,
+    status_scope: &'static str,
+    attachments: Vec<GeneratedDispatchEvidenceArchiveAttachmentIndex>,
+}
+
+#[derive(Serialize)]
+struct GeneratedDispatchEvidenceArchiveAttachmentIndex {
+    generated_document_id: String,
+    act_id: String,
+    template_id: String,
+    path: String,
+    content_type: &'static str,
+    generated_document_download: String,
+    dispatch_evidence_status: crate::documents::DispatchEvidenceStatusView,
+    proof_bytes_included: bool,
+    operator_note_included: bool,
 }
 
 #[derive(Serialize)]
@@ -638,6 +666,8 @@ async fn build_book_archive_package(
         .filter(|act| package_docs.iter().any(|doc| doc.act_id == Some(act.id)))
         .cloned()
         .collect::<Vec<_>>();
+    let generated_dispatch_evidence =
+        load_generated_dispatch_evidence_indexes(state, &included_acts).await?;
 
     let created_at = stable_package_time(&package_docs);
     let external_validator_reports = {
@@ -699,6 +729,16 @@ async fn build_book_archive_package(
             }
         }
     }
+    for entry in &generated_dispatch_evidence {
+        let mut file = PackageFileInput::new(
+            generated_dispatch_evidence_archive_path(entry),
+            PackageFileRole::EvidenceReport,
+            JSON_CONTENT_TYPE,
+            generated_dispatch_evidence_sidecar_bytes(entry)?,
+        );
+        file.act_id = Some(parse_generated_dispatch_act_id(entry)?);
+        files.push(file);
+    }
     files.push(PackageFileInput::new(
         ARCHIVE_EVIDENCE_INDEX_PATH,
         PackageFileRole::EvidenceReport,
@@ -709,6 +749,7 @@ async fn build_book_archive_package(
             &package_docs,
             legal_hold.is_some(),
             &external_validator_reports,
+            &generated_dispatch_evidence,
         )?,
     ));
 
@@ -1365,6 +1406,56 @@ async fn load_owner_documents(
         .collect())
 }
 
+async fn load_generated_dispatch_evidence_indexes(
+    state: &AppState,
+    acts: &[Act],
+) -> Result<Vec<crate::documents::GeneratedDispatchEvidencePreservationIndex>, ApiError> {
+    let mut indexes = Vec::new();
+    for act in acts {
+        indexes.extend(
+            crate::documents::generated_dispatch_evidence_preservation_indexes_for_act(
+                state, act.id,
+            )
+            .await?,
+        );
+    }
+    indexes.sort_by(|left, right| {
+        left.act_id
+            .cmp(&right.act_id)
+            .then_with(|| left.generated_document_id.cmp(&right.generated_document_id))
+    });
+    Ok(indexes)
+}
+
+fn generated_dispatch_evidence_archive_path(
+    entry: &crate::documents::GeneratedDispatchEvidencePreservationIndex,
+) -> String {
+    format!(
+        "{GENERATED_DISPATCH_EVIDENCE_ARCHIVE_PATH_PREFIX}{}.json",
+        entry.generated_document_id
+    )
+}
+
+fn generated_dispatch_evidence_sidecar_bytes(
+    entry: &crate::documents::GeneratedDispatchEvidencePreservationIndex,
+) -> Result<Vec<u8>, ApiError> {
+    serde_json::to_vec_pretty(entry).map_err(|e| {
+        ApiError::Internal(format!(
+            "generated dispatch evidence serialization failed: {e}"
+        ))
+    })
+}
+
+fn parse_generated_dispatch_act_id(
+    entry: &crate::documents::GeneratedDispatchEvidencePreservationIndex,
+) -> Result<Uuid, ApiError> {
+    Uuid::parse_str(&entry.act_id).map_err(|e| {
+        ApiError::Conflict(format!(
+            "generated dispatch evidence act id is not a UUID: {e}"
+        ))
+    })
+}
+
 async fn load_signed_document(
     state: &AppState,
     act_id: ActId,
@@ -1663,6 +1754,7 @@ fn archive_evidence_index_bytes(
     docs: &[PackageDocument],
     legal_hold: bool,
     external_validator_reports: &[ExternalValidatorEvidenceAttachment],
+    generated_dispatch_evidence: &[crate::documents::GeneratedDispatchEvidencePreservationIndex],
 ) -> Result<Vec<u8>, ApiError> {
     serde_json::to_vec_pretty(&ArchiveEvidenceIndex {
         package_profile: PACKAGE_PROFILE,
@@ -1678,6 +1770,9 @@ fn archive_evidence_index_bytes(
         },
         external_validator_reports: external_validator_report_evidence_index(
             external_validator_reports,
+        ),
+        generated_dispatch_evidence: generated_dispatch_evidence_archive_index(
+            generated_dispatch_evidence,
         ),
     })
     .map_err(|e| ApiError::Internal(format!("archive evidence index serialization failed: {e}")))
@@ -1738,6 +1833,41 @@ fn external_validator_report_evidence_index(
         indexed_path_prefix: EXTERNAL_VALIDATOR_REPORT_ARCHIVE_PATH_PREFIX,
         indexed_path_pattern: EXTERNAL_VALIDATOR_REPORT_ARCHIVE_PATH_PATTERN,
         raw_report_path_pattern: EXTERNAL_VALIDATOR_RAW_REPORT_ARCHIVE_PATH_PATTERN,
+        attachment_status,
+        status_scope: TECHNICAL_METADATA_ONLY,
+        attachments,
+    }
+}
+
+fn generated_dispatch_evidence_archive_index(
+    attachments: &[crate::documents::GeneratedDispatchEvidencePreservationIndex],
+) -> GeneratedDispatchEvidenceArchiveIndex {
+    let attachments = attachments
+        .iter()
+        .map(
+            |attachment| GeneratedDispatchEvidenceArchiveAttachmentIndex {
+                generated_document_id: attachment.generated_document_id.clone(),
+                act_id: attachment.act_id.clone(),
+                template_id: attachment.template_id.clone(),
+                path: generated_dispatch_evidence_archive_path(attachment),
+                content_type: JSON_CONTENT_TYPE,
+                generated_document_download: attachment.generated_document_download.clone(),
+                dispatch_evidence_status: attachment.dispatch_evidence_status.clone(),
+                proof_bytes_included: false,
+                operator_note_included: false,
+            },
+        )
+        .collect::<Vec<_>>();
+    let attachment_status = if attachments.is_empty() {
+        "no_generated_dispatch_evidence_metadata_attached"
+    } else {
+        "generated_dispatch_evidence_metadata_attached"
+    };
+    GeneratedDispatchEvidenceArchiveIndex {
+        evidence_kind: crate::documents::GENERATED_DISPATCH_EVIDENCE_METADATA_KIND,
+        metadata_schema: crate::documents::GENERATED_DISPATCH_EVIDENCE_METADATA_SCHEMA,
+        indexed_path_prefix: GENERATED_DISPATCH_EVIDENCE_ARCHIVE_PATH_PREFIX,
+        indexed_path_pattern: GENERATED_DISPATCH_EVIDENCE_ARCHIVE_PATH_PATTERN,
         attachment_status,
         status_scope: TECHNICAL_METADATA_ONLY,
         attachments,

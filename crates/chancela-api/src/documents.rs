@@ -2761,6 +2761,66 @@ pub struct GeneratedDocumentDispatchEvidenceListView {
     pub evidence: Vec<GeneratedDocumentDispatchEvidenceView>,
 }
 
+pub(crate) const GENERATED_DISPATCH_EVIDENCE_METADATA_KIND: &str =
+    "generated_document_dispatch_evidence_metadata";
+pub(crate) const GENERATED_DISPATCH_EVIDENCE_METADATA_SCHEMA: &str =
+    "chancela-generated-document-dispatch-evidence-metadata/v1";
+
+#[derive(Clone, Serialize)]
+pub(crate) struct GeneratedDispatchEvidencePreservationIndex {
+    pub evidence_kind: &'static str,
+    pub metadata_schema: &'static str,
+    pub status_scope: &'static str,
+    pub generated_document_id: String,
+    pub act_id: String,
+    pub template_id: String,
+    pub generated_document_download: String,
+    pub dispatch_evidence_status: DispatchEvidenceStatusView,
+    pub coverage: GeneratedDispatchEvidenceCoverage,
+    pub records: Vec<GeneratedDispatchEvidencePreservationRecord>,
+    pub sending_performed_by_chancela: bool,
+    pub delivery_confirmed: bool,
+    pub dispatch_completed: bool,
+    pub completion_basis: &'static str,
+    pub legal_notice_completion_claimed: bool,
+    pub legal_sufficiency_claimed: bool,
+    pub provider_execution_claimed: bool,
+    pub registry_filing_claimed: bool,
+    pub bundle_readiness_claimed: bool,
+    pub dglab_certification_claimed: bool,
+    pub legal_archive_acceptance_claimed: bool,
+    pub proof_bytes_included: bool,
+    pub operator_note_included: bool,
+}
+
+#[derive(Clone, Serialize)]
+pub(crate) struct GeneratedDispatchEvidenceCoverage {
+    pub required_recipients: Vec<String>,
+    pub recorded_recipients: Vec<String>,
+    pub missing_recipients: Vec<String>,
+    pub evidence_attached: bool,
+    pub all_required_recipients_covered: bool,
+}
+
+#[derive(Clone, Serialize)]
+pub(crate) struct GeneratedDispatchEvidencePreservationRecord {
+    pub dispatched_at: String,
+    pub recorded_at: String,
+    pub channel: Option<String>,
+    pub reference: Option<String>,
+    pub evidence_reference: Option<String>,
+    pub imported_document_id: Option<String>,
+    pub recipients: Vec<String>,
+    pub sending_performed_by_chancela: bool,
+    pub delivery_confirmed: bool,
+    pub legal_notice_completion_claimed: bool,
+    pub legal_sufficiency_claimed: bool,
+    pub dispatch_completed: bool,
+    pub completion_basis: &'static str,
+    pub bytes_included: bool,
+    pub operator_note_included: bool,
+}
+
 pub(crate) fn dispatch_evidence_status_for_template(
     template_id: &str,
     required_recipients: &[String],
@@ -3237,6 +3297,37 @@ async fn dispatch_evidence_status_for_generated_document(
     Ok(Some(dispatch_evidence_status_from_rows(&context, &rows)))
 }
 
+pub(crate) async fn generated_dispatch_evidence_preservation_indexes_for_act(
+    state: &AppState,
+    act_id: ActId,
+) -> Result<Vec<GeneratedDispatchEvidencePreservationIndex>, ApiError> {
+    let docs = load_documents_for_act(state, act_id).await?;
+    let mut indexes = Vec::new();
+    for doc in docs
+        .into_iter()
+        .filter(|doc| doc.template_id == CONDOMINIUM_ABSENT_OWNER_COMMUNICATION_TEMPLATE_ID)
+    {
+        let context = absent_owner_dispatch_context_for_doc(state, doc).await?;
+        let rows = match &state.store {
+            Some(store) => store
+                .generated_document_dispatch_evidence(&context.doc.id)
+                .map_err(|e| {
+                    ApiError::Internal(format!("dispatch evidence store read failed: {e}"))
+                })?,
+            None => Vec::new(),
+        };
+        indexes.push(generated_dispatch_evidence_preservation_index(
+            &context, &rows,
+        ));
+    }
+    indexes.sort_by(|left, right| {
+        left.act_id
+            .cmp(&right.act_id)
+            .then_with(|| left.generated_document_id.cmp(&right.generated_document_id))
+    });
+    Ok(indexes)
+}
+
 fn dispatch_evidence_status_from_rows(
     context: &AbsentOwnerDispatchContext,
     rows: &[StoredGeneratedDocumentDispatchEvidence],
@@ -3251,6 +3342,70 @@ fn dispatch_evidence_status_from_rows(
         &recorded,
     )
     .expect("absent-owner context uses the absent-owner template")
+}
+
+fn generated_dispatch_evidence_preservation_index(
+    context: &AbsentOwnerDispatchContext,
+    rows: &[StoredGeneratedDocumentDispatchEvidence],
+) -> GeneratedDispatchEvidencePreservationIndex {
+    let status = dispatch_evidence_status_from_rows(context, rows);
+    let all_required_recipients_covered = status.required && status.missing_recipients.is_empty();
+    GeneratedDispatchEvidencePreservationIndex {
+        evidence_kind: GENERATED_DISPATCH_EVIDENCE_METADATA_KIND,
+        metadata_schema: GENERATED_DISPATCH_EVIDENCE_METADATA_SCHEMA,
+        status_scope: crate::external_validator_evidence::TECHNICAL_METADATA_ONLY,
+        generated_document_id: context.doc.id.clone(),
+        act_id: context.doc.act_id.to_string(),
+        template_id: context.doc.template_id.clone(),
+        generated_document_download: format!("/v1/documents/generated/{}", context.doc.id),
+        coverage: GeneratedDispatchEvidenceCoverage {
+            required_recipients: status.required_recipients.clone(),
+            recorded_recipients: status.recorded_recipients.clone(),
+            missing_recipients: status.missing_recipients.clone(),
+            evidence_attached: status.evidence_attached,
+            all_required_recipients_covered,
+        },
+        dispatch_evidence_status: status,
+        records: rows
+            .iter()
+            .map(generated_dispatch_evidence_preservation_record)
+            .collect(),
+        sending_performed_by_chancela: false,
+        delivery_confirmed: false,
+        dispatch_completed: false,
+        completion_basis: "none",
+        legal_notice_completion_claimed: false,
+        legal_sufficiency_claimed: false,
+        provider_execution_claimed: false,
+        registry_filing_claimed: false,
+        bundle_readiness_claimed: false,
+        dglab_certification_claimed: false,
+        legal_archive_acceptance_claimed: false,
+        proof_bytes_included: false,
+        operator_note_included: false,
+    }
+}
+
+fn generated_dispatch_evidence_preservation_record(
+    evidence: &StoredGeneratedDocumentDispatchEvidence,
+) -> GeneratedDispatchEvidencePreservationRecord {
+    GeneratedDispatchEvidencePreservationRecord {
+        dispatched_at: evidence.dispatched_at.format(&Rfc3339).unwrap_or_default(),
+        recorded_at: evidence.recorded_at.format(&Rfc3339).unwrap_or_default(),
+        channel: evidence.channel.clone(),
+        reference: evidence.reference.clone(),
+        evidence_reference: evidence.evidence_reference.clone(),
+        imported_document_id: evidence.imported_document_id.clone(),
+        recipients: evidence.recipients.clone(),
+        sending_performed_by_chancela: false,
+        delivery_confirmed: false,
+        legal_notice_completion_claimed: false,
+        legal_sufficiency_claimed: false,
+        dispatch_completed: false,
+        completion_basis: "none",
+        bytes_included: false,
+        operator_note_included: false,
+    }
 }
 
 struct NormalizedGeneratedDispatchEvidenceRequest {
@@ -4727,6 +4882,8 @@ pub struct DocumentBundleEvidenceIndex {
     pub act_id: String,
     pub bundle_paths: DocumentBundleEvidencePaths,
     pub external_validator_reports: DocumentBundleExternalValidatorReportIndex,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub generated_dispatch_evidence: Vec<GeneratedDispatchEvidencePreservationIndex>,
 }
 
 #[derive(Serialize)]
@@ -4834,6 +4991,7 @@ fn document_bundle_evidence_index(
     doc: &StoredDocument,
     signed: Option<&StoredSignedDocument>,
     external_validator_reports: &[ExternalValidatorEvidenceAttachment],
+    generated_dispatch_evidence: &[GeneratedDispatchEvidencePreservationIndex],
 ) -> DocumentBundleEvidenceIndex {
     let attachments = attachment_indexes(external_validator_reports)
         .into_iter()
@@ -4874,6 +5032,7 @@ fn document_bundle_evidence_index(
             status_scope: TECHNICAL_METADATA_ONLY,
             attachments,
         },
+        generated_dispatch_evidence: generated_dispatch_evidence.to_vec(),
     }
 }
 
@@ -4884,6 +5043,7 @@ fn build_document_bundle_validation_report(
     attachments_manifest: &[BundleAttachment],
     signed: Option<&StoredSignedDocument>,
     external_validator_reports: &[ExternalValidatorEvidenceAttachment],
+    generated_dispatch_evidence: &[GeneratedDispatchEvidencePreservationIndex],
 ) -> DocumentBundleValidationReport {
     let canonical_pdf_sha256 = sha256_hex(&doc.pdf_bytes);
     let canonical_pdf_digest_matches_metadata = canonical_pdf_sha256 == doc.pdf_digest;
@@ -5115,6 +5275,7 @@ fn build_document_bundle_validation_report(
             doc,
             signed,
             external_validator_reports,
+            generated_dispatch_evidence,
         ),
         legal_notice: DOCUMENT_BUNDLE_VALIDATION_NOTICE,
         bundle_document_consistency: BundleDocumentConsistencyReport {
@@ -5233,6 +5394,8 @@ pub async fn get_document_bundle(
     }
     let external_validator_reports =
         matching_attachments(&external_validator_report_metadata, observed_pdf_sha256);
+    let generated_dispatch_evidence =
+        generated_dispatch_evidence_preservation_indexes_for_act(&state, act_id).await?;
     let pdf = BundlePdfRef {
         media_type: "application/pdf",
         byte_length: doc.pdf_bytes.len(),
@@ -5245,6 +5408,7 @@ pub async fn get_document_bundle(
         &attachments_manifest,
         signed.as_ref(),
         &external_validator_reports,
+        &generated_dispatch_evidence,
     );
 
     Ok(Json(DocumentBundle {
