@@ -43,6 +43,7 @@ import {
   PRIVACY_RECORD_STATUSES,
   PRIVACY_RISK_LEVELS,
   RETENTION_DISPOSAL_ACTIONS,
+  RETENTION_EVIDENCE_STATES,
   RETENTION_EXECUTION_STATUSES,
   RETENTION_POLICY_STATUSES,
   SIGNATURE_FAMILIES,
@@ -821,6 +822,8 @@ function assertRetentionDueCandidatePriorExecution(
       execution_id: true,
       execution_status: true,
       outcome: true,
+      evidence_state: true,
+      evidence_next_step: true,
       requested_at: true,
       bounded_executor: true,
       targets_acted_count: true,
@@ -840,6 +843,17 @@ function assertRetentionDueCandidatePriorExecution(
     ['bounded_archive_recorded', 'bounded_no_action_recorded'],
     priorExecution.outcome,
     `${label}.outcome`,
+  );
+  expect(priorExecution.evidence_state, `${label}.evidence_state tracks outcome`).toBe(
+    priorExecution.outcome,
+  );
+  expect(
+    priorExecution.evidence_next_step,
+    `${label}.evidence_next_step should be canonical`,
+  ).toBe(
+    RETENTION_DUE_CANDIDATE_PRIOR_NEXT_STEPS[
+      priorExecution.outcome as keyof typeof RETENTION_DUE_CANDIDATE_PRIOR_NEXT_STEPS
+    ],
   );
   assertTimestamp(priorExecution.requested_at, `${label}.requested_at`);
   if (priorExecution.executed_at !== undefined) {
@@ -886,6 +900,8 @@ function assertRetentionDueCandidate(obj: unknown, label: string): RetentionDueC
       findings: true,
       outcome: true,
       status: true,
+      candidate_evidence_state: true,
+      evidence_next_step: true,
       would_execute: true,
       destructive_disposal_completed: true,
       full_erasure_completed: true,
@@ -936,6 +952,15 @@ function assertRetentionDueCandidate(obj: unknown, label: string): RetentionDueC
   );
   expect(candidate.outcome.length, `${label}.outcome should be non-empty`).toBeGreaterThan(0);
   expect(candidate.status.length, `${label}.status should be non-empty`).toBeGreaterThan(0);
+  inEnum(
+    RETENTION_EVIDENCE_STATES,
+    candidate.candidate_evidence_state,
+    `${label}.candidate_evidence_state`,
+  );
+  expect(
+    candidate.evidence_next_step.length,
+    `${label}.evidence_next_step should be non-empty`,
+  ).toBeGreaterThan(0);
   expect(candidate.would_execute, `${label}.would_execute is pinned false`).toBe(false);
   expect(
     candidate.destructive_disposal_completed,
@@ -1245,6 +1270,8 @@ function assertRetentionExecutionRecord(obj: unknown, label: string): RetentionE
       audit_evidence: true,
       outcome: true,
       block_reason: true,
+      evidence_state: true,
+      evidence_next_step: true,
       workflow: true,
       execution_result: true,
       would_execute: true,
@@ -1307,6 +1334,11 @@ function assertRetentionExecutionRecord(obj: unknown, label: string): RetentionE
   expect(record.block_reason.length, `${label}.block_reason should be non-empty`).toBeGreaterThan(
     0,
   );
+  inEnum(RETENTION_EVIDENCE_STATES, record.evidence_state, `${label}.evidence_state`);
+  expect(
+    record.evidence_next_step.length,
+    `${label}.evidence_next_step should be non-empty`,
+  ).toBeGreaterThan(0);
   assertRetentionOperatorWorkflow(record.workflow, `${label}.workflow`);
   assertRetentionExecutionResult(record.execution_result, `${label}.execution_result`);
   expect(typeof record.would_execute, `${label}.would_execute should be boolean`).toBe('boolean');

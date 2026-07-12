@@ -1401,6 +1401,8 @@ pub struct RetentionDueCandidate {
     pub findings: Vec<RetentionDueFinding>,
     pub outcome: String,
     pub status: String,
+    pub candidate_evidence_state: RetentionEvidenceState,
+    pub evidence_next_step: String,
     pub would_execute: bool,
     pub destructive_disposal_completed: bool,
     pub full_erasure_completed: bool,
@@ -1414,6 +1416,8 @@ pub struct RetentionDueCandidatePriorExecution {
     pub execution_id: String,
     pub execution_status: String,
     pub outcome: String,
+    pub evidence_state: RetentionEvidenceState,
+    pub evidence_next_step: String,
     pub requested_at: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub executed_at: Option<String>,
@@ -1485,6 +1489,10 @@ pub struct RetentionExecutionRecord {
     pub approval: Option<RetentionExecutionApproval>,
     pub outcome: RetentionExecutionOutcome,
     pub block_reason: String,
+    #[serde(default = "default_retention_evidence_state")]
+    pub evidence_state: RetentionEvidenceState,
+    #[serde(default)]
+    pub evidence_next_step: String,
     #[serde(default = "legacy_retention_operator_workflow")]
     pub workflow: RetentionOperatorWorkflow,
     #[serde(default = "legacy_retention_execution_result")]
@@ -1526,6 +1534,16 @@ pub enum RetentionOperatorReviewDecision {
     ReviewRequired,
     Blocked,
     ExecutionRecorded,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RetentionEvidenceState {
+    ReviewQueued,
+    Blocked,
+    BoundedArchiveRecorded,
+    BoundedNoActionRecorded,
+    PriorBoundedEvidenceAvailable,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -3214,6 +3232,13 @@ fn retention_due_candidate_for_book_policy(
             execution_record.workflow.next_step.clone(),
         )
     };
+    let (candidate_evidence_state, evidence_next_step) =
+        retention_due_candidate_evidence_progression(
+            &status,
+            prior_execution.as_ref(),
+            &next_step,
+            execution_record.outcome,
+        );
 
     Some(RetentionDueCandidate {
         candidate_id: format!(
@@ -3240,6 +3265,8 @@ fn retention_due_candidate_for_book_policy(
         findings,
         outcome,
         status,
+        candidate_evidence_state,
+        evidence_next_step,
         would_execute: false,
         destructive_disposal_completed: false,
         full_erasure_completed: false,
@@ -4012,6 +4039,8 @@ fn build_retention_execution_record(
         approval: request.approval,
         outcome,
         block_reason: block_reason.to_owned(),
+        evidence_state: retention_execution_evidence_state(outcome),
+        evidence_next_step: retention_execution_evidence_next_step(outcome, &workflow.next_step),
         workflow,
         would_execute: matches!(
             outcome,
@@ -4143,6 +4172,9 @@ fn retention_prior_bounded_due_candidate_projection(
         execution_id: record.id.clone(),
         execution_status: retention_execution_status_wire(record.execution_status).to_owned(),
         outcome: retention_execution_outcome_wire(record.outcome).to_owned(),
+        evidence_state: retention_prior_bounded_evidence_state(record.outcome),
+        evidence_next_step: retention_prior_bounded_due_candidate_next_step(record.outcome)
+            .to_owned(),
         requested_at: record.requested_at.clone(),
         executed_at: record.execution_result.executed_at.clone(),
         bounded_executor: record.execution_result.bounded_executor,
@@ -4151,6 +4183,27 @@ fn retention_prior_bounded_due_candidate_projection(
         full_erasure_completed: record.execution_result.full_erasure_completed,
         next_step: retention_prior_bounded_due_candidate_next_step(record.outcome).to_owned(),
     })
+}
+
+fn retention_due_candidate_evidence_progression(
+    status: &str,
+    prior_execution: Option<&RetentionDueCandidatePriorExecution>,
+    next_step: &str,
+    outcome: RetentionExecutionOutcome,
+) -> (RetentionEvidenceState, String) {
+    if status == retention_execution_status_wire(RetentionExecutionStatus::Blocked) {
+        return (RetentionEvidenceState::Blocked, next_step.to_owned());
+    }
+    if let Some(prior_execution) = prior_execution {
+        return (
+            prior_execution.evidence_state,
+            prior_execution.evidence_next_step.clone(),
+        );
+    }
+    (
+        retention_execution_evidence_state(outcome),
+        retention_execution_evidence_next_step(outcome, next_step),
+    )
 }
 
 fn retention_prior_bounded_due_candidate_next_step(
@@ -4164,6 +4217,20 @@ fn retention_prior_bounded_due_candidate_next_step(
             RETENTION_PRIOR_BOUNDED_NO_ACTION_NEXT_STEP
         }
         _ => RETENTION_PRIOR_BOUNDED_GENERIC_NEXT_STEP,
+    }
+}
+
+fn retention_prior_bounded_evidence_state(
+    outcome: RetentionExecutionOutcome,
+) -> RetentionEvidenceState {
+    match outcome {
+        RetentionExecutionOutcome::BoundedArchiveRecorded => {
+            RetentionEvidenceState::BoundedArchiveRecorded
+        }
+        RetentionExecutionOutcome::BoundedNoActionRecorded => {
+            RetentionEvidenceState::BoundedNoActionRecorded
+        }
+        _ => RetentionEvidenceState::PriorBoundedEvidenceAvailable,
     }
 }
 
@@ -4630,6 +4697,48 @@ fn outcome_reason_code(outcome: RetentionExecutionOutcome) -> &'static str {
     }
 }
 
+fn retention_execution_evidence_state(
+    outcome: RetentionExecutionOutcome,
+) -> RetentionEvidenceState {
+    match outcome {
+        RetentionExecutionOutcome::ManualReviewRequired => RetentionEvidenceState::ReviewQueued,
+        RetentionExecutionOutcome::BoundedArchiveRecorded => {
+            RetentionEvidenceState::BoundedArchiveRecorded
+        }
+        RetentionExecutionOutcome::BoundedNoActionRecorded => {
+            RetentionEvidenceState::BoundedNoActionRecorded
+        }
+        RetentionExecutionOutcome::AlreadyExecuted => {
+            RetentionEvidenceState::PriorBoundedEvidenceAvailable
+        }
+        RetentionExecutionOutcome::BlockedMissingPolicy
+        | RetentionExecutionOutcome::BlockedStalePolicy
+        | RetentionExecutionOutcome::BlockedPolicyMismatch
+        | RetentionExecutionOutcome::BlockedLegalHold
+        | RetentionExecutionOutcome::BlockedDestructiveAction
+        | RetentionExecutionOutcome::BlockedApprovalMismatch
+        | RetentionExecutionOutcome::BlockedMissingTarget => RetentionEvidenceState::Blocked,
+    }
+}
+
+fn retention_execution_evidence_next_step(
+    outcome: RetentionExecutionOutcome,
+    workflow_next_step: &str,
+) -> String {
+    match outcome {
+        RetentionExecutionOutcome::BoundedArchiveRecorded => {
+            "Bounded archive evidence recorded; no destructive operation was performed.".to_owned()
+        }
+        RetentionExecutionOutcome::BoundedNoActionRecorded => {
+            "Bounded no-action evidence recorded; no destructive operation was performed.".to_owned()
+        }
+        RetentionExecutionOutcome::AlreadyExecuted => {
+            "Prior bounded evidence is already available for this target/policy; no duplicate action was recorded.".to_owned()
+        }
+        _ => workflow_next_step.to_owned(),
+    }
+}
+
 fn apply_execution_result_to_matches(
     record: &RetentionExecutionRecord,
     matches: &mut [RetentionDryRunMatch],
@@ -4713,6 +4822,9 @@ fn retention_operator_review_decision(
 fn normalize_retention_execution_record(record: &mut RetentionExecutionRecord) {
     record.execution_status = retention_execution_status(record.outcome);
     record.operator_review_decision = retention_operator_review_decision(record.outcome);
+    record.evidence_state = retention_execution_evidence_state(record.outcome);
+    record.evidence_next_step =
+        retention_execution_evidence_next_step(record.outcome, &record.workflow.next_step);
 }
 
 fn default_retention_execution_intent() -> RetentionExecutionIntent {
@@ -4725,6 +4837,10 @@ fn default_retention_execution_status() -> RetentionExecutionStatus {
 
 fn default_retention_operator_review_decision() -> RetentionOperatorReviewDecision {
     RetentionOperatorReviewDecision::ReviewRequired
+}
+
+fn default_retention_evidence_state() -> RetentionEvidenceState {
+    RetentionEvidenceState::ReviewQueued
 }
 
 fn legacy_retention_operator_workflow() -> RetentionOperatorWorkflow {

@@ -2219,6 +2219,14 @@ async fn retention_due_candidates_closed_book_with_active_archive_policy_becomes
     assert_eq!(candidate["overdue"], json!(true));
     assert_eq!(candidate["outcome"], json!("manual_review_required"));
     assert_eq!(candidate["status"], json!("awaiting_review"));
+    assert_eq!(
+        candidate["candidate_evidence_state"],
+        json!("review_queued")
+    );
+    assert_eq!(
+        candidate["evidence_next_step"], candidate["next_step"],
+        "review-only due candidates should expose the same non-destructive next step"
+    );
     assert_eq!(candidate["would_execute"], json!(false));
     assert_eq!(candidate["destructive_disposal_completed"], json!(false));
     assert_eq!(candidate["full_erasure_completed"], json!(false));
@@ -2287,6 +2295,11 @@ async fn retention_due_candidates_active_legal_hold_blocks_candidate() {
     assert_eq!(candidate["record_id"], json!(book_id));
     assert_eq!(candidate["outcome"], json!("blocked_legal_hold"));
     assert_eq!(candidate["status"], json!("blocked"));
+    assert_eq!(candidate["candidate_evidence_state"], json!("blocked"));
+    assert_eq!(
+        candidate["evidence_next_step"], candidate["next_step"],
+        "blocked due candidates should not project prior bounded evidence as current progress"
+    );
     assert_eq!(
         candidate["legal_hold_blockers"][0]["source"],
         json!("retention_policy")
@@ -2339,6 +2352,8 @@ async fn retention_due_candidates_destructive_policy_returns_approval_metadata_a
     assert_eq!(candidate["destructive_action"], json!(true));
     assert_eq!(candidate["outcome"], json!("blocked_destructive_action"));
     assert_eq!(candidate["status"], json!("blocked"));
+    assert_eq!(candidate["candidate_evidence_state"], json!("blocked"));
+    assert_eq!(candidate["evidence_next_step"], candidate["next_step"]);
     assert_eq!(candidate["would_execute"], json!(false));
     assert_eq!(candidate["destructive_disposal_completed"], json!(false));
     assert_eq!(candidate["full_erasure_completed"], json!(false));
@@ -2392,6 +2407,8 @@ async fn retention_due_candidates_unsupported_retention_period_fails_closed() {
     assert_eq!(candidate["overdue"], json!(false));
     assert_eq!(candidate["outcome"], json!("unsupported_retention_period"));
     assert_eq!(candidate["status"], json!("blocked"));
+    assert_eq!(candidate["candidate_evidence_state"], json!("blocked"));
+    assert_eq!(candidate["evidence_next_step"], candidate["next_step"]);
     assert!(
         candidate["findings"]
             .as_array()
@@ -2510,6 +2527,11 @@ async fn retention_due_candidates_surface_existing_review_without_mutation() {
         json!("awaiting_review")
     );
     assert_eq!(execution_record["outcome"], json!("manual_review_required"));
+    assert_eq!(execution_record["evidence_state"], json!("review_queued"));
+    assert_eq!(
+        execution_record["evidence_next_step"],
+        execution_record["workflow"]["next_step"]
+    );
     assert_eq!(execution_record["would_execute"], json!(false));
     assert!(
         execution_record["execution_result"]["targets_acted"]
@@ -2542,6 +2564,14 @@ async fn retention_due_candidates_surface_existing_review_without_mutation() {
     assert_eq!(candidate["policy_id"], json!(policy_id));
     assert_eq!(candidate["status"], execution_record["execution_status"]);
     assert_eq!(candidate["outcome"], execution_record["outcome"]);
+    assert_eq!(
+        candidate["candidate_evidence_state"],
+        json!("review_queued")
+    );
+    assert_eq!(
+        candidate["evidence_next_step"],
+        execution_record["evidence_next_step"]
+    );
     assert_eq!(candidate["would_execute"], json!(false));
     assert_eq!(candidate["destructive_disposal_completed"], json!(false));
     assert_eq!(candidate["full_erasure_completed"], json!(false));
@@ -2618,6 +2648,14 @@ async fn retention_due_candidates_project_prior_bounded_execution_without_mutati
     );
     assert_eq!(execution_record["execution_status"], json!("executed"));
     assert_eq!(
+        execution_record["evidence_state"],
+        json!("bounded_archive_recorded")
+    );
+    assert_eq!(
+        execution_record["evidence_next_step"],
+        json!("Bounded archive evidence recorded; no destructive operation was performed.")
+    );
+    assert_eq!(
         execution_record["execution_result"]["destructive_disposal_completed"],
         json!(false)
     );
@@ -2650,6 +2688,14 @@ async fn retention_due_candidates_project_prior_bounded_execution_without_mutati
     let candidate = &body["candidates"][0];
     assert_eq!(candidate["record_id"], json!(book_id));
     assert_eq!(candidate["policy_id"], json!(policy_id));
+    assert_eq!(
+        candidate["candidate_evidence_state"],
+        json!("bounded_archive_recorded")
+    );
+    assert_eq!(
+        candidate["evidence_next_step"],
+        json!(RETENTION_PRIOR_BOUNDED_ARCHIVE_NEXT_STEP)
+    );
     assert_eq!(candidate["would_execute"], json!(false));
     assert_eq!(candidate["destructive_disposal_completed"], json!(false));
     assert_eq!(candidate["full_erasure_completed"], json!(false));
@@ -2660,6 +2706,14 @@ async fn retention_due_candidates_project_prior_bounded_execution_without_mutati
     assert_eq!(
         prior_execution["outcome"],
         json!("bounded_archive_recorded")
+    );
+    assert_eq!(
+        prior_execution["evidence_state"],
+        json!("bounded_archive_recorded")
+    );
+    assert_eq!(
+        prior_execution["evidence_next_step"],
+        json!(RETENTION_PRIOR_BOUNDED_ARCHIVE_NEXT_STEP)
     );
     assert_eq!(
         prior_execution["requested_at"],
@@ -2785,6 +2839,11 @@ async fn retention_due_candidates_ignore_unsafe_prior_bounded_execution_flags() 
     let candidate = &body["candidates"][0];
     assert_eq!(candidate["record_id"], json!(book_id));
     assert_eq!(candidate["policy_id"], json!(policy_id));
+    assert_eq!(
+        candidate["candidate_evidence_state"],
+        json!("review_queued")
+    );
+    assert_eq!(candidate["evidence_next_step"], candidate["next_step"]);
     assert_eq!(candidate["would_execute"], json!(false));
     assert_eq!(candidate["destructive_disposal_completed"], json!(false));
     assert_eq!(candidate["full_erasure_completed"], json!(false));
@@ -2852,6 +2911,14 @@ async fn retention_due_candidates_project_prior_bounded_no_action_recorded_witho
     );
     assert_eq!(execution_record["execution_status"], json!("executed"));
     assert_eq!(
+        execution_record["evidence_state"],
+        json!("bounded_no_action_recorded")
+    );
+    assert_eq!(
+        execution_record["evidence_next_step"],
+        json!("Bounded no-action evidence recorded; no destructive operation was performed.")
+    );
+    assert_eq!(
         execution_record["execution_result"]["bounded_executor"],
         json!(true)
     );
@@ -2878,6 +2945,14 @@ async fn retention_due_candidates_project_prior_bounded_no_action_recorded_witho
     let candidate = &body["candidates"][0];
     assert_eq!(candidate["record_id"], json!(book_id));
     assert_eq!(candidate["policy_id"], json!(policy_id));
+    assert_eq!(
+        candidate["candidate_evidence_state"],
+        json!("bounded_no_action_recorded")
+    );
+    assert_eq!(
+        candidate["evidence_next_step"],
+        json!(RETENTION_PRIOR_BOUNDED_NO_ACTION_NEXT_STEP)
+    );
     assert_eq!(candidate["would_execute"], json!(false));
     assert_eq!(candidate["destructive_disposal_completed"], json!(false));
     assert_eq!(candidate["full_erasure_completed"], json!(false));
@@ -2888,6 +2963,14 @@ async fn retention_due_candidates_project_prior_bounded_no_action_recorded_witho
     assert_eq!(
         prior_execution["outcome"],
         json!("bounded_no_action_recorded")
+    );
+    assert_eq!(
+        prior_execution["evidence_state"],
+        json!("bounded_no_action_recorded")
+    );
+    assert_eq!(
+        prior_execution["evidence_next_step"],
+        json!(RETENTION_PRIOR_BOUNDED_NO_ACTION_NEXT_STEP)
     );
     assert_eq!(prior_execution["bounded_executor"], json!(true));
     assert_eq!(prior_execution["targets_acted_count"], json!(1));
@@ -3307,6 +3390,11 @@ async fn retention_execution_request_records_manual_review_for_non_destructive_p
         json!("review_required")
     );
     assert_eq!(execution_record["outcome"], json!("manual_review_required"));
+    assert_eq!(execution_record["evidence_state"], json!("review_queued"));
+    assert_eq!(
+        execution_record["evidence_next_step"],
+        execution_record["workflow"]["next_step"]
+    );
     assert_eq!(execution_record["would_execute"], json!(false));
     assert_eq!(
         execution_record["workflow"]["status"],
@@ -3661,6 +3749,11 @@ async fn retention_execution_records_bounded_archive_and_idempotent_repeat() {
     assert_eq!(record["outcome"], json!("bounded_archive_recorded"));
     assert_eq!(record["execution_intent"], json!("execute_supported"));
     assert_eq!(record["execution_status"], json!("executed"));
+    assert_eq!(record["evidence_state"], json!("bounded_archive_recorded"));
+    assert_eq!(
+        record["evidence_next_step"],
+        json!("Bounded archive evidence recorded; no destructive operation was performed.")
+    );
     assert_eq!(
         record["operator_review_decision"],
         json!("execution_recorded")
@@ -3714,6 +3807,16 @@ async fn retention_execution_records_bounded_archive_and_idempotent_repeat() {
     let repeat_record = &repeat["execution_record"];
     assert_eq!(repeat_record["outcome"], json!("already_executed"));
     assert_eq!(repeat_record["execution_status"], json!("executed"));
+    assert_eq!(
+        repeat_record["evidence_state"],
+        json!("prior_bounded_evidence_available")
+    );
+    assert_eq!(
+        repeat_record["evidence_next_step"],
+        json!(
+            "Prior bounded evidence is already available for this target/policy; no duplicate action was recorded."
+        )
+    );
     assert_eq!(repeat_record["would_execute"], json!(false));
     assert!(
         repeat_record["execution_result"]["targets_acted"]
@@ -3847,6 +3950,11 @@ async fn retention_execution_request_blocks_active_legal_hold() {
     assert_eq!(body["matched_count"], json!(2));
     let execution_record = &body["execution_record"];
     assert_eq!(execution_record["outcome"], json!("blocked_legal_hold"));
+    assert_eq!(execution_record["evidence_state"], json!("blocked"));
+    assert_eq!(
+        execution_record["evidence_next_step"],
+        execution_record["workflow"]["next_step"]
+    );
     assert_eq!(
         execution_record["execution_intent"],
         json!("execute_supported")
@@ -3950,6 +4058,11 @@ async fn retention_execution_request_records_missing_and_stale_policy_blocks() {
     assert_eq!(missing["matched_count"], json!(0));
     let execution_record = &missing["execution_record"];
     assert_eq!(execution_record["outcome"], json!("blocked_missing_policy"));
+    assert_eq!(execution_record["evidence_state"], json!("blocked"));
+    assert_eq!(
+        execution_record["evidence_next_step"],
+        execution_record["workflow"]["next_step"]
+    );
     assert_eq!(execution_record["requested_policy"]["found"], json!(false));
     assert_eq!(
         execution_record["requested_policy"]["id"],
@@ -4039,6 +4152,11 @@ async fn retention_execution_request_records_missing_and_stale_policy_blocks() {
     assert_eq!(stale["matched_count"], json!(0));
     let execution_record = &stale["execution_record"];
     assert_eq!(execution_record["outcome"], json!("blocked_stale_policy"));
+    assert_eq!(execution_record["evidence_state"], json!("blocked"));
+    assert_eq!(
+        execution_record["evidence_next_step"],
+        execution_record["workflow"]["next_step"]
+    );
     assert_eq!(execution_record["requested_policy"]["found"], json!(true));
     assert_eq!(execution_record["requested_policy"]["stale"], json!(true));
     assert_eq!(

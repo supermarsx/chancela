@@ -2744,6 +2744,15 @@ export type RetentionPolicyStatus = (typeof RETENTION_POLICY_STATUSES)[number];
 export const RETENTION_EXECUTION_STATUSES = ['awaiting_review', 'blocked', 'executed'] as const;
 export type RetentionExecutionStatus = (typeof RETENTION_EXECUTION_STATUSES)[number];
 
+export const RETENTION_EVIDENCE_STATES = [
+  'review_queued',
+  'blocked',
+  'bounded_archive_recorded',
+  'bounded_no_action_recorded',
+  'prior_bounded_evidence_available',
+] as const;
+export type RetentionEvidenceState = (typeof RETENTION_EVIDENCE_STATES)[number];
+
 export const RETENTION_DISPOSAL_ACTIONS = [
   'review',
   'archive',
@@ -2955,6 +2964,8 @@ export interface RetentionDueCandidatePriorExecution {
   execution_id: string;
   execution_status: RetentionExecutionStatus;
   outcome: RetentionExecutionOutcome;
+  evidence_state: RetentionEvidenceState;
+  evidence_next_step: string;
   requested_at: string;
   executed_at?: string;
   bounded_executor: boolean;
@@ -2986,6 +2997,8 @@ export interface RetentionDueCandidate {
   findings: RetentionDueCandidateFinding[];
   outcome: string;
   status: string;
+  candidate_evidence_state: RetentionEvidenceState;
+  evidence_next_step: string;
   would_execute: false;
   destructive_disposal_completed: false;
   full_erasure_completed: false;
@@ -3128,6 +3141,8 @@ export interface RetentionExecutionRecord {
   approval?: RetentionExecutionApproval;
   outcome: RetentionExecutionOutcome;
   block_reason: string;
+  evidence_state: RetentionEvidenceState;
+  evidence_next_step: string;
   workflow: RetentionOperatorWorkflow;
   execution_result: RetentionExecutionResult;
   would_execute: boolean;
