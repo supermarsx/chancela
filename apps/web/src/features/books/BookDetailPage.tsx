@@ -1229,11 +1229,9 @@ function PaperBookOcrDraftPanel({ row }: { row: PaperBookImportView }) {
                         {createdActDrafts[draft.draft_id].legal_validity_claimed ? 'sim' : 'não'}
                       </p>
                     ) : null}
-                    {createdActDrafts[draft.draft_id]?.conversion_execution_artifact ? (
-                      <PaperBookOcrConversionExecutionArtifactPanel
-                        artifact={createdActDrafts[draft.draft_id].conversion_execution_artifact}
-                      />
-                    ) : null}
+                    {renderPaperBookOcrConversionExecutionArtifactPanel(
+                      createdActDrafts[draft.draft_id]?.conversion_execution_artifact,
+                    )}
                     {createActDraft.error ? <ErrorNote error={createActDraft.error} /> : null}
                     <GateButton
                       perm="act.draft"
@@ -1263,6 +1261,13 @@ function PaperBookOcrDraftPanel({ row }: { row: PaperBookImportView }) {
       )}
     </section>
   );
+}
+
+function renderPaperBookOcrConversionExecutionArtifactPanel(
+  artifact: PaperBookOcrConversionExecutionArtifactView | undefined,
+) {
+  if (!artifact) return null;
+  return <PaperBookOcrConversionExecutionArtifactPanel artifact={artifact} />;
 }
 
 function PaperBookImportsPanel({ book }: { book: BookView }) {
