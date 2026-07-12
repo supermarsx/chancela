@@ -5737,6 +5737,7 @@ export interface DataCleanupBody {
   dry_run?: boolean;
   minimum_age_days?: number;
   keep_latest?: number;
+  preview_token?: string;
 }
 
 /** `POST /v1/data/cleanup` response. */
@@ -5744,6 +5745,7 @@ export interface DataCleanupResult {
   target: DataCleanupTarget;
   data_dir: string | null;
   dry_run: boolean;
+  preview_token?: string;
   deleted_bytes: number;
   deleted_files: number;
   deleted_directories: number;

@@ -4,10 +4,10 @@
 //! logs, and never opens or migrates a second store connection. Filesystem checks run on a blocking
 //! worker so directory traversal and permission probes do not occupy the async runtime.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt;
 use std::fs::{self, OpenOptions};
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -19,6 +19,7 @@ use chancela_store::{
     StoreKeyRotationExecution, StoreKeyRotationPreflight, StoreOpenOptions,
 };
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use time::format_description::well_known::Rfc3339;
 use tokio::task;
 
@@ -169,12 +170,15 @@ pub struct DataCleanupRequest {
     pub dry_run: Option<bool>,
     pub minimum_age_days: Option<u64>,
     pub keep_latest: Option<usize>,
+    pub preview_token: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct DataCleanupResponse {
     pub target: String,
     pub dry_run: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preview_token: Option<String>,
     pub deleted_bytes: u64,
     pub deleted_files: u64,
     pub deleted_directories: u64,
@@ -264,16 +268,69 @@ impl CleanupTarget {
 #[derive(Debug, Clone)]
 struct CleanupPolicy {
     dry_run: bool,
+    request_policy: CleanupRequestPolicy,
     minimum_age: Option<Duration>,
     keep_latest: usize,
     retained_files: BTreeSet<PathBuf>,
     now: SystemTime,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct CleanupRequestPolicy {
+    minimum_age_days: Option<u64>,
+    keep_latest: usize,
+}
+
+impl CleanupRequestPolicy {
+    fn from_request(req: &DataCleanupRequest) -> Self {
+        Self {
+            minimum_age_days: req.minimum_age_days,
+            keep_latest: req.keep_latest.unwrap_or(0),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct CleanupFileCandidate {
+    path: PathBuf,
+    bytes: u64,
+    modified: Option<SystemTime>,
+    sha256: [u8; 32],
+}
+
+#[derive(Debug, Clone)]
+struct CleanupDirectoryCandidate {
+    path: PathBuf,
+    modified: Option<SystemTime>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct CleanupSelectionManifest {
+    files: Vec<CleanupFileCandidate>,
+    directories: Vec<CleanupDirectoryCandidate>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ExportCleanupPreviewRecord {
+    data_dir: PathBuf,
+    policy: CleanupRequestPolicy,
+    manifest: CleanupSelectionManifest,
+    expires_at: SystemTime,
+}
+
+struct ExportCleanupPreview {
+    response: DataCleanupResponse,
+    record: ExportCleanupPreviewRecord,
+}
+
+const EXPORT_CLEANUP_PREVIEW_TTL: Duration = Duration::from_secs(10 * 60);
+
 impl CleanupPolicy {
     fn from_request(target: CleanupTarget, req: &DataCleanupRequest) -> Result<Self, ApiError> {
-        let has_export_policy =
-            req.dry_run.is_some() || req.minimum_age_days.is_some() || req.keep_latest.is_some();
+        let has_export_policy = req.dry_run.is_some()
+            || req.minimum_age_days.is_some()
+            || req.keep_latest.is_some()
+            || req.preview_token.is_some();
         if target != CleanupTarget::Exports && has_export_policy {
             return Err(ApiError::Unprocessable(
                 "cleanup retention policy options are supported only for exports".to_owned(),
@@ -295,6 +352,7 @@ impl CleanupPolicy {
 
         Ok(Self {
             dry_run: req.dry_run.unwrap_or(false),
+            request_policy: CleanupRequestPolicy::from_request(req),
             minimum_age,
             keep_latest: req.keep_latest.unwrap_or(0),
             retained_files: BTreeSet::new(),
@@ -399,6 +457,49 @@ pub async fn cleanup_data(
         ));
     };
     let data_dir_display = data_dir.to_string_lossy().into_owned();
+
+    if target == CleanupTarget::Exports && policy.dry_run {
+        let mut preview =
+            task::spawn_blocking(move || preview_export_cleanup_data_dir(data_dir, policy))
+                .await
+                .map_err(|e| ApiError::Internal(format!("data cleanup worker failed: {e}")))??;
+        let token = uuid::Uuid::new_v4().to_string();
+        preview.response.preview_token = Some(token.clone());
+        preview.response.data_dir = Some(data_dir_display);
+        let now = SystemTime::now();
+        {
+            let mut previews = state.export_cleanup_previews.write().await;
+            prune_expired_export_cleanup_previews(&mut previews.records, now);
+            previews.records.insert(token, preview.record);
+        }
+        return Ok(Json(preview.response));
+    }
+
+    if target == CleanupTarget::Exports {
+        let token = req
+            .preview_token
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| {
+                ApiError::Unprocessable(
+                    "export cleanup execution requires a valid preview_token from a dry-run preview"
+                        .to_owned(),
+                )
+            })?
+            .to_owned();
+        let data_dir_for_canonical = data_dir.clone();
+        let base = task::spawn_blocking(move || canonical_data_dir(&data_dir_for_canonical))
+            .await
+            .map_err(|e| ApiError::Internal(format!("data cleanup worker failed: {e}")))??;
+        let record = consume_export_cleanup_preview(&state, &token, &base, &policy).await?;
+        let mut response =
+            task::spawn_blocking(move || execute_export_cleanup_manifest(base, record))
+                .await
+                .map_err(|e| ApiError::Internal(format!("data cleanup worker failed: {e}")))??;
+        response.data_dir = Some(data_dir_display);
+        return Ok(Json(response));
+    }
 
     let mut response = task::spawn_blocking(move || cleanup_data_dir(data_dir, target, policy))
         .await
@@ -526,10 +627,44 @@ fn cleanup_data_dir(
     target: CleanupTarget,
     mut policy: CleanupPolicy,
 ) -> Result<DataCleanupResponse, ApiError> {
+    Ok(cleanup_data_dir_inner(data_dir, target, &mut policy)?.response)
+}
+
+fn preview_export_cleanup_data_dir(
+    data_dir: PathBuf,
+    mut policy: CleanupPolicy,
+) -> Result<ExportCleanupPreview, ApiError> {
+    let run = cleanup_data_dir_inner(data_dir, CleanupTarget::Exports, &mut policy)?;
+    let expires_at = SystemTime::now()
+        .checked_add(EXPORT_CLEANUP_PREVIEW_TTL)
+        .unwrap_or(UNIX_EPOCH + EXPORT_CLEANUP_PREVIEW_TTL);
+    Ok(ExportCleanupPreview {
+        response: run.response,
+        record: ExportCleanupPreviewRecord {
+            data_dir: run.base,
+            policy: policy.request_policy,
+            manifest: run.manifest,
+            expires_at,
+        },
+    })
+}
+
+struct CleanupDataRun {
+    base: PathBuf,
+    response: DataCleanupResponse,
+    manifest: CleanupSelectionManifest,
+}
+
+fn cleanup_data_dir_inner(
+    data_dir: PathBuf,
+    target: CleanupTarget,
+    policy: &mut CleanupPolicy,
+) -> Result<CleanupDataRun, ApiError> {
     let base = canonical_data_dir(&data_dir)?;
     let mut response = DataCleanupResponse {
         target: target.id().to_owned(),
         dry_run: policy.dry_run,
+        preview_token: None,
         deleted_bytes: 0,
         deleted_files: 0,
         deleted_directories: 0,
@@ -539,6 +674,7 @@ fn cleanup_data_dir(
         skipped: Vec::new(),
         data_dir: None,
     };
+    let mut manifest = CleanupSelectionManifest::default();
 
     let entries = fs::read_dir(&base).map_err(|e| {
         ApiError::Unprocessable(format!(
@@ -559,19 +695,18 @@ fn cleanup_data_dir(
         let root = entry.file_name().to_string_lossy().into_owned();
         if concern_for_root(&root).id == target.id() {
             if target == CleanupTarget::Exports && policy.keep_latest > 0 {
-                retain_latest_files(
-                    &base,
-                    &entry.path(),
-                    policy.keep_latest,
-                    &mut policy,
-                    &mut response,
-                );
+                let keep_latest = policy.keep_latest;
+                retain_latest_files(&base, &entry.path(), keep_latest, policy, &mut response);
             }
-            cleanup_concern_root(&base, &entry.path(), &policy, &mut response);
+            cleanup_concern_root(&base, &entry.path(), policy, &mut response, &mut manifest);
         }
     }
 
-    Ok(response)
+    Ok(CleanupDataRun {
+        base,
+        response,
+        manifest,
+    })
 }
 
 fn canonical_data_dir(dir: &Path) -> Result<PathBuf, ApiError> {
@@ -604,6 +739,7 @@ fn cleanup_concern_root(
     root: &Path,
     policy: &CleanupPolicy,
     response: &mut DataCleanupResponse,
+    manifest: &mut CleanupSelectionManifest,
 ) {
     let rel = relative_display(base, root);
     let meta = match fs::symlink_metadata(root) {
@@ -627,9 +763,9 @@ fn cleanup_concern_root(
     }
 
     if meta.is_dir() {
-        let _ = cleanup_directory_contents(base, root, policy, response);
+        let _ = cleanup_directory_contents(base, root, policy, response, manifest);
     } else if meta.is_file() {
-        let _ = cleanup_file(root, &meta, base, policy, response);
+        let _ = cleanup_file(root, &meta, base, policy, response, manifest);
     } else {
         response
             .skipped
@@ -642,6 +778,7 @@ fn cleanup_directory_contents(
     dir: &Path,
     policy: &CleanupPolicy,
     response: &mut DataCleanupResponse,
+    manifest: &mut CleanupSelectionManifest,
 ) -> bool {
     let entries = match fs::read_dir(dir) {
         Ok(entries) => entries,
@@ -667,7 +804,7 @@ fn cleanup_directory_contents(
                 continue;
             }
         };
-        if !cleanup_path(base, &entry.path(), policy, response) {
+        if !cleanup_path(base, &entry.path(), policy, response, manifest) {
             all_entries_removed = false;
         }
     }
@@ -679,6 +816,7 @@ fn cleanup_path(
     path: &Path,
     policy: &CleanupPolicy,
     response: &mut DataCleanupResponse,
+    manifest: &mut CleanupSelectionManifest,
 ) -> bool {
     let rel = relative_display(base, path);
     let meta = match fs::symlink_metadata(path) {
@@ -702,11 +840,15 @@ fn cleanup_path(
     }
 
     if meta.is_dir() {
-        let contents_removed = cleanup_directory_contents(base, path, policy, response);
+        let contents_removed = cleanup_directory_contents(base, path, policy, response, manifest);
         if policy.dry_run {
             if contents_removed {
                 response.would_delete_directories =
                     response.would_delete_directories.saturating_add(1);
+                manifest.directories.push(CleanupDirectoryCandidate {
+                    path: path.to_path_buf(),
+                    modified: meta.modified().ok(),
+                });
                 return true;
             }
             return false;
@@ -724,7 +866,7 @@ fn cleanup_path(
             }
         }
     } else if meta.is_file() {
-        cleanup_file(path, &meta, base, policy, response)
+        cleanup_file(path, &meta, base, policy, response, manifest)
     } else {
         response
             .skipped
@@ -739,11 +881,28 @@ fn cleanup_file(
     base: &Path,
     policy: &CleanupPolicy,
     response: &mut DataCleanupResponse,
+    manifest: &mut CleanupSelectionManifest,
 ) -> bool {
     if !policy.should_delete_file(path, meta) {
         return false;
     }
     if policy.dry_run {
+        let rel = relative_display(base, path);
+        let sha256 = match sha256_file(path) {
+            Ok(sha256) => sha256,
+            Err(e) => {
+                response.skipped.push(format!(
+                    "{rel}: failed to hash cleanup target during preview: {e}"
+                ));
+                return false;
+            }
+        };
+        manifest.files.push(CleanupFileCandidate {
+            path: path.to_path_buf(),
+            bytes: meta.len(),
+            modified: meta.modified().ok(),
+            sha256,
+        });
         response.would_delete_files = response.would_delete_files.saturating_add(1);
         response.would_delete_bytes = response.would_delete_bytes.saturating_add(meta.len());
         return true;
@@ -763,6 +922,362 @@ fn delete_file(path: &Path, bytes: u64, base: &Path, response: &mut DataCleanupR
             response
                 .skipped
                 .push(format!("{rel}: failed to delete file: {e}"));
+            false
+        }
+    }
+}
+
+fn sha256_file(path: &Path) -> std::io::Result<[u8; 32]> {
+    let mut file = fs::File::open(path)?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0_u8; 8192];
+    loop {
+        let read = file.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    Ok(hasher.finalize().into())
+}
+
+async fn consume_export_cleanup_preview(
+    state: &AppState,
+    token: &str,
+    data_dir: &Path,
+    policy: &CleanupPolicy,
+) -> Result<ExportCleanupPreviewRecord, ApiError> {
+    let now = SystemTime::now();
+    let mut previews = state.export_cleanup_previews.write().await;
+    prune_expired_export_cleanup_previews(&mut previews.records, now);
+    let Some(record) = previews.records.remove(token) else {
+        return Err(ApiError::Unprocessable(
+            "export cleanup preview_token is invalid or expired; run preview again".to_owned(),
+        ));
+    };
+    if record.expires_at <= now {
+        return Err(ApiError::Unprocessable(
+            "export cleanup preview_token expired; run preview again".to_owned(),
+        ));
+    }
+    if record.data_dir != data_dir {
+        return Err(ApiError::Unprocessable(
+            "export cleanup preview_token does not match the current data directory; run preview again"
+                .to_owned(),
+        ));
+    }
+    if record.policy != policy.request_policy {
+        return Err(ApiError::Unprocessable(
+            "export cleanup preview_token does not match the requested cleanup policy; run preview again"
+                .to_owned(),
+        ));
+    }
+    Ok(record)
+}
+
+fn prune_expired_export_cleanup_previews(
+    previews: &mut HashMap<String, ExportCleanupPreviewRecord>,
+    now: SystemTime,
+) {
+    previews.retain(|_, preview| preview.expires_at > now);
+}
+
+fn execute_export_cleanup_manifest(
+    base: PathBuf,
+    record: ExportCleanupPreviewRecord,
+) -> Result<DataCleanupResponse, ApiError> {
+    if record.data_dir != base {
+        return Err(ApiError::Unprocessable(
+            "export cleanup preview_token does not match the current data directory; run preview again"
+                .to_owned(),
+        ));
+    }
+    let mut response = DataCleanupResponse {
+        target: CleanupTarget::Exports.id().to_owned(),
+        dry_run: false,
+        preview_token: None,
+        deleted_bytes: 0,
+        deleted_files: 0,
+        deleted_directories: 0,
+        would_delete_bytes: 0,
+        would_delete_files: 0,
+        would_delete_directories: 0,
+        skipped: Vec::new(),
+        data_dir: None,
+    };
+
+    let skipped_directories =
+        prevalidate_manifest_directories(&base, &record.manifest.directories, &mut response);
+    let directories_with_selected_descendants =
+        directories_with_selected_descendants(&record.manifest);
+
+    for candidate in &record.manifest.files {
+        delete_manifest_file(&base, candidate, &skipped_directories, &mut response);
+    }
+
+    let mut directories = record.manifest.directories;
+    directories.sort_by(|left, right| {
+        right
+            .path
+            .components()
+            .count()
+            .cmp(&left.path.components().count())
+            .then_with(|| left.path.as_os_str().cmp(right.path.as_os_str()))
+    });
+    for candidate in directories {
+        let selected_descendant_was_removed =
+            directories_with_selected_descendants.contains(&candidate.path);
+        delete_manifest_directory(
+            &base,
+            &candidate,
+            &skipped_directories,
+            selected_descendant_was_removed,
+            &mut response,
+        );
+    }
+
+    Ok(response)
+}
+
+fn directories_with_selected_descendants(manifest: &CleanupSelectionManifest) -> BTreeSet<PathBuf> {
+    let mut directories = BTreeSet::new();
+    for directory in &manifest.directories {
+        if manifest
+            .files
+            .iter()
+            .any(|file| file.path.starts_with(&directory.path))
+            || manifest.directories.iter().any(|child| {
+                child.path != directory.path && child.path.starts_with(&directory.path)
+            })
+        {
+            directories.insert(directory.path.clone());
+        }
+    }
+    directories
+}
+
+fn prevalidate_manifest_directories(
+    base: &Path,
+    candidates: &[CleanupDirectoryCandidate],
+    response: &mut DataCleanupResponse,
+) -> BTreeSet<PathBuf> {
+    let mut skipped = BTreeSet::new();
+    for candidate in candidates {
+        if !manifest_directory_metadata_matches_preview(base, candidate, response) {
+            skipped.insert(candidate.path.clone());
+        }
+    }
+    skipped
+}
+
+fn manifest_directory_metadata_matches_preview(
+    base: &Path,
+    candidate: &CleanupDirectoryCandidate,
+    response: &mut DataCleanupResponse,
+) -> bool {
+    let path = &candidate.path;
+    let rel = relative_display(base, path);
+    let meta = match fs::symlink_metadata(path) {
+        Ok(meta) => meta,
+        Err(e) => {
+            response
+                .skipped
+                .push(format!("{rel}: failed to inspect cleanup directory: {e}"));
+            return false;
+        }
+    };
+    if meta.file_type().is_symlink() {
+        response
+            .skipped
+            .push(format!("{rel}: protected symlink cleanup directory"));
+        return false;
+    }
+    if let Err(reason) = validate_cleanup_target(base, path) {
+        response.skipped.push(format!("{rel}: {reason}"));
+        return false;
+    }
+    if !meta.is_dir() {
+        response
+            .skipped
+            .push(format!("{rel}: cleanup target is no longer a directory"));
+        return false;
+    }
+    let Some(preview_modified) = candidate.modified else {
+        response.skipped.push(format!(
+            "{rel}: cleanup directory metadata unavailable since preview"
+        ));
+        return false;
+    };
+    match meta.modified() {
+        Ok(current_modified) if current_modified == preview_modified => true,
+        Ok(_) => {
+            response.skipped.push(format!(
+                "{rel}: cleanup directory metadata changed since preview"
+            ));
+            false
+        }
+        Err(e) => {
+            response.skipped.push(format!(
+                "{rel}: cleanup directory metadata unavailable during execution: {e}"
+            ));
+            false
+        }
+    }
+}
+
+fn path_is_within_skipped_directory(path: &Path, skipped_directories: &BTreeSet<PathBuf>) -> bool {
+    skipped_directories
+        .iter()
+        .any(|directory| path.starts_with(directory))
+}
+
+fn delete_manifest_file(
+    base: &Path,
+    candidate: &CleanupFileCandidate,
+    skipped_directories: &BTreeSet<PathBuf>,
+    response: &mut DataCleanupResponse,
+) -> bool {
+    let path = &candidate.path;
+    let rel = relative_display(base, path);
+    if path_is_within_skipped_directory(path, skipped_directories) {
+        response.skipped.push(format!(
+            "{rel}: skipped because containing directory changed since preview"
+        ));
+        return false;
+    }
+    let meta = match fs::symlink_metadata(path) {
+        Ok(meta) => meta,
+        Err(e) => {
+            response
+                .skipped
+                .push(format!("{rel}: failed to inspect cleanup target: {e}"));
+            return false;
+        }
+    };
+    if meta.file_type().is_symlink() {
+        response
+            .skipped
+            .push(format!("{rel}: protected symlink cleanup target"));
+        return false;
+    }
+    if let Err(reason) = validate_cleanup_target(base, path) {
+        response.skipped.push(format!("{rel}: {reason}"));
+        return false;
+    }
+    if !meta.is_file() {
+        response
+            .skipped
+            .push(format!("{rel}: cleanup target is no longer a file"));
+        return false;
+    }
+    if meta.len() != candidate.bytes {
+        response.skipped.push(format!(
+            "{rel}: cleanup target metadata changed since preview"
+        ));
+        return false;
+    }
+    if let Some(preview_modified) = candidate.modified {
+        match meta.modified() {
+            Ok(current_modified) if current_modified == preview_modified => {}
+            _ => {
+                response.skipped.push(format!(
+                    "{rel}: cleanup target metadata changed since preview"
+                ));
+                return false;
+            }
+        }
+    }
+    let current_sha256 = match sha256_file(path) {
+        Ok(hash) => hash,
+        Err(e) => {
+            response.skipped.push(format!(
+                "{rel}: failed to hash cleanup target during execution: {e}"
+            ));
+            return false;
+        }
+    };
+    if current_sha256 != candidate.sha256 {
+        response.skipped.push(format!(
+            "{rel}: cleanup target content changed since preview"
+        ));
+        return false;
+    }
+    delete_file(path, candidate.bytes, base, response)
+}
+
+fn delete_manifest_directory(
+    base: &Path,
+    candidate: &CleanupDirectoryCandidate,
+    skipped_directories: &BTreeSet<PathBuf>,
+    selected_descendant_was_removed: bool,
+    response: &mut DataCleanupResponse,
+) -> bool {
+    let path = &candidate.path;
+    let rel = relative_display(base, path);
+    if skipped_directories.contains(path) {
+        return false;
+    }
+    let meta = match fs::symlink_metadata(path) {
+        Ok(meta) => meta,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return true,
+        Err(e) => {
+            response
+                .skipped
+                .push(format!("{rel}: failed to inspect cleanup target: {e}"));
+            return false;
+        }
+    };
+    if meta.file_type().is_symlink() {
+        response
+            .skipped
+            .push(format!("{rel}: protected symlink cleanup target"));
+        return false;
+    }
+    if let Err(reason) = validate_cleanup_target(base, path) {
+        response.skipped.push(format!("{rel}: {reason}"));
+        return false;
+    }
+    if !meta.is_dir() {
+        response
+            .skipped
+            .push(format!("{rel}: cleanup target is no longer a directory"));
+        return false;
+    }
+    let current_modified = match meta.modified() {
+        Ok(modified) => modified,
+        Err(e) => {
+            response.skipped.push(format!(
+                "{rel}: cleanup directory metadata unavailable during execution: {e}"
+            ));
+            return false;
+        }
+    };
+    if !selected_descendant_was_removed {
+        match candidate.modified {
+            Some(preview_modified) if current_modified == preview_modified => {}
+            Some(_) => {
+                response.skipped.push(format!(
+                    "{rel}: cleanup directory metadata changed since preview"
+                ));
+                return false;
+            }
+            None => {
+                response.skipped.push(format!(
+                    "{rel}: cleanup directory metadata unavailable since preview"
+                ));
+                return false;
+            }
+        }
+    }
+    match fs::remove_dir(path) {
+        Ok(()) => {
+            response.deleted_directories = response.deleted_directories.saturating_add(1);
+            true
+        }
+        Err(e) => {
+            response
+                .skipped
+                .push(format!("{rel}: failed to delete directory: {e}"));
             false
         }
     }
@@ -1922,6 +2437,7 @@ mod tests {
             dry_run: Some(true),
             minimum_age_days: Some(1),
             keep_latest: Some(1),
+            preview_token: None,
         };
         let policy =
             CleanupPolicy::from_request(CleanupTarget::Exports, &req).expect("exports policy");
@@ -1960,6 +2476,7 @@ mod tests {
             dry_run: Some(true),
             minimum_age_days: Some(30),
             keep_latest: Some(5),
+            preview_token: None,
         };
 
         let err = CleanupPolicy::from_request(CleanupTarget::Crash, &req)

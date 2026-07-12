@@ -822,9 +822,11 @@ function DataStatusPanel() {
   const [lastPreflight, setLastPreflight] = useState<DataKeyRotationPreflight | null>(null);
   const [lastExecution, setLastExecution] = useState<DataKeyRotationExecution | null>(null);
   const activeCleanup = CLEANUP_TARGETS.find((target) => target.target === cleanupTarget) ?? null;
-  const hasExportCleanupPreview = Boolean(
-    exportCleanupPreview?.target === 'exports' && exportCleanupPreview.dry_run,
-  );
+  const exportCleanupPreviewToken =
+    exportCleanupPreview?.target === 'exports' && exportCleanupPreview.dry_run
+      ? (exportCleanupPreview.preview_token?.trim() ?? '')
+      : '';
+  const hasExportCleanupPreview = exportCleanupPreviewToken.length > 0;
   const permissions = data ? permissionSummary(data.permissions, t) : null;
   const canClean = Boolean(
     dataPath &&
@@ -839,7 +841,7 @@ function DataStatusPanel() {
     try {
       const result = await cleanup.mutateAsync(EXPORT_CLEANUP_PREVIEW_BODY);
       setLastCleanup(result);
-      setExportCleanupPreview(result);
+      setExportCleanupPreview(result.preview_token ? result : null);
       toast.success(EXPORT_CLEANUP_PREVIEW_DONE);
     } catch (err) {
       toast.error(err);
@@ -1450,7 +1452,12 @@ function DataStatusPanel() {
 
       <ConfirmActionModal
         open={activeCleanup !== null}
-        onClose={() => setCleanupTarget(null)}
+        onClose={() => {
+          if (cleanupTarget === 'exports') {
+            setExportCleanupPreview(null);
+          }
+          setCleanupTarget(null);
+        }}
         title={activeCleanup ? t(activeCleanup.title) : ''}
         danger
         intro={
@@ -1476,18 +1483,24 @@ function DataStatusPanel() {
         canConfirm={activeCleanup?.target !== 'exports' || hasExportCleanupPreview}
         onConfirm={async () => {
           if (!activeCleanup) return;
-          const result = await cleanup.mutateAsync(
-            activeCleanup.target === 'exports'
-              ? EXPORT_CLEANUP_EXECUTION_BODY
-              : { target: activeCleanup.target },
-          );
-          setLastCleanup(result);
           if (activeCleanup.target === 'exports') {
-            setExportCleanupPreview(null);
-            toast.success(EXPORT_CLEANUP_EXECUTION_DONE);
-          } else {
-            toast.success(t('data.status.cleanup.done'));
+            try {
+              const result = await cleanup.mutateAsync({
+                ...EXPORT_CLEANUP_EXECUTION_BODY,
+                preview_token: exportCleanupPreviewToken,
+              });
+              setLastCleanup(result);
+              setExportCleanupPreview(null);
+              toast.success(EXPORT_CLEANUP_EXECUTION_DONE);
+            } catch (err) {
+              setExportCleanupPreview(null);
+              throw err;
+            }
+            return;
           }
+          const result = await cleanup.mutateAsync({ target: activeCleanup.target });
+          setLastCleanup(result);
+          toast.success(t('data.status.cleanup.done'));
         }}
       />
     </Card>

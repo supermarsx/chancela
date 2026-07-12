@@ -183,6 +183,11 @@ pub use settings::{
 pub use trust::{LocalTrustUrlTestAllowance, allow_local_trust_url_for_tests};
 pub use users::{User, UserId};
 
+#[derive(Default)]
+pub struct ExportCleanupPreviewStore {
+    pub(crate) records: HashMap<String, data_status::ExportCleanupPreviewRecord>,
+}
+
 /// Environment variable naming a data directory for on-disk persistence. When unset,
 /// [`AppState::from_env`] falls back to walking up for an existing `chancela-data/` directory,
 /// and finally to pure in-memory state.
@@ -336,6 +341,10 @@ pub struct AppState {
     /// decrypted signing key held for the life of the session. Reset on restart; the unlocked key
     /// never persists and never leaves the process (plan t29 §4.4).
     pub sessions: Arc<RwLock<HashMap<String, session::SessionEntry>>>,
+    /// Short-lived server-bound previews for destructive retained-export cleanup. In-memory only:
+    /// previews bind the token to the canonical data directory, request policy, and server-selected
+    /// candidate manifest, and reset on restart.
+    pub export_cleanup_previews: Arc<RwLock<ExportCleanupPreviewStore>>,
     /// In-memory audit-attestation sidecar (plan t29 §2/§4.4): ledger `seq` → the per-event
     /// signature produced by the signed-in user's unlocked key. Kept out of the `chancela-ledger`
     /// crate and, like the in-memory ledger, **resets on restart** (a persisted attestation would
@@ -1990,6 +1999,22 @@ mod tests {
 
     fn post_json(uri: &str, body: Value) -> Request<Body> {
         body_json("POST", uri, body)
+    }
+
+    fn cleanup_preview_token(body: &Value) -> String {
+        body["preview_token"]
+            .as_str()
+            .expect("cleanup preview_token")
+            .to_owned()
+    }
+
+    fn set_file_modified(path: &std::path::Path, modified: std::time::SystemTime) {
+        let file = std::fs::OpenOptions::new()
+            .write(true)
+            .open(path)
+            .expect("open file to set modified timestamp");
+        file.set_times(std::fs::FileTimes::new().set_modified(modified))
+            .expect("set test file modified timestamp");
     }
 
     fn patch_json(uri: &str, body: Value) -> Request<Body> {
@@ -11543,7 +11568,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn data_cleanup_exports_deletes_exports_contents_only() {
+    async fn data_cleanup_exports_execution_requires_preview_token() {
         let tmp = TempDir::new();
         let state = AppState::with_data_dir(tmp.dir.clone());
         let exports = tmp.dir.join("exports");
@@ -11556,11 +11581,59 @@ mod tests {
             post_json("/v1/data/cleanup", json!({ "target": "exports" })),
         )
         .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "body: {body}");
+        assert!(
+            body["error"]
+                .as_str()
+                .is_some_and(|message| message.contains("preview_token")),
+            "clear token error: {body}"
+        );
+        assert!(
+            exports.join("nested").join("bundle.zip").is_file(),
+            "direct cleanup did not delete exports"
+        );
+        assert!(tmp.dir.join("crash.log").is_file(), "crash untouched");
+    }
+
+    #[tokio::test]
+    async fn data_cleanup_exports_confirm_with_matching_token_deletes_preview_manifest_only() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.dir.clone());
+        let exports = tmp.dir.join("exports");
+        std::fs::create_dir_all(exports.join("nested")).expect("exports dirs");
+        std::fs::write(exports.join("nested").join("bundle.zip"), b"bundle").expect("bundle");
+        std::fs::write(tmp.dir.join("crash.log"), b"crash").expect("crash");
+
+        let (status, preview) = send(
+            state.clone(),
+            post_json(
+                "/v1/data/cleanup",
+                json!({ "target": "exports", "dry_run": true }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "body: {preview}");
+        let token = cleanup_preview_token(&preview);
+        assert_eq!(preview["target"], "exports");
+        assert_eq!(preview["dry_run"], true);
+        assert_eq!(preview["would_delete_files"], 1);
+        assert_eq!(preview["would_delete_directories"], 1);
+
+        let (status, body) = send(
+            state.clone(),
+            post_json(
+                "/v1/data/cleanup",
+                json!({ "target": "exports", "dry_run": false, "preview_token": token.clone() }),
+            ),
+        )
+        .await;
         assert_eq!(status, StatusCode::OK, "body: {body}");
         assert_eq!(body["target"], "exports");
+        assert_eq!(body["dry_run"], false);
         assert_eq!(body["deleted_files"], 1);
         assert_eq!(body["deleted_directories"], 1);
         assert_eq!(body["deleted_bytes"], 6);
+        assert!(body.get("preview_token").is_none());
         assert!(
             exports.is_dir(),
             "cleanup preserves the exports root directory"
@@ -11573,6 +11646,22 @@ mod tests {
             "exports root emptied"
         );
         assert!(tmp.dir.join("crash.log").is_file(), "crash untouched");
+
+        let (status, reuse) = send(
+            state,
+            post_json(
+                "/v1/data/cleanup",
+                json!({ "target": "exports", "dry_run": false, "preview_token": token }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "body: {reuse}");
+        assert!(
+            reuse["error"]
+                .as_str()
+                .is_some_and(|message| message.contains("invalid or expired")),
+            "successful confirm consumes token: {reuse}"
+        );
     }
 
     #[tokio::test]
@@ -11595,6 +11684,12 @@ mod tests {
         assert_eq!(status, StatusCode::OK, "body: {body}");
         assert_eq!(body["target"], "exports");
         assert_eq!(body["dry_run"], true);
+        assert!(
+            body["preview_token"]
+                .as_str()
+                .is_some_and(|token| !token.is_empty()),
+            "dry run returns token: {body}"
+        );
         assert_eq!(body["deleted_files"], 0);
         assert_eq!(body["deleted_directories"], 0);
         assert_eq!(body["deleted_bytes"], 0);
@@ -11613,11 +11708,28 @@ mod tests {
         std::fs::create_dir_all(&exports).expect("exports dir");
         std::fs::write(exports.join("recent.zip"), b"recent").expect("export");
 
+        let (status, preview) = send(
+            state.clone(),
+            post_json(
+                "/v1/data/cleanup",
+                json!({ "target": "exports", "dry_run": true, "minimum_age_days": 36500 }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "body: {preview}");
+        assert_eq!(preview["would_delete_files"], 0);
+        let token = cleanup_preview_token(&preview);
+
         let (status, body) = send(
             state,
             post_json(
                 "/v1/data/cleanup",
-                json!({ "target": "exports", "minimum_age_days": 36500 }),
+                json!({
+                    "target": "exports",
+                    "dry_run": false,
+                    "minimum_age_days": 36500,
+                    "preview_token": token
+                }),
             ),
         )
         .await;
@@ -11638,11 +11750,28 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(20));
         std::fs::write(exports.join("new.zip"), b"new").expect("new export");
 
+        let (status, preview) = send(
+            state.clone(),
+            post_json(
+                "/v1/data/cleanup",
+                json!({ "target": "exports", "dry_run": true, "keep_latest": 1 }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "body: {preview}");
+        assert_eq!(preview["would_delete_files"], 1);
+        let token = cleanup_preview_token(&preview);
+
         let (status, body) = send(
             state,
             post_json(
                 "/v1/data/cleanup",
-                json!({ "target": "exports", "keep_latest": 1 }),
+                json!({
+                    "target": "exports",
+                    "dry_run": false,
+                    "keep_latest": 1,
+                    "preview_token": token
+                }),
             ),
         )
         .await;
@@ -11651,6 +11780,271 @@ mod tests {
         assert_eq!(body["deleted_bytes"], 3);
         assert!(!exports.join("old.zip").exists(), "older export deleted");
         assert!(exports.join("new.zip").is_file(), "newest export retained");
+    }
+
+    #[tokio::test]
+    async fn data_cleanup_exports_changed_policy_rejects_preview_token() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.dir.clone());
+        let exports = tmp.dir.join("exports");
+        std::fs::create_dir_all(&exports).expect("exports dir");
+        std::fs::write(exports.join("old.zip"), b"old").expect("old export");
+
+        let (status, preview) = send(
+            state.clone(),
+            post_json(
+                "/v1/data/cleanup",
+                json!({
+                    "target": "exports",
+                    "dry_run": true,
+                    "minimum_age_days": 30,
+                    "keep_latest": 5
+                }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "body: {preview}");
+        let token = cleanup_preview_token(&preview);
+
+        let (status, body) = send(
+            state,
+            post_json(
+                "/v1/data/cleanup",
+                json!({
+                    "target": "exports",
+                    "dry_run": false,
+                    "minimum_age_days": 31,
+                    "keep_latest": 5,
+                    "preview_token": token
+                }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "body: {body}");
+        assert!(
+            body["error"]
+                .as_str()
+                .is_some_and(|message| message.contains("cleanup policy")),
+            "policy mismatch error: {body}"
+        );
+        assert!(exports.join("old.zip").is_file(), "mismatch did not delete");
+    }
+
+    #[tokio::test]
+    async fn data_cleanup_exports_new_file_after_preview_is_not_deleted() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.dir.clone());
+        let nested = tmp.dir.join("exports").join("nested");
+        std::fs::create_dir_all(&nested).expect("exports dirs");
+        std::fs::write(nested.join("old.zip"), b"old").expect("old export");
+
+        let (status, preview) = send(
+            state.clone(),
+            post_json(
+                "/v1/data/cleanup",
+                json!({ "target": "exports", "dry_run": true }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "body: {preview}");
+        assert_eq!(preview["would_delete_files"], 1);
+        assert_eq!(preview["would_delete_directories"], 1);
+        let token = cleanup_preview_token(&preview);
+        std::fs::write(nested.join("new-after-preview.zip"), b"new").expect("new export");
+
+        let (status, body) = send(
+            state,
+            post_json(
+                "/v1/data/cleanup",
+                json!({ "target": "exports", "dry_run": false, "preview_token": token }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "body: {body}");
+        assert_eq!(body["deleted_files"], 0);
+        assert_eq!(body["deleted_bytes"], 0);
+        assert_eq!(body["deleted_directories"], 0);
+        assert!(
+            nested.join("old.zip").is_file(),
+            "containing directory changed, so previewed file is retained"
+        );
+        assert!(
+            nested.join("new-after-preview.zip").is_file(),
+            "new file was not in preview manifest"
+        );
+        assert!(
+            nested.is_dir(),
+            "directory remains because new file was not selected"
+        );
+    }
+
+    #[tokio::test]
+    async fn data_cleanup_exports_directory_metadata_changed_after_preview_is_not_deleted() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.dir.clone());
+        let nested = tmp.dir.join("exports").join("nested");
+        std::fs::create_dir_all(&nested).expect("exports dirs");
+        std::fs::write(nested.join("old.zip"), b"old").expect("old export");
+
+        let (status, preview) = send(
+            state.clone(),
+            post_json(
+                "/v1/data/cleanup",
+                json!({ "target": "exports", "dry_run": true }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "body: {preview}");
+        assert_eq!(preview["would_delete_files"], 1);
+        assert_eq!(preview["would_delete_directories"], 1);
+        let token = cleanup_preview_token(&preview);
+
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::fs::remove_dir_all(&nested).expect("replace previewed directory");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::fs::create_dir_all(&nested).expect("replacement dir");
+        std::fs::write(nested.join("replacement.zip"), b"replacement").expect("replacement export");
+
+        let (status, body) = send(
+            state,
+            post_json(
+                "/v1/data/cleanup",
+                json!({ "target": "exports", "dry_run": false, "preview_token": token }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "body: {body}");
+        assert_eq!(body["deleted_files"], 0);
+        assert_eq!(body["deleted_directories"], 0);
+        assert!(
+            body["skipped"]
+                .as_array()
+                .expect("skipped")
+                .iter()
+                .any(|message| message
+                    .as_str()
+                    .is_some_and(|message| message.contains("directory metadata changed"))),
+            "directory metadata change is reported: {body}"
+        );
+        assert!(nested.is_dir(), "changed directory is retained");
+        assert!(
+            nested.join("replacement.zip").is_file(),
+            "replacement contents are retained"
+        );
+    }
+
+    #[tokio::test]
+    async fn data_cleanup_exports_file_metadata_changed_after_preview_is_not_deleted() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.dir.clone());
+        let nested = tmp.dir.join("exports").join("nested");
+        let export = nested.join("old.zip");
+        std::fs::create_dir_all(&nested).expect("exports dirs");
+        std::fs::write(&export, b"old").expect("old export");
+
+        let (status, preview) = send(
+            state.clone(),
+            post_json(
+                "/v1/data/cleanup",
+                json!({ "target": "exports", "dry_run": true }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "body: {preview}");
+        assert_eq!(preview["would_delete_files"], 1);
+        let token = cleanup_preview_token(&preview);
+
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::fs::write(&export, b"changed-size").expect("changed export");
+
+        let (status, body) = send(
+            state,
+            post_json(
+                "/v1/data/cleanup",
+                json!({ "target": "exports", "dry_run": false, "preview_token": token }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "body: {body}");
+        assert_eq!(body["deleted_files"], 0);
+        assert_eq!(body["deleted_directories"], 0);
+        assert!(
+            body["skipped"]
+                .as_array()
+                .expect("skipped")
+                .iter()
+                .any(|message| message
+                    .as_str()
+                    .is_some_and(|message| message.contains("target metadata changed"))),
+            "file metadata change is reported: {body}"
+        );
+        assert_eq!(
+            std::fs::read(&export).expect("changed export retained"),
+            b"changed-size"
+        );
+    }
+
+    #[tokio::test]
+    async fn data_cleanup_exports_same_size_rewrite_with_preserved_timestamp_is_not_deleted() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.dir.clone());
+        let nested = tmp.dir.join("exports").join("nested");
+        let export = nested.join("old.zip");
+        std::fs::create_dir_all(&nested).expect("exports dirs");
+        std::fs::write(&export, b"alpha").expect("old export");
+        let preview_modified = std::fs::symlink_metadata(&export)
+            .expect("preview metadata")
+            .modified()
+            .expect("preview modified timestamp");
+
+        let (status, preview) = send(
+            state.clone(),
+            post_json(
+                "/v1/data/cleanup",
+                json!({ "target": "exports", "dry_run": true }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "body: {preview}");
+        assert_eq!(preview["would_delete_files"], 1);
+        let token = cleanup_preview_token(&preview);
+
+        std::fs::write(&export, b"bravo").expect("same-size changed export");
+        set_file_modified(&export, preview_modified);
+        assert_eq!(
+            std::fs::symlink_metadata(&export)
+                .expect("changed metadata")
+                .modified()
+                .expect("changed modified timestamp"),
+            preview_modified,
+            "test precondition: changed file keeps the preview timestamp"
+        );
+
+        let (status, body) = send(
+            state,
+            post_json(
+                "/v1/data/cleanup",
+                json!({ "target": "exports", "dry_run": false, "preview_token": token }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "body: {body}");
+        assert_eq!(body["deleted_files"], 0);
+        assert_eq!(body["deleted_directories"], 0);
+        assert!(
+            body["skipped"]
+                .as_array()
+                .expect("skipped")
+                .iter()
+                .any(|message| message
+                    .as_str()
+                    .is_some_and(|message| message.contains("content changed since preview"))),
+            "content hash mismatch is reported: {body}"
+        );
+        assert_eq!(
+            std::fs::read(&export).expect("changed export retained"),
+            b"bravo"
+        );
     }
 
     #[tokio::test]

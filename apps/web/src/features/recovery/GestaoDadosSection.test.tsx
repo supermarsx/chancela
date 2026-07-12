@@ -570,6 +570,7 @@ describe('GestaoDadosSection', () => {
           target: 'exports',
           data_dir: 'F:\\ChancelaData',
           dry_run: true,
+          preview_token: 'export-preview-token-1',
           deleted_bytes: 0,
           deleted_files: 0,
           deleted_directories: 0,
@@ -645,6 +646,7 @@ describe('GestaoDadosSection', () => {
       dry_run: false,
       minimum_age_days: 30,
       keep_latest: 5,
+      preview_token: 'export-preview-token-1',
     });
     expect(await screen.findByText('Limpeza de exportações retidas concluída')).toBeTruthy();
     const result = screen.getByText(/2 ficheiros e 1 pastas de exportações locais retidas/);
@@ -653,6 +655,142 @@ describe('GestaoDadosSection', () => {
     await waitFor(() =>
       expect(calls.filter((c) => c.url.includes('/v1/data/status'))).toHaveLength(3),
     );
+  });
+
+  it('clears retained export cleanup preview token when confirmation is cancelled', async () => {
+    const calls = installFetch([durableStatus, durableStatus], (url) => {
+      if (url.includes('/v1/data/cleanup')) {
+        return jsonResponse({
+          target: 'exports',
+          data_dir: 'F:\\ChancelaData',
+          dry_run: true,
+          preview_token: 'export-preview-token-cancel',
+          deleted_bytes: 0,
+          deleted_files: 0,
+          deleted_directories: 0,
+          would_delete_bytes: 512,
+          would_delete_files: 2,
+          would_delete_directories: 1,
+          skipped: [],
+        });
+      }
+      return null;
+    });
+    renderWithProviders(<GestaoDadosSection />);
+    await screen.findByText('F:\\ChancelaData');
+    const maintenanceSection = screen
+      .getByRole('heading', { name: 'Manutenção' })
+      .closest('section')!;
+    const exportsRow = within(maintenanceSection).getByText('Exportações retidas').closest('li')!;
+
+    fireEvent.click(within(exportsRow).getByRole('button', { name: 'Pré-visualizar limpeza' }));
+    await waitFor(() =>
+      expect(calls.filter((c) => c.url.includes('/v1/data/cleanup'))).toHaveLength(1),
+    );
+
+    const execute = within(exportsRow).getByRole('button', {
+      name: 'Limpar ficheiros retidos',
+    }) as HTMLButtonElement;
+    expect(execute.disabled).toBe(false);
+    fireEvent.click(execute);
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+
+    expect(execute.disabled).toBe(true);
+    expect(calls.filter((c) => c.url.includes('/v1/data/cleanup'))).toHaveLength(1);
+  });
+
+  it('clears retained export cleanup preview token when confirmation is rejected', async () => {
+    const calls = installFetch([durableStatus, durableStatus], (url, init) => {
+      if (url.includes('/v1/data/cleanup')) {
+        const body = JSON.parse((init?.body as string) ?? '{}');
+        if (body.dry_run === false) {
+          return jsonResponse(
+            { error: 'export cleanup preview_token is invalid or expired; run preview again' },
+            422,
+          );
+        }
+        return jsonResponse({
+          target: 'exports',
+          data_dir: 'F:\\ChancelaData',
+          dry_run: true,
+          preview_token: 'export-preview-token-rejected',
+          deleted_bytes: 0,
+          deleted_files: 0,
+          deleted_directories: 0,
+          would_delete_bytes: 512,
+          would_delete_files: 2,
+          would_delete_directories: 1,
+          skipped: [],
+        });
+      }
+      return null;
+    });
+    renderWithProviders(<GestaoDadosSection />);
+    await screen.findByText('F:\\ChancelaData');
+    const maintenanceSection = screen
+      .getByRole('heading', { name: 'Manutenção' })
+      .closest('section')!;
+    const exportsRow = within(maintenanceSection).getByText('Exportações retidas').closest('li')!;
+
+    fireEvent.click(within(exportsRow).getByRole('button', { name: 'Pré-visualizar limpeza' }));
+    await waitFor(() =>
+      expect(calls.filter((c) => c.url.includes('/v1/data/cleanup'))).toHaveLength(1),
+    );
+
+    const execute = within(exportsRow).getByRole('button', {
+      name: 'Limpar ficheiros retidos',
+    }) as HTMLButtonElement;
+    expect(execute.disabled).toBe(false);
+    fireEvent.click(execute);
+    const confirmBtns = screen.getAllByRole('button', { name: 'Limpar ficheiros retidos' });
+    fireEvent.click(confirmBtns[confirmBtns.length - 1]);
+
+    expect(
+      await screen.findAllByText(
+        'export cleanup preview_token is invalid or expired; run preview again',
+      ),
+    ).toHaveLength(2);
+    expect(calls.filter((c) => c.url.includes('/v1/data/cleanup'))).toHaveLength(2);
+    expect(execute.disabled).toBe(true);
+    const retryBtns = screen.getAllByRole('button', { name: 'Limpar ficheiros retidos' });
+    expect((retryBtns[retryBtns.length - 1] as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('keeps retained export cleanup confirmation disabled when preview has no server token', async () => {
+    const calls = installFetch([durableStatus, durableStatus], (url) => {
+      if (url.includes('/v1/data/cleanup')) {
+        return jsonResponse({
+          target: 'exports',
+          data_dir: 'F:\\ChancelaData',
+          dry_run: true,
+          deleted_bytes: 0,
+          deleted_files: 0,
+          deleted_directories: 0,
+          would_delete_bytes: 512,
+          would_delete_files: 2,
+          would_delete_directories: 1,
+          skipped: [],
+        });
+      }
+      return null;
+    });
+    renderWithProviders(<GestaoDadosSection />);
+    await screen.findByText('F:\\ChancelaData');
+    const maintenanceSection = screen
+      .getByRole('heading', { name: 'Manutenção' })
+      .closest('section')!;
+    const exportsRow = within(maintenanceSection).getByText('Exportações retidas').closest('li')!;
+
+    fireEvent.click(within(exportsRow).getByRole('button', { name: 'Pré-visualizar limpeza' }));
+    await waitFor(() =>
+      expect(calls.filter((c) => c.url.includes('/v1/data/cleanup'))).toHaveLength(1),
+    );
+
+    const execute = within(exportsRow).getByRole('button', {
+      name: 'Limpar ficheiros retidos',
+    }) as HTMLButtonElement;
+    expect(execute.disabled).toBe(true);
+    expect(screen.getByText(/Nenhum ficheiro foi removido/)).toBeTruthy();
   });
 
   it('viewing and refreshing the data tab do not PUT settings or call platform logs', async () => {
