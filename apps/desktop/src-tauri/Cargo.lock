@@ -729,12 +729,14 @@ dependencies = [
  "chancela-ledger",
  "chancela-pades",
  "chancela-registry",
+ "chancela-scap",
  "chancela-signing",
  "chancela-smartcard",
  "chancela-store",
  "chancela-templates",
  "chancela-tsa",
  "chancela-tsl",
+ "chancela-xades",
  "ecdsa",
  "p256",
  "rand_core 0.6.4",
@@ -929,6 +931,7 @@ dependencies = [
  "cms",
  "der",
  "lopdf",
+ "png 0.17.16",
  "serde",
  "sha2 0.10.9",
  "thiserror 2.0.18",
@@ -949,6 +952,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "chancela-scap"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "chancela-cades",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "thiserror 2.0.18",
+ "time",
+ "zeroize",
+]
+
+[[package]]
 name = "chancela-signing"
 version = "0.1.0"
 dependencies = [
@@ -959,12 +977,15 @@ dependencies = [
  "chancela-smartcard",
  "chancela-tsa",
  "chancela-tsl",
+ "chancela-xades",
+ "cms",
  "der",
  "p12",
  "p256",
  "quick-xml",
  "rand_core 0.6.4",
  "reqwest",
+ "roxmltree",
  "rsa",
  "serde",
  "sha1",
@@ -975,6 +996,7 @@ dependencies = [
  "uuid",
  "x509-cert",
  "x509-ocsp",
+ "x509-tsp",
  "zeroize",
  "zip",
 ]
@@ -1059,6 +1081,25 @@ dependencies = [
  "thiserror 2.0.18",
  "time",
  "tokio",
+ "x509-cert",
+]
+
+[[package]]
+name = "chancela-xades"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "chancela-cades",
+ "chancela-tsa",
+ "der",
+ "p256",
+ "quick-xml",
+ "roxmltree",
+ "rsa",
+ "sha2 0.10.9",
+ "spki",
+ "thiserror 2.0.18",
+ "time",
  "x509-cert",
 ]
 
@@ -4563,6 +4604,15 @@ dependencies = [
  "libc",
  "untrusted",
  "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "roxmltree"
+version = "0.21.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f1964b10c76125c36f8afe190065a4bf9a87bf324842c05701330bba9f1cacbb"
+dependencies = [
+ "memchr",
 ]
 
 [[package]]
