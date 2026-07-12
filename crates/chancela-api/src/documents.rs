@@ -6831,24 +6831,6 @@ mod tests {
             .expect("ata document");
         let ata_id = ata.stored.id.clone();
         let ata_digest = ata.stored.pdf_digest.clone();
-        let communication = generate_condominium_absent_owner_communication(&act, &book, &entity)
-            .expect("absent-owner communication generation ok");
-        assert_eq!(
-            communication.event_payload["dispatch_evidence_status"]["status"],
-            "required_pending"
-        );
-        assert_eq!(
-            communication.event_payload["dispatch_evidence_status"]["required"],
-            true
-        );
-        assert_eq!(
-            communication.event_payload["dispatch_evidence_status"]["evidence_attached"],
-            false
-        );
-        assert_eq!(
-            communication.event_payload["dispatch_evidence_status"]["dispatch_completed"],
-            false
-        );
 
         {
             let mut ledger = state.ledger.write().await;

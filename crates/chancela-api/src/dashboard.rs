@@ -116,12 +116,14 @@ pub async fn dashboard(
         today,
     );
     let reminders = dashboard_reminders_with_generated_dispatch_evidence(
-        &entities,
-        &books,
-        &acts,
-        &follow_ups,
-        &generated_dispatch_evidence,
-        &registry_extracts,
+        ReminderInputs {
+            entities: &entities,
+            books: &books,
+            acts: &acts,
+            follow_ups: &follow_ups,
+            generated_dispatch_evidence: &generated_dispatch_evidence,
+            registry_extracts: &registry_extracts,
+        },
         today,
         &reminder_policy,
     );
@@ -1122,27 +1124,43 @@ fn dashboard_reminders_with_follow_ups(
     policy: &WorkflowReminderSettings,
 ) -> Vec<DashboardReminder> {
     dashboard_reminders_with_generated_dispatch_evidence(
-        entities,
-        books,
-        acts,
-        follow_ups,
-        &[],
-        registry_extracts,
+        ReminderInputs {
+            entities,
+            books,
+            acts,
+            follow_ups,
+            generated_dispatch_evidence: &[],
+            registry_extracts,
+        },
         today,
         policy,
     )
 }
 
+/// Borrowed snapshot of the store collections a reminder pass reads. Bundled so the reminder
+/// entry point stays a small `(inputs, today, policy)` signature instead of a long positional list.
+struct ReminderInputs<'a> {
+    entities: &'a HashMap<EntityId, Entity>,
+    books: &'a HashMap<BookId, Book>,
+    acts: &'a HashMap<ActId, Act>,
+    follow_ups: &'a HashMap<String, StoredFollowUp>,
+    generated_dispatch_evidence: &'a [GeneratedDispatchEvidenceSnapshot],
+    registry_extracts: &'a HashMap<EntityId, RegistryExtract>,
+}
+
 fn dashboard_reminders_with_generated_dispatch_evidence(
-    entities: &HashMap<EntityId, Entity>,
-    books: &HashMap<BookId, Book>,
-    acts: &HashMap<ActId, Act>,
-    follow_ups: &HashMap<String, StoredFollowUp>,
-    generated_dispatch_evidence: &[GeneratedDispatchEvidenceSnapshot],
-    registry_extracts: &HashMap<EntityId, RegistryExtract>,
+    inputs: ReminderInputs<'_>,
     today: Date,
     policy: &WorkflowReminderSettings,
 ) -> Vec<DashboardReminder> {
+    let ReminderInputs {
+        entities,
+        books,
+        acts,
+        follow_ups,
+        generated_dispatch_evidence,
+        registry_extracts,
+    } = inputs;
     if !policy.enabled {
         return Vec::new();
     }
@@ -2106,14 +2124,18 @@ mod tests {
         rules.iter().any(|rule| rule == expected)
     }
 
-    fn sealed_condominium_dispatch_fixture(
-        evidence_recipients: &[&str],
-    ) -> (
+    /// The store collections plus generated-dispatch evidence a sealed-condominium reminder fixture
+    /// hands back. Aliased so the builder's return type stays legible.
+    type SealedCondominiumDispatchFixture = (
         HashMap<EntityId, Entity>,
         HashMap<BookId, Book>,
         HashMap<ActId, Act>,
         Vec<GeneratedDispatchEvidenceSnapshot>,
-    ) {
+    );
+
+    fn sealed_condominium_dispatch_fixture(
+        evidence_recipients: &[&str],
+    ) -> SealedCondominiumDispatchFixture {
         let entity = entity_of(EntityKind::Condominio);
         let mut book = Book::new(entity.id, BookKind::Condominio);
         book.state = BookState::Open;
@@ -2194,12 +2216,14 @@ mod tests {
         let (entities, books, acts, generated_dispatch_evidence) =
             sealed_condominium_dispatch_fixture(evidence_recipients);
         dashboard_reminders_with_generated_dispatch_evidence(
-            &entities,
-            &books,
-            &acts,
-            &HashMap::new(),
-            &generated_dispatch_evidence,
-            &HashMap::new(),
+            ReminderInputs {
+                entities: &entities,
+                books: &books,
+                acts: &acts,
+                follow_ups: &HashMap::new(),
+                generated_dispatch_evidence: &generated_dispatch_evidence,
+                registry_extracts: &HashMap::new(),
+            },
             date!(2026 - 07 - 09),
             &WorkflowReminderSettings::default(),
         )
@@ -3177,12 +3201,14 @@ mod tests {
         };
 
         let reminders = dashboard_reminders_with_generated_dispatch_evidence(
-            &fixture.entities,
-            &fixture.books,
-            &fixture.acts,
-            &fixture.follow_ups,
-            &generated_dispatch_evidence,
-            &fixture.registry_extracts,
+            ReminderInputs {
+                entities: &fixture.entities,
+                books: &fixture.books,
+                acts: &fixture.acts,
+                follow_ups: &fixture.follow_ups,
+                generated_dispatch_evidence: &generated_dispatch_evidence,
+                registry_extracts: &fixture.registry_extracts,
+            },
             date!(2026 - 07 - 09),
             &policy,
         );

@@ -436,10 +436,7 @@ mod tests {
     #[test]
     fn create_user_stale_unauthenticated_bootstrap_is_rejected_at_insert_recheck() {
         let empty = HashMap::new();
-        assert_eq!(
-            bootstrap_state_for_insert(&empty, true, false).unwrap(),
-            true
-        );
+        assert!(bootstrap_state_for_insert(&empty, true, false).unwrap());
 
         let mut users = HashMap::new();
         let owner = stored_user("owner");
@@ -450,10 +447,7 @@ mod tests {
             err,
             ApiError::Unauthorized(message) if message == "sessão requerida"
         ));
-        assert_eq!(
-            bootstrap_state_for_insert(&users, false, true).unwrap(),
-            false
-        );
+        assert!(!bootstrap_state_for_insert(&users, false, true).unwrap());
     }
 }
 

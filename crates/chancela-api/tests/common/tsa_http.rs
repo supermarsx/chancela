@@ -1,3 +1,8 @@
+// Shared integration-test helper: each `tests/*.rs` binary compiles this module independently, so
+// any TSA mock a given binary doesn't exercise reads as dead there. Allow it module-wide rather
+// than chasing per-binary drift as new test binaries land.
+#![allow(dead_code)]
+
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::ops::Range;
@@ -31,12 +36,10 @@ impl MockTsaServer {
         Self::spawn(MockTsaMode::Granted)
     }
 
-    #[allow(dead_code)]
     pub fn outage() -> Self {
         Self::spawn(MockTsaMode::Outage)
     }
 
-    #[allow(dead_code)]
     pub fn malformed_token() -> Self {
         Self::spawn(MockTsaMode::MalformedToken)
     }
@@ -67,9 +70,7 @@ impl MockTsaServer {
 #[derive(Clone, Copy)]
 enum MockTsaMode {
     Granted,
-    #[allow(dead_code)]
     Outage,
-    #[allow(dead_code)]
     MalformedToken,
 }
 

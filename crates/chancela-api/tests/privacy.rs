@@ -378,7 +378,9 @@ async fn privacy_export_returns_target_shape_and_ledger_refs() {
     assert_eq!(body["user"]["id"], json!(target.to_string()));
     assert_eq!(body["user"]["username"], json!("bruno"));
     assert_eq!(body["user"]["active"], json!(true));
-    assert_eq!(body["user"]["has_secret"], json!(false));
+    // t68: a user's secret is their password; the fixture seeds bruno with a password_hash, so
+    // has_secret now reflects that (was false before passwords became the secret).
+    assert_eq!(body["user"]["has_secret"], json!(true));
     assert_eq!(body["user"]["has_recovery_phrase"], json!(false));
     assert_eq!(body["user"]["has_attestation_key"], json!(false));
     assert_eq!(

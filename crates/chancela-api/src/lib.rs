@@ -6395,6 +6395,19 @@ mod tests {
             "ui": {
                 "registered_entity_columns": ["Name", "Nipc", "Type", "LastActivity", "Actions"]
             },
+            "workflow": {
+                "reminders": {
+                    "enabled": true,
+                    "dashboard_limit": 5,
+                    "due_soon_days": 45,
+                    "attendance_lookahead_days": 45,
+                    "sources": {
+                        "profile_calendar": true,
+                        "act_follow_ups": true,
+                        "attendance_hygiene": true
+                    }
+                }
+            },
             "onboarding": { "completed": false, "completed_at": null }
         })
     }
@@ -12673,10 +12686,16 @@ mod tests {
         let state = AppState::default();
         let id = make_user(&state, "amelia.marques").await; // first (bootstrap) user
         let tok = open_session(&state, &id).await;
+        // t68 item 3: issuing the recovery phrase is a self-service secret op, so it now re-proves the
+        // current password (step-up) exactly like setting the secret. The bootstrap user set this
+        // password during onboarding, so this is a re-auth, not a lockout — onboarding already holds it.
         let (status, body) = send(
             state.clone(),
             with_session(
-                post_json(&format!("/v1/users/{id}/recovery"), json!({})),
+                post_json(
+                    &format!("/v1/users/{id}/recovery"),
+                    json!({ "current_password": DEFAULT_TEST_PASSWORD }),
+                ),
                 &tok,
             ),
         )
