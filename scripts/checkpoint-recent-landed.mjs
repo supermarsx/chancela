@@ -1027,23 +1027,28 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-api/src/authz.rs",
-    "read-only technical ASiC/CAdES inspection",
+    "read-only technical ASiC signature inspection",
     "API ASiC inspection route-classification marker",
   );
   assertFileContains(
     "crates/chancela-api/src/asic_signature_validation.rs",
-    "Local technical ASiC/CAdES inspection for arbitrary ASiC ZIP containers",
+    "Local technical ASiC signature inspection for arbitrary ASiC ZIP containers",
     "API ASiC inspection technical scope marker",
   );
   assertFileContains(
     "crates/chancela-api/src/asic_signature_validation.rs",
-    "runs local CAdES validation only for the bounded ASiC-S/CAdES and ASiC-E/CAdES shapes",
-    "API ASiC inspection bounded CAdES-only marker",
+    "projects the local `validate_asic_container` technical report across recognised CAdES, XAdES",
+    "API ASiC inspection validate_asic_container projection marker",
   );
   assertFileContains(
     "crates/chancela-api/src/asic_signature_validation.rs",
-    "call signing providers, mutate archives, or claim legal/qualified-signature validity",
-    "API ASiC inspection no-XAdES/live-trust marker",
+    "No live provider call",
+    "API ASiC inspection no-live-provider marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/asic_signature_validation.rs",
+    "storage mutation, or archive mutation",
+    "API ASiC inspection no-archive-mutation marker",
   );
   assertFileContains(
     "crates/chancela-api/src/asic_signature_validation.rs",
@@ -1082,8 +1087,48 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-api/src/asic_signature_validation.rs",
-    "xades_validation_performed: false",
-    "API ASiC inspection XAdES validation false marker",
+    "pub technical_validation: AsicTechnicalValidationReport",
+    "API ASiC inspection technical_validation response marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/asic_signature_validation.rs",
+    "fn asic_technical_validation_report(bytes: &[u8]) -> AsicTechnicalValidationReport",
+    "API ASiC inspection technical validation builder marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/asic_signature_validation.rs",
+    "match validate_asic_container(bytes)",
+    "API ASiC inspection validate_asic_container call marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/asic_signature_validation.rs",
+    "fn project_asic_validation_report(report: &AsicValidationReport) -> AsicTechnicalValidationReport",
+    "API ASiC inspection AsicValidationReport projection marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/asic_signature_validation.rs",
+    "fn technical_signature_report(signature: &AsicSignatureValidation) -> AsicTechnicalSignatureReport",
+    "API ASiC inspection AsicSignatureValidation projection marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/asic_signature_validation.rs",
+    "archive: &AsicArchiveTimestampValidation",
+    "API ASiC inspection AsicArchiveTimestampValidation projection marker",
+  );
+  assertFileContains(
+    "crates/chancela-signing/src/asic_validate.rs",
+    "pub struct AsicSignatureValidation",
+    "signing ASiC validation signature report struct marker",
+  );
+  assertFileContains(
+    "crates/chancela-signing/src/asic_validate.rs",
+    "pub struct AsicArchiveTimestampValidation",
+    "signing ASiC validation archive timestamp report struct marker",
+  );
+  assertFileContains(
+    "crates/chancela-signing/src/asic_validate.rs",
+    "pub struct AsicValidationReport",
+    "signing ASiC validation report struct marker",
   );
   assertFileContains(
     "crates/chancela-api/src/asic_signature_validation.rs",
@@ -1094,6 +1139,41 @@ function assertCheckpointMap() {
     "crates/chancela-api/src/asic_signature_validation.rs",
     "eidas_legal_effect_claimed: false",
     "API ASiC inspection eIDAS legal-effect false marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/asic_signature_validation.rs",
+    "trust_validation: NOT_PERFORMED",
+    "API ASiC inspection trust validation not_performed marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/asic_signature_validation.rs",
+    "revocation_validation: NOT_PERFORMED",
+    "API ASiC inspection revocation validation not_performed marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/asic_signature_validation.rs",
+    "provider_validation: NOT_PERFORMED",
+    "API ASiC inspection provider validation not_performed marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/asic_signature_validation.rs",
+    "timestamp_trust_validation: NOT_PERFORMED",
+    "API ASiC inspection timestamp trust validation not_performed marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/asic_signature_validation.rs",
+    "qualified_signature_claimed: false",
+    "API ASiC inspection qualified signature false marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/asic_signature_validation.rs",
+    "qes_claimed: false",
+    "API ASiC inspection QES false marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/asic_signature_validation.rs",
+    "b_lta_claimed: false",
+    "API ASiC inspection B-LTA false marker",
   );
   assertFileContains(
     "crates/chancela-api/tests/asic_signature_validation.rs",
@@ -1107,8 +1187,18 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-api/tests/asic_signature_validation.rs",
-    "asic_signature_validation_xades_s_and_e_are_structured_unsupported",
-    "API ASiC inspection XAdES unsupported coverage",
+    "asic_signature_validation_xades_s_and_e_use_technical_report",
+    "API ASiC inspection XAdES technical report coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/asic_signature_validation.rs",
+    "asic_signature_validation_mixed_e_cades_xades_archive_timestamp_reports_consistency",
+    "API ASiC inspection mixed/archive timestamp coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/asic_signature_validation.rs",
+    "asic_signature_validation_mixed_e_archive_timestamp_tamper_is_technical_only_invalid",
+    "API ASiC inspection archive timestamp tamper coverage",
   );
   assertFileContains(
     "crates/chancela-api/tests/asic_signature_validation.rs",
@@ -2897,7 +2987,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-tsl/tests/tsl_fixture.rs",
-    "tsl_signature_validation_accepts_p256_ecdsa_signed_by_embedded_cert",
+    "tsl_signature_validation_accepts_p256_ecdsa_signed_by_anchored_cert",
     "TSL XML-DSig P-256 ECDSA acceptance coverage",
   );
   assertFileContains(
@@ -5968,13 +6058,13 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "cargo test -p chancela-signing\n  --test roundtrip --locked asic_",
+    "chancela-signing --test roundtrip --locked asic_",
     "CI/E2E hardening plan ASiC signing command marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "ASiC-XAdES unsupported diagnostics with no XAdES validation",
-    "CI/E2E hardening plan ASiC XAdES unsupported marker",
+    "`technical_validation` projected from\n  `validate_asic_container` across CAdES, XAdES, mixed ASiC-E signatures",
+    "CI/E2E hardening plan ASiC technical_validation marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -6213,7 +6303,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "not real C14N, signer trust anchoring, certificate",
+    "not real C14N,\n  certificate path/revocation/policy validation",
     "CI/E2E hardening plan TSL P-256 caveat marker",
   );
   assertFileContains(
@@ -6668,7 +6758,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "broad ECDSA/XML-DSig profile support, legal trust certification",
+    "broad ECDSA/XML-DSig profile validation",
     "spec coverage TSL P-256 caveat marker",
   );
   assertFileContains(
@@ -6683,22 +6773,27 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "local CAdES\n  cryptographic validation only when the package is blocker-free",
-    "spec coverage ASiC inspect bounded CAdES-only marker",
+    "`technical_validation` response is projected from\n  `chancela-signing::validate_asic_container` / `AsicValidationReport`",
+    "spec coverage ASiC inspect technical_validation marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "ASiC-XAdES and direct XAdES remain structured unsupported diagnostics:\n  XAdES validation is not performed",
-    "spec coverage ASiC inspect no-XAdES-validation marker",
+    "per-signature `AsicSignatureValidation` fields for CAdES, XAdES, and mixed\n  ASiC-E containers plus per-archive-timestamp",
+    "spec coverage ASiC inspect signature/archive projection marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "per-member and aggregate actual decompressed-size caps across payloads",
+    "legacy bounded `cades` object remains for compatibility",
+    "spec coverage ASiC inspect legacy cades marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "enforces both per-member and aggregate actual decompressed-size caps across",
     "spec coverage ASiC actual decompressed-size caps marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "underdeclared ZIP entries cannot\n  bypass inspection blockers",
+    "underdeclared ZIP\n  entries cannot bypass inspection blockers",
     "spec coverage ASiC underdeclared ZIP blocker marker",
   );
   assertFileContains(
@@ -6708,7 +6803,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "ASiC inspection beyond the read-only local technical endpoint and bounded CAdES candidate validation",
+    "ASiC inspection beyond the read-only local technical endpoint and local `technical_validation` projection",
     "spec coverage matrix ASiC remaining-gap marker",
   );
   assertFileContains(
@@ -6718,8 +6813,8 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "and `xades_validation_performed: false`",
-    "spec coverage ASiC overclaim XAdES false marker",
+    "projects `technical_validation` from\n  `chancela-signing::validate_asic_container` across CAdES, XAdES, mixed ASiC-E signatures",
+    "spec coverage ASiC overclaim technical_validation marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",

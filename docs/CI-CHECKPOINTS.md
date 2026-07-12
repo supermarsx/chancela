@@ -32,7 +32,7 @@ guardrail acknowledgements, written-resolution evidence status binding, trust
 parsing, declared signer-capacity evidence preservation, live-provider static
 assurance, MCP resource/prompt coverage including workflow provenance review
 guidance and draft-vs-signed comparison review guidance, web fixtures, ASiC
-structural diagnostic markers, registry chronology
+inspect `technical_validation` and structural diagnostic markers, registry chronology
 graph markers, PDF writer spacing and PDF/UA blocker-decomposition markers,
 archive timestamp append markers,
 paper-book OCR API/UI markers including accepted OCR draft to mutable draft-act
@@ -159,7 +159,9 @@ PDF/UA blocker-decomposition markers, PDF accessibility report JSON v7,
 `writer_owned_decorative_artifacts_accounted_for`, reduced default-fixture
 `limited_tagged_structure` blocker lists, exhaustive `DocumentBlock`
 non-text-accounting coverage, ASiC structural profile-shape,
-manifest/signature diagnostic, and blocker-ID markers, local paper-book OCR
+manifest/signature diagnostic, blocker-ID, `technical_validation`,
+`validate_asic_container`, `AsicValidationReport`, `AsicSignatureValidation`,
+and `AsicArchiveTimestampValidation` markers, local paper-book OCR
 API/UI/contract markers, accepted OCR draft to mutable draft-act
 API/UI/refusal markers,
 focused paper-book OCR review browser workflow markers,
@@ -222,7 +224,7 @@ verification, verified law references, legal thresholds, external
 registry/provider behavior, signing-process behavior, official DGLAB export,
 government filing, DGLAB/legal-archive/PDF-A/PAdES/PDF-UA certification, PDF/UA
 conformance, validator evidence, signed-PDF accessibility certification,
-XAdES validation, ASiC trust/LTV
+production XAdES/ASiC conformance, ASiC trust/LTV
 or legal validity, production B-LT/B-LTA, SCAP verification, representative
 authority, live provider validity, canonical OCR conversion, imported-document
 OCR, imported-document conversion, imported-document PDF/A replacement, imported-document

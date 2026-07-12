@@ -308,15 +308,15 @@ test operating checklist for driving Chancela toward release confidence.
   optional filename, declared size, and declared SHA-256. Focused API and
   signing-crate tests pin fixity/base64/malformed-ZIP/unsafe-path validation,
   profile shape, bounded profile, blockers, member paths, manifest diagnostics,
-  signature diagnostics, no-claim fields, local CAdES validation only for
-  blocker-free bounded ASiC-S/CAdES and ASiC-E/CAdES candidates, structured
-  ASiC-XAdES unsupported diagnostics with no XAdES validation, and actual
-  decompressed-size caps across payloads, manifests, CAdES signatures, XAdES
-  signatures, unsupported `META-INF`, and other non-directory members. Treat
-  this as local technical inspection only: no signing, storage, archive
-  mutation, live provider calls, TSA/TSL/OCSP/CRL fetching, trust anchoring,
-  XAdES validation, legal validity, QES, B-LT/B-LTA, eIDAS legal-effect, or
-  production ASiC compliance claim.
+  signature diagnostics, no-claim fields, `technical_validation` projected from
+  `validate_asic_container` across CAdES, XAdES, mixed ASiC-E signatures, and
+  archive timestamp imprint/reference consistency, plus the legacy bounded
+  `cades` compatibility report. Actual decompressed-size caps cover payloads,
+  manifests, CAdES signatures, XAdES signatures, unsupported `META-INF`, and
+  other non-directory members. Treat this as local technical inspection only:
+  no signing, storage, archive mutation, live provider calls, TSA/TSL/OCSP/CRL
+  fetching, trust anchoring, legal validity, QES, B-LT/B-LTA, eIDAS
+  legal-effect, or production ASiC/XAdES conformance claim.
 
 ## Last Broad Local Verification Snapshot
 
@@ -532,11 +532,11 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
   evidence without turning local diagnostics into a qualified-signature decision.
 - ASiC inspection accepts only a bounded base64 ASiC ZIP envelope, checks
   declared size/SHA-256, malformed ZIPs, and unsafe member paths, reports local
-  profile/member/manifest/signature diagnostics, runs CAdES validation only for
-  blocker-free bounded ASiC-S/CAdES or ASiC-E/CAdES candidates, keeps ASiC-XAdES
-  unsupported with `xades_validation_performed=false`, and enforces actual
-  decompressed-size limits without making live trust, legal, or production ASiC
-  compliance claims.
+  profile/member/manifest/signature diagnostics, projects `technical_validation`
+  from `validate_asic_container` for CAdES, XAdES, mixed ASiC-E signatures, and
+  archive timestamp consistency, keeps the legacy bounded `cades` compatibility
+  field, and enforces actual decompressed-size limits without making live trust,
+  legal, or production ASiC/XAdES conformance claims.
 
 ### Imports and Search
 
@@ -1078,25 +1078,26 @@ settingsDefaults.test.ts contracts.test.ts`.
   `POST /v1/signature/asic/inspect`, base64 ASiC ZIP envelopes with optional
   filename/declared size/declared SHA-256, fixity/base64/malformed-ZIP/
   unsafe-path refusals, profile shape, bounded profile, blockers, member paths,
-  manifest diagnostics, signature diagnostics, no-claim fields, local CAdES
-  validation only for blocker-free bounded ASiC-S/CAdES and ASiC-E/CAdES
-  candidates, and structured ASiC-XAdES unsupported diagnostics with
-  `xades_validation_performed=false`. Focused `cargo test -p chancela-signing
-  --test roundtrip --locked asic_` coverage pins actual decompressed-size
-  accounting for payloads, manifests, CAdES signatures, XAdES signatures,
-  unsupported `META-INF`, and other non-directory members, including
+  manifest diagnostics, signature diagnostics, no-claim fields,
+  `technical_validation` projected from `validate_asic_container` for CAdES,
+  XAdES, mixed ASiC-E signatures, and archive timestamp consistency, plus the
+  legacy bounded `cades` compatibility field. Focused `cargo test -p
+  chancela-signing --test roundtrip --locked asic_` coverage pins actual
+  decompressed-size accounting for payloads, manifests, CAdES signatures, XAdES
+  signatures, unsupported `META-INF`, and other non-directory members, including
   underdeclared entries that must still produce inspection blockers. This is
   local technical inspection only: no signing, storage, archive mutation, live
-  provider calls, TSA/TSL/OCSP/CRL fetching, trust anchoring, XAdES validation,
-  legal validity, QES, B-LT/B-LTA, eIDAS legal-effect, or production ASiC
-  compliance claim is implemented.
+  provider calls, TSA/TSL/OCSP/CRL fetching, trust anchoring, legal validity,
+  QES, B-LT/B-LTA, eIDAS legal-effect, or production ASiC/XAdES conformance
+  claim is implemented.
 - Current working-tree TSL XML-DSig checks: focused `chancela-tsl` coverage now
-  pins bounded P-256 ECDSA-SHA256 verification only against the embedded signer
-  certificate and only for XML-DSig's fixed-width raw `r||s` signature value,
-  with DER ECDSA encodings rejected. This remains technical trust-list parsing
-  evidence only; it is not real C14N, signer trust anchoring, certificate
-  path/revocation/policy validation, broad ECDSA support, legal trust
-  certification, multiple-reference support, or transform-chain support.
+  pins bounded P-256 ECDSA-SHA256 verification only when the embedded signer
+  certificate matches a configured trust anchor and only for XML-DSig's
+  fixed-width raw `r||s` signature value, with DER ECDSA encodings rejected.
+  This remains technical trust-list parsing evidence only; it is not real C14N,
+  certificate path/revocation/policy validation, broad ECDSA support, legal
+  trust certification, production trust-list validity, multiple-reference
+  support, or transform-chain support.
 - Current working-tree backup recovery-drill receipt checks: focused
   `backup_recovery_drill` API coverage pins `POST`/`GET
   /v1/backup/recovery-drills`, restore-preflight-only execution, durable
@@ -1235,8 +1236,9 @@ settingsDefaults.test.ts contracts.test.ts`.
   static guard, clean-source provenance gate, and production-package manifest-required
   markers, plus ASiC inspect route/base64/fixity/
   malformed-ZIP/unsafe-path checks, bounded profile/member/manifest/signature
-  diagnostics, local CAdES-only bounded validation, ASiC-XAdES unsupported
-  no-XAdES-validation markers, no-claim fields, and actual decompressed-size
+  diagnostics, `technical_validation` from `validate_asic_container` across
+  CAdES/XAdES/mixed signatures and archive timestamps, legacy bounded `cades`
+  compatibility markers, no-claim fields, and actual decompressed-size
   blocker markers for underdeclared payload/signature/unsupported-META-INF
   members, plus backup recovery-drill route, contract,
   optional receipt-key tolerance, bounded-manifest receipt, overclaim-refusal,
