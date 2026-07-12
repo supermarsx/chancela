@@ -2,57 +2,14 @@
   "generated_at": "2026-07-09T14:00:00Z",
   "scope": "book_archive",
   "category": "documents",
-  "candidate_count": 3,
+  "candidate_count": 1,
+  "suppressed_candidate_count": 2,
+  "suppressed_by_bounded_evidence_count": 2,
+  "suppression_summary": {
+    "suppressed_by_bounded_evidence_count": 2,
+    "note": "Due candidates with prior safe bounded archive/no-action evidence are omitted from the active candidate list; execution history remains queryable for review."
+  },
   "candidates": [
-    {
-      "candidate_id": "retention-candidate-1",
-      "scope": "book_archive",
-      "category": "documents",
-      "record_id": "archive-doc-1",
-      "book_id": "book-archive-1",
-      "entity_id": "entity-1",
-      "closing_date": "2024-06-01",
-      "due_date": "2026-06-01",
-      "overdue": true,
-      "policy_id": "retention-1",
-      "policy_name": "Mensagens de suporte",
-      "schedule_id": "support-messages-v1",
-      "retention_period": "P2Y",
-      "disposal_action": "review",
-      "destructive_action": false,
-      "legal_hold_blockers": [],
-      "required_approvals": [
-        {
-          "code": "retention_manual_review",
-          "required_from": "privacy_or_settings_manager",
-          "reason": "review evidence only before any separate operational process"
-        }
-      ],
-      "blockers": [],
-      "findings": [],
-      "outcome": "manual_review_required",
-      "status": "awaiting_manual_review",
-      "candidate_evidence_state": "bounded_archive_recorded",
-      "evidence_next_step": "Prior bounded archive evidence is available for review; this due-candidate scan is read-only and requires separate governance approval before any operational action.",
-      "would_execute": false,
-      "destructive_disposal_completed": false,
-      "full_erasure_completed": false,
-      "prior_execution": {
-        "execution_id": "retention-exec-bounded-archive-1",
-        "execution_status": "executed",
-        "outcome": "bounded_archive_recorded",
-        "evidence_state": "bounded_archive_recorded",
-        "evidence_next_step": "Prior bounded archive evidence is available for review; this due-candidate scan is read-only and requires separate governance approval before any operational action.",
-        "requested_at": "2026-07-09T13:50:00Z",
-        "executed_at": "2026-07-09T13:50:00Z",
-        "bounded_executor": true,
-        "targets_acted_count": 1,
-        "destructive_disposal_completed": false,
-        "full_erasure_completed": false,
-        "next_step": "Prior bounded archive evidence is available for review; this due-candidate scan is read-only and requires separate governance approval before any operational action."
-      },
-      "next_step": "Review evidence only; no deletion or anonymization is performed."
-    },
     {
       "candidate_id": "retention-candidate-unsupported",
       "scope": "book_archive",
@@ -104,55 +61,6 @@
       "destructive_disposal_completed": false,
       "full_erasure_completed": false,
       "next_step": "Correct the retention schedule; this scan records evidence only."
-    },
-    {
-      "candidate_id": "retention-candidate-no-action",
-      "scope": "book_archive",
-      "category": "documents",
-      "record_id": "archive-doc-no-action",
-      "book_id": "book-archive-no-action",
-      "entity_id": "entity-3",
-      "closing_date": "2023-01-05",
-      "due_date": "2026-01-05",
-      "overdue": true,
-      "policy_id": "retention-no-action",
-      "policy_name": "No-action archive marker",
-      "schedule_id": "archive-no-action-v1",
-      "retention_period": "P3Y",
-      "disposal_action": "no_action",
-      "destructive_action": false,
-      "legal_hold_blockers": [],
-      "required_approvals": [
-        {
-          "code": "retention_manual_review",
-          "required_from": "privacy_or_settings_manager",
-          "reason": "review bounded no-action evidence before any separate operational process"
-        }
-      ],
-      "blockers": [],
-      "findings": [],
-      "outcome": "manual_review_required",
-      "status": "awaiting_manual_review",
-      "candidate_evidence_state": "bounded_no_action_recorded",
-      "evidence_next_step": "Prior bounded no-action evidence is available for review; this due-candidate scan is read-only and requires separate governance approval before any operational action.",
-      "would_execute": false,
-      "destructive_disposal_completed": false,
-      "full_erasure_completed": false,
-      "prior_execution": {
-        "execution_id": "retention-exec-bounded-no-action-1",
-        "execution_status": "executed",
-        "outcome": "bounded_no_action_recorded",
-        "evidence_state": "bounded_no_action_recorded",
-        "evidence_next_step": "Prior bounded no-action evidence is available for review; this due-candidate scan is read-only and requires separate governance approval before any operational action.",
-        "requested_at": "2026-07-09T13:55:00Z",
-        "executed_at": "2026-07-09T13:55:00Z",
-        "bounded_executor": true,
-        "targets_acted_count": 1,
-        "destructive_disposal_completed": false,
-        "full_erasure_completed": false,
-        "next_step": "Prior bounded no-action evidence is available for review; this due-candidate scan is read-only and requires separate governance approval before any operational action."
-      },
-      "next_step": "Review bounded no-action evidence only; no destructive operation is performed."
     }
   ]
 }

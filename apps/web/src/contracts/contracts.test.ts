@@ -169,6 +169,7 @@ import {
   type RetentionDueCandidateFinding,
   type RetentionDueCandidatePriorExecution,
   type RetentionDueCandidatesReport,
+  type RetentionDueCandidatesSuppressionSummary,
   type RetentionPolicyView,
   type RetentionExecutionApproval,
   type RetentionExecutionBlockerMetadata,
@@ -809,11 +810,18 @@ const RETENTION_DUE_CANDIDATE_PRIOR_NEXT_STEPS = {
 const RETENTION_DUE_CANDIDATE_PRIOR_UNSAFE_NEXT_STEP_TERMS = [
   'deletion',
   'anonymization',
+  'gdpr',
   'legal disposal',
+  'legal completion',
+  'legally complete',
   'dispatch',
   'full erasure',
   'completed',
+  'resolved',
 ] as const;
+
+const RETENTION_DUE_SUPPRESSION_SUMMARY_NOTE =
+  'Due candidates with prior safe bounded archive/no-action evidence are omitted from the active candidate list; execution history remains queryable for review.';
 
 function assertRetentionDueCandidatePriorExecution(
   obj: unknown,
@@ -982,6 +990,39 @@ function assertRetentionDueCandidate(obj: unknown, label: string): RetentionDueC
   return candidate;
 }
 
+function assertRetentionDueCandidatesSuppressionSummary(
+  obj: unknown,
+  label: string,
+): RetentionDueCandidatesSuppressionSummary {
+  const summary = assertExactKeys<RetentionDueCandidatesSuppressionSummary>(
+    obj,
+    {
+      suppressed_by_bounded_evidence_count: true,
+      note: true,
+    },
+    label,
+  );
+  expect(
+    Number.isInteger(summary.suppressed_by_bounded_evidence_count),
+    `${label}.suppressed_by_bounded_evidence_count should be integer`,
+  ).toBe(true);
+  expect(
+    summary.suppressed_by_bounded_evidence_count,
+    `${label}.suppressed_by_bounded_evidence_count should be non-negative`,
+  ).toBeGreaterThanOrEqual(0);
+  expect(summary.note, `${label}.note should use review-only wording`).toBe(
+    RETENTION_DUE_SUPPRESSION_SUMMARY_NOTE,
+  );
+  expect(summary.note.toLowerCase(), `${label}.note should remain review-oriented`).toContain(
+    'review',
+  );
+  const normalizedNote = summary.note.toLowerCase();
+  RETENTION_DUE_CANDIDATE_PRIOR_UNSAFE_NEXT_STEP_TERMS.forEach((term) => {
+    expect(normalizedNote, `${label}.note should not include ${term}`).not.toContain(term);
+  });
+  return summary;
+}
+
 function assertRetentionDueCandidatesReport(
   obj: unknown,
   label: string,
@@ -993,14 +1034,54 @@ function assertRetentionDueCandidatesReport(
       scope: true,
       category: true,
       candidate_count: true,
+      suppressed_candidate_count: true,
+      suppressed_by_bounded_evidence_count: true,
       candidates: true,
     },
     label,
+    ['suppression_summary'],
   );
   assertTimestamp(report.generated_at, `${label}.generated_at`);
   expect(report.scope, `${label}.scope`).toBe('book_archive');
   expect(report.category, `${label}.category`).toBe('documents');
-  expect(report.candidate_count, `${label}.candidate_count`).toBe(report.candidates.length);
+  expect(Number.isInteger(report.candidate_count), `${label}.candidate_count`).toBe(true);
+  expect(
+    Number.isInteger(report.suppressed_candidate_count),
+    `${label}.suppressed_candidate_count`,
+  ).toBe(true);
+  expect(
+    Number.isInteger(report.suppressed_by_bounded_evidence_count),
+    `${label}.suppressed_by_bounded_evidence_count`,
+  ).toBe(true);
+  expect(
+    report.candidate_count,
+    `${label}.candidate_count counts active unsuppressed candidates only`,
+  ).toBe(report.candidates.length);
+  expect(
+    report.suppressed_candidate_count,
+    `${label}.suppressed_candidate_count`,
+  ).toBeGreaterThanOrEqual(0);
+  expect(
+    report.suppressed_by_bounded_evidence_count,
+    `${label}.suppressed_by_bounded_evidence_count`,
+  ).toBeGreaterThanOrEqual(0);
+  expect(
+    report.suppressed_candidate_count,
+    `${label}.suppressed_candidate_count should cover bounded-evidence suppressions`,
+  ).toBeGreaterThanOrEqual(report.suppressed_by_bounded_evidence_count);
+  if (report.suppressed_candidate_count > 0) {
+    expect(report.suppression_summary, `${label}.suppression_summary`).toBeDefined();
+    const summary = assertRetentionDueCandidatesSuppressionSummary(
+      report.suppression_summary,
+      `${label}.suppression_summary`,
+    );
+    expect(
+      summary.suppressed_by_bounded_evidence_count,
+      `${label}.suppression_summary count mirrors report`,
+    ).toBe(report.suppressed_by_bounded_evidence_count);
+  } else {
+    expect(report.suppression_summary, `${label}.suppression_summary`).toBeUndefined();
+  }
   report.candidates.forEach((candidate, i) =>
     assertRetentionDueCandidate(candidate, `${label}.candidates[${i}]`),
   );
@@ -4743,7 +4824,12 @@ describe('contract fixtures parse through the real client', () => {
     stubFetch(fixture('retention.due-candidates.json'));
     const report: RetentionDueCandidatesReport = await api.listRetentionDueCandidates();
     assertRetentionDueCandidatesReport(report, 'RetentionDueCandidatesReport');
-    expect(report.candidates.length).toBeGreaterThan(0);
+    expect(report.candidate_count).toBe(1);
+    expect(report.candidates).toHaveLength(1);
+    expect(report.candidates[0].candidate_id).toBe('retention-candidate-unsupported');
+    expect(report.suppressed_candidate_count).toBe(2);
+    expect(report.suppressed_by_bounded_evidence_count).toBe(2);
+    expect(report.suppression_summary?.note).toBe(RETENTION_DUE_SUPPRESSION_SUMMARY_NOTE);
     expect(report.candidates[0].would_execute).toBe(false);
   });
 

@@ -3006,11 +3006,20 @@ export interface RetentionDueCandidate {
   next_step: string;
 }
 
+export interface RetentionDueCandidatesSuppressionSummary {
+  suppressed_by_bounded_evidence_count: number;
+  note: string;
+}
+
 export interface RetentionDueCandidatesReport {
   generated_at: string;
   scope: 'book_archive';
   category: 'documents';
+  /** Active, unsuppressed due candidates only. */
   candidate_count: number;
+  suppressed_candidate_count: number;
+  suppressed_by_bounded_evidence_count: number;
+  suppression_summary?: RetentionDueCandidatesSuppressionSummary;
   candidates: RetentionDueCandidate[];
 }
 
