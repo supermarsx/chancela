@@ -29,6 +29,8 @@ use crate::ledger_filter::{LedgerEventFilters, filter_summary, normalized_page_l
 
 #[derive(Debug, Deserialize)]
 pub struct ArchiveDocumentQuery {
+    /// Free-text search across event id, seq, kind, scope, actor, justification, chains and hashes.
+    pub q: Option<String>,
     /// Canonical chain id: `global`, `application`, `company:{uuid}`, or `book:{uuid}`.
     pub chain: Option<String>,
     /// Existing substring scope filter.
@@ -45,7 +47,7 @@ pub struct ArchiveDocumentQuery {
     pub from: Option<String>,
     /// Upper timestamp bound: RFC 3339 inclusive, or `YYYY-MM-DD` covering that whole day.
     pub to: Option<String>,
-    /// Last-N limit after filters. Omitted means the whole filtered archive.
+    /// Last-N limit after filters. Omitted uses the bounded archive page default.
     pub limit: Option<usize>,
     /// Export format. `pdfa` is the canonical preserved-evidence rendering; the others are
     /// audit/interchange exports of the same filtered event set.
@@ -104,18 +106,26 @@ fn parse_chain(raw: Option<&str>) -> Result<ChainId, ApiError> {
 }
 
 fn filtered_events<'a>(
-    events: Vec<&'a Event>,
+    events: impl DoubleEndedIterator<Item = &'a Event>,
+    chain: &ChainId,
     filters: &LedgerEventFilters,
     limit: usize,
 ) -> Vec<&'a Event> {
-    let mut events: Vec<&Event> = events
-        .into_iter()
-        .filter(|event| filters.matches(event))
-        .collect();
-    let start = events.len().saturating_sub(limit);
-    events.drain(..start);
-    events.reverse();
-    events
+    let mut selected = Vec::with_capacity(limit);
+    for event in events.rev() {
+        if !event_in_chain(event, chain) || !filters.matches(event) {
+            continue;
+        }
+        selected.push(event);
+        if selected.len() == limit {
+            break;
+        }
+    }
+    selected
+}
+
+fn event_in_chain(event: &Event, chain: &ChainId) -> bool {
+    chain.is_global() || event.links.iter().any(|link| &link.chain == chain)
 }
 
 /// `GET /v1/ledger/archive/document` — render the filtered ledger archive as PDF/A-2u bytes.
@@ -129,6 +139,7 @@ pub async fn export_archive_document(
     let chain = parse_chain(q.chain.as_deref())?;
     let format = q.format.unwrap_or(ArchiveExportFormat::Pdfa);
     let filters = LedgerEventFilters::from_parts(
+        q.q.clone(),
         q.scope.clone(),
         &q.kind,
         q.actor.clone(),
@@ -149,7 +160,7 @@ pub async fn export_archive_document(
     let (status, records, reanchors) = {
         let ledger = state.ledger.read().await;
         let status = ledger.chain_status(&chain).ok_or(ApiError::NotFound)?;
-        let events = filtered_events(ledger.events_in_chain(&chain), &filters, limit);
+        let events = filtered_events(ledger.events().iter(), &chain, &filters, limit);
         let records = events
             .into_iter()
             .map(|event| RenderRecord::from_event(event, &chain))
@@ -718,6 +729,7 @@ mod tests {
         );
 
         let filters = LedgerEventFilters::from_parts(
+            None,
             Some("book:b1".to_owned()),
             &["document.generated".to_owned(), "act.sealed".to_owned()],
             Some("amelia.marques".to_owned()),
@@ -725,7 +737,7 @@ mod tests {
             None,
         )
         .expect("filters parse");
-        let selected = filtered_events(ledger.events().iter().collect(), &filters, 1);
+        let selected = filtered_events(ledger.events().iter(), &ChainId::Global, &filters, 1);
 
         assert_eq!(selected.len(), 1);
         assert_eq!(selected[0].kind, "act.sealed");

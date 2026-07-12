@@ -410,6 +410,7 @@ describe('api client', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     await api.listLedgerPage({
+      q: 'approved digest',
       chain: 'book:book-1',
       scope: 'act:7',
       kind: 'act.sealed',
@@ -422,7 +423,7 @@ describe('api client', () => {
     });
 
     expect(fetchMock.mock.calls[0][0]).toBe(
-      '/v1/ledger/events/page?chain=book%3Abook-1&scope=act%3A7&kind=act.sealed&actor=amelia.marques&from=2026-07-01&to=2026-07-31&before_seq=42&limit=100&order=desc',
+      '/v1/ledger/events/page?q=approved+digest&chain=book%3Abook-1&scope=act%3A7&kind=act.sealed&actor=amelia.marques&from=2026-07-01&to=2026-07-31&before_seq=42&limit=100&order=desc',
     );
   });
 
@@ -444,6 +445,7 @@ describe('api client', () => {
 
       const blob = await api.fetchLedgerArchiveDocument({
         format,
+        q: 'approved digest',
         chain: 'book:book-1',
         scope: 'act:7',
         kind: 'act.sealed',
@@ -455,7 +457,7 @@ describe('api client', () => {
       });
 
       expect(fetchMock.mock.calls[0][0]).toBe(
-        `/v1/ledger/archive/document?format=${format}&chain=book%3Abook-1&scope=act%3A7&kind=act.sealed&actor=amelia.marques&from=2026-07-01&to=2026-07-31&limit=100&order=desc`,
+        `/v1/ledger/archive/document?format=${format}&q=approved+digest&chain=book%3Abook-1&scope=act%3A7&kind=act.sealed&actor=amelia.marques&from=2026-07-01&to=2026-07-31&limit=100&order=desc`,
       );
       expect(blob).toBeInstanceOf(Blob);
       expect(blob.type).toBe(contentType.replace('; ', ';'));

@@ -2128,6 +2128,7 @@ pub(crate) fn ledger_event_chains(e: &Event) -> Vec<String> {
 /// Query for `GET /v1/ledger/events`: optional chain, substring `scope` filter, and last-N `limit`.
 #[derive(Deserialize)]
 pub struct LedgerQuery {
+    pub q: Option<String>,
     pub chain: Option<String>,
     pub scope: Option<String>,
     #[serde(

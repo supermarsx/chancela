@@ -39,6 +39,7 @@ pub async fn list_ledger_events(
         .map(parse_chain)
         .transpose()?;
     let filters = LedgerEventFilters::from_parts(
+        q.q,
         q.scope,
         &q.kind,
         q.actor,
@@ -72,6 +73,7 @@ pub async fn list_ledger_events(
 
 #[derive(Deserialize)]
 pub struct LedgerPageQuery {
+    pub q: Option<String>,
     pub chain: Option<String>,
     pub scope: Option<String>,
     #[serde(
@@ -113,6 +115,7 @@ pub async fn list_ledger_events_page(
         .map(parse_chain)
         .transpose()?;
     let filters = LedgerEventFilters::from_parts(
+        q.q,
         q.scope,
         &q.kind,
         q.actor,

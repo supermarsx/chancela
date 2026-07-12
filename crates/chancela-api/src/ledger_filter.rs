@@ -7,6 +7,7 @@ use time::macros::format_description;
 use time::{Date, OffsetDateTime, Time};
 
 use crate::error::ApiError;
+use crate::hex::hex;
 
 pub(crate) const DEFAULT_LEDGER_PAGE_LIMIT: usize = 100;
 pub(crate) const MAX_LEDGER_PAGE_LIMIT: usize = 250;
@@ -37,6 +38,7 @@ where
 
 #[derive(Debug)]
 pub(crate) struct LedgerEventFilters {
+    pub(crate) query: Option<String>,
     pub(crate) scope: Option<String>,
     pub(crate) kinds: HashSet<String>,
     pub(crate) actor: Option<String>,
@@ -61,6 +63,7 @@ impl UpperBound {
 
 impl LedgerEventFilters {
     pub(crate) fn from_parts(
+        query: Option<String>,
         scope: Option<String>,
         kind: &[String],
         actor: Option<String>,
@@ -68,6 +71,7 @@ impl LedgerEventFilters {
         to: Option<&str>,
     ) -> Result<Self, ApiError> {
         Ok(Self {
+            query: normalize_query(query),
             scope: scope.filter(|s| !s.is_empty()),
             kinds: parse_kind_filter(kind),
             actor: actor.filter(|s| !s.is_empty()),
@@ -77,6 +81,11 @@ impl LedgerEventFilters {
     }
 
     pub(crate) fn matches(&self, event: &Event) -> bool {
+        if let Some(query) = &self.query {
+            if !event_matches_query(event, query) {
+                return false;
+            }
+        }
         if let Some(scope) = &self.scope {
             if !event.scope.contains(scope) {
                 return false;
@@ -104,6 +113,37 @@ impl LedgerEventFilters {
     }
 }
 
+fn normalize_query(query: Option<String>) -> Option<String> {
+    query
+        .map(|q| q.trim().to_lowercase())
+        .filter(|q| !q.is_empty())
+}
+
+fn contains_query(value: impl AsRef<str>, query: &str) -> bool {
+    value.as_ref().to_lowercase().contains(query)
+}
+
+fn event_matches_query(event: &Event, query: &str) -> bool {
+    contains_query(event.id.to_string(), query)
+        || contains_query(event.seq.to_string(), query)
+        || contains_query(&event.actor, query)
+        || event
+            .justification
+            .as_deref()
+            .is_some_and(|value| contains_query(value, query))
+        || contains_query(&event.scope, query)
+        || contains_query(&event.kind, query)
+        || contains_query(event.timestamp.format(&Rfc3339).unwrap_or_default(), query)
+        || contains_query(hex(&event.payload_digest), query)
+        || contains_query(hex(&event.prev_hash), query)
+        || contains_query(hex(&event.hash), query)
+        || event.links.iter().any(|link| {
+            contains_query(link.chain.canonical(), query)
+                || contains_query(link.seq.to_string(), query)
+                || contains_query(hex(&link.prev_hash), query)
+        })
+}
+
 pub(crate) fn parse_kind_filter(raw: &[String]) -> HashSet<String> {
     raw.iter()
         .flat_map(|s| s.split(','))
@@ -119,6 +159,9 @@ pub(crate) fn filter_summary(
     limit: Option<usize>,
 ) -> String {
     let mut parts = vec![format!("cadeia={chain}")];
+    if let Some(query) = &filters.query {
+        parts.push(format!("pesquisa contem {query}"));
+    }
     if let Some(scope) = &filters.scope {
         parts.push(format!("scope contem {scope}"));
     }
@@ -195,5 +238,51 @@ mod tests {
         assert!(kinds.contains("book.opened"));
         assert!(kinds.contains("document.generated"));
         assert!(kinds.contains("act.sealed"));
+    }
+
+    #[test]
+    fn query_filter_matches_record_metadata_and_hashes() {
+        let mut ledger = chancela_ledger::Ledger::new();
+        let event = ledger.append(
+            "Amelia.Marques",
+            "entity:e1/book:b1",
+            "act.sealed",
+            Some("Approved by records officer"),
+            b"sealed-payload",
+        );
+        let hash_prefix = hex(&event.hash)[..12].to_owned();
+        let payload_prefix = hex(&event.payload_digest)[..12].to_owned();
+
+        let by_actor = LedgerEventFilters::from_parts(
+            Some("amelia.marques".to_owned()),
+            None,
+            &[],
+            None,
+            None,
+            None,
+        )
+        .expect("actor query");
+        assert!(by_actor.matches(event));
+
+        let by_justification = LedgerEventFilters::from_parts(
+            Some("records officer".to_owned()),
+            None,
+            &[],
+            None,
+            None,
+            None,
+        )
+        .expect("justification query");
+        assert!(by_justification.matches(event));
+
+        let by_hash =
+            LedgerEventFilters::from_parts(Some(hash_prefix), None, &[], None, None, None)
+                .expect("hash query");
+        assert!(by_hash.matches(event));
+
+        let by_payload =
+            LedgerEventFilters::from_parts(Some(payload_prefix), None, &[], None, None, None)
+                .expect("payload query");
+        assert!(by_payload.matches(event));
     }
 }

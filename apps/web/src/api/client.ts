@@ -902,6 +902,7 @@ export const api = {
   listLedger: (params: LedgerQueryParams = {}) =>
     get<LedgerEventView[]>(
       `/v1/ledger/events${query({
+        q: params.q,
         chain: params.chain,
         scope: params.scope,
         kind: params.kind,
@@ -916,6 +917,7 @@ export const api = {
   listLedgerPage: (params: LedgerQueryParams = {}) =>
     get<LedgerEventsPage>(
       `/v1/ledger/events/page${query({
+        q: params.q,
         chain: params.chain,
         scope: params.scope,
         kind: params.kind,
@@ -931,6 +933,7 @@ export const api = {
     fetchBlob(
       `/v1/ledger/archive/document${query({
         format: params.format,
+        q: params.q,
         chain: params.chain,
         scope: params.scope,
         kind: params.kind,

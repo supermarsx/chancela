@@ -2092,7 +2092,8 @@ a.btn.btn--iconOnly {
   max-width: 100%;
 }
 
-.ledger-filterbar__primary .field:nth-child(2) {
+.ledger-filterbar__primary .field:first-child,
+.ledger-filterbar__primary .field:nth-child(3) {
   flex: 2 1 18rem;
 }
 

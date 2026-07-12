@@ -4,7 +4,7 @@
  * `GET /v1/ledger/events/page` newest-first. The filter block narrows both the feed
  * and archive exports on the server.
  */
-import { useMemo, useState } from 'react';
+import { useDeferredValue, useMemo, useState } from 'react';
 import {
   useDownloadLedgerArchiveDocument,
   useLedgerPages,
@@ -38,6 +38,7 @@ import { LedgerTable } from './LedgerTable';
 const DEFAULT_PAGE_LIMIT = 100;
 
 interface LedgerFilters {
+  search: string;
   chain: string;
   scope: string;
   kind: string;
@@ -48,6 +49,7 @@ interface LedgerFilters {
 }
 
 const INITIAL_FILTERS: LedgerFilters = {
+  search: '',
   chain: '',
   scope: '',
   kind: '',
@@ -66,6 +68,7 @@ function filteredParams(filters: LedgerFilters): LedgerQueryParams {
   return {
     order: 'desc',
     limit: filters.limit,
+    ...(trimParam(filters.search) ? { q: trimParam(filters.search) } : {}),
     ...(filters.chain ? { chain: filters.chain } : {}),
     ...(trimParam(filters.scope) ? { scope: trimParam(filters.scope) } : {}),
     ...(trimParam(filters.kind) ? { kind: trimParam(filters.kind) } : {}),
@@ -125,6 +128,7 @@ function exportContentType(format: LedgerArchiveDocumentFormat): string {
 function hasActiveFilters(filters: LedgerFilters): boolean {
   return (
     filters.chain !== '' ||
+    filters.search.trim() !== '' ||
     filters.scope.trim() !== '' ||
     filters.kind.trim() !== '' ||
     filters.actor.trim() !== '' ||
@@ -138,11 +142,15 @@ export function LedgerPage() {
   const t = useT();
   const toast = useToast();
   const [filters, setFilters] = useState<LedgerFilters>(INITIAL_FILTERS);
+  const deferredSearch = useDeferredValue(filters.search);
   const [archiveFormat, setArchiveFormat] = useState<LedgerArchiveDocumentFormat>('pdfa');
   const verify = useLedgerVerify();
   const integrity = useLedgerIntegrity();
   const downloadArchive = useDownloadLedgerArchiveDocument();
-  const ledgerParams = useMemo(() => filteredParams(filters), [filters]);
+  const ledgerParams = useMemo(
+    () => filteredParams({ ...filters, search: deferredSearch }),
+    [deferredSearch, filters],
+  );
   const eventsQuery = useLedgerPages(ledgerParams);
   const pages = eventsQuery.data?.pages ?? [];
   const events = pages.flatMap((page) => page.events);
@@ -268,6 +276,14 @@ export function LedgerPage() {
           >
             <div className="ledger-filterbar filter">
               <div className="ledger-filterbar__primary">
+                <Field label={t('books.filters.search.label')} htmlFor="ledger-search">
+                  <Input
+                    id="ledger-search"
+                    type="search"
+                    value={filters.search}
+                    onChange={(e) => updateFilter({ search: e.target.value })}
+                  />
+                </Field>
                 <Field label={t('ledger.chain.label')} htmlFor="ledger-chain">
                   <Select
                     id="ledger-chain"

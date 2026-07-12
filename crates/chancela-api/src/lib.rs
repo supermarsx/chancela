@@ -3702,7 +3702,7 @@ mod tests {
                 "alice",
                 "settings/archive",
                 "settings.updated",
-                None,
+                Some("approved by records officer"),
                 b"settings",
             );
             ledger.append(
@@ -3726,7 +3726,7 @@ mod tests {
                 .to_owned()
         };
         let uri = format!(
-            "/v1/ledger/events/page?chain=application&scope=settings/archive&kind=settings.updated,backup.created&actor=alice&from={date}&to={date}&limit=10"
+            "/v1/ledger/events/page?q=records&chain=application&scope=settings/archive&kind=settings.updated,backup.created&actor=alice&from={date}&to={date}&limit=10"
         );
         let (status, page) = send(state.clone(), get(&uri)).await;
         assert_eq!(status, StatusCode::OK);
@@ -3734,6 +3734,7 @@ mod tests {
         assert_eq!(events.len(), 1, "{page}");
         assert_eq!(events[0]["kind"], "settings.updated");
         assert_eq!(events[0]["actor"], "alice");
+        assert_eq!(events[0]["justification"], "approved by records officer");
         assert_eq!(events[0]["chains"], json!(["global", "application"]));
 
         let (status, empty) = send(
@@ -3850,7 +3851,7 @@ mod tests {
     async fn ledger_archive_document_exports_audit_interchange_formats_with_filters() {
         let (state, _entity_id, book_id) = entity_and_open_book("SociedadeAnonima").await;
         let base = format!(
-            "/v1/ledger/archive/document?chain=book:{book_id}&scope=book:{book_id}&kind=book.opened&limit=1"
+            "/v1/ledger/archive/document?q=book.opened&chain=book:{book_id}&scope=book:{book_id}&kind=book.opened&limit=1"
         );
 
         let (status, pdf_type, pdf_disposition, pdf_bytes) =
@@ -3871,6 +3872,13 @@ mod tests {
         assert_eq!(export["canonical_preserved_evidence"], false);
         assert_eq!(export["event_count"], 1);
         assert_eq!(export["order"], "seq_desc");
+        assert!(
+            export["filters"]
+                .as_str()
+                .expect("filters")
+                .contains("pesquisa contem book.opened"),
+            "{export}"
+        );
         assert_eq!(export["events"][0]["kind"], "book.opened");
         assert!(
             export["events"][0]["scope"]

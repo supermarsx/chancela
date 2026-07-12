@@ -208,6 +208,9 @@ describe('LedgerPage', () => {
     const tooltipId = clear.getAttribute('aria-describedby') ?? '';
     expect(document.getElementById(tooltipId)?.textContent).toBe('Limpar filtros do arquivo');
 
+    fireEvent.change(screen.getByLabelText('Pesquisar'), {
+      target: { value: 'approved digest' },
+    });
     fireEvent.change(screen.getByLabelText('Filtrar por cadeia'), {
       target: { value: 'book:book-123456789' },
     });
@@ -226,7 +229,7 @@ describe('LedgerPage', () => {
         calls.some(
           (c) =>
             c.url ===
-            '/v1/ledger/events/page?chain=book%3Abook-123456789&scope=act%3A88&kind=act.sealed&actor=amelia.marques&from=2026-07-01&to=2026-07-31&limit=50&order=desc',
+            '/v1/ledger/events/page?q=approved+digest&chain=book%3Abook-123456789&scope=act%3A88&kind=act.sealed&actor=amelia.marques&from=2026-07-01&to=2026-07-31&limit=50&order=desc',
         ),
       ).toBe(true),
     );
@@ -234,8 +237,9 @@ describe('LedgerPage', () => {
 
     fireEvent.click(clear);
     await waitFor(() =>
-      expect((screen.getByLabelText('Filtrar por âmbito') as HTMLInputElement).value).toBe(''),
+      expect((screen.getByLabelText('Pesquisar') as HTMLInputElement).value).toBe(''),
     );
+    expect((screen.getByLabelText('Filtrar por âmbito') as HTMLInputElement).value).toBe('');
     expect((screen.getByLabelText('Eventos por página') as HTMLSelectElement).value).toBe('100');
 
     const advanced = container.querySelector(
@@ -259,6 +263,9 @@ describe('LedgerPage', () => {
     renderWithProviders(<LedgerPage />);
 
     expect(await screen.findByRole('option', { name: 'Livro book-123' })).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Pesquisar'), {
+      target: { value: 'approved digest' },
+    });
     fireEvent.change(screen.getByLabelText('Filtrar por cadeia'), {
       target: { value: 'book:book-123456789' },
     });
@@ -280,7 +287,7 @@ describe('LedgerPage', () => {
     expect(saved.preferBrowserSavePicker).toBe(true);
     expect(await blobText(saved.blob)).toBe('archive-txt');
     expect(calls.find((c) => c.url.includes('/v1/ledger/archive/document'))?.url).toBe(
-      '/v1/ledger/archive/document?format=txt&chain=book%3Abook-123456789&scope=act%3A88&limit=100&order=desc',
+      '/v1/ledger/archive/document?format=txt&q=approved+digest&chain=book%3Abook-123456789&scope=act%3A88&limit=100&order=desc',
     );
     expect(screen.getByRole('option', { name: 'PDF/A canónico' })).toBeTruthy();
     expect(screen.getByRole('option', { name: 'JSON de intercâmbio' })).toBeTruthy();

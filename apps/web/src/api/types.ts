@@ -1373,6 +1373,7 @@ export type LedgerArchiveDocumentFormat = 'pdfa' | 'json' | 'txt' | 'csv' | 'htm
 
 /** Query params for `GET /v1/ledger/events` and the paged `/v1/ledger/events/page`. */
 export interface LedgerQueryParams {
+  q?: string;
   chain?: string;
   scope?: string;
   kind?: string;
