@@ -5177,6 +5177,28 @@ export interface BackupRecoveryDrillManifestEvidence {
   total_member_bytes: number;
 }
 
+export type BackupRecoveryDrillIsolatedRestoreStatus = 'verified' | 'failed' | 'not_recorded';
+
+/** Secret-free isolated snapshot verification evidence persisted with a recovery drill receipt. */
+export interface BackupRecoveryDrillIsolatedRestoreVerification {
+  status: BackupRecoveryDrillIsolatedRestoreStatus;
+  db_snapshot_materialized: boolean;
+  db_snapshot_opened: boolean;
+  state_loaded: boolean;
+  ledger_verified: boolean;
+  cleanup_verified: boolean;
+  entity_count: number;
+  book_count: number;
+  act_count: number;
+  sidecar_root_count: number;
+  sidecar_materialized_file_count: number;
+  sidecar_materialized_bytes: number;
+  sqlcipher_encryption_verified: boolean | null;
+  findings: string[];
+  errors: string[];
+  next_step: string;
+}
+
 /** `POST /v1/backup/recovery-drills` request. `passphrase` is transient and never persisted. */
 export interface BackupRecoveryDrillBody {
   archive: string;
@@ -5202,6 +5224,8 @@ export interface BackupRecoveryDrillReceipt {
   encrypted: boolean | null;
   ledger_verified: boolean;
   manifest: BackupRecoveryDrillManifestEvidence | null;
+  isolated_restore_verified: boolean;
+  isolated_restore_verification: BackupRecoveryDrillIsolatedRestoreVerification;
   operator_notes?: string;
   custody_location?: string;
   restore_executed: false;

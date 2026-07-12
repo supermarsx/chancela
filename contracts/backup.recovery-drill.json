@@ -17,6 +17,31 @@
     "db_member_present": true,
     "total_member_bytes": 12288
   },
+  "isolated_restore_verified": true,
+  "isolated_restore_verification": {
+    "status": "verified",
+    "db_snapshot_materialized": true,
+    "db_snapshot_opened": true,
+    "state_loaded": true,
+    "ledger_verified": true,
+    "cleanup_verified": true,
+    "entity_count": 4,
+    "book_count": 2,
+    "act_count": 12,
+    "sidecar_root_count": 2,
+    "sidecar_materialized_file_count": 2,
+    "sidecar_materialized_bytes": 4096,
+    "sqlcipher_encryption_verified": null,
+    "findings": [
+      "archive manifest and listed members passed store preflight checks",
+      "isolated database snapshot was materialized, opened, and loaded",
+      "isolated snapshot ledger verified",
+      "isolated sidecar readback covered 2 file(s)",
+      "isolated verification temp directory was removed"
+    ],
+    "errors": [],
+    "next_step": "record as preflight-only isolated snapshot evidence; authorize any recovery execution separately"
+  },
   "operator_notes": "Quarterly recovery drill. Preflight only; no live restore was executed.",
   "custody_location": "Evidence safe A / shelf 3",
   "restore_executed": false,

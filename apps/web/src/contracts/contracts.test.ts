@@ -65,6 +65,7 @@ import {
   type AppearanceSettings,
   type BackupFile,
   type BackupManifest,
+  type BackupRecoveryDrillIsolatedRestoreVerification,
   type BackupRecoveryDrillManifestEvidence,
   type BackupRecoveryDrillReceipt,
   type BookView,
@@ -4419,6 +4420,8 @@ describe('contract fixtures parse through the real client', () => {
         encrypted: true,
         ledger_verified: true,
         manifest: true,
+        isolated_restore_verified: true,
+        isolated_restore_verification: true,
         restore_executed: true,
         live_db_swapped: true,
         sidecars_staged: true,
@@ -4437,6 +4440,7 @@ describe('contract fixtures parse through the real client', () => {
     expect(typeof receipt.preflight_ready).toBe('boolean');
     if (receipt.encrypted !== null) expect(typeof receipt.encrypted).toBe('boolean');
     expect(typeof receipt.ledger_verified).toBe('boolean');
+    expect(receipt.isolated_restore_verified).toBe(true);
     const evidence = assertExactKeys<BackupRecoveryDrillManifestEvidence>(
       receipt.manifest,
       {
@@ -4461,6 +4465,49 @@ describe('contract fixtures parse through the real client', () => {
     expect(typeof evidence.sidecar_member_count).toBe('number');
     expect(typeof evidence.db_member_present).toBe('boolean');
     expect(typeof evidence.total_member_bytes).toBe('number');
+    const isolated = assertExactKeys<BackupRecoveryDrillIsolatedRestoreVerification>(
+      receipt.isolated_restore_verification,
+      {
+        status: true,
+        db_snapshot_materialized: true,
+        db_snapshot_opened: true,
+        state_loaded: true,
+        ledger_verified: true,
+        cleanup_verified: true,
+        entity_count: true,
+        book_count: true,
+        act_count: true,
+        sidecar_root_count: true,
+        sidecar_materialized_file_count: true,
+        sidecar_materialized_bytes: true,
+        sqlcipher_encryption_verified: true,
+        findings: true,
+        errors: true,
+        next_step: true,
+      },
+      'BackupRecoveryDrillReceipt.isolated_restore_verification',
+    );
+    expect(isolated.status).toBe('verified');
+    expect(isolated.db_snapshot_materialized).toBe(true);
+    expect(isolated.db_snapshot_opened).toBe(true);
+    expect(isolated.state_loaded).toBe(true);
+    expect(isolated.ledger_verified).toBe(true);
+    expect(isolated.cleanup_verified).toBe(true);
+    expect(typeof isolated.entity_count).toBe('number');
+    expect(typeof isolated.book_count).toBe('number');
+    expect(typeof isolated.act_count).toBe('number');
+    expect(typeof isolated.sidecar_root_count).toBe('number');
+    expect(typeof isolated.sidecar_materialized_file_count).toBe('number');
+    expect(typeof isolated.sidecar_materialized_bytes).toBe('number');
+    if (isolated.sqlcipher_encryption_verified !== null) {
+      expect(typeof isolated.sqlcipher_encryption_verified).toBe('boolean');
+    }
+    expect(isolated.findings).toContain(
+      'isolated database snapshot was materialized, opened, and loaded',
+    );
+    expect(isolated.findings).toContain('isolated snapshot ledger verified');
+    expect(isolated.errors).toEqual([]);
+    expect(isolated.next_step).toContain('preflight-only isolated snapshot evidence');
     expect(receipt.restore_executed).toBe(false);
     expect(receipt.live_db_swapped).toBe(false);
     expect(receipt.sidecars_staged).toBe(false);
