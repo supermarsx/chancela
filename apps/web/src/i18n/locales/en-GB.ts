@@ -2219,7 +2219,17 @@ export const enGB: Catalog = {
   'signing.cc.start': 'Sign with Citizen Card',
   'signing.cc.prompt.title': 'Signing with the Citizen Card',
   'signing.cc.prompt.body':
-    'Insert the Citizen Card into the reader. The signing PIN is entered at the reader or in the Autenticação.gov application — it is never asked for here.',
+    'Insert the Citizen Card into the reader. You may enter the signing PIN here only in the desktop application; leave it blank to let the reader or Autenticação.gov application ask for it.',
+  'signing.cc.pin.label': 'Citizen Card signing PIN (optional)',
+  'signing.cc.pin.placeholder': 'Leave blank to use the reader',
+  'signing.cc.pin.hint':
+    'Used only for this request; never stored. Leave blank if you prefer to enter the PIN at the reader or in the Autenticação.gov application.',
+  'signing.cc.pin.wrong': 'The signing PIN is incorrect.',
+  'signing.cc.pin.blocked':
+    'The signing PIN is blocked. Use the PUK or official channels before trying again.',
+  'signing.cc.pin.triesLow': 'Only a few attempts remain.',
+  'signing.cc.pin.triesFinal': 'This is the final attempt before blocking.',
+  'signing.cc.pin.triesLocked': 'The PIN is blocked.',
   'signing.cc.sign': 'Sign with the card',
   'signing.cc.signing': 'Signing…',
   'signing.cc.cancel': 'Cancel',

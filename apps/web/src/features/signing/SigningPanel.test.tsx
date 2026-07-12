@@ -932,12 +932,14 @@ const ccSignedStatus: SignatureStatusView = {
 };
 
 describe('SigningPanel — Cartão de Cidadão', () => {
-  it('signs synchronously and flips to the signed CC record + download', async () => {
+  it('submits an optional in-app PIN and flips to the signed CC record + download', async () => {
     let signed = false;
+    let ccBody: unknown = null;
     vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
       const url = input.toString();
       const method = init?.method ?? 'GET';
       if (url.includes('/signature/cc/sign')) {
+        ccBody = JSON.parse(String(init?.body));
         signed = true;
         return json({
           document_id: 'doc-1',
@@ -959,16 +961,19 @@ describe('SigningPanel — Cartão de Cidadão', () => {
 
     renderWithProviders(<SigningPanel act={sealedAct} entityName="Encosto Estratégico Lda" />);
 
-    // Unsigned → the CC entry action → the honest prompt (no PIN field anywhere).
+    // Unsigned -> the CC entry action -> the honest prompt with a bounded optional PIN field.
     fireEvent.click(await screen.findByRole('button', { name: 'Assinar com Cartão de Cidadão' }));
     const sign = await screen.findByRole('button', { name: 'Assinar com o cartão' });
-    expect(screen.queryByLabelText('PIN de assinatura da CMD')).toBeNull();
+    fireEvent.change(screen.getByLabelText('PIN de assinatura do Cartão de Cidadão (opcional)'), {
+      target: { value: ' 123456 ' },
+    });
     fireEvent.click(sign);
 
     // Signed: the CC-specific qualified label + the signed-PDF download.
     expect(
       await screen.findByText('Assinatura eletrónica qualificada (Cartão de Cidadão).'),
     ).toBeTruthy();
+    expect(ccBody).toEqual({ pin: '123456' });
     expect(screen.getByRole('button', { name: 'Descarregar PDF assinado' })).toBeTruthy();
   });
 
@@ -1022,10 +1027,57 @@ describe('SigningPanel — Cartão de Cidadão', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Assinar com o cartão' }));
 
     // The honest server message renders inline; the flow stays on the CC step for a retry.
-    expect(
-      await screen.findByText(/não foi possível assinar com o Cartão de Cidadão/),
-    ).toBeTruthy();
+    await waitFor(() =>
+      expect(
+        screen.getByLabelText('PIN de assinatura do Cartão de Cidadão (opcional)').closest('form')
+          ?.textContent,
+      ).toContain('não foi possível assinar com o Cartão de Cidadão'),
+    );
     expect(screen.getByRole('button', { name: 'Assinar com o cartão' })).toBeTruthy();
+  });
+
+  it('keeps a structured CC PIN rejection visible after clearing mutation state', async () => {
+    const bodies: unknown[] = [];
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      const method = init?.method ?? 'GET';
+      if (url.includes('/signature/cc/sign')) {
+        bodies.push(JSON.parse(String(init?.body)));
+        return json(
+          {
+            error: 'PIN rejected',
+            pin_status: 'wrong_pin',
+            tries_left: 'final_try',
+          },
+          422,
+        );
+      }
+      if (url.endsWith('/signature') && method === 'GET') return json(unsignedStatus);
+      return emptyInviteList(url, method) ?? Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(<SigningPanel act={sealedAct} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Assinar com Cartão de Cidadão' }));
+    fireEvent.change(
+      await screen.findByLabelText('PIN de assinatura do Cartão de Cidadão (opcional)'),
+      {
+        target: { value: '0000' },
+      },
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Assinar com o cartão' }));
+
+    expect(await screen.findByText(/PIN de assinatura incorreto/)).toBeTruthy();
+    expect(screen.getByText(/última tentativa/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Assinar com o cartão' })).toBeTruthy();
+    expect(
+      (
+        screen.getByLabelText(
+          'PIN de assinatura do Cartão de Cidadão (opcional)',
+        ) as HTMLInputElement
+      ).value,
+    ).toBe('');
+    expect(bodies).toEqual([{ pin: '0000' }]);
   });
 
   it('gates the CC action with signing.perform (disable-with-explanation)', async () => {

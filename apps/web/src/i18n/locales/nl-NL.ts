@@ -2245,7 +2245,17 @@ export const nlNL: Catalog = {
   'signing.cc.start': 'Ondertekenen met Burgerkaart',
   'signing.cc.prompt.title': 'Ondertekenen met de Burgerkaart',
   'signing.cc.prompt.body':
-    'Plaats de Burgerkaart in de lezer. De ondertekenings-PIN wordt op de lezer of in de Autenticação.gov-toepassing ingevoerd — die wordt hier nooit gevraagd.',
+    'Plaats de Burgerkaart in de lezer. U kunt de ondertekeningspincode hier alleen in de desktoptoepassing invoeren; laat het veld leeg als de lezer of de Autenticação.gov-toepassing de pincode moet vragen.',
+  'signing.cc.pin.label': 'Ondertekeningspincode van de Burgerkaart (optioneel)',
+  'signing.cc.pin.placeholder': 'Laat leeg om de lezer te gebruiken',
+  'signing.cc.pin.hint':
+    'Alleen gebruikt voor dit verzoek; nooit opgeslagen. Laat leeg als u de pincode liever op de lezer of in de Autenticação.gov-toepassing invoert.',
+  'signing.cc.pin.wrong': 'De ondertekeningspincode is onjuist.',
+  'signing.cc.pin.blocked':
+    'De ondertekeningspincode is geblokkeerd. Gebruik de PUK of officiële kanalen voordat u het opnieuw probeert.',
+  'signing.cc.pin.triesLow': 'Er zijn nog maar enkele pogingen over.',
+  'signing.cc.pin.triesFinal': 'Dit is de laatste poging voordat de pincode wordt geblokkeerd.',
+  'signing.cc.pin.triesLocked': 'De pincode is geblokkeerd.',
   'signing.cc.sign': 'Ondertekenen met de kaart',
   'signing.cc.signing': 'Bezig met ondertekenen…',
   'signing.cc.cancel': 'Annuleren',

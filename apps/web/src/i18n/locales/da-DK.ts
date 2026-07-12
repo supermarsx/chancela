@@ -2241,7 +2241,17 @@ export const daDK: Catalog = {
   'signing.cc.start': 'Signer med Borgerkort',
   'signing.cc.prompt.title': 'Signering med Borgerkort',
   'signing.cc.prompt.body':
-    'Indsæt Borgerkortet i læseren. Signerings-PIN indtastes på læseren eller i Autenticação.gov-appen — den bliver aldrig bedt om her.',
+    'Indsæt Borgerkortet i læseren. Du kan kun indtaste signerings-PIN her i skrivebordsprogrammet; lad feltet stå tomt, hvis læseren eller Autenticação.gov-appen skal bede om PIN-koden.',
+  'signing.cc.pin.label': 'Borgerkortets signerings-PIN (valgfri)',
+  'signing.cc.pin.placeholder': 'Lad stå tomt for at bruge læseren',
+  'signing.cc.pin.hint':
+    'Bruges kun til denne anmodning; gemmes aldrig. Lad feltet stå tomt, hvis du vil indtaste PIN-koden på læseren eller i Autenticação.gov-appen.',
+  'signing.cc.pin.wrong': 'Signerings-PIN-koden er forkert.',
+  'signing.cc.pin.blocked':
+    'Signerings-PIN-koden er blokeret. Brug PUK eller officielle kanaler, før du prøver igen.',
+  'signing.cc.pin.triesLow': 'Der er kun få forsøg tilbage.',
+  'signing.cc.pin.triesFinal': 'Dette er sidste forsøg før blokering.',
+  'signing.cc.pin.triesLocked': 'PIN-koden er blokeret.',
   'signing.cc.sign': 'Signer med kortet',
   'signing.cc.signing': 'Signerer…',
   'signing.cc.cancel': 'Annuller',

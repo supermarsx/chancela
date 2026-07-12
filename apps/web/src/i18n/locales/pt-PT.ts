@@ -2267,7 +2267,17 @@ export const ptPT = {
   'signing.cc.start': 'Assinar com Cartão de Cidadão',
   'signing.cc.prompt.title': 'Assinatura com Cartão de Cidadão',
   'signing.cc.prompt.body':
-    'Insira o Cartão de Cidadão no leitor. O PIN de assinatura é introduzido no leitor ou na aplicação Autenticação.gov — nunca é pedido aqui.',
+    'Insira o Cartão de Cidadão no leitor. Pode introduzir o PIN de assinatura aqui apenas na aplicação de secretária; se deixar o campo vazio, o leitor ou a aplicação Autenticação.gov pedirão o PIN.',
+  'signing.cc.pin.label': 'PIN de assinatura do Cartão de Cidadão (opcional)',
+  'signing.cc.pin.placeholder': 'Deixar vazio para usar o leitor',
+  'signing.cc.pin.hint':
+    'Usado apenas neste pedido; nunca é guardado. Deixe vazio se preferir introduzir o PIN no leitor ou na aplicação Autenticação.gov.',
+  'signing.cc.pin.wrong': 'PIN de assinatura incorreto.',
+  'signing.cc.pin.blocked':
+    'PIN de assinatura bloqueado. Use o PUK ou os canais oficiais antes de voltar a tentar.',
+  'signing.cc.pin.triesLow': 'Restam poucas tentativas.',
+  'signing.cc.pin.triesFinal': 'Esta é a última tentativa antes do bloqueio.',
+  'signing.cc.pin.triesLocked': 'O PIN está bloqueado.',
   'signing.cc.sign': 'Assinar com o cartão',
   'signing.cc.signing': 'A assinar…',
   'signing.cc.cancel': 'Cancelar',

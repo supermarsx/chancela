@@ -2257,7 +2257,17 @@ export const deDE: Catalog = {
   'signing.cc.start': 'Mit Bürgerkarte signieren',
   'signing.cc.prompt.title': 'Signatur mit der Bürgerkarte',
   'signing.cc.prompt.body':
-    'Stecken Sie die Bürgerkarte in das Lesegerät. Die Signatur-PIN wird am Lesegerät oder in der Anwendung Autenticação.gov eingegeben — sie wird hier niemals abgefragt.',
+    'Stecken Sie die Bürgerkarte in das Lesegerät. Sie können die Signatur-PIN nur in der Desktop-Anwendung hier eingeben; lassen Sie das Feld leer, wenn das Lesegerät oder die Anwendung Autenticação.gov die PIN abfragen soll.',
+  'signing.cc.pin.label': 'Signatur-PIN der Bürgerkarte (optional)',
+  'signing.cc.pin.placeholder': 'Leer lassen, um das Lesegerät zu verwenden',
+  'signing.cc.pin.hint':
+    'Nur für diese Anfrage verwendet; niemals gespeichert. Leer lassen, wenn Sie die PIN am Lesegerät oder in der Anwendung Autenticação.gov eingeben möchten.',
+  'signing.cc.pin.wrong': 'Die Signatur-PIN ist falsch.',
+  'signing.cc.pin.blocked':
+    'Die Signatur-PIN ist gesperrt. Verwenden Sie die PUK oder offizielle Kanäle, bevor Sie es erneut versuchen.',
+  'signing.cc.pin.triesLow': 'Es bleiben nur wenige Versuche.',
+  'signing.cc.pin.triesFinal': 'Dies ist der letzte Versuch vor der Sperrung.',
+  'signing.cc.pin.triesLocked': 'Die PIN ist gesperrt.',
   'signing.cc.sign': 'Mit der Karte signieren',
   'signing.cc.signing': 'Wird signiert…',
   'signing.cc.cancel': 'Abbrechen',

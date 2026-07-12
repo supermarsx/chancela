@@ -2246,7 +2246,17 @@ export const itIT: Catalog = {
   'signing.cc.start': 'Firma con Carta di Cittadino',
   'signing.cc.prompt.title': 'Firma con la Carta di Cittadino',
   'signing.cc.prompt.body':
-    'Inserisci la Carta di Cittadino nel lettore. Il PIN di firma viene inserito sul lettore o nell’applicazione Autenticação.gov — non viene mai richiesto qui.',
+    'Inserisci la Carta di Cittadino nel lettore. Puoi inserire il PIN di firma qui solo nell’applicazione desktop; lascia il campo vuoto se vuoi che il lettore o l’applicazione Autenticação.gov lo richieda.',
+  'signing.cc.pin.label': 'PIN di firma della Carta di Cittadino (opzionale)',
+  'signing.cc.pin.placeholder': 'Lascia vuoto per usare il lettore',
+  'signing.cc.pin.hint':
+    'Usato solo per questa richiesta; non viene mai salvato. Lascia vuoto se preferisci inserire il PIN sul lettore o nell’applicazione Autenticação.gov.',
+  'signing.cc.pin.wrong': 'Il PIN di firma non è corretto.',
+  'signing.cc.pin.blocked':
+    'Il PIN di firma è bloccato. Usa il PUK o i canali ufficiali prima di riprovare.',
+  'signing.cc.pin.triesLow': 'Restano pochi tentativi.',
+  'signing.cc.pin.triesFinal': 'Questo è l’ultimo tentativo prima del blocco.',
+  'signing.cc.pin.triesLocked': 'Il PIN è bloccato.',
   'signing.cc.sign': 'Firma con la carta',
   'signing.cc.signing': 'Firma in corso…',
   'signing.cc.cancel': 'Annulla',

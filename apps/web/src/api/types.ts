@@ -4019,29 +4019,103 @@ export interface CmdConfirmResult {
   finalization: FinalizationStatus;
 }
 
-// --- Qualified Cartão de Cidadão signing (§ t58, desktop / co-located) -----------
+// --- Qualified Cartão de Cidadão signing (§ t58 / t67, desktop / co-located) ------
 //
 // The SYNCHRONOUS smartcard signing flow (frozen `chancela-api::signature::cc` DTOs,
-// t58-e2). A sealed act's unsigned PDF/A is turned into a **qualified** Cartão de Cidadão
-// signed PDF in a single request: `POST /v1/acts/{id}/signature/cc/sign`. There is NO PIN
-// in the body — the PIN is entered at the reader by the Autenticação.gov middleware and
-// never enters the web app. CC signing only works on the desktop where the API process is
-// co-located with the card reader; a remote/browser server refuses with 409. The response
-// REUSES the CMD `CmdConfirmResult` shape (only `family` differs: `"CartaoDeCidadao"`), so
-// no new web-asserted contract type is introduced.
+// t58-e2, extended by t67-e8). A sealed act's unsigned PDF/A is turned into a **qualified**
+// Cartão de Cidadão signed PDF in a single request: `POST /v1/acts/{id}/signature/cc/sign`.
+// CC signing only works on the desktop where the API process is co-located with the card
+// reader; a remote/browser server refuses with 409. The optional `pin` is a **co-location-
+// gated** transient in-app PIN: when present it is threaded once to the card login (one
+// in-app entry replaces the reader dialog); when absent the classic protected-authentication
+// path runs and the PIN is entered at the reader. The PIN rides ONLY in this request body —
+// never persisted, echoed, or logged. The response REUSES the CMD `CmdConfirmResult` shape
+// (only `family` differs: `"CartaoDeCidadao"`), so no new web-asserted contract type appears.
 
 /**
- * `POST /v1/acts/{id}/signature/cc/sign` — the whole CC signing request body. Both fields
- * are optional and carry NO secret (the PIN lives only at the reader). `capacity` records
- * the signatory's stated capacity; `actor` an explicit actor override.
+ * `POST /v1/acts/{id}/signature/cc/sign` — the whole CC signing request body. `capacity` records
+ * the signatory's stated capacity; `actor` an explicit actor override; `pin` the optional transient
+ * in-app PIN (co-location-gated). None are required.
  */
 export interface CcSignBody {
   capacity?: string;
   actor?: string;
+  /**
+   * Optional transient in-app Cartão de Cidadão PIN (co-location-gated). Sent once and never stored
+   * client-side beyond this request — no localStorage/sessionStorage/URL/query-cache. Absent ⇒ the
+   * PIN is entered at the reader (protected authentication).
+   */
+  pin?: string;
 }
 
 /** The CC sign response — the produced qualified signature's metadata (same shape as CMD). */
 export type CcSignResult = CmdConfirmResult;
+
+// --- In-app Cartão de Cidadão batch signing (§ t67, desktop / co-located) ---------
+//
+// `POST /v1/signature/cc/batch-sign` signs a set of already-sealed acts with the Cartão de
+// Cidadão under ONE signer authentication where the card allows it (frozen
+// `chancela-api::batch_signing` DTOs, t67-e8). The optional `pin` is a transient in-app PIN,
+// co-location-gated exactly like the single CC path: present ⇒ one PIN covers the whole batch
+// (`auth_mode: "single_auth"`); absent ⇒ the reader prompts per document (`"per_document_auth"`).
+// The batch NEVER claims a single PIN when the signer will be prompted per document. The PIN rides
+// ONLY in this request body; the response and every per-document result are PIN-free, and one
+// document's failure never aborts the batch.
+
+/** Upper bound the server accepts for a single CC batch (mirrors `MAX_CC_BATCH_ACTS`). */
+export const MAX_CC_BATCH_ACTS = 200;
+
+/** How many times the signer authenticated to cover a batch. Never overstated by the server. */
+export type CcBatchAuthMode = 'single_auth' | 'per_document_auth';
+
+/**
+ * `POST /v1/signature/cc/batch-sign` body. `pin` is the optional transient in-app PIN — sent once,
+ * never stored client-side beyond this request (no localStorage/sessionStorage/URL/query-cache).
+ */
+export interface CcBatchSignBody {
+  act_ids: string[];
+  capacity?: string;
+  pin?: string;
+  actor?: string;
+}
+
+/**
+ * Declared signer-capacity evidence preserved with a batch. Request/operator evidence only — no
+ * SCAP or authority verification. Mirrors `chancela-api::signature::SignerCapacityEvidence`.
+ */
+export interface SignerCapacityEvidence {
+  requested_provider_capacity: string;
+  source: string;
+  verification_status: string;
+  verification_source: string | null;
+  verified_at: string | null;
+  authority_reference: string | null;
+  status_scope: string;
+}
+
+/** One document's outcome in a batch: the produced signature facts (success) or a PIN-free error. */
+export interface CcBatchDocResult {
+  act_id: string;
+  status: 'signed' | 'error';
+  document_id?: string;
+  signed_pdf_digest?: string;
+  signed_at?: string;
+  timestamp_token?: boolean;
+  error?: string;
+}
+
+/** The batch response — honest authentication accounting plus every per-document outcome. No PIN. */
+export interface CcBatchSignResponse {
+  family: string;
+  auth_mode: CcBatchAuthMode;
+  auth_events: number;
+  trusted_list_status: string | null;
+  requested: number;
+  signed: number;
+  failed: number;
+  signer_capacity_evidence?: SignerCapacityEvidence;
+  results: CcBatchDocResult[];
+}
 
 // --- Local PKCS#12/PFX software-certificate signing -----------------------------
 

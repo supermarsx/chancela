@@ -2251,7 +2251,17 @@ export const frFR: Catalog = {
   'signing.cc.start': 'Signer avec la Carte de Citoyen',
   'signing.cc.prompt.title': 'Signature avec la Carte de Citoyen',
   'signing.cc.prompt.body':
-    'Insérez la Carte de Citoyen dans le lecteur. Le code PIN de signature est saisi sur le lecteur ou dans l’application Autenticação.gov — il n’est jamais demandé ici.',
+    'Insérez la Carte de Citoyen dans le lecteur. Vous pouvez saisir le code PIN de signature ici uniquement dans l’application de bureau ; laissez le champ vide pour que le lecteur ou l’application Autenticação.gov le demande.',
+  'signing.cc.pin.label': 'Code PIN de signature de la Carte de Citoyen (facultatif)',
+  'signing.cc.pin.placeholder': 'Laisser vide pour utiliser le lecteur',
+  'signing.cc.pin.hint':
+    'Utilisé uniquement pour cette demande ; jamais conservé. Laissez vide si vous préférez saisir le code PIN sur le lecteur ou dans l’application Autenticação.gov.',
+  'signing.cc.pin.wrong': 'Le code PIN de signature est incorrect.',
+  'signing.cc.pin.blocked':
+    'Le code PIN de signature est bloqué. Utilisez le PUK ou les canaux officiels avant de réessayer.',
+  'signing.cc.pin.triesLow': 'Il ne reste que quelques tentatives.',
+  'signing.cc.pin.triesFinal': 'C’est la dernière tentative avant le blocage.',
+  'signing.cc.pin.triesLocked': 'Le code PIN est bloqué.',
   'signing.cc.sign': 'Signer avec la carte',
   'signing.cc.signing': 'Signature en cours…',
   'signing.cc.cancel': 'Annuler',

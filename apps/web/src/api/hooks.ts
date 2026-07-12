@@ -27,6 +27,7 @@ import type {
   CmdInitiateBody,
   CmdConfirmBody,
   CcSignBody,
+  CcBatchSignBody,
   LocalPkcs12SignBody,
   OfficialSignatureImportBody,
   RemoteInitiateBody,
@@ -1014,13 +1015,13 @@ export function useCmdConfirmSignature(id: string) {
 
 /**
  * Qualified Cartão de Cidadão signing (`POST /v1/acts/{id}/signature/cc/sign`, t58) — a
- * SYNCHRONOUS, desktop-only single call. No secret rides in the body (the PIN is entered at
- * the reader by the Autenticação.gov middleware, never here). The call BLOCKS while the card
- * signs, so the caller shows a brief "a assinar…" busy state. On success the signature
- * status, the act, the ledger and the dashboard refetch (the sign appends a `document.signed`
- * event). A 409 means the API is not co-located with a reader (browser/remote); a 422 is an
- * honest provider error (no card / wrong PIN / not activated / no reader) — both surfaced by
- * the caller, never persisted.
+ * SYNCHRONOUS, desktop-only single call. The optional in-app PIN is a transient mutation
+ * variable; when it is absent, protected authentication happens at the reader / Autenticação.gov
+ * prompt. The call BLOCKS while the card signs, so the caller shows a brief "a assinar…" busy
+ * state. On success the signature status, the act, the ledger and the dashboard refetch (the sign
+ * appends a `document.signed` event). A 409 means the API is not co-located with a reader
+ * (browser/remote); a 422 is an honest provider error (no card / wrong PIN / not activated / no
+ * reader) — both surfaced by the caller, never persisted.
  */
 export function useCcSignSignature(id: string) {
   const qc = useQueryClient();
@@ -1029,6 +1030,25 @@ export function useCcSignSignature(id: string) {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: keys.actSignature(id) });
       void qc.invalidateQueries({ queryKey: keys.act(id) });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+      void qc.invalidateQueries({ queryKey: keys.dashboard });
+    },
+  });
+}
+
+/**
+ * In-app Cartão de Cidadão **batch** signing (`POST /v1/signature/cc/batch-sign`, t67). Signs a set
+ * of sealed acts under one signer authentication where the card allows it. The optional PIN is a
+ * transient mutation variable only — the caller clears it and calls `reset()` after each submit so
+ * it never lingers in the retained mutation state. A batch may touch acts across many books, so the
+ * broad signing/ledger/dashboard surfaces are invalidated on success (each affected act refetches).
+ */
+export function useCcBatchSign() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CcBatchSignBody) => api.signCcBatch(body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['acts'] });
       void qc.invalidateQueries({ queryKey: ['ledger'] });
       void qc.invalidateQueries({ queryKey: keys.dashboard });
     },

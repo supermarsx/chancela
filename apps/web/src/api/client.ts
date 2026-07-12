@@ -134,6 +134,8 @@ import type {
   CmdConfirmResult,
   CcSignBody,
   CcSignResult,
+  CcBatchSignBody,
+  CcBatchSignResponse,
   LocalPkcs12SignBody,
   LocalPkcs12SignResult,
   OfficialSignatureImportBody,
@@ -219,17 +221,28 @@ import { t } from '../i18n';
 /** The header that carries the current-user session token (plan t14 §2.8). */
 export const SESSION_HEADER = 'X-Chancela-Session';
 
-/** Shape of an error response body; `issues`/`warnings` are endpoint-specific. */
+/** Shape of an error response body; `issues`/`warnings`/`pin_status` are endpoint-specific. */
 interface ApiErrorBody {
   error: string;
   issues?: ComplianceIssue[];
   warnings?: ComplianceIssue[];
+  /** In-app CC PIN rejection (t67): `"wrong_pin"`/`"blocked"`. Never carries the PIN. */
+  pin_status?: string;
+  /** Coarse remaining-attempt hint (`"low"`/`"final_try"`/`"locked"`/`"unknown"`). */
+  tries_left?: string;
 }
 
 export class ApiError extends Error {
   readonly status: number;
   readonly issues?: ComplianceIssue[];
   readonly warnings?: ComplianceIssue[];
+  /**
+   * Structured in-app Cartão de Cidadão PIN-rejection fields (t67-e8's `422 PinRejected`). Both are
+   * PIN-free: `pinStatus` is `"wrong_pin"`/`"blocked"`, `triesLeft` a coarse hint. Absent on every
+   * non-PIN error, so callers must feature-detect before rendering PIN-specific copy.
+   */
+  readonly pinStatus?: string;
+  readonly triesLeft?: string;
 
   constructor(status: number, body: ApiErrorBody) {
     super(body.error || t('error.requestFailed', { status }));
@@ -237,6 +250,8 @@ export class ApiError extends Error {
     this.status = status;
     this.issues = body.issues;
     this.warnings = body.warnings;
+    this.pinStatus = body.pin_status;
+    this.triesLeft = body.tries_left;
   }
 }
 
@@ -631,12 +646,18 @@ export const api = {
   cmdConfirmSignature: (id: string, body: CmdConfirmBody) =>
     post<CmdConfirmResult>(`/v1/acts/${id}/signature/cmd/confirm`, body),
   // Qualified Cartão de Cidadão signing (§ t58) — SYNCHRONOUS and desktop-only. A single
-  // call signs the sealed PDF at the co-located card reader; NO PIN in the body (it is
-  // entered at the reader / Autenticação.gov). Refused with 409 when the API is not
-  // co-located with a reader (browser/remote server); a provider failure (no card / wrong
-  // PIN / not activated / no reader) is an honest 422 whose PT message is surfaced verbatim.
+  // call signs the sealed PDF at the co-located card reader. The optional PIN is transient
+  // request input only; callers must not persist it and the API does not take custody of it.
+  // Refused with 409 when the API is not co-located with a reader (browser/remote server); a
+  // provider failure (no card / wrong PIN / not activated / no reader) is an honest 422 whose
+  // PT message is surfaced verbatim.
   ccSignSignature: (id: string, body: CcSignBody = {}) =>
     post<CcSignResult>(`/v1/acts/${id}/signature/cc/sign`, body),
+  // In-app Cartão de Cidadão BATCH signing (§ t67) — signs many sealed acts under one signer
+  // authentication where the card allows it. The optional PIN rides only in this request body; the
+  // response and every per-document result are PIN-free. Not act-scoped (the batch spans acts).
+  signCcBatch: (body: CcBatchSignBody) =>
+    post<CcBatchSignResponse>('/v1/signature/cc/batch-sign', body),
   // Advanced local PKCS#12/PFX software-certificate signing. The PFX bytes and passphrase
   // ride only in this request body; the response is local technical evidence, not qualified/CMD.
   localPkcs12SignSignature: (id: string, body: LocalPkcs12SignBody) =>

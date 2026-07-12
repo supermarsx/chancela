@@ -2239,7 +2239,17 @@ export const fiFI: Catalog = {
   'signing.cc.start': 'Allekirjoita Kansalaiskortilla',
   'signing.cc.prompt.title': 'Allekirjoitus Kansalaiskortilla',
   'signing.cc.prompt.body':
-    'Aseta Kansalaiskortti lukijaan. Allekirjoitus-PIN syötetään lukijassa tai Autenticação.gov-sovelluksessa — sitä ei koskaan kysytä täällä.',
+    'Aseta Kansalaiskortti lukijaan. Voit syöttää allekirjoituksen PIN-koodin tähän vain työpöytäsovelluksessa; jätä kenttä tyhjäksi, jos haluat lukijan tai Autenticação.gov-sovelluksen pyytävän PIN-koodia.',
+  'signing.cc.pin.label': 'Kansalaiskortin allekirjoitus-PIN (valinnainen)',
+  'signing.cc.pin.placeholder': 'Jätä tyhjäksi käyttääksesi lukijaa',
+  'signing.cc.pin.hint':
+    'Käytetään vain tähän pyyntöön; ei koskaan tallenneta. Jätä tyhjäksi, jos haluat syöttää PIN-koodin lukijassa tai Autenticação.gov-sovelluksessa.',
+  'signing.cc.pin.wrong': 'Allekirjoitus-PIN on väärä.',
+  'signing.cc.pin.blocked':
+    'Allekirjoitus-PIN on estetty. Käytä PUK-koodia tai virallisia kanavia ennen uutta yritystä.',
+  'signing.cc.pin.triesLow': 'Yrityksiä on jäljellä vain muutama.',
+  'signing.cc.pin.triesFinal': 'Tämä on viimeinen yritys ennen estoa.',
+  'signing.cc.pin.triesLocked': 'PIN on estetty.',
   'signing.cc.sign': 'Allekirjoita kortilla',
   'signing.cc.signing': 'Allekirjoitetaan…',
   'signing.cc.cancel': 'Peruuta',

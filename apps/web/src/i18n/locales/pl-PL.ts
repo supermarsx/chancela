@@ -2239,7 +2239,17 @@ export const plPL: Catalog = {
   'signing.cc.start': 'Podpisz Kartą obywatela',
   'signing.cc.prompt.title': 'Podpis Kartą obywatela',
   'signing.cc.prompt.body':
-    'Włóż Kartę obywatela do czytnika. PIN podpisu wprowadza się na czytniku lub w aplikacji Autenticação.gov — nigdy nie jest wymagany tutaj.',
+    'Włóż Kartę obywatela do czytnika. PIN podpisu można wpisać tutaj tylko w aplikacji komputerowej; pozostaw pole puste, aby czytnik lub aplikacja Autenticação.gov poprosiły o PIN.',
+  'signing.cc.pin.label': 'PIN podpisu Karty obywatela (opcjonalnie)',
+  'signing.cc.pin.placeholder': 'Pozostaw puste, aby użyć czytnika',
+  'signing.cc.pin.hint':
+    'Używany tylko dla tego żądania; nigdy nie jest zapisywany. Pozostaw puste, jeśli wolisz wpisać PIN na czytniku lub w aplikacji Autenticação.gov.',
+  'signing.cc.pin.wrong': 'PIN podpisu jest nieprawidłowy.',
+  'signing.cc.pin.blocked':
+    'PIN podpisu jest zablokowany. Użyj kodu PUK lub oficjalnych kanałów przed kolejną próbą.',
+  'signing.cc.pin.triesLow': 'Pozostało tylko kilka prób.',
+  'signing.cc.pin.triesFinal': 'To ostatnia próba przed zablokowaniem.',
+  'signing.cc.pin.triesLocked': 'PIN jest zablokowany.',
   'signing.cc.sign': 'Podpisz kartą',
   'signing.cc.signing': 'Podpisywanie…',
   'signing.cc.cancel': 'Anuluj',

@@ -10,10 +10,11 @@
  *       2. collect the OTP received by SMS → `cmd/confirm` → the act is signed.
  *
  *   • **Cartão de Cidadão (CC)** — a SYNCHRONOUS single call (t58), desktop-only. «Assinar com
- *     Cartão de Cidadão» → an honest prompt (insert the card; the PIN is entered AT THE READER
- *     via the Autenticação.gov middleware, never here) → `cc/sign` blocks while the card signs →
- *     the act is signed. CC only works when the API is co-located with the reader (the desktop
- *     app); a remote/browser server refuses with **409**, which we surface as an honest note.
+ *     Cartão de Cidadão» → an honest prompt (insert the card; optionally enter the transient PIN
+ *     in the desktop app, or leave it blank for protected authentication at the reader) → `cc/sign`
+ *     blocks while the card signs → the act is signed. CC only works when the API is co-located
+ *     with the reader (the desktop app); a remote/browser server refuses with **409**, which we
+ *     surface as an honest note.
  *
  *   • **A configured CSC QTSP** (Multicert / DigitalSign / … by label, t59) — the SAME two-phase
  *     activation flow as CMD, driven through the GENERIC endpoints
@@ -36,9 +37,10 @@
  * restarts cleanly, a rejected OTP surfaces a clear retry. The two-phase credential/OTP (CMD) and
  * user-reference/credential/activation (CSC) are TRANSIENT — held only in this component's form
  * state for the duration of the request that consumes them, cleared the instant they are sent, and
- * never stored client-side. The CC PIN never enters the web app at all (it is entered at the
- * reader). The qualified-signing methods label their qualified status accurately, while imported
- * and local technical evidence are kept visibly separate.
+ * never stored client-side. The optional CC PIN follows the same rule and is omitted when the
+ * signer uses the reader / Autenticação.gov prompt instead. The qualified-signing methods label
+ * their qualified status accurately, while imported and local technical evidence are kept visibly
+ * separate.
  *
  * Read errors render inline; the mutations follow the toast idiom (success + error) per
  * CONVENTIONS §2/§3. The sign actions are gated with `useCan('signing.perform', <act's book
@@ -197,6 +199,14 @@ function trustedListLabel(status: string, t: TFunction): string {
 
 function trustedListTone(status: string): 'ok' | 'warn' {
   return status === 'Granted' ? 'ok' : 'warn';
+}
+
+function isCcPinRejection(error: unknown): error is ApiError {
+  return (
+    error instanceof ApiError &&
+    error.status === 422 &&
+    (error.pinStatus === 'wrong_pin' || error.pinStatus === 'blocked')
+  );
 }
 
 function officialImportGuardrailLabel(
@@ -1568,6 +1578,13 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
   // Set once a CC sign attempt 409s: the API is not co-located with a card reader (browser /
   // remote server). We then swap the CC affordance for an honest note rather than fake it.
   const [ccBlocked, setCcBlocked] = useState(false);
+  // The optional in-app CC PIN (co-location-gated). A transient secret: it lives here only while the
+  // CC step is open, is dropped the instant the request is sent (success OR error), and never
+  // reaches localStorage/sessionStorage/URL/query-cache. `ccSignError` mirrors the last CC failure
+  // locally so the inline message survives the `ccSign.reset()` we call to purge the PIN from the
+  // retained mutation variables (t68-r7: React Query keeps `mutation.variables` until reset).
+  const [ccPin, setCcPin] = useState('');
+  const [ccSignError, setCcSignError] = useState<unknown>(null);
 
   const data = status.data;
   // Only CSC QTSPs come from the picker list — CMD + CC always have their own always-available
@@ -1664,29 +1681,74 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
     }
   }
 
-  function onCcSign() {
-    // No secret in the body — the PIN is entered at the reader by the Autenticação.gov
-    // middleware. The call BLOCKS while the card signs; the button shows «A assinar…».
+  /** Enter the CC step, clearing any stale transient PIN / error from a previous attempt. */
+  function onPickCc() {
+    setCcPin('');
+    setCcSignError(null);
+    ccSign.reset();
+    setStep({ kind: 'cc' });
+  }
+
+  /** Leave the CC step back to the picker, dropping the transient PIN and error. */
+  function onCancelCc() {
+    setCcPin('');
+    setCcSignError(null);
+    ccSign.reset();
+    setStep({ kind: 'view' });
+  }
+
+  function onCcSign(e: React.FormEvent) {
+    e.preventDefault();
+    if (ccSign.isPending) return;
+    // The call BLOCKS while the card signs; the button shows «A assinar…». The optional in-app PIN
+    // (co-location-gated) rides only in this request body — absent ⇒ the reader owns the PIN
+    // (protected authentication). On BOTH success and error we clear the PIN and call `ccSign.reset()`
+    // to purge the retained mutation variables, so the secret never lingers in client state. The
+    // failure is mirrored into local `ccSignError` first so the inline message survives that reset.
+    setCcSignError(null);
+    const trimmedPin = ccPin.trim();
+    const pin = trimmedPin.length > 0 ? trimmedPin : undefined;
     ccSign.mutate(
-      {},
+      { pin },
       {
         onSuccess: () => {
+          setCcPin('');
+          ccSign.reset();
           setStep({ kind: 'view' });
           toast.success(t('toast.signing.signed'));
         },
         onError: (err) => {
+          setCcPin(''); // consumed — drop it immediately, even on failure
+          setCcSignError(err); // keep the message locally; `reset()` clears `ccSign.error` next
+          ccSign.reset();
           toast.error(err);
-          // 409 = the API is not co-located with a reader (browser / remote server). Surface
-          // the honest co-location note and drop the CC affordance rather than retry blindly.
+          // 409 = the API is not co-located with a reader (browser / remote server). Surface the
+          // honest co-location note and drop the CC affordance rather than retry blindly.
           if (err instanceof ApiError && err.status === 409) {
             setCcBlocked(true);
+            setCcSignError(null);
             setStep({ kind: 'view' });
           }
-          // A 422 provider error (no card / wrong PIN / not activated / no reader) STAYS on the
-          // CC step so the honest server message renders inline for a retry.
+          // A 422 (wrong/blocked PIN, no card, not activated, no reader) STAYS on the CC step so the
+          // honest message renders inline for a retry.
         },
       },
     );
+  }
+
+  /** The localized, PIN-free message for a structured CC PIN rejection (422 `pin_status`). */
+  function ccPinRejectionMessage(err: ApiError): string {
+    if (err.pinStatus === 'blocked') return t('signing.cc.pin.blocked');
+    const hint =
+      err.triesLeft === 'final_try'
+        ? t('signing.cc.pin.triesFinal')
+        : err.triesLeft === 'locked'
+          ? t('signing.cc.pin.triesLocked')
+          : err.triesLeft === 'low'
+            ? t('signing.cc.pin.triesLow')
+            : '';
+    const base = t('signing.cc.pin.wrong');
+    return hint ? `${base} ${hint}` : base;
   }
 
   function resetPkcs12Form() {
@@ -2225,8 +2287,8 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
             );
           })()
         ) : step.kind === 'cc' ? (
-          // --- CC: the honest synchronous prompt (PIN is entered at the reader) -----------------
-          <div className="stack--tight">
+          // --- CC: the honest synchronous prompt with an optional transient in-app PIN ----------
+          <form className="form" onSubmit={onCcSign}>
             <StatusSummary
               tone="info"
               badge={t('signing.status.localCard')}
@@ -2234,14 +2296,40 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
             >
               <p>{t('signing.cc.prompt.body')}</p>
             </StatusSummary>
-            {ccSign.error ? <ErrorNote error={ccSign.error} /> : null}
+            <Field
+              label={t('signing.cc.pin.label')}
+              htmlFor="sign-cc-pin"
+              hint={t('signing.cc.pin.hint')}
+            >
+              <Input
+                id="sign-cc-pin"
+                type="password"
+                inputMode="numeric"
+                autoComplete="off"
+                value={ccPin}
+                maxLength={12}
+                placeholder={t('signing.cc.pin.placeholder')}
+                disabled={ccSign.isPending}
+                onChange={(event) => setCcPin(event.target.value.slice(0, 12))}
+              />
+            </Field>
+            {ccSignError ? (
+              <div role="alert" aria-live="assertive">
+                {isCcPinRejection(ccSignError) ? (
+                  <InlineWarning tone="error" title={t('common.error')}>
+                    {ccPinRejectionMessage(ccSignError)}
+                  </InlineWarning>
+                ) : (
+                  <ErrorNote error={ccSignError} />
+                )}
+              </div>
+            ) : null}
             <div className="rowline">
               <Button
-                type="button"
+                type="submit"
                 variant="primary"
                 icon={<Icon.IdCard />}
                 disabled={ccSign.isPending}
-                onClick={onCcSign}
               >
                 {ccSign.isPending ? t('signing.cc.signing') : t('signing.cc.sign')}
               </Button>
@@ -2250,12 +2338,12 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
                 variant="ghost"
                 icon={<Icon.Refresh />}
                 disabled={ccSign.isPending}
-                onClick={() => setStep({ kind: 'view' })}
+                onClick={onCancelCc}
               >
                 {t('signing.cc.cancel')}
               </Button>
             </div>
-          </div>
+          </form>
         ) : (
           // --- UNSIGNED: the honest state + the provider picker (CMD + CC + configured CSC QTSPs) -
           <div className="stack--tight">
@@ -2313,7 +2401,7 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
                     type="button"
                     variant="secondary"
                     icon={<Icon.IdCard />}
-                    onClick={() => setStep({ kind: 'cc' })}
+                    onClick={onPickCc}
                   >
                     {t('signing.cc.start')}
                   </GateButton>

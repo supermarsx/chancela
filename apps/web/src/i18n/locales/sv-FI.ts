@@ -2242,7 +2242,17 @@ export const svFI: Catalog = {
   'signing.cc.start': 'Signera med Medborgarkort',
   'signing.cc.prompt.title': 'Signering med Medborgarkort',
   'signing.cc.prompt.body':
-    'Sätt in Medborgarkortet i läsaren. Signerings-PIN anges på läsaren eller i appen Autenticação.gov — den efterfrågas aldrig här.',
+    'Sätt in Medborgarkortet i läsaren. Du kan ange signerings-PIN här endast i skrivbordsappen; lämna fältet tomt om läsaren eller appen Autenticação.gov ska be om PIN-koden.',
+  'signing.cc.pin.label': 'Medborgarkortets signerings-PIN (valfri)',
+  'signing.cc.pin.placeholder': 'Lämna tomt för att använda läsaren',
+  'signing.cc.pin.hint':
+    'Används endast för denna begäran; sparas aldrig. Lämna tomt om du vill ange PIN-koden på läsaren eller i appen Autenticação.gov.',
+  'signing.cc.pin.wrong': 'Signerings-PIN-koden är felaktig.',
+  'signing.cc.pin.blocked':
+    'Signerings-PIN-koden är spärrad. Använd PUK eller officiella kanaler innan du försöker igen.',
+  'signing.cc.pin.triesLow': 'Endast några försök återstår.',
+  'signing.cc.pin.triesFinal': 'Detta är sista försöket före spärrning.',
+  'signing.cc.pin.triesLocked': 'PIN-koden är spärrad.',
   'signing.cc.sign': 'Signera med kortet',
   'signing.cc.signing': 'Signerar…',
   'signing.cc.cancel': 'Avbryt',

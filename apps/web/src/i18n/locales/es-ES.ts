@@ -2246,7 +2246,17 @@ export const esES: Catalog = {
   'signing.cc.start': 'Firmar con Tarjeta de Ciudadano',
   'signing.cc.prompt.title': 'Firma con Tarjeta de Ciudadano',
   'signing.cc.prompt.body':
-    'Introduzca la Tarjeta de Ciudadano en el lector. El PIN de firma se introduce en el lector o en la aplicación Autenticação.gov — nunca se solicita aquí.',
+    'Introduzca la Tarjeta de Ciudadano en el lector. Puede introducir el PIN de firma aquí solo en la aplicación de escritorio; deje el campo vacío para que el lector o la aplicación Autenticação.gov lo solicite.',
+  'signing.cc.pin.label': 'PIN de firma de la Tarjeta de Ciudadano (opcional)',
+  'signing.cc.pin.placeholder': 'Dejar vacío para usar el lector',
+  'signing.cc.pin.hint':
+    'Se usa solo para esta solicitud; nunca se guarda. Déjelo vacío si prefiere introducir el PIN en el lector o en la aplicación Autenticação.gov.',
+  'signing.cc.pin.wrong': 'El PIN de firma es incorrecto.',
+  'signing.cc.pin.blocked':
+    'El PIN de firma está bloqueado. Use el PUK o los canales oficiales antes de volver a intentarlo.',
+  'signing.cc.pin.triesLow': 'Quedan pocos intentos.',
+  'signing.cc.pin.triesFinal': 'Este es el último intento antes del bloqueo.',
+  'signing.cc.pin.triesLocked': 'El PIN está bloqueado.',
   'signing.cc.sign': 'Firmar con la tarjeta',
   'signing.cc.signing': 'Firmando…',
   'signing.cc.cancel': 'Cancelar',
