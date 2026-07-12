@@ -556,9 +556,7 @@ function PaperBookOcrConversionExecutionArtifactPanel({
         </div>
         <div>
           <dt>Dossier associado</dt>
-          <dd>
-            {artifact.dossier_id ? <span className="mono">{artifact.dossier_id}</span> : '—'}
-          </dd>
+          <dd>{artifact.dossier_id ? <span className="mono">{artifact.dossier_id}</span> : '—'}</dd>
         </div>
         <div>
           <dt>Ata mutável de destino</dt>
@@ -618,10 +616,10 @@ function PaperBookOcrConversionExecutionArtifactPanel({
             {noClaimLabel(artifact.signed_document_created)} · arquivo legal/pacote:{' '}
             {noClaimLabel(artifact.archive_package_created)} · certificação de arquivo:{' '}
             {noClaimLabel(artifact.archive_certification_claimed)} · PDF/A:{' '}
-            {noClaimLabel(artifact.pdfa_created)} · PDF/UA:{' '}
-            {noClaimLabel(artifact.pdfua_created)} · assinatura:{' '}
-            {noClaimLabel(artifact.signature_created)} · selo: {noClaimLabel(artifact.seal_created)}{' '}
-            · validade legal: {noClaimLabel(artifact.legal_validity_claimed)}
+            {noClaimLabel(artifact.pdfa_created)} · PDF/UA: {noClaimLabel(artifact.pdfua_created)} ·
+            assinatura: {noClaimLabel(artifact.signature_created)} · selo:{' '}
+            {noClaimLabel(artifact.seal_created)} · validade legal:{' '}
+            {noClaimLabel(artifact.legal_validity_claimed)}
           </dd>
         </div>
         <div>
