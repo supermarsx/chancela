@@ -77,6 +77,7 @@ mod apikeys;
 mod archive_package;
 mod arquivo;
 mod asic_signature_validation;
+mod asic_signing;
 mod attestation;
 mod authz;
 mod backup;
@@ -114,11 +115,13 @@ mod privacy;
 mod recovery;
 mod registry;
 mod roles;
+mod scap;
 mod session;
 mod settings;
 mod signature;
 mod trust;
 mod users;
+mod xades_signature;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -1299,6 +1302,31 @@ pub fn router(state: AppState) -> Router {
             post(asic_signature_validation::inspect_asic_signature).layer(DefaultBodyLimit::max(
                 asic_signature_validation::ASIC_SIGNATURE_INSPECTION_ENVELOPE_BYTES,
             )),
+        )
+        .route(
+            "/v1/signature/xades/sign",
+            post(xades_signature::sign_xades).layer(DefaultBodyLimit::max(
+                xades_signature::XADES_REQUEST_ENVELOPE_BYTES,
+            )),
+        )
+        .route(
+            "/v1/signature/xades/validate",
+            post(xades_signature::validate_xades_document).layer(DefaultBodyLimit::max(
+                xades_signature::XADES_REQUEST_ENVELOPE_BYTES,
+            )),
+        )
+        .route(
+            "/v1/signature/asic/sign",
+            post(asic_signing::sign_asic).layer(DefaultBodyLimit::max(
+                asic_signing::ASIC_SIGN_ENVELOPE_BYTES,
+            )),
+        )
+        .route("/v1/scap/providers", post(scap::list_providers))
+        .route("/v1/scap/attributes", post(scap::fetch_attributes))
+        .route(
+            "/v1/scap/sign",
+            post(scap::sign_with_attribute)
+                .layer(DefaultBodyLimit::max(scap::SCAP_SIGN_ENVELOPE_BYTES)),
         )
         .route(
             "/v1/acts/{id}/signature/cmd/initiate",

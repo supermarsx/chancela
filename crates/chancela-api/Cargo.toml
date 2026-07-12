@@ -25,6 +25,8 @@ chancela-store = { workspace = true }
 chancela-templates = { workspace = true }
 chancela-doc = { workspace = true }
 chancela-signing = { workspace = true }
+chancela-xades = { workspace = true }
+chancela-scap = { workspace = true }
 chancela-pades = { workspace = true }
 chancela-cmd = { workspace = true }
 chancela-csc = { workspace = true }
