@@ -222,6 +222,8 @@ const RETENTION_DUE_CANDIDATES_REPORT = {
       findings: [],
       outcome: 'manual_review_required',
       status: 'awaiting_manual_review',
+      candidate_evidence_state: 'review_queued',
+      evidence_next_step: 'Review evidence only; no deletion or anonymization is performed.',
       would_execute: false,
       destructive_disposal_completed: false,
       full_erasure_completed: false,
@@ -272,6 +274,8 @@ const RETENTION_DUE_CANDIDATES_REPORT = {
       ],
       outcome: 'blocked_unsupported_period',
       status: 'blocked',
+      candidate_evidence_state: 'blocked',
+      evidence_next_step: 'Correct the retention schedule; this scan records evidence only.',
       would_execute: false,
       destructive_disposal_completed: false,
       full_erasure_completed: false,
@@ -323,6 +327,9 @@ const RETENTION_EXECUTION_BLOCKED: RetentionExecutionMetadata = {
   audit_evidence: [{ label: 'case', value: 'ticket export hash verified' }],
   outcome: 'blocked_destructive_action',
   block_reason: 'delete/anonymize execution is not enabled in this guarded slice',
+  evidence_state: 'blocked',
+  evidence_next_step:
+    'Record separate governance approval before any external destructive process; this API will not execute it.',
   workflow: {
     status: 'blocked',
     blockers: [
@@ -409,6 +416,8 @@ const RETENTION_EXECUTION_AWAITING: RetentionExecutionMetadata = {
   operator_notes: 'Manual review evidence captured.',
   outcome: 'manual_review_required',
   block_reason: 'retention execution request is recorded for manual review only',
+  evidence_state: 'review_queued',
+  evidence_next_step: 'Review the retained evidence for manual approval; no disposal has been executed.',
   workflow: {
     status: 'awaiting_manual_review',
     blockers: [],
@@ -481,6 +490,9 @@ const RETENTION_EXECUTION_EXECUTED: RetentionExecutionMetadata = {
   },
   outcome: 'bounded_archive_recorded',
   block_reason: 'bounded archive evidence recorded for the retention target',
+  evidence_state: 'bounded_archive_recorded',
+  evidence_next_step:
+    'Bounded archive evidence was recorded for this target; no source document deletion or GDPR erasure was performed.',
   workflow: {
     status: 'awaiting_manual_review',
     blockers: [],
@@ -1268,17 +1280,45 @@ function privacyFetch(
         const requestedPolicy = retentionPolicies.find(
           (policy) => policy.id === body.execution_request?.requested_policy_id,
         );
-        const isSupportedNoActionRequest =
+        const supportedBoundedEvidenceAction =
           body.execution_request.execution_mode === 'execute_supported' &&
-          requestedPolicy?.disposal_action === 'no_action';
+          (requestedPolicy?.disposal_action === 'no_action' ||
+            requestedPolicy?.disposal_action === 'archive')
+            ? requestedPolicy.disposal_action
+            : null;
+        const isSupportedBoundedEvidenceRequest = supportedBoundedEvidenceAction !== null;
+        const supportedBoundedOutcome =
+          supportedBoundedEvidenceAction === 'archive'
+            ? 'bounded_archive_recorded'
+            : 'bounded_no_action_recorded';
+        const supportedBoundedBlockReason =
+          supportedBoundedEvidenceAction === 'archive'
+            ? 'bounded archive evidence recorded for the retention target'
+            : 'bounded no-action evidence recorded for the retention target';
+        const supportedBoundedNextStep =
+          supportedBoundedEvidenceAction === 'archive'
+            ? 'Bounded archive evidence was recorded for this target; no source records were changed.'
+            : 'Bounded no-action evidence was recorded; no source records were changed.';
+        const supportedBoundedTargetAction =
+          supportedBoundedEvidenceAction === 'archive'
+            ? 'bounded_archive_evidence'
+            : 'bounded_no_action_evidence';
+        const supportedBoundedDetail =
+          supportedBoundedEvidenceAction === 'archive'
+            ? 'candidate evaluated for bounded archive evidence only'
+            : 'candidate evaluated for bounded no-action evidence only';
+        const supportedBoundedRecordedDetail =
+          supportedBoundedEvidenceAction === 'archive'
+            ? 'bounded archive evidence recorded'
+            : 'bounded no-action evidence recorded';
         const executionRecord = cloneJson(RETENTION_EXECUTION_AWAITING);
         executionRecord.id = `retention-exec-requested-${retentionExecutions.length + 1}`;
         executionRecord.requested_at = '2026-07-09T14:05:00Z';
         executionRecord.execution_intent = body.execution_request.execution_mode ?? 'review_only';
-        executionRecord.execution_status = isSupportedNoActionRequest
+        executionRecord.execution_status = isSupportedBoundedEvidenceRequest
           ? 'executed'
           : 'awaiting_review';
-        executionRecord.operator_review_decision = isSupportedNoActionRequest
+        executionRecord.operator_review_decision = isSupportedBoundedEvidenceRequest
           ? 'execution_recorded'
           : 'review_required';
         executionRecord.candidate = {
@@ -1294,7 +1334,7 @@ function privacyFetch(
           category: body.category,
           schedule_id: requestedPolicy?.schedule_id,
           retention_period: requestedPolicy?.retention_period,
-          disposal_action: isSupportedNoActionRequest ? 'no_action' : 'review',
+          disposal_action: supportedBoundedEvidenceAction ?? 'review',
           status: requestedPolicy?.status,
           active: requestedPolicy?.active,
           stale: false,
@@ -1318,16 +1358,22 @@ function privacyFetch(
           delete executionRecord.operator_notes;
         }
         executionRecord.audit_evidence = body.execution_request.evidence ?? [];
-        executionRecord.outcome = isSupportedNoActionRequest
-          ? 'bounded_no_action_recorded'
+        executionRecord.outcome = isSupportedBoundedEvidenceRequest
+          ? supportedBoundedOutcome
           : 'manual_review_required';
-        executionRecord.block_reason = isSupportedNoActionRequest
-          ? 'bounded no-action evidence recorded for the retention target'
+        executionRecord.block_reason = isSupportedBoundedEvidenceRequest
+          ? supportedBoundedBlockReason
           : 'retention execution request is recorded for manual review only';
+        executionRecord.evidence_state = isSupportedBoundedEvidenceRequest
+          ? supportedBoundedOutcome
+          : 'review_queued';
+        executionRecord.evidence_next_step = isSupportedBoundedEvidenceRequest
+          ? supportedBoundedNextStep
+          : 'Review retained evidence only; no disposal has been executed.';
         executionRecord.workflow = {
           status: 'awaiting_manual_review',
           blockers: [],
-          required_approvals: isSupportedNoActionRequest
+          required_approvals: isSupportedBoundedEvidenceRequest
             ? []
             : [
                 {
@@ -1336,8 +1382,8 @@ function privacyFetch(
                   reason: 'review retained evidence only before any separate operational process',
                 },
               ],
-          next_step: isSupportedNoActionRequest
-            ? 'Bounded no-action evidence was recorded; no source records were changed.'
+          next_step: isSupportedBoundedEvidenceRequest
+            ? supportedBoundedNextStep
             : 'Review retained evidence only; no disposal has been executed.',
         };
         executionRecord.execution_result = {
@@ -1346,27 +1392,27 @@ function privacyFetch(
             {
               target_type: 'retention_candidate_record',
               target_id: body.record_id ?? `${body.scope}:${body.category}`,
-              action: isSupportedNoActionRequest
-                ? 'bounded_no_action_evidence'
+              action: isSupportedBoundedEvidenceRequest
+                ? supportedBoundedTargetAction
                 : 'bounded_review_evidence',
               reason_code: 'target_considered',
-              detail: isSupportedNoActionRequest
-                ? 'candidate evaluated for bounded no-action evidence only'
+              detail: isSupportedBoundedEvidenceRequest
+                ? supportedBoundedDetail
                 : 'candidate queued for review-only evidence evaluation',
             },
           ],
-          targets_acted: isSupportedNoActionRequest
+          targets_acted: isSupportedBoundedEvidenceRequest
             ? [
                 {
                   target_type: 'retention_candidate_record',
                   target_id: body.record_id ?? `${body.scope}:${body.category}`,
-                  action: 'bounded_no_action_evidence',
-                  reason_code: 'bounded_no_action_recorded',
-                  detail: 'bounded no-action evidence recorded',
+                  action: supportedBoundedTargetAction,
+                  reason_code: supportedBoundedOutcome,
+                  detail: supportedBoundedRecordedDetail,
                 },
               ]
             : [],
-          targets_skipped: isSupportedNoActionRequest
+          targets_skipped: isSupportedBoundedEvidenceRequest
             ? []
             : [
                 {
@@ -1377,11 +1423,11 @@ function privacyFetch(
                   detail: 'manual review request only',
                 },
               ],
-          reason_codes: isSupportedNoActionRequest
-            ? ['bounded_no_action_recorded']
+          reason_codes: isSupportedBoundedEvidenceRequest
+            ? [supportedBoundedOutcome]
             : ['retention_manual_review', 'review_only_intent'],
-          next_step: isSupportedNoActionRequest
-            ? 'Bounded no-action evidence was recorded; no source records were changed.'
+          next_step: isSupportedBoundedEvidenceRequest
+            ? supportedBoundedNextStep
             : 'Review retained evidence only; no disposal has been executed.',
           destructive_disposal_completed: false,
           full_erasure_completed: false,
@@ -1389,7 +1435,7 @@ function privacyFetch(
         };
         executionRecord.would_execute = false;
         retentionExecutions = [executionRecord, ...retentionExecutions];
-        if (isSupportedNoActionRequest) {
+        if (isSupportedBoundedEvidenceRequest) {
           retentionDueCandidatesReport = {
             ...retentionDueCandidatesReport,
             candidates: retentionDueCandidatesReport.candidates.map((candidate) =>
@@ -1397,18 +1443,21 @@ function privacyFetch(
               candidate.policy_id === body.execution_request?.requested_policy_id
                 ? {
                     ...candidate,
+                    candidate_evidence_state: supportedBoundedOutcome,
+                    evidence_next_step: supportedBoundedNextStep,
                     prior_execution: {
                       execution_id: executionRecord.id,
                       execution_status: executionRecord.execution_status,
                       outcome: executionRecord.outcome,
+                      evidence_state: supportedBoundedOutcome,
+                      evidence_next_step: supportedBoundedNextStep,
                       requested_at: executionRecord.requested_at,
                       executed_at: '2026-07-09T14:05:00Z',
                       bounded_executor: true,
                       targets_acted_count: 1,
                       destructive_disposal_completed: false,
                       full_erasure_completed: false,
-                      next_step:
-                        'Bounded no-action evidence was recorded; no source records were changed.',
+                      next_step: supportedBoundedNextStep,
                     },
                   }
                 : candidate,
@@ -1596,6 +1645,19 @@ function retentionNoActionPolicy(overrides: Partial<RetentionPolicyMetadata> = {
   };
 }
 
+function retentionArchivePolicy(overrides: Partial<RetentionPolicyMetadata> = {}) {
+  return {
+    ...RETENTION_POLICY_ONE,
+    id: 'retention-archive',
+    name: 'Arquivo delimitado',
+    scope: 'book_archive',
+    category: 'documents',
+    disposal_action: 'archive',
+    notes: 'Registo delimitado de evidência de arquivo.',
+    ...overrides,
+  };
+}
+
 function retentionNoActionCandidate(overrides: Record<string, unknown> = {}) {
   return {
     ...cloneJson(RETENTION_DUE_CANDIDATES_REPORT.candidates[0]),
@@ -1613,10 +1675,40 @@ function retentionNoActionCandidate(overrides: Record<string, unknown> = {}) {
     findings: [],
     outcome: 'no_action_required',
     status: 'due_no_action',
+    candidate_evidence_state: 'review_queued',
+    evidence_next_step: 'Registar apenas evidência delimitada sem ação; nenhum registo fonte é alterado.',
     would_execute: false,
     destructive_disposal_completed: false,
     full_erasure_completed: false,
     next_step: 'Registar apenas evidência delimitada sem ação; nenhum registo fonte é alterado.',
+    ...overrides,
+  };
+}
+
+function retentionArchiveCandidate(overrides: Record<string, unknown> = {}) {
+  return {
+    ...cloneJson(RETENTION_DUE_CANDIDATES_REPORT.candidates[0]),
+    candidate_id: 'retention-candidate-archive',
+    record_id: 'archive-doc-archive',
+    book_id: 'book-archive',
+    entity_id: 'entity-archive',
+    policy_id: 'retention-archive',
+    policy_name: 'Arquivo delimitado',
+    disposal_action: 'archive',
+    destructive_action: false,
+    legal_hold_blockers: [],
+    required_approvals: [],
+    blockers: [],
+    findings: [],
+    outcome: 'manual_review_required',
+    status: 'awaiting_manual_review',
+    candidate_evidence_state: 'review_queued',
+    evidence_next_step:
+      'Registar apenas evidência delimitada de arquivo; nenhum registo fonte é alterado.',
+    would_execute: false,
+    destructive_disposal_completed: false,
+    full_erasure_completed: false,
+    next_step: 'Registar apenas evidência delimitada de arquivo; nenhum registo fonte é alterado.',
     ...overrides,
   };
 }
@@ -2638,6 +2730,9 @@ describe('SettingsPage', () => {
       execution_id: 'retention-exec-projected-archive',
       execution_status: 'executed',
       outcome: 'bounded_archive_recorded',
+      evidence_state: 'bounded_archive_recorded',
+      evidence_next_step:
+        'Prior bounded archive evidence is available for review; this due-candidate scan is read-only and requires separate governance approval before any operational action.',
       requested_at: '2026-07-09T13:50:00Z',
       executed_at: '2026-07-09T13:50:00Z',
       bounded_executor: true,
@@ -2647,6 +2742,9 @@ describe('SettingsPage', () => {
       next_step:
         'Prior bounded archive evidence is available for review; this due-candidate scan is read-only and requires separate governance approval before any operational action.',
     };
+    report.candidates[0].candidate_evidence_state = 'bounded_archive_recorded';
+    report.candidates[0].evidence_next_step =
+      'Prior bounded archive evidence is available for review; this due-candidate scan is read-only and requires separate governance approval before any operational action.';
 
     const { fn, calls } = privacyFetch(
       undefined,
@@ -2670,6 +2768,15 @@ describe('SettingsPage', () => {
     expect(within(candidateRow!).getAllByText('Evidência delimitada existente').length).toBe(1);
     expect(within(candidateRow!).getByText(/executed · bounded_archive_recorded/)).toBeTruthy();
     expect(
+      within(candidateRow!).getByText('Estado de evidência: bounded_archive_recorded'),
+    ).toBeTruthy();
+    expect(
+      within(candidateRow!).getByText('Evidência anterior: bounded_archive_recorded'),
+    ).toBeTruthy();
+    expect(
+      within(candidateRow!).getByText(/Próximo passo de evidência anterior: Prior bounded archive/),
+    ).toBeTruthy();
+    expect(
       within(candidateRow!).getByText(/Execução retention-exec-projected-archive/),
     ).toBeTruthy();
     expect(
@@ -2680,9 +2787,308 @@ describe('SettingsPage', () => {
       within(candidateRow!).queryByRole('button', { name: 'Pedir revisão de evidência' }),
     ).toBeNull();
     expect(
+      within(candidateRow!).queryByRole('button', { name: 'Registar evidência de arquivo' }),
+    ).toBeNull();
+    expect(
       calls.some(
         (call) =>
           call.method === 'POST' && call.url.endsWith('/v1/privacy/retention-policies/dry-run'),
+      ),
+    ).toBe(false);
+  });
+
+  it('records bounded archive evidence from an eligible due retention candidate row', async () => {
+    const archivePolicy = retentionArchivePolicy();
+    const report = retentionDueReportWith([retentionArchiveCandidate()]);
+    const { fn, calls } = privacyFetch(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      [archivePolicy],
+      report,
+      [],
+    );
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+
+    const candidatesPanel = (await screen.findByText('Candidatos de retenção vencidos')).closest(
+      'section',
+    );
+    expect(candidatesPanel).toBeTruthy();
+    const candidateRow = (
+      await within(candidatesPanel!).findByText('archive-doc-archive')
+    ).closest('tr');
+    expect(candidateRow).toBeTruthy();
+    expect(
+      within(candidateRow!).getByRole('button', { name: 'Registar evidência de arquivo' }),
+    ).toBeTruthy();
+    expect(
+      within(candidateRow!).queryByRole('button', { name: 'Pedir revisão de evidência' }),
+    ).toBeNull();
+    expect(
+      within(candidateRow!).queryByText(/GDPR erasure|legal erasure|full erasure/i),
+    ).toBeNull();
+
+    const initialDueCandidateGets = calls.filter(
+      (call) => call.method === 'GET' && call.url.endsWith('/v1/privacy/retention-due-candidates'),
+    ).length;
+    const initialExecutionGets = calls.filter(
+      (call) => call.method === 'GET' && call.url.includes('/v1/privacy/retention-executions'),
+    ).length;
+
+    fireEvent.click(
+      within(candidateRow!).getByRole('button', { name: 'Registar evidência de arquivo' }),
+    );
+
+    const supportedRequest = await waitFor(() => {
+      const call = calls.find(
+        (c) =>
+          c.method === 'POST' &&
+          c.url.endsWith('/v1/privacy/retention-policies/dry-run') &&
+          Boolean(c.body?.includes('execute_supported')),
+      );
+      expect(call).toBeTruthy();
+      return call!;
+    });
+    expect(JSON.parse(supportedRequest.body as string)).toEqual({
+      scope: 'book_archive',
+      category: 'documents',
+      record_id: 'archive-doc-archive',
+      execution_request: {
+        requested_policy_id: 'retention-archive',
+        execution_mode: 'execute_supported',
+      },
+    });
+
+    await waitFor(() =>
+      expect(
+        calls.filter(
+          (call) =>
+            call.method === 'GET' && call.url.endsWith('/v1/privacy/retention-due-candidates'),
+        ).length,
+      ).toBeGreaterThan(initialDueCandidateGets),
+    );
+    await waitFor(() =>
+      expect(
+        calls.filter(
+          (call) => call.method === 'GET' && call.url.includes('/v1/privacy/retention-executions'),
+        ).length,
+      ).toBeGreaterThan(initialExecutionGets),
+    );
+    expect(
+      await within(candidatesPanel!).findByText(/executed · bounded_archive_recorded/),
+    ).toBeTruthy();
+    expect(
+      within(candidatesPanel!).getByText('Estado de evidência: bounded_archive_recorded'),
+    ).toBeTruthy();
+    const executionQueue = (await screen.findByText('Fila de revisão de execução')).closest(
+      'section',
+    );
+    expect(executionQueue).toBeTruthy();
+    expect(await within(executionQueue!).findByText('archive-doc-archive')).toBeTruthy();
+    expect(
+      within(executionQueue!).getAllByText('bounded_archive_recorded').length,
+    ).toBeGreaterThan(0);
+    expect(
+      calls.some(
+        (call) => call.method === 'POST' && call.url.includes('/v1/privacy/retention-executions'),
+      ),
+    ).toBe(false);
+    expect(
+      calls.some((call) => call.method !== 'GET' && /disposal|erasure|legal-hold/.test(call.url)),
+    ).toBe(false);
+    expect(
+      calls.every(
+        (call) =>
+          !call.body?.includes('"delete"') &&
+          !call.body?.includes('"anonymize"') &&
+          !call.body?.includes('destructive_disposal_completed') &&
+          !call.body?.includes('full_erasure_completed') &&
+          !call.body?.includes('legal_hold'),
+      ),
+    ).toBe(true);
+  });
+
+  it('keeps bounded archive evidence unavailable for unsafe due retention candidates', async () => {
+    const priorArchiveNextStep =
+      'Prior bounded archive evidence is available for review; do not create duplicate evidence.';
+    const candidates = [
+      retentionArchiveCandidate({
+        candidate_id: 'retention-candidate-archive-empty-record',
+        record_id: '',
+        book_id: 'book-empty-record',
+      }),
+      retentionArchiveCandidate({
+        candidate_id: 'retention-candidate-archive-destructive',
+        record_id: 'archive-doc-archive-destructive',
+        destructive_action: true,
+      }),
+      retentionArchiveCandidate({
+        candidate_id: 'retention-candidate-archive-blocker',
+        record_id: 'archive-doc-archive-blocker',
+        blockers: [{ code: 'unsupported_retention_period', message: 'Unsupported period.' }],
+      }),
+      retentionArchiveCandidate({
+        candidate_id: 'retention-candidate-archive-legal-hold',
+        record_id: 'archive-doc-archive-legal-hold',
+        legal_hold_blockers: [{ policy_id: 'hold-1', name: 'Hold', reason: 'Active hold.' }],
+      }),
+      retentionArchiveCandidate({
+        candidate_id: 'retention-candidate-archive-queued',
+        record_id: 'archive-doc-archive-queued-review',
+      }),
+      retentionArchiveCandidate({
+        candidate_id: 'retention-candidate-archive-prior',
+        record_id: 'archive-doc-archive-prior-execution',
+        candidate_evidence_state: 'bounded_archive_recorded',
+        evidence_next_step: 'Bounded archive evidence already exists.',
+        prior_execution: {
+          execution_id: 'retention-exec-prior-archive',
+          execution_status: 'executed',
+          outcome: 'bounded_archive_recorded',
+          evidence_state: 'bounded_archive_recorded',
+          evidence_next_step: 'Bounded archive evidence already exists.',
+          requested_at: '2026-07-09T14:00:00Z',
+          executed_at: '2026-07-09T14:00:00Z',
+          bounded_executor: true,
+          targets_acted_count: 1,
+          destructive_disposal_completed: false,
+          full_erasure_completed: false,
+          next_step: 'Bounded archive evidence already exists.',
+        },
+      }),
+      retentionArchiveCandidate({
+        candidate_id: 'retention-candidate-archive-state-blocked',
+        record_id: 'archive-doc-archive-state-blocked',
+        candidate_evidence_state: 'blocked',
+        evidence_next_step: 'Resolve evidence blocker before recording archive evidence.',
+      }),
+      retentionArchiveCandidate({
+        candidate_id: 'retention-candidate-archive-recorded',
+        record_id: 'archive-doc-archive-recorded',
+        candidate_evidence_state: 'bounded_archive_recorded',
+        evidence_next_step: 'Bounded archive evidence already exists.',
+      }),
+      retentionArchiveCandidate({
+        candidate_id: 'retention-candidate-archive-no-action-recorded',
+        record_id: 'archive-doc-archive-no-action-recorded',
+        candidate_evidence_state: 'bounded_no_action_recorded',
+        evidence_next_step: 'Bounded no-action evidence already exists.',
+      }),
+      retentionArchiveCandidate({
+        candidate_id: 'retention-candidate-archive-prior-projected',
+        record_id: 'archive-doc-archive-prior-projected',
+        candidate_evidence_state: 'prior_bounded_evidence_available',
+        evidence_next_step: priorArchiveNextStep,
+      }),
+    ];
+    const queuedReview = cloneJson(RETENTION_EXECUTION_AWAITING) as RetentionExecutionMetadata & {
+      requested_policy: Record<string, unknown>;
+      candidate: Record<string, unknown>;
+      matched_records_summary: Record<string, unknown>;
+    };
+    queuedReview.id = 'retention-exec-queued-archive';
+    queuedReview.execution_intent = 'review_only';
+    queuedReview.execution_status = 'awaiting_review';
+    queuedReview.requested_policy = {
+      ...queuedReview.requested_policy,
+      id: 'retention-archive',
+      scope: 'book_archive',
+      category: 'documents',
+      disposal_action: 'archive',
+      destructive_action: false,
+    };
+    queuedReview.candidate = {
+      scope: 'book_archive',
+      category: 'documents',
+      record_id: 'archive-doc-archive-queued-review',
+    };
+    queuedReview.matched_records_summary = {
+      scope: 'book_archive',
+      category: 'documents',
+      record_id: 'archive-doc-archive-queued-review',
+      record_count: 1,
+      policy_match_count: 1,
+      destructive_policy_count: 0,
+      policy_ids: ['retention-archive'],
+    };
+
+    const { fn, calls } = privacyFetch(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      [retentionArchivePolicy()],
+      retentionDueReportWith(candidates),
+      [queuedReview],
+    );
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+
+    const candidatesPanel = (await screen.findByText('Candidatos de retenção vencidos')).closest(
+      'section',
+    );
+    expect(candidatesPanel).toBeTruthy();
+    expect(
+      within(candidatesPanel!).queryByRole('button', { name: 'Registar evidência de arquivo' }),
+    ).toBeNull();
+
+    const missingRecordRow = (
+      await within(candidatesPanel!).findByText('Livro: book-empty-record')
+    ).closest('tr');
+    expect(missingRecordRow).toBeTruthy();
+    expect(
+      within(missingRecordRow!).queryByRole('button', { name: 'Registar evidência de arquivo' }),
+    ).toBeNull();
+
+    for (const recordId of [
+      'archive-doc-archive-destructive',
+      'archive-doc-archive-blocker',
+      'archive-doc-archive-legal-hold',
+      'archive-doc-archive-queued-review',
+      'archive-doc-archive-prior-execution',
+      'archive-doc-archive-state-blocked',
+      'archive-doc-archive-recorded',
+      'archive-doc-archive-no-action-recorded',
+      'archive-doc-archive-prior-projected',
+    ]) {
+      const candidateRow = (await within(candidatesPanel!).findByText(recordId)).closest('tr');
+      expect(candidateRow).toBeTruthy();
+      expect(
+        within(candidateRow!).queryByRole('button', { name: 'Registar evidência de arquivo' }),
+      ).toBeNull();
+    }
+
+    const queuedRow = (
+      await within(candidatesPanel!).findByText('archive-doc-archive-queued-review')
+    ).closest('tr');
+    expect(queuedRow).toBeTruthy();
+    expect(within(queuedRow!).getByText('Revisão já na fila')).toBeTruthy();
+
+    const priorRow = (
+      await within(candidatesPanel!).findByText('archive-doc-archive-prior-execution')
+    ).closest('tr');
+    expect(priorRow).toBeTruthy();
+    expect(within(priorRow!).getByText('Evidência delimitada existente')).toBeTruthy();
+    expect(within(priorRow!).getByText('Evidência anterior: bounded_archive_recorded')).toBeTruthy();
+
+    const priorProjectedRow = (
+      await within(candidatesPanel!).findByText('archive-doc-archive-prior-projected')
+    ).closest('tr');
+    expect(priorProjectedRow).toBeTruthy();
+    expect(
+      within(priorProjectedRow!).getByText('Estado de evidência: prior_bounded_evidence_available'),
+    ).toBeTruthy();
+    expect(within(priorProjectedRow!).getByText(`Próximo passo de evidência: ${priorArchiveNextStep}`)).toBeTruthy();
+    expect(
+      calls.some(
+        (call) =>
+          call.method === 'POST' &&
+          call.url.endsWith('/v1/privacy/retention-policies/dry-run') &&
+          Boolean(call.body?.includes('execute_supported')),
       ),
     ).toBe(false);
   });
@@ -2801,11 +3207,6 @@ describe('SettingsPage', () => {
   it('keeps bounded no-action evidence unavailable for ineligible due retention candidates', async () => {
     const candidates = [
       retentionNoActionCandidate({
-        candidate_id: 'retention-candidate-archive',
-        record_id: 'archive-doc-action-archive',
-        disposal_action: 'archive',
-      }),
-      retentionNoActionCandidate({
         candidate_id: 'retention-candidate-delete',
         record_id: 'archive-doc-action-delete',
         disposal_action: 'delete',
@@ -2834,10 +3235,14 @@ describe('SettingsPage', () => {
       retentionNoActionCandidate({
         candidate_id: 'retention-candidate-prior',
         record_id: 'archive-doc-prior-execution',
+        candidate_evidence_state: 'bounded_no_action_recorded',
+        evidence_next_step: 'Bounded no-action evidence already exists.',
         prior_execution: {
           execution_id: 'retention-exec-prior-no-action',
           execution_status: 'executed',
           outcome: 'bounded_no_action_recorded',
+          evidence_state: 'bounded_no_action_recorded',
+          evidence_next_step: 'Bounded no-action evidence already exists.',
           requested_at: '2026-07-09T14:00:00Z',
           executed_at: '2026-07-09T14:00:00Z',
           bounded_executor: true,
@@ -2906,7 +3311,6 @@ describe('SettingsPage', () => {
       ).toBeNull();
     }
     for (const recordId of [
-      'archive-doc-action-archive',
       'archive-doc-action-delete',
       'archive-doc-action-anonymize',
       'archive-doc-blocker',

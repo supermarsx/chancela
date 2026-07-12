@@ -47,6 +47,7 @@ import {
   type RetentionDueCandidate,
   type RetentionDueCandidatesReport,
   type RetentionDueCandidateFinding,
+  type RetentionEvidenceState,
   type RetentionExecutionRecord,
   type RetentionExecutionStatus,
   type RetentionPolicyStatus,
@@ -230,6 +231,14 @@ const RETENTION_EXECUTION_STATUS_LABELS: Record<RetentionExecutionStatus, string
   blocked: 'Bloqueado',
   executed: 'Executado',
 };
+
+const RETENTION_BOUNDED_EVIDENCE_SUPPRESSED_STATES: ReadonlySet<RetentionEvidenceState> =
+  new Set([
+    'blocked',
+    'bounded_archive_recorded',
+    'bounded_no_action_recorded',
+    'prior_bounded_evidence_available',
+  ]);
 
 const statusOptions = [
   { value: 'all', label: 'Todos os estados' },
@@ -499,6 +508,8 @@ function retentionExecutionSearchText(record: RetentionExecutionRecord): string 
       record.execution_status,
       record.operator_review_decision,
       record.outcome,
+      record.evidence_state,
+      record.evidence_next_step,
       record.block_reason,
       record.candidate.scope,
       record.candidate.category,
@@ -555,6 +566,30 @@ function retentionCandidateCanRecordNoActionEvidence(
     candidate.legal_hold_blockers.length === 0 &&
     !queuedReview &&
     !candidate.prior_execution
+  );
+}
+
+function retentionCandidateHasConcreteRecordId(candidate: RetentionDueCandidate): boolean {
+  return candidate.record_id.trim().length > 0;
+}
+
+function retentionCandidateHasSuppressedEvidenceState(candidate: RetentionDueCandidate): boolean {
+  return RETENTION_BOUNDED_EVIDENCE_SUPPRESSED_STATES.has(candidate.candidate_evidence_state);
+}
+
+function retentionCandidateCanRecordArchiveEvidence(
+  candidate: RetentionDueCandidate,
+  queuedReview: RetentionExecutionRecord | undefined,
+): boolean {
+  return (
+    candidate.disposal_action === 'archive' &&
+    retentionCandidateHasConcreteRecordId(candidate) &&
+    candidate.destructive_action === false &&
+    candidate.blockers.length === 0 &&
+    candidate.legal_hold_blockers.length === 0 &&
+    !queuedReview &&
+    !candidate.prior_execution &&
+    !retentionCandidateHasSuppressedEvidenceState(candidate)
   );
 }
 
@@ -2088,6 +2123,10 @@ function RetentionDueCandidatesPanel({
                 candidate,
                 queuedReview,
               );
+              const canRecordArchiveEvidence = retentionCandidateCanRecordArchiveEvidence(
+                candidate,
+                queuedReview,
+              );
               return (
                 <tr key={candidate.candidate_id}>
                   <td>
@@ -2121,11 +2160,20 @@ function RetentionDueCandidatesPanel({
                         {candidate.status} · {candidate.outcome}
                       </span>
                       <span className="muted">{candidate.next_step}</span>
+                      <span className="muted">
+                        Estado de evidência: {candidate.candidate_evidence_state}
+                      </span>
+                      <span className="muted">
+                        Próximo passo de evidência: {candidate.evidence_next_step}
+                      </span>
                       {priorExecution ? (
                         <>
                           <Badge tone="ok">Evidência delimitada registada</Badge>
                           <span>
                             {priorExecution.execution_status} · {priorExecution.outcome}
+                          </span>
+                          <span className="muted">
+                            Evidência anterior: {priorExecution.evidence_state}
                           </span>
                           <span className="muted">
                             Execução {priorExecution.execution_id} · pedido em{' '}
@@ -2137,6 +2185,10 @@ function RetentionDueCandidatesPanel({
                             </span>
                           ) : null}
                           <span className="muted">{priorExecution.next_step}</span>
+                          <span className="muted">
+                            Próximo passo de evidência anterior:{' '}
+                            {priorExecution.evidence_next_step}
+                          </span>
                         </>
                       ) : null}
                     </div>
@@ -2212,6 +2264,8 @@ function RetentionDueCandidatesPanel({
                       <span className="muted">
                         {canRecordNoActionEvidence
                           ? 'Apenas registo delimitado de evidência sem ação.'
+                          : canRecordArchiveEvidence
+                            ? 'Apenas registo delimitado de evidência de arquivo.'
                           : 'Apenas revisão de evidência.'}
                       </span>
                     </div>
@@ -2233,6 +2287,18 @@ function RetentionDueCandidatesPanel({
                           {requestingReviewCandidateId === candidate.candidate_id
                             ? 'A registar evidência sem ação'
                             : 'Registar evidência sem ação'}
+                        </Button>
+                      ) : canRecordArchiveEvidence ? (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          icon={<Icon.Check />}
+                          disabled={reviewRequestPending}
+                          onClick={() => void onRequestReview(candidate, 'execute_supported')}
+                        >
+                          {requestingReviewCandidateId === candidate.candidate_id
+                            ? 'A registar evidência de arquivo'
+                            : 'Registar evidência de arquivo'}
                         </Button>
                       ) : (
                         <Button
@@ -2264,10 +2330,21 @@ function RetentionDueCandidatesPanel({
                           <span className="muted">
                             Pedido em {formatDateTime(queuedReview.requested_at)}
                           </span>
+                          <span className="muted">
+                            Estado de evidência na fila: {queuedReview.evidence_state}
+                          </span>
+                          <span className="muted">
+                            Próximo passo na fila: {queuedReview.evidence_next_step}
+                          </span>
                         </>
                       ) : canRecordNoActionEvidence ? (
                         <span className="muted">
                           Regista apenas evidência delimitada de no-action; não aprova nem executa
+                          descarte.
+                        </span>
+                      ) : canRecordArchiveEvidence ? (
+                        <span className="muted">
+                          Regista apenas evidência delimitada de arquivo; não aprova nem executa
                           descarte.
                         </span>
                       ) : (
@@ -2438,6 +2515,10 @@ function RetentionExecutionReviewQueue({
                 <td>
                   <div className="stack--tight">
                     <span>{record.workflow.next_step}</span>
+                    <span className="muted">Estado de evidência: {record.evidence_state}</span>
+                    <span className="muted">
+                      Próximo passo de evidência: {record.evidence_next_step}
+                    </span>
                     {record.operator_notes ? (
                       <span className="muted">{record.operator_notes}</span>
                     ) : null}
@@ -2753,13 +2834,19 @@ export function PrivacyComplianceSection() {
     setRetentionReviewCandidateId(candidate.candidate_id);
     try {
       const report = await dryRunRetentionPolicy.mutateAsync(body);
+      const isArchiveEvidenceRequest =
+        executionMode === 'execute_supported' && candidate.disposal_action === 'archive';
       toast.success(
         report.execution_record
           ? executionMode === 'execute_supported'
-            ? 'Evidência delimitada sem ação registada.'
+            ? isArchiveEvidenceRequest
+              ? 'Evidência delimitada de arquivo registada.'
+              : 'Evidência delimitada sem ação registada.'
             : 'Pedido de revisão de evidência registado.'
           : executionMode === 'execute_supported'
-            ? 'Pedido de evidência sem ação enviado; sem registo devolvido.'
+            ? isArchiveEvidenceRequest
+              ? 'Pedido de evidência de arquivo enviado; sem registo devolvido.'
+              : 'Pedido de evidência sem ação enviado; sem registo devolvido.'
             : 'Pedido de revisão enviado; sem registo de execução devolvido.',
       );
     } catch (e) {
