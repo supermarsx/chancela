@@ -18,11 +18,8 @@
 
 mod common;
 
-use std::io::{Read, Write};
-use std::net::{TcpListener, TcpStream};
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
-use std::thread;
 use std::time::Duration as StdDuration;
 
 use axum::body::{Body, to_bytes};
@@ -313,69 +310,6 @@ impl Drop for TempDir {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.0);
     }
-}
-
-struct MockTslServer {
-    url: String,
-}
-
-impl MockTslServer {
-    fn invalid_signature_fixture() -> Self {
-        Self::spawn(MockTslMode::InvalidSignatureFixture)
-    }
-
-    fn outage() -> Self {
-        Self::spawn(MockTslMode::Outage)
-    }
-
-    fn url(&self) -> &str {
-        &self.url
-    }
-
-    fn spawn(mode: MockTslMode) -> Self {
-        let listener = TcpListener::bind("127.0.0.1:0").expect("bind mock TSL");
-        let url = format!("http://{}", listener.local_addr().expect("local addr"));
-        thread::spawn(move || {
-            if let Ok((stream, _)) = listener.accept() {
-                handle_tsl_connection(stream, mode);
-            }
-        });
-        Self { url }
-    }
-}
-
-#[derive(Clone, Copy)]
-enum MockTslMode {
-    InvalidSignatureFixture,
-    Outage,
-}
-
-fn handle_tsl_connection(mut stream: TcpStream, mode: MockTslMode) {
-    let _ = stream.set_read_timeout(Some(StdDuration::from_secs(5)));
-    let mut buf = [0u8; 1024];
-    let _ = stream.read(&mut buf);
-    match mode {
-        MockTslMode::InvalidSignatureFixture => {
-            write_tsl_response(&mut stream, "200 OK", "application/xml", PT_TSL_SAMPLE);
-        }
-        MockTslMode::Outage => {
-            write_tsl_response(
-                &mut stream,
-                "503 Service Unavailable",
-                "text/plain",
-                b"tsl outage",
-            );
-        }
-    }
-}
-
-fn write_tsl_response(stream: &mut TcpStream, status: &str, content_type: &str, body: &[u8]) {
-    let headers = format!(
-        "HTTP/1.1 {status}\r\ncontent-type: {content_type}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
-        body.len()
-    );
-    stream.write_all(headers.as_bytes()).expect("write headers");
-    stream.write_all(body).expect("write body");
 }
 
 fn fixture_granted_issuer_cert() -> Vec<u8> {
@@ -1742,11 +1676,14 @@ async fn cc_sign_rejects_real_tsl_source_with_invalid_signature() {
     let factory = provider_factory(card, Some(issuer));
     let mut state = state_at(&dir.0, Some(factory), true, true);
     state.cmd_trust_policy = None;
-    let tsl = MockTslServer::invalid_signature_fixture();
+    let tsl_path = dir.0.join("invalid-signature-tsl.xml");
+    std::fs::write(&tsl_path, PT_TSL_SAMPLE).expect("invalid signature TSL fixture");
     {
         let mut settings = state.settings.write().await;
-        settings.signing.tsl_sources.clear();
-        settings.signing.tsl_url = Some(tsl.url().to_owned());
+        settings.signing.tsl_sources.truncate(1);
+        settings.signing.tsl_sources[0].url = None;
+        settings.signing.tsl_sources[0].path = Some(tsl_path.display().to_string());
+        settings.signing.tsl_url = None;
         settings.signing.tsa_url = None;
         settings.signing.tsa_providers.clear();
     }
@@ -1777,10 +1714,9 @@ async fn cc_sign_rejects_real_tsl_source_with_invalid_signature() {
 }
 
 #[tokio::test]
-async fn trust_refresh_reports_tsl_source_offline_without_replacing_cache() {
+async fn trust_refresh_rejects_unsafe_tsl_source_without_replacing_cache() {
     let dir = TempDir::new();
     let state = state_at(&dir.0, None, true, true);
-    let tsl = MockTslServer::outage();
     let (token, _uid) = bootstrap(&state).await;
 
     let (status, body) = send(
@@ -1789,22 +1725,22 @@ async fn trust_refresh_reports_tsl_source_offline_without_replacing_cache() {
             "POST",
             "/v1/trust/refresh",
             &token,
-            json!({ "url": tsl.url() }),
+            json!({ "url": "http://127.0.0.1:9/tsl.xml" }),
         ),
     )
     .await;
     assert_eq!(
         status,
         StatusCode::OK,
-        "offline TSL refresh reports status: {body}"
+        "unsafe TSL refresh reports status: {body}"
     );
     assert_eq!(body["outcome"], "Failed");
     assert_eq!(body["source_kind"], "Url");
     assert!(
         body["error"]
             .as_str()
-            .is_some_and(|error| error.contains("503") || error.contains("status")),
-        "refresh response carries an actionable fetch error: {body}"
+            .is_some_and(|error| error.contains("unsafe outbound URL")),
+        "refresh response carries an actionable unsafe-url error: {body}"
     );
     assert!(
         !dir.0.join("tsl.xml").exists(),

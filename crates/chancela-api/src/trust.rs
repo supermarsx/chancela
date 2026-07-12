@@ -2,10 +2,16 @@
 //!
 //! It parses an on-disk cached Portuguese TSL XML when one is present in the data directory,
 //! otherwise it falls back to the bundled `chancela-tsl` fixture. Operators may also trigger an
-//! explicit URL/file import into that cache. Signature validation is reported as data so an
-//! operator can see whether the catalog is advisory (`Invalid`) or trustable (`Valid`).
+//! explicit URL/file import into that cache. Imported XML is promoted only after signature/trust
+//! anchor validation succeeds; invalid imports are recorded as failed attempts and the previous
+//! cache is preserved.
 
+#[cfg(debug_assertions)]
+use std::collections::BTreeMap;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, ToSocketAddrs};
 use std::path::PathBuf;
+#[cfg(debug_assertions)]
+use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 use axum::Json;
@@ -50,6 +56,59 @@ const TRUST_CACHE_FILE: &str = "tsl.xml";
 const TRUST_REFRESH_STATUS_FILE: &str = "tsl-refresh-status.json";
 const DEFAULT_TSL_FETCH_TIMEOUT_SECONDS: u16 = 30;
 const DEFAULT_TSL_FETCH_MAX_BYTES: u64 = 25 * 1024 * 1024;
+
+#[cfg(debug_assertions)]
+static LOCAL_TRUST_URL_TEST_ALLOWANCES: OnceLock<Mutex<BTreeMap<String, usize>>> = OnceLock::new();
+
+#[cfg(debug_assertions)]
+#[derive(Debug)]
+pub struct LocalTrustUrlTestAllowance {
+    origin: String,
+}
+
+#[cfg(debug_assertions)]
+impl Drop for LocalTrustUrlTestAllowance {
+    fn drop(&mut self) {
+        let allowances = local_trust_url_allowances();
+        let mut allowances = allowances.lock().expect("local trust URL test allowances");
+        match allowances.get_mut(&self.origin) {
+            Some(count) if *count > 1 => *count -= 1,
+            Some(_) => {
+                allowances.remove(&self.origin);
+            }
+            None => {}
+        }
+    }
+}
+
+#[cfg(debug_assertions)]
+pub fn allow_local_trust_url_for_tests(
+    raw_url: &str,
+) -> Result<LocalTrustUrlTestAllowance, String> {
+    let url =
+        reqwest::Url::parse(raw_url).map_err(|e| format!("invalid local trust test URL: {e}"))?;
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err(format!(
+            "local trust test URL scheme '{}' is not allowed; use http or https",
+            url.scheme()
+        ));
+    }
+    let host = url
+        .host_str()
+        .ok_or_else(|| "local trust test URL is missing host".to_owned())?;
+    let is_loopback = host.parse::<IpAddr>().is_ok_and(is_loopback_ip) || is_localhost_name(host);
+    if !is_loopback {
+        return Err(format!(
+            "local trust test URL host '{}' is not loopback",
+            strip_url_host_for_error(host)
+        ));
+    }
+    let origin = url_origin_key(&url)?;
+    let allowances = local_trust_url_allowances();
+    let mut allowances = allowances.lock().expect("local trust URL test allowances");
+    *allowances.entry(origin.clone()).or_insert(0) += 1;
+    Ok(LocalTrustUrlTestAllowance { origin })
+}
 
 // --- Views -------------------------------------------------------------------------------------
 
@@ -479,9 +538,9 @@ pub async fn trust_status(
 /// `POST /v1/trust/refresh` — operator-triggered TSL import from a URL or local XML file.
 ///
 /// With an empty body, the handler uses the configured signing TSL URL, falling back to the
-/// Portuguese default. The imported XML is parsed and its XML-DSig status is recorded, then a
-/// parseable list is cached as `tsl.xml`. Invalid signatures remain advisory and are surfaced in
-/// the status; they are not treated as trusted validation.
+/// Portuguese default. The imported XML is parsed and its XML-DSig/trust-anchor status is recorded.
+/// Only authenticated lists are cached as `tsl.xml`; invalid signatures fail closed and preserve the
+/// previous cache.
 pub async fn refresh_trust_tsl(
     State(state): State<AppState>,
     actor: CurrentActor,
@@ -765,17 +824,266 @@ fn read_bounded_tsl_file(path: &str, max_bytes: u64) -> Result<Vec<u8>, String> 
     Ok(bytes)
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct VettedHttpUrl {
+    url: reqwest::Url,
+    host: String,
+    resolved_addrs: Vec<SocketAddr>,
+    host_is_ip: bool,
+}
+
+impl VettedHttpUrl {
+    pub(crate) fn as_str(&self) -> &str {
+        self.url.as_str()
+    }
+
+    pub(crate) fn client(
+        &self,
+        timeout: Duration,
+    ) -> Result<reqwest::blocking::Client, reqwest::Error> {
+        let mut builder = reqwest::blocking::Client::builder()
+            .timeout(timeout)
+            .redirect(reqwest::redirect::Policy::none());
+        if !self.host_is_ip {
+            builder = builder.resolve_to_addrs(&self.host, &self.resolved_addrs);
+        }
+        builder.build()
+    }
+}
+
+pub(crate) fn validate_outbound_http_url(raw_url: &str) -> Result<VettedHttpUrl, String> {
+    let url = reqwest::Url::parse(raw_url)
+        .map_err(|e| format!("unsafe outbound URL: invalid URL: {e}"))?;
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err(format!(
+            "unsafe outbound URL: scheme '{}' is not allowed; use http or https",
+            url.scheme()
+        ));
+    }
+    let host = url
+        .host_str()
+        .ok_or_else(|| "unsafe outbound URL: missing host".to_owned())?
+        .to_owned();
+    let test_origin_allowed = local_trust_url_origin_allowed_for_tests(&url);
+    if is_localhost_name(&host) && !test_origin_allowed {
+        return Err(format!(
+            "unsafe outbound URL: host '{}' is local-only",
+            strip_url_host_for_error(&host)
+        ));
+    }
+    let port = url.port_or_known_default().ok_or_else(|| {
+        format!(
+            "unsafe outbound URL: scheme '{}' has no default port",
+            url.scheme()
+        )
+    })?;
+
+    let host_is_ip = host.parse::<IpAddr>().is_ok();
+    let resolved_addrs = if let Ok(ip) = host.parse::<IpAddr>() {
+        if is_disallowed_ip_for_outbound_policy(ip, test_origin_allowed) {
+            return Err(format!(
+                "unsafe outbound URL: host '{}' is a disallowed address",
+                strip_url_host_for_error(&host)
+            ));
+        }
+        vec![SocketAddr::new(ip, port)]
+    } else {
+        let addrs: Vec<SocketAddr> = (host.as_str(), port)
+            .to_socket_addrs()
+            .map_err(|e| format!("unsafe outbound URL: failed to resolve host '{host}': {e}"))?
+            .collect();
+        if addrs.is_empty() {
+            return Err(format!(
+                "unsafe outbound URL: host '{host}' resolved to no addresses"
+            ));
+        }
+        if let Some(addr) = addrs
+            .iter()
+            .find(|addr| is_disallowed_ip_for_outbound_policy(addr.ip(), test_origin_allowed))
+        {
+            return Err(format!(
+                "unsafe outbound URL: host '{host}' resolves to disallowed address {}",
+                addr.ip()
+            ));
+        }
+        addrs
+    };
+
+    Ok(VettedHttpUrl {
+        url,
+        host,
+        resolved_addrs,
+        host_is_ip,
+    })
+}
+
+pub(crate) fn validate_outbound_http_url_metadata(raw_url: &str) -> Result<(), String> {
+    let url = reqwest::Url::parse(raw_url)
+        .map_err(|e| format!("unsafe outbound URL: invalid URL: {e}"))?;
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err(format!(
+            "unsafe outbound URL: scheme '{}' is not allowed; use http or https",
+            url.scheme()
+        ));
+    }
+    let host = url
+        .host_str()
+        .ok_or_else(|| "unsafe outbound URL: missing host".to_owned())?;
+    if is_localhost_name(host) {
+        return Err(format!(
+            "unsafe outbound URL: host '{}' is local-only",
+            strip_url_host_for_error(host)
+        ));
+    }
+    if url.port_or_known_default().is_none() {
+        return Err(format!(
+            "unsafe outbound URL: scheme '{}' has no default port",
+            url.scheme()
+        ));
+    }
+    if let Ok(ip) = host.parse::<IpAddr>() {
+        if is_disallowed_ip(ip) {
+            return Err(format!(
+                "unsafe outbound URL: host '{}' is a disallowed address",
+                strip_url_host_for_error(host)
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn is_localhost_name(host: &str) -> bool {
+    let normalized = host.trim_end_matches('.').to_ascii_lowercase();
+    normalized == "localhost" || normalized.ends_with(".localhost")
+}
+
+fn is_disallowed_ip(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(addr) => is_disallowed_ipv4(addr),
+        IpAddr::V6(addr) => is_disallowed_ipv6(addr),
+    }
+}
+
+fn is_disallowed_ip_for_outbound_policy(ip: IpAddr, test_origin_allowed: bool) -> bool {
+    is_disallowed_ip(ip) && !(test_origin_allowed && is_loopback_ip(ip))
+}
+
+fn is_loopback_ip(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(addr) => addr.is_loopback(),
+        IpAddr::V6(addr) => addr.is_loopback(),
+    }
+}
+
+fn local_trust_url_origin_allowed_for_tests(url: &reqwest::Url) -> bool {
+    #[cfg(debug_assertions)]
+    {
+        url_origin_key(url)
+            .ok()
+            .and_then(|origin| {
+                local_trust_url_allowances()
+                    .lock()
+                    .expect("local trust URL test allowances")
+                    .get(&origin)
+                    .copied()
+            })
+            .is_some_and(|count| count > 0)
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        let _ = url;
+        false
+    }
+}
+
+#[cfg(debug_assertions)]
+fn local_trust_url_allowances() -> &'static Mutex<BTreeMap<String, usize>> {
+    LOCAL_TRUST_URL_TEST_ALLOWANCES.get_or_init(|| Mutex::new(BTreeMap::new()))
+}
+
+fn url_origin_key(url: &reqwest::Url) -> Result<String, String> {
+    let host = url
+        .host_str()
+        .ok_or_else(|| "URL is missing host".to_owned())?;
+    let port = url
+        .port_or_known_default()
+        .ok_or_else(|| format!("scheme '{}' has no default port", url.scheme()))?;
+    let host = if host.parse::<Ipv6Addr>().is_ok() {
+        format!("[{}]", host.to_ascii_lowercase())
+    } else {
+        host.to_ascii_lowercase()
+    };
+    Ok(format!("{}://{host}:{port}", url.scheme()))
+}
+
+fn is_disallowed_ipv4(addr: Ipv4Addr) -> bool {
+    addr.is_unspecified()
+        || ipv4_in_cidr(addr, Ipv4Addr::new(0, 0, 0, 0), 8)
+        || addr.is_loopback()
+        || addr.is_private()
+        || addr.is_link_local()
+        || addr.is_broadcast()
+        || addr.is_multicast()
+        || ipv4_in_cidr(addr, Ipv4Addr::new(100, 64, 0, 0), 10)
+        || ipv4_in_cidr(addr, Ipv4Addr::new(192, 0, 0, 0), 24)
+        || ipv4_in_cidr(addr, Ipv4Addr::new(192, 0, 2, 0), 24)
+        || ipv4_in_cidr(addr, Ipv4Addr::new(192, 88, 99, 0), 24)
+        || ipv4_in_cidr(addr, Ipv4Addr::new(198, 18, 0, 0), 15)
+        || ipv4_in_cidr(addr, Ipv4Addr::new(198, 51, 100, 0), 24)
+        || ipv4_in_cidr(addr, Ipv4Addr::new(203, 0, 113, 0), 24)
+        || ipv4_in_cidr(addr, Ipv4Addr::new(240, 0, 0, 0), 4)
+}
+
+fn is_disallowed_ipv6(addr: Ipv6Addr) -> bool {
+    if let Some(mapped) = addr.to_ipv4_mapped() {
+        return is_disallowed_ipv4(mapped);
+    }
+    addr.is_unspecified()
+        || addr.is_loopback()
+        || addr.is_multicast()
+        || ipv6_in_cidr(addr, Ipv6Addr::from(0xfc00_u128 << 112), 7)
+        || ipv6_in_cidr(addr, Ipv6Addr::from(0xfe80_u128 << 112), 10)
+        || ipv6_in_cidr(addr, Ipv6Addr::from(0x2001_0db8_u128 << 96), 32)
+        || ipv6_in_cidr(addr, Ipv6Addr::from(0x2001_u128 << 112), 23)
+}
+
+fn ipv4_in_cidr(addr: Ipv4Addr, base: Ipv4Addr, prefix: u32) -> bool {
+    let addr = u32::from(addr);
+    let base = u32::from(base);
+    let mask = if prefix == 0 {
+        0
+    } else {
+        u32::MAX << (32 - prefix)
+    };
+    (addr & mask) == (base & mask)
+}
+
+fn ipv6_in_cidr(addr: Ipv6Addr, base: Ipv6Addr, prefix: u32) -> bool {
+    let addr = u128::from(addr);
+    let base = u128::from(base);
+    let mask = if prefix == 0 {
+        0
+    } else {
+        u128::MAX << (128 - prefix)
+    };
+    (addr & mask) == (base & mask)
+}
+
+fn strip_url_host_for_error(host: &str) -> String {
+    host.trim_matches(['[', ']']).to_owned()
+}
+
 fn fetch_bounded_tsl_url(
     url: &str,
     timeout_seconds: u16,
     max_bytes: u64,
 ) -> Result<Vec<u8>, String> {
-    let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(u64::from(timeout_seconds)))
-        .build()
+    let vetted = validate_outbound_http_url(url)?;
+    let client = vetted
+        .client(Duration::from_secs(u64::from(timeout_seconds)))
         .map_err(|e| e.to_string())?;
     let bytes = client
-        .get(url)
+        .get(vetted.as_str())
         .send()
         .and_then(|response| response.error_for_status())
         .map_err(|e| e.to_string())?
@@ -800,7 +1108,9 @@ fn status_for_imported_xml(
 ) -> TslRefreshStatusView {
     match parse_tsl(xml) {
         Ok(list) => {
-            let validation_error = validate_tsl_signature(xml).err().map(|e| e.to_string());
+            let validation_error = validate_tsl_signature(xml)
+                .err()
+                .map(|e| format!("Trusted List signature/trust-anchor validation failed: {e}"));
             let signature_valid = validation_error.is_none();
             let services = list.services().count();
             let ca_qc_services = list.services().filter(|s| s.is_ca_qc()).count();
@@ -814,7 +1124,11 @@ fn status_for_imported_xml(
                 source_url,
                 source_path,
                 target_path,
-                outcome: TslRefreshOutcome::Success,
+                outcome: if signature_valid {
+                    TslRefreshOutcome::Success
+                } else {
+                    TslRefreshOutcome::Failed
+                },
                 validation: TslValidationView {
                     checked_at: format_time(now),
                     signature: if signature_valid {
@@ -822,7 +1136,7 @@ fn status_for_imported_xml(
                     } else {
                         TslSignatureStatus::Invalid
                     },
-                    error: validation_error,
+                    error: validation_error.clone(),
                 },
                 providers: Some(list.providers.len()),
                 services: Some(services),
@@ -833,7 +1147,7 @@ fn status_for_imported_xml(
                 } else {
                     0
                 }),
-                error: None,
+                error: validation_error.clone(),
             }
         }
         Err(error) => failed_refresh_status(
@@ -2220,6 +2534,50 @@ mod tests {
     }
 
     #[test]
+    fn outbound_url_policy_rejects_reserved_ipv4_zero_eight() {
+        for url in ["http://0.1.2.3/tsl.xml", "http://0.255.255.255/tsa"] {
+            let runtime = validate_outbound_http_url(url)
+                .expect_err("runtime URL validation rejects 0.0.0.0/8");
+            assert!(runtime.contains("unsafe outbound URL"), "{runtime}");
+            assert!(runtime.contains("disallowed address"), "{runtime}");
+
+            let metadata = validate_outbound_http_url_metadata(url)
+                .expect_err("settings URL validation rejects 0.0.0.0/8");
+            assert!(metadata.contains("unsafe outbound URL"), "{metadata}");
+            assert!(metadata.contains("disallowed address"), "{metadata}");
+        }
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    fn local_trust_url_test_allowance_is_scoped_to_registered_origin() {
+        let registered = "http://127.0.0.1:31000/tsa";
+        validate_outbound_http_url(registered)
+            .expect_err("loopback is rejected before the test origin is registered");
+
+        let allowance =
+            allow_local_trust_url_for_tests(registered).expect("register exact mock origin");
+        validate_outbound_http_url("http://127.0.0.1:31000/other")
+            .expect("same registered origin is allowed");
+
+        let other_port = validate_outbound_http_url("http://127.0.0.1:31001/tsa")
+            .expect_err("different loopback authority remains rejected");
+        assert!(other_port.contains("disallowed address"), "{other_port}");
+
+        let localhost_alias = validate_outbound_http_url("http://localhost:31000/tsa")
+            .expect_err("localhost alias is not covered by the registered IP origin");
+        assert!(localhost_alias.contains("local-only"), "{localhost_alias}");
+
+        let reserved = validate_outbound_http_url("http://0.1.2.3/tsa")
+            .expect_err("registered loopback origin does not allow reserved ranges");
+        assert!(reserved.contains("disallowed address"), "{reserved}");
+
+        drop(allowance);
+        validate_outbound_http_url(registered)
+            .expect_err("loopback is rejected after the scoped allowance is dropped");
+    }
+
+    #[test]
     fn summary_reports_fixture_validation_without_trusting_it() {
         let loaded = fixture();
         let summary = summary_view(&loaded, NOW, None);
@@ -2233,10 +2591,12 @@ mod tests {
     }
 
     #[test]
-    fn import_from_file_persists_cache_and_last_attempt_status() {
+    fn import_from_file_with_invalid_signature_persists_failure_without_replacing_cache() {
         let tmp = TempDir::new();
         let source = tmp.0.join("source-tsl.xml");
         std::fs::write(&source, BUNDLED_PT_TSL).expect("fixture source");
+        let cache = tmp.0.join(TRUST_CACHE_FILE);
+        std::fs::write(&cache, b"previous-cache").expect("existing cache");
 
         let status = import_tsl_to_cache(
             tmp.0.clone(),
@@ -2249,22 +2609,29 @@ mod tests {
         )
         .expect("import status");
 
-        assert_eq!(status.outcome, TslRefreshOutcome::Success);
+        assert_eq!(status.outcome, TslRefreshOutcome::Failed);
         assert_eq!(status.source_kind, TslRefreshSourceKind::File);
         assert_eq!(status.source_url, None);
         assert_eq!(status.providers, Some(4));
         assert_eq!(status.services, Some(5));
         assert_eq!(status.validation.signature, TslSignatureStatus::Invalid);
-        assert!(tmp.0.join(TRUST_CACHE_FILE).is_file());
+        assert!(
+            status
+                .error
+                .as_deref()
+                .is_some_and(|e| e.contains("signature/trust-anchor")),
+            "{status:?}"
+        );
+        assert_eq!(
+            std::fs::read(&cache).expect("cache still readable"),
+            b"previous-cache"
+        );
 
         let persisted = load_refresh_status(Some(tmp.0.clone())).expect("persisted status");
-        assert_eq!(persisted.outcome, TslRefreshOutcome::Success);
-        let state = AppState::with_data_dir(tmp.0.clone());
-        let loaded = load_tsl(&state).expect("cached TSL loads");
-        assert_eq!(loaded.source.kind, TslSourceKind::Cache);
+        assert_eq!(persisted.outcome, TslRefreshOutcome::Failed);
         assert_eq!(
-            loaded.last_refresh.as_ref().map(|s| s.outcome),
-            Some(TslRefreshOutcome::Success)
+            std::fs::read(&cache).expect("cache still readable after status write"),
+            b"previous-cache"
         );
     }
 
@@ -2291,6 +2658,39 @@ mod tests {
         let persisted = load_refresh_status(Some(tmp.0.clone())).expect("persisted failure");
         assert_eq!(persisted.outcome, TslRefreshOutcome::Failed);
         assert_eq!(persisted.providers, None);
+    }
+
+    #[test]
+    fn import_from_unsafe_url_persists_failure_without_fetching_or_cache() {
+        let tmp = TempDir::new();
+        let status = import_tsl_to_cache(
+            tmp.0.clone(),
+            SigningSettings::default().runtime_tsl_selection(),
+            TslRefreshRequest {
+                url: Some("http://127.0.0.1:9/tsl.xml".to_owned()),
+                path: None,
+            },
+            NOW,
+        )
+        .expect("unsafe URL attempt still records status");
+
+        assert_eq!(status.outcome, TslRefreshOutcome::Failed);
+        assert_eq!(status.source_kind, TslRefreshSourceKind::Url);
+        assert!(
+            status
+                .error
+                .as_deref()
+                .is_some_and(|e| e.contains("unsafe outbound URL"))
+        );
+        assert!(!tmp.0.join(TRUST_CACHE_FILE).exists());
+        let persisted = load_refresh_status(Some(tmp.0.clone())).expect("persisted failure");
+        assert_eq!(persisted.outcome, TslRefreshOutcome::Failed);
+        assert!(
+            persisted
+                .error
+                .as_deref()
+                .is_some_and(|e| e.contains("unsafe outbound URL"))
+        );
     }
 
     #[test]
@@ -2359,7 +2759,7 @@ mod tests {
         )
         .expect("configured source import");
 
-        assert_eq!(status.outcome, TslRefreshOutcome::Success);
+        assert_eq!(status.outcome, TslRefreshOutcome::Failed);
         assert_eq!(status.source_kind, TslRefreshSourceKind::File);
         let enabled_source_display = enabled_source.display().to_string();
         assert_eq!(
@@ -2367,6 +2767,12 @@ mod tests {
             Some(enabled_source_display.as_str())
         );
         assert_eq!(status.providers, Some(4));
+        assert!(
+            status
+                .error
+                .as_deref()
+                .is_some_and(|e| e.contains("signature/trust-anchor"))
+        );
     }
 
     #[test]

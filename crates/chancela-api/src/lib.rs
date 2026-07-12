@@ -179,6 +179,8 @@ pub use settings::{
     RegistryAutoUpdateSettings, RegistryAutoUpdateWeekday, Settings, SignatureFamily,
     SigningCmdSettings, SigningSettings, ThemeMode,
 };
+#[cfg(debug_assertions)]
+pub use trust::{LocalTrustUrlTestAllowance, allow_local_trust_url_for_tests};
 pub use users::{User, UserId};
 
 /// Environment variable naming a data directory for on-disk persistence. When unset,
@@ -1458,7 +1460,11 @@ pub fn router(state: AppState) -> Router {
                 .post(backup_recovery::create_backup_recovery_drill),
         )
         .route("/v1/books/{id}/export", post(bundles::export_book))
-        .route("/v1/books/import", post(bundles::import_book))
+        .route(
+            "/v1/books/import",
+            post(bundles::import_book)
+                .layer(DefaultBodyLimit::max(bundles::BOOK_IMPORT_BUNDLE_MAX_BYTES)),
+        )
         .route("/v1/books/{id}/start-over", post(bundles::start_over_book))
         .route("/v1/data/reset", post(data::reset_data))
         .route("/v1/data/status", get(data_status::get_data_status))
@@ -1785,7 +1791,7 @@ async fn security_headers(request: axum::http::Request<axum::body::Body>, next: 
     headers.insert(
         axum::http::HeaderName::from_static("content-security-policy"),
         "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; \
-         script-src 'self'; object-src 'none'; base-uri 'self'"
+         script-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
             .parse()
             .unwrap(),
     );
@@ -1817,7 +1823,7 @@ async fn unknown_api_route(
 /// explaining how to build the UI (see [`landing`]).
 pub fn app(state: AppState, web_dist: Option<PathBuf>) -> Router {
     let api = router(state);
-    match web_dist {
+    let app = match web_dist {
         Some(dir) => {
             // ServeDir handles real files; its own fallback returns index.html for anything
             // it can't find, which is exactly SPA deep-link behaviour.
@@ -1825,7 +1831,8 @@ pub fn app(state: AppState, web_dist: Option<PathBuf>) -> Router {
             api.fallback_service(serve)
         }
         None => api.fallback(landing),
-    }
+    };
+    app.layer(middleware::from_fn(security_headers))
 }
 
 /// API-only fallback served at `/` (and any unmatched path) when no web build is present.
@@ -1911,7 +1918,7 @@ async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
 mod tests {
     use super::*;
     use axum::body::{Body, to_bytes};
-    use axum::http::{Request, StatusCode};
+    use axum::http::{HeaderMap, Request, StatusCode};
     use base64::Engine;
     use base64::engine::general_purpose::STANDARD as B64;
     use serde_json::{Value, json};
@@ -6030,6 +6037,46 @@ mod tests {
         (status, String::from_utf8_lossy(&bytes).into_owned())
     }
 
+    async fn send_text_with_headers(
+        router: Router,
+        req: Request<Body>,
+    ) -> (StatusCode, HeaderMap, String) {
+        let response = router.oneshot(req).await.expect("router responds");
+        let status = response.status();
+        let headers = response.headers().clone();
+        let bytes = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body collects");
+        (
+            status,
+            headers,
+            String::from_utf8_lossy(&bytes).into_owned(),
+        )
+    }
+
+    fn assert_security_headers(headers: &HeaderMap) {
+        assert_eq!(
+            headers
+                .get("x-content-type-options")
+                .and_then(|v| v.to_str().ok()),
+            Some("nosniff")
+        );
+        assert_eq!(
+            headers.get("x-frame-options").and_then(|v| v.to_str().ok()),
+            Some("DENY")
+        );
+        assert_eq!(
+            headers.get("referrer-policy").and_then(|v| v.to_str().ok()),
+            Some("no-referrer")
+        );
+        let csp = headers
+            .get("content-security-policy")
+            .and_then(|v| v.to_str().ok())
+            .expect("content-security-policy header");
+        assert!(csp.contains("default-src 'self'"), "{csp}");
+        assert!(csp.contains("frame-ancestors 'none'"), "{csp}");
+    }
+
     #[tokio::test]
     async fn web_dist_serves_index_at_root() {
         let web = TempWeb::new("<!doctype html><title>Chancela</title>");
@@ -6047,6 +6094,24 @@ mod tests {
         let (status, body) = send_text(app, get("/livros")).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body, "SPA-SHELL-MARKER");
+    }
+
+    #[tokio::test]
+    async fn security_headers_apply_to_static_spa_fallback_and_assets() {
+        let web = TempWeb::new("SPA-SHELL-MARKER");
+        std::fs::write(web.dir.join("app.js"), "window.__chancela = true;").expect("asset");
+
+        let spa_app = app(AppState::default(), Some(web.dir.clone()));
+        let (status, headers, body) = send_text_with_headers(spa_app, get("/livros")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body, "SPA-SHELL-MARKER");
+        assert_security_headers(&headers);
+
+        let asset_app = app(AppState::default(), Some(web.dir.clone()));
+        let (status, headers, body) = send_text_with_headers(asset_app, get("/app.js")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body, "window.__chancela = true;");
+        assert_security_headers(&headers);
     }
 
     #[tokio::test]
@@ -6642,6 +6707,64 @@ mod tests {
         let (status, body) = send(AppState::default(), put_json("/v1/settings", bad)).await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
         assert!(body["error"].is_string());
+    }
+
+    #[tokio::test]
+    async fn settings_put_rejects_private_loopback_metadata_tsl_tsa_urls() {
+        let mut loopback_tsl = sample_settings();
+        loopback_tsl["signing"]["tsl_sources"][0]["url"] = json!("http://127.0.0.1:9/tsl.xml");
+        let (status, body) =
+            send(AppState::default(), put_json("/v1/settings", loopback_tsl)).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        let err = body["error"].as_str().expect("error");
+        assert!(err.contains("signing.tsl_sources[0].url"), "{err}");
+        assert!(err.contains("unsafe outbound URL"), "{err}");
+
+        let mut reserved_tsl = sample_settings();
+        reserved_tsl["signing"]["tsl_sources"][0]["url"] = json!("http://0.1.2.3/tsl.xml");
+        let (status, body) =
+            send(AppState::default(), put_json("/v1/settings", reserved_tsl)).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        let err = body["error"].as_str().expect("error");
+        assert!(err.contains("signing.tsl_sources[0].url"), "{err}");
+        assert!(err.contains("unsafe outbound URL"), "{err}");
+        assert!(err.contains("disallowed address"), "{err}");
+
+        let mut private_tsa = sample_settings();
+        private_tsa["signing"]["tsa_providers"][0]["url"] = json!("http://10.0.0.5/tsa");
+        let (status, body) = send(AppState::default(), put_json("/v1/settings", private_tsa)).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        let err = body["error"].as_str().expect("error");
+        assert!(err.contains("signing.tsa_providers[0].url"), "{err}");
+        assert!(err.contains("unsafe outbound URL"), "{err}");
+
+        let mut reserved_tsa = sample_settings();
+        reserved_tsa["signing"]["tsa_providers"][0]["url"] = json!("http://0.1.2.3/tsa");
+        let (status, body) =
+            send(AppState::default(), put_json("/v1/settings", reserved_tsa)).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        let err = body["error"].as_str().expect("error");
+        assert!(err.contains("signing.tsa_providers[0].url"), "{err}");
+        assert!(err.contains("unsafe outbound URL"), "{err}");
+        assert!(err.contains("disallowed address"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn settings_put_allows_public_https_tsl_tsa_urls() {
+        let mut doc = sample_settings();
+        doc["signing"]["tsl_sources"][0]["url"] = json!("https://93.184.216.34/tsl.xml");
+        doc["signing"]["tsa_providers"][0]["url"] = json!("https://93.184.216.34/tsa");
+
+        let (status, stored) = send(AppState::default(), put_json("/v1/settings", doc)).await;
+        assert_eq!(status, StatusCode::OK, "{stored}");
+        assert_eq!(
+            stored["signing"]["tsl_sources"][0]["url"],
+            "https://93.184.216.34/tsl.xml"
+        );
+        assert_eq!(
+            stored["signing"]["tsa_providers"][0]["url"],
+            "https://93.184.216.34/tsa"
+        );
     }
 
     #[tokio::test]
@@ -15296,6 +15419,26 @@ mod tests {
         assert!(
             outcome["verdict"]["break"].is_object(),
             "break detail present"
+        );
+    }
+
+    #[tokio::test]
+    async fn books_import_rejects_body_above_route_limit_before_staging() {
+        let state = persistent_state();
+        let token = seed_session(&state, &make_user(&state, "bruno").await).await;
+        let data_dir = state.data_dir().expect("persistent state has data dir");
+        let oversized = vec![0_u8; bundles::BOOK_IMPORT_BUNDLE_MAX_BYTES + 1];
+
+        let status = send_status(
+            state,
+            with_session(post_raw("/v1/books/import", oversized), &token),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
+        assert!(
+            !data_dir.join("imports").exists(),
+            "body limit should reject before staging upload bytes"
         );
     }
 

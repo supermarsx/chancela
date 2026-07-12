@@ -22,6 +22,8 @@ const TST_INFO_ANCHOR: &[u8] = &[0x02, 0x01, 0x01, 0x06, 0x04, 0x2a, 0x03, 0x04,
 
 pub struct MockTsaServer {
     url: String,
+    #[cfg(debug_assertions)]
+    _local_url_allowance: chancela_api::LocalTrustUrlTestAllowance,
 }
 
 impl MockTsaServer {
@@ -46,12 +48,19 @@ impl MockTsaServer {
     fn spawn(mode: MockTsaMode) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind mock TSA");
         let url = format!("http://{}", listener.local_addr().expect("local addr"));
+        #[cfg(debug_assertions)]
+        let local_url_allowance = chancela_api::allow_local_trust_url_for_tests(&url)
+            .expect("register mock TSA loopback URL");
         thread::spawn(move || {
             if let Ok((stream, _)) = listener.accept() {
                 handle_connection(stream, mode);
             }
         });
-        Self { url }
+        Self {
+            url,
+            #[cfg(debug_assertions)]
+            _local_url_allowance: local_url_allowance,
+        }
     }
 }
 

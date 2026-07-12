@@ -1500,6 +1500,9 @@ impl Settings {
                         "{field} must be an http(s) URL, got {raw:?}"
                     )));
                 }
+                if !trimmed.is_empty() && field.starts_with("signing.") {
+                    validate_outbound_url_setting(field, trimmed)?;
+                }
             }
         }
         // Each ordered CAE source entry: a required http(s) URL and, when present, a 64-char
@@ -1556,6 +1559,9 @@ fn validate_tsl_sources(entries: &[TslSourceSettings]) -> Result<(), ApiError> {
                     "signing.tsl_sources[{i}].url must be an http(s) URL, got {url:?}"
                 )));
             }
+            if !trimmed.is_empty() {
+                validate_outbound_url_setting(&format!("signing.tsl_sources[{i}].url"), trimmed)?;
+            }
         }
         if let Some(digest) = entry.digest.as_deref() {
             validate_optional_sha256_hex(&format!("signing.tsl_sources[{i}].digest"), digest)?;
@@ -1608,6 +1614,9 @@ fn validate_tsa_providers(entries: &[TsaProviderSettings]) -> Result<(), ApiErro
                 return Err(ApiError::Unprocessable(format!(
                     "signing.tsa_providers[{i}].url must be an http(s) URL, got {url:?}"
                 )));
+            }
+            if !trimmed.is_empty() {
+                validate_outbound_url_setting(&format!("signing.tsa_providers[{i}].url"), trimmed)?;
             }
         }
         validate_non_blank_label(&format!("signing.tsa_providers[{i}].digest"), &entry.digest)?;
@@ -1690,6 +1699,13 @@ fn validate_url_or_path(
             )));
         }
     }
+    Ok(())
+}
+
+fn validate_outbound_url_setting(field: &str, url: &str) -> Result<(), ApiError> {
+    crate::trust::validate_outbound_http_url_metadata(url).map_err(|e| {
+        ApiError::Unprocessable(format!("{field} rejected by outbound URL policy: {e}"))
+    })?;
     Ok(())
 }
 

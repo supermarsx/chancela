@@ -35,6 +35,8 @@ use crate::dto::{BookView, TermoSignatoryInput, normalize_termo_signatories, par
 use crate::error::ApiError;
 use crate::recovery::{ChainBreakView, map_store_error};
 
+pub(crate) const BOOK_IMPORT_BUNDLE_MAX_BYTES: usize = 64 * 1024 * 1024;
+
 fn default_actor() -> String {
     "api".to_owned()
 }
@@ -164,6 +166,12 @@ pub async fn import_book(
         .ok_or_else(|| ApiError::Internal("durable store without a data directory".to_owned()))?;
     if body.is_empty() {
         return Err(ApiError::Unprocessable("corpo do pacote vazio".to_owned()));
+    }
+    if body.len() > BOOK_IMPORT_BUNDLE_MAX_BYTES {
+        return Err(ApiError::Unprocessable(format!(
+            "pacote do livro tem {} bytes; o limite é {BOOK_IMPORT_BUNDLE_MAX_BYTES} bytes",
+            body.len()
+        )));
     }
 
     // Land the uploaded bytes in a temp file the store reads from (it retains its own copy in the

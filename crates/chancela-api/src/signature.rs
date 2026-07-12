@@ -5541,11 +5541,14 @@ impl TslSource for RuntimeTslSource {
                 .location
                 .url()
                 .expect("runtime TSL source has either path or URL");
-            let client = reqwest::blocking::Client::builder()
-                .timeout(StdDuration::from_secs(u64::from(self.timeout_seconds)))
-                .build()?;
+            let vetted = crate::trust::validate_outbound_http_url(url).map_err(|e| {
+                TslError::Structure(format!("configured TSL source '{}' rejected: {e}", self.id))
+            })?;
+            let client = vetted
+                .client(StdDuration::from_secs(u64::from(self.timeout_seconds)))
+                .map_err(TslError::from)?;
             client
-                .get(url)
+                .get(vetted.as_str())
                 .send()?
                 .error_for_status()?
                 .bytes()?
@@ -5564,14 +5567,32 @@ impl TslSource for RuntimeTslSource {
 }
 
 pub(crate) struct BoundedTsaTransport {
-    inner: chancela_tsa::HttpTsaTransport,
+    url: String,
+    client: reqwest::blocking::Client,
     provider_id: String,
     max_bytes: u64,
 }
 
 impl chancela_tsa::TsaTransport for BoundedTsaTransport {
     fn send(&self, der_req: &[u8]) -> Result<Vec<u8>, chancela_tsa::TsaError> {
-        let bytes = chancela_tsa::TsaTransport::send(&self.inner, der_req)?;
+        let response = self
+            .client
+            .post(&self.url)
+            .header(reqwest::header::CONTENT_TYPE, "application/timestamp-query")
+            .header(reqwest::header::ACCEPT, "application/timestamp-reply")
+            .body(der_req.to_vec())
+            .send()
+            .map_err(|e| chancela_tsa::TsaError::Transport(e.to_string()))?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(chancela_tsa::TsaError::Transport(format!(
+                "TSA returned HTTP {status}"
+            )));
+        }
+        let bytes = response
+            .bytes()
+            .map_err(|e| chancela_tsa::TsaError::Transport(e.to_string()))?
+            .to_vec();
         if bytes.len() as u64 > self.max_bytes {
             return Err(chancela_tsa::TsaError::Transport(format!(
                 "TSA provider '{}' response exceeded max_bytes ({} > {})",
@@ -5598,16 +5619,38 @@ pub(crate) fn build_bounded_tsa_client(
             provider.id
         ))
     })?;
-    let transport = chancela_tsa::HttpTsaTransport::with_timeout(
-        tsa_url,
-        StdDuration::from_secs(u64::from(provider.timeout_seconds)),
-    )
-    .map_err(|e| ApiError::Unprocessable(format!("configuração TSA inválida: {e}")))?;
-    Ok(chancela_tsa::TsaClient::new(BoundedTsaTransport {
-        inner: transport,
+    let transport = bounded_tsa_transport(provider, tsa_url)
+        .map_err(|e| ApiError::Unprocessable(format!("configuração TSA inválida: {e}")))?;
+    Ok(chancela_tsa::TsaClient::new(transport))
+}
+
+fn bounded_tsa_transport(
+    provider: &RuntimeTsaProvider,
+    tsa_url: &str,
+) -> Result<BoundedTsaTransport, String> {
+    let vetted = crate::trust::validate_outbound_http_url(tsa_url)?;
+    let client = vetted
+        .client(StdDuration::from_secs(u64::from(provider.timeout_seconds)))
+        .map_err(|e| e.to_string())?;
+    Ok(BoundedTsaTransport {
+        url: vetted.as_str().to_owned(),
+        client,
         provider_id: provider.id.clone(),
         max_bytes: provider.max_bytes,
-    }))
+    })
+}
+
+pub(crate) fn validate_runtime_tsa_provider_url(
+    provider: &RuntimeTsaProvider,
+) -> Result<(), String> {
+    if let Some(url) = provider.location.url() {
+        crate::trust::validate_outbound_http_url(url).map(|_| ())
+    } else {
+        Err(format!(
+            "TSA provider '{}' is path-backed; live RFC 3161 timestamping requires an HTTP URL",
+            provider.id
+        ))
+    }
 }
 
 /// Phase-1 driver: run `cmd_initiate` over the injected transport inline (tests, no network), or a
@@ -5809,16 +5852,9 @@ fn timestamp_pdf_with_trust_report(
             tsa_provider.id
         ))
     })?;
-    let transport = chancela_tsa::HttpTsaTransport::with_timeout(
-        tsa_url,
-        StdDuration::from_secs(u64::from(tsa_provider.timeout_seconds)),
-    )
-    .map_err(|e| chancela_signing::SigningError::Timestamp(e.to_string()))?;
-    let client = chancela_tsa::TsaClient::new(BoundedTsaTransport {
-        inner: transport,
-        provider_id: tsa_provider.id.clone(),
-        max_bytes: tsa_provider.max_bytes,
-    });
+    let transport = bounded_tsa_transport(&tsa_provider, tsa_url)
+        .map_err(chancela_signing::SigningError::Timestamp)?;
+    let client = chancela_tsa::TsaClient::new(transport);
     let mut captured: Option<chancela_tsa::Timestamp> = None;
     let request_certificate = tsl_source.is_some();
     let stamped = add_signature_timestamp(signed_pdf, |sig_digest: &[u8; 32]| {
@@ -5933,6 +5969,8 @@ pub(crate) async fn configured_tsa_provider(
             provider.id, provider.digest
         )));
     }
+    validate_runtime_tsa_provider_url(&provider)
+        .map_err(|e| ApiError::Unprocessable(format!("configuração TSA inválida: {e}")))?;
     Ok(Some(provider))
 }
 
@@ -6815,6 +6853,42 @@ mod tests {
             .expect_err("unsupported digest is rejected locally");
 
         assert!(err.to_string().contains("supports sha256 only"));
+    }
+
+    #[test]
+    fn timestamp_unsafe_tsa_url_fails_before_network_or_pdf_processing() {
+        let provider = runtime_tsa_provider(
+            "unsafe-tsa",
+            RuntimeTrustLocation::Url("http://0.1.2.3/tsa".to_owned()),
+            "sha256",
+        );
+
+        let err = timestamp_pdf_with_trust_report(b"%PDF-1.7", provider, None)
+            .expect_err("unsafe TSA URL fails closed");
+        let msg = err.to_string();
+        assert!(msg.contains("unsafe outbound URL"), "{msg}");
+        assert!(msg.contains("disallowed address"), "{msg}");
+    }
+
+    #[test]
+    fn trust_policy_url_backed_tsl_source_rejects_unsafe_url_before_fetch() {
+        for url in ["http://127.0.0.1:9/tsl.xml", "http://0.1.2.3/tsl.xml"] {
+            let source = RuntimeTslSource {
+                id: "unsafe-tsl".to_owned(),
+                name: "Unsafe TSL".to_owned(),
+                location: RuntimeTrustLocation::Url(url.to_owned()),
+                timeout_seconds: 30,
+                max_bytes: 1024 * 1024,
+                configured_index: Some(0),
+                legacy: false,
+            };
+
+            let err =
+                chancela_tsl::TslSource::fetch(&source).expect_err("unsafe TSL URL fails closed");
+            let msg = err.to_string();
+            assert!(msg.contains("unsafe outbound URL"), "{msg}");
+            assert!(msg.contains("disallowed address"), "{msg}");
+        }
     }
 
     #[test]
