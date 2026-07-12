@@ -46,7 +46,8 @@ recovery/document/dashboard/notification
 UI, dashboard guest recent-events redaction, Ferramentas external-validator
 metadata UI, raw-report byte download API, imported-document review receipt UI,
 password-required account creation/session static markers,
-trust identifier-match explanations, and read-only local DGLAB interchange
+trust identifier-match explanations, trust/import/static request-boundary
+hardening, and read-only local DGLAB interchange
 manifest API and BookDetail JSON-download markers, generated-document by-id
 download route plus absent-owner dispatch-evidence recording and generated
 absent-owner evidence UI and dashboard absent-owner dispatch-evidence reminders,
@@ -166,6 +167,25 @@ It intentionally reuses existing test surfaces:
 - API official signed-PDF handoff guardrail acknowledgement:
   `cargo test -p chancela-api --test official_signature_import --locked official_import_requires_guardrail_acknowledgement_without_artifact_or_event`
 - TSL XML-DSig hardening: `cargo test -p chancela-tsl --locked`
+- API trust/import/static hardening markers: the static map pins
+  `outbound_url_policy_rejects_reserved_ipv4_zero_eight`,
+  `local_trust_url_test_allowance_is_scoped_to_registered_origin`,
+  `settings_put_rejects_private_loopback_metadata_tsl_tsa_urls`,
+  `trust_policy_url_backed_tsl_source_rejects_unsafe_url_before_fetch`,
+  `timestamp_unsafe_tsa_url_fails_before_network_or_pdf_processing`,
+  `import_from_file_with_invalid_signature_persists_failure_without_replacing_cache`,
+  `import_from_unsafe_url_persists_failure_without_fetching_or_cache`,
+  `books_import_rejects_body_above_route_limit_before_staging`,
+  `security_headers_apply_to_static_spa_fallback_and_assets`,
+  `trust_refresh_rejects_unsafe_tsl_source_without_replacing_cache`, and
+  `cc_sign_rejects_real_tsl_source_with_invalid_signature`. These pin unsafe
+  TSL/TSA URL refusal before runtime fetch/network/PDF work, resolved-address
+  validation and `reqwest` pinning with redirects/system proxy disabled,
+  debug/test-only exact-origin loopback allowance with RAII drop and no env-var
+  production bypass, fail-closed invalid TSL XML import/cache behavior,
+  `/v1/books/import` route and handler body limits before staging, and security
+  headers on API responses plus static SPA fallback/assets including CSP
+  `frame-ancestors 'none'`.
 - MCP resource/prompt coverage: `cargo test -p chancela-mcp --locked`
   including the no-argument draft-signed comparison prompt/resource, closed
   resource params, no bridge/API/provider calls, no secrets, and false
@@ -215,7 +235,7 @@ imported-document review-depth/receipt markers for metadata-derived summaries,
 neutral missing-preservation copy, pending/reviewed states, no-claim OCR/
 conversion/PDF-A replacement/signed-PDF/signature-validation/seal/PDF-UA/legal
 acceptance copy, and no-extra-route behavior, trust identifier-match explanation/copy-safe hash and
-SKI markers,
+SKI markers, trust/import/static URL/body/header fail-closed markers,
 retained-export `would_delete_*`/zero-`deleted_*` dry-run planning markers,
 preview-only Settings payload/no-files-removed markers, retained-export
 execution payload/modal-gate/deleted-counter markers, post-act
@@ -278,7 +298,9 @@ authority, live provider validity, canonical OCR conversion, imported-document
 OCR, imported-document conversion, imported-document PDF/A replacement, imported-document
 signed-PDF creation or signature validation, imported-document seal/PDF-UA, imported-document
 legal acceptance, raw external-validator legal/trust/certification validation,
-trust-list legal validity, provider approval, raw MCP report-byte exposure,
+trust-list legal validity, hostile DNS/rebinding proof, production qualified trust,
+provider approval, live provider readiness, DGLAB certification, full release
+hardening, raw MCP report-byte exposure,
 auto-role reconciliation, permission grants, archive custody/decryption material,
 AI-01/full AI completion, MCP draft-signed legal/source/trust/external
 certification, generated-document signing, bundle readiness, template legal

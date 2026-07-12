@@ -6423,6 +6423,111 @@ function assertCheckpointMap() {
     "CI/E2E hardening plan trust copy-safe identifier marker",
   );
   assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Trust/import/static request-boundary hardening",
+    "spec coverage trust/import/static hardening marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "trust/import/static hardening markers for unsafe TSL/TSA URL refusal",
+    "spec coverage recent-landed trust/import/static marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "API trust/import/static hardening markers",
+    "CI checkpoints trust/import/static hardening lane marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Current working-tree trust/import/static hardening checks",
+    "CI/E2E hardening plan trust/import/static checks marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "rejects unsafe schemes plus localhost, loopback, private, link-local, reserved, and unspecified ranges including `0.0.0.0/8`; validates resolved addresses before runtime fetch; pins the resolved address into `reqwest`; and disables redirects plus system proxy use",
+    "CI/E2E hardening plan outbound URL policy marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "loopback allowance is debug/test-only, exact-origin scoped, RAII-dropped, and has no env-var production bypass",
+    "CI/E2E hardening plan scoped loopback allowance marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "invalid signature/trust-anchor XML fails closed and does not promote or replace the cache; unsafe URL imports fail before fetching or cache replacement",
+    "CI/E2E hardening plan invalid TSL import fail-closed marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "`/v1/books/import` has route-level and handler-level body limits and rejects oversized bodies before staging",
+    "CI/E2E hardening plan books import body limit marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "security headers including CSP `frame-ancestors 'none'`",
+    "CI/E2E hardening plan static/API security headers marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "does not exhaustively prove hostile DNS/rebinding resistance, production qualified trust, legal validity, live provider readiness, DGLAB certification, or full release hardening",
+    "CI/E2E hardening plan trust/import/static caveat marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/trust.rs",
+    "outbound_url_policy_rejects_reserved_ipv4_zero_eight",
+    "API trust outbound URL 0.0.0.0/8 test marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/trust.rs",
+    "local_trust_url_test_allowance_is_scoped_to_registered_origin",
+    "API trust scoped loopback allowance test marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "settings_put_rejects_private_loopback_metadata_tsl_tsa_urls",
+    "API settings unsafe TSL/TSA URL refusal test marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/signature.rs",
+    "trust_policy_url_backed_tsl_source_rejects_unsafe_url_before_fetch",
+    "API signing trust policy unsafe TSL source test marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/signature.rs",
+    "timestamp_unsafe_tsa_url_fails_before_network_or_pdf_processing",
+    "API timestamp unsafe TSA URL pre-network test marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/trust.rs",
+    "import_from_file_with_invalid_signature_persists_failure_without_replacing_cache",
+    "API trust invalid signature cache preservation test marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/trust.rs",
+    "import_from_unsafe_url_persists_failure_without_fetching_or_cache",
+    "API trust unsafe URL import no-fetch cache test marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "books_import_rejects_body_above_route_limit_before_staging",
+    "API books import route-limit before staging test marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "security_headers_apply_to_static_spa_fallback_and_assets",
+    "API/static security headers test marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/cc_signing.rs",
+    "trust_refresh_rejects_unsafe_tsl_source_without_replacing_cache",
+    "API trust refresh unsafe TSL cache preservation test marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/cc_signing.rs",
+    "cc_sign_rejects_real_tsl_source_with_invalid_signature",
+    "API CC signing invalid TSL source test marker",
+  );
+  assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
     "`chancela-local-dglab-interchange-manifest/v1`",
     "CI/E2E hardening plan local DGLAB schema marker",

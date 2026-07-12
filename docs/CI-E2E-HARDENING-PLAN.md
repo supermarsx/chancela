@@ -1147,6 +1147,35 @@ settingsDefaults.test.ts contracts.test.ts`.
   certificate path/revocation/policy validation, broad ECDSA support, legal
   trust certification, production trust-list validity, multiple-reference
   support, or transform-chain support.
+- Current working-tree trust/import/static hardening checks: focused API
+  coverage pins TSL/TSA outbound URL policy that rejects unsafe schemes plus
+  localhost, loopback, private, link-local, reserved, and unspecified ranges
+  including `0.0.0.0/8`; validates resolved addresses before runtime fetch;
+  pins the resolved address into `reqwest`; and disables redirects plus system
+  proxy use. The loopback allowance is debug/test-only, exact-origin scoped,
+  RAII-dropped, and has no env-var production bypass. TSL import from invalid
+  signature/trust-anchor XML fails closed and does not promote or replace the
+  cache; unsafe URL imports fail before fetching or cache replacement. Settings
+  rejects private/loopback/metadata TSL/TSA URLs. Timestamping and signing trust
+  policy fail before network/PDF work for unsafe sources. `/v1/books/import`
+  has route-level and handler-level body limits and rejects oversized bodies
+  before staging. Static SPA fallback/assets and API responses get security
+  headers including CSP `frame-ancestors 'none'`. The pinned tests are
+  `outbound_url_policy_rejects_reserved_ipv4_zero_eight`,
+  `local_trust_url_test_allowance_is_scoped_to_registered_origin`,
+  `settings_put_rejects_private_loopback_metadata_tsl_tsa_urls`,
+  `trust_policy_url_backed_tsl_source_rejects_unsafe_url_before_fetch`,
+  `timestamp_unsafe_tsa_url_fails_before_network_or_pdf_processing`,
+  `import_from_file_with_invalid_signature_persists_failure_without_replacing_cache`,
+  `import_from_unsafe_url_persists_failure_without_fetching_or_cache`,
+  `books_import_rejects_body_above_route_limit_before_staging`,
+  `security_headers_apply_to_static_spa_fallback_and_assets`,
+  `trust_refresh_rejects_unsafe_tsl_source_without_replacing_cache`, and
+  `cc_sign_rejects_real_tsl_source_with_invalid_signature`. This remains
+  defensive request-boundary/cache/static-header coverage only; it does not
+  exhaustively prove hostile DNS/rebinding resistance, production qualified
+  trust, legal validity, live provider readiness, DGLAB certification, or full
+  release hardening.
 - Current working-tree backup recovery-drill receipt checks: focused
   `backup_recovery_drill` API coverage pins `POST`/`GET
   /v1/backup/recovery-drills`, restore-preflight-only execution, durable
@@ -1264,8 +1293,9 @@ settingsDefaults.test.ts contracts.test.ts`.
   attachment-header, 404, fail-closed, and redaction markers, plus MCP workflow
   provenance review prompt/resource offline/no-call/no-claim markers, imported-document
   review receipt pending/reviewed/no-extra-route markers, trust catalog
-  identifier-match explanation/copy-safe strict lookup markers, plus local DGLAB
-  interchange manifest API route, book.export gate, schema, builder,
+  identifier-match explanation/copy-safe strict lookup markers, trust/import/static
+  URL/body/header fail-closed markers, plus local DGLAB interchange manifest API
+  route, book.export gate, schema, builder,
   deterministic sorted file entries, source validation, false-claim-flag
   rejection, and metadata-only/no-ZIP-member/no-persisted-bytes/no-ledger/
   no-certification markers, plus

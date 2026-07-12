@@ -1948,6 +1948,31 @@ behavior, legal disposal, or legal-effect claims.
   but it still does not perform real C14N, support multiple references, support
   transform chains, complete broad ECDSA/XML-DSig profile validation, or perform
   full certificate path/revocation/policy validation or legal trust certification.
+- **Trust/import/static request-boundary hardening:** focused API tests now pin
+  TSL/TSA outbound URL policy that rejects unsafe schemes and localhost,
+  loopback, private, link-local, reserved, and unspecified ranges including
+  `0.0.0.0/8`; validates resolved addresses before runtime fetch; pins resolved
+  addresses into `reqwest`; and disables redirects plus system proxy use.
+  Loopback allowance is debug/test-only, exact-origin scoped, RAII-dropped, and
+  has no env-var production bypass. Imported TSL XML with an invalid signature
+  or trust anchor fails closed without promoting or replacing cache entries.
+  `/v1/books/import` is bounded at route and handler level and rejects oversized
+  bodies before staging. Static SPA fallback/assets and API responses carry
+  security headers including CSP `frame-ancestors 'none'`. The pinned tests
+  include `outbound_url_policy_rejects_reserved_ipv4_zero_eight`,
+  `local_trust_url_test_allowance_is_scoped_to_registered_origin`,
+  `settings_put_rejects_private_loopback_metadata_tsl_tsa_urls`,
+  `trust_policy_url_backed_tsl_source_rejects_unsafe_url_before_fetch`,
+  `timestamp_unsafe_tsa_url_fails_before_network_or_pdf_processing`,
+  `import_from_file_with_invalid_signature_persists_failure_without_replacing_cache`,
+  `import_from_unsafe_url_persists_failure_without_fetching_or_cache`,
+  `books_import_rejects_body_above_route_limit_before_staging`,
+  `security_headers_apply_to_static_spa_fallback_and_assets`,
+  `trust_refresh_rejects_unsafe_tsl_source_without_replacing_cache`, and
+  `cc_sign_rejects_real_tsl_source_with_invalid_signature`. This hardening does
+  not exhaustively prove hostile DNS/rebinding resistance, production qualified
+  trust, legal validity, live provider readiness, DGLAB certification, or full
+  release hardening.
 - **Bounded retention execution evidence:** non-destructive retention policies can
   now record bounded archive/no-action execution evidence with approvals,
   acted/skipped targets, reason codes, next steps, and idempotent repeat detection.
@@ -2631,7 +2656,7 @@ behavior, legal disposal, or legal-effect claims.
 - **Recent-landed checkpoint:** `npm run test:checkpoint:recent-landed` and the GitHub Actions
   `recent-landed` job pin the cross-cutting recent work: paper import API tests including
   canonical-conversion preflight markers, archive package and DocTimeStamp evidence tests, local
-  PKCS#12 API signing tests, multi-signature PAdES renewal-plan API tests, bounded retention execution tests, Settings retention policy list/create/patch/dry-run UI markers and non-destructive payload assertions, privacy breach/transfer review-receipt tests, TSL XML-DSig hardening tests including bounded same-document `URI="#id"` fragment markers and raw P-256 ECDSA-SHA256 `r||s` signature markers, MCP
+  PKCS#12 API signing tests, multi-signature PAdES renewal-plan API tests, bounded retention execution tests, Settings retention policy list/create/patch/dry-run UI markers and non-destructive payload assertions, privacy breach/transfer review-receipt tests, TSL XML-DSig hardening tests including bounded same-document `URI="#id"` fragment markers and raw P-256 ECDSA-SHA256 `r||s` signature markers, trust/import/static hardening markers for unsafe TSL/TSA URL refusal, scoped test-only loopback, import fail-closed cache preservation, `/v1/books/import` body limits, security headers, and CC signing invalid-TSL refusal, MCP
   resource/prompt tests, API dashboard reminder policy/default/source-toggle/window/year-boundary
   tests, web contract/client/settings-default/dashboard/ferramentas/signing/i18n/trust tests,
   external-signing envelope UI/link-safety tests,
@@ -2815,13 +2840,18 @@ behavior, legal disposal, or legal-effect claims.
   selection/reporting now consume configured enabled TSL/TSA entries with legacy fallbacks, but
   production trust operation still needs valid live source material, production network
   configuration, signer-certificate trust anchoring to EU LOTL or national trust anchors, certificate
-  path/revocation/policy validation, and policy/legal review. TSA diagnostics use an offline fixture
+  path/revocation/policy validation, and policy/legal review. TSL/TSA outbound URL policy rejects
+  unsafe schemes, localhost, loopback, private, link-local, reserved, and unspecified ranges including
+  `0.0.0.0/8`, validates resolved addresses before fetch, pins the resolved address into `reqwest`,
+  and disables redirects plus system proxy use; the loopback allowance is debug/test-only,
+  exact-origin scoped, RAII-dropped, and has no env-var production bypass. TSA diagnostics use an offline fixture
   probe unless a signing flow explicitly requests a timestamp. Path-backed TSA providers,
   unsupported timestamp digests, and XML-DSig shapes outside the supported minimal verifier remain
   deterministic blockers, not fake live signing; bounded same-document `URI="#id"` handling does
   not change the absence of real C14N, multiple-reference support, broad ECDSA
-  wiring, or legal trust certification. The bundled fixture is advisory and must not be treated as
-  legal trust completion.
+  wiring, legal trust certification, exhaustive hostile DNS/rebinding proof, production qualified trust,
+  live provider readiness, DGLAB certification, or full release hardening. The bundled fixture is
+  advisory and must not be treated as legal trust completion.
 - **Law/legal review:** PT DRE corpus entries need authoritative source text/PDF extraction before
   they can be marked Verified; the current guard intentionally keeps incomplete DRE captures
   Pending, including when those articles are copied through the citation shelf. Generated
