@@ -327,7 +327,10 @@ API after-reload/memory-clear store-pager coverage, shared list/export search
 (`q`), chain/scope filter, and limit normalization markers, numeric
 `next_cursor` typing, Livro-style filters, icon-only clear-control markers,
 JSON/TXT/CSV/HTML export-format markers, and canonical-only PDF/A evidence
-boundaries, external-signing slot evidence
+boundaries, backup recovery-drill `isolated_restore_verified` /
+`isolated_restore_verification` receipt markers, isolated DB material/readback,
+sidecar materialized file/byte counts, temp-cleanup evidence, no live-restore/
+no `ledger.restored` markers, external-signing slot evidence
 metadata rendering, pending/initiated slot operator evidence actions,
 identity-requirement-tagged row builders, no-`complete:true` PATCH payloads,
 and desktop `Cargo.lock` are present, so accidental deletion or rename of the
@@ -350,6 +353,13 @@ markers pin explicit non-destructive evidence states, bounded evidence UI
 copy/payload shape, active/suppressed candidate counts, and suppression-summary
 copy, not physical deletion, anonymization, GDPR erasure, legal disposal
 completion, persisted resolution, or candidate disposal execution.
+The backup recovery-drill markers pin isolated preflight material/readback
+evidence only: DB snapshot materialized/opened/loaded, ledger/readback counts,
+sidecar materialized file/byte counts, cleanup verification, redaction, and
+false live-restore flags. They do not prove live restore execution, live DB
+swap, live sidecar staging, `ledger.restored` append, SQLCipher-at-rest proof,
+RPO/RTO, off-site custody, production backup policy, legal archive
+certification, or FULL coverage.
 They do not certify legal validity, legal retention schedules or approvals,
 retention deletion or anonymization/redaction execution, retention execution
 completion, destructive GDPR erasure, full erasure, template legal effect, DRE

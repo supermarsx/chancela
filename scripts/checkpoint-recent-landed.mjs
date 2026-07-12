@@ -5860,6 +5860,16 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-store/src/recovery.rs",
+    "plus sidecars under a unique temp dir for isolated load/readback evidence",
+    "store restore preflight isolated material/readback marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/src/recovery.rs",
+    "pub sqlcipher_encryption_verified: Option<bool>",
+    "store restore preflight SQLCipher-proof boundary field",
+  );
+  assertFileContains(
+    "crates/chancela-store/src/recovery.rs",
     "member {} digest mismatch",
     "store restore preflight member digest refusal marker",
   );
@@ -5872,6 +5882,16 @@ function assertCheckpointMap() {
     "crates/chancela-store/tests/recovery.rs",
     "preflight does not append restore audit events",
     "store restore preflight no ledger restored event assertion",
+  );
+  assertFileContains(
+    "crates/chancela-store/tests/recovery.rs",
+    "isolated.sidecar_materialized_file_count",
+    "store restore preflight sidecar readback coverage",
+  );
+  assertFileContains(
+    "crates/chancela-store/tests/recovery.rs",
+    "preflight does not rewrite the live DB file",
+    "store restore preflight no live DB mutation coverage",
   );
   assertFileContains(
     "crates/chancela-api/src/recovery.rs",
@@ -5939,9 +5959,34 @@ function assertCheckpointMap() {
     "API backup recovery drill bounded manifest evidence marker",
   );
   assertFileContains(
+    "crates/chancela-api/src/backup_recovery.rs",
+    "pub isolated_restore_verified: bool",
+    "API backup recovery drill isolated verification flag marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/backup_recovery.rs",
+    "pub isolated_restore_verification: BackupRecoveryDrillIsolatedRestoreVerification",
+    "API backup recovery drill isolated verification object marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/backup_recovery.rs",
+    "record as preflight-only isolated snapshot evidence",
+    "API backup recovery drill isolated verification next-step marker",
+  );
+  assertFileContains(
     "crates/chancela-api/tests/backup_recovery_drill.rs",
     "backup_recovery_drill_creates_receipt_from_preflight_and_persists_whitelist_only",
     "API backup recovery drill whitelist-only receipt coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/backup_recovery_drill.rs",
+    'assert_eq!(receipt["isolated_restore_verified"], true);',
+    "API backup recovery drill isolated verified coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/backup_recovery_drill.rs",
+    "run a new recovery drill to record isolated snapshot verification",
+    "API backup recovery drill legacy isolated-not-recorded coverage",
   );
   assertFileContains(
     "crates/chancela-api/tests/backup_recovery_drill.rs",
@@ -5970,6 +6015,21 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "contracts/backup.recovery-drill.json",
+    "\"isolated_restore_verified\": true",
+    "backup recovery drill contract isolated verified marker",
+  );
+  assertFileContains(
+    "contracts/backup.recovery-drill.json",
+    "\"sqlcipher_encryption_verified\": null",
+    "backup recovery drill contract SQLCipher-at-rest not-proven marker",
+  );
+  assertFileContains(
+    "contracts/backup.recovery-drill.json",
+    "isolated sidecar readback covered 2 file(s)",
+    "backup recovery drill contract sidecar readback marker",
+  );
+  assertFileContains(
+    "contracts/backup.recovery-drill.json",
     "\"offsite_custody_proven\": false",
     "backup recovery drill contract custody false marker",
   );
@@ -5990,6 +6050,11 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/api/types.ts",
+    "isolated_restore_verification: BackupRecoveryDrillIsolatedRestoreVerification;",
+    "web backup recovery drill isolated verification contract marker",
+  );
+  assertFileContains(
+    "apps/web/src/api/types.ts",
     "restore_executed: false;",
     "web backup recovery drill false restore flag contract marker",
   );
@@ -5997,6 +6062,16 @@ function assertCheckpointMap() {
     "apps/web/src/contracts/contracts.test.ts",
     "backup.recovery-drill.json → BackupRecoveryDrillReceipt",
     "web backup recovery drill fixture contract coverage",
+  );
+  assertFileContains(
+    "apps/web/src/contracts/contracts.test.ts",
+    "BackupRecoveryDrillReceipt.isolated_restore_verification",
+    "web backup recovery drill isolated verification contract coverage",
+  );
+  assertFileContains(
+    "apps/web/src/contracts/contracts.test.ts",
+    "expect(isolated.status).toBe('verified');",
+    "web backup recovery drill isolated verified contract assertion",
   );
   assertFileContains(
     "apps/web/src/contracts/contracts.test.ts",
@@ -6032,6 +6107,16 @@ function assertCheckpointMap() {
     "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
     "posts a preflight-only recovery drill receipt with exact passphrase",
     "web backup recovery drill exact passphrase coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "Verificação isolada",
+    "web backup recovery drill isolated verification rendering coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "Ficheiros sidecar materializados",
+    "web backup recovery drill sidecar readback rendering coverage",
   );
   assertFileContains(
     "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
@@ -7229,13 +7314,28 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
+    "prove isolated open/load/readback",
+    "CI/E2E hardening plan isolated restore proof marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
     "The current backup recovery-drill slice records preflight-only receipts",
     "CI/E2E hardening plan backup recovery drill receipt marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
+    "`isolated_restore_verified`, `isolated_restore_verification`",
+    "CI/E2E hardening plan backup recovery drill isolated receipt fields marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-E2E-HARDENING-PLAN.md",
     "live restore, DB swap, sidecar staging, ledger restore append",
     "CI/E2E hardening plan backup recovery drill caveat marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "SQLCipher-at-rest proof",
+    "CI/E2E hardening plan backup recovery drill SQLCipher caveat marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -7379,6 +7479,11 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
+    "isolated DB materialization/open/load",
+    "CI/E2E hardening plan backup recovery drill isolated DB checks marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-E2E-HARDENING-PLAN.md",
     "live DB swap, sidecar staging, ledger restore append",
     "CI/E2E hardening plan backup recovery drill focused caveat marker",
   );
@@ -7386,6 +7491,16 @@ function assertCheckpointMap() {
     "docs/CI-E2E-HARDENING-PLAN.md",
     "optional receipt keys",
     "CI/E2E hardening plan backup recovery drill optional keys marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-CHECKPOINTS.md",
+    "backup recovery-drill `isolated_restore_verified` / `isolated_restore_verification` receipt markers",
+    "CI checkpoints backup recovery drill isolated receipt marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "They do not prove live restore execution, live DB\nswap, live sidecar staging, `ledger.restored` append, SQLCipher-at-rest proof",
+    "CI checkpoints backup recovery drill no-claim marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -8284,8 +8399,18 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
+    "`isolated_restore_verified`,\n  `isolated_restore_verification`",
+    "spec coverage backup recovery drill isolated receipt fields marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
     "recovery-drill receipt route records preflight-only bounded evidence",
     "spec coverage recovery drill receipt bounded evidence marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "isolated restore material/readback and cleanup proof",
+    "spec coverage recovery drill isolated material/readback proof marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
@@ -8294,8 +8419,18 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "swap the live DB, stage/replace sidecars",
+    "swap the live DB, stage/replace live sidecars",
     "spec coverage recovery drill no destructive restore caveat marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "SQLCipher-at-rest proof",
+    "spec coverage recovery drill SQLCipher caveat marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "or make coverage FULL",
+    "spec coverage recovery drill no FULL coverage marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",

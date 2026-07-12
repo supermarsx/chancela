@@ -128,20 +128,23 @@ test operating checklist for driving Chancela toward release confidence.
   proof, tenant model, email verification, or credential recovery completion.
 - The current restore preflight slice is non-destructive evidence only: API/store
   verify the archive manifest, every manifest-listed member digest, and ledger
-  integrity from an isolated snapshot, while the web UI exposes bounded
-  manifest/evidence before destructive restore. Treat these checks as restore
-  material screening, not restore execution, DR readiness, custody proof,
-  encryption proof, or legal archive certification.
+  integrity, then materialize the DB plus sidecars in a unique temp workspace to
+  prove isolated open/load/readback, sidecar file/byte readback, and temp cleanup,
+  while the web UI exposes bounded manifest/evidence before destructive restore.
+  Treat these checks as restore material screening, not live restore execution,
+  live DB swap, live sidecar staging, `ledger.restored` append, DR readiness,
+  custody proof, SQLCipher-at-rest proof, or legal archive certification.
 - The current backup recovery-drill slice records preflight-only receipts through
   `POST`/`GET /v1/backup/recovery-drills`. The API calls the existing restore
-  preflight path, persists only bounded sidecar evidence (archive reference,
-  preflight ok/ready/encrypted, ledger verified, manifest counts/bytes/schema/
-  ledger length, optional operator notes/custody location), rejects true
-  overclaim flags, and the web action clears the transient passphrase while
-  preserving exact bytes on submit. Treat this as operator receipt evidence, not
-  live restore, DB swap, sidecar staging, ledger restore append, data deletion,
-  off-site custody proof, RPO/RTO certification, production backup policy, or
-  legal archive certification.
+  preflight path, persists only bounded evidence (archive reference, preflight
+  ok/ready/encrypted, ledger verified, manifest counts/bytes/schema/ledger
+  length, `isolated_restore_verified`, `isolated_restore_verification`, optional
+  operator notes/custody location), rejects true overclaim flags, and the web
+  action clears the transient passphrase while preserving exact bytes on submit.
+  Treat this as operator receipt evidence, not live restore, DB swap, sidecar
+  staging, ledger restore append, data deletion, SQLCipher-at-rest proof,
+  off-site custody proof, RPO/RTO certification, production backup policy, FULL
+  coverage, or legal archive certification.
 - Release and package builds now opt into SQLCipher features by default where the
   supported package scripts and CI metadata require it. Treat this as encrypted
   build-default coverage, not proof of operator key custody, migration success,
@@ -1246,19 +1249,22 @@ settingsDefaults.test.ts contracts.test.ts`.
   `backup_recovery_drill` API coverage pins `POST`/`GET
   /v1/backup/recovery-drills`, restore-preflight-only execution, durable
   `backup-recovery-drills.json` persistence, bounded manifest evidence,
-  passphrase/hash/member-name/app-version redaction, no live DB rewrite, no
-  sidecar replacement, no `ledger.restored` append, and 422 refusal for true
-  overclaim flags. Web/contract coverage pins the receipt fixture, nullable
-  manifest handling, exact transient passphrase submit/clear behavior, the
-  explicit operator-triggered drill action, and no calls to either live restore
-  or the separate restore-preflight modal route from the Data Management drill
-  action. Contract coverage now treats `operator_notes` / `custody_location` as
-  optional receipt keys, matching the API wire contract and fixing the optional
-  key build check without making those fields required. This remains custody
-  receipt evidence only; no destructive restore
-  success, live DB swap, sidecar staging, ledger restore append, data deletion,
-  off-site custody proof, RPO/RTO certification, production backup policy, or
-  legal archive certification is implemented or proven.
+  `isolated_restore_verified` and `isolated_restore_verification` receipt fields,
+  isolated DB materialization/open/load, ledger/readback counts, sidecar
+  materialized file/byte counts, temp cleanup evidence, passphrase/hash/
+  member-name/app-version redaction, no live DB rewrite, no sidecar replacement,
+  no `ledger.restored` append, and 422 refusal for true overclaim flags. Web/
+  contract coverage pins the receipt fixture, nullable manifest handling, exact
+  transient passphrase submit/clear behavior, the explicit operator-triggered
+  drill action, rendered isolated verification evidence, and no calls to either
+  live restore or the separate restore-preflight modal route from the Data
+  Management drill action. Contract coverage now treats `operator_notes` /
+  `custody_location` as optional receipt keys, matching the API wire contract and
+  fixing the optional key build check without making those fields required. This
+  remains custody receipt evidence only; no destructive restore success, live DB
+  swap, sidecar staging, ledger restore append, data deletion, SQLCipher-at-rest
+  proof, off-site custody proof, RPO/RTO certification, production backup policy,
+  FULL coverage, or legal archive certification is implemented or proven.
 - Current working-tree workflow reminder policy checks: focused `cargo test -p
   chancela-api --locked reminder_` coverage pins `workflow.reminders` defaults
   (enabled, dashboard limit 5, due-soon 45 days, attendance lookahead 45 days,
@@ -1412,10 +1418,11 @@ settingsDefaults.test.ts contracts.test.ts`.
   compatibility markers, no-claim fields, and actual decompressed-size
   blocker markers for underdeclared payload/signature/unsupported-META-INF
   members, plus backup recovery-drill route, contract,
-  optional receipt-key tolerance, bounded-manifest receipt, overclaim-refusal,
-  no-restore/no-DB-swap, no sidecar staging, no ledger append, exact-passphrase
-  submit/clear, nullable-manifest, and custody/legal-certification false-flag
-  markers, plus workflow reminder policy/default/UI/dashboard/source-toggle and
+  optional receipt-key tolerance, bounded-manifest receipt, isolated
+  restore/readback receipt evidence, overclaim-refusal, no-restore/no-DB-swap,
+  no sidecar staging, no ledger append, exact-passphrase submit/clear,
+  nullable-manifest, and custody/legal-certification false-flag markers, plus
+  workflow reminder policy/default/UI/dashboard/source-toggle and
   year-boundary status markers, plus platform forwarded-log route,
   `platform.logs.write` seed-default, missing/invalid-bearer unaudited,
   validation,

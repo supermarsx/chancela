@@ -339,13 +339,17 @@ Implementation checkpoints covered here:
   created timestamp, total bytes, file count/bytes, store schema version, ledger
   length, and ledger verification status. The API/store restore preflight path
   verifies the archive manifest, every manifest-listed member digest, and ledger
-  integrity in an isolated snapshot, then cleans up the temporary preflight copy
-  without swapping the live DB, staging sidecars, appending `ledger.restored`, or
-  reloading live state. `POST`/`GET /v1/backup/recovery-drills` now records an
-  operator-triggered, preflight-only receipt from that path, persists only
-  bounded sidecar evidence (archive reference, preflight ok/ready/encrypted,
-  ledger verified, manifest counts/bytes/schema/ledger length, and optional
-  operator notes/custody location), and rejects true overclaim flags for
+  integrity, then materializes the snapshot DB plus sidecars under a unique temp
+  workspace for isolated open/load/readback evidence. That preflight reads back
+  ledger/entity/book/act counts, sidecar root/file/byte counts, and cleanup
+  status without swapping the live DB, staging live sidecars, appending
+  `ledger.restored`, reloading live state, or mutating live DB/sidecars.
+  `POST`/`GET /v1/backup/recovery-drills` now records an operator-triggered,
+  preflight-only receipt from that path, persists only bounded evidence (archive
+  reference, preflight ok/ready/encrypted, ledger verified, manifest counts/
+  bytes/schema/ledger length, `isolated_restore_verified`,
+  `isolated_restore_verification`, and optional operator notes/custody
+  location), and rejects true overclaim flags for
   `restore_executed`, `live_db_swapped`, `sidecars_staged`,
   `ledger_restored_appended`, `data_deleted`, `offsite_custody_proven`, and
   `legal_archive_certified`. The web UI exposes bounded manifest/evidence before
@@ -361,11 +365,12 @@ Implementation checkpoints covered here:
   app version details, and passphrases from the DOM. The CAE obtainer module
   documentation also drops stale skeleton-status wording in favor of the current
   bounded implementation/unavailable-source status. This is operator UI,
-  non-destructive restore preflight and recovery-drill receipt evidence,
-  acceptance-cleanup, and regression coverage only; it is not restore execution,
-  production backup policy, RPO/RTO certification, disaster-recovery readiness,
-  off-site custody proof, encryption proof, legal archive certification, or new
-  CAE provider/legal behavior.
+  non-destructive restore preflight and isolated recovery-drill receipt
+  evidence, acceptance-cleanup, and regression coverage only; it is not live
+  restore execution, live DB swap, live sidecar staging, `ledger.restored`
+  append, production backup policy, RPO/RTO certification, disaster-recovery
+  readiness, off-site custody proof, SQLCipher-at-rest proof, legal archive
+  certification, FULL coverage, or new CAE provider/legal behavior.
 - Working tree keeps Template Catalog/UX/CI **PARTIAL**: the embedded template
   catalog now loads 101 JSON template assets (101 total / 41 CSC), including
   standalone
@@ -1537,10 +1542,12 @@ Implementation checkpoints covered here:
 
 Recovery/backup matrix note: the current recovery-drill receipt slice belongs to
 the Data, Architecture, Workflow, UX, and Legal/Compliance boundaries as bounded
-preflight receipt evidence. It does not reduce the remaining PARTIAL status for
-destructive restore success, live DB swap, sidecar staging, ledger restore
-append, off-site custody proof, RPO/RTO certification, production backup policy,
-or legal archive certification.
+preflight receipt evidence, now including isolated restore materialization,
+snapshot readback, sidecar readback, and cleanup proof. It does not reduce the
+remaining PARTIAL status for destructive restore success, live DB swap, live
+sidecar staging, `ledger.restored` append, SQLCipher-at-rest proof, off-site
+custody proof, RPO/RTO certification, production backup policy, legal archive
+certification, or FULL coverage.
 
 Current matrix alignment note: the `platform_logs` and
 `backup_recovery_drills` data-status categories are Data/Architecture telemetry
@@ -1608,14 +1615,16 @@ behavior, legal disposal, or legal-effect claims.
   names, digests, app version, or secret-like payload data. Focused tests cover
   the operation list, durable-store gating, success/failure rendering, status
   invalidation, and redaction boundaries. The restore preflight surface is
-  read-only: API/store verify the archive manifest, member digests, and isolated
-  snapshot ledger integrity, while the web UI shows bounded manifest/evidence
-  before any destructive restore execution. Data Management also exposes an
+  read-only: API/store verify the archive manifest and member digests, then
+  materialize the DB and sidecars in a unique temp workspace to prove isolated
+  open/load/readback, ledger verification, sidecar file/byte readback, and temp
+  cleanup without mutating live DB/sidecars. Data Management also exposes an
   explicit recovery-drill action that posts to `POST /v1/backup/recovery-drills`
   and records a preflight-only custody receipt retrievable through `GET
-  /v1/backup/recovery-drills`. The receipt persists only bounded sidecar evidence
+  /v1/backup/recovery-drills`. The receipt persists only bounded evidence
   (archive reference, preflight ok/ready/encrypted, ledger verified, manifest
-  counts/bytes/schema/ledger length, optional operator notes/custody location),
+  counts/bytes/schema/ledger length, `isolated_restore_verified`,
+  `isolated_restore_verification`, optional operator notes/custody location),
   and the web contract checker treats `operator_notes` / `custody_location` as
   optional wire keys matching the API contract. The UI clears the transient
   passphrase after submit while preserving exact bytes in the request, handles
@@ -1625,10 +1634,11 @@ behavior, legal disposal, or legal-effect claims.
   updated as acceptance cleanup so it no longer describes implemented Rev.3/Rev.4
   obtain logic as a skeleton. This is UI/status/documentation hygiene,
   non-destructive restore preflight evidence, and bounded recovery-drill receipt
-  evidence only, not restore execution, destructive restore success, live DB
-  swap, sidecar staging, ledger restore append, RPO/RTO certification,
-  production backup policy, DR readiness, backup custody proof, encryption
-  proof, legal archive certification, or new CAE provider behavior.
+  evidence only, not live restore execution, destructive restore success, live
+  DB swap, live sidecar staging, `ledger.restored` append, RPO/RTO
+  certification, production backup policy, DR readiness, backup custody proof,
+  SQLCipher-at-rest proof, legal archive certification, FULL coverage, or new
+  CAE provider behavior.
 - **Trust-source provider management:** Settings now exposes settings-backed
   management for multiple TSL sources and TSA providers, with localized labels
   and focused `SettingsPage` coverage for rendering, autosave, default TSA
@@ -2877,8 +2887,9 @@ behavior, legal disposal, or legal-effect claims.
   retained-export dry-run/minimum-age/keep-latest guardrails and dry-run `would_delete_*` planning
   counters that leave `deleted_*` at zero, and archive disposal execution is
   non-destructive evidence only; the web hot-backup button creates and displays a manifest, and the
-  recovery-drill receipt route records preflight-only bounded evidence, but neither proves restore
-  success, custody policy, RPO/RTO, production backup policy, or legal archive certification; deeper backend per-table payload statistics, actual physical deletion, broader retention/disposal policy
+  recovery-drill receipt route records preflight-only bounded evidence including isolated restore
+  material/readback and cleanup proof, but neither proves live restore/swap, custody policy, RPO/RTO,
+  production backup policy, SQLCipher-at-rest proof, or legal archive certification; deeper backend per-table payload statistics, actual physical deletion, broader retention/disposal policy
   automation, GDPR erasure, export-retention policy controls beyond the current cleanup guardrails,
   incident-response/transfer-control automation beyond registers, executed storage
   migration/export-restore and production key-secret rotation tooling beyond the current key-ops
@@ -3102,13 +3113,15 @@ behavior, legal disposal, or legal-effect claims.
   flows, or retire plaintext data.
 - Restore preflight and backup recovery-drill receipts are non-destructive
   archive screening/receipt evidence: API/store verify the archive manifest,
-  member digests, and ledger integrity in an isolated snapshot, the receipt route
-  records only bounded sidecar evidence, and the web surfaces expose only bounded
+  member digests, ledger integrity, isolated DB open/load/readback, sidecar
+  material/readback counts, and temp cleanup; the receipt route records only
+  bounded manifest plus `isolated_restore_verified` /
+  `isolated_restore_verification` evidence; and the web surfaces expose bounded
   manifest/evidence before destructive restore. They do not execute restore,
-  swap the live DB, stage/replace sidecars, append ledger restore events, delete
-  data, prove off-site custody, certify RPO/RTO or production backup policy,
-  prove backup encryption custody, establish disaster-recovery readiness, provide
-  legal archive acceptance, or certify data-lifecycle compliance.
+  swap the live DB, stage/replace live sidecars, append `ledger.restored`, delete
+  data, prove SQLCipher at rest, prove off-site custody, certify RPO/RTO or
+  production backup policy, establish disaster-recovery readiness, provide legal
+  archive acceptance, certify data-lifecycle compliance, or make coverage FULL.
 - Per-book import preflight is an operator-safety preview only. It does not create or certify a
   legal archive, provide official DGLAB acceptance or legal acceptance, stage or retain imported
   bundles, create an `import_id`, add `ledger.imported`, persist `imported_books`, or validate a
