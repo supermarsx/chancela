@@ -127,6 +127,31 @@ const bundle: DocumentBundle = {
   },
 };
 
+const importedDocumentReviewNotice =
+  'Operator review records a preservation workflow decision only; it does not run OCR, convert bytes, replace the canonical PDF/A, or claim legal acceptance.';
+
+const importedDocumentReviewGuardrailChecklist = [
+  'preserved_original_bytes_remain_non_canonical_evidence',
+  'canonical_pdfa_record_is_not_replaced',
+  'signed_pdf_artifact_is_not_created_or_validated',
+  'ocr_or_conversion_output_is_not_promoted_to_canonical_records',
+];
+
+const importedDocumentPreservationPolicy = {
+  review_state: 'operator_review_required',
+  requires_operator_review: true,
+  requires_ocr_review: false,
+  canonical_record_status: 'not_canonical_record',
+  signed_artifact_status: 'not_signed_artifact',
+  review_guardrail_checklist: importedDocumentReviewGuardrailChecklist,
+  canonical_conversion_status: 'not_performed_non_canonical_original_only',
+  original_bytes_preservation_status: 'preserved_original_bytes',
+  preservation_action: 'preserve_original_bytes_as_non_canonical_evidence_if_needed',
+  canonical_conversion_performed: false,
+  canonical_pdfa_generated: false,
+  legal_acceptance_claimed: false,
+};
+
 const importedDocument: ImportedDocumentView = {
   id: 'import-1',
   act_id: 'act-1',
@@ -139,7 +164,42 @@ const importedDocument: ImportedDocumentView = {
   classification: 'imported_pdf_non_canonical_evidence',
   imported_at: '2026-07-09T10:15:30Z',
   imported_by: 'amelia.marques',
+  operator_review_status: 'reviewed_non_canonical_original_only',
+  operator_reviewed_at: '2026-07-10T09:30:00Z',
+  operator_reviewed_by: 'amelia.operator',
+  operator_review_note: 'Checked as non-canonical technical evidence only.',
+  acknowledged_guardrail_ids: importedDocumentReviewGuardrailChecklist,
+  review_history: [
+    {
+      decision_index: 1,
+      review_status: 'reviewed_non_canonical_original_only',
+      reviewed_at: '2026-07-10T09:30:00Z',
+      reviewed_by: 'amelia.operator',
+      review_note: 'Checked as non-canonical technical evidence only.',
+      acknowledged_guardrail_ids: importedDocumentReviewGuardrailChecklist,
+      bytes_in_payload: false,
+      ocr_performed: false,
+      canonical_conversion_performed: false,
+      canonical_pdfa_generated: false,
+      signed_artifact_created_or_validated: false,
+      legal_acceptance_claimed: false,
+      certification_claimed: false,
+    },
+  ],
+  operator_review_notice: importedDocumentReviewNotice,
   non_canonical: true,
+  requires_ocr_review: false,
+  canonical_record_status: 'not_canonical_record',
+  signed_artifact_status: 'not_signed_artifact',
+  review_guardrail_checklist: importedDocumentReviewGuardrailChecklist,
+  canonical_conversion_status: 'not_performed_non_canonical_original_only',
+  canonical_conversion_performed: false,
+  legal_acceptance_claimed: false,
+  preservation_policy: {
+    ...importedDocumentPreservationPolicy,
+    review_state: 'reviewed_non_canonical_original_only',
+    requires_operator_review: false,
+  },
   legal_notice:
     'Imported document preserved as non-canonical evidence only; it does not replace the generated PDF/A or signed PDF, and no legal validity, PDF/A conformance, or signature validity is claimed.',
   bytes_download: '/v1/documents/imported/import-1/bytes',
@@ -193,31 +253,6 @@ const absentOwnerEvidence: GeneratedDocumentDispatchEvidenceList = {
       bytes_in_payload: false,
     },
   ],
-};
-
-const importedDocumentReviewNotice =
-  'Operator review records a preservation workflow decision only; it does not run OCR, convert bytes, replace the canonical PDF/A, or claim legal acceptance.';
-
-const importedDocumentReviewGuardrailChecklist = [
-  'preserved_original_bytes_remain_non_canonical_evidence',
-  'canonical_pdfa_record_is_not_replaced',
-  'signed_pdf_artifact_is_not_created_or_validated',
-  'ocr_or_conversion_output_is_not_promoted_to_canonical_records',
-];
-
-const importedDocumentPreservationPolicy = {
-  review_state: 'operator_review_required',
-  requires_operator_review: true,
-  requires_ocr_review: false,
-  canonical_record_status: 'not_canonical_record',
-  signed_artifact_status: 'not_signed_artifact',
-  review_guardrail_checklist: importedDocumentReviewGuardrailChecklist,
-  canonical_conversion_status: 'not_performed_non_canonical_original_only',
-  original_bytes_preservation_status: 'preserved_original_bytes',
-  preservation_action: 'preserve_original_bytes_as_non_canonical_evidence_if_needed',
-  canonical_conversion_performed: false,
-  canonical_pdfa_generated: false,
-  legal_acceptance_claimed: false,
 };
 
 const importedDocumentPendingReview: ImportedDocumentView = {
@@ -1431,9 +1466,9 @@ describe('ActDocumentPanel — imported evidence documents', () => {
     expect(within(metadata).getByText('Não declarado')).toBeTruthy();
     expect(within(metadata).getByText('application/octet-stream')).toBeTruthy();
     expect(within(metadata).getByText('Não canónico')).toBeTruthy();
-    expect(within(summary).getByText(/Preservação dos bytes originais não indicada/i)).toBeTruthy();
-    expect(within(summary).getByText(/metadados carregados/i)).toBeTruthy();
-    expect(within(summary).queryByText(/Bytes preservados/)).toBeNull();
+    expect(within(summary).getByText(/Bytes preservados/)).toBeTruthy();
+    expect(within(summary).getByText(/digest SHA-256/i)).toBeTruthy();
+    expect(within(summary).getByText(/aceitação legal: não/i)).toBeTruthy();
     expect(calls.some((url) => url.includes(`/v1/documents/imported/${longId}`))).toBe(true);
 
     fireEvent.click(within(firstItem).getByRole('button', { name: 'Descarregar importado' }));
@@ -1480,8 +1515,8 @@ describe('ActDocumentPanel — imported evidence documents', () => {
     expect(within(summary).getByText('Resumo de profundidade da revisão')).toBeTruthy();
     expect(within(summary).getByText(/Bytes preservados/)).toBeTruthy();
     expect(within(summary).getByText(/digest SHA-256/i)).toBeTruthy();
-    expect(within(summary).getByText(/estado de revisão pendente/i)).toBeTruthy();
-    expect(within(summary).getByText(/nota do operador não indicada/i)).toBeTruthy();
+    expect(within(summary).getByText(/Revisão do operador necessária/i)).toBeTruthy();
+    expect(within(summary).getByText(/nota do operador\s+não indicada/i)).toBeTruthy();
     expect(within(summary).getByText(/Histórico técnico: sem decisões/i)).toBeTruthy();
     expect(within(summary).getByText(/OCR, conversão, substituição de PDF\/A/i)).toBeTruthy();
     expect(within(summary).getByText(/PDF assinado, validação de assinatura, selo/i)).toBeTruthy();
@@ -1490,10 +1525,13 @@ describe('ActDocumentPanel — imported evidence documents', () => {
     expect(within(summary).queryByText(/Assinatura válida/i)).toBeNull();
     expect(within(summary).queryByText(/Conversão concluída/i)).toBeNull();
     expect(within(summary).queryByText(/PDF\/A certificado/i)).toBeNull();
-    expect(within(receipt).getByText('Sem recibo de revisão')).toBeTruthy();
-    expect(within(receipt).queryByText('Revisto em')).toBeNull();
-    expect(within(receipt).queryByText('Revisto por')).toBeNull();
-    expect(within(receipt).queryByText('Nota registada')).toBeNull();
+    expect(within(receipt).getByText('Estado do recibo')).toBeTruthy();
+    expect(within(receipt).getByText('Revisão do operador necessária')).toBeTruthy();
+    expect(within(receipt).getByText('Revisto em')).toBeTruthy();
+    expect(within(receipt).getByText('Revisto por')).toBeTruthy();
+    expect(within(receipt).getByText('Nota registada')).toBeTruthy();
+    expect(within(receipt).getAllByText('Não indicado no recibo')).toHaveLength(2);
+    expect(within(receipt).getByText('Sem nota registada')).toBeTruthy();
     expect(within(receipt).getByText('OCR')).toBeTruthy();
     expect(within(receipt).getByText('Não efetuado por esta revisão.')).toBeTruthy();
     expect(within(receipt).getByText('Conversão')).toBeTruthy();
@@ -1600,9 +1638,12 @@ describe('ActDocumentPanel — imported evidence documents', () => {
     expect(within(summary).getByText(/Bytes preservados/)).toBeTruthy();
     expect(within(summary).getByText(/aceitação legal: não/i)).toBeTruthy();
     expect(within(summary).getByText(/Histórico técnico: sem decisões/i)).toBeTruthy();
-    expect(within(receipt).getByText('Sem recibo de revisão')).toBeTruthy();
-    expect(within(receipt).queryByText('Limites exigidos')).toBeNull();
-    expect(within(receipt).queryByText('Limites reconhecidos')).toBeNull();
+    expect(within(receipt).getByText('Estado do recibo')).toBeTruthy();
+    expect(within(receipt).getByText('Revisão do operador necessária')).toBeTruthy();
+    expect(within(receipt).getByText('Limites exigidos')).toBeTruthy();
+    expect(within(receipt).getByText('Limites reconhecidos')).toBeTruthy();
+    expect(within(receipt).getAllByText('Não indicado no recibo')).toHaveLength(2);
+    expect(within(receipt).getByText('Sem nota registada')).toBeTruthy();
     expect(within(metadata).getByText('Limites de preservação')).toBeTruthy();
     expect(within(metadata).getByText('Registo canónico')).toBeTruthy();
     expect(within(metadata).getByText('Não substitui o PDF/A canónico preservado.')).toBeTruthy();
