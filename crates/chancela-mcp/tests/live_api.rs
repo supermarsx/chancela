@@ -7,6 +7,8 @@ use chancela_mcp::{EnabledTools, McpConfig, McpServer, Secret};
 use serde_json::{Value, json};
 use tokio::sync::RwLock;
 
+const TEST_PASSWORD: &str = "Teste-Forte7!X";
+
 struct LiveApi {
     base_url: String,
     handle: tokio::task::JoinHandle<()>,
@@ -312,7 +314,11 @@ async fn bootstrap_owner_session(client: &reqwest::Client, base_url: &str) -> St
         base_url,
         "/api/v1/users",
         None,
-        json!({ "username": "owner", "display_name": "Owner" }),
+        json!({
+            "username": "owner",
+            "display_name": "Owner",
+            "password": TEST_PASSWORD
+        }),
     )
     .await;
     assert_eq!(status, 201, "owner bootstraps: {user}");
@@ -323,7 +329,7 @@ async fn bootstrap_owner_session(client: &reqwest::Client, base_url: &str) -> St
         base_url,
         "/api/v1/session",
         None,
-        json!({ "user_id": user_id }),
+        json!({ "user_id": user_id, "password": TEST_PASSWORD }),
     )
     .await;
     assert_eq!(status, 200, "session opens: {session}");
