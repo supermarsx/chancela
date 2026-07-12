@@ -7,6 +7,8 @@ import { SEAL_IMAGE_MAX_BYTES } from '../../../api/types';
 import {
   bytesToBase64,
   buildSealBody,
+  decodedBase64ByteSize,
+  imageContentFromSeal,
   nameDateTemplate,
   readSealImage,
   sealImageFormatFromMime,
@@ -119,10 +121,36 @@ describe('buildSealBody', () => {
       base64: 'QUJD',
       format: 'jpeg',
       previewUrl: 'blob:mock',
+      revokePreview: true,
       byteSize: 3,
     });
     expect(body.image_base64).toBe('QUJD');
     expect(body.image_format).toBe('jpeg');
     expect(body.template).toBeUndefined();
+  });
+});
+
+describe('imageContentFromSeal', () => {
+  it('reconstructs a preview/re-apply content object from an existing image seal DTO', () => {
+    const content = imageContentFromSeal({
+      invisible: false,
+      page: 1,
+      x: 10,
+      y: 20,
+      w: 120,
+      h: 48,
+      image_base64: 'QUJDRA==',
+      image_format: 'png',
+    });
+
+    expect(content).toEqual({
+      kind: 'image',
+      base64: 'QUJDRA==',
+      format: 'png',
+      previewUrl: 'data:image/png;base64,QUJDRA==',
+      revokePreview: false,
+      byteSize: 4,
+    });
+    expect(decodedBase64ByteSize('QUJDRA==')).toBe(4);
   });
 });

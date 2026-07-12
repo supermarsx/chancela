@@ -16,6 +16,42 @@ import type {
   SignatureStatusView,
 } from '../../api/types';
 
+vi.mock('./seal-designer', async () => {
+  const React = await import('react');
+  return {
+    SealDesigner: ({
+      onApply,
+    }: {
+      onApply: (seal: {
+        invisible: false;
+        page: number;
+        x: number;
+        y: number;
+        w: number;
+        h: number;
+        template: { kind: 'name_date'; name: string; date: string };
+      }) => void;
+    }) =>
+      React.createElement(
+        'button',
+        {
+          type: 'button',
+          onClick: () =>
+            onApply({
+              invisible: false,
+              page: 2,
+              x: 10,
+              y: 20,
+              w: 120,
+              h: 48,
+              template: { kind: 'name_date', name: 'Amélia Marques', date: '2026-07-12' },
+            }),
+        },
+        'Aplicar selo de teste',
+      ),
+  };
+});
+
 const sealedAct: ActView = {
   id: 'act-1',
   book_id: 'book-1',
@@ -1239,6 +1275,74 @@ describe('SigningPanel — local PKCS#12 software certificate', () => {
       screen.getByText(/evidência técnica avançada apenas; não é assinatura qualificada/),
     ).toBeTruthy();
     expect(screen.queryByLabelText('Palavra-passe do certificado')).toBeNull();
+  });
+
+  it('threads an applied visible seal into the local PKCS#12 signing request', async () => {
+    let requestBody: Record<string, unknown> | null = null;
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      const method = init?.method ?? 'GET';
+      if (url.endsWith('/signature/providers')) return json([]);
+      if (url.includes('/signature/local/pkcs12/sign')) {
+        requestBody = JSON.parse(String(init?.body));
+        return json({
+          document_id: 'doc-1',
+          act_id: 'act-1',
+          family: 'LocalPkcs12SoftwareCertificate',
+          evidentiary_level: 'AdvancedLocalTechnicalEvidence',
+          trusted_list_status: null,
+          signing_time: '2026-07-06T10:00:00Z',
+          signed_at: '2026-07-06T10:00:05Z',
+          signed_pdf_digest: localPkcs12SignedStatus.signed!.signed_pdf_digest,
+          signer_cert_subject: 'CN=Amélia Marques,O=Encosto Estratégico Lda',
+          signer_cert_sha256: 'b1'.repeat(32),
+          certificate_chain_count: 1,
+          timestamp_token: false,
+          finalization: 'finalizado',
+          qualification_claimed: false,
+          legal_status_claimed: false,
+          status_scope: 'local_technical_evidence_only',
+          notice: 'technical evidence only',
+        });
+      }
+      if (url.endsWith('/signature') && method === 'GET') return json(unsignedStatus);
+      return emptyInviteList(url, method) ?? Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(<SigningPanel act={sealedAct} entityName="Encosto Estratégico Lda" />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Posicionar selo visível' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Aplicar selo de teste' }));
+    expect(await screen.findByText('Selo visível posicionado na página 3.')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Assinar com PKCS#12 local' }));
+    const file = new File(['pfx-bytes'], 'signer.pfx', { type: 'application/x-pkcs12' });
+    Object.defineProperty(file, 'arrayBuffer', {
+      value: () => Promise.resolve(new TextEncoder().encode('pfx-bytes').buffer),
+    });
+    fireEvent.change(await screen.findByLabelText('Ficheiro PKCS#12/PFX'), {
+      target: { files: [file] },
+    });
+    fireEvent.change(screen.getByLabelText('Palavra-passe do certificado'), {
+      target: { value: 'pfx-passphrase' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Assinar localmente' }));
+
+    await waitFor(() =>
+      expect(requestBody).toMatchObject({
+        pkcs12_base64: btoa('pfx-bytes'),
+        passphrase: 'pfx-passphrase',
+        seal: {
+          invisible: false,
+          page: 2,
+          x: 10,
+          y: 20,
+          w: 120,
+          h: 48,
+          template: { kind: 'name_date', name: 'Amélia Marques', date: '2026-07-12' },
+        },
+      }),
+    );
   });
 });
 

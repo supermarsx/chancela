@@ -24,6 +24,7 @@ import {
 } from './coordinates';
 import {
   buildSealBody,
+  imageContentFromSeal,
   nameDateTemplate,
   readSealImage,
   signedByTemplate,
@@ -34,8 +35,18 @@ import { usePdfPage } from './usePdfPage';
 
 /** The CSS width the page is fit into (the container's inner width caps the actual render). */
 const DEFAULT_FIT_WIDTH = 560;
+/** Stable fallback while pdf.js is still loading the real page geometry (US Letter portrait). */
+const FALLBACK_RENDERED_SIZE = {
+  width: DEFAULT_FIT_WIDTH,
+  height: Math.round(DEFAULT_FIT_WIDTH * (11 / 8.5)),
+};
 /** A sensible starting seal rectangle (points) when the user opts in without drawing first. */
 const DEFAULT_RECT: PdfRect = { x: 72, y: 72, w: 200, h: 80 };
+const MIN_CANVAS_BOX_SIZE = 8;
+const KEYBOARD_STEP_PT = 1;
+const KEYBOARD_FAST_STEP_PT = 10;
+const ARIA_KEY_SHORTCUTS =
+  'ArrowUp ArrowDown ArrowLeft ArrowRight Shift+ArrowUp Shift+ArrowDown Shift+ArrowLeft Shift+ArrowRight';
 
 type ContentKind = 'name_date' | 'signed_by' | 'image';
 
@@ -109,7 +120,9 @@ export function SealDesigner({
   const [heading, setHeading] = useState(
     initialSeal?.template?.kind === 'signed_by' ? initialSeal.template.heading : '',
   );
-  const [image, setImage] = useState<Extract<SealContent, { kind: 'image' }> | null>(null);
+  const [image, setImage] = useState<Extract<SealContent, { kind: 'image' }> | null>(() =>
+    imageContentFromSeal(initialSeal),
+  );
   const [imageError, setImageError] = useState<SealImageError | null>(null);
 
   // Load the PDF bytes once.
@@ -137,7 +150,7 @@ export function SealDesigner({
   // Revoke an image preview URL when it is replaced or the designer unmounts.
   useEffect(() => {
     return () => {
-      if (image) URL.revokeObjectURL(image.previewUrl);
+      if (image?.revokePreview) URL.revokeObjectURL(image.previewUrl);
     };
   }, [image]);
 
@@ -154,6 +167,69 @@ export function SealDesigner({
   const commitBox = useCallback((box: CanvasBox, geo: PageGeometry) => {
     setRect(canvasBoxToPdfRect(clampBoxToPage(box, geo), geo));
   }, []);
+
+  function keyboardStepPx(e: React.KeyboardEvent): number {
+    return (e.shiftKey ? KEYBOARD_FAST_STEP_PT : KEYBOARD_STEP_PT) * (geometry?.scale ?? 1);
+  }
+
+  function moveBoxWithKeyboard(e: React.KeyboardEvent) {
+    if (!geometry || !overlayBox) return;
+    const step = keyboardStepPx(e);
+    let dx = 0;
+    let dy = 0;
+    switch (e.key) {
+      case 'ArrowLeft':
+        dx = -step;
+        break;
+      case 'ArrowRight':
+        dx = step;
+        break;
+      case 'ArrowUp':
+        dy = -step;
+        break;
+      case 'ArrowDown':
+        dy = step;
+        break;
+      default:
+        return;
+    }
+    e.preventDefault();
+    e.stopPropagation();
+    commitBox({ ...overlayBox, left: overlayBox.left + dx, top: overlayBox.top + dy }, geometry);
+  }
+
+  function resizeBoxWithKeyboard(e: React.KeyboardEvent) {
+    if (!geometry || !overlayBox) return;
+    const step = keyboardStepPx(e);
+    let dw = 0;
+    let dh = 0;
+    switch (e.key) {
+      case 'ArrowLeft':
+        dw = -step;
+        break;
+      case 'ArrowRight':
+        dw = step;
+        break;
+      case 'ArrowUp':
+        dh = -step;
+        break;
+      case 'ArrowDown':
+        dh = step;
+        break;
+      default:
+        return;
+    }
+    e.preventDefault();
+    e.stopPropagation();
+    commitBox(
+      {
+        ...overlayBox,
+        width: Math.max(MIN_CANVAS_BOX_SIZE, overlayBox.width + dw),
+        height: Math.max(MIN_CANVAS_BOX_SIZE, overlayBox.height + dh),
+      },
+      geometry,
+    );
+  }
 
   // Window-level drag: track move/up on the document so a fast drag that leaves the surface still
   // updates and releases cleanly.
@@ -183,8 +259,8 @@ export function SealDesigner({
           geo,
         );
       } else {
-        const width = Math.max(8, drag.startBox.width + (p.x - drag.originX));
-        const height = Math.max(8, drag.startBox.height + (p.y - drag.originY));
+        const width = Math.max(MIN_CANVAS_BOX_SIZE, drag.startBox.width + (p.x - drag.originX));
+        const height = Math.max(MIN_CANVAS_BOX_SIZE, drag.startBox.height + (p.y - drag.originY));
         commitBox({ left: drag.startBox.left, top: drag.startBox.top, width, height }, geo);
       }
     }
@@ -235,14 +311,14 @@ export function SealDesigner({
     const result = await readSealImage(file);
     if (!result.ok) {
       setImage((prev) => {
-        if (prev) URL.revokeObjectURL(prev.previewUrl);
+        if (prev?.revokePreview) URL.revokeObjectURL(prev.previewUrl);
         return null;
       });
       setImageError(result.error);
       return;
     }
     setImage((prev) => {
-      if (prev) URL.revokeObjectURL(prev.previewUrl);
+      if (prev?.revokePreview) URL.revokeObjectURL(prev.previewUrl);
       return result.content;
     });
   }
@@ -274,7 +350,20 @@ export function SealDesigner({
     onApply(buildSealBody(pageIndex, rect, content));
   }
 
-  const rendered = geometry ? renderedSize(geometry) : { width: DEFAULT_FIT_WIDTH, height: 0 };
+  const rendered = geometry ? renderedSize(geometry) : FALLBACK_RENDERED_SIZE;
+  const placementText = rect
+    ? t('signing.seal.designer.placement.summary', {
+        page: String(pageIndex + 1),
+        w: String(Math.round(rect.w)),
+        h: String(Math.round(rect.h)),
+        x: String(Math.round(rect.x)),
+        y: String(Math.round(rect.y)),
+      })
+    : t('signing.seal.designer.placement.hint');
+  const moveControlLabel = `${t('signing.seal.designer.position.legend')}: ${placementText}`;
+  const resizeControlLabel = `${t('signing.seal.designer.position.w')} / ${t(
+    'signing.seal.designer.position.h',
+  )}: ${placementText}`;
 
   return (
     <section className="seal-designer" aria-label={t('signing.seal.designer.title')}>
@@ -316,7 +405,13 @@ export function SealDesigner({
           <div
             ref={surfaceRef}
             className="seal-designer__surface"
-            style={{ position: 'relative', width: rendered.width, height: rendered.height }}
+            style={{
+              position: 'relative',
+              width: rendered.width,
+              height: rendered.height,
+              minHeight: rendered.height,
+              aspectRatio: `${rendered.width} / ${rendered.height}`,
+            }}
             onMouseDown={startDraw}
             role="application"
             aria-label={t('signing.seal.designer.surface.aria')}
@@ -336,25 +431,37 @@ export function SealDesigner({
                   width: overlayBox.width,
                   height: overlayBox.height,
                 }}
-                onMouseDown={startMove}
               >
-                {contentKind === 'image' && image ? (
-                  <img
-                    src={image.previewUrl}
-                    alt=""
-                    className="seal-designer__box-image"
-                    style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-                  />
-                ) : (
-                  <span className="seal-designer__box-label">
-                    {name || t('signing.seal.designer.box.placeholder')}
-                  </span>
-                )}
-                <span
+                <button
+                  type="button"
+                  className="seal-designer__move-control"
+                  data-testid="seal-move-control"
+                  onMouseDown={startMove}
+                  onKeyDown={moveBoxWithKeyboard}
+                  aria-label={moveControlLabel}
+                  aria-keyshortcuts={ARIA_KEY_SHORTCUTS}
+                >
+                  {contentKind === 'image' && image ? (
+                    <img
+                      src={image.previewUrl}
+                      alt=""
+                      className="seal-designer__box-image"
+                      style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                    />
+                  ) : (
+                    <span className="seal-designer__box-label">
+                      {name || t('signing.seal.designer.box.placeholder')}
+                    </span>
+                  )}
+                </button>
+                <button
+                  type="button"
                   className="seal-designer__handle"
                   data-testid="seal-resize-handle"
                   onMouseDown={startResize}
-                  aria-hidden="true"
+                  onKeyDown={resizeBoxWithKeyboard}
+                  aria-label={resizeControlLabel}
+                  aria-keyshortcuts={ARIA_KEY_SHORTCUTS}
                 />
               </div>
             ) : null}
@@ -365,17 +472,7 @@ export function SealDesigner({
               {t('signing.seal.designer.error')}
             </p>
           ) : (
-            <p className="seal-designer__hint">
-              {rect
-                ? t('signing.seal.designer.placement.summary', {
-                    page: String(pageIndex + 1),
-                    w: String(Math.round(rect.w)),
-                    h: String(Math.round(rect.h)),
-                    x: String(Math.round(rect.x)),
-                    y: String(Math.round(rect.y)),
-                  })
-                : t('signing.seal.designer.placement.hint')}
-            </p>
+            <p className="seal-designer__hint">{placementText}</p>
           )}
           {error ? <span hidden>{String(error)}</span> : null}
         </div>

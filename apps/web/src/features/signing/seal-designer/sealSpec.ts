@@ -23,8 +23,10 @@ export type SealContent =
       /** Base64 of the raster bytes (no data-URL prefix) — what goes on the wire. */
       base64: string;
       format: SealImageFormat;
-      /** An object URL for the on-screen preview; the caller revokes it on replace/unmount. */
+      /** A preview URL for the on-screen seal box (object URL for uploads, data URL for edits). */
       previewUrl: string;
+      /** True when the preview URL is an object URL minted by the designer and must be revoked. */
+      revokePreview: boolean;
       /** The decoded byte size, for the "N KB" hint. */
       byteSize: number;
     };
@@ -57,6 +59,33 @@ export function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
+/** Estimate decoded bytes for an existing base64 seal without needing the original File. */
+export function decodedBase64ByteSize(base64: string): number {
+  const compact = base64.replace(/\s/g, '');
+  if (compact.length === 0) return 0;
+  const padding = compact.endsWith('==') ? 2 : compact.endsWith('=') ? 1 : 0;
+  return Math.max(0, Math.floor((compact.length * 3) / 4) - padding);
+}
+
+/**
+ * Reconstruct image content from a previously applied seal. The original upload `File` is gone,
+ * but the request DTO has enough information to preview and re-apply the same raster bytes.
+ */
+export function imageContentFromSeal(
+  seal: SealAppearanceBody | null | undefined,
+): Extract<SealContent, { kind: 'image' }> | null {
+  if (!seal?.image_base64 || !seal.image_format) return null;
+  const mime = seal.image_format === 'png' ? 'image/png' : 'image/jpeg';
+  return {
+    kind: 'image',
+    base64: seal.image_base64,
+    format: seal.image_format,
+    previewUrl: `data:${mime};base64,${seal.image_base64}`,
+    revokePreview: false,
+    byteSize: decodedBase64ByteSize(seal.image_base64),
+  };
+}
+
 /**
  * Read + validate a chosen seal image. Enforces the format set and the 2 MiB decoded cap
  * client-side (defense-in-depth against the server's own limit), returning a typed error the
@@ -85,6 +114,7 @@ export async function readSealImage(file: File): Promise<SealImageResult> {
       base64: bytesToBase64(bytes),
       format,
       previewUrl: URL.createObjectURL(file),
+      revokePreview: true,
       byteSize: bytes.length,
     },
   };

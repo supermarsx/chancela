@@ -6,26 +6,47 @@
  * §0.3 binding spec, incl. the y-flip). `usePdfPage` is mocked so the assertion runs on the real
  * component wiring without a live pdf.js render, and the page geometry is fixed and known.
  */
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { ToastProvider } from '../../../ui/toast';
+import type { SealAppearanceBody } from '../../../api/types';
 import type { PageGeometry } from './coordinates';
 
 // A known, non-square US-Letter page at scale 1 (render surface = 612x792 CSS px, no rotation).
 const GEOMETRY: PageGeometry = { widthPt: 612, heightPt: 792, rotation: 0, scale: 1 };
 
+type PdfPageMockResult = {
+  status: 'idle' | 'loading' | 'ready' | 'error';
+  pageCount: number;
+  geometry: PageGeometry | null;
+  error: unknown;
+};
+
+const pdfPageMock = vi.hoisted(() => ({
+  result: {
+    status: 'ready',
+    pageCount: 1,
+    geometry: { widthPt: 612, heightPt: 792, rotation: 0, scale: 1 },
+    error: null,
+  } as PdfPageMockResult,
+}));
+
 vi.mock('./usePdfPage', () => ({
-  usePdfPage: () => ({ status: 'ready', pageCount: 1, geometry: GEOMETRY, error: null }),
+  usePdfPage: () => pdfPageMock.result,
 }));
 
 // Import AFTER the mock is registered.
 import { SealDesigner } from './SealDesigner';
 
-function renderDesigner(onApply: (seal: unknown) => void) {
+function renderDesigner(
+  onApply: (seal: unknown) => void,
+  initialSeal: SealAppearanceBody | null = null,
+) {
   return render(
     <ToastProvider>
       <SealDesigner
         loadPdf={() => Promise.resolve(new ArrayBuffer(8))}
+        initialSeal={initialSeal}
         defaultName="Amélia Marques"
         defaultDate="2026-07-12"
         onApply={onApply}
@@ -52,6 +73,10 @@ function stubSurfaceRect() {
     }) as DOMRect;
   return surface;
 }
+
+beforeEach(() => {
+  pdfPageMock.result = { status: 'ready', pageCount: 1, geometry: GEOMETRY, error: null };
+});
 
 afterEach(cleanup);
 
@@ -107,5 +132,98 @@ describe('SealDesigner coordinate mapping', () => {
     renderDesigner(onApply);
     const apply = screen.getByRole('button', { name: 'Aplicar selo' }) as HTMLButtonElement;
     expect(apply.disabled).toBe(true);
+  });
+
+  it('keeps a stable fallback page surface while the PDF geometry is loading', () => {
+    pdfPageMock.result = { status: 'loading', pageCount: 0, geometry: null, error: null };
+    renderDesigner(vi.fn());
+
+    const surface = screen.getByRole('application');
+    expect(surface.style.width).toBe('560px');
+    expect(surface.style.height).toBe('725px');
+    expect(surface.style.minHeight).toBe('725px');
+    expect(surface.style.aspectRatio).toBe('560 / 725');
+    expect(screen.getByText('A carregar a pré-visualização…')).toBeTruthy();
+  });
+
+  it('moves the seal with arrow keys from the focusable placement control', () => {
+    const onApply = vi.fn();
+    renderDesigner(onApply, {
+      invisible: false,
+      page: 0,
+      x: 72,
+      y: 144,
+      w: 150,
+      h: 60,
+    });
+    stubSurfaceRect();
+
+    const moveControl = screen.getByTestId('seal-move-control') as HTMLButtonElement;
+    expect(moveControl.tagName).toBe('BUTTON');
+    expect(moveControl.getAttribute('aria-keyshortcuts')).toContain('Shift+ArrowUp');
+
+    fireEvent.keyDown(moveControl, { key: 'ArrowRight' });
+    fireEvent.keyDown(moveControl, { key: 'ArrowUp', shiftKey: true });
+    fireEvent.click(screen.getByRole('button', { name: 'Aplicar selo' }));
+
+    expect(onApply).toHaveBeenCalledWith(
+      expect.objectContaining({ invisible: false, page: 0, x: 73, y: 154, w: 150, h: 60 }),
+    );
+  });
+
+  it('resizes the seal with arrow keys from the focusable handle', () => {
+    const onApply = vi.fn();
+    renderDesigner(onApply, {
+      invisible: false,
+      page: 0,
+      x: 72,
+      y: 144,
+      w: 150,
+      h: 60,
+    });
+    stubSurfaceRect();
+
+    const handle = screen.getByTestId('seal-resize-handle') as HTMLButtonElement;
+    expect(handle.tagName).toBe('BUTTON');
+    expect(handle.getAttribute('aria-label')).toContain('Largura (pontos)');
+
+    fireEvent.keyDown(handle, { key: 'ArrowRight' });
+    fireEvent.keyDown(handle, { key: 'ArrowDown', shiftKey: true });
+    fireEvent.click(screen.getByRole('button', { name: 'Aplicar selo' }));
+
+    expect(onApply).toHaveBeenCalledWith(
+      expect.objectContaining({ invisible: false, page: 0, x: 72, y: 134, w: 151, h: 70 }),
+    );
+  });
+
+  it('previews and re-applies an existing image seal without the original File', () => {
+    const onApply = vi.fn();
+    const { container } = renderDesigner(onApply, {
+      invisible: false,
+      page: 0,
+      x: 72,
+      y: 144,
+      w: 150,
+      h: 60,
+      image_base64: 'QUJDRA==',
+      image_format: 'png',
+    });
+    stubSurfaceRect();
+
+    const image = container.querySelector('.seal-designer__box-image') as HTMLImageElement | null;
+    expect(image?.getAttribute('src')).toBe('data:image/png;base64,QUJDRA==');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Aplicar selo' }));
+
+    expect(onApply).toHaveBeenCalledWith({
+      invisible: false,
+      page: 0,
+      x: 72,
+      y: 144,
+      w: 150,
+      h: 60,
+      image_base64: 'QUJDRA==',
+      image_format: 'png',
+    });
   });
 });
