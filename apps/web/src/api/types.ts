@@ -3978,6 +3978,54 @@ export interface SignatureStatusView {
   evidence: SignatureEvidenceStatus;
 }
 
+// --- Visible-seal appearance (§ t67-e9 / e12) -----------------------------------
+//
+// The optional visible-seal appearance carried by a sign request (mirrors the backend
+// `chancela-api::signature::SealAppearanceRequest`). Absent, or with `invisible` at its `true`
+// default, keeps the backward-compatible invisible signature widget. When `invisible` is `false`
+// the geometry (`page`/`x`/`y`/`w`/`h`) and exactly ONE content source (`template` OR
+// `image_base64` + `image_format`) place a real seal. The coordinate convention is frozen: `page`
+// is 0-based; units are PDF points; the origin is the page's bottom-left with `y` increasing UP;
+// `x`/`y` are the seal rectangle's LOWER-LEFT corner; `w`/`h` are its size (both > 0). The visual
+// seal designer (`features/signing/seal-designer`) produces this shape from an on-screen box.
+
+/** The raster format of a seal image (backend `SealImageFormatRequest`, lowercase on the wire). */
+export type SealImageFormat = 'png' | 'jpeg';
+
+/** The decoded-byte cap the server enforces on a seal image (mirrors `SEAL_IMAGE_MAX_BYTES`). */
+export const SEAL_IMAGE_MAX_BYTES = 2 * 1024 * 1024;
+
+/**
+ * A predefined text-seal template (backend `SealTemplateRequest`, serde tag `kind`, snake_case).
+ * The caller supplies the exact strings to draw — nothing is inferred server-side.
+ */
+export type SealTemplateBody =
+  | { kind: 'name_date'; name: string; date: string }
+  | { kind: 'signed_by'; heading: string; name: string; date: string };
+
+/**
+ * Optional visible-seal appearance on a sign request. `template` and `image_base64` are mutually
+ * exclusive; `image_format` is required with `image_base64`. All fields default server-side, so a
+ * bare `{ invisible: false, ... }` visible spec, or an omitted `seal`, are both valid.
+ */
+export interface SealAppearanceBody {
+  invisible?: boolean;
+  /** 0-based target page index. */
+  page?: number;
+  /** Lower-left `x` in PDF points (origin bottom-left). */
+  x?: number;
+  /** Lower-left `y` in PDF points (origin bottom-left, y-up). */
+  y?: number;
+  /** Seal width in points (> 0 when visible). */
+  w?: number;
+  /** Seal height in points (> 0 when visible). */
+  h?: number;
+  template?: SealTemplateBody;
+  /** Base64-encoded raster image; mutually exclusive with `template`; needs `image_format`. */
+  image_base64?: string;
+  image_format?: SealImageFormat;
+}
+
 /**
  * `POST /v1/acts/{id}/signature/cmd/initiate` — phase 1. The `pin` is a transient
  * knowledge factor: it is sent once and never stored client-side beyond this request.
@@ -3987,6 +4035,8 @@ export interface CmdInitiateBody {
   pin: string;
   capacity?: string;
   actor?: string;
+  /** Optional visible-seal appearance (t67-e12); baked into the prepared PAdES revision. */
+  seal?: SealAppearanceBody;
 }
 
 /** The initiate response — no secret (no PIN, no OTP, no SCMD process id). */
@@ -4049,6 +4099,8 @@ export interface CcSignBody {
    * PIN is entered at the reader (protected authentication).
    */
   pin?: string;
+  /** Optional visible-seal appearance (t67-e12); baked into the signed PAdES revision. */
+  seal?: SealAppearanceBody;
 }
 
 /** The CC sign response — the produced qualified signature's metadata (same shape as CMD). */
@@ -4133,6 +4185,8 @@ export interface LocalPkcs12SignBody {
   friendly_name?: string;
   capacity?: string;
   actor?: string;
+  /** Optional visible-seal appearance (t67-e12); baked into the signed PAdES revision. */
+  seal?: SealAppearanceBody;
 }
 
 /** The produced local signature metadata. This is technical evidence, not a qualified claim. */
@@ -4271,6 +4325,8 @@ export interface RemoteInitiateBody {
   credential?: string;
   capacity?: string;
   actor?: string;
+  /** Optional visible-seal appearance (t67-e12); baked into the prepared PAdES revision. */
+  seal?: SealAppearanceBody;
 }
 
 /** The generic initiate response — no secret. `activation_hint` is a non-secret UI hint (a

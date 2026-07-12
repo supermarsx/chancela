@@ -46,7 +46,7 @@
  * CONVENTIONS §2/§3. The sign actions are gated with `useCan('signing.perform', <act's book
  * scope>)` (disable-with-explanation); the server re-enforces the permission regardless.
  */
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type {
   ActView,
@@ -58,13 +58,15 @@ import type {
   ExternalSigningEnvelopeView,
   ExternalSigningOrderPolicy,
   OfficialSignatureImportGuardrail,
+  SealAppearanceBody,
   Settings,
   SignatureEvidenceStatus,
   SignatureFamily,
   UpdateExternalSigningEnvelopeEvidenceBody,
 } from '../../api/types';
 import { OFFICIAL_SIGNATURE_IMPORT_GUARDRAIL_IDS } from '../../api/types';
-import { ApiError } from '../../api/client';
+import { ApiError, api } from '../../api/client';
+import { SealDesigner } from './seal-designer';
 import { signatureFamilyLabels } from '../../api/labels';
 import {
   keys,
@@ -1585,6 +1587,17 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
   // retained mutation variables (t68-r7: React Query keeps `mutation.variables` until reset).
   const [ccPin, setCcPin] = useState('');
   const [ccSignError, setCcSignError] = useState<unknown>(null);
+  // The optional visible-seal appearance (t67-e12). Set by the visual seal designer and threaded
+  // into whichever signing lane the user then picks (CMD / CC / CSC / local PKCS#12). Absent ⇒ the
+  // signature stays the backward-compatible invisible widget.
+  const [seal, setSeal] = useState<SealAppearanceBody | null>(null);
+  const [showSealDesigner, setShowSealDesigner] = useState(false);
+  // Loads the sealed (pre-signature) PDF/A bytes the designer renders. Memoized on the act so the
+  // designer's render effect does not re-fetch on every parent re-render.
+  const loadSealPdf = useCallback(
+    () => api.fetchActDocumentPdf(act.id).then((blob) => blob.arrayBuffer()),
+    [act.id],
+  );
 
   const data = status.data;
   // Only CSC QTSPs come from the picker list — CMD + CC always have their own always-available
@@ -1636,7 +1649,7 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
     };
     if (provider.kind === 'cmd') {
       initiate.mutate(
-        { phone: identifier.trim(), pin: secret },
+        { phone: identifier.trim(), pin: secret, seal: seal ?? undefined },
         {
           onSuccess: (res) => onSuccess(res.session_id, res.masked_phone),
           onError: (err) => toast.error(err),
@@ -1644,7 +1657,10 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
       );
     } else {
       remoteInitiate.mutate(
-        { provider: provider.id, body: { user_ref: identifier.trim(), credential: secret } },
+        {
+          provider: provider.id,
+          body: { user_ref: identifier.trim(), credential: secret, seal: seal ?? undefined },
+        },
         {
           onSuccess: (res) => onSuccess(res.session_id, res.activation_hint),
           onError: (err) => toast.error(err),
@@ -1709,7 +1725,7 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
     const trimmedPin = ccPin.trim();
     const pin = trimmedPin.length > 0 ? trimmedPin : undefined;
     ccSign.mutate(
-      { pin },
+      { pin, seal: seal ?? undefined },
       {
         onSuccess: () => {
           setCcPin('');
@@ -1779,6 +1795,7 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
         passphrase: pkcs12Passphrase,
         friendly_name: pkcs12FriendlyName.trim() || undefined,
         capacity: pkcs12Capacity.trim() || undefined,
+        seal: seal ?? undefined,
       });
       resetPkcs12Form();
       setStep({ kind: 'view' });
@@ -2362,6 +2379,48 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
                   : t('signing.unsigned.body')}
               </p>
             </StatusSummary>
+            {/* Optional visible-seal placement (t67-e12). The applied seal rides into whichever
+                signing lane the user then picks. */}
+            <div className="signing-seal-affordance stack--tight">
+              {seal ? (
+                <div className="rowline">
+                  <p className="field__hint">
+                    {t('signing.seal.applied.summary', {
+                      page: String((seal.page ?? 0) + 1),
+                    })}
+                  </p>
+                  <Button type="button" variant="ghost" onClick={() => setShowSealDesigner(true)}>
+                    {t('signing.seal.applied.edit')}
+                  </Button>
+                  <Button type="button" variant="ghost" onClick={() => setSeal(null)}>
+                    {t('signing.seal.applied.remove')}
+                  </Button>
+                </div>
+              ) : showSealDesigner ? null : (
+                <div className="stack--tight">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    icon={<Icon.PenNib />}
+                    onClick={() => setShowSealDesigner(true)}
+                  >
+                    {t('signing.seal.affordance.open')}
+                  </Button>
+                  <p className="field__hint">{t('signing.seal.affordance.hint')}</p>
+                </div>
+              )}
+              {showSealDesigner ? (
+                <SealDesigner
+                  loadPdf={loadSealPdf}
+                  initialSeal={seal}
+                  onApply={(applied) => {
+                    setSeal(applied);
+                    setShowSealDesigner(false);
+                  }}
+                  onCancel={() => setShowSealDesigner(false)}
+                />
+              ) : null}
+            </div>
             <div className="signing-provider-list">
               {/* Chave Móvel Digital — always offered (its dedicated two-phase path). */}
               <ProviderChoice

@@ -25,6 +25,11 @@ function manualChunks(id: string): string | undefined {
   if (/[\\/]node_modules[\\/]@tauri-apps[\\/]/.test(id)) {
     return 'vendor-tauri';
   }
+  // pdf.js (visual seal designer, t67-e12) is heavy and reached only via a lazy dynamic import;
+  // keep it in its own chunk so it stays an async load for signing, out of the eager vendor bundle.
+  if (/[\\/]node_modules[\\/]pdfjs-dist[\\/]/.test(id)) {
+    return 'vendor-pdfjs';
+  }
   return 'vendor';
 }
 
