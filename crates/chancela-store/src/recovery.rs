@@ -373,12 +373,49 @@ pub struct RestorePreflightOutcome {
     pub manifest: Option<RestorePreflightManifestEvidence>,
     /// Whether the snapshot ledger verified from the isolated copy.
     pub ledger_verified: bool,
+    /// Full isolated restore/readback evidence when the archive reached materialization.
+    pub isolated_restore: Option<RestorePreflightIsolatedRestoreEvidence>,
     /// Bounded positive evidence for operator display.
     pub findings: Vec<String>,
     /// Bounded errors for operator display; no secrets or member hashes.
     pub errors: Vec<String>,
     /// Human next step for the recovery UI.
     pub next_step: String,
+}
+
+/// Secret-free evidence from a full temp restore/readback drill.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RestorePreflightIsolatedRestoreEvidence {
+    /// Unique temp directory name used under the supplied data dir. The directory is removed before
+    /// this evidence is returned.
+    pub temp_dir_name: String,
+    /// Whether the snapshot database bytes were materialized as `chancela.db` in the temp dir.
+    pub db_materialized: bool,
+    /// Whether the temp database was opened as a store.
+    pub db_opened: bool,
+    /// Whether the temp store was loaded back into read models.
+    pub state_loaded: bool,
+    /// Snapshot ledger length read from the temp database.
+    pub ledger_length: u64,
+    /// Whether the temp snapshot ledger verified.
+    pub ledger_verified: bool,
+    /// Entity rows read from the temp database.
+    pub entity_count: usize,
+    /// Book rows read from the temp database.
+    pub book_count: usize,
+    /// Act rows read from the temp database.
+    pub act_count: usize,
+    /// Sidecar root count materialized under the temp dir.
+    pub sidecar_root_count: usize,
+    /// Sidecar files read back from the temp dir.
+    pub sidecar_materialized_file_count: usize,
+    /// Total sidecar bytes read back from the temp dir.
+    pub sidecar_materialized_bytes: u64,
+    /// Whether the temp directory was removed and no longer exists.
+    pub cleanup_verified: bool,
+    /// SQLCipher-at-rest proof for the temp database. `None` means unknown: preflight opened the
+    /// temp copy with the default store options and did not prove SQLCipher encryption.
+    pub sqlcipher_encryption_verified: Option<bool>,
 }
 
 /// Secret-free manifest evidence for a restore preflight.
@@ -811,9 +848,10 @@ impl Store {
     /// **Non-mutating whole-store restore preflight**.
     ///
     /// Accepts the same archive/key mode as execution restore, verifies the zip structure,
-    /// `manifest.json`, every manifest-listed member digest, and the snapshot ledger from an
-    /// isolated copy of `chancela.db`. It does not swap the live DB, stage sidecars, append
-    /// `ledger.restored`, reload state, or mutate this store.
+    /// `manifest.json`, every manifest-listed member digest, and then materializes the snapshot DB
+    /// plus sidecars under a unique temp dir for isolated load/readback evidence. It does not call
+    /// the execution restore path, swap the live DB, replace live sidecars, append
+    /// `ledger.restored`, reload live state, or mutate this store.
     pub fn restore_preflight(
         &self,
         archive: &Path,
@@ -1984,7 +2022,7 @@ fn verify_restore_preflight_zip(
     findings.push("manifest.json parsed".to_owned());
 
     let evidence = restore_preflight_manifest_evidence(&manifest);
-    let mut db_bytes = None;
+    let mut verified_members = BTreeMap::<String, Vec<u8>>::new();
     for f in &manifest.files {
         validate_backup_member_name(&f.name)?;
         let mut member = zip
@@ -2004,7 +2042,7 @@ fn verify_restore_preflight_zip(
                 f.name
             )));
         }
-        if f.name == DB_FILE && db_bytes.replace(bytes).is_some() {
+        if verified_members.insert(f.name.clone(), bytes).is_some() {
             return Err(StoreError::BadBackup(format!(
                 "manifest lists duplicate member {}",
                 f.name
@@ -2016,27 +2054,21 @@ fn verify_restore_preflight_zip(
         evidence.member_count
     ));
 
-    let db_bytes =
-        db_bytes.ok_or_else(|| StoreError::BadBackup(format!("archive has no {DB_FILE}")))?;
-    let verify_dir = data_dir.join(format!(".restore-preflight-{}", uuid::Uuid::new_v4()));
-    let result: Result<bool, StoreError> = (|| {
-        std::fs::create_dir_all(&verify_dir)?;
-        std::fs::write(verify_dir.join(DB_FILE), &db_bytes)?;
-        let verify_store = Store::open(&verify_dir).map_err(|e| {
-            StoreError::BadBackup(format!("snapshot database could not be opened: {e}"))
-        })?;
-        let loaded = verify_store.load().map_err(|e| {
-            StoreError::BadBackup(format!("snapshot database could not be loaded: {e}"))
-        })?;
-        let ledger_verified = loaded.integrity.healthy;
-        if ledger_verified {
-            findings.push("snapshot ledger verified from an isolated copy".to_owned());
-        }
-        Ok(ledger_verified)
-    })();
-    let _ = std::fs::remove_dir_all(&verify_dir);
-    let ledger_verified = result?;
-    if !ledger_verified {
+    let db_bytes = verified_members
+        .get(DB_FILE)
+        .ok_or_else(|| StoreError::BadBackup(format!("archive has no {DB_FILE}")))?;
+    let isolated = materialize_isolated_restore_preflight(data_dir, db_bytes, &verified_members)?;
+    findings.push(format!(
+        "isolated restore materialized {} sidecar root(s) / {} file(s)",
+        isolated.sidecar_root_count, isolated.sidecar_materialized_file_count
+    ));
+    if isolated.ledger_verified {
+        findings.push("snapshot ledger verified from an isolated copy".to_owned());
+    }
+    if isolated.cleanup_verified {
+        findings.push("isolated restore temp directory was removed".to_owned());
+    }
+    if !isolated.ledger_verified {
         return Ok(RestorePreflightOutcome {
             ok: false,
             ready: false,
@@ -2044,6 +2076,7 @@ fn verify_restore_preflight_zip(
             archive: archive.to_path_buf(),
             manifest: Some(evidence),
             ledger_verified: false,
+            isolated_restore: Some(isolated),
             findings,
             errors: vec![
                 "snapshot ledger does not verify; refusing to restore a broken backup".to_owned(),
@@ -2060,10 +2093,127 @@ fn verify_restore_preflight_zip(
         archive: archive.to_path_buf(),
         manifest: Some(evidence),
         ledger_verified: true,
+        isolated_restore: Some(isolated),
         findings,
         errors: Vec::new(),
         next_step: "restore can proceed".to_owned(),
     })
+}
+
+fn materialize_isolated_restore_preflight(
+    data_dir: &Path,
+    db_bytes: &[u8],
+    verified_members: &BTreeMap<String, Vec<u8>>,
+) -> Result<RestorePreflightIsolatedRestoreEvidence, StoreError> {
+    let temp_dir_name = format!(".restore-preflight-{}", uuid::Uuid::new_v4());
+    let verify_dir = data_dir.join(&temp_dir_name);
+    let mut evidence = RestorePreflightIsolatedRestoreEvidence {
+        temp_dir_name,
+        db_materialized: false,
+        db_opened: false,
+        state_loaded: false,
+        ledger_length: 0,
+        ledger_verified: false,
+        entity_count: 0,
+        book_count: 0,
+        act_count: 0,
+        sidecar_root_count: 0,
+        sidecar_materialized_file_count: 0,
+        sidecar_materialized_bytes: 0,
+        cleanup_verified: false,
+        sqlcipher_encryption_verified: None,
+    };
+
+    let materialized: Result<(), StoreError> = (|| {
+        std::fs::create_dir(&verify_dir)?;
+        std::fs::write(verify_dir.join(DB_FILE), db_bytes)?;
+        evidence.db_materialized = true;
+
+        let sidecar_roots = stage_backup_sidecars(&verify_dir, verified_members)?;
+        evidence.sidecar_root_count = sidecar_roots.len();
+        let (sidecar_files, sidecar_bytes) =
+            readback_materialized_sidecars(&verify_dir, &sidecar_roots)?;
+        evidence.sidecar_materialized_file_count = sidecar_files;
+        evidence.sidecar_materialized_bytes = sidecar_bytes;
+
+        {
+            let verify_store = Store::open(&verify_dir).map_err(|e| {
+                StoreError::BadBackup(format!("snapshot database could not be opened: {e}"))
+            })?;
+            evidence.db_opened = true;
+            let loaded = verify_store.load().map_err(|e| {
+                StoreError::BadBackup(format!("snapshot database could not be loaded: {e}"))
+            })?;
+            evidence.state_loaded = true;
+            evidence.ledger_length = loaded.ledger.len() as u64;
+            evidence.ledger_verified = loaded.integrity.healthy;
+            evidence.entity_count = loaded.entities.len();
+            evidence.book_count = loaded.books.len();
+            evidence.act_count = loaded.acts.len();
+        }
+
+        Ok(())
+    })();
+
+    match remove_isolated_restore_preflight_dir(&verify_dir) {
+        Ok(cleanup_verified) => evidence.cleanup_verified = cleanup_verified,
+        Err(e) if materialized.is_ok() => return Err(e),
+        Err(_) => {}
+    }
+
+    materialized?;
+    if !evidence.cleanup_verified {
+        return Err(StoreError::BadBackup(
+            "isolated restore temp directory was not removed".to_owned(),
+        ));
+    }
+
+    Ok(evidence)
+}
+
+fn readback_materialized_sidecars(
+    verify_dir: &Path,
+    sidecar_roots: &BTreeSet<PathBuf>,
+) -> Result<(usize, u64), StoreError> {
+    let mut files = 0usize;
+    let mut bytes = 0u64;
+    for root in sidecar_roots {
+        let (root_files, root_bytes) = readback_materialized_sidecar_path(&verify_dir.join(root))?;
+        files += root_files;
+        bytes += root_bytes;
+    }
+    Ok((files, bytes))
+}
+
+fn readback_materialized_sidecar_path(path: &Path) -> Result<(usize, u64), StoreError> {
+    match std::fs::symlink_metadata(path) {
+        Ok(meta) if meta.is_dir() && !meta.file_type().is_symlink() => {
+            let mut files = 0usize;
+            let mut bytes = 0u64;
+            for entry in std::fs::read_dir(path)? {
+                let (child_files, child_bytes) =
+                    readback_materialized_sidecar_path(&entry?.path())?;
+                files += child_files;
+                bytes += child_bytes;
+            }
+            Ok((files, bytes))
+        }
+        Ok(meta) if meta.is_file() => {
+            let bytes = std::fs::read(path)?.len() as u64;
+            Ok((1, bytes))
+        }
+        Ok(_) => Ok((0, 0)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok((0, 0)),
+        Err(e) => Err(StoreError::Io(e)),
+    }
+}
+
+fn remove_isolated_restore_preflight_dir(path: &Path) -> Result<bool, StoreError> {
+    match std::fs::remove_dir_all(path) {
+        Ok(()) => Ok(!path.exists()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(true),
+        Err(e) => Err(StoreError::Io(e)),
+    }
 }
 
 fn restore_preflight_manifest_evidence(
@@ -2098,6 +2248,7 @@ fn restore_preflight_failure(
         archive: archive.to_path_buf(),
         manifest: None,
         ledger_verified: false,
+        isolated_restore: None,
         findings: Vec::new(),
         errors: vec![message.to_owned()],
         next_step: "fix the archive material or choose another backup before restoring".to_owned(),

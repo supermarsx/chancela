@@ -606,17 +606,24 @@ fn restore_preflight_verifies_without_mutating_live_store_or_sidecars() {
     let (mut ledger, _entity, _book, _act) = seed(&store);
 
     let settings = dir.path().join("settings.json");
+    let laws = dir.path().join("laws");
     std::fs::write(&settings, br#"{"theme":"backup"}"#).unwrap();
-    let backup = store
-        .backup(dir.path(), std::slice::from_ref(&settings))
-        .expect("backup");
+    std::fs::create_dir_all(&laws).unwrap();
+    std::fs::write(laws.join("csc.pdf"), b"%PDF backup law").unwrap();
+    let sidecars = vec![settings.clone(), laws.clone()];
+    let backup = store.backup(dir.path(), &sidecars).expect("backup");
 
     let extra = ledger
         .append("amelia.marques", "settings", "settings.changed", None, b"x")
         .clone();
     store.persist(|tx| tx.append_event(&extra)).unwrap();
     std::fs::write(&settings, br#"{"theme":"live"}"#).unwrap();
+    std::fs::write(laws.join("csc.pdf"), b"%PDF live law").unwrap();
+    std::fs::write(laws.join("live-only.pdf"), b"%PDF live-only law").unwrap();
     let before = store.load().unwrap().ledger.len();
+    let live_db_before = std::fs::read(dir.path().join("chancela.db")).unwrap();
+    let live_wal_before = dir.path().join("chancela.db-wal").exists();
+    let live_shm_before = dir.path().join("chancela.db-shm").exists();
 
     let preflight = store
         .restore_preflight(Path::new(&backup.path), dir.path(), None)
@@ -625,14 +632,50 @@ fn restore_preflight_verifies_without_mutating_live_store_or_sidecars() {
     assert!(preflight.ready);
     assert_eq!(preflight.encrypted, Some(false));
     assert!(preflight.ledger_verified);
-    let manifest = preflight.manifest.expect("manifest evidence");
+    let manifest = preflight.manifest.as_ref().expect("manifest evidence");
     assert_eq!(manifest.path, "manifest.json");
     assert_eq!(manifest.schema, "chancela-backup-manifest/v1");
     assert_eq!(manifest.version, 1);
     assert_eq!(manifest.ledger_length, 3);
-    assert_eq!(manifest.member_count, 2);
-    assert_eq!(manifest.sidecar_member_count, 1);
+    assert_eq!(manifest.member_count, 3);
+    assert_eq!(manifest.sidecar_member_count, 2);
     assert!(manifest.db_member_present);
+    let isolated = preflight
+        .isolated_restore
+        .as_ref()
+        .expect("isolated restore evidence");
+    assert!(isolated.temp_dir_name.starts_with(".restore-preflight-"));
+    assert!(isolated.db_materialized);
+    assert!(isolated.db_opened);
+    assert!(isolated.state_loaded);
+    assert_eq!(isolated.ledger_length, 3);
+    assert!(isolated.ledger_verified);
+    assert_eq!(isolated.entity_count, 1);
+    assert_eq!(isolated.book_count, 1);
+    assert_eq!(isolated.act_count, 1);
+    assert_eq!(isolated.sidecar_root_count, 2);
+    assert_eq!(isolated.sidecar_materialized_file_count, 2);
+    assert_eq!(
+        isolated.sidecar_materialized_bytes,
+        br#"{"theme":"backup"}"#.len() as u64 + b"%PDF backup law".len() as u64
+    );
+    assert!(isolated.cleanup_verified);
+    assert_eq!(isolated.sqlcipher_encryption_verified, None);
+    assert_eq!(
+        std::fs::read(dir.path().join("chancela.db")).unwrap(),
+        live_db_before,
+        "preflight does not rewrite the live DB file"
+    );
+    assert_eq!(
+        dir.path().join("chancela.db-wal").exists(),
+        live_wal_before,
+        "preflight does not remove or create the live WAL"
+    );
+    assert_eq!(
+        dir.path().join("chancela.db-shm").exists(),
+        live_shm_before,
+        "preflight does not remove or create the live SHM"
+    );
 
     let loaded = store.load().unwrap();
     assert_eq!(loaded.ledger.len(), before, "preflight does not restore DB");
@@ -653,6 +696,14 @@ fn restore_preflight_verifies_without_mutating_live_store_or_sidecars() {
         "preflight does not append restore audit events"
     );
     assert_eq!(std::fs::read(&settings).unwrap(), br#"{"theme":"live"}"#);
+    assert_eq!(
+        std::fs::read(laws.join("csc.pdf")).unwrap(),
+        b"%PDF live law"
+    );
+    assert_eq!(
+        std::fs::read(laws.join("live-only.pdf")).unwrap(),
+        b"%PDF live-only law"
+    );
     assert!(
         std::fs::read_dir(dir.path()).unwrap().all(|entry| !entry
             .unwrap()
@@ -678,6 +729,7 @@ fn restore_preflight_reports_bad_archive_as_evidence() {
     assert!(!preflight.ready);
     assert_eq!(preflight.encrypted, Some(false));
     assert!(preflight.manifest.is_none());
+    assert!(preflight.isolated_restore.is_none());
     assert!(
         preflight
             .errors
@@ -712,6 +764,7 @@ fn restore_preflight_rejects_a_zip_bomb_backup_member_without_mutating_live_stor
     assert!(!preflight.ok);
     assert!(!preflight.ready);
     assert_eq!(preflight.encrypted, Some(false));
+    assert!(preflight.isolated_restore.is_none());
     assert!(
         preflight
             .errors
