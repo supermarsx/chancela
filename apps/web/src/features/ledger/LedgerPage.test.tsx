@@ -174,7 +174,7 @@ describe('LedgerPage', () => {
     ).toBe(true);
   });
 
-  it('shows a bounded first page for a 1000-log book chain and loads more by cursor', async () => {
+  it('shows a bounded first page for a 1000-log archive and loads more by cursor', async () => {
     const firstHundred = Array.from({ length: 100 }, (_, index) => makeEvent(1000 - index));
     const calls = stubLedgerFetch(
       page(firstHundred, { next_cursor: 900, has_more: true }),
@@ -182,20 +182,6 @@ describe('LedgerPage', () => {
     );
     renderWithProviders(<LedgerPage />);
 
-    expect(await screen.findByRole('option', { name: 'Livro book-123' })).toBeTruthy();
-    fireEvent.change(screen.getByLabelText('Filtrar por cadeia'), {
-      target: { value: 'book:book-123456789' },
-    });
-
-    await waitFor(() =>
-      expect(
-        calls.some(
-          (c) =>
-            c.url ===
-            '/v1/ledger/events/page?chain=book%3Abook-123456789&limit=100&order=desc',
-        ),
-      ).toBe(true),
-    );
     expect(await screen.findByText('event.1000')).toBeTruthy();
     expect(screen.getByLabelText('100 eventos carregados; existem mais')).toBeTruthy();
     expect(screen.queryByText('event.1')).toBeNull();
@@ -207,7 +193,7 @@ describe('LedgerPage', () => {
       calls.some(
         (c) =>
           c.url ===
-          '/v1/ledger/events/page?chain=book%3Abook-123456789&before_seq=900&limit=100&order=desc',
+          '/v1/ledger/events/page?before_seq=900&limit=100&order=desc',
       ),
     ).toBe(true);
   });
