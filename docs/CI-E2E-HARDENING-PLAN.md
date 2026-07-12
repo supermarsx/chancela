@@ -1077,6 +1077,12 @@ settingsDefaults.test.ts contracts.test.ts`.
   ActDocumentPanel dispatch-evidence selection/focus, advisory absent-owner
   reminder copy, and the `contracts/dashboard.json` pending no-due-date
   generated absent-owner fixture.
+  Focused route-stubbed browser proof is
+  `npm run test:browser --workspace apps/web -- e2e/absent-owner-dispatch-evidence.spec.ts`;
+  it pins the advisory dashboard reminder opening the generated-document
+  dispatch-evidence form, generated `condominio-comunicacao-ausentes/v1`
+  visibility/download, metadata-only evidence recording, resulting operator
+  evidence row display, and no send/delivery/legal-notice completion claims.
   This is generated-document retrieval, dashboard/notification navigation, and
   operator-recorded dispatch-evidence metadata only: no sealed act, canonical
   Ata, or generated-byte mutation; no mail, email, SMS, or provider sending; no

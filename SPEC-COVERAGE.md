@@ -563,7 +563,15 @@ Implementation checkpoints covered here:
   `ActDocumentPanel`; the focused web tests pin that the UI selects and focuses
   the dispatch-evidence form once, then records bounded operator metadata
   without changing `dispatch_completed=false` or claiming
-  send/delivery/legal-notice completion. Dashboard follow-on now has
+  send/delivery/legal-notice completion. Route-stubbed browser proof now pins
+  the dashboard reminder -> generated-document dispatch-evidence workflow in
+  `apps/web/e2e/absent-owner-dispatch-evidence.spec.ts`: it opens the advisory
+  absent-owner reminder, follows
+  `/atas/{act_id}?generated_document_id={document_id}&focus=dispatch-evidence#generated-dispatch-evidence`,
+  observes `condominio-comunicacao-ausentes/v1`, downloads the generated
+  communication, focuses the metadata-only evidence form, records mocked/local
+  operator metadata, displays the resulting evidence row, and keeps the no
+  send/delivery/legal-notice completion boundaries visible. Dashboard follow-on now has
   `GET /v1/dashboard` add `Pending`/`Advisory` no-due-date reminders with
   `source_rule` `absent-owner-dispatch-evidence`, `source_profile`
   `condominium-generated-communication`, and action kind

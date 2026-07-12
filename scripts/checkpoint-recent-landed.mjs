@@ -6948,6 +6948,46 @@ function assertCheckpointMap() {
     "PDF validator fail-closed browser coverage",
   );
   assertFileContains(
+    "apps/web/e2e/absent-owner-dispatch-evidence.spec.ts",
+    "dashboard reminder opens generated absent-owner dispatch evidence and records metadata only",
+    "absent-owner dispatch-evidence browser workflow coverage",
+  );
+  assertFileContains(
+    "apps/web/e2e/absent-owner-dispatch-evidence.spec.ts",
+    "condominio-comunicacao-ausentes/v1",
+    "absent-owner dispatch-evidence browser generated template marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/absent-owner-dispatch-evidence.spec.ts",
+    "?generated_document_id=${GENERATED_DOCUMENT_ID}&focus=dispatch-evidence#generated-dispatch-evidence",
+    "absent-owner dispatch-evidence browser deep-link marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/absent-owner-dispatch-evidence.spec.ts",
+    "Registe apenas metadados de evidência. A Chancela não enviou, não confirmou entrega e não completou aviso legal.",
+    "absent-owner dispatch-evidence browser metadata-only no-claim copy marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/absent-owner-dispatch-evidence.spec.ts",
+    "Envio pela Chancela=false; confirmação de entrega=false; suficiência legal=false; reivindicação de conclusão=false; bytes no payload=false.",
+    "absent-owner dispatch-evidence browser false flags marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Route-stubbed browser proof now pins\n  the dashboard reminder -> generated-document dispatch-evidence workflow",
+    "spec coverage absent-owner dispatch-evidence browser proof marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "Focused Playwright browser proof is guarded by\n  `apps/web/e2e/absent-owner-dispatch-evidence.spec.ts`",
+    "CI checkpoints absent-owner dispatch-evidence browser proof marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Focused route-stubbed browser proof is\n  `npm run test:browser --workspace apps/web -- e2e/absent-owner-dispatch-evidence.spec.ts`",
+    "CI/E2E hardening plan absent-owner dispatch-evidence browser command marker",
+  );
+  assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
     "Updated 2026-07-12 from the current CI configuration and head `869e02f`",
     "CI/E2E hardening plan current head marker",

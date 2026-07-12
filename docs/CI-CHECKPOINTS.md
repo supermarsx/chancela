@@ -199,7 +199,12 @@ It intentionally reuses existing test surfaces:
   `generated_document_id`, `focus=dispatch-evidence`,
   `#generated-dispatch-evidence`, `actDocumentPanelTargetFromLocation`, one-time
   dispatch-evidence selection/focus, and no send/delivery/legal-notice or
-  dispatch-completion copy. Dashboard markers pin `source_rule`
+  dispatch-completion copy. Focused Playwright browser proof is guarded by
+  `apps/web/e2e/absent-owner-dispatch-evidence.spec.ts` and pins the advisory
+  dashboard reminder route into the generated-document dispatch-evidence form,
+  generated `condominio-comunicacao-ausentes/v1` visibility and download,
+  metadata-only evidence recording, resulting operator evidence row display,
+  and no send/delivery/legal-notice completion claims. Dashboard markers pin `source_rule`
   `absent-owner-dispatch-evidence`, `source_profile`
   `condominium-generated-communication`, action kind
   `open_absent_owner_dispatch_evidence`, no-date `Pending`/`Advisory`
