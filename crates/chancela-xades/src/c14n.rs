@@ -153,17 +153,54 @@ impl Dom {
         }
     }
 
-    /// Find the element carrying `Id="id"` (the XMLDSig id attribute), searching in document order.
-    pub(crate) fn find_by_id(&self, id: &str) -> Option<NodeId> {
-        (0..self.arena.len()).find(|&nid| {
+    /// Resolve the element carrying `Id="id"` (the XMLDSig id attribute), fail-closed on ambiguity.
+    ///
+    /// XML Signature dereferences an `Id` for every `#id` reference and for the enveloped-transform
+    /// exclusion. A duplicate `Id` makes that dereference ambiguous and is the lever for
+    /// signature-wrapping (XSW): the validator digests one element while a downstream consumer reads
+    /// another. Rather than silently pick the first match, resolution returns an error when more than
+    /// one element carries the value.
+    pub(crate) fn find_by_id(&self, id: &str) -> Result<Option<NodeId>, XadesError> {
+        let mut found: Option<NodeId> = None;
+        for nid in 0..self.arena.len() {
             if let Node::Element(e) = &self.arena[nid] {
-                e.attrs
+                let carries = e
+                    .attrs
                     .iter()
-                    .any(|a| a.prefix.is_none() && a.local == "Id" && a.value == id)
-            } else {
-                false
+                    .any(|a| a.prefix.is_none() && a.local == "Id" && a.value == id);
+                if carries {
+                    if found.is_some() {
+                        return Err(XadesError::Canonicalization(format!(
+                            "ambiguous Id \"{id}\" resolves to multiple elements"
+                        )));
+                    }
+                    found = Some(nid);
+                }
             }
-        })
+        }
+        Ok(found)
+    }
+
+    /// Reject a document in which more than one element carries the same XMLDSig `Id` value.
+    ///
+    /// A document-wide fail-closed scan run at validation entry, complementing the per-resolution
+    /// check in [`Self::find_by_id`]: it catches a duplicate planted on an element that no
+    /// `Reference` happens to dereference, closing the signature-wrapping surface completely.
+    pub(crate) fn check_unique_ids(&self) -> Result<(), XadesError> {
+        let mut seen: HashSet<&str> = HashSet::new();
+        for node in &self.arena {
+            if let Node::Element(e) = node {
+                for a in &e.attrs {
+                    if a.prefix.is_none() && a.local == "Id" && !seen.insert(a.value.as_str()) {
+                        return Err(XadesError::Canonicalization(format!(
+                            "duplicate Id \"{}\" — document rejected (signature-wrapping guard)",
+                            a.value
+                        )));
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 
     /// The in-scope namespace mapping visible to `node` from its ancestors (excluding the node's
@@ -456,6 +493,16 @@ pub fn canonicalize_document(
     Ok(dom.canonicalize_document(alg, inclusive_prefixes, &HashSet::new()))
 }
 
+/// Parse `xml` and fail closed if any XMLDSig `Id` value is carried by more than one element.
+///
+/// XML Signature reference resolution (`#id`) and the enveloped-transform exclusion both dereference
+/// an `Id`; a duplicate `Id` makes that dereference ambiguous and is the lever for signature-wrapping
+/// (XSW) attacks. Callers run this at validation entry so an ambiguous document is rejected outright
+/// rather than validated against a first-match guess.
+pub fn check_unique_ids(xml: &[u8]) -> Result<(), XadesError> {
+    parse(xml)?.check_unique_ids()
+}
+
 /// Parse `xml` and canonicalize the single element carrying `Id="id"` (the common XMLDSig case:
 /// canonicalizing `SignedInfo`, `SignedProperties`, or a referenced `Object`).
 pub fn canonicalize_element_by_id(
@@ -466,7 +513,7 @@ pub fn canonicalize_element_by_id(
 ) -> Result<Vec<u8>, XadesError> {
     let dom = parse(xml)?;
     let node = dom
-        .find_by_id(id)
+        .find_by_id(id)?
         .ok_or_else(|| XadesError::Canonicalization(format!("no element with Id=\"{id}\"")))?;
     Ok(dom.canonicalize_subtree(node, alg, inclusive_prefixes, &HashSet::new()))
 }
@@ -483,7 +530,7 @@ pub fn canonicalize_document_excluding_ids(
     let dom = parse(xml)?;
     let mut omit = HashSet::new();
     for id in exclude_ids {
-        if let Some(nid) = dom.find_by_id(id) {
+        if let Some(nid) = dom.find_by_id(id)? {
             omit.insert(nid);
         }
     }

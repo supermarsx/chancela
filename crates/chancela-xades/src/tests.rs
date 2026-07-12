@@ -17,11 +17,13 @@ use x509_cert::name::Name;
 use x509_cert::serial_number::SerialNumber;
 use x509_cert::time::Validity;
 
+use crate::c14n::{self, C14nAlgorithm};
 use crate::validate::validate_xades;
 use crate::xades::{
     DetachedRef, EnvelopedDocument, EnvelopingObject, ObjectContent, SignaturePackaging,
     XadesContext, XadesLevel, XadesSignRequest, prepare_xades,
 };
+use crate::xmldsig::{DIGEST_SHA256, DS_NS, Reference, XADES_NS, XmlDsigBuilder};
 
 const SHA256_WITH_RSA: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.113549.1.1.11");
 const ECDSA_WITH_SHA256: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.10045.4.3.2");
@@ -211,6 +213,10 @@ fn assert_valid_b(xml: &[u8]) {
         report.signing_certificate_v2_present,
         "XAdES-B needs SigningCertificateV2"
     );
+    assert!(
+        report.signed_properties_signed,
+        "a verified reference must cover the SignedProperties"
+    );
     assert!(report.is_valid_b(), "overall XAdES-B validity");
     assert_eq!(report.level, XadesLevel::B);
     assert_eq!(
@@ -383,4 +389,100 @@ fn xades_t_embeds_and_reports_signature_timestamp() {
         "SignatureTimeStamp must be present"
     );
     assert_eq!(report.level, XadesLevel::T);
+}
+
+/// H1 (t68) — a genuinely valid XMLDSig over body content, plus an *unsigned* SignedProperties /
+/// SigningCertificateV2 blob appended in the signature, must NOT be reported XAdES-B valid: no
+/// digest-verified reference covers the qualifying properties, so the signer never committed to
+/// them. The old whole-document existence check reported this as valid.
+#[test]
+fn unsigned_signed_properties_blob_is_not_valid_b() {
+    let signer = TestSigner::new_rsa("H1 unsigned props", 20);
+
+    // Digest of the enveloping payload object over its exclusive-C14N, computed exactly as the
+    // validator recomputes it (the `ds` prefix declared on an ancestor).
+    let object_xml = "<ds:Object Id=\"payload\">Chancela: ato numero 7</ds:Object>";
+    let obj_wrapper = format!("<ds:Signature xmlns:ds=\"{DS_NS}\">{object_xml}</ds:Signature>");
+    let obj_c14n = c14n::canonicalize_element_by_id(
+        obj_wrapper.as_bytes(),
+        "payload",
+        C14nAlgorithm::ExclusiveWithoutComments,
+        &[],
+    )
+    .expect("c14n object");
+    let obj_digest = sha256(&obj_c14n);
+
+    // A plain XMLDSig: the only signed reference is the payload; there is NO SignedProperties
+    // reference in SignedInfo.
+    let mut builder = XmlDsigBuilder::new("sig-h1", signer.algorithm());
+    builder.declare_ns("xades", XADES_NS);
+    builder.add_cert(signer.cert_der());
+    builder.add_reference(Reference {
+        uri: "#payload".into(),
+        id: None,
+        ref_type: None,
+        transforms: vec![C14nAlgorithm::ExclusiveWithoutComments.uri().to_string()],
+        digest: obj_digest,
+    });
+    builder.add_object(object_xml.to_string());
+    // Append an unsigned SignedProperties carrying SigningTime + SigningCertificateV2, not covered
+    // by any reference — the "append a qualifying blob anywhere" attack.
+    builder.add_object(format!(
+        "<ds:Object><xades:QualifyingProperties Target=\"#sig-h1\">\
+         <xades:SignedProperties Id=\"forged-props\"><xades:SignedSignatureProperties>\
+         <xades:SigningTime>2026-01-01T00:00:00Z</xades:SigningTime>\
+         <xades:SigningCertificateV2><xades:Cert><xades:CertDigest>\
+         <ds:DigestMethod Algorithm=\"{DIGEST_SHA256}\"></ds:DigestMethod>\
+         <ds:DigestValue>AAAA</ds:DigestValue></xades:CertDigest></xades:Cert>\
+         </xades:SigningCertificateV2></xades:SignedSignatureProperties>\
+         </xades:SignedProperties></xades:QualifyingProperties></ds:Object>"
+    ));
+
+    let digest = builder.signed_info_digest().expect("signed_info digest");
+    let raw = signer.raw_signature(&digest);
+    let xml = builder.assemble(&raw).expect("assemble");
+
+    let report = validate_xades(&xml).expect("validate");
+    // The underlying XMLDSig really is cryptographically sound over its body reference.
+    assert!(report.signature_valid, "the XMLDSig itself verifies");
+    assert!(report.references_valid, "the body reference matches");
+    assert_eq!(report.references_checked, 1);
+    // The permissive presence flags are still true — which is exactly why they must not gate validity.
+    assert!(report.signed_properties_present);
+    assert!(report.signing_certificate_v2_present);
+    // But nothing signed covers the SignedProperties, so it is not XAdES-B valid.
+    assert!(
+        !report.signed_properties_signed,
+        "no verified reference covers the appended SignedProperties"
+    );
+    assert!(
+        !report.is_valid_b(),
+        "an unsigned SignedProperties blob must not satisfy XAdES-B"
+    );
+}
+
+/// H2 (t68) — a document carrying two elements with the same `Id` is rejected outright: `Id`
+/// resolution must fail closed rather than silently pick the first match (the signature-wrapping /
+/// XSW lever). A unique-`Id` document still validates.
+#[test]
+fn duplicate_id_is_rejected() {
+    let signer = TestSigner::new_ecdsa("H2 duplicate id", 21);
+    let xml = sign_to_bytes(&signer, enveloping_request(&signer, XadesLevel::B));
+    // Baseline: the genuine, unique-Id document validates.
+    assert!(
+        validate_xades(&xml).expect("validate genuine").is_valid_b(),
+        "the unique-Id document is valid"
+    );
+
+    // Inject a second element carrying the payload's Id ("obj-1") — the XSW wrapper. The genuine
+    // reference still digests the original, but resolution is now ambiguous and must be rejected.
+    let text = String::from_utf8(xml).unwrap();
+    let injected = "<ds:Object Id=\"obj-1\">forged</ds:Object></ds:Signature>";
+    let tampered = text.replace("</ds:Signature>", injected).into_bytes();
+
+    let result = validate_xades(&tampered);
+    assert!(
+        result.is_err(),
+        "a document with a duplicate Id must be rejected, got {result:?}"
+    );
 }

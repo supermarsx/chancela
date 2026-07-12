@@ -33,10 +33,16 @@ pub struct XadesValidationReport {
     /// Number of references this call could dereference and check (external detached references in a
     /// bare signature cannot be checked without their bytes).
     pub references_checked: usize,
-    /// `xades:SignedProperties` is present.
+    /// `xades:SignedProperties` is present somewhere in the document (a presence check only — see
+    /// [`Self::signed_properties_signed`] for the security-relevant "is it actually signed").
     pub signed_properties_present: bool,
-    /// `xades:SigningCertificateV2` is present.
+    /// `xades:SigningCertificateV2` is present somewhere in the document (presence only).
     pub signing_certificate_v2_present: bool,
+    /// A digest-verified `ds:Reference` covers the `xades:SignedProperties` that carries the mandatory
+    /// `SigningCertificateV2`/`SigningTime` — i.e. the signer actually committed to those signed
+    /// properties. This is what XAdES-B validity requires; an unsigned `SignedProperties` blob
+    /// appended anywhere in the document does **not** set it.
+    pub signed_properties_signed: bool,
     /// The `xades:SigningTime`, if present and parseable.
     pub signing_time: Option<OffsetDateTime>,
     /// The signer certificate DER recovered from `KeyInfo`, if any.
@@ -46,13 +52,16 @@ pub struct XadesValidationReport {
 }
 
 impl XadesValidationReport {
-    /// Whether the signature is valid at XAdES-B: signature verified, all checkable references
-    /// matched, and the mandatory `SignedProperties`/`SigningCertificateV2` present.
+    /// Whether the signature is valid at XAdES-B: the signature verified over `SignedInfo`, at least
+    /// one reference was dereferenced and every checkable reference matched, and — the security-
+    /// critical condition — a digest-verified reference actually covers the `SignedProperties`
+    /// carrying the mandatory `SigningCertificateV2`/`SigningTime`. Mere presence of those elements
+    /// somewhere in the document is not enough: an unsigned blob appended anywhere must not qualify.
     pub fn is_valid_b(&self) -> bool {
         self.signature_valid
             && self.references_valid
-            && self.signed_properties_present
-            && self.signing_certificate_v2_present
+            && self.references_checked > 0
+            && self.signed_properties_signed
     }
 }
 
@@ -61,6 +70,11 @@ pub fn validate_xades(xml: &[u8]) -> Result<XadesValidationReport, XadesError> {
     let text = std::str::from_utf8(xml)
         .map_err(|_| XadesError::XmlParse("document is not UTF-8".into()))?;
     let doc = roxmltree::Document::parse(text).map_err(|e| XadesError::XmlParse(e.to_string()))?;
+
+    // Fail closed on ambiguous XMLDSig `Id`s before dereferencing anything: a duplicate `Id` is the
+    // lever for signature-wrapping (XSW), letting the validator digest one element while a consumer
+    // reads the attacker's. Reject the whole document rather than resolve to a first-match guess.
+    c14n::check_unique_ids(xml)?;
 
     let signature = doc
         .descendants()
@@ -117,6 +131,7 @@ pub fn validate_xades(xml: &[u8]) -> Result<XadesValidationReport, XadesError> {
     let reference_count = references.len();
     let mut references_checked = 0usize;
     let mut references_valid = true;
+    let mut signed_properties_signed = false;
 
     for r in &references {
         let uri = r.attribute("URI").unwrap_or("");
@@ -158,6 +173,24 @@ pub fn validate_xades(xml: &[u8]) -> Result<XadesValidationReport, XadesError> {
             references_checked += 1;
             if computed.as_slice() != expected.as_slice() {
                 references_valid = false;
+            } else if let Some(id) = uri.strip_prefix('#') {
+                // The reference's digest matched. It proves the signer committed to the
+                // `SignedProperties` only when the resolved, digest-verified element actually *is*
+                // the `xades:SignedProperties` carrying the mandatory `SigningCertificateV2`/
+                // `SigningTime`. Resolving by the same `#id` the digest covered (Id uniqueness was
+                // enforced above) prevents an unsigned blob elsewhere from satisfying the check.
+                if let Some(node) = find_element_by_id(&doc, id) {
+                    if node.has_tag_name((XADES_NS, "SignedProperties"))
+                        && node
+                            .descendants()
+                            .any(|n| n.has_tag_name((XADES_NS, "SigningCertificateV2")))
+                        && node
+                            .descendants()
+                            .any(|n| n.has_tag_name((XADES_NS, "SigningTime")))
+                    {
+                        signed_properties_signed = true;
+                    }
+                }
             }
         }
     }
@@ -192,10 +225,21 @@ pub fn validate_xades(xml: &[u8]) -> Result<XadesValidationReport, XadesError> {
         references_checked,
         signed_properties_present,
         signing_certificate_v2_present,
+        signed_properties_signed,
         signing_time,
         signer_cert_der,
         signature_timestamp_present,
     })
+}
+
+/// The single element carrying `Id="id"`, if any. Id uniqueness is enforced at validation entry
+/// (`c14n::check_unique_ids`), so a first match is the only match.
+fn find_element_by_id<'a, 'input>(
+    doc: &'a roxmltree::Document<'input>,
+    id: &str,
+) -> Option<roxmltree::Node<'a, 'input>> {
+    doc.descendants()
+        .find(|n| n.is_element() && n.attribute("Id") == Some(id))
 }
 
 /// The c14n algorithm named by a reference's transforms, defaulting to exclusive-without-comments.
