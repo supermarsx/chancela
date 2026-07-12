@@ -179,6 +179,35 @@ function yesNo(value: boolean | null, t: TFunction): string {
   return value ? t('common.yes') : t('common.no');
 }
 
+const SHA256_LIKE_RE = /\b[A-Fa-f0-9]{64}\b/g;
+const WINDOWS_PATH_RE = /\b[A-Za-z]:\\[^\s<>"']+/g;
+const POSIX_ARCHIVE_PATH_RE =
+  /\/[A-Za-z0-9._~!$&()*+,;=:@%/-]+\.(?:zip|cbackup|sqlite|sqlite3|db)\b/g;
+const SECRETISH_ASSIGNMENT_RE = /\b(?:passphrase|secret|token)\s*[:=]\s*[^\s,;]+/gi;
+const SECRETISH_TOKEN_RE = /\b[^\s,;:]*?(?:passphrase|secret)[^\s,;:]*/gi;
+const MEMBER_FILENAME_RE = /\b[\w.-]+\.(?:zip|cbackup|sqlite|sqlite3|db|json)\b/g;
+
+function safeArchiveLabel(archive: string): string {
+  const trimmed = archive.trim();
+  if (!trimmed) return '—';
+  const parts = trimmed.split(/[\\/]+/).filter(Boolean);
+  const label = parts.length > 0 ? parts[parts.length - 1] : trimmed;
+  return label
+    .replace(SHA256_LIKE_RE, '[hash redigido]')
+    .replace(SECRETISH_ASSIGNMENT_RE, '[segredo redigido]')
+    .replace(SECRETISH_TOKEN_RE, '[segredo redigido]');
+}
+
+function redactReceiptEvidenceText(value: string): string {
+  return value
+    .replace(SHA256_LIKE_RE, '[hash redigido]')
+    .replace(WINDOWS_PATH_RE, '[caminho redigido]')
+    .replace(POSIX_ARCHIVE_PATH_RE, '[caminho redigido]')
+    .replace(SECRETISH_ASSIGNMENT_RE, '[segredo redigido]')
+    .replace(SECRETISH_TOKEN_RE, '[segredo redigido]')
+    .replace(MEMBER_FILENAME_RE, '[membro redigido]');
+}
+
 function permissionTone(check: DataPermissionCheck): 'ok' | 'warn' | 'neutral' {
   if (!check.checked) return 'neutral';
   return check.ok ? 'ok' : 'warn';
@@ -330,6 +359,126 @@ function StatusBadge({
   return <Badge tone={ok ? 'ok' : 'warn'}>{value ? t('common.yes') : t('common.no')}</Badge>;
 }
 
+function IsolatedRestoreVerificationReport({
+  receipt,
+  t,
+  locale,
+}: {
+  receipt: BackupRecoveryDrillReceipt;
+  t: TFunction;
+  locale: string;
+}) {
+  const verification = receipt.isolated_restore_verification;
+  const verified = receipt.isolated_restore_verified && verification.status === 'verified';
+  const statusTone =
+    verification.status === 'verified'
+      ? 'ok'
+      : verification.status === 'not_recorded'
+        ? 'neutral'
+        : 'warn';
+  const booleanRows = [
+    { label: 'Snapshot materializado', value: verification.db_snapshot_materialized },
+    { label: 'Snapshot aberto', value: verification.db_snapshot_opened },
+    { label: 'Estado carregado', value: verification.state_loaded },
+    { label: 'Ledger verificado', value: verification.ledger_verified },
+    { label: 'Limpeza verificada', value: verification.cleanup_verified },
+  ];
+  const countRows = [
+    { label: 'Entidades', value: verification.entity_count },
+    { label: 'Livros', value: verification.book_count },
+    { label: 'Atos', value: verification.act_count },
+    { label: 'Raízes sidecar', value: verification.sidecar_root_count },
+    {
+      label: 'Ficheiros sidecar materializados',
+      value: verification.sidecar_materialized_file_count,
+    },
+    {
+      label: 'Bytes sidecar materializados',
+      value: formatBytes(verification.sidecar_materialized_bytes, locale),
+    },
+  ];
+  const findings = verification.findings.map(redactReceiptEvidenceText).filter(Boolean);
+  const errors = verification.errors.map(redactReceiptEvidenceText).filter(Boolean);
+
+  return (
+    <div>
+      <h5>Verificação isolada</h5>
+      <dl className="deflist data-status-summary">
+        <div>
+          <dt>Estado</dt>
+          <dd>
+            <Badge tone={statusTone}>{verification.status}</Badge>
+          </dd>
+        </div>
+        <div>
+          <dt>Snapshot isolado verificado</dt>
+          <dd>
+            <Badge tone={verified ? 'ok' : 'warn'}>
+              {verified ? t('common.yes') : t('common.no')}
+            </Badge>
+          </dd>
+        </div>
+        {booleanRows.map((row) => (
+          <div key={row.label}>
+            <dt>{row.label}</dt>
+            <dd>
+              <Badge tone={row.value ? 'ok' : 'warn'}>
+                {row.value ? t('common.yes') : t('common.no')}
+              </Badge>
+            </dd>
+          </div>
+        ))}
+        <div>
+          <dt>SQLCipher verificado</dt>
+          <dd>
+            <StatusBadge value={verification.sqlcipher_encryption_verified} t={t} />
+          </dd>
+        </div>
+        {countRows.map((row) => (
+          <div key={row.label}>
+            <dt>{row.label}</dt>
+            <dd className="mono">
+              {typeof row.value === 'number'
+                ? new Intl.NumberFormat(locale).format(row.value)
+                : row.value}
+            </dd>
+          </div>
+        ))}
+        <div className="deflist__wide">
+          <dt>Próximo passo</dt>
+          <dd>{redactReceiptEvidenceText(verification.next_step)}</dd>
+        </div>
+      </dl>
+
+      <div>
+        <h5>Constatações</h5>
+        {findings.length === 0 ? (
+          <p className="field__hint">Sem constatações registadas.</p>
+        ) : (
+          <ul className="plain-list">
+            {findings.map((finding, index) => (
+              <li key={`${finding}-${index}`}>{finding}</li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div>
+        <h5>Erros</h5>
+        {errors.length === 0 ? (
+          <p className="field__hint">Sem erros registados.</p>
+        ) : (
+          <ul className="plain-list">
+            {errors.map((error, index) => (
+              <li key={`${error}-${index}`}>{error}</li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function RecoveryDrillReceiptReport({
   receipt,
   t,
@@ -340,14 +489,14 @@ function RecoveryDrillReceiptReport({
   locale: string;
 }) {
   const manifest = receipt.manifest;
-  const falseFlags: { label: string; value: boolean }[] = [
-    { label: 'Restauro executado', value: receipt.restore_executed },
-    { label: 'Base de dados trocada', value: receipt.live_db_swapped },
-    { label: 'Sidecars preparados', value: receipt.sidecars_staged },
-    { label: 'ledger.restored acrescentado', value: receipt.ledger_restored_appended },
-    { label: 'Dados apagados', value: receipt.data_deleted },
-    { label: 'Custódia off-site comprovada', value: receipt.offsite_custody_proven },
-    { label: 'Certificação legal de arquivo', value: receipt.legal_archive_certified },
+  const limitRows: { label: string; confirmed: boolean }[] = [
+    { label: 'Sem restauro ao vivo', confirmed: !receipt.restore_executed },
+    { label: 'Sem troca ao vivo da base de dados', confirmed: !receipt.live_db_swapped },
+    { label: 'Sem preparação ao vivo de sidecars', confirmed: !receipt.sidecars_staged },
+    { label: 'Sem evento ledger.restored', confirmed: !receipt.ledger_restored_appended },
+    { label: 'Sem apagamento de dados', confirmed: !receipt.data_deleted },
+    { label: 'Sem certificação de custódia off-site', confirmed: !receipt.offsite_custody_proven },
+    { label: 'Sem certificação legal ou de arquivo', confirmed: !receipt.legal_archive_certified },
   ];
   return (
     <InlineWarning
@@ -358,7 +507,7 @@ function RecoveryDrillReceiptReport({
         <dl className="deflist data-status-summary">
           <div className="deflist__wide">
             <dt>Arquivo verificado</dt>
-            <dd className="mono">{receipt.archive}</dd>
+            <dd className="mono">{safeArchiveLabel(receipt.archive)}</dd>
           </div>
           <div>
             <dt>Registado em</dt>
@@ -423,25 +572,29 @@ function RecoveryDrillReceiptReport({
           {receipt.custody_location ? (
             <div className="deflist__wide">
               <dt>Local de custódia indicado</dt>
-              <dd>{receipt.custody_location}</dd>
+              <dd>{redactReceiptEvidenceText(receipt.custody_location)}</dd>
             </div>
           ) : null}
           {receipt.operator_notes ? (
             <div className="deflist__wide">
               <dt>Notas do operador</dt>
-              <dd>{receipt.operator_notes}</dd>
+              <dd>{redactReceiptEvidenceText(receipt.operator_notes)}</dd>
             </div>
           ) : null}
         </dl>
 
+        <IsolatedRestoreVerificationReport receipt={receipt} t={t} locale={locale} />
+
         <div>
           <h5>Limites do recibo</h5>
           <dl className="deflist data-status-summary">
-            {falseFlags.map((flag) => (
-              <div key={flag.label}>
-                <dt>{flag.label}</dt>
+            {limitRows.map((row) => (
+              <div key={row.label}>
+                <dt>{row.label}</dt>
                 <dd>
-                  <Badge tone="neutral">{flag.value ? t('common.yes') : t('common.no')}</Badge>
+                  <Badge tone={row.confirmed ? 'ok' : 'warn'}>
+                    {row.confirmed ? 'Confirmado' : 'Não confirmado'}
+                  </Badge>
                 </dd>
               </div>
             ))}

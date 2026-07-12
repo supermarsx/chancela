@@ -882,6 +882,7 @@ describe('GestaoDadosSection', () => {
     const passphrase = `  ${passphraseMaterial}  `;
     const hiddenSecret = 'server-secret-not-for-dom';
     const hiddenHash = 'f'.repeat(64);
+    const hiddenMember = 'secret-member-name.json';
     const calls = installFetch([durableStatus], (url, init) => {
       if (url === '/v1/backup/recovery-drills') {
         const body = JSON.parse((init?.body as string) ?? '{}');
@@ -911,8 +912,31 @@ describe('GestaoDadosSection', () => {
               sidecar_member_count: 2,
               db_member_present: true,
               total_member_bytes: 4096,
-              member_name: 'secret-member-name.json',
+              member_name: hiddenMember,
               sha256: hiddenHash,
+            },
+            isolated_restore_verified: true,
+            isolated_restore_verification: {
+              status: 'verified',
+              db_snapshot_materialized: true,
+              db_snapshot_opened: true,
+              state_loaded: true,
+              ledger_verified: true,
+              cleanup_verified: true,
+              entity_count: 4,
+              book_count: 2,
+              act_count: 12,
+              sidecar_root_count: 2,
+              sidecar_materialized_file_count: 2,
+              sidecar_materialized_bytes: 4096,
+              sqlcipher_encryption_verified: null,
+              findings: [
+                'isolated database snapshot was materialized, opened, and loaded',
+                `hash ${hiddenHash} and member ${hiddenMember} stayed bounded`,
+              ],
+              errors: [`raw archive ${archive} and token ${hiddenSecret} stayed bounded`],
+              next_step:
+                'record as preflight-only isolated snapshot evidence; authorize recovery execution separately',
             },
             operator_notes: 'Quarterly drill only',
             custody_location: 'Safe A / shelf 3',
@@ -930,6 +954,12 @@ describe('GestaoDadosSection', () => {
       }
       if (url === '/v1/ledger/recovery/restore') {
         return jsonResponse({ error: 'restore should not be called' }, 500);
+      }
+      if (url === '/v1/ledger/recovery/restore/preflight') {
+        return jsonResponse({ error: 'restore preflight should not be called' }, 500);
+      }
+      if (url === '/v1/data/reset') {
+        return jsonResponse({ error: 'destructive reset should not be called' }, 500);
       }
       return null;
     });
@@ -953,28 +983,85 @@ describe('GestaoDadosSection', () => {
     );
     const drill = calls.find((c) => c.url === '/v1/backup/recovery-drills')!;
     expect(drill.method).toBe('POST');
-    expect(calls.some((c) => c.url === '/v1/ledger/recovery/restore')).toBe(false);
-    expect(calls.some((c) => c.url === '/v1/ledger/recovery/restore/preflight')).toBe(false);
+    for (const forbiddenUrl of [
+      '/v1/ledger/recovery/restore',
+      '/v1/ledger/recovery/restore/preflight',
+      '/v1/data/reset',
+    ]) {
+      expect(calls.some((c) => c.url === forbiddenUrl)).toBe(false);
+    }
 
     expect(await screen.findByText('Recibo de ensaio registado')).toBeTruthy();
-    expect(screen.getByText(archive)).toBeTruthy();
+    expect(screen.queryByText(archive)).toBeNull();
+    expect(screen.getByText('chancela-backup-drill.cbackup')).toBeTruthy();
     expect(screen.getByText('chancela-backup-manifest/v1')).toBeTruthy();
     expect(screen.getByText('Membros no arquivo')).toBeTruthy();
     expect(screen.getByText('Membros sidecar')).toBeTruthy();
-    expect(screen.getByText('Custódia off-site comprovada')).toBeTruthy();
-    expect(screen.getByText('Certificação legal de arquivo')).toBeTruthy();
-    expect(screen.getByText('Custódia off-site comprovada').closest('div')?.textContent).toContain(
-      'Não',
+    const isolated = screen.getByText('Verificação isolada').closest('div')!;
+    expect(within(isolated).getByText('verified')).toBeTruthy();
+    expect(
+      within(isolated).getByText('Snapshot materializado').closest('div')?.textContent,
+    ).toContain('Sim');
+    expect(within(isolated).getByText('Snapshot aberto').closest('div')?.textContent).toContain(
+      'Sim',
     );
-    expect(screen.getByText('Certificação legal de arquivo').closest('div')?.textContent).toContain(
-      'Não',
+    expect(within(isolated).getByText('Estado carregado').closest('div')?.textContent).toContain(
+      'Sim',
     );
+    expect(within(isolated).getByText('Ledger verificado').closest('div')?.textContent).toContain(
+      'Sim',
+    );
+    expect(within(isolated).getByText('Limpeza verificada').closest('div')?.textContent).toContain(
+      'Sim',
+    );
+    expect(within(isolated).getByText('Entidades').closest('div')?.textContent).toContain('4');
+    expect(within(isolated).getByText('Livros').closest('div')?.textContent).toContain('2');
+    expect(within(isolated).getByText('Atos').closest('div')?.textContent).toContain('12');
+    expect(within(isolated).getByText('Raízes sidecar').closest('div')?.textContent).toContain('2');
+    expect(
+      within(isolated).getByText('Ficheiros sidecar materializados').closest('div')?.textContent,
+    ).toContain('2');
+    expect(
+      within(isolated).getByText('Bytes sidecar materializados').closest('div')?.textContent,
+    ).toContain('4 KB');
+    expect(
+      within(isolated).getByText('isolated database snapshot was materialized, opened, and loaded'),
+    ).toBeTruthy();
+    expect(
+      within(isolated).getByText(/record as preflight-only isolated snapshot evidence/),
+    ).toBeTruthy();
+    expect(within(isolated).getByText(/hash redigido/)).toBeTruthy();
+    expect(within(isolated).getByText(/caminho redigido/)).toBeTruthy();
+    expect(within(isolated).getAllByText(/segredo redigido/).length).toBeGreaterThan(0);
+    for (const limit of [
+      'Sem restauro ao vivo',
+      'Sem troca ao vivo da base de dados',
+      'Sem preparação ao vivo de sidecars',
+      'Sem evento ledger.restored',
+      'Sem apagamento de dados',
+      'Sem certificação de custódia off-site',
+      'Sem certificação legal ou de arquivo',
+    ]) {
+      expect(screen.getByText(limit).closest('div')?.textContent).toContain('Confirmado');
+    }
+    for (const overclaim of [
+      'Restauro executado',
+      'Base de dados trocada',
+      'Sidecars preparados',
+      'ledger.restored acrescentado',
+      'Dados apagados',
+      'Custódia off-site comprovada',
+      'Certificação legal de arquivo',
+    ]) {
+      expect(document.body.textContent).not.toContain(overclaim);
+    }
     expect(key.value).toBe('');
+    expect(document.body.textContent).not.toContain(archive);
     expect(document.body.textContent).not.toContain(passphraseMaterial);
     expect(document.body.textContent).not.toContain(hiddenSecret);
     expect(document.body.textContent).not.toContain(hiddenHash);
     expect(document.body.textContent).not.toContain('internal-build-not-rendered');
-    expect(document.body.textContent).not.toContain('secret-member-name.json');
+    expect(document.body.textContent).not.toContain(hiddenMember);
   });
 
   it('disables backup creation when the instance is not using durable storage', async () => {
