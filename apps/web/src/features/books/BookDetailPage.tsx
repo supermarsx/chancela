@@ -267,6 +267,10 @@ function noClaimLabel(value: boolean): string {
   return value ? 'sim' : 'não';
 }
 
+function paperBookPreflightStatusLabel(blockers: string[]): string {
+  return blockers.length ? 'bloqueado' : 'evidência local reunida para revisão externa';
+}
+
 function paperBookOcrTextPreview(draft: PaperBookOcrDraftView): string {
   const text = draft.extracted_text?.trim();
   if (!text) return 'Texto OCR não armazenado; rever pelo digest indicado.';
@@ -889,6 +893,102 @@ function PaperBookOcrDossierReviewSummary({
   );
 }
 
+function PaperBookCanonicalConversionPreflightGate({
+  row,
+  dossiers,
+  drafts,
+  loading,
+}: {
+  row: PaperBookImportView;
+  dossiers: PaperBookOcrConversionDossierView[];
+  drafts: PaperBookOcrDraftView[];
+  loading: boolean;
+}) {
+  const acceptedDraft = drafts.find((draft) => draft.review_status === 'accepted') ?? null;
+  const acceptedDossier = acceptedDraft
+    ? (dossiers.find((dossier) => dossier.draft_id === acceptedDraft.draft_id) ?? null)
+    : null;
+  const blockers = [
+    ...(acceptedDraft ? [] : ['accepted_ocr_draft_required']),
+    ...(loading || acceptedDossier ? [] : ['metadata_only_conversion_dossier_required']),
+  ];
+  const sourceTextDigest =
+    acceptedDossier?.source_text_digest ?? acceptedDraft?.text_digest ?? null;
+
+  return (
+    <section
+      className="stack--tight"
+      aria-label={`Preflight de conversão canónica OCR da importação ${row.import_id}`}
+    >
+      <p className="card__label">Preflight canónico OCR read-only</p>
+      <InlineWarning tone="info" title="Metadata-only, read-only, non-canonical">
+        Evidência bounded para revisão de conversão canónica posterior. Não executa conversão, não
+        promove rascunhos e não aceita legalmente o conteúdo.
+      </InlineWarning>
+      <dl className="deflist deflist--tight">
+        <div>
+          <dt>Estado</dt>
+          <dd>{loading ? 'a carregar dossier' : paperBookPreflightStatusLabel(blockers)}</dd>
+        </div>
+        <div>
+          <dt>Âmbito</dt>
+          <dd>ocr_to_canonical_conversion_preflight</dd>
+        </div>
+        <div>
+          <dt>Importação preservada</dt>
+          <dd>
+            <span className="mono">{row.import_id}</span> · páginas {paperBookPageRange(row)} ·
+            digest <span className="mono">{row.sha256.slice(0, 16)}...</span>
+          </dd>
+        </div>
+        <div>
+          <dt>Rascunho OCR aceite</dt>
+          <dd>
+            {acceptedDraft ? (
+              <span className="mono">{acceptedDraft.draft_id}</span>
+            ) : (
+              'accepted_ocr_draft_required'
+            )}
+          </dd>
+        </div>
+        <div>
+          <dt>Dossier metadata-only</dt>
+          <dd>
+            {loading
+              ? 'a carregar'
+              : acceptedDossier
+                ? acceptedDossier.dossier_id
+                : 'metadata_only_conversion_dossier_required'}
+          </dd>
+        </div>
+        <div>
+          <dt>Digest OCR de referência</dt>
+          <dd>
+            {sourceTextDigest ? <span className="mono">{sourceTextDigest}</span> : 'não exposto'}
+          </dd>
+        </div>
+        <div>
+          <dt>Bloqueios</dt>
+          <dd>{blockers.length ? blockers.join(', ') : 'nenhum bloqueio de metadados local'}</dd>
+        </div>
+        <div>
+          <dt>Limite legal</dt>
+          <dd>legal_acceptance_recorded_is_operator_evidence_only</dd>
+        </div>
+        <div>
+          <dt>Sem produção</dt>
+          <dd>
+            raw_ocr_text_in_report: false · canonical_act_created: false ·
+            canonical_document_created: false · signature_created: false · signing_requested: false
+            · signature_validity_claimed: false · qualified_signature_claimed: false ·
+            legal_validity_claimed: false · PDF/A: false · PDF/UA: false
+          </dd>
+        </div>
+      </dl>
+    </section>
+  );
+}
+
 function PaperBookOcrDraftPanel({ row }: { row: PaperBookImportView }) {
   const toast = useToast();
   const drafts = usePaperBookOcrDrafts(row.import_id);
@@ -1008,6 +1108,12 @@ function PaperBookOcrDraftPanel({ row }: { row: PaperBookImportView }) {
         {PAPER_BOOK_OCR_DRAFT_COPY}
       </InlineWarning>
       <PaperBookOcrDossierReviewSummary
+        dossiers={dossiers.data ?? []}
+        drafts={rows}
+        loading={dossiers.isLoading}
+      />
+      <PaperBookCanonicalConversionPreflightGate
+        row={row}
         dossiers={dossiers.data ?? []}
         drafts={rows}
         loading={dossiers.isLoading}

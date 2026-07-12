@@ -927,6 +927,29 @@ describe('BookDetailPage — paper-book preserved imports', () => {
     expect(
       await within(summary).findByText('Sem dossier aplicável sem rascunho aceite.'),
     ).toBeTruthy();
+    const preflight = await screen.findByRole('region', {
+      name: /Preflight de conversão canónica OCR/i,
+    });
+    expect(within(preflight).getByText('Preflight canónico OCR read-only')).toBeTruthy();
+    expect(within(preflight).getByText(/Metadata-only, read-only, non-canonical/i)).toBeTruthy();
+    expect(within(preflight).getByText('bloqueado')).toBeTruthy();
+    expect(within(preflight).getAllByText(/accepted_ocr_draft_required/i).length).toBeGreaterThan(
+      0,
+    );
+    expect(
+      within(preflight).getAllByText(/metadata_only_conversion_dossier_required/i).length,
+    ).toBeGreaterThan(0);
+    expect(
+      within(preflight).getByText(/legal_acceptance_recorded_is_operator_evidence_only/i),
+    ).toBeTruthy();
+    expect(within(preflight).getByText(/raw_ocr_text_in_report: false/i)).toBeTruthy();
+    expect(within(preflight).getByText(/canonical_act_created: false/i)).toBeTruthy();
+    expect(within(preflight).getByText(/canonical_document_created: false/i)).toBeTruthy();
+    expect(within(preflight).getByText(/signature_created: false/i)).toBeTruthy();
+    expect(within(preflight).getByText(/signing_requested: false/i)).toBeTruthy();
+    expect(within(preflight).getByText(/legal_validity_claimed: false/i)).toBeTruthy();
+    expect(within(preflight).getByText(/PDF\/A: false/i)).toBeTruthy();
+    expect(within(preflight).getByText(/PDF\/UA: false/i)).toBeTruthy();
     expect(screen.getByText('Sem rascunhos OCR registados')).toBeTruthy();
     expect(
       calls.some((call) => call.url.endsWith('/conversion-dossier') && call.method === 'POST'),
@@ -1187,9 +1210,9 @@ describe('BookDetailPage — paper-book preserved imports', () => {
     expect(screen.getAllByText(/assinatura: não/i).length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText(/selo: não/i).length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText(/validade legal: não/i).length).toBeGreaterThanOrEqual(1);
-    expect(
-      calls.some((call) => /\/(document|signature|seal|archive)(\/|$)/.test(call.url)),
-    ).toBe(false);
+    expect(calls.some((call) => /\/(document|signature|seal|archive)(\/|$)/.test(call.url))).toBe(
+      false,
+    );
   });
 
   it('creates a metadata-only conversion dossier for an accepted OCR draft on operator action', async () => {
@@ -1248,6 +1271,17 @@ describe('BookDetailPage — paper-book preserved imports', () => {
     expect(within(summary).queryByText(/dossier canónico/i)).toBeNull();
     expect(within(summary).queryByText(/assinatura válida/i)).toBeNull();
     expect(within(summary).queryByText(/PDF\/A certificado/i)).toBeNull();
+    const preflight = await screen.findByRole('region', {
+      name: /Preflight de conversão canónica OCR/i,
+    });
+    expect(within(preflight).getByText('Preflight canónico OCR read-only')).toBeTruthy();
+    expect(
+      within(preflight).getAllByText(/metadata_only_conversion_dossier_required/i).length,
+    ).toBeGreaterThan(0);
+    expect(within(preflight).getByText(draft.draft_id)).toBeTruthy();
+    expect(within(preflight).getByText(/raw_ocr_text_in_report: false/i)).toBeTruthy();
+    expect(within(preflight).getByText(/signature_validity_claimed: false/i)).toBeTruthy();
+    expect(within(preflight).getByText(/qualified_signature_claimed: false/i)).toBeTruthy();
     expect(
       calls.some((call) => call.url.endsWith('/conversion-dossier') && call.method === 'POST'),
     ).toBe(false);
@@ -1271,6 +1305,15 @@ describe('BookDetailPage — paper-book preserved imports', () => {
       within(summary).getByText(
         `Dossier só de metadados registado (${createdDossier.dossier_id}).`,
       ),
+    ).toBeTruthy();
+    expect(within(preflight).getByText(createdDossier.dossier_id)).toBeTruthy();
+    expect(within(preflight).queryByText('metadata_only_conversion_dossier_required')).toBeNull();
+    expect(
+      within(preflight).getByText('evidência local reunida para revisão externa'),
+    ).toBeTruthy();
+    expect(within(preflight).getByText('nenhum bloqueio de metadados local')).toBeTruthy();
+    expect(
+      within(preflight).getByText(/legal_acceptance_recorded_is_operator_evidence_only/i),
     ).toBeTruthy();
     expect(screen.getByText(/metadata-only, non-canonical/i)).toBeTruthy();
     expect(screen.getByText(/Ata criada: não/i)).toBeTruthy();
@@ -1361,9 +1404,9 @@ describe('BookDetailPage — paper-book preserved imports', () => {
     expect(
       calls.some((call) => call.url.endsWith('/conversion-dossier') && call.method === 'POST'),
     ).toBe(false);
-    expect(
-      calls.some((call) => /\/(document|signature|seal|archive)(\/|$)/.test(call.url)),
-    ).toBe(false);
+    expect(calls.some((call) => /\/(document|signature|seal|archive)(\/|$)/.test(call.url))).toBe(
+      false,
+    );
   });
 
   it('does not expose conversion dossier creation for non-accepted OCR drafts', async () => {

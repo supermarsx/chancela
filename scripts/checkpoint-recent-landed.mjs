@@ -843,6 +843,16 @@ function assertCheckpointMap() {
     "web paper-book OCR/dossier metadata-only no-claim flags marker",
   );
   assertFileContains(
+    "apps/web/src/features/books/BookDetailPage.tsx",
+    "Preflight canónico OCR read-only",
+    "web paper-book OCR canonical-conversion read-only preflight marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/books/books.test.tsx",
+    "legal_acceptance_recorded_is_operator_evidence_only",
+    "web paper-book OCR canonical-conversion preflight operator-evidence boundary coverage",
+  );
+  assertFileContains(
     "apps/web/src/features/books/books.test.tsx",
     "renders an existing conversion dossier without encouraging duplicate creation",
     "web paper-book conversion dossier existing-dossier coverage",
