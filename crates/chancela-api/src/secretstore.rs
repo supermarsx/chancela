@@ -33,11 +33,10 @@
 //! - **Zeroize** for every plaintext and key buffer: the CMK/root live in [`Zeroizing`], and
 //!   decrypted plaintext is wiped on every path.
 
-// This module is the crypto core built ahead of its consumers (plan slices S2–S4 wire it into
-// `AppState`, the provider assembly, and the credential endpoints). Until then its public surface
-// has no in-crate caller outside the unit tests, so the unused-code lints are scoped-off here and
-// removed when S2 introduces the first consumer.
-#![allow(dead_code)]
+// This module is the crypto core; S2 (`secretstore_persist`) is its first in-crate consumer, wiring
+// `resolve`/`wrap`/`unwrap`/`protection_level`/`strict_from_env` into the credential store. A few
+// items are still consumed only by later slices (S3 assembly / S4 endpoints); those carry a targeted
+// `#[allow(dead_code)]` with a note rather than a blanket module-level allow.
 
 use std::collections::HashMap;
 use std::fmt;
@@ -515,6 +514,10 @@ impl CredentialSecretStore {
     }
 
     /// Whether strict credential storage is enabled.
+    ///
+    // Consumed by the credential status endpoint (S4); the S2 persistence store tracks the strict
+    // flag independently (without forcing key resolution), so there is no live caller yet.
+    #[allow(dead_code)]
     pub fn strict(&self) -> bool {
         self.inner.strict
     }

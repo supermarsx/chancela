@@ -120,6 +120,7 @@ mod registry;
 mod roles;
 mod scap;
 mod secretstore;
+mod secretstore_persist;
 mod session;
 mod settings;
 mod signature;
@@ -173,6 +174,15 @@ pub use platform_logs::{PlatformLogEntry, PlatformLogRing, PlatformLogsResponse}
 pub use roles::{
     count_owner_admins, effective_permissions_for, effective_permissions_for_actor,
     last_owner_guard_ok, resolve_principal_id,
+};
+// Signature-provider credential model + encrypted sidecar (t77 S2). Re-exported so the credential
+// API/assembly slices (S3/S4) can name these and so the crypto core's consumers are reachable from
+// the crate root (the crate-private `CredentialSecretStore` itself stays internal).
+pub use secretstore::{CredentialKeySource, ProtectionLevel, SecretEnvelope, SecretStoreError};
+pub use secretstore_persist::{
+    CmdCredentialFields, CredentialFieldSet, CredentialMode, CredentialRecordStatus,
+    CscCredentialFields, DecryptedCredentialRecord, EncryptedCredentialRecord,
+    ProviderCredentialError, ProviderCredentialStore, ScapCredentialFields, StoredCredentialField,
 };
 pub use settings::{
     AiSettings, AppearanceSettings, CaeSourceEntry, CatalogSettings, CmdEnvSetting,
@@ -497,6 +507,13 @@ pub struct AppState {
     /// Non-secret source classification for the configured database encryption key. `None` means no
     /// database key was configured; this never contains key material.
     pub database_encryption_key_source: Option<DatabaseEncryptionKeySource>,
+    /// Signature-provider credentials encrypted at rest (t77): the loaded
+    /// `provider-credentials.enc.json` sidecar plus a lazily-resolved handle to the internally-derived
+    /// credential key (S1/S2). Reads of an empty/absent sidecar are fine; storing a secret fails
+    /// closed when no key source is available or (in strict mode) the protection level is not
+    /// confidential. `Default` is an in-memory, no-key-source store that refuses every write. Held
+    /// behind an `Arc` so cloning the state shares the one set of interior locks.
+    pub provider_credentials: Arc<ProviderCredentialStore>,
 }
 
 impl AppState {
@@ -755,6 +772,13 @@ impl AppState {
         state.csc_providers = Arc::new(signature::load_csc_providers_from_env());
         state.paper_book_ocr_command =
             paper_import::PaperBookOcrCommandConfig::from_env().map(Arc::new);
+        // Signature-provider credential store (t77 S2): read the encrypted sidecar now (no key file
+        // is created at boot — resolution is deferred to the first store), fail-closed on a missing
+        // key source or a corrupt sidecar. Strict mode defaults off; the `credential_storage_strict`
+        // settings selector that also feeds it arrives in S4, so only the env override applies here.
+        let credential_strict = secretstore::strict_from_env(false);
+        state.provider_credentials =
+            Arc::new(ProviderCredentialStore::load(&dir, credential_strict));
         Ok(state)
     }
 
