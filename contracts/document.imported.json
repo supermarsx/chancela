@@ -10,7 +10,91 @@
   "classification": "image_non_canonical_evidence",
   "imported_at": "2026-07-09T10:15:30Z",
   "imported_by": "amelia.marques",
+  "operator_review_status": "reviewed_non_canonical_original_only",
+  "operator_reviewed_at": "2026-07-10T09:30:00Z",
+  "operator_reviewed_by": "amelia.operator",
+  "operator_review_note": "Checked as non-canonical technical evidence only.",
+  "acknowledged_guardrail_ids": [
+    "preserved_original_bytes_remain_non_canonical_evidence",
+    "canonical_pdfa_record_is_not_replaced",
+    "signed_pdf_artifact_is_not_created_or_validated",
+    "ocr_or_conversion_output_is_not_promoted_to_canonical_records"
+  ],
+  "operator_review_notice": "Operator review records a preservation workflow decision only; it does not run OCR, convert bytes, replace the canonical PDF/A, or claim legal acceptance.",
+  "review_history": [
+    {
+      "decision_index": 1,
+      "review_status": "rejected_non_canonical_evidence",
+      "reviewed_at": "2026-07-09T11:00:00Z",
+      "reviewed_by": "ana.reviewer",
+      "review_note": "Initial preservation review retained for audit.",
+      "acknowledged_guardrail_ids": [
+        "preserved_original_bytes_remain_non_canonical_evidence",
+        "canonical_pdfa_record_is_not_replaced",
+        "signed_pdf_artifact_is_not_created_or_validated",
+        "ocr_or_conversion_output_is_not_promoted_to_canonical_records"
+      ],
+      "bytes_in_payload": false,
+      "ocr_performed": false,
+      "canonical_conversion_performed": false,
+      "canonical_pdfa_generated": false,
+      "signed_artifact_created_or_validated": false,
+      "legal_acceptance_claimed": false,
+      "certification_claimed": false
+    },
+    {
+      "decision_index": 2,
+      "review_status": "reviewed_non_canonical_original_only",
+      "reviewed_at": "2026-07-10T09:30:00Z",
+      "reviewed_by": "amelia.operator",
+      "review_note": "Checked as non-canonical technical evidence only.",
+      "acknowledged_guardrail_ids": [
+        "preserved_original_bytes_remain_non_canonical_evidence",
+        "canonical_pdfa_record_is_not_replaced",
+        "signed_pdf_artifact_is_not_created_or_validated",
+        "ocr_or_conversion_output_is_not_promoted_to_canonical_records"
+      ],
+      "bytes_in_payload": false,
+      "ocr_performed": false,
+      "canonical_conversion_performed": false,
+      "canonical_pdfa_generated": false,
+      "signed_artifact_created_or_validated": false,
+      "legal_acceptance_claimed": false,
+      "certification_claimed": false
+    }
+  ],
   "non_canonical": true,
+  "requires_ocr_review": false,
+  "canonical_record_status": "not_canonical_record",
+  "signed_artifact_status": "not_signed_artifact",
+  "review_guardrail_checklist": [
+    "preserved_original_bytes_remain_non_canonical_evidence",
+    "canonical_pdfa_record_is_not_replaced",
+    "signed_pdf_artifact_is_not_created_or_validated",
+    "ocr_or_conversion_output_is_not_promoted_to_canonical_records"
+  ],
+  "canonical_conversion_status": "not_performed_non_canonical_original_only",
+  "canonical_conversion_performed": false,
+  "legal_acceptance_claimed": false,
+  "preservation_policy": {
+    "review_state": "reviewed_non_canonical_original_only",
+    "requires_operator_review": false,
+    "requires_ocr_review": false,
+    "canonical_record_status": "not_canonical_record",
+    "signed_artifact_status": "not_signed_artifact",
+    "review_guardrail_checklist": [
+      "preserved_original_bytes_remain_non_canonical_evidence",
+      "canonical_pdfa_record_is_not_replaced",
+      "signed_pdf_artifact_is_not_created_or_validated",
+      "ocr_or_conversion_output_is_not_promoted_to_canonical_records"
+    ],
+    "canonical_conversion_status": "not_performed_non_canonical_original_only",
+    "original_bytes_preservation_status": "preserved_original_bytes",
+    "preservation_action": "preserve_original_bytes_as_non_canonical_evidence_if_needed",
+    "canonical_conversion_performed": false,
+    "canonical_pdfa_generated": false,
+    "legal_acceptance_claimed": false
+  },
   "legal_notice": "Imported document preserved as non-canonical evidence only; it does not replace the generated PDF/A or signed PDF, and no legal validity, PDF/A conformance, or signature validity is claimed.",
   "bytes_download": "/v1/documents/imported/8f7e6d50-0000-4000-8000-000000000010/bytes"
 }

@@ -303,14 +303,16 @@ test operating checklist for driving Chancela toward release confidence.
   legal sufficiency/legal-effect claims, sign, archive, or certify legal
   validity. It also makes no DGLAB certification or legal archive acceptance
   claim.
-- The current imported-document receipt slice derives a `Recibo de revisão`
-  panel from the existing imported-document view. Pending rows show no fake
-  receipt, while reviewed rows show status, reviewer, time, note, required and
-  acknowledged guardrails, plus no-claim rows for OCR, conversion, canonical
-  PDF/A replacement, signed artifact creation/validation, and legal acceptance.
-  Treat this as display of existing review metadata only: no new routes, schema,
-  mutations, downloads, OCR, conversion, canonical replacement, signed artifact,
-  or legal acceptance.
+- The current imported-document receipt/history slice projects a `Recibo de
+  revisão` panel and bounded technical review history from the imported-document
+  view. Pending rows show no fake receipt, while reviewed rows show latest
+  status, reviewer, time, note, required and acknowledged guardrails, ordered
+  prior decisions, plus no-claim rows for OCR, conversion, canonical PDF/A
+  replacement, signed artifact creation/validation, signature validation, seal,
+  PDF/UA, certification, and legal acceptance. Treat this as metadata-only
+  review history for non-canonical evidence: no downloads, OCR, conversion,
+  canonical replacement, signed artifact, signature validation, seal, PDF/UA,
+  certification, legal validity, or legal acceptance.
 - The current trust catalog identifier-match slice adds optional
   `identifier_match` fields to identifier-filtered TSL/TSA rows and renders
   technical match explanations in Ferramentas while preserving strict complete
@@ -1131,18 +1133,20 @@ settingsDefaults.test.ts contracts.test.ts`.
   duplicate/ambiguous identity behavior. There is no auto-upload, no UI raw
   rendering, and no validator, legal, certification, trust, external-validation,
   or provider-approval claim.
-- Current working-tree imported-document review receipt checks: focused
+- Current working-tree imported-document review receipt/history checks: focused
   `npm run test --workspace apps/web -- src/features/documents/ActDocumentPanel.test.tsx`
-  coverage pins the derived review-depth summary and `Recibo de revisão` group,
-  pending `Sem recibo de revisão` without fake reviewer/time/note/guardrail
-  details, neutral/not-indicated copy when preservation status is missing,
-  reviewed status/reviewer/time/note plus required and acknowledged guardrails,
-  explicit no-claim rows for OCR/conversion/PDF-A replacement/signed artifact/
-  signature validation/seal/PDF-UA/legal acceptance, and no accidental bytes/
-  archive/signed-document/external-validator/trust/OCR/conversion calls. This is
-  existing-view metadata rendering only, with no new route, schema, event,
-  mutation, POST, download, OCR, conversion, PDF/A replacement, signed PDF,
-  signature validation, seal, PDF/UA, or legal acceptance behavior.
+  coverage pins the review-depth summary, `Recibo de revisão` group, and
+  `Histórico técnico de revisão` group, pending `Sem recibo de revisão` without
+  fake reviewer/time/note/guardrail details, neutral/not-indicated copy when
+  preservation status is missing, latest reviewed status/reviewer/time/note plus
+  required and acknowledged guardrails, ordered prior decisions, explicit
+  no-claim rows for OCR/conversion/PDF-A replacement/signed artifact/signature
+  validation/seal/PDF-UA/certification/legal acceptance, and no accidental
+  bytes/archive/signed-document/external-validator/trust/OCR/conversion calls.
+  This is imported-document metadata rendering and bounded review-history
+  projection only, with no download, OCR, conversion, PDF/A replacement, signed
+  PDF, signature validation, seal, PDF/UA, certification, or legal acceptance
+  behavior.
 - Current working-tree trust catalog identifier-match checks: focused
   `cargo test -p chancela-api trust --locked` and `npm run test --workspace
   apps/web -- src/features/ferramentas/trust.test.tsx` coverage pins optional
@@ -1436,7 +1440,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   summary-only/no-claim UI markers, raw-report byte download route, settings.read,
   attachment-header, 404, fail-closed, and redaction markers, plus MCP workflow
   provenance review prompt/resource offline/no-call/no-claim markers, imported-document
-  review receipt pending/reviewed/no-extra-route markers, trust catalog
+  review receipt/history pending/reviewed/no-claim markers, trust catalog
   identifier-match explanation/copy-safe strict lookup markers, trust/import/static
   URL/body/header fail-closed markers, plus local DGLAB interchange manifest API
   route, book.export gate, schema, builder,

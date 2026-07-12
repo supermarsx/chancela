@@ -1062,6 +1062,26 @@ pub struct StoredImportedDocumentMeta {
     pub operator_acknowledged_guardrail_ids: Vec<String>,
 }
 
+/// One stored operator review decision for an imported document. This is append-only technical
+/// evidence; the latest projection remains on [`StoredImportedDocumentMeta`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredImportedDocumentReviewHistoryEntry {
+    /// Monotonic SQLite row id for deterministic ordering.
+    pub id: i64,
+    /// Imported document id this review decision belongs to.
+    pub imported_document_id: String,
+    /// Review workflow status recorded by the operator.
+    pub review_status: StoredImportedDocumentReviewStatus,
+    /// When the operator review decision was recorded, if available.
+    pub reviewed_at: Option<OffsetDateTime>,
+    /// Resolved actor that recorded the decision, if available.
+    pub reviewed_by: Option<String>,
+    /// Optional operator note attached to this decision.
+    pub review_note: Option<String>,
+    /// Stable guardrail ids acknowledged for this decision.
+    pub acknowledged_guardrail_ids: Vec<String>,
+}
+
 /// A validated, non-canonical document evidence import with retained bytes. These bytes live beside
 /// but never replace [`StoredDocument`] or [`StoredSignedDocument`].
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1973,6 +1993,29 @@ impl Store {
             .transpose()
     }
 
+    /// List append-only review decisions for one imported document, oldest first.
+    pub fn imported_document_review_history(
+        &self,
+        imported_document_id: &str,
+    ) -> Result<Vec<StoredImportedDocumentReviewHistoryEntry>, StoreError> {
+        let guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let mut stmt = guard.prepare(
+            "SELECT id, imported_document_id, review_status, reviewed_at, reviewed_by, \
+             review_note, acknowledged_guardrail_ids_json \
+             FROM imported_document_review_history \
+             WHERE imported_document_id = ?1 ORDER BY id ASC",
+        )?;
+        let rows = stmt.query_map(
+            params![imported_document_id],
+            row_to_imported_document_review_history_entry,
+        )?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row??);
+        }
+        Ok(out)
+    }
+
     /// Fetch one preserved historical paper-book import package by id, including retained bytes.
     pub fn paper_book_import(
         &self,
@@ -2724,6 +2767,20 @@ impl Tx<'_> {
         if changed == 0 {
             return Err(StoreError::NotFound(format!("imported document {id}")));
         }
+        self.txn.execute(
+            "INSERT INTO imported_document_review_history \
+             (imported_document_id, review_status, reviewed_at, reviewed_by, review_note, \
+              acknowledged_guardrail_ids_json) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                id,
+                status.as_str(),
+                reviewed_at,
+                reviewed_by,
+                review_note,
+                acknowledged_guardrail_ids_json,
+            ],
+        )?;
         Ok(())
     }
 
@@ -3601,6 +3658,29 @@ fn row_to_imported_document(
                 operator_acknowledged_guardrail_ids_json,
             )?,
             bytes,
+        })
+    })())
+}
+
+fn row_to_imported_document_review_history_entry(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<Result<StoredImportedDocumentReviewHistoryEntry, StoreError>> {
+    let id: i64 = row.get(0)?;
+    let imported_document_id: String = row.get(1)?;
+    let review_status_raw: String = row.get(2)?;
+    let reviewed_at_raw: Option<String> = row.get(3)?;
+    let reviewed_by: Option<String> = row.get(4)?;
+    let review_note: Option<String> = row.get(5)?;
+    let acknowledged_guardrail_ids_json: String = row.get(6)?;
+    Ok((|| {
+        Ok(StoredImportedDocumentReviewHistoryEntry {
+            id,
+            imported_document_id,
+            review_status: StoredImportedDocumentReviewStatus::parse(&review_status_raw)?,
+            reviewed_at: reviewed_at_raw.as_deref().map(parse_rfc3339).transpose()?,
+            reviewed_by,
+            review_note,
+            acknowledged_guardrail_ids: serde_json::from_str(&acknowledged_guardrail_ids_json)?,
         })
     })())
 }

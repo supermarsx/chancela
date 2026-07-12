@@ -326,10 +326,11 @@ bounded archive/no-action `execute_supported` UI markers, ineligible
 review-only/badge paths, locale keys, and non-destructive payload assertions,
 Ferramentas
 panel/client/i18n markers including compact validator-report actions,
-imported-document review-depth/receipt markers for metadata-derived summaries,
-neutral missing-preservation copy, pending/reviewed states, no-claim OCR/
-conversion/PDF-A replacement/signed-PDF/signature-validation/seal/PDF-UA/legal
-acceptance copy, and no-extra-route behavior, trust identifier-match explanation/copy-safe hash and
+imported-document review-depth/receipt/history markers for technical review
+history, neutral missing-preservation copy, pending/reviewed states, no-claim
+OCR/conversion/PDF-A replacement/signed-PDF/signature-validation/seal/PDF-UA/
+certification/legal acceptance copy, and no accidental download/OCR/conversion
+behavior, trust identifier-match explanation/copy-safe hash and
 SKI markers, trust/import/static URL/body/header fail-closed markers,
 retained-export `would_delete_*`/zero-`deleted_*` dry-run planning markers,
 preview-only Settings payload/no-files-removed markers, retained-export

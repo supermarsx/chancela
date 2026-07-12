@@ -2029,6 +2029,98 @@ fn imported_document_review_transition_updates_metadata_without_replacing_bytes(
 }
 
 #[test]
+fn imported_document_review_history_retains_multiple_decisions_in_order() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let import = sample_imported_document("11111111-1111-4111-8111-111111111113", None, FAKE_PDF);
+    let first_reviewed_at = OffsetDateTime::from_unix_timestamp(1_790_000_000).unwrap();
+    let second_reviewed_at = OffsetDateTime::from_unix_timestamp(1_790_000_120).unwrap();
+    let guardrails = vec![
+        "preserved_original_bytes_remain_non_canonical_evidence".to_string(),
+        "canonical_pdfa_record_is_not_replaced".to_string(),
+        "signed_pdf_artifact_is_not_created_or_validated".to_string(),
+        "ocr_or_conversion_output_is_not_promoted_to_canonical_records".to_string(),
+    ];
+
+    store
+        .persist(|tx| tx.upsert_imported_document(&import))
+        .expect("persist imported doc");
+    store
+        .persist(|tx| {
+            tx.review_imported_document(
+                &import.meta.id,
+                StoredImportedDocumentReviewStatus::RejectedNonCanonicalEvidence,
+                Some(first_reviewed_at),
+                Some("document.reviewer"),
+                Some("Initial rejection retained for audit."),
+                &guardrails,
+            )
+        })
+        .expect("first review");
+    store
+        .persist(|tx| {
+            tx.review_imported_document(
+                &import.meta.id,
+                StoredImportedDocumentReviewStatus::ReviewedNonCanonicalOriginalOnly,
+                Some(second_reviewed_at),
+                Some("document.owner"),
+                Some("Later accepted as non-canonical technical evidence only."),
+                &guardrails,
+            )
+        })
+        .expect("second review");
+
+    let latest = store
+        .imported_document(&import.meta.id)
+        .expect("read latest imported doc")
+        .expect("import remains stored");
+    assert_eq!(
+        latest.meta.operator_review_status,
+        StoredImportedDocumentReviewStatus::ReviewedNonCanonicalOriginalOnly
+    );
+    assert_eq!(
+        latest.meta.operator_review_note.as_deref(),
+        Some("Later accepted as non-canonical technical evidence only.")
+    );
+
+    let history = store
+        .imported_document_review_history(&import.meta.id)
+        .expect("read review history");
+    assert_eq!(history.len(), 2);
+    assert!(history[0].id < history[1].id);
+    assert_eq!(
+        history[0].review_status,
+        StoredImportedDocumentReviewStatus::RejectedNonCanonicalEvidence
+    );
+    assert_eq!(history[0].reviewed_at, Some(first_reviewed_at));
+    assert_eq!(history[0].reviewed_by.as_deref(), Some("document.reviewer"));
+    assert_eq!(
+        history[0].review_note.as_deref(),
+        Some("Initial rejection retained for audit.")
+    );
+    assert_eq!(
+        history[1].review_status,
+        StoredImportedDocumentReviewStatus::ReviewedNonCanonicalOriginalOnly
+    );
+    assert_eq!(history[1].reviewed_at, Some(second_reviewed_at));
+    assert_eq!(
+        history[1].review_note.as_deref(),
+        Some("Later accepted as non-canonical technical evidence only.")
+    );
+    assert_eq!(history[1].acknowledged_guardrail_ids, guardrails);
+
+    drop(store);
+    let reopened = Store::open(dir.path()).expect("reopen");
+    assert_eq!(
+        reopened
+            .imported_document_review_history(&import.meta.id)
+            .expect("read reopened history")
+            .len(),
+        2
+    );
+}
+
+#[test]
 fn paper_book_import_package_round_trips_with_metadata_and_ocr_status() {
     let dir = TempDir::new();
     let store = Store::open(dir.path()).expect("open");

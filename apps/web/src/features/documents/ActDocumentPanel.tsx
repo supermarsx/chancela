@@ -636,6 +636,99 @@ function ImportedDocumentReviewReceipt({
   );
 }
 
+function ImportedDocumentReviewHistory({
+  document,
+  t,
+}: {
+  document: ImportedDocumentView;
+  t: TFunction;
+}) {
+  const history = document.review_history ?? [];
+
+  return (
+    <div className="stack--tight" role="group" aria-label="Histórico técnico de revisão">
+      <p className="card__label">Histórico técnico de revisão</p>
+      {history.length === 0 ? (
+        <p className="muted">
+          Sem histórico técnico registado para além dos metadados atuais da revisão.
+        </p>
+      ) : (
+        <ol className="stack--tight">
+          {history.map((entry) => {
+            const reviewedAt = metadataText(entry.reviewed_at);
+            const reviewedBy = metadataText(entry.reviewed_by);
+            const reviewNote = metadataText(entry.review_note);
+            const acknowledgedGuardrails = uniqueImportedGuardrails(
+              importedGuardrailChecklist(entry.acknowledged_guardrail_ids),
+            );
+
+            return (
+              <li key={entry.decision_index} className="stack--tight">
+                <dl className="deflist deflist--tight">
+                  <div>
+                    <dt>Decisão</dt>
+                    <dd>
+                      <Badge tone={importedReviewStatusTone(entry.review_status)}>
+                        {importedReviewStatusLabel(entry.review_status)}
+                      </Badge>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Registada em</dt>
+                    <dd>
+                      {reviewedAt ? (
+                        <time className="mono" dateTime={reviewedAt}>
+                          {reviewedAt}
+                        </time>
+                      ) : (
+                        <span className="muted">{t('documents.import.notIndicated')}</span>
+                      )}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Registada por</dt>
+                    <dd>
+                      {reviewedBy ?? (
+                        <span className="muted">{t('documents.import.notIndicated')}</span>
+                      )}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Nota histórica</dt>
+                    <dd>
+                      {reviewNote ?? (
+                        <span className="muted">{t('documents.import.notIndicated')}</span>
+                      )}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Limites reconhecidos</dt>
+                    <dd>
+                      <GuardrailList
+                        empty="Sem limites reconhecidos nesta decisão"
+                        guardrails={acknowledgedGuardrails}
+                        t={t}
+                      />
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Âmbito técnico</dt>
+                    <dd>
+                      Histórico de revisão metadata-only para evidência não canónica; sem OCR,
+                      conversão, substituição de PDF/A, validação de assinatura, selo, PDF/UA,
+                      certificação ou aceitação legal.
+                    </dd>
+                  </div>
+                </dl>
+              </li>
+            );
+          })}
+        </ol>
+      )}
+    </div>
+  );
+}
+
 function ImportedDocumentReviewDepthSummary({
   document,
   t,
@@ -651,6 +744,7 @@ function ImportedDocumentReviewDepthSummary({
     ? `Bytes preservados (${originalBytesStatus})`
     : 'Preservação dos bytes originais não indicada nos metadados carregados';
   const hasReceipt = importedDocumentHasReviewReceipt(document);
+  const historyCount = document.review_history?.length ?? 0;
 
   return (
     <div
@@ -665,7 +759,8 @@ function ImportedDocumentReviewDepthSummary({
           <dd>
             {originalBytesSummary}, digest SHA-256, estado de revisão{' '}
             {hasReceipt ? 'registado' : 'pendente'} e nota do operador{' '}
-            {reviewNote ? 'registada' : 'não indicada'}.
+            {reviewNote ? 'registada' : 'não indicada'}. Histórico técnico:{' '}
+            {historyCount > 0 ? `${historyCount} decisão(ões) preservada(s)` : 'sem decisões'}.
           </dd>
         </div>
         <div>
@@ -1302,6 +1397,7 @@ function ImportedDocumentDetails({
       </div>
       <ImportedDocumentReviewDepthSummary document={document} t={t} />
       <ImportedDocumentReviewReceipt document={document} t={t} />
+      <ImportedDocumentReviewHistory document={document} t={t} />
     </div>
   );
 }

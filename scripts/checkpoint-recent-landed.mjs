@@ -2284,12 +2284,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "imported-document review-depth/receipt markers for metadata-derived summaries",
+    "imported-document review-depth/receipt/history markers for technical review\nhistory",
     "CI checkpoints imported-document review-depth static marker",
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "neutral missing-preservation copy, pending/reviewed states, no-claim OCR/",
+    "neutral missing-preservation copy, pending/reviewed states, no-claim\nOCR/",
     "CI checkpoints imported-document neutral/no-claim static marker",
   );
   assertFileContains(
@@ -2434,7 +2434,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "imported-document review-depth/receipt markers for metadata-derived summaries",
+    "imported-document review-depth/receipt/history markers for technical review\nhistory",
     "CI checkpoints static imported-document receipt marker",
   );
   assertFileContains(
@@ -4969,8 +4969,8 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/documents/ActDocumentPanel.tsx",
-    "const hasReceipt = importedDocumentHasReviewReceipt(document);",
-    "imported-document review receipt derives from existing view marker",
+    'aria-label="Histórico técnico de revisão"',
+    "imported-document technical review history group marker",
   );
   assertFileContains(
     "apps/web/src/features/documents/ActDocumentPanel.tsx",
@@ -4991,6 +4991,21 @@ function assertCheckpointMap() {
     "apps/web/src/features/documents/ActDocumentPanel.tsx",
     "· selo: não · PDF/UA: não · aceitação legal: não.",
     "imported-document review-depth no-claim flags marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/documents/ActDocumentPanel.tsx",
+    "Histórico de revisão metadata-only para evidência não canónica",
+    "imported-document technical review history no-claim copy marker",
+  );
+  assertFileContains(
+    "apps/web/src/api/types.ts",
+    "export interface ImportedDocumentReviewHistoryEntry",
+    "web imported-document review history contract type marker",
+  );
+  assertFileContains(
+    "contracts/document.imported.json",
+    '"review_history"',
+    "imported-document review history contract fixture marker",
   );
   assertFileContains(
     "apps/web/src/features/documents/ActDocumentPanel.tsx",
@@ -7509,18 +7524,18 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current working-tree imported-document review receipt checks",
+    "Current working-tree imported-document review receipt/history checks",
     "CI/E2E hardening plan imported-document review receipt checks marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "pending `Sem recibo de revisão` without fake reviewer/time/note/guardrail",
+    "`Histórico técnico de revisão` group, pending `Sem recibo de revisão` without",
     "CI/E2E hardening plan imported-document no fake receipt marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "no new route, schema, event,\n  mutation, POST, download, OCR, conversion, PDF/A replacement, signed PDF",
-    "CI/E2E hardening plan imported-document receipt no-claim marker",
+    "metadata-only\n  review history for non-canonical evidence",
+    "CI/E2E hardening plan imported-document receipt/history no-claim marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -7734,12 +7749,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "neutral/not-indicated copy when preservation status is missing",
+    "neutral/not-indicated copy when\n  preservation status is missing",
     "CI/E2E hardening plan imported-document neutral preservation-status marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "signature validation/seal/PDF-UA/legal acceptance",
+    "signature\n  validation/seal/PDF-UA/certification/legal acceptance",
     "CI/E2E hardening plan imported-document no-claim exclusion marker",
   );
   assertFileContainsNormalized(
@@ -8654,22 +8669,22 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "derived `Recibo de revisão` panel built from the existing imported\n  document view fields",
+    "includes a `Recibo de revisão` panel plus bounded technical review history\n  projected from the imported-document view",
     "spec coverage imported-document review receipt checkpoint marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Pending documents show `Sem recibo de revisão` and no\n  fake reviewer/time/note/guardrail receipt",
+    "Pending documents show `Sem recibo\n  de revisão` and no fake reviewer/time/note/guardrail receipt",
     "spec coverage imported-document no fake receipt marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "missing\n  preservation status renders neutral/not-indicated copy rather than a bytes-preserved claim",
+    "missing preservation status renders neutral/not-indicated copy rather than a bytes-preserved claim",
     "spec coverage imported-document neutral missing preservation marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "no OCR, conversion, PDF/A replacement, signed\n  artifact creation/validation, new route/schema/mutation/download, or legal\n  acceptance claim",
+    "technical review history only for non-canonical evidence; no OCR, conversion,\n  PDF/A replacement",
     "spec coverage imported-document review receipt no-claim marker",
   );
   assertFileContains(

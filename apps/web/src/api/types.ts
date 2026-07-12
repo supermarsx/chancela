@@ -1295,6 +1295,22 @@ export interface ImportedDocumentReviewBody {
   review_note?: string | null;
 }
 
+export interface ImportedDocumentReviewHistoryEntry {
+  decision_index: number;
+  review_status: ImportedDocumentReviewStatus;
+  reviewed_at?: string | null;
+  reviewed_by?: string | null;
+  review_note?: string | null;
+  acknowledged_guardrail_ids: ImportedDocumentReviewGuardrail[];
+  bytes_in_payload: false;
+  ocr_performed: false;
+  canonical_conversion_performed: false;
+  canonical_pdfa_generated: false;
+  signed_artifact_created_or_validated: false;
+  legal_acceptance_claimed: false;
+  certification_claimed: false;
+}
+
 export interface DocumentPreservationPolicyReport {
   review_state: string;
   requires_operator_review: boolean;
@@ -1329,6 +1345,7 @@ export interface ImportedDocumentView {
   operator_reviewed_by?: string | null;
   operator_review_note?: string | null;
   operator_review_notice?: string | null;
+  review_history?: ImportedDocumentReviewHistoryEntry[];
   non_canonical: boolean;
   requires_ocr_review?: boolean;
   canonical_record_status?: ImportedDocumentCanonicalRecordStatus;

@@ -227,6 +227,7 @@ const importedDocumentPendingReview: ImportedDocumentView = {
   operator_reviewed_by: null,
   operator_review_note: null,
   operator_review_notice: importedDocumentReviewNotice,
+  review_history: [],
   requires_ocr_review: false,
   canonical_record_status: 'not_canonical_record',
   signed_artifact_status: 'not_signed_artifact',
@@ -1467,6 +1468,7 @@ describe('ActDocumentPanel — imported evidence documents', () => {
     const list = await screen.findByRole('list', { name: 'Documentos importados' });
     fireEvent.click(within(list).getByRole('button', { name: 'Ver metadados' }));
     const receipt = await screen.findByRole('group', { name: 'Recibo de revisão' });
+    const history = await screen.findByRole('group', { name: 'Histórico técnico de revisão' });
     const summary = await screen.findByRole('group', {
       name: 'Resumo de profundidade da revisão importada',
     });
@@ -1480,6 +1482,7 @@ describe('ActDocumentPanel — imported evidence documents', () => {
     expect(within(summary).getByText(/digest SHA-256/i)).toBeTruthy();
     expect(within(summary).getByText(/estado de revisão pendente/i)).toBeTruthy();
     expect(within(summary).getByText(/nota do operador não indicada/i)).toBeTruthy();
+    expect(within(summary).getByText(/Histórico técnico: sem decisões/i)).toBeTruthy();
     expect(within(summary).getByText(/OCR, conversão, substituição de PDF\/A/i)).toBeTruthy();
     expect(within(summary).getByText(/PDF assinado, validação de assinatura, selo/i)).toBeTruthy();
     expect(within(summary).getByText(/PDF\/UA e aceitação legal/i)).toBeTruthy();
@@ -1501,6 +1504,12 @@ describe('ActDocumentPanel — imported evidence documents', () => {
     expect(within(receipt).getByText('Não criado nem validado por esta revisão.')).toBeTruthy();
     expect(within(receipt).getByText('Aceitação legal')).toBeTruthy();
     expect(within(receipt).getByText('Não declarada por esta revisão.')).toBeTruthy();
+    expect(within(history).getByText('Histórico técnico de revisão')).toBeTruthy();
+    expect(
+      within(history).getByText(
+        'Sem histórico técnico registado para além dos metadados atuais da revisão.',
+      ),
+    ).toBeTruthy();
     expect((save as HTMLButtonElement).disabled).toBe(true);
     expect(acknowledgement.checked).toBe(false);
     fireEvent.click(save);
@@ -1531,6 +1540,38 @@ describe('ActDocumentPanel — imported evidence documents', () => {
           operator_reviewed_by: 'amelia.operator',
           operator_review_note: body.review_note,
           acknowledged_guardrail_ids: body.acknowledged_guardrail_ids,
+          review_history: [
+            {
+              decision_index: 1,
+              review_status: 'operator_review_required',
+              reviewed_at: '2026-07-09T10:20:00Z',
+              reviewed_by: 'ana.reviewer',
+              review_note: 'Triagem inicial mantida como evidência não canónica.',
+              acknowledged_guardrail_ids: body.acknowledged_guardrail_ids,
+              bytes_in_payload: false,
+              ocr_performed: false,
+              canonical_conversion_performed: false,
+              canonical_pdfa_generated: false,
+              signed_artifact_created_or_validated: false,
+              legal_acceptance_claimed: false,
+              certification_claimed: false,
+            },
+            {
+              decision_index: 2,
+              review_status: body.review_status,
+              reviewed_at: '2026-07-10T09:30:00Z',
+              reviewed_by: 'amelia.operator',
+              review_note: body.review_note,
+              acknowledged_guardrail_ids: body.acknowledged_guardrail_ids,
+              bytes_in_payload: false,
+              ocr_performed: false,
+              canonical_conversion_performed: false,
+              canonical_pdfa_generated: false,
+              signed_artifact_created_or_validated: false,
+              legal_acceptance_claimed: false,
+              certification_claimed: false,
+            },
+          ],
         };
         return json(current);
       }
@@ -1549,6 +1590,7 @@ describe('ActDocumentPanel — imported evidence documents', () => {
       name: 'Metadados do documento importado',
     });
     const receipt = await screen.findByRole('group', { name: 'Recibo de revisão' });
+    const history = await screen.findByRole('group', { name: 'Histórico técnico de revisão' });
     const summary = await screen.findByRole('group', {
       name: 'Resumo de profundidade da revisão importada',
     });
@@ -1557,6 +1599,7 @@ describe('ActDocumentPanel — imported evidence documents', () => {
     expect(within(summary).getByText(/Resumo de profundidade da revisão/)).toBeTruthy();
     expect(within(summary).getByText(/Bytes preservados/)).toBeTruthy();
     expect(within(summary).getByText(/aceitação legal: não/i)).toBeTruthy();
+    expect(within(summary).getByText(/Histórico técnico: sem decisões/i)).toBeTruthy();
     expect(within(receipt).getByText('Sem recibo de revisão')).toBeTruthy();
     expect(within(receipt).queryByText('Limites exigidos')).toBeNull();
     expect(within(receipt).queryByText('Limites reconhecidos')).toBeNull();
@@ -1635,8 +1678,15 @@ describe('ActDocumentPanel — imported evidence documents', () => {
     expect(within(receipt).getByText('Não substituído por este documento.')).toBeTruthy();
     expect(within(receipt).getByText('Não criado nem validado por esta revisão.')).toBeTruthy();
     expect(within(receipt).getByText('Não declarada por esta revisão.')).toBeTruthy();
-    expect(await screen.findAllByText('2026-07-10T09:30:00Z')).toHaveLength(2);
-    expect(await screen.findAllByText('amelia.operator')).toHaveLength(2);
+    expect(await screen.findAllByText('2026-07-10T09:30:00Z')).toHaveLength(3);
+    expect(await screen.findAllByText('amelia.operator')).toHaveLength(3);
+    expect(within(history).getByText('Histórico técnico de revisão')).toBeTruthy();
+    expect(within(history).getByText('Triagem inicial mantida como evidência não canónica.')).toBeTruthy();
+    expect(within(history).getByText('Conferido contra o original preservado.')).toBeTruthy();
+    expect(within(history).getAllByText(/Histórico de revisão metadata-only/i)).toHaveLength(2);
+    expect(within(history).getAllByText(/sem OCR, conversão, substituição de PDF\/A/i)).toHaveLength(2);
+    expect(within(history).getAllByText(/certificação ou aceitação legal/i)).toHaveLength(2);
+    expect(within(history).queryByText(/certificado/i)).toBeNull();
     await waitFor(() =>
       expect(within(metadata).getByText('Conferido contra o original preservado.')).toBeTruthy(),
     );

@@ -59,7 +59,9 @@
 /// - **v14** — adds `paper_book_ocr_conversion_execution_artifacts`: reviewed, metadata-only
 ///   execution artifacts binding accepted OCR evidence, an optional dossier, and the mutable draft
 ///   act created from that OCR. They carry explicit no-claim flags and never store raw OCR text.
-pub const SCHEMA_VERSION: i64 = 14;
+/// - **v15** — adds `imported_document_review_history`: append-only imported-document review
+///   decisions so the review workflow is auditable beyond the latest metadata projection.
+pub const SCHEMA_VERSION: i64 = 15;
 
 /// `meta` — small key/value table for the `schema_version` stamp and the app version.
 pub const CREATE_META: &str = "\
@@ -329,6 +331,23 @@ pub const CREATE_IMPORTED_DOCUMENTS_ACT_IDX: &str =
 /// Index over `imported_documents.imported_at` — keeps the global list ordered without scanning.
 pub const CREATE_IMPORTED_DOCUMENTS_IMPORTED_AT_IDX: &str = "CREATE INDEX IF NOT EXISTS idx_imported_documents_imported_at ON imported_documents (imported_at);";
 
+/// `imported_document_review_history` - append-only technical review decisions for imported
+/// document evidence. These rows preserve operator decisions and guardrail acknowledgements only;
+/// they do not store bytes and do not claim OCR, conversion, certification, or legal acceptance.
+pub const CREATE_IMPORTED_DOCUMENT_REVIEW_HISTORY: &str = "\
+CREATE TABLE IF NOT EXISTS imported_document_review_history (
+    id                                      INTEGER PRIMARY KEY,
+    imported_document_id                    TEXT NOT NULL,
+    review_status                           TEXT NOT NULL,
+    reviewed_at                             TEXT,
+    reviewed_by                             TEXT,
+    review_note                             TEXT,
+    acknowledged_guardrail_ids_json         TEXT NOT NULL DEFAULT '[]'
+) STRICT;";
+
+/// Index over `imported_document_review_history.imported_document_id` - feeds document read views.
+pub const CREATE_IMPORTED_DOCUMENT_REVIEW_HISTORY_DOCUMENT_IDX: &str = "CREATE INDEX IF NOT EXISTS idx_imported_document_review_history_document ON imported_document_review_history (imported_document_id, id);";
+
 /// `generated_document_dispatch_evidence` — metadata-only operator dispatch evidence for generated
 /// absent-owner communications (schema v13).
 ///
@@ -555,6 +574,8 @@ pub const ALL: &[&str] = &[
     CREATE_IMPORTED_DOCUMENTS,
     CREATE_IMPORTED_DOCUMENTS_ACT_IDX,
     CREATE_IMPORTED_DOCUMENTS_IMPORTED_AT_IDX,
+    CREATE_IMPORTED_DOCUMENT_REVIEW_HISTORY,
+    CREATE_IMPORTED_DOCUMENT_REVIEW_HISTORY_DOCUMENT_IDX,
     CREATE_GENERATED_DOCUMENT_DISPATCH_EVIDENCE,
     CREATE_GENERATED_DOCUMENT_DISPATCH_EVIDENCE_ACT_IDX,
     CREATE_PAPER_BOOK_IMPORTS,

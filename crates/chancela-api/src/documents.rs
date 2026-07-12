@@ -33,7 +33,8 @@ use chancela_core::{
 };
 use chancela_store::{
     StoredDocument, StoredGeneratedDocumentDispatchEvidence, StoredImportedDocument,
-    StoredImportedDocumentMeta, StoredImportedDocumentReviewStatus, StoredSignedDocument,
+    StoredImportedDocumentMeta, StoredImportedDocumentReviewHistoryEntry,
+    StoredImportedDocumentReviewStatus, StoredSignedDocument,
 };
 use chancela_templates::{Registry, TemplateLawReference, TemplateSpec};
 use serde::{Deserialize, Serialize};
@@ -1210,6 +1211,7 @@ pub struct ImportedDocumentView {
     pub operator_reviewed_by: Option<String>,
     pub operator_review_note: Option<String>,
     pub acknowledged_guardrail_ids: Vec<String>,
+    pub review_history: Vec<ImportedDocumentReviewHistoryEntryView>,
     pub operator_review_notice: &'static str,
     pub non_canonical: bool,
     pub requires_ocr_review: bool,
@@ -1222,6 +1224,23 @@ pub struct ImportedDocumentView {
     pub preservation_policy: DocumentPreservationPolicyReport,
     pub legal_notice: &'static str,
     pub bytes_download: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ImportedDocumentReviewHistoryEntryView {
+    pub decision_index: usize,
+    pub review_status: &'static str,
+    pub reviewed_at: Option<String>,
+    pub reviewed_by: Option<String>,
+    pub review_note: Option<String>,
+    pub acknowledged_guardrail_ids: Vec<String>,
+    pub bytes_in_payload: bool,
+    pub ocr_performed: bool,
+    pub canonical_conversion_performed: bool,
+    pub canonical_pdfa_generated: bool,
+    pub signed_artifact_created_or_validated: bool,
+    pub legal_acceptance_claimed: bool,
+    pub certification_claimed: bool,
 }
 
 /// `POST /v1/documents/import` — persist a structurally validated document as non-canonical
@@ -1310,7 +1329,7 @@ pub async fn import_document(
 
     Ok((
         StatusCode::CREATED,
-        Json(imported_document_view(&stored.meta)),
+        Json(imported_document_view(&stored.meta, &[])),
     ))
 }
 
@@ -1340,11 +1359,20 @@ pub async fn list_imported_documents(
     let rows = store
         .imported_documents(act_id)
         .map_err(|e| ApiError::Internal(format!("imported document store read failed: {e}")))?;
-    Ok(Json(
-        rows.iter()
-            .map(|meta| imported_document_view_with_redaction(meta, redaction))
-            .collect(),
-    ))
+    let mut views = Vec::with_capacity(rows.len());
+    for meta in &rows {
+        let history = store
+            .imported_document_review_history(&meta.id)
+            .map_err(|e| {
+                ApiError::Internal(format!(
+                    "imported document review history store read failed: {e}"
+                ))
+            })?;
+        views.push(imported_document_view_with_redaction(
+            meta, &history, redaction,
+        ));
+    }
+    Ok(Json(views))
 }
 
 /// `GET /v1/documents/imported/{id}` — read imported-document metadata only.
@@ -1355,8 +1383,9 @@ pub async fn get_imported_document(
 ) -> Result<Json<ImportedDocumentView>, ApiError> {
     let doc = load_imported_document_for_actor(&state, &actor, &id).await?;
     let redaction = read_redaction_for_actor(&state, &actor).await?;
+    let history = imported_document_review_history_for_state(&state, &doc.meta.id)?;
     Ok(Json(imported_document_view_with_redaction(
-        &doc.meta, redaction,
+        &doc.meta, &history, redaction,
     )))
 }
 
@@ -1431,7 +1460,12 @@ pub async fn review_imported_document(
         .imported_document(&id)
         .map_err(|e| ApiError::Internal(format!("imported document store read failed: {e}")))?
         .ok_or(ApiError::NotFound)?;
-    Ok(Json(imported_document_view(&reviewed.meta)))
+    let history = store.imported_document_review_history(&id).map_err(|e| {
+        ApiError::Internal(format!(
+            "imported document review history store read failed: {e}"
+        ))
+    })?;
+    Ok(Json(imported_document_view(&reviewed.meta, &history)))
 }
 
 /// `GET /v1/documents/imported/{id}/bytes` — stream the retained imported bytes. This is explicitly
@@ -1500,7 +1534,10 @@ async fn imported_document_event_scope(
     ))
 }
 
-fn imported_document_view(meta: &StoredImportedDocumentMeta) -> ImportedDocumentView {
+fn imported_document_view(
+    meta: &StoredImportedDocumentMeta,
+    history: &[StoredImportedDocumentReviewHistoryEntry],
+) -> ImportedDocumentView {
     let classification = document_evidence_classification(&meta.detected_content_type);
     let preservation_policy = imported_document_preservation_policy(meta);
     ImportedDocumentView {
@@ -1522,6 +1559,7 @@ fn imported_document_view(meta: &StoredImportedDocumentMeta) -> ImportedDocument
         operator_reviewed_by: meta.operator_reviewed_by.clone(),
         operator_review_note: meta.operator_review_note.clone(),
         acknowledged_guardrail_ids: meta.operator_acknowledged_guardrail_ids.clone(),
+        review_history: imported_document_review_history_view(history),
         operator_review_notice: IMPORTED_DOCUMENT_REVIEW_NOTICE,
         non_canonical: true,
         requires_ocr_review: preservation_policy.requires_ocr_review,
@@ -1539,9 +1577,10 @@ fn imported_document_view(meta: &StoredImportedDocumentMeta) -> ImportedDocument
 
 fn imported_document_view_with_redaction(
     meta: &StoredImportedDocumentMeta,
+    history: &[StoredImportedDocumentReviewHistoryEntry],
     redaction: ReadRedaction,
 ) -> ImportedDocumentView {
-    let mut view = imported_document_view(meta);
+    let mut view = imported_document_view(meta, history);
     if redaction.is_guest() {
         view.filename = None;
         view.sha256 = crate::dto::REDACTED.to_owned();
@@ -1552,9 +1591,61 @@ fn imported_document_view_with_redaction(
         view.operator_review_note = view
             .operator_review_note
             .map(|_| crate::dto::REDACTED.to_owned());
+        for entry in &mut view.review_history {
+            entry.reviewed_by = entry
+                .reviewed_by
+                .take()
+                .map(|_| crate::dto::REDACTED.to_owned());
+            entry.review_note = entry
+                .review_note
+                .take()
+                .map(|_| crate::dto::REDACTED.to_owned());
+        }
         view.bytes_download = crate::dto::REDACTED.to_owned();
     }
     view
+}
+
+fn imported_document_review_history_for_state(
+    state: &AppState,
+    imported_document_id: &str,
+) -> Result<Vec<StoredImportedDocumentReviewHistoryEntry>, ApiError> {
+    let Some(store) = &state.store else {
+        return Ok(Vec::new());
+    };
+    store
+        .imported_document_review_history(imported_document_id)
+        .map_err(|e| {
+            ApiError::Internal(format!(
+                "imported document review history store read failed: {e}"
+            ))
+        })
+}
+
+fn imported_document_review_history_view(
+    history: &[StoredImportedDocumentReviewHistoryEntry],
+) -> Vec<ImportedDocumentReviewHistoryEntryView> {
+    history
+        .iter()
+        .enumerate()
+        .map(|(idx, entry)| ImportedDocumentReviewHistoryEntryView {
+            decision_index: idx + 1,
+            review_status: entry.review_status.as_str(),
+            reviewed_at: entry
+                .reviewed_at
+                .map(|t| t.format(&Rfc3339).unwrap_or_default()),
+            reviewed_by: entry.reviewed_by.clone(),
+            review_note: entry.review_note.clone(),
+            acknowledged_guardrail_ids: entry.acknowledged_guardrail_ids.clone(),
+            bytes_in_payload: false,
+            ocr_performed: false,
+            canonical_conversion_performed: false,
+            canonical_pdfa_generated: false,
+            signed_artifact_created_or_validated: false,
+            legal_acceptance_claimed: false,
+            certification_claimed: false,
+        })
+        .collect()
 }
 
 fn imported_document_initial_review_status(
@@ -5966,14 +6057,33 @@ mod tests {
             operator_acknowledged_guardrail_ids: Vec::new(),
         };
 
-        let view = imported_document_view_with_redaction(&meta, ReadRedaction::Guest);
+        let history = vec![StoredImportedDocumentReviewHistoryEntry {
+            id: 1,
+            imported_document_id: meta.id.clone(),
+            review_status: StoredImportedDocumentReviewStatus::ReviewedNonCanonicalOriginalOnly,
+            reviewed_at: Some(time::OffsetDateTime::UNIX_EPOCH),
+            reviewed_by: Some("amelia.reviewer".to_owned()),
+            review_note: Some("Private review note.".to_owned()),
+            acknowledged_guardrail_ids: imported_document_review_guardrail_ids_as_strings(),
+        }];
+        let view = imported_document_view_with_redaction(&meta, &history, ReadRedaction::Guest);
         assert_eq!(view.filename, None);
         assert_eq!(view.sha256, crate::dto::REDACTED);
         assert_eq!(view.imported_by, crate::dto::REDACTED);
         assert_eq!(view.bytes_download, crate::dto::REDACTED);
+        assert_eq!(
+            view.review_history[0].reviewed_by.as_deref(),
+            Some(crate::dto::REDACTED)
+        );
+        assert_eq!(
+            view.review_history[0].review_note.as_deref(),
+            Some(crate::dto::REDACTED)
+        );
         let raw = serde_json::to_string(&view).expect("imported document view JSON");
         assert!(!raw.contains("medical-report-joana.pdf"));
         assert!(!raw.contains("amelia.marques"));
+        assert!(!raw.contains("amelia.reviewer"));
+        assert!(!raw.contains("Private review note."));
         assert!(!raw.contains(&"cd".repeat(32)));
     }
 
@@ -6461,6 +6571,10 @@ mod tests {
         assert!(!imported.canonical_conversion_performed);
         assert!(!imported.legal_acceptance_claimed);
         assert_imported_review_guardrails(&imported.preservation_policy);
+        assert!(
+            imported.review_history.is_empty(),
+            "fresh imports should not fabricate review history"
+        );
 
         let before = state
             .store
@@ -6541,6 +6655,27 @@ mod tests {
             reviewed.acknowledged_guardrail_ids,
             imported_document_review_guardrail_ids_as_strings()
         );
+        assert_eq!(reviewed.review_history.len(), 1);
+        assert_eq!(reviewed.review_history[0].decision_index, 1);
+        assert_eq!(
+            reviewed.review_history[0].review_status,
+            "reviewed_non_canonical_original_only"
+        );
+        assert_eq!(
+            reviewed.review_history[0].review_note.as_deref(),
+            Some(review_note.as_str())
+        );
+        assert_eq!(
+            reviewed.review_history[0].acknowledged_guardrail_ids,
+            imported_document_review_guardrail_ids_as_strings()
+        );
+        assert!(!reviewed.review_history[0].bytes_in_payload);
+        assert!(!reviewed.review_history[0].ocr_performed);
+        assert!(!reviewed.review_history[0].canonical_conversion_performed);
+        assert!(!reviewed.review_history[0].canonical_pdfa_generated);
+        assert!(!reviewed.review_history[0].signed_artifact_created_or_validated);
+        assert!(!reviewed.review_history[0].legal_acceptance_claimed);
+        assert!(!reviewed.review_history[0].certification_claimed);
         assert!(!reviewed.preservation_policy.requires_operator_review);
         assert_eq!(
             reviewed.preservation_policy.canonical_conversion_status,
@@ -6613,6 +6748,46 @@ mod tests {
         );
         let payload_text = serde_json::to_string(&payload).expect("payload serializes");
         assert!(!payload_text.contains(&review_note));
+
+        let second_review_note = "Rejected after later preservation review.".to_owned();
+        let Json(second_reviewed) = review_imported_document(
+            State(state.clone()),
+            actor.clone(),
+            CurrentAttestor::default(),
+            Path(imported.id.clone()),
+            Json(ImportedDocumentReviewRequest {
+                review_status: "rejected_non_canonical_evidence".to_owned(),
+                review_note: Some(second_review_note.clone()),
+                acknowledged_guardrail_ids: imported_document_review_guardrail_ids_as_strings(),
+            }),
+        )
+        .await
+        .expect("second review transition succeeds");
+        assert_eq!(
+            second_reviewed.operator_review_status,
+            "rejected_non_canonical_evidence"
+        );
+        assert_eq!(
+            second_reviewed.operator_review_note.as_deref(),
+            Some(second_review_note.as_str())
+        );
+        assert_eq!(second_reviewed.review_history.len(), 2);
+        assert_eq!(second_reviewed.review_history[0].decision_index, 1);
+        assert_eq!(second_reviewed.review_history[1].decision_index, 2);
+        assert_eq!(
+            second_reviewed.review_history[0].review_status,
+            "reviewed_non_canonical_original_only"
+        );
+        assert_eq!(
+            second_reviewed.review_history[1].review_status,
+            "rejected_non_canonical_evidence"
+        );
+        assert_eq!(
+            second_reviewed.review_history[1].review_note.as_deref(),
+            Some(second_review_note.as_str())
+        );
+        assert!(!second_reviewed.review_history[1].legal_acceptance_claimed);
+        assert!(!second_reviewed.review_history[1].certification_claimed);
     }
 
     #[test]

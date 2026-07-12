@@ -2679,7 +2679,22 @@ describe('contract fixtures parse through the real client', () => {
         classification: true,
         imported_at: true,
         imported_by: true,
+        operator_review_status: true,
+        operator_reviewed_at: true,
+        operator_reviewed_by: true,
+        operator_review_note: true,
+        acknowledged_guardrail_ids: true,
+        operator_review_notice: true,
+        review_history: true,
         non_canonical: true,
+        requires_ocr_review: true,
+        canonical_record_status: true,
+        signed_artifact_status: true,
+        review_guardrail_checklist: true,
+        canonical_conversion_status: true,
+        canonical_conversion_performed: true,
+        legal_acceptance_claimed: true,
+        preservation_policy: true,
         legal_notice: true,
         bytes_download: true,
       },
@@ -2691,9 +2706,40 @@ describe('contract fixtures parse through the real client', () => {
     expect(doc.evidence_family).toBe('image');
     expect(doc.classification).toBe('image_non_canonical_evidence');
     expect(doc.non_canonical).toBe(true);
+    expect(doc.operator_review_status).toBe('reviewed_non_canonical_original_only');
+    expect(doc.operator_review_note).toContain('non-canonical technical evidence');
+    expect(doc.acknowledged_guardrail_ids).toContain(
+      'preserved_original_bytes_remain_non_canonical_evidence',
+    );
+    expect(doc.review_history).toHaveLength(2);
+    expect(doc.review_history?.map((entry) => entry.decision_index)).toEqual([1, 2]);
+    expect(doc.review_history?.map((entry) => entry.review_status)).toEqual([
+      'rejected_non_canonical_evidence',
+      'reviewed_non_canonical_original_only',
+    ]);
+    expect(doc.review_history?.[0].review_note).toContain('retained for audit');
+    expect(doc.review_history?.[1].review_note).toContain('technical evidence only');
+    for (const entry of doc.review_history ?? []) {
+      expect(entry.acknowledged_guardrail_ids).toContain(
+        'canonical_pdfa_record_is_not_replaced',
+      );
+      expect(entry.bytes_in_payload).toBe(false);
+      expect(entry.ocr_performed).toBe(false);
+      expect(entry.canonical_conversion_performed).toBe(false);
+      expect(entry.canonical_pdfa_generated).toBe(false);
+      expect(entry.signed_artifact_created_or_validated).toBe(false);
+      expect(entry.legal_acceptance_claimed).toBe(false);
+      expect(entry.certification_claimed).toBe(false);
+    }
+    expect(doc.canonical_record_status).toBe('not_canonical_record');
+    expect(doc.signed_artifact_status).toBe('not_signed_artifact');
+    expect(doc.canonical_conversion_performed).toBe(false);
+    expect(doc.legal_acceptance_claimed).toBe(false);
+    expect(doc.preservation_policy?.legal_acceptance_claimed).toBe(false);
     expect(doc.bytes_download).toContain(`/v1/documents/imported/${doc.id}/bytes`);
     expect(JSON.stringify(doc)).not.toContain('%PDF');
     expect(JSON.stringify(doc)).not.toContain('access_code');
+    expect(JSON.stringify(doc)).not.toContain('legal_validity_claimed":true');
   });
 
   it('paper-book.import.json → PaperBookImportReport (POST /v1/books/paper-import/validate)', async () => {

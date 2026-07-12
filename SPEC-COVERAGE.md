@@ -659,17 +659,20 @@ Implementation checkpoints covered here:
   validity, certificate trust, provider approval, external validation,
   qualified-status, or trust-list certification.
 - Working tree keeps Documents/UX/CI **PARTIAL**: imported-document metadata now
-  includes a derived `Recibo de revisão` panel built from the existing imported
-  document view fields. Pending documents show `Sem recibo de revisão` and no
-  fake reviewer/time/note/guardrail receipt; reviewed documents show status,
-  reviewer, time, note, required and acknowledged guardrails, and explicit
-  no-claim rows for OCR, conversion, canonical PDF/A replacement, signed PDF
-  artifact, and legal acceptance. The UI uses the existing imported-document
-  view/review mutation only and tests block accidental bytes, archive,
+  includes a `Recibo de revisão` panel plus bounded technical review history
+  projected from the imported-document view. Pending documents show `Sem recibo
+  de revisão` and no fake reviewer/time/note/guardrail receipt; reviewed
+  documents show latest status, reviewer, time, note, required and acknowledged
+  guardrails, ordered prior review decisions, and explicit no-claim rows for
+  OCR, conversion, canonical PDF/A replacement, signed PDF artifact, signature
+  validation, seal, PDF/UA, certification, and legal acceptance. The local store
+  appends metadata-only history rows while preserving latest review metadata and
+  original bytes unchanged; tests block accidental bytes, archive,
   signed-document, external-validator, trust, conversion, or OCR calls. This is
-  review metadata display only; no OCR, conversion, PDF/A replacement, signed
-  artifact creation/validation, new route/schema/mutation/download, or legal
-  acceptance claim is implemented.
+  technical review history only for non-canonical evidence; no OCR, conversion,
+  PDF/A replacement, signed artifact creation/validation, signature validation,
+  seal, PDF/UA, certification, legal validity, or legal acceptance claim is
+  implemented.
 - `3e72e08` keeps Legal/Data/Signatures/Documents/UX/CI **PARTIAL**:
   opening/closing termo signatories now accept structured name/capacity/email
   records through the legacy `required_signatories` write field while exposing
@@ -2889,7 +2892,7 @@ behavior, legal disposal, or legal-effect claims.
   signatory contracts, retention execution review-queue/client/fixture/review-closure markers, database
   encryption key-source and fail-closed hardware-fallback status markers, backup recovery-drill
   route/contract/optional-key/overclaim/no-mutation/exact-passphrase markers, imported-document
-  review receipt UI/no-fake-receipt/no-extra-route markers, MCP workflow provenance review
+  review receipt/history UI/no-fake-receipt/no-claim markers, MCP workflow provenance review
   prompt/resource markers, MCP draft-vs-signed comparison review prompt/resource
   markers, dashboard guest `recent_events: []` redaction markers,
   generated-document by-id download route plus absent-owner dispatch-evidence
@@ -3221,13 +3224,13 @@ behavior, legal disposal, or legal-effect claims.
   mutable-sidecar planning, and explicit false destructive/full-erasure flags. It is not GDPR
   erasure, anonymization, physical deletion, redaction execution, or full data-subject erasure.
 - Imported-document preservation review policy, UI controls, guardrail acknowledgements, guardrail
-  fields, and the derived review-depth / `Recibo de revisão` panels record review requirements,
-  reviewer metadata, loaded preservation metadata, and conservative original-byte/canonical-conversion
-  decisions for non-canonical evidence. Pending rows do not invent receipt metadata, and missing
-  preservation status renders neutral/not-indicated copy rather than a bytes-preserved claim. These
-  surfaces do not run OCR, convert documents to PDF/A, replace canonical PDF/A records, create
-  canonical records, create signed PDFs, create seals, validate signatures, add PDF/UA, add
-  routes/schema/events/POSTs/mutations/downloads, certify legal acceptance, or validate legal effect.
+  fields, technical review history, and the review-depth / `Recibo de revisão` panels record review
+  requirements, reviewer metadata, loaded preservation metadata, latest status/note, and ordered
+  prior review decisions for non-canonical evidence. Pending rows do not invent receipt metadata, and
+  missing preservation status renders neutral/not-indicated copy rather than a bytes-preserved claim.
+  These surfaces do not run OCR, convert documents to PDF/A, replace canonical PDF/A records, create
+  canonical records, create signed PDFs, create seals, validate signatures, add PDF/UA, certify legal
+  acceptance, or validate legal effect.
 - Paper-book local OCR run, OCR draft review metadata, accepted-draft conversion
   dossiers, any accepted-draft-to-act drafting aid, UI, and focused browser
   workflow coverage record bounded command status and non-authoritative
