@@ -140,6 +140,16 @@ import type {
   LocalPkcs12SignResult,
   OfficialSignatureImportBody,
   OfficialSignatureImportResult,
+  XadesSignBody,
+  XadesSignResponse,
+  AsicSignBody,
+  AsicSignResponse,
+  ScapProvidersBody,
+  ScapProvidersResponse,
+  ScapAttributesBody,
+  ScapAttributesResponse,
+  ScapSignBody,
+  ScapSignResponse,
   CreateExternalSignerInviteBody,
   CreateExternalSignerInviteResult,
   CreateExternalSigningEnvelopeBody,
@@ -396,6 +406,31 @@ export async function fetchBlob(path: string): Promise<Blob> {
 }
 
 /**
+ * Fetch a binary body as an `ArrayBuffer`, attaching the session token exactly like
+ * {@link fetchBlob}. Reads the bytes straight off the `Response` (not via `Blob.arrayBuffer`, which
+ * jsdom does not implement) so callers that need the raw bytes — e.g. base64-encoding the act's
+ * PDF/A for the local XAdES/ASiC/SCAP tools — work in both the browser and tests.
+ */
+export async function fetchArrayBuffer(path: string): Promise<ArrayBuffer> {
+  const token = getSessionToken();
+  const headers: Record<string, string> = {};
+  if (token) headers[SESSION_HEADER] = token;
+  const res = await fetch(path, { headers });
+  if (res.status === 401) clearSessionToken();
+  if (!res.ok) {
+    let message = t('error.requestFailed', { status: res.status });
+    try {
+      const body = (await res.json()) as { error?: string };
+      if (body?.error) message = body.error;
+    } catch {
+      // Non-JSON error body — keep the generic status message.
+    }
+    throw new ApiError(res.status, { error: message });
+  }
+  return res.arrayBuffer();
+}
+
+/**
  * Fetch a textual download without routing it through JSON parsing or PDF-specific
  * helpers. Returns both text and Blob forms, preserving
  * the response content type/header metadata for callers that save the file.
@@ -599,6 +634,9 @@ export const api = {
   // as a Blob (not JSON) so it can be triggered as a download with an honest filename;
   // carries the session token like every other request. 404 until sealed.
   fetchActDocumentPdf: (id: string) => fetchBlob(`/v1/acts/${id}/document`),
+  // The persisted PDF/A bytes as a raw ArrayBuffer (for base64-encoding into the local
+  // XAdES/ASiC/SCAP tools). Same auth/404 semantics as `fetchActDocumentPdf`.
+  fetchActDocumentBytes: (id: string) => fetchArrayBuffer(`/v1/acts/${id}/document`),
   fetchGeneratedDocumentPdf: (documentId: string) =>
     fetchBlob(`/v1/documents/generated/${encodeURIComponent(documentId)}`),
   getGeneratedDocumentDispatchEvidence: (documentId: string) =>
@@ -667,6 +705,22 @@ export const api = {
   importOfficialSignature: (id: string, body: OfficialSignatureImportBody) =>
     post<OfficialSignatureImportResult>(`/v1/acts/${id}/signature/official/import`, body),
   fetchSignedActDocumentPdf: (id: string) => fetchBlob(`/v1/acts/${id}/document/signed`),
+
+  // Local technical XAdES / ASiC signing tools (§ t67-e10/e13) — distinct from the act-signing
+  // lanes above: each takes a transient co-located PKCS#12 signer + content and RETURNS a document
+  // (never persisted, never changing act state). Co-location-gated (409 off-host). The PKCS#12 bytes
+  // + passphrase ride only in the request body and must never be persisted client-side.
+  signXades: (body: XadesSignBody) => post<XadesSignResponse>('/v1/signature/xades/sign', body),
+  signAsic: (body: AsicSignBody) => post<AsicSignResponse>('/v1/signature/asic/sign', body),
+  // SCAP professional-attribute surface (§ t67-e10/e13). `scapProviders`/`scapAttributes` are POSTs
+  // (they carry the environment + citizen selectors). `scapSign` attaches a reported attribute and
+  // returns a CAdES signature whose honesty status is decided by the transport — the mock/declared
+  // path can never report a verified capacity. The PKCS#12 material rides only in the sign body.
+  scapProviders: (body: ScapProvidersBody = {}) =>
+    post<ScapProvidersResponse>('/v1/scap/providers', body),
+  scapAttributes: (body: ScapAttributesBody) =>
+    post<ScapAttributesResponse>('/v1/scap/attributes', body),
+  scapSign: (body: ScapSignBody) => post<ScapSignResponse>('/v1/scap/sign', body),
 
   // Generic remote qualified signing (§ t59) — the provider picker + the provider-agnostic
   // two-phase flow. `listSignatureProviders` enumerates CMD + every configured CSC QTSP (gated

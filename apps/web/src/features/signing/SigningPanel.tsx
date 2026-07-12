@@ -50,6 +50,9 @@ import { useCallback, useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type {
   ActView,
+  AsicContainer,
+  AsicSignerRole,
+  AsicSignResponse,
   CreateExternalSignerInviteBody,
   ExternalSignerIdentityRequirement,
   ExternalSignerInviteView,
@@ -57,20 +60,25 @@ import type {
   ExternalSigningEnvelopeSlotView,
   ExternalSigningEnvelopeView,
   ExternalSigningOrderPolicy,
+  LocalSignatureLevel,
   OfficialSignatureImportGuardrail,
   SealAppearanceBody,
   Settings,
   SignatureEvidenceStatus,
   SignatureFamily,
   UpdateExternalSigningEnvelopeEvidenceBody,
+  XadesPackaging,
+  XadesSignResponse,
 } from '../../api/types';
 import { OFFICIAL_SIGNATURE_IMPORT_GUARDRAIL_IDS } from '../../api/types';
 import { ApiError, api } from '../../api/client';
+import { ScapAttributePicker } from './ScapAttributePicker';
 import { SealDesigner } from './seal-designer';
 import { signatureFamilyLabels } from '../../api/labels';
 import {
   keys,
   useActSignature,
+  useAsicSign,
   useCcSignSignature,
   useCmdConfirmSignature,
   useCmdInitiateSignature,
@@ -86,6 +94,7 @@ import {
   useRevokeExternalSignerInvite,
   useSignatureProviders,
   useUpdateExternalSigningEnvelope,
+  useXadesSign,
 } from '../../api/hooks';
 import { saveBlobAs, saveBlobResultMessage, type SaveBlobResult } from '../../desktop/saveFile';
 import { GateButton, scopeBook, useCan, type CanScope } from '../session/permissions';
@@ -269,12 +278,495 @@ function externalInviteLink(token: string): string {
 
 async function fileToBase64(file: File): Promise<string> {
   const bytes = new Uint8Array(await file.arrayBuffer());
+  return bytesToBase64(bytes);
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
   let binary = '';
   const chunkSize = 0x8000;
   for (let i = 0; i < bytes.length; i += chunkSize) {
     binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
   }
   return btoa(binary);
+}
+
+/** Decode a base64 payload to raw bytes for a download blob. */
+function base64ToBytes(b64: string): Uint8Array {
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+/**
+ * The signing format the user selects. `pades` is the qualified act-signing lane (the existing
+ * provider picker, which signs the act's sealed PDF in place). `xades`/`asic`/`scap` are local
+ * technical tools that produce a downloadable document over the act's PDF/A without changing act
+ * state; each is co-location-gated server-side.
+ */
+type SigningFormat = 'pades' | 'xades' | 'asic' | 'scap';
+
+/** Transient co-located software-certificate signer form state (PKCS#12 + passphrase). */
+type Pkcs12SignerState = {
+  file: File | null;
+  passphrase: string;
+  friendlyName: string;
+};
+
+function emptyPkcs12Signer(): Pkcs12SignerState {
+  return { file: null, passphrase: '', friendlyName: '' };
+}
+
+/**
+ * The shared co-located PKCS#12 signer fields for the local XAdES/ASiC tools. The bytes + passphrase
+ * are transient: the parent clears them on success and error and never persists them.
+ */
+function Pkcs12SignerFields({
+  idPrefix,
+  signer,
+  disabled,
+  onChange,
+}: {
+  idPrefix: string;
+  signer: Pkcs12SignerState;
+  disabled: boolean;
+  onChange: (patch: Partial<Pkcs12SignerState>) => void;
+}) {
+  const t = useT();
+  return (
+    <>
+      <p className="card__label">{t('signing.tool.signer.legend')}</p>
+      <div className="form__grid">
+        <Field
+          label={t('signing.tool.signer.file.label')}
+          htmlFor={`${idPrefix}-pkcs12-file`}
+          hint={t('signing.tool.signer.file.hint')}
+        >
+          <Input
+            id={`${idPrefix}-pkcs12-file`}
+            type="file"
+            accept=".p12,.pfx,application/x-pkcs12"
+            autoComplete="off"
+            disabled={disabled}
+            onChange={(event) => onChange({ file: event.target.files?.[0] ?? null })}
+          />
+        </Field>
+        <Field
+          label={t('signing.tool.signer.passphrase.label')}
+          htmlFor={`${idPrefix}-pkcs12-passphrase`}
+          hint={t('signing.tool.signer.passphrase.hint')}
+        >
+          <Input
+            id={`${idPrefix}-pkcs12-passphrase`}
+            type="password"
+            autoComplete="off"
+            value={signer.passphrase}
+            disabled={disabled}
+            onChange={(event) => onChange({ passphrase: event.target.value })}
+          />
+        </Field>
+        <Field
+          label={t('signing.tool.signer.friendlyName.label')}
+          htmlFor={`${idPrefix}-pkcs12-friendly-name`}
+          hint={t('signing.tool.signer.friendlyName.hint')}
+        >
+          <Input
+            id={`${idPrefix}-pkcs12-friendly-name`}
+            type="text"
+            autoComplete="off"
+            value={signer.friendlyName}
+            disabled={disabled}
+            onChange={(event) => onChange({ friendlyName: event.target.value })}
+          />
+        </Field>
+      </div>
+    </>
+  );
+}
+
+/** Trigger a browser download of local-tool output bytes with an honest filename. */
+function downloadToolBytes(
+  base64: string,
+  filename: string,
+  contentType: string,
+  toast: ReturnType<typeof useToast>,
+) {
+  saveBlobAs({
+    blob: new Blob([base64ToBytes(base64) as BlobPart], { type: contentType }),
+    filename,
+    contentType,
+    preferBrowserSavePicker: true,
+  })
+    .then((result) => {
+      if (result.kind === 'cancelled') toast.info(saveBlobResultMessage(result));
+      else toast.success(saveBlobResultMessage(result));
+    })
+    .catch((err) => toast.error(err));
+}
+
+/**
+ * Local XAdES production tool. Signs the act's sealed PDF/A with a co-located PKCS#12 and returns a
+ * XAdES-B/T document. Co-location-gated (409 off-host → honest note). Only B/T are offered — LT/LTA
+ * are rejected by the backend, stated honestly rather than shown as a false capability.
+ */
+function XadesToolForm({ loadContentBase64 }: { loadContentBase64: () => Promise<string> }) {
+  const t = useT();
+  const toast = useToast();
+  const xadesSign = useXadesSign();
+  const [packaging, setPackaging] = useState<XadesPackaging>('detached');
+  const [level, setLevel] = useState<LocalSignatureLevel>('B');
+  const [signer, setSigner] = useState<Pkcs12SignerState>(emptyPkcs12Signer);
+  const [error, setError] = useState<unknown>(null);
+  const [coLocationBlocked, setCoLocationBlocked] = useState(false);
+  const [result, setResult] = useState<XadesSignResponse | null>(null);
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!signer.file || signer.passphrase.length === 0 || xadesSign.isPending) return;
+    setError(null);
+    try {
+      const [contentBase64, pkcs12Base64] = await Promise.all([
+        loadContentBase64(),
+        fileToBase64(signer.file),
+      ]);
+      const response = await xadesSign.mutateAsync({
+        content_base64: contentBase64,
+        content_name: 'ata.pdf',
+        packaging,
+        level,
+        signer: {
+          kind: 'soft_pkcs12',
+          pkcs12_base64: pkcs12Base64,
+          passphrase: signer.passphrase,
+          friendly_name: signer.friendlyName.trim() || undefined,
+        },
+      });
+      setSigner(emptyPkcs12Signer());
+      setResult(response);
+      toast.success(t('signing.xades.result.title'));
+    } catch (err) {
+      setSigner(emptyPkcs12Signer());
+      setError(err);
+      if (err instanceof ApiError && err.status === 409) setCoLocationBlocked(true);
+      toast.error(err);
+    } finally {
+      xadesSign.reset();
+    }
+  }
+
+  return (
+    <form className="form" onSubmit={onSubmit}>
+      <InlineWarning tone="info" title={t('signing.xades.title')}>
+        {t('signing.xades.intro')}
+      </InlineWarning>
+      <p className="field__hint">{t('signing.tool.content.note')}</p>
+      <div className="form__grid">
+        <Field label={t('signing.xades.packaging.label')} htmlFor="xades-packaging">
+          <Select
+            id="xades-packaging"
+            value={packaging}
+            onChange={(event) => setPackaging(event.target.value as XadesPackaging)}
+            options={[
+              { value: 'detached', label: t('signing.xades.packaging.detached') },
+              { value: 'enveloping', label: t('signing.xades.packaging.enveloping') },
+            ]}
+          />
+        </Field>
+        <Field
+          label={t('signing.xades.level.label')}
+          htmlFor="xades-level"
+          hint={t('signing.xades.level.note')}
+        >
+          <Select
+            id="xades-level"
+            value={level}
+            onChange={(event) => setLevel(event.target.value as LocalSignatureLevel)}
+            options={[
+              { value: 'B', label: t('signing.xades.level.b') },
+              { value: 'T', label: t('signing.xades.level.t') },
+            ]}
+          />
+        </Field>
+      </div>
+      {coLocationBlocked ? (
+        <InlineWarning tone="info" title={t('signing.tool.coLocation.title')}>
+          {t('signing.tool.coLocation.body')}
+        </InlineWarning>
+      ) : (
+        <Pkcs12SignerFields
+          idPrefix="xades"
+          signer={signer}
+          disabled={xadesSign.isPending}
+          onChange={(patch) => setSigner((current) => ({ ...current, ...patch }))}
+        />
+      )}
+      {error ? <ErrorNote error={error} /> : null}
+      {!coLocationBlocked ? (
+        <div className="rowline">
+          <Button
+            type="submit"
+            variant="primary"
+            icon={<Icon.PenNib />}
+            disabled={!signer.file || signer.passphrase.length === 0 || xadesSign.isPending}
+          >
+            {xadesSign.isPending ? t('signing.xades.submitting') : t('signing.xades.submit')}
+          </Button>
+        </div>
+      ) : null}
+      {result ? (
+        <section className="signing-status signing-status--ok">
+          <div className="signing-status__icon" aria-hidden="true">
+            <Icon.Check />
+          </div>
+          <div className="signing-status__body">
+            <p className="signing-status__title">{t('signing.xades.result.title')}</p>
+            <dl className="deflist signing-deflist signing-deflist--compact">
+              <div>
+                <dt>{t('signing.xades.result.level')}</dt>
+                <dd>{result.level}</dd>
+              </div>
+              <div>
+                <dt>{t('signing.xades.result.packaging')}</dt>
+                <dd>{result.packaging}</dd>
+              </div>
+              <div>
+                <dt>{t('signing.xades.result.algorithm')}</dt>
+                <dd>{result.signature_algorithm}</dd>
+              </div>
+              <div>
+                <dt>{t('signing.tool.result.signer')}</dt>
+                <dd className="mono">{result.signer_cert_subject ?? '—'}</dd>
+              </div>
+              <div>
+                <dt>{t('signing.tool.result.contentDigest')}</dt>
+                <dd>
+                  <Digest value={result.content_sha256} />
+                </dd>
+              </div>
+              <div className="signing-deflist__wide">
+                <dt>{t('signing.tool.legalNotice.title')}</dt>
+                <dd>{result.legal_notice}</dd>
+              </div>
+            </dl>
+            <Button
+              type="button"
+              variant="secondary"
+              icon={<Icon.FileText />}
+              onClick={() =>
+                downloadToolBytes(result.xades_base64, 'ata-xades.xml', 'application/xml', toast)
+              }
+            >
+              {t('signing.tool.download')}
+            </Button>
+          </div>
+        </section>
+      ) : null}
+    </form>
+  );
+}
+
+/**
+ * Local ASiC container tool. Signs the act's sealed PDF/A payload with a co-located PKCS#12 and
+ * returns an ASiC-S (single XAdES) or ASiC-E (single CAdES/XAdES signer here) container.
+ * Co-location-gated. Only XAdES levels B/T are offered; the archive timestamp applies to ASiC-E only.
+ */
+function AsicToolForm({ loadContentBase64 }: { loadContentBase64: () => Promise<string> }) {
+  const t = useT();
+  const toast = useToast();
+  const asicSign = useAsicSign();
+  const [container, setContainer] = useState<AsicContainer>('asic_s_xades');
+  const [level, setLevel] = useState<LocalSignatureLevel>('B');
+  const [role, setRole] = useState<AsicSignerRole>('xades');
+  const [archiveTimestamp, setArchiveTimestamp] = useState(false);
+  const [signer, setSigner] = useState<Pkcs12SignerState>(emptyPkcs12Signer);
+  const [error, setError] = useState<unknown>(null);
+  const [coLocationBlocked, setCoLocationBlocked] = useState(false);
+  const [result, setResult] = useState<AsicSignResponse | null>(null);
+
+  const isAsicE = container === 'asic_e_multi';
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!signer.file || signer.passphrase.length === 0 || asicSign.isPending) return;
+    setError(null);
+    try {
+      const [contentBase64, pkcs12Base64] = await Promise.all([
+        loadContentBase64(),
+        fileToBase64(signer.file),
+      ]);
+      const response = await asicSign.mutateAsync({
+        container,
+        xades_level: level,
+        archive_timestamp: isAsicE ? archiveTimestamp : false,
+        payloads: [
+          { name: 'ata.pdf', content_base64: contentBase64, mime_type: 'application/pdf' },
+        ],
+        signers: [
+          {
+            // ASiC-S is always XAdES; the role only matters for ASiC-E.
+            role: isAsicE ? role : 'xades',
+            pkcs12_base64: pkcs12Base64,
+            passphrase: signer.passphrase,
+            friendly_name: signer.friendlyName.trim() || undefined,
+          },
+        ],
+      });
+      setSigner(emptyPkcs12Signer());
+      setResult(response);
+      toast.success(t('signing.asic.result.title'));
+    } catch (err) {
+      setSigner(emptyPkcs12Signer());
+      setError(err);
+      if (err instanceof ApiError && err.status === 409) setCoLocationBlocked(true);
+      toast.error(err);
+    } finally {
+      asicSign.reset();
+    }
+  }
+
+  return (
+    <form className="form" onSubmit={onSubmit}>
+      <InlineWarning tone="info" title={t('signing.asic.title')}>
+        {t('signing.asic.intro')}
+      </InlineWarning>
+      <p className="field__hint">{t('signing.tool.content.note')}</p>
+      <div className="form__grid">
+        <Field label={t('signing.asic.container.label')} htmlFor="asic-container">
+          <Select
+            id="asic-container"
+            value={container}
+            onChange={(event) => setContainer(event.target.value as AsicContainer)}
+            options={[
+              { value: 'asic_s_xades', label: t('signing.asic.container.asicS') },
+              { value: 'asic_e_multi', label: t('signing.asic.container.asicE') },
+            ]}
+          />
+        </Field>
+        <Field
+          label={t('signing.asic.level.label')}
+          htmlFor="asic-level"
+          hint={t('signing.xades.level.note')}
+        >
+          <Select
+            id="asic-level"
+            value={level}
+            onChange={(event) => setLevel(event.target.value as LocalSignatureLevel)}
+            options={[
+              { value: 'B', label: t('signing.xades.level.b') },
+              { value: 'T', label: t('signing.xades.level.t') },
+            ]}
+          />
+        </Field>
+        {isAsicE ? (
+          <Field
+            label={t('signing.asic.role.label')}
+            htmlFor="asic-role"
+            hint={t('signing.asic.role.hint')}
+          >
+            <Select
+              id="asic-role"
+              value={role}
+              onChange={(event) => setRole(event.target.value as AsicSignerRole)}
+              options={[
+                { value: 'xades', label: t('signing.asic.role.xades') },
+                { value: 'cades', label: t('signing.asic.role.cades') },
+              ]}
+            />
+          </Field>
+        ) : null}
+      </div>
+      {isAsicE ? (
+        <label className="checkline" htmlFor="asic-archive-timestamp">
+          <input
+            id="asic-archive-timestamp"
+            type="checkbox"
+            checked={archiveTimestamp}
+            disabled={asicSign.isPending}
+            onChange={(event) => setArchiveTimestamp(event.target.checked)}
+          />
+          {t('signing.asic.archiveTimestamp.label')}
+        </label>
+      ) : null}
+      {isAsicE ? <p className="field__hint">{t('signing.asic.archiveTimestamp.hint')}</p> : null}
+      {coLocationBlocked ? (
+        <InlineWarning tone="info" title={t('signing.tool.coLocation.title')}>
+          {t('signing.tool.coLocation.body')}
+        </InlineWarning>
+      ) : (
+        <Pkcs12SignerFields
+          idPrefix="asic"
+          signer={signer}
+          disabled={asicSign.isPending}
+          onChange={(patch) => setSigner((current) => ({ ...current, ...patch }))}
+        />
+      )}
+      {error ? <ErrorNote error={error} /> : null}
+      {!coLocationBlocked ? (
+        <div className="rowline">
+          <Button
+            type="submit"
+            variant="primary"
+            icon={<Icon.PenNib />}
+            disabled={!signer.file || signer.passphrase.length === 0 || asicSign.isPending}
+          >
+            {asicSign.isPending ? t('signing.asic.submitting') : t('signing.asic.submit')}
+          </Button>
+        </div>
+      ) : null}
+      {result ? (
+        <section className="signing-status signing-status--ok">
+          <div className="signing-status__icon" aria-hidden="true">
+            <Icon.Check />
+          </div>
+          <div className="signing-status__body">
+            <p className="signing-status__title">{t('signing.asic.result.title')}</p>
+            <dl className="deflist signing-deflist signing-deflist--compact">
+              <div>
+                <dt>{t('signing.asic.result.container')}</dt>
+                <dd>{result.container}</dd>
+              </div>
+              <div>
+                <dt>{t('signing.asic.result.level')}</dt>
+                <dd>{result.xades_level}</dd>
+              </div>
+              <div>
+                <dt>{t('signing.asic.result.signatures')}</dt>
+                <dd>
+                  {t('signing.asic.result.signatures', {
+                    cades: result.cades_signature_count,
+                    xades: result.xades_signature_count,
+                  })}
+                </dd>
+              </div>
+              <div>
+                <dt>{t('signing.asic.result.archiveTimestamp')}</dt>
+                <dd>{result.archive_timestamp ? t('common.yes') : t('common.no')}</dd>
+              </div>
+              <div className="signing-deflist__wide">
+                <dt>{t('signing.tool.legalNotice.title')}</dt>
+                <dd>{result.legal_notice}</dd>
+              </div>
+            </dl>
+            <Button
+              type="button"
+              variant="secondary"
+              icon={<Icon.FileText />}
+              onClick={() =>
+                downloadToolBytes(
+                  result.asic_base64,
+                  container === 'asic_s_xades' ? 'ata.asics' : 'ata.asice',
+                  'application/vnd.etsi.asic-e+zip',
+                  toast,
+                )
+              }
+            >
+              {t('signing.tool.download')}
+            </Button>
+          </div>
+        </section>
+      ) : null}
+    </form>
+  );
 }
 
 /**
@@ -1592,10 +2084,18 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
   // signature stays the backward-compatible invisible widget.
   const [seal, setSeal] = useState<SealAppearanceBody | null>(null);
   const [showSealDesigner, setShowSealDesigner] = useState(false);
+  // The chosen signing format (t67-e13). `pades` is the qualified act-signing lane (the provider
+  // picker below); `xades`/`asic`/`scap` are the local technical tools over the act's PDF/A.
+  const [format, setFormat] = useState<SigningFormat>('pades');
   // Loads the sealed (pre-signature) PDF/A bytes the designer renders. Memoized on the act so the
   // designer's render effect does not re-fetch on every parent re-render.
   const loadSealPdf = useCallback(
     () => api.fetchActDocumentPdf(act.id).then((blob) => blob.arrayBuffer()),
+    [act.id],
+  );
+  // Loads the act's sealed PDF/A as base64 — the content the local XAdES/ASiC/SCAP tools bind over.
+  const loadContentBase64 = useCallback(
+    () => api.fetchActDocumentBytes(act.id).then((buffer) => bytesToBase64(new Uint8Array(buffer))),
     [act.id],
   );
 
@@ -2379,150 +2879,86 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
                   : t('signing.unsigned.body')}
               </p>
             </StatusSummary>
-            {/* Optional visible-seal placement (t67-e12). The applied seal rides into whichever
-                signing lane the user then picks. */}
-            <div className="signing-seal-affordance stack--tight">
-              {seal ? (
-                <div className="rowline">
-                  <p className="field__hint">
-                    {t('signing.seal.applied.summary', {
-                      page: String((seal.page ?? 0) + 1),
-                    })}
-                  </p>
-                  <Button type="button" variant="ghost" onClick={() => setShowSealDesigner(true)}>
-                    {t('signing.seal.applied.edit')}
-                  </Button>
-                  <Button type="button" variant="ghost" onClick={() => setSeal(null)}>
-                    {t('signing.seal.applied.remove')}
-                  </Button>
+            {/* Signing-format selector (t67-e13). PAdES is the qualified act-signing lane below;
+                XAdES / ASiC / SCAP are local technical tools over the act's PDF/A. */}
+            <Field
+              label={t('signing.format.label')}
+              htmlFor="signing-format"
+              hint={t('signing.format.hint')}
+            >
+              <Select
+                id="signing-format"
+                value={format}
+                onChange={(event) => setFormat(event.target.value as SigningFormat)}
+                options={[
+                  { value: 'pades', label: t('signing.format.pades') },
+                  { value: 'xades', label: t('signing.format.xades') },
+                  { value: 'asic', label: t('signing.format.asic') },
+                  { value: 'scap', label: t('signing.format.scap') },
+                ]}
+              />
+            </Field>
+            {format === 'xades' ? (
+              <XadesToolForm loadContentBase64={loadContentBase64} />
+            ) : format === 'asic' ? (
+              <AsicToolForm loadContentBase64={loadContentBase64} />
+            ) : format === 'scap' ? (
+              <ScapAttributePicker act={act} loadContentBase64={loadContentBase64} />
+            ) : (
+              <>
+                {/* Optional visible-seal placement (t67-e12). The applied seal rides into whichever
+                    signing lane the user then picks. */}
+                <div className="signing-seal-affordance stack--tight">
+                  {seal ? (
+                    <div className="rowline">
+                      <p className="field__hint">
+                        {t('signing.seal.applied.summary', {
+                          page: String((seal.page ?? 0) + 1),
+                        })}
+                      </p>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={() => setShowSealDesigner(true)}
+                      >
+                        {t('signing.seal.applied.edit')}
+                      </Button>
+                      <Button type="button" variant="ghost" onClick={() => setSeal(null)}>
+                        {t('signing.seal.applied.remove')}
+                      </Button>
+                    </div>
+                  ) : showSealDesigner ? null : (
+                    <div className="stack--tight">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        icon={<Icon.PenNib />}
+                        onClick={() => setShowSealDesigner(true)}
+                      >
+                        {t('signing.seal.affordance.open')}
+                      </Button>
+                      <p className="field__hint">{t('signing.seal.affordance.hint')}</p>
+                    </div>
+                  )}
+                  {showSealDesigner ? (
+                    <SealDesigner
+                      loadPdf={loadSealPdf}
+                      initialSeal={seal}
+                      onApply={(applied) => {
+                        setSeal(applied);
+                        setShowSealDesigner(false);
+                      }}
+                      onCancel={() => setShowSealDesigner(false)}
+                    />
+                  ) : null}
                 </div>
-              ) : showSealDesigner ? null : (
-                <div className="stack--tight">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    icon={<Icon.PenNib />}
-                    onClick={() => setShowSealDesigner(true)}
-                  >
-                    {t('signing.seal.affordance.open')}
-                  </Button>
-                  <p className="field__hint">{t('signing.seal.affordance.hint')}</p>
-                </div>
-              )}
-              {showSealDesigner ? (
-                <SealDesigner
-                  loadPdf={loadSealPdf}
-                  initialSeal={seal}
-                  onApply={(applied) => {
-                    setSeal(applied);
-                    setShowSealDesigner(false);
-                  }}
-                  onCancel={() => setShowSealDesigner(false)}
-                />
-              ) : null}
-            </div>
-            <div className="signing-provider-list">
-              {/* Chave Móvel Digital — always offered (its dedicated two-phase path). */}
-              <ProviderChoice
-                title={t('signing.provider.cmd.title')}
-                description={t('signing.provider.cmd.description')}
-                badges={
-                  isRecommended('cmd') ? (
-                    <Badge tone="accent">{t('signing.recommended')}</Badge>
-                  ) : null
-                }
-              >
-                <GateButton
-                  perm="signing.perform"
-                  scope={bookScope}
-                  type="button"
-                  variant="primary"
-                  icon={<Icon.PenNib />}
-                  onClick={() => onPick(CMD_PROVIDER)}
-                >
-                  {t('signing.start')}
-                </GateButton>
-              </ProviderChoice>
-              {/* Cartão de Cidadão — always offered unless a 409 proved this server is not co-located. */}
-              {ccBlocked ? null : (
-                <ProviderChoice
-                  title={t('signing.provider.cc.title')}
-                  description={t('signing.provider.cc.description')}
-                  badges={
-                    isRecommended('cc') ? (
-                      <Badge tone="accent">{t('signing.recommended')}</Badge>
-                    ) : null
-                  }
-                >
-                  <GateButton
-                    perm="signing.perform"
-                    scope={bookScope}
-                    type="button"
-                    variant="secondary"
-                    icon={<Icon.IdCard />}
-                    onClick={onPickCc}
-                  >
-                    {t('signing.cc.start')}
-                  </GateButton>
-                </ProviderChoice>
-              )}
-              <ProviderChoice
-                title={t('signing.provider.pkcs12.title')}
-                description={t('signing.provider.pkcs12.description')}
-                badges={<Badge tone="warn">{t('signing.provider.pkcs12.badge')}</Badge>}
-              >
-                <GateButton
-                  perm="signing.perform"
-                  scope={bookScope}
-                  type="button"
-                  variant="secondary"
-                  icon={<Icon.FileText />}
-                  onClick={() => {
-                    resetPkcs12Form();
-                    setStep({ kind: 'pkcs12' });
-                  }}
-                >
-                  {t('signing.pkcs12.start')}
-                </GateButton>
-              </ProviderChoice>
-              <ProviderChoice
-                title={t('signing.provider.official.title')}
-                description={t('signing.provider.official.description')}
-                badges={<Badge tone="warn">{t('signing.provider.official.badge')}</Badge>}
-              >
-                <GateButton
-                  perm="signing.perform"
-                  scope={bookScope}
-                  type="button"
-                  variant="secondary"
-                  icon={<Icon.FileText />}
-                  onClick={() => {
-                    resetOfficialImportForm();
-                    setStep({ kind: 'officialImport' });
-                  }}
-                >
-                  {t('signing.official.start')}
-                </GateButton>
-              </ProviderChoice>
-              {providers.isLoading ? (
-                <p className="field__hint signing-provider-list__note">
-                  {t('signing.provider.loading')}
-                </p>
-              ) : providers.error ? (
-                <InlineWarning tone="info" title={t('signing.provider.unavailable.title')}>
-                  {t('signing.provider.unavailable.body')}
-                </InlineWarning>
-              ) : null}
-              {/* Every configured CSC QTSP (Multicert / DigitalSign / …) — the generic two-phase path.
-                An unconfigured provider is shown disabled with an honest «não configurado» note. */}
-              {cscProviders.map((provider) =>
-                provider.configured ? (
+                <div className="signing-provider-list">
+                  {/* Chave Móvel Digital — always offered (its dedicated two-phase path). */}
                   <ProviderChoice
-                    key={provider.id}
-                    title={provider.label}
-                    description={t('signing.provider.csc.description')}
+                    title={t('signing.provider.cmd.title')}
+                    description={t('signing.provider.cmd.description')}
                     badges={
-                      isRecommended('csc') ? (
+                      isRecommended('cmd') ? (
                         <Badge tone="accent">{t('signing.recommended')}</Badge>
                       ) : null
                     }
@@ -2531,40 +2967,137 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
                       perm="signing.perform"
                       scope={bookScope}
                       type="button"
-                      variant="secondary"
+                      variant="primary"
                       icon={<Icon.PenNib />}
-                      onClick={() =>
-                        onPick({ id: provider.id, kind: 'csc', label: provider.label })
-                      }
+                      onClick={() => onPick(CMD_PROVIDER)}
                     >
-                      {t('signing.csc.start', { provider: provider.label })}
+                      {t('signing.start')}
                     </GateButton>
                   </ProviderChoice>
-                ) : (
+                  {/* Cartão de Cidadão — always offered unless a 409 proved this server is not co-located. */}
+                  {ccBlocked ? null : (
+                    <ProviderChoice
+                      title={t('signing.provider.cc.title')}
+                      description={t('signing.provider.cc.description')}
+                      badges={
+                        isRecommended('cc') ? (
+                          <Badge tone="accent">{t('signing.recommended')}</Badge>
+                        ) : null
+                      }
+                    >
+                      <GateButton
+                        perm="signing.perform"
+                        scope={bookScope}
+                        type="button"
+                        variant="secondary"
+                        icon={<Icon.IdCard />}
+                        onClick={onPickCc}
+                      >
+                        {t('signing.cc.start')}
+                      </GateButton>
+                    </ProviderChoice>
+                  )}
                   <ProviderChoice
-                    key={provider.id}
-                    title={provider.label}
-                    description={t('signing.provider.csc.unconfigured')}
-                    disabledNote={t('signing.csc.notConfigured')}
+                    title={t('signing.provider.pkcs12.title')}
+                    description={t('signing.provider.pkcs12.description')}
+                    badges={<Badge tone="warn">{t('signing.provider.pkcs12.badge')}</Badge>}
                   >
-                    <Button
+                    <GateButton
+                      perm="signing.perform"
+                      scope={bookScope}
                       type="button"
                       variant="secondary"
-                      icon={<Icon.PenNib />}
-                      aria-disabled="true"
-                      disabled
+                      icon={<Icon.FileText />}
+                      onClick={() => {
+                        resetPkcs12Form();
+                        setStep({ kind: 'pkcs12' });
+                      }}
                     >
-                      {t('signing.csc.start', { provider: provider.label })}
-                    </Button>
+                      {t('signing.pkcs12.start')}
+                    </GateButton>
                   </ProviderChoice>
-                ),
-              )}
-            </div>
-            {ccBlocked ? (
-              <InlineWarning tone="info" title={t('signing.cc.coLocation.title')}>
-                {t('signing.cc.coLocation.body')}
-              </InlineWarning>
-            ) : null}
+                  <ProviderChoice
+                    title={t('signing.provider.official.title')}
+                    description={t('signing.provider.official.description')}
+                    badges={<Badge tone="warn">{t('signing.provider.official.badge')}</Badge>}
+                  >
+                    <GateButton
+                      perm="signing.perform"
+                      scope={bookScope}
+                      type="button"
+                      variant="secondary"
+                      icon={<Icon.FileText />}
+                      onClick={() => {
+                        resetOfficialImportForm();
+                        setStep({ kind: 'officialImport' });
+                      }}
+                    >
+                      {t('signing.official.start')}
+                    </GateButton>
+                  </ProviderChoice>
+                  {providers.isLoading ? (
+                    <p className="field__hint signing-provider-list__note">
+                      {t('signing.provider.loading')}
+                    </p>
+                  ) : providers.error ? (
+                    <InlineWarning tone="info" title={t('signing.provider.unavailable.title')}>
+                      {t('signing.provider.unavailable.body')}
+                    </InlineWarning>
+                  ) : null}
+                  {/* Every configured CSC QTSP (Multicert / DigitalSign / …) — the generic two-phase path.
+                An unconfigured provider is shown disabled with an honest «não configurado» note. */}
+                  {cscProviders.map((provider) =>
+                    provider.configured ? (
+                      <ProviderChoice
+                        key={provider.id}
+                        title={provider.label}
+                        description={t('signing.provider.csc.description')}
+                        badges={
+                          isRecommended('csc') ? (
+                            <Badge tone="accent">{t('signing.recommended')}</Badge>
+                          ) : null
+                        }
+                      >
+                        <GateButton
+                          perm="signing.perform"
+                          scope={bookScope}
+                          type="button"
+                          variant="secondary"
+                          icon={<Icon.PenNib />}
+                          onClick={() =>
+                            onPick({ id: provider.id, kind: 'csc', label: provider.label })
+                          }
+                        >
+                          {t('signing.csc.start', { provider: provider.label })}
+                        </GateButton>
+                      </ProviderChoice>
+                    ) : (
+                      <ProviderChoice
+                        key={provider.id}
+                        title={provider.label}
+                        description={t('signing.provider.csc.unconfigured')}
+                        disabledNote={t('signing.csc.notConfigured')}
+                      >
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          icon={<Icon.PenNib />}
+                          aria-disabled="true"
+                          disabled
+                        >
+                          {t('signing.csc.start', { provider: provider.label })}
+                        </Button>
+                      </ProviderChoice>
+                    ),
+                  )}
+                </div>
+                {ccBlocked ? (
+                  <InlineWarning tone="info" title={t('signing.cc.coLocation.title')}>
+                    {t('signing.cc.coLocation.body')}
+                  </InlineWarning>
+                ) : null}
+              </>
+            )}
           </div>
         )}
         {data?.evidence ? <SignatureEvidenceSummary evidence={data.evidence} /> : null}

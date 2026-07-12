@@ -1598,3 +1598,186 @@ describe('SigningPanel — CSC QTSP providers', () => {
     expect(screen.queryByLabelText('Referência do utilizador')).toBeNull();
   });
 });
+
+// A binary document response for the local XAdES/ASiC tools' `loadContentBase64` (the act's PDF/A).
+function pdf(bytes: string, status = 200): Promise<Response> {
+  return Promise.resolve(
+    new Response(new TextEncoder().encode(bytes), {
+      status,
+      headers: { 'Content-Type': 'application/pdf' },
+    }),
+  );
+}
+
+function pkcs12File(bytes = 'pfx-bytes'): File {
+  const file = new File([bytes], 'signer.pfx', { type: 'application/x-pkcs12' });
+  Object.defineProperty(file, 'arrayBuffer', {
+    value: () => Promise.resolve(new TextEncoder().encode(bytes).buffer),
+  });
+  return file;
+}
+
+describe('SigningPanel — signing-format selector (t67-e13)', () => {
+  it('routes an XAdES format/level/packaging choice to the xades/sign endpoint body', async () => {
+    let requestUrl: string | null = null;
+    let requestBody: Record<string, unknown> | null = null;
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      const method = init?.method ?? 'GET';
+      if (url.endsWith('/signature/providers')) return json([]);
+      if (url.endsWith('/signature') && method === 'GET') return json(unsignedStatus);
+      if (url.endsWith('/v1/acts/act-1/document') && method === 'GET') return pdf('%PDF-1.7');
+      if (url.includes('/v1/signature/xades/sign')) {
+        requestUrl = url;
+        requestBody = JSON.parse(String(init?.body));
+        return json({
+          report_kind: 'xades_signature',
+          scope: 'local_technical_xades_evidence',
+          legal_notice: 'Local technical XAdES signature production only.',
+          xades_base64: btoa('<xml/>'),
+          xades_sha256: 'ab'.repeat(32),
+          level: 'XAdES-T',
+          packaging: 'enveloping',
+          content_sha256: 'cd'.repeat(32),
+          signer_cert_subject: 'CN=Amélia Marques,O=Encosto Estratégico Lda',
+          signer_cert_sha256: 'ef'.repeat(32),
+          signature_algorithm: 'rsa-sha256',
+        });
+      }
+      return emptyInviteList(url, method) ?? Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(<SigningPanel act={sealedAct} entityName="Encosto Estratégico Lda" />);
+
+    // Switch the format to XAdES; the local XAdES tool replaces the PAdES provider picker.
+    fireEvent.change(await screen.findByLabelText('Formato de assinatura'), {
+      target: { value: 'xades' },
+    });
+    expect(await screen.findByText('Assinatura XAdES local')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Assinar com Chave Móvel Digital' })).toBeNull();
+
+    // A level + packaging choice must reach the request body.
+    fireEvent.change(screen.getByLabelText('Empacotamento'), { target: { value: 'enveloping' } });
+    fireEvent.change(screen.getByLabelText('Nível'), { target: { value: 'T' } });
+    fireEvent.change(screen.getByLabelText('Ficheiro PKCS#12/PFX'), {
+      target: { files: [pkcs12File()] },
+    });
+    fireEvent.change(screen.getByLabelText('Frase-passe'), { target: { value: 'pfx-passphrase' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Produzir XAdES' }));
+
+    await waitFor(() =>
+      expect(requestBody).toMatchObject({
+        content_name: 'ata.pdf',
+        packaging: 'enveloping',
+        level: 'T',
+        content_base64: btoa('%PDF-1.7'),
+        signer: {
+          kind: 'soft_pkcs12',
+          pkcs12_base64: btoa('pfx-bytes'),
+          passphrase: 'pfx-passphrase',
+        },
+      }),
+    );
+    expect(requestUrl).toContain('/v1/signature/xades/sign');
+    // The result heading (and the success toast) both surface the produced-XAdES title.
+    expect((await screen.findAllByText('XAdES produzido')).length).toBeGreaterThan(0);
+    // The transient passphrase is dropped once consumed.
+    expect((screen.getByLabelText('Frase-passe') as HTMLInputElement).value).toBe('');
+  });
+
+  it('routes an ASiC-E container/level/role/archive choice to the asic/sign endpoint body', async () => {
+    let requestUrl: string | null = null;
+    let requestBody: Record<string, unknown> | null = null;
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      const method = init?.method ?? 'GET';
+      if (url.endsWith('/signature/providers')) return json([]);
+      if (url.endsWith('/signature') && method === 'GET') return json(unsignedStatus);
+      if (url.endsWith('/v1/acts/act-1/document') && method === 'GET') return pdf('%PDF-1.7');
+      if (url.includes('/v1/signature/asic/sign')) {
+        requestUrl = url;
+        requestBody = JSON.parse(String(init?.body));
+        return json({
+          report_kind: 'asic_signature',
+          scope: 'local_technical_asic_evidence',
+          legal_notice: 'Local technical ASiC container production only.',
+          asic_base64: btoa('PK'),
+          asic_sha256: 'ab'.repeat(32),
+          container: 'ASiC-E',
+          xades_level: 'XAdES-T',
+          payload_count: 1,
+          cades_signature_count: 1,
+          xades_signature_count: 0,
+          archive_timestamp: true,
+        });
+      }
+      return emptyInviteList(url, method) ?? Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(<SigningPanel act={sealedAct} entityName="Encosto Estratégico Lda" />);
+
+    fireEvent.change(await screen.findByLabelText('Formato de assinatura'), {
+      target: { value: 'asic' },
+    });
+    expect(await screen.findByText('Contentor ASiC local')).toBeTruthy();
+
+    // Choose ASiC-E → the role selector + archive-timestamp checkbox appear.
+    fireEvent.change(screen.getByLabelText('Tipo de contentor'), {
+      target: { value: 'asic_e_multi' },
+    });
+    fireEvent.change(screen.getByLabelText('Nível XAdES'), { target: { value: 'T' } });
+    fireEvent.change(await screen.findByLabelText('Tipo de assinatura'), {
+      target: { value: 'cades' },
+    });
+    fireEvent.click(screen.getByLabelText('Manifesto de arquivo com carimbo temporal'));
+    fireEvent.change(screen.getByLabelText('Ficheiro PKCS#12/PFX'), {
+      target: { files: [pkcs12File()] },
+    });
+    fireEvent.change(screen.getByLabelText('Frase-passe'), { target: { value: 'pfx-passphrase' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Produzir ASiC' }));
+
+    await waitFor(() =>
+      expect(requestBody).toMatchObject({
+        container: 'asic_e_multi',
+        xades_level: 'T',
+        archive_timestamp: true,
+        payloads: [
+          { name: 'ata.pdf', content_base64: btoa('%PDF-1.7'), mime_type: 'application/pdf' },
+        ],
+        signers: [
+          { role: 'cades', pkcs12_base64: btoa('pfx-bytes'), passphrase: 'pfx-passphrase' },
+        ],
+      }),
+    );
+    expect(requestUrl).toContain('/v1/signature/asic/sign');
+    expect((await screen.findAllByText('Contentor ASiC produzido')).length).toBeGreaterThan(0);
+  });
+
+  it('surfaces the honest co-location note when the local XAdES tool 409s off-host', async () => {
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      const method = init?.method ?? 'GET';
+      if (url.endsWith('/signature/providers')) return json([]);
+      if (url.endsWith('/signature') && method === 'GET') return json(unsignedStatus);
+      if (url.endsWith('/v1/acts/act-1/document') && method === 'GET') return pdf('%PDF-1.7');
+      if (url.includes('/v1/signature/xades/sign')) {
+        return json({ error: 'requires the desktop app' }, 409);
+      }
+      return emptyInviteList(url, method) ?? Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(<SigningPanel act={sealedAct} />);
+    fireEvent.change(await screen.findByLabelText('Formato de assinatura'), {
+      target: { value: 'xades' },
+    });
+    fireEvent.change(await screen.findByLabelText('Ficheiro PKCS#12/PFX'), {
+      target: { files: [pkcs12File()] },
+    });
+    fireEvent.change(screen.getByLabelText('Frase-passe'), { target: { value: 'pfx-passphrase' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Produzir XAdES' }));
+
+    expect(await screen.findByText('Disponível apenas na aplicação de secretária')).toBeTruthy();
+    // The submit action is withdrawn once the co-location note is shown.
+    expect(screen.queryByRole('button', { name: 'Produzir XAdES' })).toBeNull();
+  });
+});

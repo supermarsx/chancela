@@ -4290,6 +4290,203 @@ export interface DssAttachResult {
   status_scope: string;
 }
 
+// --- Local technical XAdES / ASiC signing tools (§ t67-e10/e13) -----------------
+//
+// The signing-format selector routes to three local technical tools distinct from the act-signing
+// lanes above: `POST /v1/signature/xades/sign` and `POST /v1/signature/asic/sign` take a transient
+// co-located PKCS#12 signer + content and RETURN a document (never persisted, never changing act
+// state). Honest scope: local technical evidence — no trusted-list, qualified-signature, or legal
+// claim. Both are co-location-gated (409 when the API is not co-located with the private key); only
+// levels B and T are accepted (LT/LTA are rejected by the backend), which the UI reflects honestly.
+
+/** Shared co-located PKCS#12 signer material. Transient: never persisted client-side. */
+export interface Pkcs12SignerMaterial {
+  pkcs12_base64: string;
+  passphrase: string;
+  friendly_name?: string;
+}
+
+/** The tagged software-certificate signer for the XAdES/SCAP sign bodies. */
+export type SoftPkcs12Signer = { kind: 'soft_pkcs12' } & Pkcs12SignerMaterial;
+
+/** XAdES packaging: `detached` (hash content by URI) or `enveloping` (embed as `<ds:Object>`). */
+export type XadesPackaging = 'detached' | 'enveloping';
+
+/**
+ * The level the local XAdES/ASiC endpoints accept. Only `B` and `T` are wired; `LT`/`LTA` are
+ * rejected by the backend, so they are never sent — the selector reflects this honestly.
+ */
+export type LocalSignatureLevel = 'B' | 'T';
+
+/** `POST /v1/signature/xades/sign` body. The produced XML is returned to the caller only. */
+export interface XadesSignBody {
+  content_base64: string;
+  content_name?: string;
+  packaging?: XadesPackaging;
+  level?: LocalSignatureLevel;
+  signer: SoftPkcs12Signer;
+}
+
+/** `POST /v1/signature/xades/sign` response — the produced XAdES + honest technical scope. */
+export interface XadesSignResponse {
+  report_kind: string;
+  scope: string;
+  legal_notice: string;
+  xades_base64: string;
+  xades_sha256: string;
+  level: string;
+  packaging: string;
+  content_sha256: string;
+  signer_cert_subject: string | null;
+  signer_cert_sha256: string;
+  signature_algorithm: string;
+}
+
+/** The ASiC container form. */
+export type AsicContainer = 'asic_s_xades' | 'asic_e_multi';
+
+/** The role an ASiC-E signer plays (ignored for ASiC-S, which is always XAdES). */
+export type AsicSignerRole = 'cades' | 'xades';
+
+/** A payload member of an ASiC container. */
+export interface AsicPayloadBody {
+  name: string;
+  content_base64: string;
+  mime_type?: string;
+}
+
+/** A co-located software-certificate ASiC signer. */
+export interface AsicSignerBody extends Pkcs12SignerMaterial {
+  role?: AsicSignerRole;
+}
+
+/** `POST /v1/signature/asic/sign` body. The produced container is returned to the caller only. */
+export interface AsicSignBody {
+  container: AsicContainer;
+  payloads: AsicPayloadBody[];
+  signers: AsicSignerBody[];
+  xades_level?: LocalSignatureLevel;
+  archive_timestamp?: boolean;
+}
+
+/** `POST /v1/signature/asic/sign` response — the produced container + honest technical scope. */
+export interface AsicSignResponse {
+  report_kind: string;
+  scope: string;
+  legal_notice: string;
+  asic_base64: string;
+  asic_sha256: string;
+  container: string;
+  xades_level: string;
+  payload_count: number;
+  cades_signature_count: number;
+  xades_signature_count: number;
+  archive_timestamp: boolean;
+}
+
+// --- SCAP professional-attribute signing (§ t67-e10/e13) ------------------------
+//
+// The AMA SCAP surface: list attribute providers, fetch a citizen's professional attributes, and
+// attach a selected attribute at signing time (a co-located PKCS#12 produces a CAdES attribute-
+// qualified signature over content). The HONESTY invariant is load-bearing: the default `preprod`
+// transport is the offline mock, which can ONLY report a DECLARED capacity — `verified` is always
+// `false` and `verification_status` is `declared_capacity_by_provider`. A `verified_by_scap` status
+// is reachable ONLY through the real `prod` transport on a live Granted decision. The UI must NEVER
+// render a declared/mock attribute as verified — it keys the label strictly off `verification.verified`.
+
+/** The SCAP transport/environment. `preprod` = offline mock (declared-only); `prod` = real AMA. */
+export type ScapEnvironment = 'preprod' | 'prod';
+
+/** `POST /v1/scap/providers` body. */
+export interface ScapProvidersBody {
+  environment?: ScapEnvironment;
+}
+
+/** One attribute provider SCAP knows about. */
+export interface AttributeProviderView {
+  id: string;
+  name: string;
+  attribute_names: string[];
+}
+
+/** `POST /v1/scap/providers` response. */
+export interface ScapProvidersResponse {
+  report_kind: string;
+  environment: string;
+  transport: string;
+  providers: AttributeProviderView[];
+}
+
+/** `POST /v1/scap/attributes` body. */
+export interface ScapAttributesBody {
+  citizen_id: string;
+  full_name?: string;
+  environment?: ScapEnvironment;
+}
+
+/** A sub-attribute (name/value pair) of a professional attribute. */
+export interface ScapSubAttributeView {
+  name: string;
+  value: string;
+}
+
+/** A professional attribute SCAP reports for a citizen. */
+export interface ProfessionalAttributeView {
+  provider_id: string;
+  provider_name: string;
+  name: string;
+  valid_from: string | null;
+  valid_until: string | null;
+  sub_attributes: ScapSubAttributeView[];
+}
+
+/** `POST /v1/scap/attributes` response. */
+export interface ScapAttributesResponse {
+  report_kind: string;
+  environment: string;
+  transport: string;
+  citizen_id: string;
+  attributes: ProfessionalAttributeView[];
+}
+
+/** `POST /v1/scap/sign` body — attach a reported attribute and produce a CAdES signature. */
+export interface ScapSignBody {
+  citizen_id: string;
+  full_name?: string;
+  provider_id: string;
+  attribute_name: string;
+  content_base64: string;
+  signer: SoftPkcs12Signer;
+  environment?: ScapEnvironment;
+}
+
+/**
+ * The honesty status of a SCAP capacity claim. `verified` is `true` ONLY on a real Granted SCAP
+ * verification; the mock/declared path always reports `false` with `verification_status`
+ * `declared_capacity_by_provider` and `status_scope` `declared_capacity_evidence_only`.
+ */
+export interface ScapVerification {
+  verified: boolean;
+  verification_status: string;
+  status_scope: string;
+  attribute_name: string;
+  provider_id: string;
+}
+
+/** `POST /v1/scap/sign` response — the CAdES signature + honest capacity status. */
+export interface ScapSignResponse {
+  report_kind: string;
+  environment: string;
+  transport: string;
+  legal_notice: string;
+  verification: ScapVerification;
+  content_sha256: string;
+  signature_base64: string;
+  signature_sha256: string;
+  signer_cert_subject: string | null;
+  signer_cert_sha256: string;
+}
+
 // --- Generic remote qualified signing (§ t59) -----------------------------------
 //
 // The provider-agnostic two-phase remote-signing surface (frozen `chancela-api::signature`

@@ -30,6 +30,11 @@ import type {
   CcBatchSignBody,
   LocalPkcs12SignBody,
   OfficialSignatureImportBody,
+  XadesSignBody,
+  AsicSignBody,
+  ScapProvidersBody,
+  ScapAttributesBody,
+  ScapSignBody,
   RemoteInitiateBody,
   RemoteConfirmBody,
   CompleteFollowUpBody,
@@ -1089,6 +1094,41 @@ export function useImportOfficialSignature(id: string) {
       void qc.invalidateQueries({ queryKey: keys.dashboard });
     },
   });
+}
+
+// --- Local technical XAdES / ASiC / SCAP signing tools (§ t67-e13) ----------------
+//
+// These local tools return a document (or a CAdES signature) without changing act state, so — unlike
+// the act-signing lanes — they invalidate NO query cache. The transient PKCS#12 material rides only
+// in the mutation variables; each caller clears it and calls `reset()` after every submit so it never
+// lingers in the retained mutation state.
+
+/** Local XAdES production (`POST /v1/signature/xades/sign`). Co-location-gated; returns the XML. */
+export function useXadesSign() {
+  return useMutation({ mutationFn: (body: XadesSignBody) => api.signXades(body) });
+}
+
+/** Local ASiC production (`POST /v1/signature/asic/sign`). Co-location-gated; returns the container. */
+export function useAsicSign() {
+  return useMutation({ mutationFn: (body: AsicSignBody) => api.signAsic(body) });
+}
+
+/** SCAP attribute-provider list (`POST /v1/scap/providers`). */
+export function useScapProviders() {
+  return useMutation({ mutationFn: (body: ScapProvidersBody = {}) => api.scapProviders(body) });
+}
+
+/** SCAP citizen professional-attribute fetch (`POST /v1/scap/attributes`). */
+export function useScapAttributes() {
+  return useMutation({ mutationFn: (body: ScapAttributesBody) => api.scapAttributes(body) });
+}
+
+/**
+ * SCAP attribute-qualified signing (`POST /v1/scap/sign`). The response's `verification.verified` is
+ * the single source of truth for the declared-vs-verified label; the mock transport can never set it.
+ */
+export function useScapSign() {
+  return useMutation({ mutationFn: (body: ScapSignBody) => api.scapSign(body) });
 }
 
 // --- Generic remote qualified signing (§ t59) — the provider picker + CSC QTSPs ---
