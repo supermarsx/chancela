@@ -11,8 +11,8 @@ use std::time::Duration as StdDuration;
 use chancela_tsl::parse::{FOR_ESEALS, FOR_ESIGNATURES, SVCTYPE_CA_QC};
 use chancela_tsl::{
     BytesTslSource, DigitalIdentity, FileTslSource, QualifiedStatus, ServiceStatus, TrustedList,
-    TslClient, TslError, parse_tsl, qualified_esig_services, resolve_esig_status,
-    resolve_qtst_match_details, validate_tsl_signature,
+    TslClient, TslError, TslTrustAnchors, parse_tsl, qualified_esig_services, resolve_esig_status,
+    resolve_qtst_match_details, validate_tsl_signature, validate_tsl_signature_with_anchors,
 };
 use der::Encode;
 use der::asn1::{Any, BitString, ObjectIdentifier};
@@ -47,6 +47,15 @@ const SHA256_DIGEST_INFO_PREFIX: [u8; 19] = [
 struct SignedFixture {
     xml: Vec<u8>,
     signature_value: Vec<u8>,
+    /// The DER of the certificate embedded in `<ds:KeyInfo>` — the anchor a well-configured
+    /// deployment would pin for this list.
+    signer_cert_der: Vec<u8>,
+}
+
+/// The trust anchors a well-configured deployment would hold for `fixture`: a pin of the exact
+/// certificate the list is signed with.
+fn anchors_for(fixture: &SignedFixture) -> TslTrustAnchors {
+    TslTrustAnchors::new().with_cert_der(&fixture.signer_cert_der)
 }
 
 #[derive(Clone, Copy)]
@@ -107,6 +116,7 @@ fn signed_fixture() -> SignedFixture {
     SignedFixture {
         xml: xml.into_bytes(),
         signature_value,
+        signer_cert_der: cert_der,
     }
 }
 
@@ -146,6 +156,7 @@ fn signed_ecdsa_fixture(encoding: EcdsaSignatureEncoding) -> SignedFixture {
     SignedFixture {
         xml: xml.into_bytes(),
         signature_value,
+        signer_cert_der: cert_der,
     }
 }
 
@@ -194,6 +205,7 @@ fn signed_fragment_fixture() -> SignedFixture {
     SignedFixture {
         xml: xml.into_bytes(),
         signature_value,
+        signer_cert_der: cert_der,
     }
 }
 
@@ -242,6 +254,7 @@ fn signed_non_root_fragment_fixture() -> SignedFixture {
     SignedFixture {
         xml: xml.into_bytes(),
         signature_value,
+        signer_cert_der: cert_der,
     }
 }
 
@@ -758,21 +771,82 @@ fn tsl_signature_validation_rejects_digest_mismatch_metadata() {
 }
 
 #[test]
-fn tsl_signature_validation_accepts_supported_fixture_shape_signed_by_embedded_cert() {
+fn tsl_signature_validation_accepts_supported_fixture_shape_signed_by_anchored_cert() {
     let signed = signed_fixture();
-    validate_tsl_signature(&signed.xml).expect("supported XML-DSig shape verifies");
+    validate_tsl_signature_with_anchors(&signed.xml, &anchors_for(&signed))
+        .expect("supported XML-DSig shape signed by the anchored cert verifies");
 }
 
 #[test]
-fn tsl_signature_validation_accepts_p256_ecdsa_signed_by_embedded_cert() {
+fn tsl_signature_validation_accepts_p256_ecdsa_signed_by_anchored_cert() {
     let signed = signed_ecdsa_fixture(EcdsaSignatureEncoding::Raw);
-    validate_tsl_signature(&signed.xml).expect("P-256 ECDSA XML-DSig shape verifies");
+    validate_tsl_signature_with_anchors(&signed.xml, &anchors_for(&signed))
+        .expect("P-256 ECDSA XML-DSig shape signed by the anchored cert verifies");
 }
 
 #[test]
 fn tsl_signature_validation_accepts_same_document_root_uri_fragment() {
     let signed = signed_fragment_fixture();
-    validate_tsl_signature(&signed.xml).expect("root URI fragment XML-DSig shape verifies");
+    validate_tsl_signature_with_anchors(&signed.xml, &anchors_for(&signed))
+        .expect("root URI fragment XML-DSig shape signed by the anchored cert verifies");
+}
+
+#[test]
+fn tsl_signature_validation_pins_anchor_by_sha256_fingerprint() {
+    // Configuring the anchor by the DER cert's SHA-256 fingerprint is equivalent to shipping the
+    // cert file.
+    let signed = signed_fixture();
+    let fingerprint: [u8; 32] = Sha256::digest(&signed.signer_cert_der).into();
+    let anchors = TslTrustAnchors::new().with_fingerprint(fingerprint);
+    validate_tsl_signature_with_anchors(&signed.xml, &anchors)
+        .expect("a list signed by the fingerprint-pinned cert verifies");
+}
+
+#[test]
+fn tsl_signature_validation_rejects_self_signed_list_not_matching_anchor() {
+    // The core of audit t41/C2 part H4: a list that verifies against the certificate it *itself*
+    // carries, but whose signer does not match the configured anchor, MUST be untrusted. Here the
+    // configured anchor is a *different* signer (the ECDSA fixture's cert).
+    let signed = signed_fixture();
+    let other = signed_ecdsa_fixture(EcdsaSignatureEncoding::Raw);
+    let anchors = TslTrustAnchors::new().with_cert_der(&other.signer_cert_der);
+
+    let err = validate_tsl_signature_with_anchors(&signed.xml, &anchors).unwrap_err();
+    assert!(
+        matches!(err, TslError::SignatureUntrusted(_)),
+        "a self-attested list whose signer is not the anchor must be untrusted, got {err:?}"
+    );
+}
+
+#[test]
+fn tsl_signature_validation_fails_closed_with_empty_anchor_set() {
+    // No anchor configured -> even a cryptographically self-consistent list is untrusted.
+    let signed = signed_fixture();
+    let err =
+        validate_tsl_signature_with_anchors(&signed.xml, &TslTrustAnchors::new()).unwrap_err();
+    assert!(
+        matches!(err, TslError::SignatureUntrusted(_)),
+        "an empty anchor set must trust no list, got {err:?}"
+    );
+}
+
+#[test]
+fn tsl_signature_env_entry_point_fails_closed_without_configured_anchor() {
+    // The public `validate_tsl_signature` resolves anchors from the environment. With neither
+    // CHANCELA_TSL_TRUST_ANCHOR nor CHANCELA_TSL_TRUST_ANCHOR_SHA256 set (this test binary sets
+    // neither), the anchor set is empty and a self-consistent list is reported untrusted.
+    assert!(
+        TslTrustAnchors::from_env()
+            .expect("no anchor env vars set -> empty set")
+            .is_empty(),
+        "this test binary must not configure a TSL trust anchor"
+    );
+    let signed = signed_fixture();
+    let err = validate_tsl_signature(&signed.xml).unwrap_err();
+    assert!(
+        matches!(err, TslError::SignatureUntrusted(_)),
+        "env entry point must fail closed without a configured anchor, got {err:?}"
+    );
 }
 
 #[test]

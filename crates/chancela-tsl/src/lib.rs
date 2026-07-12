@@ -19,11 +19,19 @@
 //!    (`Granted`/`Withdrawn`/`Unknown`), which `chancela-signing` maps onto its
 //!    `TrustedListStatus`. [`query::TslClient`] ties source + cache + query together.
 //!
-//! # XML-DSig signature validation (SIG-11)
+//! # XML-DSig signature validation (SIG-11, audit t41/C2)
 //! The Trusted List's own XML-DSig signature is validated by
 //! [`source::validate_tsl_signature`]. The [`query::TslClient`] calls this on every `refresh`
-//! and refuses to return [`QualifiedStatus::Granted`] when the signature does not verify —
-//! see `crates/chancela-tsl/TESTING.md` for the verification boundary.
+//! and refuses to return [`QualifiedStatus::Granted`] when the signature does not verify.
+//!
+//! Verifying the signature against the certificate the list *itself* carries only proves internal
+//! consistency — a self-signed list passes. The list is the system's root of trust, so the signer
+//! certificate is additionally **anchored** to a configured EU LOTL / national scheme signing
+//! certificate ([`source::TslTrustAnchors`], sourced from `CHANCELA_TSL_TRUST_ANCHOR` /
+//! `CHANCELA_TSL_TRUST_ANCHOR_SHA256`). This is **fail-closed**: when no anchor is configured,
+//! every list is reported untrusted. Callers holding a configured anchor can call
+//! [`source::validate_tsl_signature_with_anchors`] directly. See `crates/chancela-tsl/TESTING.md`
+//! for the verification boundary.
 
 #![forbid(unsafe_code)]
 
@@ -53,6 +61,7 @@ pub use record::{
     TslRecordLookupMatch, filter_records, lookup_records, trust_service_records, tsa_records,
 };
 pub use source::{
-    BytesTslSource, DEFAULT_PT_TSL_URL, ENV_TSL_URL, FileTslSource, HttpTslSource, TslSource,
-    validate_tsl_signature,
+    BytesTslSource, DEFAULT_PT_TSL_URL, ENV_TSL_TRUST_ANCHOR, ENV_TSL_TRUST_ANCHOR_SHA256,
+    ENV_TSL_URL, FileTslSource, HttpTslSource, TslSource, TslTrustAnchors, validate_tsl_signature,
+    validate_tsl_signature_with_anchors,
 };

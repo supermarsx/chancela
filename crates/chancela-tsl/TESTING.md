@@ -62,7 +62,7 @@ It fetches the real Portuguese Trusted List and parses it. Prerequisites:
 
 Nothing in CI sets the feature or passes `--ignored`, so the network is never touched there.
 
-## XML-DSig validation boundary (SIG-11)
+## XML-DSig validation boundary (SIG-11, audit t41/C2 part H4)
 
 `source::validate_tsl_signature` validates the Trusted List's XML-DSig metadata enough for the
 trust gate to reject missing/malformed signatures, unsupported algorithms, digest mismatches and
@@ -71,12 +71,32 @@ records the validation result at refresh time and never reports `QualifiedStatus
 that validation fails. The bundled fixture carries a deliberately invalid placeholder signature, so
 catalog surfaces show it as advisory.
 
-This is **not** full legal/authenticated EU TSL validation yet. Remaining blockers include signer
-certificate trust anchoring to the EU LOTL or national scheme-operator trust anchor, certificate
-path/revocation/policy validation for the TSL signer, full XML canonicalization/transform
-processing, and broader XML-DSig transform/reference shapes. The implemented RSA-SHA256 and
-P-256 ECDSA-SHA256 checks only prove the document matches the embedded signer certificate's public
-key, not that the signer is legally trusted to publish the TSL.
+### Trust anchoring (fail-closed)
+
+Verifying the signature against the certificate the list *itself* carries only proves the bytes are
+self-consistent — anyone can mint a self-signed `TrustServiceStatusList` that verifies against its
+own embedded key. Because the Trusted List is the system's root of trust, the signer certificate is
+additionally **anchored**: after the signature verifies, the embedded certificate must match a
+configured trust anchor (`source::TslTrustAnchors`) or the list is reported
+`TslError::SignatureUntrusted`.
+
+- `source::validate_tsl_signature` resolves anchors from the environment
+  (`CHANCELA_TSL_TRUST_ANCHOR`, a PEM/DER file of the EU LOTL / national scheme signing
+  certificate(s); and/or `CHANCELA_TSL_TRUST_ANCHOR_SHA256`, pinned hex SHA-256 fingerprints).
+- **This is fail-closed:** with neither variable set, the anchor set is empty and *every* list —
+  including a cryptographically valid, self-signed one — is untrusted. No default anchor is baked
+  in, because shipping an unverified pin would be worse than none; operators configure the current
+  scheme signing certificate out-of-band.
+- `source::validate_tsl_signature_with_anchors` takes the anchors as a parameter for callers that
+  hold them from application config, and is what the tests use.
+
+Anchoring is by exact certificate (equivalently, SHA-256 fingerprint of the DER), not by building a
+path to an issuing CA; rotation is handled by configuring multiple anchors. Remaining blockers
+before full legal/authenticated EU TSL validation include certificate path/revocation/policy
+validation for the TSL signer, full XML canonicalization/transform processing, and broader XML-DSig
+transform/reference shapes. The implemented RSA-SHA256 and P-256 ECDSA-SHA256 checks prove the
+document matches the embedded signer certificate's public key; the anchor gate then proves that
+signer is one the operator trusts to publish the TSL.
 
 ## Fixtures
 

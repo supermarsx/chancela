@@ -51,4 +51,18 @@ pub enum TslError {
     /// The TSL XML-DSig uses an unsupported signature or digest algorithm (audit t41/C2).
     #[error("unsupported TSL XML-DSig algorithm: {0}")]
     SignatureUnsupportedAlgorithm(String),
+
+    /// The Trusted List's XML-DSig signature verified against the certificate the list itself
+    /// carried, but that signer certificate does not match a configured trust anchor — or no
+    /// trust anchor is configured at all (audit t41/C2, part H4). The list is the system's root
+    /// of trust; an unanchored (self-attested) list MUST NOT be trusted. This is the fail-closed
+    /// result: absent a configured EU LOTL / national scheme anchor, every list is untrusted.
+    #[error("TSL signer is not anchored to a configured trust anchor: {0}")]
+    SignatureUntrusted(String),
+
+    /// A configured TSL trust anchor could not be loaded/parsed (bad file path, malformed PEM/DER,
+    /// or an invalid pinned SHA-256 fingerprint). Misconfiguration is treated as fail-closed: an
+    /// anchor that cannot be loaded trusts nothing (audit t41/C2, part H4).
+    #[error("invalid TSL trust-anchor configuration: {0}")]
+    TrustAnchorConfig(String),
 }

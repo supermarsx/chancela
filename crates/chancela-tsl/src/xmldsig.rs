@@ -11,6 +11,7 @@ use sha2::Digest;
 
 use crate::error::TslError;
 use crate::parse::decode_base64;
+use crate::source::TslTrustAnchors;
 
 // ---- URIs -------------------------------------------------------------------------------------
 
@@ -68,8 +69,16 @@ pub(crate) struct Reference {
 }
 
 impl ParsedSignature {
-    /// Verify the parsed signature against `xml` (the original document bytes).
-    pub fn verify(self, xml: &[u8]) -> Result<(), TslError> {
+    /// Verify the parsed signature against `xml` (the original document bytes), then require the
+    /// signer certificate to match a configured trust anchor.
+    ///
+    /// Steps 1-7 establish that the signature is internally consistent (structure, digests, and
+    /// the signature value verify against the certificate the list itself carried). Step 8 is the
+    /// trust decision (audit t41/C2 part H4): a self-signed list is internally consistent too, so
+    /// the signer certificate MUST match `anchors` (the EU LOTL / national scheme signing
+    /// certificate) or the list is reported [`TslError::SignatureUntrusted`]. An empty anchor set
+    /// trusts nothing (fail closed).
+    pub fn verify(self, xml: &[u8], anchors: &TslTrustAnchors) -> Result<(), TslError> {
         // 1. Structural completeness: the signature must carry a value and at least one reference.
         if self.signature_count != 1 {
             return Err(TslError::SignatureStructure(format!(
@@ -166,13 +175,33 @@ impl ParsedSignature {
             )
         })?;
 
-        // 7. Verify the signature value against the cert's public key.
+        // 7. Verify the signature value against the cert's public key. This only proves the list
+        //    is self-consistent — a self-signed list passes this step too.
         verify_signature_value(
             &cert_der,
             &self.signature_method,
             &self.signature_value,
             &canonical_signed_info,
-        )
+        )?;
+
+        // 8. Trust decision (audit t41/C2 part H4): the signer certificate the list carried about
+        //    itself must match a configured trust anchor (the EU LOTL / national scheme signing
+        //    certificate). Without this gate, anyone supplying TSL bytes could present a
+        //    self-signed list declaring arbitrary CAs "qualified" and have it verified. An empty
+        //    anchor set (nothing configured) matches nothing, so this fails closed.
+        if !anchors.is_anchored(&cert_der) {
+            return Err(TslError::SignatureUntrusted(if anchors.is_empty() {
+                "no trust anchor configured (set CHANCELA_TSL_TRUST_ANCHOR or \
+                 CHANCELA_TSL_TRUST_ANCHOR_SHA256 to the EU LOTL / national scheme signing \
+                 certificate)"
+                    .to_owned()
+            } else {
+                "the list's signer certificate does not match any configured trust anchor"
+                    .to_owned()
+            }));
+        }
+
+        Ok(())
     }
 }
 
