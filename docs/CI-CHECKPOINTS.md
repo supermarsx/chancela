@@ -52,7 +52,11 @@ manifest API and BookDetail JSON-download markers, generated-document by-id
 download route plus absent-owner dispatch-evidence recording and generated
 absent-owner evidence UI and dashboard absent-owner dispatch-evidence reminders,
 compact validator-report actions, template provenance UI, release clean-source
-provenance gating, seeded role drift diagnostics, archive readability/ZK caveat
+provenance gating, local CC batch-signing UI markers for BatchSigningPanel,
+`useCcBatchSign`, `POST /v1/signature/cc/batch-sign`, optional transient PIN
+clearing/no-storage, per-document results, auth-mode reporting, declared
+signer-capacity evidence display, and local-CC-only no-claim boundary copy,
+seeded role drift diagnostics, archive readability/ZK caveat
 metadata, template family/channel rule guards, MCP trust-catalog filter
 discoverability, redacted external-validator report summary tools, external
 invite signed-PDF technical evidence markers including linked no-identity slot
@@ -205,7 +209,11 @@ asserts the expected test files, fixture markers, data key preflight markers,
 official-signature/imported-document guardrail acknowledgement markers,
 written-resolution evidence status/binding markers, declared signer-capacity
 evidence markers with `not_checked_by_scap` and
-`declared_capacity_evidence_only`, dashboard subtab markers,
+`declared_capacity_evidence_only`, local CC batch-signing UI markers for
+BatchSigningPanel, `useCcBatchSign`, `POST /v1/signature/cc/batch-sign`,
+transient PIN clear/no-storage tests, route/current-act reset behavior,
+per-document result rendering, auth-mode reporting, and declared-capacity
+evidence display, dashboard subtab markers,
 dashboard/notification icon-only markers, template law-reference UI markers,
 password-required account creation/session API and web markers,
 structured registry chronology graph markers, mapped PDF inter-word space,
@@ -312,8 +320,11 @@ legal notice completion, generated communication legal sufficiency,
 promotion of generated dispatch-evidence metadata sidecars into canonical documents,
 canonical paper-book conversion,
 paper-book canonical act/document/archive-package creation, paper-book PDF/A/PDF-UA,
-paper-book signature/seal creation, paper-book OCR/conversion behavior, or legal effect for mutable draft acts created from
-accepted OCR drafts. The Arquivo markers prove bounded UI/API paging and
+paper-book signature/seal creation, paper-book OCR/conversion behavior, legal
+effect for mutable draft acts created from accepted OCR drafts, CMD batch
+signing, CSC/QTSP remote batch signing, provider-certified remote batch signing,
+SCAP-verified representative authority, legal-capacity proof, or legal effect
+for local CC batch UI evidence. The Arquivo markers prove bounded UI/API paging and
 filtered export behavior only; they do not prove persistent-store boot-time SQL
 paging or turn non-PDF/A exports into preserved evidence. The external invite
 signed-PDF markers prove act-scoped technical signed evidence and the linked

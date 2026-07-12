@@ -559,6 +559,13 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 
 - CMD, CC, and CSC setup paths stay explicit about provider/hardware/onboarding
   requirements.
+- Local/co-located CC batch signing is represented in the web UI for sealed acts
+  through the desktop/local CC path and `POST /v1/signature/cc/batch-sign`,
+  with optional transient PIN submission, per-document results, auth-mode/event
+  reporting, and declared signer-capacity evidence display. This checkpoint is
+  local CC batch UI evidence only: not CMD batch signing, not CSC/QTSP remote
+  batch signing, not provider-certified remote batch signing, and not
+  SCAP-verified representative authority or legal-capacity proof.
 - Trust policy rejects unknown, withdrawn, stale, or invalid TSL states before
   signing.
 - TSA diagnostics use offline fixtures in CI and do not make live timestamp
@@ -1331,7 +1338,11 @@ settingsDefaults.test.ts contracts.test.ts`.
   operator technical evidence PATCH/no-`complete:true` payload markers, and
   identity-requirement-tagged row markers, release workflow unsigned/local-only
   static guard, clean-source provenance gate, and production-package manifest-required
-  markers, plus ASiC inspect route/base64/fixity/
+  markers, plus local CC BatchSigningPanel UI, `useCcBatchSign`,
+  `/v1/signature/cc/batch-sign`, transient PIN clear/no-storage and route-reset
+  tests, per-document result rendering, auth-mode reporting, declared capacity
+  evidence display, and local-CC-only boundary copy markers, plus ASiC inspect
+  route/base64/fixity/
   malformed-ZIP/unsafe-path checks, bounded profile/member/manifest/signature
   diagnostics, `technical_validation` from `validate_asic_container` across
   CAdES/XAdES/mixed signatures and archive timestamps, legacy bounded `cades`

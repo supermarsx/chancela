@@ -2406,6 +2406,106 @@ function assertCheckpointMap() {
     "store declared signer-capacity evidence persistence marker",
   );
   assertFileContains(
+    "apps/web/src/features/signing/BatchSigningPanel.tsx",
+    "export function BatchSigningPanel",
+    "web CC batch signing panel component marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/signing/BatchSigningPanel.tsx",
+    "const ccBatchSign = useCcBatchSign();",
+    "web CC batch signing hook usage marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/signing/BatchSigningPanel.tsx",
+    "pin: trimmedPin || undefined",
+    "web CC batch signing optional transient PIN request marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/signing/BatchSigningPanel.tsx",
+    "setPin('');",
+    "web CC batch signing PIN clear marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/signing/BatchSigningPanel.tsx",
+    "signing.ccBatch.result.authMode",
+    "web CC batch signing auth-mode display marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/signing/BatchSigningPanel.tsx",
+    "response.signer_capacity_evidence",
+    "web CC batch signing declared capacity evidence display marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/signing/BatchSigningPanel.tsx",
+    "response.results.map",
+    "web CC batch signing per-document results marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/signing/SigningPanel.tsx",
+    "<BatchSigningPanel currentAct={act} bookScope={bookScope} />",
+    "web signing panel mounts CC batch signing panel marker",
+  );
+  assertFileContains(
+    "apps/web/src/api/hooks.ts",
+    "export function useCcBatchSign()",
+    "web CC batch signing mutation hook marker",
+  );
+  assertFileContains(
+    "apps/web/src/api/client.ts",
+    "post<CcBatchSignResponse>('/v1/signature/cc/batch-sign', body)",
+    "web CC batch signing client route marker",
+  );
+  assertFileContains(
+    "apps/web/src/api/types.ts",
+    "export interface CcBatchSignBody",
+    "web CC batch signing request contract marker",
+  );
+  assertFileContains(
+    "apps/web/src/api/types.ts",
+    "export interface CcBatchSignResponse",
+    "web CC batch signing response contract marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/signing/BatchSigningPanel.test.tsx",
+    "submits the exact request shape and renders per-document success and error results",
+    "web CC batch signing request/results regression coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/signing/BatchSigningPanel.test.tsx",
+    "omits PIN when blank and labels per-document authentication only from the response",
+    "web CC batch signing auth-mode honesty coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/signing/BatchSigningPanel.test.tsx",
+    "clears the transient PIN on error and keeps the request body transient",
+    "web CC batch signing PIN error-clear regression coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/signing/BatchSigningPanel.test.tsx",
+    "clears PIN on reset and unmount without writing storage",
+    "web CC batch signing no-storage regression coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/signing/BatchSigningPanel.test.tsx",
+    "resets transient batch state when the current act changes in a reused panel",
+    "web CC batch signing route/current-act reset coverage",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "CC batch UI evidence only",
+    "spec coverage local CC batch signing no-claim marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "local CC batch UI evidence only: not CMD batch signing",
+    "CI/E2E hardening local CC batch signing no-claim marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "local CC batch-signing UI markers for BatchSigningPanel",
+    "CI checkpoints local CC batch signing marker",
+  );
+  assertFileContains(
     "crates/chancela-api/src/signature.rs",
     "multi_signature_local_renewal_plan",
     "signature status multi-signature renewal-plan field",
