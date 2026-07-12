@@ -260,6 +260,67 @@ fn archive_retention_policy_payload(disposal_action: &str, retention_period: &st
     })
 }
 
+fn retention_review_closure_payload(decision: &str, note: &str) -> Value {
+    json!({
+        "review_closure_decision": decision,
+        "review_closure_note": note,
+        "review_closure_evidence": [
+            {
+                "label": "  checklist  ",
+                "value": "  operator evidence acknowledged  "
+            }
+        ],
+        "destructive_disposal_completed": false,
+        "full_erasure_completed": false,
+        "legal_hold_mutated": false,
+        "retention_policy_mutated": false
+    })
+}
+
+async fn create_retention_execution_for_closure(
+    state: &AppState,
+    token: &str,
+    policy_payload: Value,
+    scope: &str,
+    category: &str,
+    record_id: &str,
+    execution_mode: &str,
+) -> (String, Value) {
+    let (status, created) = send(
+        state.clone(),
+        with_session(
+            post_json("/v1/privacy/retention-policies", policy_payload),
+            token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "policy create: {created}");
+    let policy_id = created["id"].as_str().expect("policy id").to_owned();
+
+    let (status, execution) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                "/v1/privacy/retention-policies/dry-run",
+                json!({
+                    "scope": scope,
+                    "category": category,
+                    "record_id": record_id,
+                    "execution_request": {
+                        "requested_policy_id": policy_id,
+                        "execution_mode": execution_mode,
+                        "operator_notes": "Record bounded review evidence."
+                    }
+                }),
+            ),
+            token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "execution request: {execution}");
+    (policy_id, execution["execution_record"].clone())
+}
+
 fn date(year: i32, month: Month, day: u8) -> Date {
     Date::from_calendar_date(year, month, day).expect("valid date")
 }
@@ -3597,6 +3658,573 @@ async fn retention_review_only_duplicate_returns_existing_queue_without_new_hist
         })
         .count();
     assert_eq!(matching, 1);
+}
+
+#[tokio::test]
+async fn retention_execution_review_closure_records_review_only_and_idempotent_duplicate() {
+    let (state, _target, owner_token, _reader, _reader_token) = fixture_state().await;
+    let (_settings_user, settings_token) = add_settings_manager(&state).await;
+
+    let (_policy_id, execution_record) = create_retention_execution_for_closure(
+        &state,
+        &owner_token,
+        retention_policy_payload("review", "active"),
+        "document",
+        "signed_pdf",
+        "doc-review-close",
+        "review_only",
+    )
+    .await;
+    let execution_id = execution_record["id"]
+        .as_str()
+        .expect("execution id")
+        .to_owned();
+    assert_eq!(
+        execution_record["execution_status"],
+        json!("awaiting_review")
+    );
+    assert_eq!(execution_record["outcome"], json!("manual_review_required"));
+    assert_eq!(execution_record["decision_state"], json!("open"));
+
+    let ledger_count_before = state.ledger.read().await.events().len();
+    let close_payload = retention_review_closure_payload(
+        "review_evidence_acknowledged",
+        "  Manual queue evidence acknowledged.  ",
+    );
+    let (status, closed) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                &format!("/v1/privacy/retention-executions/{execution_id}/review-closure"),
+                close_payload,
+            ),
+            &settings_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "review closure: {closed}");
+    assert_eq!(closed["id"], json!(execution_id));
+    assert_eq!(closed["execution_status"], json!("awaiting_review"));
+    assert_eq!(closed["outcome"], json!("manual_review_required"));
+    assert_eq!(closed["decision_state"], json!("review_closed"));
+    assert_eq!(
+        closed["review_closure_decision"],
+        json!("review_evidence_acknowledged")
+    );
+    assert_eq!(
+        closed["review_closure_note"],
+        json!("Manual queue evidence acknowledged.")
+    );
+    assert_eq!(
+        closed["review_closure_evidence"][0]["label"],
+        json!("checklist")
+    );
+    assert_eq!(
+        closed["review_closure_evidence"][0]["value"],
+        json!("operator evidence acknowledged")
+    );
+    assert_eq!(closed["review_closed_by"], json!("settings-manager"));
+    let first_closed_at = closed["review_closed_at"]
+        .as_str()
+        .expect("closed timestamp")
+        .to_owned();
+    assert_eq!(closed["destructive_disposal_completed"], json!(false));
+    assert_eq!(closed["full_erasure_completed"], json!(false));
+    assert_eq!(closed["legal_hold_mutated"], json!(false));
+    assert_eq!(closed["retention_policy_mutated"], json!(false));
+    assert_eq!(
+        state.ledger.read().await.events().len(),
+        ledger_count_before + 1,
+        "first closure records exactly one ledger event"
+    );
+
+    let ledger_count_before_repeat = state.ledger.read().await.events().len();
+    let idempotent_payload = json!({
+        "operator_decision": "review_evidence_acknowledged",
+        "closure_note": "Manual queue evidence acknowledged.",
+        "closure_evidence": [
+            {
+                "label": "checklist",
+                "value": "operator evidence acknowledged"
+            }
+        ]
+    });
+    let (status, repeat) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                &format!("/v1/privacy/retention-executions/{execution_id}/review-closure"),
+                idempotent_payload,
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "idempotent closure: {repeat}");
+    assert_eq!(repeat["id"], json!(execution_id));
+    assert_eq!(repeat["review_closed_by"], json!("settings-manager"));
+    assert_eq!(repeat["review_closed_at"], json!(first_closed_at));
+    assert_eq!(
+        state.ledger.read().await.events().len(),
+        ledger_count_before_repeat,
+        "idempotent duplicate must not append another ledger event"
+    );
+
+    let (status, conflict) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                &format!("/v1/privacy/retention-executions/{execution_id}/review-closure"),
+                retention_review_closure_payload(
+                    "review_evidence_acknowledged",
+                    "Different closure evidence acknowledged.",
+                ),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::CONFLICT,
+        "different closure: {conflict}"
+    );
+
+    let (status, history) = send(
+        state.clone(),
+        with_session(get("/v1/privacy/retention-executions"), &owner_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "history: {history}");
+    let closed_history = history
+        .as_array()
+        .expect("history")
+        .iter()
+        .find(|record| record["id"] == json!(execution_id))
+        .expect("closed record remains queryable");
+    assert_eq!(closed_history["decision_state"], json!("review_closed"));
+    assert_eq!(
+        closed_history["review_closure_decision"],
+        json!("review_evidence_acknowledged")
+    );
+
+    let (status, events) = send(
+        state,
+        with_session(
+            get("/v1/ledger/events?scope=privacy:retention-execution:&limit=1000"),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "ledger events: {events}");
+    assert_eq!(
+        events
+            .as_array()
+            .expect("events")
+            .iter()
+            .filter(|event| {
+                event["kind"] == json!("privacy.retention.execution.review.closed")
+                    && event["scope"]
+                        == json!(format!("privacy:retention-execution:{execution_id}"))
+            })
+            .count(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn retention_execution_review_closure_accepts_bounded_and_blocked_categories() {
+    let (state, _target, owner_token, _reader, _reader_token) = fixture_state().await;
+
+    let (_archive_policy, archive_record) = create_retention_execution_for_closure(
+        &state,
+        &owner_token,
+        retention_policy_payload("archive", "active"),
+        "document",
+        "signed_pdf",
+        "doc-archive-close",
+        "execute_supported",
+    )
+    .await;
+    let archive_id = archive_record["id"].as_str().expect("archive id");
+    assert_eq!(archive_record["outcome"], json!("bounded_archive_recorded"));
+    let (status, archive_closed) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                &format!("/v1/privacy/retention-executions/{archive_id}/review-closure"),
+                retention_review_closure_payload(
+                    "bounded_evidence_acknowledged",
+                    "Bounded archive evidence acknowledged.",
+                ),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "archive closure: {archive_closed}");
+    assert_eq!(archive_closed["execution_status"], json!("executed"));
+    assert_eq!(
+        archive_closed["review_closure_decision"],
+        json!("bounded_evidence_acknowledged")
+    );
+    assert_eq!(
+        archive_closed["destructive_disposal_completed"],
+        json!(false)
+    );
+    assert_eq!(archive_closed["full_erasure_completed"], json!(false));
+
+    let (_no_action_policy, no_action_record) = create_retention_execution_for_closure(
+        &state,
+        &owner_token,
+        retention_policy_payload("no_action", "active"),
+        "document",
+        "signed_pdf",
+        "doc-no-action-close",
+        "execute_supported",
+    )
+    .await;
+    let no_action_id = no_action_record["id"].as_str().expect("no-action id");
+    assert_eq!(
+        no_action_record["outcome"],
+        json!("bounded_no_action_recorded")
+    );
+    let (status, no_action_closed) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                &format!("/v1/privacy/retention-executions/{no_action_id}/review-closure"),
+                retention_review_closure_payload(
+                    "bounded_evidence_acknowledged",
+                    "Bounded no-action evidence acknowledged.",
+                ),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "no-action closure: {no_action_closed}"
+    );
+    assert_eq!(
+        no_action_closed["review_closure_decision"],
+        json!("bounded_evidence_acknowledged")
+    );
+
+    let (_blocked_policy, blocked_record) = create_retention_execution_for_closure(
+        &state,
+        &owner_token,
+        retention_policy_payload("delete", "active"),
+        "document",
+        "signed_pdf",
+        "doc-blocked-close",
+        "execute_supported",
+    )
+    .await;
+    let blocked_id = blocked_record["id"].as_str().expect("blocked id");
+    assert_eq!(
+        blocked_record["outcome"],
+        json!("blocked_destructive_action")
+    );
+    let (status, mismatch) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                &format!("/v1/privacy/retention-executions/{blocked_id}/review-closure"),
+                retention_review_closure_payload(
+                    "review_evidence_acknowledged",
+                    "Blocked evidence acknowledged.",
+                ),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "wrong closure decision: {mismatch}"
+    );
+
+    let (status, blocked_closed) = send(
+        state,
+        with_session(
+            post_json(
+                &format!("/v1/privacy/retention-executions/{blocked_id}/review-closure"),
+                retention_review_closure_payload(
+                    "blocked_evidence_acknowledged",
+                    "Blocked evidence acknowledged.",
+                ),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "blocked closure: {blocked_closed}");
+    assert_eq!(blocked_closed["execution_status"], json!("blocked"));
+    assert_eq!(
+        blocked_closed["review_closure_decision"],
+        json!("blocked_evidence_acknowledged")
+    );
+    assert_eq!(blocked_closed["legal_hold_mutated"], json!(false));
+    assert_eq!(blocked_closed["retention_policy_mutated"], json!(false));
+}
+
+#[tokio::test]
+async fn retention_execution_review_closure_rejects_claims_flags_unknowns_and_authz() {
+    let (state, _target, owner_token, _reader, reader_token) = fixture_state().await;
+
+    let (_policy_id, execution_record) = create_retention_execution_for_closure(
+        &state,
+        &owner_token,
+        retention_policy_payload("review", "active"),
+        "document",
+        "signed_pdf",
+        "doc-review-close-validation",
+        "review_only",
+    )
+    .await;
+    let execution_id = execution_record["id"].as_str().expect("execution id");
+    let uri = format!("/v1/privacy/retention-executions/{execution_id}/review-closure");
+
+    let (status, denied) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                &uri,
+                retention_review_closure_payload(
+                    "review_evidence_acknowledged",
+                    "Manual evidence acknowledged.",
+                ),
+            ),
+            &reader_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "reader denied: {denied}");
+
+    let (status, missing_decision) = send(
+        state.clone(),
+        with_session(
+            post_json(&uri, json!({ "review_closure_note": "Evidence only." })),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "missing decision: {missing_decision}"
+    );
+
+    let (status, missing_evidence) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                &uri,
+                json!({ "operator_decision": "review_evidence_acknowledged" }),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "missing note/evidence: {missing_evidence}"
+    );
+
+    let (status, true_flag) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                &uri,
+                json!({
+                    "operator_decision": "review_evidence_acknowledged",
+                    "review_closure_note": "Evidence only.",
+                    "destructive_disposal_completed": true
+                }),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "true flag rejected: {true_flag}"
+    );
+
+    let (status, claim_terms) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                &uri,
+                json!({
+                    "operator_decision": "review_evidence_acknowledged",
+                    "review_closure_note": "Legal approval resolved deletion and erasure."
+                }),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "claim terms rejected: {claim_terms}"
+    );
+
+    let (status, unknown_field) = send(
+        state,
+        with_session(
+            post_json(
+                &uri,
+                json!({
+                    "operator_decision": "review_evidence_acknowledged",
+                    "review_closure_note": "Evidence only.",
+                    "legal_approval": false
+                }),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "unknown field rejected: {unknown_field}"
+    );
+    assert!(
+        unknown_field["error"]
+            .as_str()
+            .expect("error")
+            .contains("unknown field")
+    );
+}
+
+#[tokio::test]
+async fn retention_execution_review_closure_persists_and_due_candidates_stay_non_mutating() {
+    let tmp = TempDir::new();
+    let state = AppState::with_data_dir(tmp.dir.clone());
+    let (owner, owner_token) = bootstrap_owner(&state).await;
+    let book_id = insert_closed_book(&state, date(2000, Month::January, 15)).await;
+
+    let (_policy_id, execution_record) = create_retention_execution_for_closure(
+        &state,
+        &owner_token,
+        archive_retention_policy_payload("archive", "P1D"),
+        "book_archive",
+        "documents",
+        &book_id,
+        "review_only",
+    )
+    .await;
+    let execution_id = execution_record["id"]
+        .as_str()
+        .expect("execution id")
+        .to_owned();
+
+    let (status, closed) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                &format!("/v1/privacy/retention-executions/{execution_id}/review-closure"),
+                retention_review_closure_payload(
+                    "review_evidence_acknowledged",
+                    "Due candidate evidence acknowledged.",
+                ),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "closure persists: {closed}");
+    assert_eq!(closed["decision_state"], json!("review_closed"));
+    assert!(tmp.dir.join(RETENTION_EXECUTIONS_FILE).is_file());
+
+    let execution_count_before_due = state.retention_execution_records.read().await.len();
+    let ledger_count_before_due = state.ledger.read().await.events().len();
+    let books_before_due = state.books.read().await.clone();
+    let (status, due) = send(
+        state.clone(),
+        with_session(get("/v1/privacy/retention-due-candidates"), &owner_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "due candidates: {due}");
+    assert_eq!(due["candidate_count"], json!(1));
+    assert_eq!(
+        state.retention_execution_records.read().await.len(),
+        execution_count_before_due,
+        "due-candidate GET must not write execution records"
+    );
+    assert_eq!(
+        state.ledger.read().await.events().len(),
+        ledger_count_before_due,
+        "due-candidate GET must not append ledger events"
+    );
+    assert_eq!(
+        *state.books.read().await,
+        books_before_due,
+        "due-candidate GET must not mutate books"
+    );
+
+    let restarted = AppState::with_data_dir(tmp.dir.clone());
+    let restarted_token = open_session(&restarted, owner).await;
+    let (status, history) = send(
+        restarted.clone(),
+        with_session(get("/v1/privacy/retention-executions"), &restarted_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "history after restart: {history}");
+    let history = history.as_array().expect("history");
+    assert_eq!(history.len(), 1);
+    assert_eq!(history[0]["id"], json!(execution_id));
+    assert_eq!(history[0]["decision_state"], json!("review_closed"));
+    assert_eq!(
+        history[0]["review_closure_decision"],
+        json!("review_evidence_acknowledged")
+    );
+    assert_eq!(
+        history[0]["review_closure_note"],
+        json!("Due candidate evidence acknowledged.")
+    );
+
+    let (status, duplicate_review) = send(
+        restarted.clone(),
+        with_session(
+            post_json(
+                "/v1/privacy/retention-policies/dry-run",
+                json!({
+                    "scope": "book_archive",
+                    "category": "documents",
+                    "record_id": book_id,
+                    "execution_request": {
+                        "requested_policy_id": history[0]["requested_policy"]["id"],
+                        "execution_mode": "review_only",
+                        "operator_notes": "Create a fresh queue after review closure."
+                    }
+                }),
+            ),
+            &restarted_token,
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "new queue after closure: {duplicate_review}"
+    );
+    let duplicate_record = &duplicate_review["execution_record"];
+    assert_ne!(duplicate_record["id"], json!(execution_id));
+    assert_eq!(duplicate_record["decision_state"], json!("open"));
+    assert_eq!(
+        restarted.retention_execution_records.read().await.len(),
+        2,
+        "closed review is not reused as the active queued review"
+    );
 }
 
 #[tokio::test]

@@ -60,8 +60,10 @@
 //! - `GET|POST /v1/privacy/retention-policies`, `PATCH /v1/privacy/retention-policies/{id}`,
 //!   `POST /v1/privacy/retention-policies/dry-run`,
 //!   `GET /v1/privacy/retention-due-candidates`,
-//!   `GET /v1/privacy/retention-executions` — bounded retention policy register,
-//!   non-destructive applicability reporting, and recorded execution-request evidence.
+//!   `GET /v1/privacy/retention-executions`,
+//!   `POST /v1/privacy/retention-executions/{id}/review-closure` — bounded retention policy
+//!   register, non-destructive applicability reporting, recorded execution-request evidence, and
+//!   review-only execution closure.
 //!
 //! ## Serving the web UI
 //!
@@ -1621,6 +1623,10 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/v1/privacy/retention-executions",
             get(privacy::list_retention_execution_records),
+        )
+        .route(
+            "/v1/privacy/retention-executions/{id}/review-closure",
+            post(privacy::close_retention_execution_review),
         )
         .route(
             "/v1/privacy/retention-policies/{id}",

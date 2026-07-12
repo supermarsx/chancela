@@ -40,6 +40,7 @@ const TRANSFER_CONTROL_UPDATED_KIND: &str = "privacy.transfer.control.updated";
 const RETENTION_POLICY_CREATED_KIND: &str = "privacy.retention.policy.created";
 const RETENTION_POLICY_UPDATED_KIND: &str = "privacy.retention.policy.updated";
 const RETENTION_EXECUTION_REQUESTED_KIND: &str = "privacy.retention.execution.requested";
+const RETENTION_EXECUTION_REVIEW_CLOSED_KIND: &str = "privacy.retention.execution.review.closed";
 const ARCHIVE_RETENTION_POLICY_SCOPE: &str = "book_archive";
 const ARCHIVE_RETENTION_POLICY_CATEGORY: &str = "documents";
 const RETENTION_PRIOR_BOUNDED_ARCHIVE_NEXT_STEP: &str = "Prior bounded archive evidence is available for review; this due-candidate scan is read-only and requires separate governance approval before any operational action.";
@@ -1312,6 +1313,25 @@ pub struct RetentionExecutionRequest {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RetentionReviewClosureRequest {
+    #[serde(default, alias = "operator_decision")]
+    pub review_closure_decision: Option<String>,
+    #[serde(default, alias = "closure_evidence")]
+    pub review_closure_evidence: Option<Vec<RetentionReviewClosureEvidenceInput>>,
+    #[serde(default, alias = "closure_note")]
+    pub review_closure_note: Option<String>,
+    #[serde(default)]
+    pub destructive_disposal_completed: Option<bool>,
+    #[serde(default)]
+    pub full_erasure_completed: Option<bool>,
+    #[serde(default)]
+    pub legal_hold_mutated: Option<bool>,
+    #[serde(default)]
+    pub retention_policy_mutated: Option<bool>,
+}
+
+#[derive(Deserialize)]
 pub struct RetentionExecutionApprovalInput {
     #[serde(default)]
     pub approval_reference: Option<String>,
@@ -1327,6 +1347,15 @@ pub struct RetentionExecutionApprovalInput {
 
 #[derive(Deserialize)]
 pub struct RetentionExecutionEvidenceInput {
+    #[serde(default)]
+    pub label: Option<String>,
+    #[serde(default)]
+    pub value: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RetentionReviewClosureEvidenceInput {
     #[serde(default)]
     pub label: Option<String>,
     #[serde(default)]
@@ -1470,6 +1499,13 @@ struct ValidatedRetentionExecutionRequest {
     approval: Option<RetentionExecutionApproval>,
 }
 
+#[derive(Debug)]
+struct ValidatedRetentionReviewClosure {
+    decision: RetentionReviewClosureDecision,
+    note: Option<String>,
+    evidence: Vec<RetentionOperatorEvidence>,
+}
+
 #[derive(Default, Deserialize)]
 pub(crate) struct RetentionExecutionListQuery {
     #[serde(default)]
@@ -1487,6 +1523,26 @@ pub struct RetentionExecutionRecord {
     pub execution_status: RetentionExecutionStatus,
     #[serde(default = "default_retention_operator_review_decision")]
     pub operator_review_decision: RetentionOperatorReviewDecision,
+    #[serde(default = "default_retention_execution_decision_state")]
+    pub decision_state: RetentionExecutionDecisionState,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub review_closure_decision: Option<RetentionReviewClosureDecision>,
+    #[serde(default)]
+    pub review_closure_evidence: Vec<RetentionOperatorEvidence>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub review_closed_by: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub review_closed_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub review_closure_note: Option<String>,
+    #[serde(default)]
+    pub destructive_disposal_completed: bool,
+    #[serde(default)]
+    pub full_erasure_completed: bool,
+    #[serde(default)]
+    pub legal_hold_mutated: bool,
+    #[serde(default)]
+    pub retention_policy_mutated: bool,
     pub requested_policy: RetentionExecutionRequestedPolicy,
     pub candidate: RetentionDryRunCandidate,
     pub matched_records_summary: RetentionMatchedRecordsSummary,
@@ -1545,6 +1601,35 @@ pub enum RetentionOperatorReviewDecision {
     ReviewRequired,
     Blocked,
     ExecutionRecorded,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RetentionExecutionDecisionState {
+    Open,
+    ReviewClosed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RetentionReviewClosureDecision {
+    ReviewEvidenceAcknowledged,
+    BoundedEvidenceAcknowledged,
+    BlockedEvidenceAcknowledged,
+}
+
+impl RetentionReviewClosureDecision {
+    fn parse(raw: &str) -> Result<Self, ApiError> {
+        match normalize_enum(raw).as_str() {
+            "review_evidence_acknowledged" => Ok(Self::ReviewEvidenceAcknowledged),
+            "bounded_evidence_acknowledged" => Ok(Self::BoundedEvidenceAcknowledged),
+            "blocked_evidence_acknowledged" => Ok(Self::BlockedEvidenceAcknowledged),
+            _ => Err(ApiError::Unprocessable(
+                "invalid review_closure_decision; expected review_evidence_acknowledged, bounded_evidence_acknowledged, or blocked_evidence_acknowledged"
+                    .to_owned(),
+            )),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1634,7 +1719,7 @@ pub struct RetentionRequiredApproval {
     pub reason: String,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RetentionOperatorEvidence {
     pub label: String,
     pub value: String,
@@ -1683,6 +1768,21 @@ pub struct RetentionExecutionBlockerMetadata {
     pub detail: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub policy_id: Option<String>,
+}
+
+#[derive(Serialize)]
+struct RetentionReviewClosureLedgerEvent<'a> {
+    execution_id: &'a str,
+    decision_state: RetentionExecutionDecisionState,
+    review_closure_decision: Option<RetentionReviewClosureDecision>,
+    review_closure_evidence: &'a [RetentionOperatorEvidence],
+    review_closed_by: Option<&'a str>,
+    review_closed_at: Option<&'a str>,
+    review_closure_note: Option<&'a str>,
+    destructive_disposal_completed: bool,
+    full_erasure_completed: bool,
+    legal_hold_mutated: bool,
+    retention_policy_mutated: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -2872,6 +2972,61 @@ pub async fn list_retention_execution_records(
     Ok(Json(list.into_iter().cloned().collect()))
 }
 
+/// `POST /v1/privacy/retention-executions/{id}/review-closure` — close operator review evidence without executing disposal.
+pub async fn close_retention_execution_review(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    Json(req): Json<serde_json::Value>,
+) -> Result<Json<RetentionExecutionRecord>, ApiError> {
+    require_privacy_record_manage(&state, &actor).await?;
+    let actor_name = actor.resolve("api");
+    let req = serde_json::from_value::<RetentionReviewClosureRequest>(req)
+        .map_err(|e| ApiError::Unprocessable(format!("invalid review closure body: {e}")))?;
+    let closure = validate_retention_review_closure(req)?;
+    let mut should_record_ledger = false;
+    let record = {
+        let mut records = state.retention_execution_records.write().await;
+        let mut record = records.get(&id).cloned().ok_or(ApiError::NotFound)?;
+        validate_retention_review_closure_decision_for_record(&record, closure.decision)?;
+
+        if record.decision_state == RetentionExecutionDecisionState::ReviewClosed {
+            if retention_review_closure_matches(&record, &closure) {
+                record
+            } else {
+                return Err(ApiError::Conflict(
+                    "retention execution review closure already exists with different evidence"
+                        .to_owned(),
+                ));
+            }
+        } else {
+            apply_retention_review_closure(&mut record, closure, &actor_name);
+            records.insert(record.id.clone(), record.clone());
+            persist_retention_execution_records_locked(&state, &records)?;
+            should_record_ledger = true;
+            record
+        }
+    };
+
+    if should_record_ledger {
+        let scope = format!("privacy:retention-execution:{}", record.id);
+        let event = retention_review_closure_ledger_event(&record);
+        record_privacy_event(
+            &state,
+            &scope,
+            RETENTION_EXECUTION_REVIEW_CLOSED_KIND,
+            "Retention execution review closure recorded as bounded evidence acknowledgment",
+            &actor_name,
+            &event,
+            &attestor,
+        )
+        .await?;
+    }
+
+    Ok(Json(record))
+}
+
 /// `GET /v1/privacy/retention-due-candidates` — read-only closed-book archive retention scanner.
 pub async fn list_retention_due_candidates(
     State(state): State<AppState>,
@@ -3500,6 +3655,22 @@ fn retention_execution_status_wire(status: RetentionExecutionStatus) -> &'static
     }
 }
 
+fn retention_review_closure_decision_wire(
+    decision: RetentionReviewClosureDecision,
+) -> &'static str {
+    match decision {
+        RetentionReviewClosureDecision::ReviewEvidenceAcknowledged => {
+            "review_evidence_acknowledged"
+        }
+        RetentionReviewClosureDecision::BoundedEvidenceAcknowledged => {
+            "bounded_evidence_acknowledged"
+        }
+        RetentionReviewClosureDecision::BlockedEvidenceAcknowledged => {
+            "blocked_evidence_acknowledged"
+        }
+    }
+}
+
 async fn complete_dsr_request_inner(
     state: &AppState,
     request_id: DsrRequestId,
@@ -4038,6 +4209,88 @@ fn sanitize_retention_execution_evidence(
         .collect()
 }
 
+fn validate_retention_review_closure(
+    raw: RetentionReviewClosureRequest,
+) -> Result<ValidatedRetentionReviewClosure, ApiError> {
+    reject_true_flag(
+        raw.destructive_disposal_completed,
+        "destructive_disposal_completed",
+        "destructive disposal completion",
+    )?;
+    reject_true_flag(
+        raw.full_erasure_completed,
+        "full_erasure_completed",
+        "full erasure completion",
+    )?;
+    reject_true_flag(
+        raw.legal_hold_mutated,
+        "legal_hold_mutated",
+        "legal hold mutation",
+    )?;
+    reject_true_flag(
+        raw.retention_policy_mutated,
+        "retention_policy_mutated",
+        "retention policy mutation",
+    )?;
+
+    let decision = raw
+        .review_closure_decision
+        .as_deref()
+        .ok_or_else(|| ApiError::Unprocessable("review_closure_decision is required".to_owned()))
+        .and_then(RetentionReviewClosureDecision::parse)?;
+    let note = clean_optional_bounded(
+        raw.review_closure_note,
+        "review_closure_note",
+        MAX_RETENTION_TEXT_CHARS,
+    )?;
+    if let Some(note) = &note {
+        reject_retention_review_closure_claims(note, "review_closure_note")?;
+    }
+    let evidence = sanitize_retention_review_closure_evidence(raw.review_closure_evidence)?;
+    if note.is_none() && evidence.is_empty() {
+        return Err(ApiError::Unprocessable(
+            "review_closure_note or review_closure_evidence is required".to_owned(),
+        ));
+    }
+
+    Ok(ValidatedRetentionReviewClosure {
+        decision,
+        note,
+        evidence,
+    })
+}
+
+fn sanitize_retention_review_closure_evidence(
+    raw: Option<Vec<RetentionReviewClosureEvidenceInput>>,
+) -> Result<Vec<RetentionOperatorEvidence>, ApiError> {
+    let Some(raw) = raw else {
+        return Ok(Vec::new());
+    };
+    if raw.len() > MAX_RETENTION_EXECUTION_EVIDENCE_ITEMS {
+        return Err(ApiError::Unprocessable(format!(
+            "review_closure_evidence must include at most {MAX_RETENTION_EXECUTION_EVIDENCE_ITEMS} entries"
+        )));
+    }
+
+    raw.into_iter()
+        .map(|item| {
+            let label = required_retention_segment(
+                item.label,
+                "review_closure_evidence.label",
+                MAX_RETENTION_EXECUTION_EVIDENCE_LABEL_CHARS,
+            )?;
+            reject_retention_review_closure_claims(&label, "review_closure_evidence.label")?;
+            let value = required_sensitive_checked_text(
+                item.value,
+                "review_closure_evidence.value",
+                MAX_RETENTION_TEXT_CHARS,
+            )?;
+            reject_retention_review_closure_claims(&value, "review_closure_evidence.value")?;
+            Ok(RetentionOperatorEvidence { label, value })
+        })
+        .collect()
+}
+
 fn build_retention_execution_record(
     actor_name: &str,
     candidate: &RetentionDryRunCandidate,
@@ -4083,6 +4336,16 @@ fn build_retention_execution_record(
         execution_intent: request.execution_intent,
         execution_status: retention_execution_status(outcome),
         operator_review_decision: retention_operator_review_decision(outcome),
+        decision_state: RetentionExecutionDecisionState::Open,
+        review_closure_decision: None,
+        review_closure_evidence: Vec::new(),
+        review_closed_by: None,
+        review_closed_at: None,
+        review_closure_note: None,
+        destructive_disposal_completed: false,
+        full_erasure_completed: false,
+        legal_hold_mutated: false,
+        retention_policy_mutated: false,
         requested_policy,
         candidate: candidate.clone(),
         matched_records_summary: retention_matched_records_summary(candidate, matches),
@@ -4339,6 +4602,7 @@ fn retention_existing_awaiting_review_execution(
         .filter(|record| {
             record.execution_intent == RetentionExecutionIntent::ReviewOnly
                 && record.execution_status == RetentionExecutionStatus::AwaitingReview
+                && record.decision_state == RetentionExecutionDecisionState::Open
                 && record.candidate.scope == candidate.scope
                 && record.candidate.category == candidate.category
                 && record.candidate.record_id == candidate.record_id
@@ -4346,6 +4610,93 @@ fn retention_existing_awaiting_review_execution(
         })
         .min_by(|a, b| a.requested_at.cmp(&b.requested_at).then(a.id.cmp(&b.id)))
         .cloned()
+}
+
+fn validate_retention_review_closure_decision_for_record(
+    record: &RetentionExecutionRecord,
+    decision: RetentionReviewClosureDecision,
+) -> Result<(), ApiError> {
+    let expected = retention_review_closure_decision_for_outcome(record.outcome);
+    if decision == expected {
+        Ok(())
+    } else {
+        Err(ApiError::Unprocessable(format!(
+            "review_closure_decision must be {} for this retention execution outcome",
+            retention_review_closure_decision_wire(expected)
+        )))
+    }
+}
+
+fn retention_review_closure_decision_for_outcome(
+    outcome: RetentionExecutionOutcome,
+) -> RetentionReviewClosureDecision {
+    match outcome {
+        RetentionExecutionOutcome::ManualReviewRequired => {
+            RetentionReviewClosureDecision::ReviewEvidenceAcknowledged
+        }
+        RetentionExecutionOutcome::BoundedArchiveRecorded
+        | RetentionExecutionOutcome::BoundedNoActionRecorded
+        | RetentionExecutionOutcome::AlreadyExecuted => {
+            RetentionReviewClosureDecision::BoundedEvidenceAcknowledged
+        }
+        RetentionExecutionOutcome::BlockedMissingPolicy
+        | RetentionExecutionOutcome::BlockedStalePolicy
+        | RetentionExecutionOutcome::BlockedPolicyMismatch
+        | RetentionExecutionOutcome::BlockedLegalHold
+        | RetentionExecutionOutcome::BlockedDestructiveAction
+        | RetentionExecutionOutcome::BlockedApprovalMismatch
+        | RetentionExecutionOutcome::BlockedMissingTarget => {
+            RetentionReviewClosureDecision::BlockedEvidenceAcknowledged
+        }
+    }
+}
+
+fn retention_review_closure_matches(
+    record: &RetentionExecutionRecord,
+    closure: &ValidatedRetentionReviewClosure,
+) -> bool {
+    record.review_closure_decision == Some(closure.decision)
+        && record.review_closure_note == closure.note
+        && record.review_closure_evidence == closure.evidence
+        && !record.destructive_disposal_completed
+        && !record.full_erasure_completed
+        && !record.legal_hold_mutated
+        && !record.retention_policy_mutated
+}
+
+fn apply_retention_review_closure(
+    record: &mut RetentionExecutionRecord,
+    closure: ValidatedRetentionReviewClosure,
+    actor_name: &str,
+) {
+    record.decision_state = RetentionExecutionDecisionState::ReviewClosed;
+    record.review_closure_decision = Some(closure.decision);
+    record.review_closure_evidence = closure.evidence;
+    record.review_closed_by = Some(actor_name.to_owned());
+    record.review_closed_at = Some(now_rfc3339());
+    record.review_closure_note = closure.note;
+    record.destructive_disposal_completed = false;
+    record.full_erasure_completed = false;
+    record.legal_hold_mutated = false;
+    record.retention_policy_mutated = false;
+}
+
+fn retention_review_closure_ledger_event(
+    record: &RetentionExecutionRecord,
+) -> RetentionReviewClosureLedgerEvent<'_> {
+    RetentionReviewClosureLedgerEvent {
+        execution_id: &record.id,
+        decision_state: record.decision_state,
+        review_closure_decision: record.review_closure_decision,
+        review_closure_evidence: &record.review_closure_evidence,
+        review_closed_by: record.review_closed_by.as_deref(),
+        review_closed_at: record.review_closed_at.as_deref(),
+        review_closure_note: record.review_closure_note.as_deref(),
+        destructive_disposal_completed: false,
+        full_erasure_completed: false,
+        legal_hold_mutated: false,
+        retention_policy_mutated: false,
+    }
 }
 
 fn retention_execution_decision(
@@ -4878,6 +5229,10 @@ fn normalize_retention_execution_record(record: &mut RetentionExecutionRecord) {
     record.evidence_state = retention_execution_evidence_state(record.outcome);
     record.evidence_next_step =
         retention_execution_evidence_next_step(record.outcome, &record.workflow.next_step);
+    record.destructive_disposal_completed = false;
+    record.full_erasure_completed = false;
+    record.legal_hold_mutated = false;
+    record.retention_policy_mutated = false;
 }
 
 fn default_retention_execution_intent() -> RetentionExecutionIntent {
@@ -4890,6 +5245,10 @@ fn default_retention_execution_status() -> RetentionExecutionStatus {
 
 fn default_retention_operator_review_decision() -> RetentionOperatorReviewDecision {
     RetentionOperatorReviewDecision::ReviewRequired
+}
+
+fn default_retention_execution_decision_state() -> RetentionExecutionDecisionState {
+    RetentionExecutionDecisionState::Open
 }
 
 fn default_retention_evidence_state() -> RetentionEvidenceState {
@@ -5097,6 +5456,29 @@ fn reject_true_flag(value: Option<bool>, field: &str, action: &str) -> Result<()
     if value == Some(true) {
         Err(ApiError::Unprocessable(format!(
             "{field} cannot be true; this API records review evidence only and does not perform {action}"
+        )))
+    } else {
+        Ok(())
+    }
+}
+
+fn reject_retention_review_closure_claims(value: &str, field: &str) -> Result<(), ApiError> {
+    const CLAIM_TERMS: &[&str] = &[
+        "legal approval",
+        "legal approved",
+        "legally approved",
+        "approved by legal",
+        "disposed",
+        "deleted",
+        "deletion",
+        "erased",
+        "erasure",
+        "resolved",
+    ];
+    let normalized = value.to_ascii_lowercase();
+    if let Some(term) = CLAIM_TERMS.iter().find(|term| normalized.contains(**term)) {
+        Err(ApiError::Unprocessable(format!(
+            "{field} cannot claim {term}; review closure records bounded evidence only"
         )))
     } else {
         Ok(())

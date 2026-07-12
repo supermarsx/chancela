@@ -508,6 +508,10 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/privacy/retention-policies/dry-run", RouteClass::Gated), // POST user.manage|settings.manage@Global, non-destructive
     ("/v1/privacy/retention-due-candidates", RouteClass::Gated), // GET user.manage|settings.manage@Global, read-only scanner
     ("/v1/privacy/retention-executions", RouteClass::Gated), // GET user.manage|settings.manage@Global
+    (
+        "/v1/privacy/retention-executions/{id}/review-closure",
+        RouteClass::Gated,
+    ), // POST user.manage|settings.manage@Global
     ("/v1/privacy/retention-policies/{id}", RouteClass::Gated), // PATCH user.manage|settings.manage@Global
     // --- API keys -------------------------------------------------------------------------------
     ("/v1/api-keys", RouteClass::Gated), // GET/POST user.manage@Global + interactive session
