@@ -91,8 +91,10 @@ const EXPORT_CLEANUP_PREVIEW_BUTTON = 'Pré-visualizar limpeza';
 const EXPORT_CLEANUP_PREVIEW_PENDING = 'A pré-visualizar…';
 const EXPORT_CLEANUP_PREVIEW_DONE = 'Pré-visualização pronta.';
 const EXPORT_CLEANUP_PREVIEW_TITLE = 'Pré-visualização da limpeza de exportações retidas';
-const EXPORT_CLEANUP_EXECUTION_BUTTON = 'Limpar ficheiros retidos';
-const EXPORT_CLEANUP_EXECUTION_PENDING = 'A limpar ficheiros retidos…';
+const EXPORT_CLEANUP_EXECUTION_BUTTON = 'Executar limpeza destrutiva';
+const EXPORT_CLEANUP_EXECUTION_TOOLTIP =
+  'Executa a limpeza destrutiva apenas dos ficheiros locais retidos aprovados na pré-visualização.';
+const EXPORT_CLEANUP_EXECUTION_PENDING = 'A executar limpeza destrutiva…';
 const EXPORT_CLEANUP_EXECUTION_TITLE = 'Limpeza de exportações retidas concluída';
 const EXPORT_CLEANUP_EXECUTION_DONE = 'Limpeza de ficheiros retidos concluída.';
 
@@ -1295,7 +1297,8 @@ function DataStatusPanel() {
                           type="button"
                           variant="secondary"
                           className="btn--danger"
-                          icon={<Icon.Trash />}
+                          icon={<Icon.Wrench />}
+                          title={EXPORT_CLEANUP_EXECUTION_TOOLTIP}
                           disabled={!canClean || cleanup.isPending || !hasExportCleanupPreview}
                           onClick={() => setCleanupTarget('exports')}
                         >

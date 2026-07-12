@@ -598,9 +598,10 @@ describe('GestaoDadosSection', () => {
       '2 ficheiros',
     );
     const executeBeforePreview = within(exportsRow).getByRole('button', {
-      name: 'Limpar ficheiros retidos',
+      name: 'Executar limpeza destrutiva',
     }) as HTMLButtonElement;
     expect(executeBeforePreview.disabled).toBe(true);
+    expect(screen.getByTitle(/Executa a limpeza destrutiva/)).toBeTruthy();
 
     fireEvent.click(within(exportsRow).getByRole('button', { name: 'Pré-visualizar limpeza' }));
 
@@ -629,11 +630,11 @@ describe('GestaoDadosSection', () => {
     expect(screen.getByText('Relatórios de falha')).toBeTruthy();
 
     const executeAfterPreview = within(exportsRow).getByRole('button', {
-      name: 'Limpar ficheiros retidos',
+      name: 'Executar limpeza destrutiva',
     }) as HTMLButtonElement;
     expect(executeAfterPreview.disabled).toBe(false);
     fireEvent.click(executeAfterPreview);
-    const confirmBtns = screen.getAllByRole('button', { name: 'Limpar ficheiros retidos' });
+    const confirmBtns = screen.getAllByRole('button', { name: 'Executar limpeza destrutiva' });
     fireEvent.click(confirmBtns[confirmBtns.length - 1]);
 
     await waitFor(() =>
@@ -689,7 +690,7 @@ describe('GestaoDadosSection', () => {
     );
 
     const execute = within(exportsRow).getByRole('button', {
-      name: 'Limpar ficheiros retidos',
+      name: 'Executar limpeza destrutiva',
     }) as HTMLButtonElement;
     expect(execute.disabled).toBe(false);
     fireEvent.click(execute);
@@ -738,11 +739,11 @@ describe('GestaoDadosSection', () => {
     );
 
     const execute = within(exportsRow).getByRole('button', {
-      name: 'Limpar ficheiros retidos',
+      name: 'Executar limpeza destrutiva',
     }) as HTMLButtonElement;
     expect(execute.disabled).toBe(false);
     fireEvent.click(execute);
-    const confirmBtns = screen.getAllByRole('button', { name: 'Limpar ficheiros retidos' });
+    const confirmBtns = screen.getAllByRole('button', { name: 'Executar limpeza destrutiva' });
     fireEvent.click(confirmBtns[confirmBtns.length - 1]);
 
     expect(
@@ -752,7 +753,7 @@ describe('GestaoDadosSection', () => {
     ).toHaveLength(2);
     expect(calls.filter((c) => c.url.includes('/v1/data/cleanup'))).toHaveLength(2);
     expect(execute.disabled).toBe(true);
-    const retryBtns = screen.getAllByRole('button', { name: 'Limpar ficheiros retidos' });
+    const retryBtns = screen.getAllByRole('button', { name: 'Executar limpeza destrutiva' });
     expect((retryBtns[retryBtns.length - 1] as HTMLButtonElement).disabled).toBe(true);
   });
 
@@ -787,7 +788,7 @@ describe('GestaoDadosSection', () => {
     );
 
     const execute = within(exportsRow).getByRole('button', {
-      name: 'Limpar ficheiros retidos',
+      name: 'Executar limpeza destrutiva',
     }) as HTMLButtonElement;
     expect(execute.disabled).toBe(true);
     expect(screen.getByText(/Nenhum ficheiro foi removido/)).toBeTruthy();
