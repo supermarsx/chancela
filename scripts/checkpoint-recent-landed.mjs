@@ -451,6 +451,216 @@ console.log("\nrecent landed checkpoint OK");
 
 function assertCheckpointMap() {
   assertFileContains(
+    "crates/chancela-api/src/users.rs",
+    "pub password: String,",
+    "API create-user password field marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/users.rs",
+    "before password policy/hash work for non-bootstrap requests",
+    "API create-user auth-before-policy marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/users.rs",
+    "crate::password_policy::enforce(",
+    "API create-user password policy enforcement marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/users.rs",
+    "attestation::hash_secret_with_seed(&req.password, &seed)?",
+    "API create-user hardened verifier seed marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/users.rs",
+    "password_hash: Some(password_hash)",
+    "API create-user stored password hash marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/users.rs",
+    "let bootstrap = bootstrap_state_for_insert(&users, is_bootstrap, has_authenticated_actor)?;",
+    "API create-user bootstrap write-lock recheck marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/users.rs",
+    "create_user_stale_unauthenticated_bootstrap_is_rejected_at_insert_recheck",
+    "API stale bootstrap loser rejection coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/users.rs",
+    "sem a palavra-passe atual ou uma frase de recuperação válida",
+    "API cross-user credential proof uniform refusal marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/users.rs",
+    "without clearing `password_hash` or the attestation key",
+    "API remove-secret no-clear boundary marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/users.rs",
+    "não é permitido remover a palavra-passe; defina uma nova palavra-passe em alternativa",
+    "API remove-secret 409 replacement guidance marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/session.rs",
+    "pub password: String,",
+    "API create-session password field marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/session.rs",
+    "let Some(stored) = user.password_hash.clone() else",
+    "API create-session legacy no-hash refusal marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/session.rs",
+    "palavra-passe não configurada para este utilizador",
+    "API create-session no-hash 409 message marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/session.rs",
+    "verify_secret_with_seed(&req.password, &stored, &seed)",
+    "API create-session password verification marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "create_user_requires_password_and_persists_hardened_hash",
+    "API create-user password/hash coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "create_user_rejects_missing_or_weak_password_with_policy_errors",
+    "API create-user missing/weak password coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "create_user_rejects_unauthenticated_non_bootstrap_before_password_policy",
+    "API create-user unauth-before-policy coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "create_session_requires_password_for_hashed_user",
+    "API create-session password-required coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "create_session_rejects_legacy_no_hash_user_409",
+    "API create-session legacy no-hash coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "legacy no-hash rejection must not return a session token",
+    "API legacy no-hash no-token assertion marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "legacy no-hash rejection must not insert a session",
+    "API legacy no-hash no-session assertion marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "Correct proof still cannot remove the password; replacing it via POST is supported.",
+    "API self remove-secret 409 coverage marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "Correct-password cross-user remove-secret",
+    "API cross-user remove-secret 409 coverage marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/users/UserCreateForm.tsx",
+    "if (password.length === 0)",
+    "web user creation requires password marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/users/UserCreateForm.tsx",
+    "password !== password2",
+    "web user creation password confirmation marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/users/users.test.tsx",
+    "creates a user with a valid slug and sends identity email fields",
+    "web user creation password payload coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/users/users.test.tsx",
+    "hides the remove-password action for users that already have a password",
+    "web remove-password action hidden coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/onboarding/onboarding.test.tsx",
+    "walks welcome → org → user → password → recovery → finish and marks onboarding complete",
+    "web onboarding password-required path coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/onboarding/onboarding.test.tsx",
+    "does not expose a password skip path and blocks weak passwords before the server",
+    "web onboarding no password skip coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/session/session.test.tsx",
+    "prompts for a password for every roster user and sends it",
+    "web sign-in password prompt coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/session/session.test.tsx",
+    "bootstrap: empty roster → create a user with password → password sign-in lands in the app",
+    "web bootstrap create password sign-in coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/session/session.test.tsx",
+    "roster present: \"criar novo utilizador\" routes back to sign-in",
+    "web signed-out non-bootstrap create refusal coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/session/session.test.tsx",
+    "switches to a has_secret user by prompting for the password",
+    "web current-user switch password coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/session/SignIn.tsx",
+    "api.createSession({ user_id: user.id, password: createdPassword })",
+    "web bootstrap sign-in uses created password marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/session/CurrentUserPicker.tsx",
+    "picking one prompts for a password",
+    "web current-user picker password marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/auth.ts",
+    "export const OPERATOR_PASSWORD = 'Str0ng!Vault9';",
+    "browser e2e shared operator password marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/auth.ts",
+    "Complete the first-run wizard: organization → operator → password → recovery phrase.",
+    "browser e2e onboarding helper password marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/fixtures.ts",
+    "has no configured password verifier",
+    "browser e2e reset refuses no-password operator marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "password-required account creation/session static markers",
+    "CI checkpoints password-required auth lane marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Current working-tree password-required auth checks",
+    "CI/E2E hardening plan password-required auth checks marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Password-required account creation/session slice",
+    "spec coverage password-required auth checkpoint marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "broad Playwright browser suite timed out and is not green",
+    "spec coverage broad Playwright residual marker",
+  );
+  assertFileContains(
     "crates/chancela-api/tests/paper_import.rs",
     "valid_paper_book_import_validation_returns_non_canonical_dry_run_report",
     "paper import test fixture coverage",

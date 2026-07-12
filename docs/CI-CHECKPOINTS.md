@@ -45,6 +45,7 @@ sealed-provenance lint, all-family standalone agenda-item templates,
 recovery/document/dashboard/notification
 UI, dashboard guest recent-events redaction, Ferramentas external-validator
 metadata UI, raw-report byte download API, imported-document review receipt UI,
+password-required account creation/session static markers,
 trust identifier-match explanations, and read-only local DGLAB interchange
 manifest API and BookDetail JSON-download markers, generated-document by-id
 download route plus absent-owner dispatch-evidence recording and generated
@@ -169,6 +170,7 @@ written-resolution evidence status/binding markers, declared signer-capacity
 evidence markers with `not_checked_by_scap` and
 `declared_capacity_evidence_only`, dashboard subtab markers,
 dashboard/notification icon-only markers, template law-reference UI markers,
+password-required account creation/session API and web markers,
 structured registry chronology graph markers, mapped PDF inter-word space,
 PDF/UA blocker-decomposition markers, PDF accessibility report JSON v7,
 `writer_owned_decorative_artifacts_accounted_for`, reduced default-fixture
@@ -231,6 +233,17 @@ and desktop `Cargo.lock` are present, so accidental deletion or rename of the
 checkpoint targets fails with a direct message. It also statically pins the
 imported-document review notification/export browser E2E marker; Playwright
 execution remains in the browser jobs so this recent-landed lane stays focused.
+
+Password-required auth markers pin the current security slice only: `POST
+/v1/users` requires a password, enforces policy after auth for non-bootstrap
+creates, stores a hardened `password_hash`, and rechecks stale bootstrap
+requests under the users write lock; `POST /v1/session` requires a password and
+rejects legacy no-hash users without minting a token; `DELETE
+/v1/users/{id}/secret` returns `409` after authorization while preserving the
+password hash and attestation key; web onboarding, sign-in, current-user
+switching, user creation, and E2E helpers all submit passwords. These markers
+are not SSO, legal identity proof, tenant model, email verification, credential
+recovery completion, or broad Playwright-browser-suite proof.
 Static markers are deletion/rename guards only; the retention no-action markers
 pin bounded evidence UI copy and payload shape, not legal disposal completion.
 They do not certify legal validity, legal retention schedules or approvals,

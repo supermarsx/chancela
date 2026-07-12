@@ -19,6 +19,7 @@ dashboard guest recent-events redaction, generated-document by-id download route
 condominium absent-owner communication auto-generation, and operator-supplied
 dispatch-evidence recording with dashboard reminder surfacing,
 imported-document review receipt UI, trust catalog identifier-match explanations,
+password-required account creation/session hardening,
 plus local ASiC inspection endpoint and ASiC ZIP decompression-bound coverage,
 plus release workflow static
 assurance for the unsigned/local-only trust posture and production-package
@@ -110,6 +111,16 @@ test operating checklist for driving Chancela toward release confidence.
   `backup_recovery_drills` while preserving durable permission/status behavior.
   Treat this as telemetry classification only, not cleanup, retention execution,
   deletion, legal custody proof, or data-lifecycle certification.
+- The current password-required auth slice makes `POST /v1/users` require a
+  password, enforce policy, hash with the existing verifier seed, and recheck
+  stale bootstrap requests under the users write lock. Non-bootstrap signed-out
+  creates reject before password policy/hash work. `POST /v1/session` requires a
+  password, rejects wrong/missing credentials and legacy no-hash users, and the
+  no-hash path does not insert a session token. `DELETE /v1/users/{id}/secret`
+  now returns `409` after authorization and preserves the password hash and
+  attestation key; the web hides the remove-password action. This is local
+  password-required account/session hardening only, not SSO, legal identity
+  proof, tenant model, email verification, or credential recovery completion.
 - The current restore preflight slice is non-destructive evidence only: API/store
   verify the archive manifest, every manifest-listed member digest, and ledger
   integrity from an isolated snapshot, while the web UI exposes bounded
@@ -429,6 +440,10 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 
 - First-launch path creates the organization, first admin user, password,
   recovery phrase, and settings record in one pass.
+- User creation and bootstrap sign-in submit the same operator password; no
+  passwordless create/sign-in path is a supported browser workflow.
+- Current-user switching prompts for a password before posting `POST
+  /v1/session`.
 - Refresh during onboarding does not skip mandatory recovery phrase display.
 - Existing users but no session routes to sign-in, not onboarding.
 - Expired or invalid sessions fail closed without exposing protected routes.
@@ -1185,6 +1200,20 @@ settingsDefaults.test.ts contracts.test.ts`.
   upload path/schema exposure. This is discoverability and redacted summary
   access only, not raw report download, provider execution, legal validation,
   trust validation, or certification.
+- Current working-tree password-required auth checks: focused static markers pin
+  `create_user_requires_password_and_persists_hardened_hash`,
+  `create_user_rejects_missing_or_weak_password_with_policy_errors`,
+  `create_user_rejects_unauthenticated_non_bootstrap_before_password_policy`,
+  `create_user_stale_unauthenticated_bootstrap_is_rejected_at_insert_recheck`,
+  `create_session_requires_password_for_hashed_user`,
+  `create_session_rejects_legacy_no_hash_user_409`, the no-token/no-session
+  legacy no-hash assertions, and the remove-secret `409` preservation assertions.
+  Web markers pin onboarding password create/sign-in ordering, no password skip,
+  sign-in password prompts, current-user password switching, settings-hosted user
+  creation with password, hidden remove-password action, and E2E helpers using a
+  configured operator password. The broad Playwright browser suite timed out and
+  was not green; treat the static/unit/focused markers as the pinned slice, not
+  browser-matrix proof.
 - Current checkpoint metadata/static checks through `3e72e08` plus working-tree
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run

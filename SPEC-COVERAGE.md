@@ -124,7 +124,8 @@ diagnostics, archive readability/ZK caveat metadata, template family/channel
 rule guards, MCP discoverability updates for trust-catalog filters and
 redacted external-validator report summaries, and web external-signing slot
 evidence display/operator technical evidence PATCH flow with
-identity-requirement-tagged rows and no `complete:true` payload.
+identity-requirement-tagged rows and no `complete:true` payload, plus
+password-required account creation/session hardening.
 Earlier coverage text remains prior snapshot context. All top-level spec areas remain **PARTIAL**.
 This is an implementation and test coverage snapshot, not a legal certification,
 not production CMD approval, not DRE verification promotion, not full PDF/UA
@@ -147,6 +148,22 @@ blockers.
 
 Implementation checkpoints covered here:
 
+- Password-required account creation/session slice keeps Data/Roles/UX/CI
+  **PARTIAL**: `POST /v1/users` now requires a password, validates it through
+  the server password policy, hashes it with the existing verifier-seed path, and
+  inserts `password_hash: Some(...)`; non-bootstrap unauthenticated creates
+  reject before password policy/hash work, and stale concurrent bootstrap losers
+  recheck under the users write lock and reject instead of inserting. `POST
+  /v1/session` requires a password, rejects wrong or missing credentials and
+  legacy no-hash users, and the legacy no-hash path returns no token and inserts
+  no session. `DELETE /v1/users/{id}/secret` is now a `409` replacement-guidance
+  endpoint after authorization and preserves `password_hash` plus the
+  attestation key. Web onboarding, sign-in, current-user switching, settings
+  user creation, and E2E helpers require passwords, while the remove-password UI
+  action is hidden. This is password-required local account/session hardening
+  only; it is not SSO, legal identity proof, tenant model, email verification,
+  credential recovery completion, or broad Playwright-browser-suite proof. The
+  broad Playwright browser suite timed out and is not green.
 - Working tree keeps Architecture/Data/Roles/CI **PARTIAL**: `POST
   /v1/platform/logs/forwarded` now accepts supervisor- or operator-forwarded
   structured platform log entries into the existing platform log ring. The route
@@ -2159,7 +2176,11 @@ behavior, legal disposal, or legal-effect claims.
   and password-setting paths enforce them: minimum length, character classes, username/common
   password checks, repeat/sequence checks, Argon2 verifiers, sign-in backoff, one-time recovery
   phrases, and step-up composition for destructive actions. Onboarding and user-management UI now
-  consume this policy.
+  consume this policy. Account creation is now part of the same password-required surface: the API
+  rejects missing/weak create passwords, authenticates non-bootstrap creates before policy/hash
+  work, hashes accepted create passwords through the hardened verifier-seed path, rejects stale
+  concurrent bootstrap losers under the write lock, and no longer allows session creation for
+  legacy no-hash users.
 - **Arquivo backend and UI:** `GET /v1/ledger/archive/document` renders a filtered ledger chain
   archive as PDF/A-2u without mutating state. The web ledger page lets the operator select chain and
   scope filters and download the same archive document.
