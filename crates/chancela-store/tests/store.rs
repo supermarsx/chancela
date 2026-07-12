@@ -6,7 +6,7 @@
 //! tamper detection, the schema-version-too-new rejection, and the `VACUUM INTO` hot backup
 //! (archive present, per-file digests match, snapshot re-openable and self-verifying).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -16,15 +16,16 @@ use chancela_core::{
     DispatchChannel, Entity, EntityKind, LegalHold, MeetingChannel, Nipc, PresenceMode, SecondCall,
     SignatoryCapacity,
 };
-use chancela_ledger::{Event, Ledger, LedgerError};
+use chancela_ledger::{ChainId, Event, Ledger, LedgerError};
 use chancela_registry::{RegistryExtract, RegistryProvenance};
 use chancela_store::{
-    GeneratedDocumentDispatchEvidenceUpsert, PaperBookOcrConversionDossierUpsert, Store,
-    StoreError, StoreKeyRotationStatus, StoreOpenOptions, StoredDocument, StoredFollowUp,
-    StoredFollowUpStatus, StoredGeneratedDocumentDispatchEvidence, StoredImportedDocument,
-    StoredImportedDocumentMeta, StoredImportedDocumentReviewStatus, StoredPaperBookImport,
-    StoredPaperBookImportMeta, StoredPaperBookOcrConversionDossier, StoredPaperBookOcrDraft,
-    StoredPaperBookOcrPageSpan, StoredPaperBookOcrReviewStatus, StoredPaperBookOcrStatus,
+    GeneratedDocumentDispatchEvidenceUpsert, LedgerEventPageQuery, LedgerEventUpperBound,
+    PaperBookOcrConversionDossierUpsert, Store, StoreError, StoreKeyRotationStatus,
+    StoreOpenOptions, StoredDocument, StoredFollowUp, StoredFollowUpStatus,
+    StoredGeneratedDocumentDispatchEvidence, StoredImportedDocument, StoredImportedDocumentMeta,
+    StoredImportedDocumentReviewStatus, StoredPaperBookImport, StoredPaperBookImportMeta,
+    StoredPaperBookOcrConversionDossier, StoredPaperBookOcrDraft, StoredPaperBookOcrPageSpan,
+    StoredPaperBookOcrReviewStatus, StoredPaperBookOcrStatus,
 };
 #[cfg(not(feature = "sqlcipher"))]
 use chancela_store::{StoreDatabaseFormat, StoreKeyConfigStatus, StoreKeyOpsPlan};
@@ -267,8 +268,28 @@ fn sample_follow_up(id: &str, act_id: ActId) -> StoredFollowUp {
 
 /// Append an event to `ledger` and persist it (event-only), returning the appended event.
 fn persist_event(store: &Store, ledger: &mut Ledger, scope: &str, kind: &str) -> Event {
+    persist_event_with(
+        store,
+        ledger,
+        "amelia.marques",
+        scope,
+        kind,
+        None,
+        scope.as_bytes(),
+    )
+}
+
+fn persist_event_with(
+    store: &Store,
+    ledger: &mut Ledger,
+    actor: &str,
+    scope: &str,
+    kind: &str,
+    justification: Option<&str>,
+    payload: &[u8],
+) -> Event {
     let event = ledger
-        .append("amelia.marques", scope, kind, None, scope.as_bytes())
+        .append(actor, scope, kind, justification, payload)
         .clone();
     store
         .persist(|tx| tx.append_event(&event))
@@ -299,6 +320,268 @@ fn open_creates_db_and_reopen_is_idempotent() {
     assert!(dir.path().join("chancela.db").exists());
     let reopened = Store::open(dir.path()).expect("reopen");
     assert_eq!(reopened.load().expect("reload").chain_status, Ok(0));
+}
+
+#[test]
+fn ledger_events_page_walks_persisted_events_newest_first_without_duplicates() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let mut ledger = Ledger::new();
+
+    persist_event_with(
+        &store,
+        &mut ledger,
+        "system",
+        "entity:company-a",
+        "entity.created",
+        None,
+        b"company-a",
+    );
+    persist_event_with(
+        &store,
+        &mut ledger,
+        "system",
+        "entity:company-b",
+        "entity.created",
+        None,
+        b"company-b",
+    );
+    persist_event_with(
+        &store,
+        &mut ledger,
+        "system",
+        "entity:company-a/book:book-a",
+        "book.opened",
+        None,
+        b"book-a",
+    );
+    persist_event_with(
+        &store,
+        &mut ledger,
+        "system",
+        "entity:company-b/book:book-b",
+        "book.opened",
+        None,
+        b"book-b",
+    );
+
+    for i in 0..1_100 {
+        let (company, book) = if i % 3 == 0 {
+            ("company-a", "book-a")
+        } else {
+            ("company-b", "book-b")
+        };
+        let scope = format!("entity:{company}/book:{book}/act:{i}");
+        let kind = if i % 5 == 0 {
+            "document.generated"
+        } else {
+            "act.sealed"
+        };
+        let actor = if company == "company-a" && i % 30 == 0 {
+            "rui.secretario"
+        } else {
+            "amelia.marques"
+        };
+        let justification =
+            (company == "company-a" && i % 30 == 0).then_some("needle archive cadeia a");
+        let payload = format!("{scope}:{kind}:{i}");
+        persist_event_with(
+            &store,
+            &mut ledger,
+            actor,
+            &scope,
+            kind,
+            justification,
+            payload.as_bytes(),
+        );
+    }
+
+    let expected_len = ledger.len() as usize;
+    assert!(expected_len > 1_000);
+    drop(store);
+    let store = Store::open(dir.path()).expect("reopen");
+
+    let mut before_seq = None;
+    let mut previous_seq = None;
+    let mut seen = HashSet::new();
+    let mut collected = Vec::new();
+
+    loop {
+        let page = store
+            .ledger_events_page(&LedgerEventPageQuery {
+                before_seq,
+                limit: 137,
+                chain: None,
+                q: None,
+                scope: None,
+                kinds: Vec::new(),
+                actor: None,
+                from: None,
+                to: None,
+            })
+            .expect("ledger page");
+
+        assert_eq!(page.limit, 137);
+        assert!(page.events.len() <= 137);
+        for event in &page.events {
+            if let Some(previous_seq) = previous_seq {
+                assert!(
+                    event.seq < previous_seq,
+                    "events must stay newest-first across pages"
+                );
+            }
+            previous_seq = Some(event.seq);
+            assert!(seen.insert(event.seq), "duplicate seq {}", event.seq);
+            collected.push(event.seq);
+        }
+
+        if page.has_more {
+            assert_eq!(page.events.len(), 137);
+            assert_eq!(page.next_cursor, page.events.last().map(|event| event.seq));
+            before_seq = page.next_cursor;
+        } else {
+            assert!(page.next_cursor.is_none());
+            break;
+        }
+    }
+
+    assert_eq!(collected.len(), expected_len);
+    assert_eq!(collected.first().copied(), Some(expected_len as u64 - 1));
+    assert_eq!(collected.last().copied(), Some(0));
+}
+
+#[test]
+fn ledger_events_page_fills_sparse_chain_and_text_filtered_pages() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let mut ledger = Ledger::new();
+
+    persist_event_with(
+        &store,
+        &mut ledger,
+        "system",
+        "entity:company-a",
+        "entity.created",
+        None,
+        b"company-a",
+    );
+    persist_event_with(
+        &store,
+        &mut ledger,
+        "system",
+        "entity:company-a/book:book-a",
+        "book.opened",
+        None,
+        b"book-a",
+    );
+    persist_event_with(
+        &store,
+        &mut ledger,
+        "system",
+        "entity:company-b",
+        "entity.created",
+        None,
+        b"company-b",
+    );
+    persist_event_with(
+        &store,
+        &mut ledger,
+        "system",
+        "entity:company-b/book:book-b",
+        "book.opened",
+        None,
+        b"book-b",
+    );
+
+    for i in 0..1_050 {
+        let (company, book) = if i % 3 == 0 {
+            ("company-a", "book-a")
+        } else {
+            ("company-b", "book-b")
+        };
+        let scope = format!("entity:{company}/book:{book}/act:{i}");
+        let is_sparse_match = company == "company-a" && i % 30 == 0;
+        let actor = if is_sparse_match {
+            "rui.secretario"
+        } else {
+            "amelia.marques"
+        };
+        let justification = is_sparse_match.then_some("needle archive cadeia a");
+        let payload = format!("{scope}:{i}");
+        persist_event_with(
+            &store,
+            &mut ledger,
+            actor,
+            &scope,
+            "document.generated",
+            justification,
+            payload.as_bytes(),
+        );
+    }
+    drop(store);
+    let store = Store::open(dir.path()).expect("reopen");
+
+    let query = LedgerEventPageQuery {
+        before_seq: None,
+        limit: 7,
+        chain: Some(ChainId::Book("book-a".to_owned())),
+        q: Some("NEEDLE ARCHIVE".to_owned()),
+        scope: None,
+        kinds: vec!["act.sealed, document.generated".to_owned()],
+        actor: Some("rui.secretario".to_owned()),
+        from: Some(OffsetDateTime::from_unix_timestamp(0).unwrap()),
+        to: Some(LedgerEventUpperBound::Exclusive(
+            OffsetDateTime::from_unix_timestamp(4_000_000_000).unwrap(),
+        )),
+    };
+
+    let page = store
+        .ledger_events_page(&query)
+        .expect("sparse filtered page");
+    assert_eq!(page.limit, 7);
+    assert_eq!(page.events.len(), 7);
+    assert!(page.has_more);
+    assert_eq!(page.next_cursor, page.events.last().map(|event| event.seq));
+
+    let book_chain = ChainId::Book("book-a".to_owned());
+    for window in page.events.windows(2) {
+        assert!(window[0].seq > window[1].seq);
+    }
+    for event in &page.events {
+        assert_eq!(event.actor, "rui.secretario");
+        assert_eq!(event.kind, "document.generated");
+        assert!(
+            event
+                .justification
+                .as_deref()
+                .is_some_and(|value| value.contains("needle archive"))
+        );
+        assert!(
+            event.links.iter().any(|link| link.chain == book_chain),
+            "event {} should belong to book-a",
+            event.seq
+        );
+    }
+
+    let mut next_query = query.clone();
+    next_query.before_seq = page.next_cursor;
+    let next_page = store
+        .ledger_events_page(&next_query)
+        .expect("next sparse filtered page");
+    let first_page_seqs: HashSet<u64> = page.events.iter().map(|event| event.seq).collect();
+    assert_eq!(next_page.events.len(), 7);
+    assert!(
+        next_page
+            .events
+            .iter()
+            .all(|event| !first_page_seqs.contains(&event.seq))
+    );
+    assert!(
+        next_page
+            .events
+            .iter()
+            .all(|event| Some(event.seq) < page.next_cursor)
+    );
 }
 
 #[cfg(not(feature = "sqlcipher"))]

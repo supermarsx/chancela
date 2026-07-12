@@ -33,7 +33,7 @@
 pub mod recovery;
 pub mod schema;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -43,11 +43,12 @@ use chacha20poly1305::aead::{Aead, Payload};
 use chacha20poly1305::{KeyInit, XChaCha20Poly1305, XNonce};
 use chancela_core::{Act, ActId, Book, BookId, Entity, EntityId};
 use chancela_ledger::{
-    AppendError, ChainLink, Event, EventId, IntegrityReport, Ledger, LedgerError,
+    AppendError, ChainId, ChainLink, Event, EventId, IntegrityReport, Ledger, LedgerError,
 };
 use chancela_registry::RegistryExtract;
 use rand_core::{OsRng, RngCore};
-use rusqlite::{OptionalExtension, params};
+use rusqlite::types::Value;
+use rusqlite::{OptionalExtension, params, params_from_iter};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -187,6 +188,65 @@ pub struct Store {
     /// takes this lock for the (tiny, local) duration of its transaction. `pub(crate)` so the
     /// [`recovery`] module can swap the whole connection during a whole-store restore.
     pub(crate) conn: Arc<Mutex<rusqlite::Connection>>,
+}
+
+/// Query shape for [`Store::ledger_events_page`].
+///
+/// The store returns newest-first events using the global `seq` as the cursor. `before_seq` is an
+/// exclusive upper cursor boundary: passing a previous page's `next_cursor` fetches older events.
+/// Cheap row predicates are pushed into SQLite, while filters that require reconstructed
+/// [`Event`] values (chain membership and free-text search) are applied after row mapping.
+#[derive(Debug, Clone)]
+pub struct LedgerEventPageQuery {
+    /// Exclusive cursor boundary over the global ledger sequence.
+    pub before_seq: Option<u64>,
+    /// Requested page size. The store clamps this to at least one event.
+    pub limit: usize,
+    /// Optional chain filter. [`ChainId::Global`] is equivalent to no chain filter.
+    pub chain: Option<ChainId>,
+    /// Free-text search across the same event fields exposed by the API ledger filters.
+    pub q: Option<String>,
+    /// Case-sensitive substring match against `event.scope`.
+    pub scope: Option<String>,
+    /// Exact event kind filter. Entries may be repeatable or comma-separated.
+    pub kinds: Vec<String>,
+    /// Exact actor filter.
+    pub actor: Option<String>,
+    /// Inclusive lower timestamp bound.
+    pub from: Option<OffsetDateTime>,
+    /// Upper timestamp bound.
+    pub to: Option<LedgerEventUpperBound>,
+}
+
+/// Upper timestamp bound for [`LedgerEventPageQuery`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LedgerEventUpperBound {
+    /// Include events whose timestamp equals this bound.
+    Inclusive(OffsetDateTime),
+    /// Exclude events whose timestamp equals this bound.
+    Exclusive(OffsetDateTime),
+}
+
+impl LedgerEventUpperBound {
+    fn contains(self, timestamp: OffsetDateTime) -> bool {
+        match self {
+            Self::Inclusive(to) => timestamp <= to,
+            Self::Exclusive(to) => timestamp < to,
+        }
+    }
+}
+
+/// Newest-first persisted event page returned by [`Store::ledger_events_page`].
+#[derive(Debug, Clone)]
+pub struct LedgerEventPage {
+    /// Events in `seq DESC` order.
+    pub events: Vec<Event>,
+    /// Cursor for the next older page, when one exists.
+    pub next_cursor: Option<u64>,
+    /// Whether another older page exists for this query.
+    pub has_more: bool,
+    /// Effective page size used by the store.
+    pub limit: usize,
 }
 
 /// Options for opening the durable store.
@@ -1605,25 +1665,10 @@ impl Store {
         // uuid / fixed-width-digest conversions can surface as `StoreError`.
         let mut raw_events: Vec<RawEventRow> = Vec::new();
         {
-            let mut stmt = guard.prepare(
-                "SELECT seq, id, actor, justification, timestamp, scope, kind, \
-                 payload_digest, prev_hash, hash, links FROM events ORDER BY seq",
-            )?;
-            let rows = stmt.query_map([], |row| {
-                Ok(RawEventRow {
-                    seq: row.get(0)?,
-                    id: row.get(1)?,
-                    actor: row.get(2)?,
-                    justification: row.get(3)?,
-                    timestamp: row.get(4)?,
-                    scope: row.get(5)?,
-                    kind: row.get(6)?,
-                    payload_digest: row.get(7)?,
-                    prev_hash: row.get(8)?,
-                    hash: row.get(9)?,
-                    links: row.get(10)?,
-                })
-            })?;
+            let mut stmt = guard.prepare(&format!(
+                "SELECT {EVENT_SELECT_COLUMNS} FROM events ORDER BY seq"
+            ))?;
+            let rows = stmt.query_map([], raw_event_row)?;
             for row in rows {
                 raw_events.push(row?);
             }
@@ -1647,6 +1692,78 @@ impl Store {
             ledger,
             chain_status,
             integrity,
+        })
+    }
+
+    /// Fetch a persisted newest-first ledger event page without loading the full ledger.
+    ///
+    /// SQLite handles the global sequence cursor and direct row predicates (`seq`, `scope`,
+    /// `kind`, `actor`, `timestamp`). Chain membership and free-text search are intentionally
+    /// checked on reconstructed [`Event`] values so they stay aligned with the native ledger link
+    /// model and the API's searchable event fields.
+    pub fn ledger_events_page(
+        &self,
+        query: &LedgerEventPageQuery,
+    ) -> Result<LedgerEventPage, StoreError> {
+        let limit = query.limit.max(1);
+        let target = limit.saturating_add(1);
+        let filters = NormalizedLedgerEventPageFilters::from_query(query);
+        let batch_limit = ledger_event_page_batch_limit(limit, filters.has_residual_filters());
+        let mut before_seq = query.before_seq;
+        let mut accepted = Vec::with_capacity(target);
+        let guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+
+        loop {
+            let (sql, values) = ledger_events_page_sql(&filters, before_seq, batch_limit);
+            let mut stmt = guard.prepare(&sql)?;
+            let rows = stmt.query_map(params_from_iter(values.iter()), raw_event_row)?;
+            let mut raw_events = Vec::new();
+            for row in rows {
+                raw_events.push(row?);
+            }
+
+            let row_count = raw_events.len();
+            let oldest_seq = raw_events.last().map(|row| row.seq);
+            if row_count == 0 {
+                break;
+            }
+
+            for raw in raw_events {
+                let event = raw.into_event()?;
+                if !filters.matches(&event) {
+                    continue;
+                }
+                accepted.push(event);
+                if accepted.len() >= target {
+                    break;
+                }
+            }
+
+            if accepted.len() >= target || row_count < batch_limit {
+                break;
+            }
+
+            let Some(oldest_seq) = oldest_seq else {
+                break;
+            };
+            if oldest_seq <= 0 {
+                break;
+            }
+            before_seq = Some(oldest_seq as u64);
+        }
+
+        let has_more = accepted.len() > limit;
+        if has_more {
+            accepted.truncate(limit);
+        }
+        let next_cursor = has_more
+            .then(|| accepted.last().map(|event| event.seq))
+            .flatten();
+        Ok(LedgerEventPage {
+            events: accepted,
+            next_cursor,
+            has_more,
+            limit,
         })
     }
 
@@ -2232,10 +2349,7 @@ impl Tx<'_> {
     /// The hash-chain fields are stored directly: the ids/scope/kind/actor as text, the timestamp
     /// as RFC 3339 text (round-trips the instant), and the three 32-byte digests as BLOBs.
     pub fn append_event(&self, event: &Event) -> Result<(), StoreError> {
-        let timestamp = event
-            .timestamp
-            .format(&Rfc3339)
-            .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned());
+        let timestamp = format_event_timestamp(event.timestamp);
         let links_json = serde_json::to_string(&event.links)?;
         self.txn.execute(
             "INSERT INTO events \
@@ -2841,6 +2955,214 @@ impl Tx<'_> {
         )?;
         Ok(())
     }
+}
+
+const EVENT_SELECT_COLUMNS: &str = "seq, id, actor, justification, timestamp, scope, kind, \
+    payload_digest, prev_hash, hash, links";
+
+struct NormalizedLedgerEventPageFilters {
+    chain: Option<ChainId>,
+    query: Option<String>,
+    scope: Option<String>,
+    kinds: HashSet<String>,
+    actor: Option<String>,
+    from: Option<OffsetDateTime>,
+    to: Option<LedgerEventUpperBound>,
+}
+
+impl NormalizedLedgerEventPageFilters {
+    fn from_query(query: &LedgerEventPageQuery) -> Self {
+        Self {
+            chain: query
+                .chain
+                .as_ref()
+                .filter(|chain| !chain.is_global())
+                .cloned(),
+            query: normalize_event_page_query(query.q.as_deref()),
+            scope: query.scope.clone().filter(|scope| !scope.is_empty()),
+            kinds: parse_event_page_kinds(&query.kinds),
+            actor: query.actor.clone().filter(|actor| !actor.is_empty()),
+            from: query.from,
+            to: query.to,
+        }
+    }
+
+    fn has_residual_filters(&self) -> bool {
+        self.chain.is_some() || self.query.is_some()
+    }
+
+    fn matches(&self, event: &Event) -> bool {
+        if let Some(chain) = &self.chain {
+            if !event.links.iter().any(|link| &link.chain == chain) {
+                return false;
+            }
+        }
+        if let Some(query) = &self.query {
+            if !event_matches_page_query(event, query) {
+                return false;
+            }
+        }
+        if let Some(scope) = &self.scope {
+            if !event.scope.contains(scope) {
+                return false;
+            }
+        }
+        if !self.kinds.is_empty() && !self.kinds.contains(&event.kind) {
+            return false;
+        }
+        if let Some(actor) = &self.actor {
+            if &event.actor != actor {
+                return false;
+            }
+        }
+        if let Some(from) = self.from {
+            if event.timestamp < from {
+                return false;
+            }
+        }
+        if let Some(to) = self.to {
+            if !to.contains(event.timestamp) {
+                return false;
+            }
+        }
+        true
+    }
+}
+
+fn ledger_event_page_batch_limit(limit: usize, has_residual_filters: bool) -> usize {
+    let target = limit.saturating_add(1);
+    if has_residual_filters {
+        target.max(256)
+    } else {
+        target
+    }
+}
+
+fn ledger_events_page_sql(
+    filters: &NormalizedLedgerEventPageFilters,
+    before_seq: Option<u64>,
+    batch_limit: usize,
+) -> (String, Vec<Value>) {
+    let mut clauses = Vec::new();
+    let mut values = Vec::new();
+
+    if let Some(before_seq) = before_seq {
+        if let Ok(before_seq) = i64::try_from(before_seq) {
+            clauses.push("seq < ?".to_owned());
+            values.push(Value::Integer(before_seq));
+        }
+    }
+    if let Some(scope) = &filters.scope {
+        clauses.push("instr(scope, ?) > 0".to_owned());
+        values.push(Value::Text(scope.clone()));
+    }
+    if !filters.kinds.is_empty() {
+        let mut placeholders = Vec::with_capacity(filters.kinds.len());
+        let mut kinds: Vec<&String> = filters.kinds.iter().collect();
+        kinds.sort_unstable();
+        for kind in kinds {
+            placeholders.push("?".to_owned());
+            values.push(Value::Text(kind.clone()));
+        }
+        clauses.push(format!("kind IN ({})", placeholders.join(", ")));
+    }
+    if let Some(actor) = &filters.actor {
+        clauses.push("actor = ?".to_owned());
+        values.push(Value::Text(actor.clone()));
+    }
+    if let Some(from) = filters.from {
+        clauses.push("timestamp >= ?".to_owned());
+        values.push(Value::Text(format_event_timestamp(from)));
+    }
+    if let Some(to) = filters.to {
+        match to {
+            LedgerEventUpperBound::Inclusive(to) => {
+                clauses.push("timestamp <= ?".to_owned());
+                values.push(Value::Text(format_event_timestamp(to)));
+            }
+            LedgerEventUpperBound::Exclusive(to) => {
+                clauses.push("timestamp < ?".to_owned());
+                values.push(Value::Text(format_event_timestamp(to)));
+            }
+        }
+    }
+
+    let where_sql = if clauses.is_empty() {
+        String::new()
+    } else {
+        format!(" WHERE {}", clauses.join(" AND "))
+    };
+    values.push(Value::Integer(sqlite_limit_value(batch_limit)));
+    (
+        format!("SELECT {EVENT_SELECT_COLUMNS} FROM events{where_sql} ORDER BY seq DESC LIMIT ?"),
+        values,
+    )
+}
+
+fn sqlite_limit_value(limit: usize) -> i64 {
+    i64::try_from(limit).unwrap_or(i64::MAX)
+}
+
+fn normalize_event_page_query(query: Option<&str>) -> Option<String> {
+    query
+        .map(|query| query.trim().to_lowercase())
+        .filter(|query| !query.is_empty())
+}
+
+fn parse_event_page_kinds(raw: &[String]) -> HashSet<String> {
+    raw.iter()
+        .flat_map(|value| value.split(','))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
+fn event_matches_page_query(event: &Event, query: &str) -> bool {
+    contains_event_page_query(event.id.to_string(), query)
+        || contains_event_page_query(event.seq.to_string(), query)
+        || contains_event_page_query(&event.actor, query)
+        || event
+            .justification
+            .as_deref()
+            .is_some_and(|value| contains_event_page_query(value, query))
+        || contains_event_page_query(&event.scope, query)
+        || contains_event_page_query(&event.kind, query)
+        || contains_event_page_query(event.timestamp.format(&Rfc3339).unwrap_or_default(), query)
+        || contains_event_page_query(hex(&event.payload_digest), query)
+        || contains_event_page_query(hex(&event.prev_hash), query)
+        || contains_event_page_query(hex(&event.hash), query)
+        || event.links.iter().any(|link| {
+            contains_event_page_query(link.chain.canonical(), query)
+                || contains_event_page_query(link.seq.to_string(), query)
+                || contains_event_page_query(hex(&link.prev_hash), query)
+        })
+}
+
+fn contains_event_page_query(value: impl AsRef<str>, query: &str) -> bool {
+    value.as_ref().to_lowercase().contains(query)
+}
+
+fn format_event_timestamp(timestamp: OffsetDateTime) -> String {
+    timestamp
+        .format(&Rfc3339)
+        .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned())
+}
+
+fn raw_event_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RawEventRow> {
+    Ok(RawEventRow {
+        seq: row.get(0)?,
+        id: row.get(1)?,
+        actor: row.get(2)?,
+        justification: row.get(3)?,
+        timestamp: row.get(4)?,
+        scope: row.get(5)?,
+        kind: row.get(6)?,
+        payload_digest: row.get(7)?,
+        prev_hash: row.get(8)?,
+        hash: row.get(9)?,
+        links: row.get(10)?,
+    })
 }
 
 /// One row of the `events` table read back as raw primitives (the shape rusqlite's row closure can
