@@ -37,18 +37,20 @@
 //! [`SealAppearance`] (t67-e3) and its own [`SignOptions`], so placement and field metadata are
 //! per-document, not batch-wide.
 
+use serde::ser::SerializeStruct;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use zeroize::Zeroizing;
 
 use chancela_cades::{assemble_cades_b, signed_attributes_digest};
 use chancela_pades::{
-    SealAppearance, SignOptions, embed_signature, prepare_signature_with_appearance,
-    validate_pdf_signature,
+    PreparedSignature, SealAppearance, SignOptions, embed_signature,
+    prepare_signature_with_appearance, validate_pdf_signature,
 };
 
 use crate::policy::TrustPolicy;
 use crate::provider::SignerProvider;
+use crate::remote::{RemoteInitiate, RemoteSignSession, RemoteSigningSource};
 use crate::{SigningError, SigningFamily, TrustedListStatus};
 
 /// How many times the signer had to authenticate to cover the whole batch (plan decision 3).
@@ -69,6 +71,18 @@ pub enum AuthMode {
     PerDocumentAuth,
 }
 
+/// Authentication accounting for remote repeated-session orchestration.
+///
+/// This deliberately has no `SingleAuth` variant. The helpers in this module drive one
+/// [`RemoteSigningSource::initiate`] and one [`RemoteSigningSource::confirm`] per document. That is
+/// a repeated per-document activation workflow, not a provider-certified multi-digest batch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum RemoteBatchAuthMode {
+    /// Every pending document has its own remote provider session and its own activation step.
+    PerDocumentActivation,
+}
+
 /// One PDF to sign in a batch: its bytes, per-document [`SignOptions`], and optional visible seal.
 ///
 /// `appearance` is per-document so each act may place its seal independently (t67-e3); `None` keeps
@@ -82,6 +96,37 @@ pub struct BatchPdfDocument<'a> {
     pub options: SignOptions,
     /// Optional visible-seal appearance for this document; `None` = invisible signature widget.
     pub appearance: Option<SealAppearance>,
+}
+
+/// One PDF to prepare and initiate through repeated remote sessions.
+///
+/// This is the remote counterpart of [`BatchPdfDocument`], with an explicit `doc_name` because
+/// remote providers commonly show a per-document label while dispatching the activation.
+pub struct RemoteBatchPdfDocument<'a> {
+    /// A caller-chosen stable id used to correlate initiate/confirm outcomes.
+    pub id: String,
+    /// The unsigned PDF/A bytes to sign (PAdES-B-B).
+    pub pdf: &'a [u8],
+    /// PAdES signing options for this document.
+    pub options: SignOptions,
+    /// Optional visible-seal appearance for this document; `None` = invisible signature widget.
+    pub appearance: Option<SealAppearance>,
+    /// Human-readable label sent to the remote provider for this one document/session.
+    pub doc_name: String,
+}
+
+/// One already-prepared PAdES input to initiate through repeated remote sessions.
+///
+/// Use this when a caller has already run [`prepare_signature_with_appearance`]. The prepared value
+/// is public, serializable PAdES state and is carried into the pending record so confirm can embed
+/// the returned CMS without recomputing the ByteRange.
+pub struct RemoteBatchPreparedDocument {
+    /// A caller-chosen stable id used to correlate initiate/confirm outcomes.
+    pub id: String,
+    /// Human-readable label sent to the remote provider for this one document/session.
+    pub doc_name: String,
+    /// Non-secret prepared PAdES material for this one document.
+    pub prepared: PreparedSignature,
 }
 
 /// One detached-CAdES payload to sign in a batch: a caller id and the SHA-256 of the content.
@@ -103,6 +148,160 @@ pub struct BatchDocumentOutcome {
     pub id: String,
     /// The produced signature bytes, or this document's isolated error.
     pub result: Result<Vec<u8>, SigningError>,
+}
+
+/// A pending repeated remote document: prepared PAdES state plus exactly one remote session.
+///
+/// This type intentionally stores no activation/PIN/SAD/secret. Those values are transient
+/// arguments to initiate/confirm. The stored fields are the same non-secret prepared/session
+/// material used by the existing one-document remote flow.
+#[derive(Clone, Deserialize)]
+pub struct RemoteBatchPendingDocument {
+    /// The [`RemoteBatchPdfDocument::id`] / [`RemoteBatchPreparedDocument::id`] this pending record
+    /// corresponds to.
+    pub id: String,
+    /// Non-secret prepared PAdES material needed to embed the CMS returned at confirm time.
+    pub prepared: PreparedSignature,
+    /// The one-digest remote signing session opened for this document.
+    pub session: RemoteSignSession,
+}
+
+impl std::fmt::Debug for RemoteBatchPendingDocument {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RemoteBatchPendingDocument")
+            .field("id", &self.id)
+            .field("prepared_pdf_len", &self.prepared.prepared_pdf().len())
+            .field(
+                "prepared_byterange_digest",
+                self.prepared.byterange_digest(),
+            )
+            .field("provider_id", &self.session.provider_id)
+            .field("provider_ref", &self.session.provider_ref)
+            .field("session_byterange_digest", &self.session.byterange_digest)
+            .field("trusted_list_status", &self.session.trusted_list_status)
+            .field("signing_time", &self.session.signing_time)
+            .finish()
+    }
+}
+
+impl Serialize for RemoteBatchPendingDocument {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        #[derive(Serialize)]
+        struct PreparedSummary<'a> {
+            prepared_pdf_len: usize,
+            byterange_digest: &'a [u8; 32],
+        }
+
+        let mut state = serializer.serialize_struct("RemoteBatchPendingDocument", 3)?;
+        state.serialize_field("id", &self.id)?;
+        state.serialize_field(
+            "prepared",
+            &PreparedSummary {
+                prepared_pdf_len: self.prepared.prepared_pdf().len(),
+                byterange_digest: self.prepared.byterange_digest(),
+            },
+        )?;
+        state.serialize_field("session", &self.session)?;
+        state.end()
+    }
+}
+
+/// The outcome for one document during repeated remote initiate.
+#[derive(Debug, Clone)]
+pub struct RemoteBatchInitiateOutcome {
+    /// The caller-supplied document id this outcome corresponds to.
+    pub id: String,
+    /// The pending record, or this document's isolated prepare/initiate error.
+    pub result: Result<RemoteBatchPendingDocument, SigningError>,
+}
+
+impl RemoteBatchInitiateOutcome {
+    /// Whether this document reached a pending remote session successfully.
+    #[must_use]
+    pub fn is_ok(&self) -> bool {
+        self.result.is_ok()
+    }
+}
+
+/// The aggregate report for repeated remote initiate.
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub struct RemoteBatchInitiateReport {
+    /// Always [`RemoteBatchAuthMode::PerDocumentActivation`] for this seam.
+    pub auth_mode: RemoteBatchAuthMode,
+    /// Number of documents for which [`RemoteSigningSource::initiate`] was called.
+    ///
+    /// Documents that fail local PDF preparation are not counted because no remote session was
+    /// opened for them.
+    pub initiate_events: usize,
+    /// The per-document outcomes, in input order.
+    pub results: Vec<RemoteBatchInitiateOutcome>,
+}
+
+impl RemoteBatchInitiateReport {
+    /// The number of documents with a pending remote session.
+    #[must_use]
+    pub fn ok_count(&self) -> usize {
+        self.results.iter().filter(|r| r.is_ok()).count()
+    }
+
+    /// The number of documents that failed during prepare/initiate.
+    #[must_use]
+    pub fn failed_count(&self) -> usize {
+        self.results.len() - self.ok_count()
+    }
+
+    /// Whether every document reached a pending remote session.
+    #[must_use]
+    pub fn all_ok(&self) -> bool {
+        self.results.iter().all(RemoteBatchInitiateOutcome::is_ok)
+    }
+}
+
+/// One confirm request for a repeated remote pending document.
+///
+/// This type deliberately does not implement `Debug`: it carries a borrowed activation secret. The
+/// activation is consumed by one confirm call only and is never copied into a pending record/report.
+pub struct RemoteBatchConfirmDocument<'a> {
+    /// The pending record produced by the initiate phase for exactly one document.
+    pub pending: &'a RemoteBatchPendingDocument,
+    /// The OTP/SAD/activation for this one pending record.
+    pub activation: &'a Zeroizing<String>,
+}
+
+/// The aggregate report for repeated remote confirm.
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub struct RemoteBatchConfirmReport {
+    /// Always [`RemoteBatchAuthMode::PerDocumentActivation`] for this seam.
+    pub auth_mode: RemoteBatchAuthMode,
+    /// Number of pending documents for which [`RemoteSigningSource::confirm`] was called.
+    pub confirm_events: usize,
+    /// The per-document signed-PDF outcomes, in input order.
+    pub results: Vec<BatchDocumentOutcome>,
+}
+
+impl RemoteBatchConfirmReport {
+    /// The number of documents signed successfully.
+    #[must_use]
+    pub fn ok_count(&self) -> usize {
+        self.results.iter().filter(|r| r.is_ok()).count()
+    }
+
+    /// The number of documents that failed during confirm/embed/validate.
+    #[must_use]
+    pub fn failed_count(&self) -> usize {
+        self.results.len() - self.ok_count()
+    }
+
+    /// Whether every document was signed successfully.
+    #[must_use]
+    pub fn all_ok(&self) -> bool {
+        self.results.iter().all(BatchDocumentOutcome::is_ok)
+    }
 }
 
 impl BatchDocumentOutcome {
@@ -205,6 +404,150 @@ pub fn sign_pdf_batch(
         results,
     }
     // `pin` (the only copy of the in-app PIN this batch held) drops here and is zeroized.
+}
+
+/// Prepare and initiate one independent remote signing session per PDF document.
+///
+/// This is a repeated-session orchestration helper over the existing one-digest
+/// [`RemoteSigningSource`] trait. It does **not** implement or claim provider-native multi-digest
+/// batch signing: every valid document is prepared independently and passed to
+/// [`RemoteSigningSource::initiate`] once, producing one [`RemoteSignSession`] per document.
+///
+/// A malformed PDF or an initiate failure is isolated to that document; later valid documents still
+/// run. The `credential` is transient and is never stored in returned pending records.
+pub fn initiate_remote_pdf_batch_repeated_sessions(
+    source: &dyn RemoteSigningSource,
+    documents: &[RemoteBatchPdfDocument<'_>],
+    user_ref: &str,
+    credential: &Zeroizing<String>,
+    signing_time: OffsetDateTime,
+    mut policy: Option<&mut dyn TrustPolicy>,
+) -> RemoteBatchInitiateReport {
+    let mut results = Vec::with_capacity(documents.len());
+    let mut initiate_events = 0usize;
+
+    for doc in documents {
+        let prepared =
+            match prepare_signature_with_appearance(doc.pdf, &doc.options, doc.appearance.as_ref())
+            {
+                Ok(prepared) => prepared,
+                Err(e) => {
+                    results.push(RemoteBatchInitiateOutcome {
+                        id: doc.id.clone(),
+                        result: Err(pades_err(e)),
+                    });
+                    continue;
+                }
+            };
+
+        initiate_events += 1;
+        let req = RemoteInitiate {
+            user_ref,
+            credential,
+            doc_name: &doc.doc_name,
+            signing_time,
+        };
+        let result = match &mut policy {
+            Some(policy) => source.initiate(&req, &prepared, Some(&mut **policy)),
+            None => source.initiate(&req, &prepared, None),
+        }
+        .map(|session| RemoteBatchPendingDocument {
+            id: doc.id.clone(),
+            prepared,
+            session,
+        });
+        results.push(RemoteBatchInitiateOutcome {
+            id: doc.id.clone(),
+            result,
+        });
+    }
+
+    RemoteBatchInitiateReport {
+        auth_mode: RemoteBatchAuthMode::PerDocumentActivation,
+        initiate_events,
+        results,
+    }
+}
+
+/// Initiate one independent remote signing session per already-prepared PAdES document.
+///
+/// This is the prepared-input sibling of [`initiate_remote_pdf_batch_repeated_sessions`]. It still
+/// calls [`RemoteSigningSource::initiate`] once per document and returns one pending record per
+/// successful initiate.
+pub fn initiate_remote_prepared_batch_repeated_sessions(
+    source: &dyn RemoteSigningSource,
+    documents: &[RemoteBatchPreparedDocument],
+    user_ref: &str,
+    credential: &Zeroizing<String>,
+    signing_time: OffsetDateTime,
+    mut policy: Option<&mut dyn TrustPolicy>,
+) -> RemoteBatchInitiateReport {
+    let mut results = Vec::with_capacity(documents.len());
+    let mut initiate_events = 0usize;
+
+    for doc in documents {
+        initiate_events += 1;
+        let req = RemoteInitiate {
+            user_ref,
+            credential,
+            doc_name: &doc.doc_name,
+            signing_time,
+        };
+        let result = match &mut policy {
+            Some(policy) => source.initiate(&req, &doc.prepared, Some(&mut **policy)),
+            None => source.initiate(&req, &doc.prepared, None),
+        }
+        .map(|session| RemoteBatchPendingDocument {
+            id: doc.id.clone(),
+            prepared: doc.prepared.clone(),
+            session,
+        });
+        results.push(RemoteBatchInitiateOutcome {
+            id: doc.id.clone(),
+            result,
+        });
+    }
+
+    RemoteBatchInitiateReport {
+        auth_mode: RemoteBatchAuthMode::PerDocumentActivation,
+        initiate_events,
+        results,
+    }
+}
+
+/// Confirm repeated remote sessions independently, one activation per pending record.
+///
+/// Each [`RemoteBatchConfirmDocument`] pairs one pending record with one activation. If a caller
+/// explicitly passes the same activation value for several documents this helper will use it, but it
+/// still performs and reports one confirm/auth event per document. One failed confirm/embed/validate
+/// does not abort later documents.
+pub fn confirm_remote_pdf_batch_repeated_sessions(
+    source: &dyn RemoteSigningSource,
+    documents: &[RemoteBatchConfirmDocument<'_>],
+) -> RemoteBatchConfirmReport {
+    let mut results = Vec::with_capacity(documents.len());
+    let mut confirm_events = 0usize;
+
+    for doc in documents {
+        confirm_events += 1;
+        let result = source
+            .confirm(&doc.pending.session, doc.activation)
+            .and_then(|cms| {
+                let signed_pdf = embed_signature(&doc.pending.prepared, &cms).map_err(pades_err)?;
+                validate_pdf_signature(&signed_pdf).map_err(pades_err)?;
+                Ok(signed_pdf)
+            });
+        results.push(BatchDocumentOutcome {
+            id: doc.pending.id.clone(),
+            result,
+        });
+    }
+
+    RemoteBatchConfirmReport {
+        auth_mode: RemoteBatchAuthMode::PerDocumentActivation,
+        confirm_events,
+        results,
+    }
 }
 
 /// Sign a set of detached-CAdES payloads with one provider under a single authentication.

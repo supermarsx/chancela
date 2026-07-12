@@ -26,6 +26,7 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration as StdDuration;
 
+use chancela_cades::{assemble_cades_b, signed_attributes_digest};
 use der::Encode;
 use der::asn1::{Any, BitString, ObjectIdentifier};
 use sha2::{Digest, Sha256};
@@ -40,8 +41,11 @@ use zeroize::Zeroizing;
 use chancela_pades::validate_pdf_signature;
 use chancela_signing::{
     AuthMode, BatchCadesDocument, BatchPdfDocument, EvidentiaryLevel, MockProvider, RawSignature,
-    SealAppearance, SealContent, SealPlacement, SignOptions, SignatureAlgorithm, SignerProvider,
-    SigningError, SigningFamily, SmartcardProvider, StaticTrustPolicy, TextSeal, TrustedListStatus,
+    RemoteBatchAuthMode, RemoteBatchConfirmDocument, RemoteBatchPdfDocument, RemoteInitiate,
+    RemoteSignSession, RemoteSigningSource, SealAppearance, SealContent, SealPlacement,
+    SignOptions, SignatureAlgorithm, SignerProvider, SigningError, SigningFamily,
+    SmartcardProvider, StaticTrustPolicy, TextSeal, TrustPolicy, TrustedListStatus,
+    confirm_remote_pdf_batch_repeated_sessions, initiate_remote_pdf_batch_repeated_sessions,
     sign_detached_cades_batch, sign_pdf_batch,
 };
 use chancela_smartcard::token::LABEL_SIGNATURE_CERT;
@@ -54,6 +58,10 @@ const SHA256_DIGEST_INFO_PREFIX: [u8; 19] = [
     0x30, 0x31, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01, 0x05,
     0x00, 0x04, 0x20,
 ];
+
+const PHONE: &str = "+351 912345678";
+const PIN: &str = "2468";
+const OTP: &str = "135790";
 
 /// 2026-07-11T00:00:00Z — a fixed, whole-second batch signing time.
 fn fixed_time() -> OffsetDateTime {
@@ -128,6 +136,127 @@ struct CountingProvider<'a> {
     inner: &'a dyn SignerProvider,
     calls: AtomicUsize,
     calls_with_pin: AtomicUsize,
+}
+
+/// A [`RemoteSigningSource`] test double that can only open one-digest sessions. It records every
+/// initiate digest and confirm reference so the repeated-session helper cannot hide a multi-hash
+/// provider batch behind one call.
+struct CountingRemoteSource {
+    provider_id: String,
+    signer: EphemeralRsaSigner,
+    issuer: EphemeralRsaSigner,
+    expected_activation: String,
+    fail_initiate_doc_names: Vec<String>,
+    initiate_digests: Mutex<Vec<[u8; 32]>>,
+    confirm_refs: Mutex<Vec<String>>,
+}
+
+impl CountingRemoteSource {
+    fn new() -> Self {
+        Self {
+            provider_id: "encosto-remote-test".to_owned(),
+            signer: EphemeralRsaSigner::new("Amélia Marques (remote batch)", 11),
+            issuer: EphemeralRsaSigner::new("Encosto Estratégico Lda EC", 12),
+            expected_activation: OTP.to_owned(),
+            fail_initiate_doc_names: Vec::new(),
+            initiate_digests: Mutex::new(Vec::new()),
+            confirm_refs: Mutex::new(Vec::new()),
+        }
+    }
+
+    fn failing_initiate_for(doc_names: &[&str]) -> Self {
+        let mut source = Self::new();
+        source.fail_initiate_doc_names = doc_names.iter().map(|name| (*name).to_owned()).collect();
+        source
+    }
+
+    fn initiate_digests(&self) -> Vec<[u8; 32]> {
+        self.initiate_digests.lock().unwrap().clone()
+    }
+
+    fn confirm_refs(&self) -> Vec<String> {
+        self.confirm_refs.lock().unwrap().clone()
+    }
+}
+
+impl RemoteSigningSource for CountingRemoteSource {
+    fn family(&self) -> SigningFamily {
+        SigningFamily::QualifiedCertificate
+    }
+
+    fn evidentiary_level(&self) -> EvidentiaryLevel {
+        EvidentiaryLevel::Qualified
+    }
+
+    fn initiate(
+        &self,
+        req: &RemoteInitiate<'_>,
+        prepared: &chancela_signing::PreparedSignature,
+        policy: Option<&mut dyn TrustPolicy>,
+    ) -> Result<RemoteSignSession, SigningError> {
+        let issuer_der = self.issuer.cert_der.clone();
+        let trusted_list_status = match policy {
+            Some(policy) => {
+                let status = policy.issuer_status(&issuer_der, req.signing_time)?;
+                if status != TrustedListStatus::Granted {
+                    return Err(SigningError::UntrustedService { status });
+                }
+                Some(status)
+            }
+            None => None,
+        };
+        if self
+            .fail_initiate_doc_names
+            .iter()
+            .any(|name| name == req.doc_name)
+        {
+            return Err(SigningError::Provider(format!(
+                "initiate rejected {}",
+                req.doc_name
+            )));
+        }
+        let mut digests = self.initiate_digests.lock().unwrap();
+        digests.push(*prepared.byterange_digest());
+        let ordinal = digests.len();
+        Ok(RemoteSignSession {
+            provider_id: self.provider_id.clone(),
+            provider_ref: format!("remote-session-{ordinal}-{}", req.doc_name),
+            user_ref: req.user_ref.to_owned(),
+            signing_cert_der: self.signer.cert_der.clone(),
+            chain_der: vec![issuer_der],
+            trusted_list_status,
+            byterange_digest: *prepared.byterange_digest(),
+            signing_time: req.signing_time,
+        })
+    }
+
+    fn confirm(
+        &self,
+        session: &RemoteSignSession,
+        activation: &Zeroizing<String>,
+    ) -> Result<Vec<u8>, SigningError> {
+        self.confirm_refs
+            .lock()
+            .unwrap()
+            .push(session.provider_ref.clone());
+        if activation.as_str() != self.expected_activation {
+            return Err(SigningError::Provider("activation rejected".to_owned()));
+        }
+        let signed_attrs_digest = signed_attributes_digest(
+            &session.byterange_digest,
+            &session.signing_cert_der,
+            session.signing_time,
+        )
+        .map_err(|e| SigningError::Cades(e.to_string()))?;
+        let raw = RawSignature::new(
+            SignatureAlgorithm::RsaPkcs1Sha256,
+            self.signer.sign_digest(&signed_attrs_digest),
+            session.signing_cert_der.clone(),
+            session.chain_der.clone(),
+        );
+        assemble_cades_b(&raw, &session.byterange_digest, session.signing_time)
+            .map_err(|e| SigningError::Cades(e.to_string()))
+    }
 }
 
 impl<'a> CountingProvider<'a> {
@@ -207,6 +336,10 @@ impl EphemeralRsaSigner {
             sign_rsa_digest_info(&signer, &Sha256::digest(tbs).into())
         });
         Self { key, cert_der }
+    }
+
+    fn sign_digest(&self, digest: &[u8; 32]) -> Vec<u8> {
+        sign_rsa_digest_info(&self.key, digest)
     }
 }
 
@@ -291,6 +424,36 @@ fn base_pdf() -> Vec<u8> {
     )
 }
 
+fn marked_pdf(marker: &str) -> Vec<u8> {
+    let marker_object = format!("<< /ChancelaTestMarker ({marker}) >>");
+    assemble_pdf(
+        &[
+            (1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            (2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+            (
+                3,
+                "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << >> >>",
+            ),
+            (4, &marker_object),
+        ],
+        1,
+    )
+}
+
+fn contains_bytes(haystack: &[u8], needle: &[u8]) -> bool {
+    haystack
+        .windows(needle.len())
+        .any(|window| window == needle)
+}
+
+fn comma_joined_bytes(bytes: &[u8]) -> String {
+    bytes
+        .iter()
+        .map(u8::to_string)
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
 /// A visible text seal at a given page/position (fixed size), for the per-document seal proofs.
 fn text_seal(page: usize, x: f32, y: f32) -> SealAppearance {
     SealAppearance {
@@ -315,6 +478,16 @@ fn pdf_doc<'a>(
         pdf,
         options: SignOptions::default(),
         appearance,
+    }
+}
+
+fn remote_pdf_doc<'a>(id: &str, pdf: &'a [u8]) -> RemoteBatchPdfDocument<'a> {
+    RemoteBatchPdfDocument {
+        id: id.to_owned(),
+        pdf,
+        options: SignOptions::default(),
+        appearance: None,
+        doc_name: format!("{id}.pdf"),
     }
 }
 
@@ -673,5 +846,292 @@ fn auth_mode_reflects_the_signer_family() {
         cmd_report.auth_mode,
         AuthMode::PerDocumentAuth,
         "CMD dispatches a fresh OTP per signature"
+    );
+}
+
+/// Remote repeated-session batch is deliberately N independent one-digest sessions and N confirms,
+/// never one provider-certified multi-hash batch or a `SingleAuth` claim.
+#[test]
+fn remote_repeated_batch_opens_and_confirms_one_session_per_pdf() {
+    let pdf = base_pdf();
+    let source = CountingRemoteSource::new();
+    let mut doc_2 = remote_pdf_doc("act-2", &pdf);
+    doc_2.options.field_name = Some("Assinatura2".to_owned());
+    let docs = [remote_pdf_doc("act-1", &pdf), doc_2];
+    let pin = Zeroizing::new(PIN.to_owned());
+    let mut policy = StaticTrustPolicy::granted();
+
+    let initiate = initiate_remote_pdf_batch_repeated_sessions(
+        &source,
+        &docs,
+        PHONE,
+        &pin,
+        fixed_time(),
+        Some(&mut policy),
+    );
+
+    assert!(initiate.all_ok());
+    assert_eq!(
+        initiate.auth_mode,
+        RemoteBatchAuthMode::PerDocumentActivation
+    );
+    assert_eq!(initiate.initiate_events, 2);
+    let digests = source.initiate_digests();
+    assert_eq!(digests.len(), 2, "two one-digest initiate calls");
+    assert_ne!(
+        digests[0], digests[1],
+        "each prepared PDF/session carries its own ByteRange digest"
+    );
+
+    let pending: Vec<_> = initiate
+        .results
+        .iter()
+        .map(|r| r.result.as_ref().expect("pending"))
+        .collect();
+    assert_ne!(
+        pending[0].session.provider_ref, pending[1].session.provider_ref,
+        "provider sessions are distinct"
+    );
+    assert_eq!(
+        pending[0].session.byterange_digest,
+        *pending[0].prepared.byterange_digest()
+    );
+    assert_eq!(
+        pending[1].session.byterange_digest,
+        *pending[1].prepared.byterange_digest()
+    );
+
+    let activation_1 = Zeroizing::new(OTP.to_owned());
+    let activation_2 = Zeroizing::new(OTP.to_owned());
+    let confirm_docs = [
+        RemoteBatchConfirmDocument {
+            pending: pending[0],
+            activation: &activation_1,
+        },
+        RemoteBatchConfirmDocument {
+            pending: pending[1],
+            activation: &activation_2,
+        },
+    ];
+
+    let confirm = confirm_remote_pdf_batch_repeated_sessions(&source, &confirm_docs);
+
+    assert!(confirm.all_ok());
+    assert_eq!(
+        confirm.auth_mode,
+        RemoteBatchAuthMode::PerDocumentActivation
+    );
+    assert_eq!(confirm.confirm_events, 2);
+    assert_eq!(source.confirm_refs().len(), 2, "two confirm calls");
+    for outcome in &confirm.results {
+        let signed = outcome.result.as_ref().expect("signed pdf");
+        validate_pdf_signature(signed).expect("signature validates");
+    }
+}
+
+/// A malformed PDF fails before remote initiate and does not prevent later valid PDFs from opening
+/// their own sessions.
+#[test]
+fn remote_repeated_batch_prepare_failure_is_per_document() {
+    let good = base_pdf();
+    let broken = b"%PDF-1.7 this is not a real pdf".to_vec();
+    let source = CountingRemoteSource::new();
+    let docs = [
+        remote_pdf_doc("ok-first", &good),
+        remote_pdf_doc("broken", &broken),
+        remote_pdf_doc("ok-last", &good),
+    ];
+    let pin = Zeroizing::new(PIN.to_owned());
+    let mut policy = StaticTrustPolicy::granted();
+
+    let report = initiate_remote_pdf_batch_repeated_sessions(
+        &source,
+        &docs,
+        PHONE,
+        &pin,
+        fixed_time(),
+        Some(&mut policy),
+    );
+
+    assert!(!report.all_ok());
+    assert_eq!(report.ok_count(), 2);
+    assert_eq!(report.failed_count(), 1);
+    assert_eq!(
+        report.initiate_events, 2,
+        "only valid PDFs reached the remote source"
+    );
+    assert_eq!(source.initiate_digests().len(), 2);
+    assert!(report.results[0].result.is_ok());
+    assert_eq!(report.results[1].id, "broken");
+    assert!(matches!(
+        report.results[1].result,
+        Err(SigningError::Pades(_))
+    ));
+    assert!(report.results[2].result.is_ok());
+}
+
+/// A provider-side initiate rejection is isolated to that document and preserves input order while
+/// later valid documents still open their own sessions.
+#[test]
+fn remote_repeated_batch_initiate_failure_is_per_document() {
+    let pdf = base_pdf();
+    let source = CountingRemoteSource::failing_initiate_for(&["fail-middle.pdf"]);
+    let docs = [
+        remote_pdf_doc("ok-first", &pdf),
+        remote_pdf_doc("fail-middle", &pdf),
+        remote_pdf_doc("ok-last", &pdf),
+    ];
+    let pin = Zeroizing::new(PIN.to_owned());
+    let mut policy = StaticTrustPolicy::granted();
+
+    let report = initiate_remote_pdf_batch_repeated_sessions(
+        &source,
+        &docs,
+        PHONE,
+        &pin,
+        fixed_time(),
+        Some(&mut policy),
+    );
+
+    assert!(!report.all_ok());
+    assert_eq!(report.ok_count(), 2);
+    assert_eq!(report.failed_count(), 1);
+    assert_eq!(
+        report.initiate_events, 3,
+        "all prepared PDFs reached provider initiate"
+    );
+    assert_eq!(
+        source.initiate_digests().len(),
+        2,
+        "only accepted sessions record provider digests"
+    );
+    assert_eq!(report.results[0].id, "ok-first");
+    assert!(report.results[0].result.is_ok());
+    assert_eq!(report.results[1].id, "fail-middle");
+    assert!(matches!(
+        report.results[1].result,
+        Err(SigningError::Provider(_))
+    ));
+    assert_eq!(report.results[2].id, "ok-last");
+    assert!(report.results[2].result.is_ok());
+}
+
+/// One rejected activation fails only that pending document; other pending records still confirm
+/// under their own per-document activation semantics.
+#[test]
+fn remote_repeated_batch_confirm_failure_is_per_document() {
+    let pdf = base_pdf();
+    let source = CountingRemoteSource::new();
+    let docs = [
+        remote_pdf_doc("act-1", &pdf),
+        remote_pdf_doc("act-2", &pdf),
+        remote_pdf_doc("act-3", &pdf),
+    ];
+    let pin = Zeroizing::new(PIN.to_owned());
+    let mut policy = StaticTrustPolicy::granted();
+    let initiate = initiate_remote_pdf_batch_repeated_sessions(
+        &source,
+        &docs,
+        PHONE,
+        &pin,
+        fixed_time(),
+        Some(&mut policy),
+    );
+    let pending: Vec<_> = initiate
+        .results
+        .iter()
+        .map(|r| r.result.as_ref().expect("pending"))
+        .collect();
+
+    let good_activation = Zeroizing::new(OTP.to_owned());
+    let bad_activation = Zeroizing::new("wrong-activation".to_owned());
+    let good_activation_after = Zeroizing::new(OTP.to_owned());
+    let confirm_docs = [
+        RemoteBatchConfirmDocument {
+            pending: pending[0],
+            activation: &good_activation,
+        },
+        RemoteBatchConfirmDocument {
+            pending: pending[1],
+            activation: &bad_activation,
+        },
+        RemoteBatchConfirmDocument {
+            pending: pending[2],
+            activation: &good_activation_after,
+        },
+    ];
+
+    let report = confirm_remote_pdf_batch_repeated_sessions(&source, &confirm_docs);
+
+    assert!(!report.all_ok());
+    assert_eq!(report.ok_count(), 2);
+    assert_eq!(report.failed_count(), 1);
+    assert_eq!(report.confirm_events, 3);
+    assert_eq!(
+        source.confirm_refs().len(),
+        3,
+        "bad activation did not abort later confirm accounting"
+    );
+    assert!(report.results[0].result.is_ok());
+    assert!(matches!(
+        report.results[1].result,
+        Err(SigningError::Provider(_))
+    ));
+    assert!(report.results[2].result.is_ok());
+}
+
+/// Pending records are the reusable remote state and must remain secret-free: no initiate PIN and
+/// no activation value may appear in serialization or `Debug`.
+#[test]
+fn remote_repeated_batch_pending_records_do_not_store_activation_secrets() {
+    let marker = "CONFIDENTIAL_ACT_BODY_924190";
+    let pdf = marked_pdf(marker);
+    let source = CountingRemoteSource::new();
+    let docs = [remote_pdf_doc("act-1", &pdf)];
+    let pin = Zeroizing::new(PIN.to_owned());
+    let mut policy = StaticTrustPolicy::granted();
+    let report = initiate_remote_pdf_batch_repeated_sessions(
+        &source,
+        &docs,
+        PHONE,
+        &pin,
+        fixed_time(),
+        Some(&mut policy),
+    );
+    let pending = report.results[0].result.as_ref().expect("pending");
+    assert!(
+        contains_bytes(pending.prepared.prepared_pdf(), marker.as_bytes()),
+        "test marker must be present in the prepared PDF before redaction checks"
+    );
+
+    let serialized = serde_json::to_string(pending).expect("pending serializes");
+    let debug = format!("{pending:?}");
+    let marker_json_fragment = comma_joined_bytes(marker.as_bytes());
+    let marker_debug_fragment = marker_json_fragment.replace(',', ", ");
+    assert!(
+        !serialized.contains(marker),
+        "document text must not leak through serialization"
+    );
+    assert!(
+        !serialized.contains(&marker_json_fragment),
+        "document bytes must not leak through serialization"
+    );
+    assert!(
+        !debug.contains(marker),
+        "document text must not leak through Debug"
+    );
+    assert!(
+        !debug.contains(&marker_debug_fragment),
+        "document bytes must not leak through Debug"
+    );
+    assert!(!serialized.contains(PIN), "PIN must not be persisted");
+    assert!(
+        !serialized.contains(OTP),
+        "activation must not be persisted before confirm"
+    );
+    assert!(!debug.contains(PIN), "PIN must not leak through Debug");
+    assert!(
+        !debug.contains(OTP),
+        "activation must not leak through Debug"
     );
 }

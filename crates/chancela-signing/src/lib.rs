@@ -64,7 +64,11 @@ pub use asic_validate::{
 };
 pub use batch::{
     AuthMode, BatchCadesDocument, BatchDocumentOutcome, BatchPdfDocument, BatchReport,
-    sign_detached_cades_batch, sign_pdf_batch,
+    RemoteBatchAuthMode, RemoteBatchConfirmDocument, RemoteBatchConfirmReport,
+    RemoteBatchInitiateOutcome, RemoteBatchInitiateReport, RemoteBatchPdfDocument,
+    RemoteBatchPendingDocument, RemoteBatchPreparedDocument,
+    confirm_remote_pdf_batch_repeated_sessions, initiate_remote_pdf_batch_repeated_sessions,
+    initiate_remote_prepared_batch_repeated_sessions, sign_detached_cades_batch, sign_pdf_batch,
 };
 pub use cc::{CcSignedPdf, sign_pdf_cc};
 pub use cmd_session::{
