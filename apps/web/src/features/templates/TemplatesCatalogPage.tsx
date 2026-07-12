@@ -19,13 +19,13 @@ import {
 import { useT } from '../../i18n';
 import {
   Badge,
-  Button,
   ButtonLink,
   Card,
   EmptyState,
   ErrorNote,
   Field,
   Icon,
+  IconButton,
   InlineWarning,
   Input,
   PageHeader,
@@ -250,15 +250,12 @@ export function TemplatesCatalogPage() {
                   />
                 </Field>
                 <div className="templates-controls__actions templates-filterbar__clear">
-                  <Button
-                    type="button"
-                    variant="ghost"
+                  <IconButton
                     icon={<Icon.Close />}
+                    label={t('templates.clearFilters')}
                     disabled={!hasFilters}
                     onClick={clearFilters}
-                  >
-                    {t('templates.clearFilters')}
-                  </Button>
+                  />
                 </div>
               </div>
             </div>

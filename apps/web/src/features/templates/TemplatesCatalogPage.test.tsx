@@ -140,6 +140,11 @@ describe('TemplatesCatalogPage', () => {
       name: 'Limpar pesquisa e filtros',
     }) as HTMLButtonElement;
     expect(clearFilters.disabled).toBe(true);
+    expect(clearFilters.className).toContain('btn--iconOnly');
+    expect(clearFilters.textContent?.trim()).toBe('');
+    expect(
+      document.getElementById(clearFilters.getAttribute('aria-describedby') ?? '')?.textContent,
+    ).toBe('Limpar pesquisa e filtros');
 
     fireEvent.click(within(advanced).getByText('Filtros avançados'));
     expect(advanced.open).toBe(true);

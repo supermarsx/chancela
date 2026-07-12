@@ -161,7 +161,14 @@ describe('EntitiesPage', () => {
     expect(within(primary).getByLabelText('Pesquisar')).toBeTruthy();
     expect(within(primary).getByLabelText('Família')).toBeTruthy();
     expect(within(primary).getByLabelText('Forma')).toBeTruthy();
-    expect(within(primary).getByRole('button', { name: /limpar/i })).toBeTruthy();
+    const clearFilters = within(primary).getByRole('button', {
+      name: 'Limpar filtros de entidades',
+    }) as HTMLButtonElement;
+    expect(clearFilters.className).toContain('btn--iconOnly');
+    expect(clearFilters.textContent?.trim()).toBe('');
+    expect(
+      document.getElementById(clearFilters.getAttribute('aria-describedby') ?? '')?.textContent,
+    ).toBe('Limpar filtros de entidades');
     expect(within(primary).queryByLabelText('NIPC')).toBeNull();
     expect(within(primary).queryByLabelText('Registo')).toBeNull();
 

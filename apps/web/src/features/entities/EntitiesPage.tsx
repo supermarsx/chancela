@@ -31,7 +31,6 @@ import {
 import { useLocale, useT, type MessageKey, type TFunction } from '../../i18n';
 import {
   Badge,
-  Button,
   Card,
   EmptyState,
   ErrorNote,
@@ -1055,16 +1054,12 @@ export function EntitiesPage() {
                       options={kindOptions}
                     />
                   </Field>
-                  <Button
-                    type="button"
-                    variant="ghost"
+                  <IconButton
                     icon={<Icon.Close />}
+                    label={t('entities.filters.clear.aria')}
                     disabled={!hasFilters}
-                    aria-label={t('entities.filters.clear.aria')}
                     onClick={clearFilters}
-                  >
-                    {t('entities.filters.clear')}
-                  </Button>
+                  />
                 </div>
               </div>
               <details className="entities-advanced-filters">
