@@ -5562,11 +5562,48 @@ export interface PaperBookOcrDraftView {
   legal_notice: string;
 }
 
+/** Reviewed OCR conversion execution evidence bound to a mutable draft act only. */
+export interface PaperBookOcrConversionExecutionArtifactView {
+  artifact_id: string;
+  import_id: string;
+  draft_id: string;
+  dossier_id: string | null;
+  source_text_digest: string | null;
+  source_page_spans: PaperBookOcrDraftPageSpanView[];
+  source_review_status: PaperBookOcrDraftReviewStatus;
+  source_reviewed_at: string | null;
+  source_reviewed_by: string | null;
+  target_act_id: string;
+  target_act_state: 'Draft' | string;
+  mutable_draft_act_created: boolean;
+  created_at: string;
+  created_by: string;
+  artifact_notice: string;
+  reviewed_conversion_execution_artifact: boolean;
+  non_canonical: boolean;
+  canonical_conversion_claimed: boolean;
+  canonical_minutes_claimed: boolean;
+  canonical_act_created: boolean;
+  canonical_document_created: boolean;
+  signed_document_created: boolean;
+  archive_package_created: boolean;
+  archive_certification_claimed: boolean;
+  pdfa_created: boolean;
+  pdfua_created: boolean;
+  signature_created: boolean;
+  seal_created: boolean;
+  legal_validity_claimed: boolean;
+  source_extracted_text_in_artifact: boolean;
+  source_extracted_text_in_ledger_event: boolean;
+  legal_notice: string;
+}
+
 /** `POST /v1/books/paper-import/{id}/ocr-drafts/{draft_id}/canonical-draft` result. */
 export interface PaperBookOcrDraftCanonicalDraftResponse {
   import_id: string;
   draft_id: string;
   act: ActView;
+  conversion_execution_artifact?: PaperBookOcrConversionExecutionArtifactView;
   draft_act_created: boolean;
   act_state: 'Draft' | string;
   notice: string;
@@ -5574,9 +5611,15 @@ export interface PaperBookOcrDraftCanonicalDraftResponse {
   ocr_text_in_ledger_event: boolean;
   non_canonical: boolean;
   authoritative_text_claimed: boolean;
+  canonical_conversion_claimed: boolean;
   canonical_minutes_claimed: boolean;
+  canonical_act_created: boolean;
   canonical_document_created: boolean;
+  signed_document_created: boolean;
+  archive_package_created: boolean;
+  archive_certification_claimed: boolean;
   pdfa_created: boolean;
+  pdfua_created: boolean;
   signature_created: boolean;
   seal_created: boolean;
   legal_validity_claimed: boolean;
@@ -5588,6 +5631,7 @@ export interface PaperBookOcrConversionDossierView {
   dossier_id: string;
   import_id: string;
   draft_id: string;
+  conversion_execution_artifacts?: PaperBookOcrConversionExecutionArtifactView[];
   source_text_digest: string | null;
   source_page_spans: PaperBookOcrDraftPageSpanView[];
   source_review_status: PaperBookOcrDraftReviewStatus;
@@ -5604,6 +5648,7 @@ export interface PaperBookOcrConversionDossierView {
   canonical_document_created: boolean;
   signed_document_created: boolean;
   archive_package_created: boolean;
+  archive_certification_claimed?: boolean;
   pdfa_created: boolean;
   pdfua_created: boolean;
   signature_created: boolean;

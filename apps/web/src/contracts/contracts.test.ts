@@ -129,6 +129,9 @@ import {
   type PaperBookContinuationRecommendation,
   type PaperBookLinkingEvidence,
   PAPER_BOOK_OCR_DRAFT_REVIEW_STATUSES,
+  type PaperBookOcrConversionDossierView,
+  type PaperBookOcrConversionExecutionArtifactView,
+  type PaperBookOcrDraftCanonicalDraftResponse,
   type PaperBookOcrDraftPageSpanView,
   type PaperBookOcrDraftView,
   type PaperBookOcrEngineView,
@@ -1847,6 +1850,340 @@ function assertPaperBookOcrDraft(obj: unknown, label: string): PaperBookOcrDraft
   return draft;
 }
 
+const PAPER_BOOK_CANONICAL_DRAFT_RAW_OCR_TEXT =
+  'Deliberacao importada por OCR para revisao humana.';
+
+function assertFalseFlags(obj: unknown, label: string, keys: readonly string[]): void {
+  const record = obj as Record<string, unknown>;
+  for (const key of keys) {
+    expect(record, `${label} should expose ${key}`).toHaveProperty(key);
+    expect(record[key], `${label}.${key} must remain false`).toBe(false);
+  }
+}
+
+function assertPaperBookSourcePageSpans(
+  spans: unknown,
+  label: string,
+): PaperBookOcrDraftPageSpanView[] {
+  expect(Array.isArray(spans), `${label} should be array`).toBe(true);
+  const typed = spans as unknown[];
+  expect(typed.length, `${label} should be non-empty`).toBeGreaterThan(0);
+  return typed.map((span, index) => {
+    const item = assertExactKeys<PaperBookOcrDraftPageSpanView>(
+      span,
+      { start_page: true, end_page: true },
+      `${label}[${index}]`,
+    );
+    expect(item.start_page, `${label}[${index}].start_page positive`).toBeGreaterThan(0);
+    expect(item.end_page, `${label}[${index}].end_page ordered`).toBeGreaterThanOrEqual(
+      item.start_page,
+    );
+    return item;
+  });
+}
+
+function assertPaperBookActView(obj: unknown, label: string): ActView {
+  const act = assertExactKeys<ActView>(
+    obj,
+    {
+      id: true,
+      book_id: true,
+      title: true,
+      channel: true,
+      meeting_date: true,
+      meeting_time: true,
+      place: true,
+      mesa: true,
+      agenda: true,
+      attendance_reference: true,
+      members_present: true,
+      members_represented: true,
+      referenced_documents: true,
+      deliberations: true,
+      deliberation_items: true,
+      telematic_evidence: true,
+      attachments: true,
+      signatories: true,
+      state: true,
+      ata_number: true,
+      payload_digest: true,
+      seal_event_seq: true,
+      seal_metadata: true,
+      retifies: true,
+    },
+    label,
+    ['convening', 'ai_provenance'],
+  );
+  expect(act.id.length, `${label}.id should be non-empty`).toBeGreaterThan(0);
+  expect(act.book_id.length, `${label}.book_id should be non-empty`).toBeGreaterThan(0);
+  inEnum(MEETING_CHANNELS, act.channel, `${label}.channel`);
+  inEnum(ACT_STATES, act.state, `${label}.state`);
+  if (act.meeting_date) assertIsoDate(act.meeting_date, `${label}.meeting_date`);
+  if (act.meeting_time) expect(act.meeting_time).toMatch(/^\d{2}:\d{2}$/);
+  assertExactKeys<ActMesa>(act.mesa, { presidente: true, secretarios: true }, `${label}.mesa`);
+  expect(Array.isArray(act.agenda), `${label}.agenda should be array`).toBe(true);
+  expect(Array.isArray(act.referenced_documents), `${label}.referenced_documents`).toBe(true);
+  expect(Array.isArray(act.deliberation_items), `${label}.deliberation_items`).toBe(true);
+  expect(Array.isArray(act.attachments), `${label}.attachments`).toBe(true);
+  expect(Array.isArray(act.signatories), `${label}.signatories`).toBe(true);
+  if (act.payload_digest) assertHex64(act.payload_digest, `${label}.payload_digest`);
+  return act;
+}
+
+function assertPaperBookOcrConversionExecutionArtifact(
+  obj: unknown,
+  label: string,
+  forbiddenRawText = PAPER_BOOK_CANONICAL_DRAFT_RAW_OCR_TEXT,
+): PaperBookOcrConversionExecutionArtifactView {
+  const artifact = assertExactKeys<PaperBookOcrConversionExecutionArtifactView>(
+    obj,
+    {
+      artifact_id: true,
+      import_id: true,
+      draft_id: true,
+      dossier_id: true,
+      source_text_digest: true,
+      source_page_spans: true,
+      source_review_status: true,
+      source_reviewed_at: true,
+      source_reviewed_by: true,
+      target_act_id: true,
+      target_act_state: true,
+      mutable_draft_act_created: true,
+      created_at: true,
+      created_by: true,
+      artifact_notice: true,
+      reviewed_conversion_execution_artifact: true,
+      non_canonical: true,
+      canonical_conversion_claimed: true,
+      canonical_minutes_claimed: true,
+      canonical_act_created: true,
+      canonical_document_created: true,
+      signed_document_created: true,
+      archive_package_created: true,
+      archive_certification_claimed: true,
+      pdfa_created: true,
+      pdfua_created: true,
+      signature_created: true,
+      seal_created: true,
+      legal_validity_claimed: true,
+      source_extracted_text_in_artifact: true,
+      source_extracted_text_in_ledger_event: true,
+      legal_notice: true,
+    },
+    label,
+  );
+  expect(artifact.artifact_id.length, `${label}.artifact_id should be non-empty`).toBeGreaterThan(0);
+  expect(artifact.import_id.length, `${label}.import_id should be non-empty`).toBeGreaterThan(0);
+  expect(artifact.draft_id.length, `${label}.draft_id should be non-empty`).toBeGreaterThan(0);
+  if (artifact.dossier_id !== null) {
+    expect(artifact.dossier_id.length, `${label}.dossier_id should be non-empty`).toBeGreaterThan(
+      0,
+    );
+  }
+  if (artifact.source_text_digest !== null) {
+    assertHex64(artifact.source_text_digest, `${label}.source_text_digest`);
+  }
+  assertPaperBookSourcePageSpans(artifact.source_page_spans, `${label}.source_page_spans`);
+  inEnum(PAPER_BOOK_OCR_DRAFT_REVIEW_STATUSES, artifact.source_review_status, `${label}.status`);
+  if (artifact.source_reviewed_at !== null) {
+    assertTimestamp(artifact.source_reviewed_at, `${label}.source_reviewed_at`);
+  }
+  expect(artifact.target_act_id.length, `${label}.target_act_id should be non-empty`).toBeGreaterThan(
+    0,
+  );
+  expect(artifact.target_act_state).toBe('Draft');
+  expect(artifact.mutable_draft_act_created).toBe(true);
+  assertTimestamp(artifact.created_at, `${label}.created_at`);
+  expect(artifact.created_by.length, `${label}.created_by should be non-empty`).toBeGreaterThan(0);
+  expect(artifact.artifact_notice).toContain('not a canonical or legal conversion');
+  expect(artifact.artifact_notice).toContain('PDF/UA');
+  expect(artifact.reviewed_conversion_execution_artifact).toBe(true);
+  expect(artifact.non_canonical).toBe(true);
+  assertFalseFlags(artifact, label, [
+    'canonical_conversion_claimed',
+    'canonical_minutes_claimed',
+    'canonical_act_created',
+    'canonical_document_created',
+    'signed_document_created',
+    'archive_package_created',
+    'archive_certification_claimed',
+    'pdfa_created',
+    'pdfua_created',
+    'signature_created',
+    'seal_created',
+    'legal_validity_claimed',
+    'source_extracted_text_in_artifact',
+    'source_extracted_text_in_ledger_event',
+  ]);
+  expect(artifact, `${label} must not expose extracted_text`).not.toHaveProperty('extracted_text');
+  expect(JSON.stringify(artifact), `${label} must not include raw OCR text`).not.toContain(
+    forbiddenRawText,
+  );
+  return artifact;
+}
+
+function assertPaperBookOcrDraftCanonicalDraftResponse(
+  obj: unknown,
+  label: string,
+): PaperBookOcrDraftCanonicalDraftResponse {
+  const response = assertExactKeys<PaperBookOcrDraftCanonicalDraftResponse>(
+    obj,
+    {
+      import_id: true,
+      draft_id: true,
+      act: true,
+      draft_act_created: true,
+      act_state: true,
+      notice: true,
+      ocr_text_copied_to_deliberations: true,
+      ocr_text_in_ledger_event: true,
+      non_canonical: true,
+      authoritative_text_claimed: true,
+      canonical_conversion_claimed: true,
+      canonical_minutes_claimed: true,
+      canonical_act_created: true,
+      canonical_document_created: true,
+      signed_document_created: true,
+      archive_package_created: true,
+      archive_certification_claimed: true,
+      pdfa_created: true,
+      pdfua_created: true,
+      signature_created: true,
+      seal_created: true,
+      legal_validity_claimed: true,
+      legal_notice: true,
+    },
+    label,
+    ['conversion_execution_artifact'],
+  );
+  expect(response.import_id.length, `${label}.import_id should be non-empty`).toBeGreaterThan(0);
+  expect(response.draft_id.length, `${label}.draft_id should be non-empty`).toBeGreaterThan(0);
+  const act = assertPaperBookActView(response.act, `${label}.act`);
+  expect(act.state).toBe('Draft');
+  expect(response.draft_act_created).toBe(true);
+  expect(response.act_state).toBe('Draft');
+  expect(response.notice).toContain('No canonical document');
+  expect(response.ocr_text_copied_to_deliberations).toBe(true);
+  expect(response.non_canonical).toBe(true);
+  assertFalseFlags(response, label, [
+    'ocr_text_in_ledger_event',
+    'authoritative_text_claimed',
+    'canonical_conversion_claimed',
+    'canonical_minutes_claimed',
+    'canonical_act_created',
+    'canonical_document_created',
+    'signed_document_created',
+    'archive_package_created',
+    'archive_certification_claimed',
+    'pdfa_created',
+    'pdfua_created',
+    'signature_created',
+    'seal_created',
+    'legal_validity_claimed',
+  ]);
+  expect(response.conversion_execution_artifact).toBeTruthy();
+  const artifact = assertPaperBookOcrConversionExecutionArtifact(
+    response.conversion_execution_artifact,
+    `${label}.conversion_execution_artifact`,
+  );
+  expect(artifact.import_id).toBe(response.import_id);
+  expect(artifact.draft_id).toBe(response.draft_id);
+  expect(artifact.target_act_id).toBe(act.id);
+  return response;
+}
+
+function assertPaperBookOcrConversionDossier(
+  obj: unknown,
+  label: string,
+  forbiddenRawText = PAPER_BOOK_CANONICAL_DRAFT_RAW_OCR_TEXT,
+): PaperBookOcrConversionDossierView {
+  const dossier = assertExactKeys<PaperBookOcrConversionDossierView>(
+    obj,
+    {
+      dossier_id: true,
+      import_id: true,
+      draft_id: true,
+      source_text_digest: true,
+      source_page_spans: true,
+      source_review_status: true,
+      source_reviewed_at: true,
+      source_reviewed_by: true,
+      created_at: true,
+      created_by: true,
+      dossier_notice: true,
+      metadata_only: true,
+      non_canonical: true,
+      act_created: true,
+      canonical_act_created: true,
+      canonical_minutes_claimed: true,
+      canonical_document_created: true,
+      signed_document_created: true,
+      archive_package_created: true,
+      pdfa_created: true,
+      pdfua_created: true,
+      signature_created: true,
+      seal_created: true,
+      legal_validity_claimed: true,
+      source_extracted_text_in_response: true,
+      source_extracted_text_in_ledger_event: true,
+      legal_notice: true,
+    },
+    label,
+    ['conversion_execution_artifacts', 'archive_certification_claimed'],
+  );
+  expect(dossier.dossier_id.length, `${label}.dossier_id should be non-empty`).toBeGreaterThan(0);
+  expect(dossier.import_id.length, `${label}.import_id should be non-empty`).toBeGreaterThan(0);
+  expect(dossier.draft_id.length, `${label}.draft_id should be non-empty`).toBeGreaterThan(0);
+  if (dossier.source_text_digest !== null) {
+    assertHex64(dossier.source_text_digest, `${label}.source_text_digest`);
+  }
+  assertPaperBookSourcePageSpans(dossier.source_page_spans, `${label}.source_page_spans`);
+  inEnum(PAPER_BOOK_OCR_DRAFT_REVIEW_STATUSES, dossier.source_review_status, `${label}.status`);
+  if (dossier.source_reviewed_at !== null) {
+    assertTimestamp(dossier.source_reviewed_at, `${label}.source_reviewed_at`);
+  }
+  assertTimestamp(dossier.created_at, `${label}.created_at`);
+  expect(dossier.created_by.length, `${label}.created_by should be non-empty`).toBeGreaterThan(0);
+  expect(dossier.dossier_notice).toContain('metadata-only');
+  expect(dossier.dossier_notice).toContain('PDF/UA');
+  expect(dossier.metadata_only).toBe(true);
+  expect(dossier.non_canonical).toBe(true);
+  assertFalseFlags(dossier, label, [
+    'act_created',
+    'canonical_act_created',
+    'canonical_minutes_claimed',
+    'canonical_document_created',
+    'signed_document_created',
+    'archive_package_created',
+    'archive_certification_claimed',
+    'pdfa_created',
+    'pdfua_created',
+    'signature_created',
+    'seal_created',
+    'legal_validity_claimed',
+    'source_extracted_text_in_response',
+    'source_extracted_text_in_ledger_event',
+  ]);
+  expect(dossier, `${label} must not expose extracted_text`).not.toHaveProperty('extracted_text');
+  expect(JSON.stringify(dossier), `${label} must not include raw OCR text`).not.toContain(
+    forbiddenRawText,
+  );
+  expect(Array.isArray(dossier.conversion_execution_artifacts)).toBe(true);
+  expect(dossier.conversion_execution_artifacts?.length).toBeGreaterThan(0);
+  for (const artifact of dossier.conversion_execution_artifacts ?? []) {
+    const item = assertPaperBookOcrConversionExecutionArtifact(
+      artifact,
+      `${label}.conversion_execution_artifacts[]`,
+      forbiddenRawText,
+    );
+    expect(item.import_id).toBe(dossier.import_id);
+    expect(item.draft_id).toBe(dossier.draft_id);
+    expect(item.dossier_id).toBe(dossier.dossier_id);
+  }
+  return dossier;
+}
+
 function assertPaperBookOcrRun(obj: unknown, label: string): PaperBookOcrRunView {
   const result = assertExactKeys<PaperBookOcrRunView>(
     obj,
@@ -2199,6 +2536,36 @@ describe('contract fixtures parse through the real client', () => {
       '11111111-1111-4111-8111-111111111111',
     );
     assertPaperBookOcrRun(result, 'PaperBookOcrRunView');
+  });
+
+  it('paper-book.ocr-canonical-draft.json → PaperBookOcrDraftCanonicalDraftResponse (POST /v1/books/paper-import/{id}/ocr-drafts/{draft_id}/canonical-draft)', async () => {
+    stubFetch(fixture('paper-book.ocr-canonical-draft.json'), 201);
+    const response: PaperBookOcrDraftCanonicalDraftResponse =
+      await api.createPaperBookOcrDraftActDraft(
+        '11111111-1111-4111-8111-111111111111',
+        '33333333-3333-4333-8333-333333333333',
+      );
+    assertPaperBookOcrDraftCanonicalDraftResponse(
+      response,
+      'PaperBookOcrDraftCanonicalDraftResponse',
+    );
+  });
+
+  it('paper-book.ocr-conversion-dossier.json → PaperBookOcrConversionDossierView (POST/GET conversion dossier)', async () => {
+    const dossierFixture = fixture('paper-book.ocr-conversion-dossier.json');
+    stubFetch(dossierFixture, 201);
+    const created: PaperBookOcrConversionDossierView =
+      await api.createPaperBookOcrConversionDossier(
+        '11111111-1111-4111-8111-111111111111',
+        '33333333-3333-4333-8333-333333333333',
+      );
+    assertPaperBookOcrConversionDossier(created, 'PaperBookOcrConversionDossierView');
+
+    stubFetch(`[${dossierFixture}]`);
+    const listed: PaperBookOcrConversionDossierView[] =
+      await api.listPaperBookOcrConversionDossiers('11111111-1111-4111-8111-111111111111');
+    expect(listed.length).toBe(1);
+    assertPaperBookOcrConversionDossier(listed[0], 'PaperBookOcrConversionDossierView[]');
   });
 
   it('ledger.events.json → LedgerEventView[] (GET /v1/ledger/events)', async () => {
@@ -4601,6 +4968,8 @@ describe('contract fixtures — cross-cutting guarantees', () => {
       'paper-book.import.json',
       'paper-book.ocr-draft.json',
       'paper-book.ocr-run.json',
+      'paper-book.ocr-canonical-draft.json',
+      'paper-book.ocr-conversion-dossier.json',
       'api-key.list.json',
       'api-key.create.json',
       'api-key.revoke.json',
