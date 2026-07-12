@@ -277,13 +277,17 @@ test operating checklist for driving Chancela toward release confidence.
   `recordGeneratedDocumentDispatchEvidence`, generated absent-owner
   communication listing, stored evidence rows, permission-gated metadata-only
   evidence recording, `operator_evidence_*` statuses, and
-  `documents.generated.noClaim.*` copy. Treat this as retrieval and
-  operator-recorded dispatch-evidence metadata only: no sealed act, canonical
-  Ata, or generated-byte mutation; no mail, email, SMS, or provider sending; no
-  delivery, legal notice completion, legal sufficiency, legal effect, provider
-  execution, registry filing, signing, bundle readiness, template legal review,
-  threshold correctness, or law verification claim. It also makes no DGLAB
-  certification or legal archive acceptance claim.
+  `documents.generated.noClaim.*` copy. Dashboard and notification actions use
+  generated-document deep links with `generated_document_id`,
+  `focus=dispatch-evidence`, and `#generated-dispatch-evidence`; the Ata route
+  resolves them through `actDocumentPanelTargetFromLocation`, and
+  `ActDocumentPanel` selects/focuses the dispatch-evidence form once for
+  operator evidence recording. Treat this as navigation and focus support for
+  operator evidence recording only: it does not send mail/email/SMS/provider
+  messages, prove delivery, mark dispatch complete, complete legal notice, add
+  legal sufficiency/legal-effect claims, sign, archive, or certify legal
+  validity. It also makes no DGLAB certification or legal archive acceptance
+  claim.
 - The current imported-document receipt slice derives a `Recibo de revisão`
   panel from the existing imported-document view. Pending rows show no fake
   receipt, while reviewed rows show status, reviewer, time, note, required and
@@ -1018,9 +1022,10 @@ settingsDefaults.test.ts contracts.test.ts`.
   `GET /v1/dashboard` absent-owner dispatch-evidence reminders for
   `required_pending` and `operator_evidence_partial`, suppresses
   `operator_evidence_covered`, keeps no-date reminders `Pending`/`Advisory`,
-  routes them to `/atas/{act_id}`, points `api_href` to
-  `/v1/documents/generated/{document_id}/dispatch-evidence`, and keeps valid
-  dated reminders ahead of no-date reminders before `dashboard_limit`
+  routes them to
+  `/atas/{act_id}?generated_document_id={document_id}&focus=dispatch-evidence#generated-dispatch-evidence`,
+  points `api_href` to `/v1/documents/generated/{document_id}/dispatch-evidence`,
+  and keeps valid dated reminders ahead of no-date reminders before `dashboard_limit`
   truncation through
   `reminder_generated_absent_owner_no_due_date_does_not_evict_dated_reminders_before_limit`.
   Focused web coverage is
@@ -1030,15 +1035,17 @@ settingsDefaults.test.ts contracts.test.ts`.
   communication listing, generated PDF fetch, stored evidence rows,
   permission-gated metadata-only evidence recording, `operator_evidence_*`
   status display, `documents.generated.noClaim.*` localized copy, dashboard
-  localized act routing, advisory absent-owner reminder copy, and the
-  `contracts/dashboard.json` pending no-due-date generated absent-owner
-  fixture.
-  This is generated-document retrieval and operator-recorded dispatch-evidence
-  metadata only: no sealed act, canonical Ata, or generated-byte mutation; no
-  mail, email, SMS, or provider sending; no delivery, legal notice completion,
-  legal sufficiency, legal effect, provider execution, registry filing, signing,
-  bundle readiness, template legal review, threshold correctness, law
-  verification claim, or dashboard ledger-event append.
+  localized deep-link routing, notification deep-link routing, one-time
+  ActDocumentPanel dispatch-evidence selection/focus, advisory absent-owner
+  reminder copy, and the `contracts/dashboard.json` pending no-due-date
+  generated absent-owner fixture.
+  This is generated-document retrieval, dashboard/notification navigation, and
+  operator-recorded dispatch-evidence metadata only: no sealed act, canonical
+  Ata, or generated-byte mutation; no mail, email, SMS, or provider sending; no
+  delivery, legal notice completion, legal sufficiency, legal effect, provider
+  execution, registry filing, signing, bundle readiness, template legal review,
+  threshold correctness, law verification claim, dashboard ledger-event append,
+  archive action, legal validity certification, or dispatch-complete claim.
 - Current working-tree external-validator raw-report checks: focused API,
   archive-package, and web Ferramentas tests now pin bounded
   `raw_report.content_base64` acceptance only when declared byte length and
@@ -1392,7 +1399,8 @@ settingsDefaults.test.ts contracts.test.ts`.
   markers, plus generated-document by-id route, absent-owner dispatch-evidence
   route/store/idempotency/selected-recipient coverage/evidence-attached/
   no-completion/no-claim markers and focused generated absent-owner evidence
-  web client/panel/i18n/dashboard/contract markers, plus document-bundle
+  web client/panel/i18n/dashboard/notification deep-link/focus/contract markers,
+  plus document-bundle
   `generated_dispatch_evidence` metadata and archive
   `evidence/generated-dispatch/{document_id}.json` sidecar/index markers,
   plus Arquivo paged ledger route/default-limit/cursor markers,

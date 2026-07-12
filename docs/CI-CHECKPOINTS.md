@@ -163,12 +163,17 @@ It intentionally reuses existing test surfaces:
   `recordGeneratedDocumentDispatchEvidence`, generated absent-owner
   communication listing, generated PDF fetch, stored evidence rows,
   metadata-only evidence form submission, `operator_evidence_*` statuses,
-  `documents.generated.noClaim.*` copy, and no send/delivery/legal-notice or
+  `documents.generated.noClaim.*` copy, generated-document deep-link
+  `generated_document_id`, `focus=dispatch-evidence`,
+  `#generated-dispatch-evidence`, `actDocumentPanelTargetFromLocation`, one-time
+  dispatch-evidence selection/focus, and no send/delivery/legal-notice or
   dispatch-completion copy. Dashboard markers pin `source_rule`
   `absent-owner-dispatch-evidence`, `source_profile`
   `condominium-generated-communication`, action kind
   `open_absent_owner_dispatch_evidence`, no-date `Pending`/`Advisory`
-  semantics, `/atas/{act_id}` routing,
+  semantics,
+  `/atas/{act_id}?generated_document_id={document_id}&focus=dispatch-evidence#generated-dispatch-evidence`
+  routing from dashboard reminders and notification popup actions,
   `/v1/documents/generated/{document_id}/dispatch-evidence` API hrefs,
   `operator_evidence_covered` suppression, dated-before-no-date
   `dashboard_limit` sorting, and the `contracts/dashboard.json` no-date
@@ -280,8 +285,10 @@ markers, generated-document by-id route, dispatch-evidence route, `act.read`/
 absent-owner communication auto-generation, dispatch-evidence store,
 idempotency, selected-recipient evidence coverage, evidence-attached headers,
 no dispatch completion, web client/hooks/panel/i18n metadata-only evidence UI,
-no send/delivery/legal-notice copy, no-claim markers, and dashboard reminder
-source/action/no-date ordering/fixture markers, plus document-bundle
+generated-document deep-link query/hash focus routing, one-time
+ActDocumentPanel dispatch-evidence selection/focus, no send/delivery/
+legal-notice copy, no-claim markers, and dashboard reminder/notification
+source/action/deep-link/no-date ordering/fixture markers, plus document-bundle
 `generated_dispatch_evidence` metadata and archive
 `evidence/generated-dispatch/{document_id}.json` sidecar/index markers,
 live-provider assurance markers, validator manifest,

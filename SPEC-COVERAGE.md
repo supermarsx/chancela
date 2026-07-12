@@ -515,9 +515,12 @@ Implementation checkpoints covered here:
   Follow-on web coverage now surfaces the generated
   absent-owner communication list, generated PDF fetch, stored evidence rows,
   metadata-only evidence recording form, `operator_evidence_*` status display,
-  and `documents.generated.noClaim.*` copy through the web client/hooks and
-  `ActDocumentPanel`; the focused web tests pin that the UI records bounded
-  operator metadata without changing `dispatch_completed=false` or claiming
+  `documents.generated.noClaim.*` copy, and generated-document deep links with
+  `generated_document_id`, `focus=dispatch-evidence`, and
+  `#generated-dispatch-evidence` through the web client/hooks and
+  `ActDocumentPanel`; the focused web tests pin that the UI selects and focuses
+  the dispatch-evidence form once, then records bounded operator metadata
+  without changing `dispatch_completed=false` or claiming
   send/delivery/legal-notice completion. Dashboard follow-on now has
   `GET /v1/dashboard` add `Pending`/`Advisory` no-due-date reminders with
   `source_rule` `absent-owner-dispatch-evidence`, `source_profile`
@@ -526,9 +529,10 @@ Implementation checkpoints covered here:
   `condominio-comunicacao-ausentes/v1` documents tied to sealed condominium
   acts when dispatch evidence is `required_pending` or
   `operator_evidence_partial`; `operator_evidence_covered` is suppressed. The
-  reminder routes the web UI to `/atas/{act_id}`, exposes API href
-  `/v1/documents/generated/{document_id}/dispatch-evidence`, and server
-  sorting keeps valid dated reminders ahead of no-date reminders before
+  reminder and notification popup route the web UI to
+  `/atas/{act_id}?generated_document_id={document_id}&focus=dispatch-evidence#generated-dispatch-evidence`,
+  expose API href `/v1/documents/generated/{document_id}/dispatch-evidence`,
+  and server sorting keeps valid dated reminders ahead of no-date reminders before
   `dashboard_limit` truncation. This is generated-document retrieval plus
   operator-recorded dispatch-evidence metadata and dashboard advisory surfacing
   only: no sealed act,

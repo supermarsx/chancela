@@ -2209,17 +2209,27 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "generated-document by-id route, dispatch-evidence route, `act.read`/\n`document.generate` gates, durable/in-memory, canonical Ata preservation,\nabsent-owner communication auto-generation, dispatch-evidence store,\nidempotency, selected-recipient evidence coverage, evidence-attached headers,\nno dispatch completion, web client/hooks/panel/i18n metadata-only evidence UI,\nno send/delivery/legal-notice copy, no-claim markers, and dashboard reminder\nsource/action/no-date ordering/fixture markers",
+    "generated-document by-id route, dispatch-evidence route, `act.read`/\n`document.generate` gates, durable/in-memory, canonical Ata preservation,\nabsent-owner communication auto-generation, dispatch-evidence store,\nidempotency, selected-recipient evidence coverage, evidence-attached headers,\nno dispatch completion, web client/hooks/panel/i18n metadata-only evidence UI,\ngenerated-document deep-link query/hash focus routing, one-time\nActDocumentPanel dispatch-evidence selection/focus, no send/delivery/\nlegal-notice copy, no-claim markers, and dashboard reminder/notification\nsource/action/deep-link/no-date ordering/fixture markers",
     "CI checkpoints static generated-document dispatch-evidence marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "generated-document deep-link query/hash focus routing, one-time\nActDocumentPanel dispatch-evidence selection/focus",
+    "CI checkpoints static generated-document deep-link focus marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "dashboard reminder/notification\nsource/action/deep-link/no-date ordering/fixture markers",
+    "CI checkpoints static dashboard notification deep-link marker",
   );
   assertFileContainsNormalized(
     "docs/CI-CHECKPOINTS.md",
-    "dashboard reminder source/action/no-date ordering/fixture markers",
+    "dashboard reminder/notification source/action/deep-link/no-date ordering/fixture markers",
     "CI checkpoints static dashboard absent-owner reminder marker",
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "no dispatch completion, web client/hooks/panel/i18n metadata-only evidence UI,\nno send/delivery/legal-notice copy, no-claim markers",
+    "no dispatch completion, web client/hooks/panel/i18n metadata-only evidence UI,\ngenerated-document deep-link query/hash focus routing, one-time\nActDocumentPanel dispatch-evidence selection/focus, no send/delivery/\nlegal-notice copy, no-claim markers",
     "CI checkpoints static generated absent-owner evidence UI marker",
   );
   assertFileContains(
@@ -4268,9 +4278,84 @@ function assertCheckpointMap() {
     "web dashboard absent-owner action kind coverage",
   );
   assertFileContains(
+    "apps/web/src/features/dashboard/DashboardPage.tsx",
+    "url.searchParams.set('generated_document_id', trimmedDocumentId);",
+    "web dashboard absent-owner generated-document id deep-link marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/dashboard/DashboardPage.tsx",
+    "url.searchParams.set('focus', 'dispatch-evidence');",
+    "web dashboard absent-owner dispatch-evidence focus query marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/dashboard/DashboardPage.tsx",
+    "url.hash = 'generated-dispatch-evidence';",
+    "web dashboard absent-owner dispatch-evidence hash marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/dashboard/DashboardPage.test.tsx",
+    "/atas/act-absent-1?generated_document_id=generated-absent-1&focus=dispatch-evidence#generated-dispatch-evidence",
+    "web dashboard absent-owner expected deep-link href marker",
+  );
+  assertFileContains(
     "apps/web/src/features/dashboard/DashboardPage.test.tsx",
     "expect(within(item).getByText('Sem data')).toBeTruthy();",
     "web dashboard absent-owner no-date label coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/notifications/notifications.ts",
+    "url.searchParams.set('generated_document_id', trimmedDocumentId);",
+    "web notifications absent-owner generated-document id deep-link marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/notifications/notifications.ts",
+    "url.searchParams.set('focus', 'dispatch-evidence');",
+    "web notifications absent-owner dispatch-evidence focus query marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/notifications/notifications.ts",
+    "url.hash = 'generated-dispatch-evidence';",
+    "web notifications absent-owner dispatch-evidence hash marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/notifications/notifications.test.ts",
+    "/atas/act-absent-1?generated_document_id=generated-absent-1&focus=dispatch-evidence#generated-dispatch-evidence",
+    "web notifications absent-owner expected deep-link href marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/AtaEditorPage.tsx",
+    "export function actDocumentPanelTargetFromLocation(",
+    "Ata editor generated-document deep-link target helper marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/AtaEditorPage.tsx",
+    "params.get('generated_document_id')?.trim()",
+    "Ata editor generated-document id query marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/AtaEditorPage.tsx",
+    "hash === '#generated-dispatch-evidence'",
+    "Ata editor dispatch-evidence hash target marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/AtaEditorStructured.test.tsx",
+    "actDocumentPanelTargetFromLocation(",
+    "Ata editor generated-document deep-link helper test marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/AtaEditorStructured.test.tsx",
+    "?generated_document_id=generated-absent-1&focus=dispatch-evidence",
+    "Ata editor generated-document focus query test marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/documents/ActDocumentPanel.tsx",
+    "id=\"generated-dispatch-evidence\"",
+    "ActDocumentPanel dispatch-evidence hash target marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/documents/ActDocumentPanel.test.tsx",
+    "selects and focuses dispatch evidence from the generated-document navigation target once",
+    "ActDocumentPanel one-time dispatch-evidence select/focus coverage",
   );
   assertFileContains(
     "apps/web/src/i18n/i18n.test.ts",
@@ -6629,13 +6714,33 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "`contracts/dashboard.json` pending no-due-date generated absent-owner\n  fixture",
+    "the `contracts/dashboard.json` pending no-due-date\n  generated absent-owner fixture",
     "CI/E2E hardening plan generated absent-owner dashboard contract fixture marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "web client/panel/i18n/dashboard/contract markers",
+    "web client/panel/i18n/dashboard/notification deep-link/focus/contract markers",
     "CI/E2E hardening plan generated absent-owner web static-map marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "`focus=dispatch-evidence`",
+    "CI/E2E hardening plan generated-document dispatch-evidence focus marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "`#generated-dispatch-evidence`",
+    "CI/E2E hardening plan generated-document dispatch-evidence hash marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "`actDocumentPanelTargetFromLocation`",
+    "CI/E2E hardening plan Ata editor target helper marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "notification deep-link routing, one-time ActDocumentPanel dispatch-evidence selection/focus",
+    "CI/E2E hardening plan notification deep-link ActDocumentPanel focus marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -7674,8 +7779,33 @@ function assertCheckpointMap() {
   );
   assertFileContainsNormalized(
     "SPEC-COVERAGE.md",
-    "Follow-on web coverage now surfaces the generated absent-owner communication list, generated PDF fetch, stored evidence rows, metadata-only evidence recording form, `operator_evidence_*` status display, and `documents.generated.noClaim.*` copy",
+    "Follow-on web coverage now surfaces the generated absent-owner communication list, generated PDF fetch, stored evidence rows, metadata-only evidence recording form, `operator_evidence_*` status display, `documents.generated.noClaim.*` copy, and generated-document deep links",
     "spec coverage generated absent-owner web follow-on marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "`generated_document_id`",
+    "spec coverage generated-document deep-link id marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "`focus=dispatch-evidence`",
+    "spec coverage generated-document dispatch-evidence focus marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "`#generated-dispatch-evidence`",
+    "spec coverage generated-document dispatch-evidence hash marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "selects and focuses the dispatch-evidence form once",
+    "spec coverage generated-document one-time dispatch-evidence focus marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "/atas/{act_id}?generated_document_id={document_id}&focus=dispatch-evidence#generated-dispatch-evidence",
+    "spec coverage dashboard absent-owner deep-link route marker",
   );
   assertFileContainsNormalized(
     "SPEC-COVERAGE.md",
