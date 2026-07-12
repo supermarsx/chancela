@@ -896,6 +896,17 @@ a.btn.btn--iconOnly {
   font-size: 1.2em;
 }
 
+/* Large button size (t74): a single scale-up of the shared `.btn` chrome — bigger padding
+   and type — for an action that wants extra prominence (the sign-in "escolher outro
+   utilizador"). It composes with any `.btn--{variant}`; being declared AFTER `.btn--ghost`
+   (which overrides padding to a compact `0.5rem 0.6rem`) it wins the padding at equal
+   specificity by source order, so `btn btn--ghost btn--lg` actually renders large rather
+   than staying at the ghost's tight size. */
+.btn--lg {
+  padding: 0.7rem 1.4rem;
+  font-size: 0.92rem;
+}
+
 .btn__icon {
   display: inline-flex;
   flex: none;
@@ -8082,6 +8093,32 @@ input[type='radio']:disabled {
   flex-direction: row;
   align-items: center;
   justify-content: space-between;
+}
+
+/* Login-in-progress spinner (t74) — while the sign-in mutation is pending the two actions
+   (entrar / escolher outro utilizador) are suppressed and this centred ring spins in their
+   place. It STOPS DEAD under both kill-switches: `prefers-reduced-motion` zeroes the
+   duration + iteration count and `:root[data-safe-mode='on']` zeroes `animation`, each
+   settling it as a static ring — so no variant-specific reduced-motion rule is needed. */
+.signin__pending {
+  display: flex;
+  justify-content: center;
+  padding: 0.4rem 0;
+}
+
+.signin__spinner {
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 999px;
+  border: 3px solid color-mix(in srgb, var(--accent) 26%, transparent);
+  border-top-color: var(--accent-strong);
+  animation: signin-spin 0.7s linear infinite;
+}
+
+@keyframes signin-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* The entry-screen "criar novo utilizador" affordance — a hairline-separated row below

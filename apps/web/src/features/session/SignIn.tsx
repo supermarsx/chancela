@@ -197,19 +197,28 @@ export function SignIn() {
                 autoFocus
               />
             </Field>
-            <div className="signin__actions">
-              <Button
-                type="button"
-                variant="ghost"
-                disabled={busy}
-                onClick={() => setSelected(null)}
-              >
-                {t('signin.back')}
-              </Button>
-              <Button type="submit" variant="primary" disabled={busy || password.length === 0}>
-                {busy ? t('signin.submitting') : t('signin.submit')}
-              </Button>
-            </div>
+            {busy ? (
+              // Sign-in in flight: suppress both actions and spin a nice ring in their place
+              // until the mutation settles (success lands in the app; an error restores the
+              // controls below). The label reuses the existing "a entrar…" string.
+              <div className="signin__pending" role="status" aria-label={t('signin.submitting')}>
+                <span className="signin__spinner" aria-hidden="true" />
+              </div>
+            ) : (
+              <div className="signin__actions">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="btn--lg"
+                  onClick={() => setSelected(null)}
+                >
+                  {t('signin.back')}
+                </Button>
+                <Button type="submit" variant="primary" disabled={password.length === 0}>
+                  {t('signin.submit')}
+                </Button>
+              </div>
+            )}
           </form>
         ) : users.length === 0 ? (
           // Empty roster — no dead-end: offer the bootstrap create (the primary win).

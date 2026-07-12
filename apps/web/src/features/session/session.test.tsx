@@ -241,6 +241,53 @@ describe('AuthGate', () => {
     expect(post?.body).toMatchObject({ user_id: 'u2', password: 'correct-horse' });
   });
 
+  it('the "escolher outro utilizador" control is a large button on the password prompt', async () => {
+    const { fn } = serverStub({
+      roster: { onboarding_required: false, users: [BRUNO_ROSTER] },
+      postUser: BRUNO,
+    });
+    vi.stubGlobal('fetch', fn);
+
+    renderGate();
+
+    fireEvent.click(await screen.findByText('Bruno Dias'));
+    const back = await screen.findByRole('button', { name: 'Escolher outro utilizador' });
+    // It carries the shared large-button size modifier so it renders visually prominent.
+    expect(back.classList.contains('btn--lg')).toBe(true);
+  });
+
+  it('while the sign-in mutation is pending, both actions are suppressed and a spinner shows', async () => {
+    // A stub whose `POST /v1/session` never settles → the mutation stays pending, so the UI
+    // holds in the in-flight state we assert on.
+    const roster: SessionRoster = { onboarding_required: false, users: [BRUNO_ROSTER] };
+    const fn = ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      const method = init?.method ?? 'GET';
+      const json = (b: unknown) =>
+        Promise.resolve(
+          new Response(JSON.stringify(b), { headers: { 'Content-Type': 'application/json' } }),
+        );
+      if (url.includes('/v1/session/roster')) return json(roster);
+      if (url.includes('/v1/session') && method === 'POST') return new Promise<Response>(() => {});
+      if (url.includes('/v1/session')) return json({ user: null });
+      return Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch;
+    vi.stubGlobal('fetch', fn);
+
+    renderGate();
+
+    fireEvent.click(await screen.findByText('Bruno Dias'));
+    fireEvent.change(await screen.findByLabelText('Palavra-passe'), {
+      target: { value: 'correct-horse' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Entrar' }));
+
+    // The pending spinner replaces the two actions.
+    expect(await screen.findByRole('status')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Entrar' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Escolher outro utilizador' })).toBeNull();
+  });
+
   it('bootstrap: empty roster → create a user with password → password sign-in lands in the app', async () => {
     const NEW: UserView = {
       id: 'u9',
