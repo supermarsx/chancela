@@ -149,10 +149,106 @@ test('settings users, RBAC owner guard, and recovery/data confirmation gates', a
   });
 });
 
+test('data management recovery drill records isolated restore evidence without live restore', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+
+  const backupPassphrase = 'browser-drill-passphrase-not-for-dom';
+  const custodyLocation = 'Browser proof custody shelf';
+  const operatorNotes = 'Browser proof recovery drill only';
+  const liveRestoreCalls: string[] = [];
+
+  await page.route('**/v1/backup', async (route, request) => {
+    if (request.method() === 'POST' && apiPath(request.url()) === '/v1/backup') {
+      await route.continue({
+        headers: { ...request.headers(), 'content-type': 'application/json' },
+        postData: JSON.stringify({ passphrase: backupPassphrase }),
+      });
+      return;
+    }
+    await route.continue();
+  });
+
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && apiPath(request.url()) === '/v1/ledger/recovery/restore') {
+      liveRestoreCalls.push(request.url());
+    }
+  });
+
+  await signInAt(page, '/configuracoes?sec=dados');
+  await selectSettingsSection(page, 'Gestão de Dados', 'dados');
+
+  const backupResponsePromise = page.waitForResponse(
+    (response) => response.request().method() === 'POST' && apiPath(response.url()) === '/v1/backup',
+  );
+  const backupButton = page.getByRole('button', { name: 'Criar backup' });
+  await expect(backupButton).toBeEnabled();
+  await backupButton.click();
+  const backupResponse = await backupResponsePromise;
+  expect(backupResponse.ok()).toBeTruthy();
+  const backupPath = backupPathFromManifest(await backupResponse.json());
+
+  await page.getByLabel('Arquivo do backup para ensaio').fill(backupPath);
+  await page.getByLabel('Chave do backup (opcional)').fill(backupPassphrase);
+  await page.getByLabel('Local de custódia').fill(custodyLocation);
+  await page.getByLabel('Notas do operador').fill(operatorNotes);
+
+  const drillResponsePromise = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' &&
+      apiPath(response.url()) === '/v1/backup/recovery-drills',
+  );
+  await page.getByRole('button', { name: 'Registar ensaio sem restauro' }).click();
+  const drillResponse = await drillResponsePromise;
+  expect(drillResponse.ok()).toBeTruthy();
+
+  const drillBody = JSON.parse(drillResponse.request().postData() ?? '{}') as Record<
+    string,
+    unknown
+  >;
+  expect(drillBody).toMatchObject({
+    archive: backupPath,
+    passphrase: backupPassphrase,
+    custody_location: custodyLocation,
+    operator_notes: operatorNotes,
+  });
+  const drillReceipt = (await drillResponse.json()) as Record<string, unknown>;
+  expect(drillReceipt.isolated_restore_verified).toBe(true);
+  expect(drillReceipt.restore_executed).toBe(false);
+  expect(drillReceipt.ledger_restored_appended).toBe(false);
+  expect(drillReceipt.legal_archive_certified).toBe(false);
+
+  const receipt = page.getByRole('note').filter({ hasText: 'Recibo de ensaio registado' });
+  await expect(receipt).toBeVisible();
+  await expect(receipt.getByText('Verificação isolada')).toBeVisible();
+  await expect(receipt.getByText('Limites do recibo')).toBeVisible();
+  await expect(receipt.getByText('Sem restauro ao vivo')).toBeVisible();
+  await expect(receipt.getByText('Sem evento ledger.restored')).toBeVisible();
+  await expect(receipt.getByText('Sem certificação legal ou de arquivo')).toBeVisible();
+
+  await expect(page.getByLabel('Chave do backup (opcional)')).toHaveValue('');
+  await expect(page.locator('body')).not.toContainText(backupPassphrase);
+  expect(liveRestoreCalls).toEqual([]);
+});
+
 function settingsSectionButton(page: Page, name: string): Locator {
   return page
     .getByRole('group', { name: 'Secções de configuração' })
     .getByRole('button', { name, exact: true });
+}
+
+function apiPath(url: string): string {
+  return new URL(url).pathname;
+}
+
+function backupPathFromManifest(manifest: unknown): string {
+  const path =
+    manifest && typeof manifest === 'object' ? (manifest as { path?: unknown }).path : undefined;
+  if (typeof path !== 'string' || path.length === 0) {
+    throw new Error('POST /v1/backup did not return a backup manifest path.');
+  }
+  return path;
 }
 
 async function selectSettingsSection(page: Page, name: string, section: string): Promise<void> {
