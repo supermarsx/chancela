@@ -3079,8 +3079,8 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-api/tests/privacy.rs",
-    "retention_due_candidates_project_prior_bounded_execution_without_mutation",
-    "API retention due-candidates prior bounded archive projection coverage",
+    "retention_due_candidates_suppress_prior_bounded_archive_without_mutation",
+    "API retention due-candidates prior bounded archive suppression coverage",
   );
   assertFileContains(
     "crates/chancela-api/tests/privacy.rs",
@@ -3089,13 +3089,13 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-api/tests/privacy.rs",
-    "retention_due_candidates_project_prior_bounded_no_action_recorded_without_mutation",
-    "API retention due-candidates prior bounded no-action projection coverage",
+    "retention_due_candidates_suppress_prior_bounded_no_action_without_mutation",
+    "API retention due-candidates prior bounded no-action suppression coverage",
   );
   assertFileContains(
     "crates/chancela-api/tests/privacy.rs",
-    "prior execution next_step must not surface unsafe term",
-    "API retention prior projection canonical next-step safety marker",
+    "suppression summary must not surface unsafe term",
+    "API retention prior bounded suppression summary safety marker",
   );
   assertFileContains(
     "crates/chancela-api/tests/privacy.rs",
@@ -3114,18 +3114,18 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "contracts/retention.due-candidates.json",
-    '"prior_execution": {',
-    "retention due-candidates fixture prior execution marker",
+    '"suppression_summary": {',
+    "retention due-candidates fixture suppression summary marker",
   );
   assertFileContains(
     "contracts/retention.due-candidates.json",
-    '"bounded_executor": true',
-    "retention due-candidates fixture prior bounded executor marker",
+    '"suppressed_by_bounded_evidence_count": 2',
+    "retention due-candidates fixture bounded suppression count marker",
   );
   assertFileContains(
     "contracts/retention.due-candidates.json",
-    '"next_step": "Prior bounded archive evidence is available for review; this due-candidate scan is read-only and requires separate governance approval before any operational action."',
-    "retention due-candidates fixture canonical prior next-step marker",
+    '"note": "Due candidates with prior safe bounded archive/no-action evidence are omitted from the active candidate list; execution history remains queryable for review."',
+    "retention due-candidates fixture suppression note marker",
   );
   assertFileContains(
     "contracts/retention.due-candidates.json",
@@ -3359,8 +3359,8 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/settings/SettingsPage.test.tsx",
-    "shows projected bounded execution and does not offer duplicate review",
-    "Settings retention due-candidate projected evidence no-POST coverage",
+    "suppresses projected bounded execution rows and leaves execution history visible",
+    "Settings retention due-candidate suppressed evidence history coverage",
   );
   assertFileContains(
     "apps/web/src/features/settings/SettingsPage.test.tsx",
@@ -3394,8 +3394,8 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "contracts/retention.due-candidates.json",
-    '"candidate_evidence_state": "bounded_archive_recorded"',
-    "retention due-candidates fixture bounded archive evidence-state marker",
+    '"suppressed_candidate_count": 2',
+    "retention due-candidates fixture bounded evidence suppression marker",
   );
   assertFileContains(
     "crates/chancela-api/tests/privacy.rs",
