@@ -118,6 +118,7 @@ pub struct PdfSignatureTechnicalReport {
     pub byte_range_marker_count: usize,
     pub has_contents_marker: bool,
     pub pades_profile: Option<&'static str>,
+    pub coverage: Option<PdfSignatureCoverageReport>,
     pub byte_range: Option<PdfByteRangeReport>,
     pub cades: Option<CadesTechnicalReport>,
     pub timestamp: SignatureTimestampReport,
@@ -125,6 +126,14 @@ pub struct PdfSignatureTechnicalReport {
     pub doc_timestamp: DocTimeStampTechnicalReport,
     pub local_technical_renewal_plan: LocalTechnicalRenewalPlanReport,
     pub multi_signature_local_renewal_plan: MultiSignatureLocalRenewalPlanReport,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PdfSignatureCoverageReport {
+    pub verdict: &'static str,
+    pub covers_rendered_document: bool,
+    pub reason: &'static str,
+    pub status_scope: &'static str,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -452,6 +461,23 @@ fn validate_signed_pdf_evidence(
             } else {
                 "PAdES-B-B"
             };
+            let rendered_document_covered = report.coverage.covers_rendered_document();
+            let status = if rendered_document_covered {
+                PdfValidationStatus::Valid
+            } else {
+                PdfValidationStatus::Invalid
+            };
+            if rendered_document_covered {
+                findings.push(PdfSignatureValidationFinding::info(
+                    "pades_cades_cryptographic_validation_succeeded",
+                    "PAdES/CAdES cryptographic validation succeeded locally and the signature coverage binds the rendered document; signer trust, qualification, and legal effect were not assessed",
+                ));
+            } else {
+                findings.push(PdfSignatureValidationFinding::error(
+                    "rendered_document_not_covered",
+                    "PAdES/CAdES cryptographic validation succeeded locally, but the signature coverage does not bind the rendered document",
+                ));
+            }
             let dss = dss_report(&report.dss);
             let doc_timestamp = doc_timestamp_report(&report.doc_timestamps);
             if dss.revocation_evidence_present {
@@ -466,14 +492,10 @@ fn validate_signed_pdf_evidence(
                     "embedded DocTimeStamp imprint evidence was inspected locally; TSA trust/path validation was not performed",
                 ));
             }
-            findings.push(PdfSignatureValidationFinding::info(
-                "pades_valid_local_technical",
-                "PAdES/CAdES cryptographic validation succeeded locally; signer trust, qualification, and legal effect were not assessed",
-            ));
             (
-                PdfValidationStatus::Valid,
+                status,
                 PdfSignatureTechnicalReport {
-                    status: PdfValidationStatus::Valid,
+                    status,
                     validation_performed: true,
                     validation_error: None,
                     signed_pdf_signal: true,
@@ -481,6 +503,7 @@ fn validate_signed_pdf_evidence(
                     byte_range_marker_count: signal.byte_range_marker_count,
                     has_contents_marker: signal.has_contents_marker,
                     pades_profile: Some(pades_profile),
+                    coverage: Some(coverage_report(report.coverage)),
                     byte_range: Some(valid_byte_range_report(bytes, &report)),
                     cades: Some(cades_report(&report)),
                     timestamp: SignatureTimestampReport {
@@ -521,6 +544,7 @@ fn validate_signed_pdf_evidence(
                     byte_range_marker_count: signal.byte_range_marker_count,
                     has_contents_marker: signal.has_contents_marker,
                     pades_profile: None,
+                    coverage: None,
                     byte_range: signal
                         .byte_range
                         .and_then(|range| best_effort_byte_range_report(bytes, range)),
@@ -588,6 +612,7 @@ fn empty_signature_report(
         byte_range_marker_count: signal.byte_range_marker_count,
         has_contents_marker: signal.has_contents_marker,
         pades_profile: None,
+        coverage: None,
         byte_range: signal
             .byte_range
             .and_then(|range| best_effort_byte_range_report(bytes, range)),
@@ -600,6 +625,47 @@ fn empty_signature_report(
         doc_timestamp: DocTimeStampTechnicalReport::default(),
         local_technical_renewal_plan: renewal_plan_without_report(status),
         multi_signature_local_renewal_plan: multi_signature_renewal_plan_without_report(status),
+    }
+}
+
+fn coverage_report(
+    coverage: chancela_pades::validate::PdfSignatureCoverage,
+) -> PdfSignatureCoverageReport {
+    PdfSignatureCoverageReport {
+        verdict: coverage_verdict(coverage),
+        covers_rendered_document: coverage.covers_rendered_document(),
+        reason: coverage_reason(coverage),
+        status_scope: TECHNICAL_ONLY,
+    }
+}
+
+fn coverage_verdict(coverage: chancela_pades::validate::PdfSignatureCoverage) -> &'static str {
+    use chancela_pades::validate::PdfSignatureCoverage;
+    match coverage {
+        PdfSignatureCoverage::WholeDocument => "whole_document",
+        PdfSignatureCoverage::LtvAugmentedSignedRevision => "ltv_augmented_signed_revision",
+        PdfSignatureCoverage::AlteredAfterSigning => "altered_after_signing",
+        PdfSignatureCoverage::Malformed => "malformed",
+        _ => "unknown",
+    }
+}
+
+fn coverage_reason(coverage: chancela_pades::validate::PdfSignatureCoverage) -> &'static str {
+    use chancela_pades::validate::PdfSignatureCoverage;
+    match coverage {
+        PdfSignatureCoverage::WholeDocument => {
+            "signature ByteRange covers the rendered document except the signature Contents bytes"
+        }
+        PdfSignatureCoverage::LtvAugmentedSignedRevision => {
+            "later incremental updates were classified as local technical PAdES evidence only"
+        }
+        PdfSignatureCoverage::AlteredAfterSigning => {
+            "later incremental updates can alter the rendered document and are outside the signature coverage"
+        }
+        PdfSignatureCoverage::Malformed => {
+            "signature ByteRange does not support a rendered-document coverage claim"
+        }
+        _ => "coverage verdict is not recognized by this API version",
     }
 }
 
@@ -1319,6 +1385,59 @@ startxref
         assert_eq!(plan["legal_ltv_claimed"], false);
     }
 
+    fn append_object_override(pdf: &[u8], obj_id: u32, new_body: &str) -> Vec<u8> {
+        let root_id = parse_u32_after_last(pdf, b"/Root ").expect("root object id");
+        let size = parse_u32_after_last(pdf, b"/Size ").expect("trailer size");
+        let prev_startxref = last_startxref(pdf).expect("startxref");
+        let mut out = pdf.to_vec();
+        let obj_offset = out.len() + 1;
+        out.extend_from_slice(b"\n");
+        out.extend_from_slice(format!("{obj_id} 0 obj\n{new_body}\nendobj\n").as_bytes());
+        let xref_offset = out.len();
+        out.extend_from_slice(
+            format!(
+                "xref\n{obj_id} 1\n{obj_offset:010} 00000 n\r\ntrailer\n<< /Size {size} /Root {root_id} 0 R /Prev {prev_startxref} >>\nstartxref\n{xref_offset}\n%%EOF\n",
+            )
+            .as_bytes(),
+        );
+        out
+    }
+
+    fn last_startxref(pdf: &[u8]) -> Option<usize> {
+        let marker = rfind_bytes(pdf, b"startxref")? + b"startxref".len();
+        parse_usize_at(pdf, marker)
+    }
+
+    fn parse_u32_after_last(haystack: &[u8], needle: &[u8]) -> Option<u32> {
+        let start = rfind_bytes(haystack, needle)? + needle.len();
+        parse_u32_at(haystack, start)
+    }
+
+    fn parse_u32_at(bytes: &[u8], start: usize) -> Option<u32> {
+        let value = parse_usize_at(bytes, start)?;
+        u32::try_from(value).ok()
+    }
+
+    fn parse_usize_at(bytes: &[u8], mut start: usize) -> Option<usize> {
+        while matches!(bytes.get(start), Some(b' ' | b'\r' | b'\n' | b'\t')) {
+            start += 1;
+        }
+        let mut end = start;
+        while matches!(bytes.get(end), Some(byte) if byte.is_ascii_digit()) {
+            end += 1;
+        }
+        (end > start).then(|| std::str::from_utf8(&bytes[start..end]).ok()?.parse().ok())?
+    }
+
+    fn rfind_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+        if needle.is_empty() || haystack.len() < needle.len() {
+            return None;
+        }
+        haystack
+            .windows(needle.len())
+            .rposition(|window| window == needle)
+    }
+
     #[tokio::test]
     async fn pdf_signature_unsigned_minimal_pdf_reports_structure() {
         let state = AppState::default();
@@ -1499,6 +1618,59 @@ startxref
         assert_eq!(plan["next_action"], "record_dss_validation_time");
         assert_eq!(plan["has_local_evidence_gap"], true);
         assert_eq!(plan["all_local_planning_inputs_present"], false);
+    }
+
+    #[tokio::test]
+    async fn pdf_signature_validation_rejects_cms_valid_rendered_content_alteration() {
+        let state = AppState::default();
+        let token = owner_session(&state).await;
+        let signed = include_bytes!(
+            "../../../docs/fixtures/validator-corpus/cases/bb-basic/input/bb-basic.pdf"
+        );
+        let altered = append_object_override(
+            signed,
+            3,
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 72 72] /Resources << >> >>",
+        );
+        let pades_report =
+            chancela_pades::validate_pdf_signature(&altered).expect("CMS still validates");
+        assert!(!pades_report.coverage.covers_rendered_document());
+
+        let (status, body) = send(&state, post_pdf(&token, &altered)).await;
+
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["status"], "invalid");
+        assert_eq!(body["signature"]["status"], "invalid");
+        assert_eq!(body["signature"]["cades"]["status"], "valid");
+        assert_eq!(
+            body["signature"]["coverage"]["verdict"],
+            "altered_after_signing"
+        );
+        assert_eq!(
+            body["signature"]["coverage"]["covers_rendered_document"],
+            false
+        );
+        assert!(
+            body["signature"]["coverage"]["reason"]
+                .as_str()
+                .expect("coverage reason")
+                .contains("rendered document")
+        );
+        assert_eq!(
+            body["signature"]["byte_range"]["covers_signed_revision_except_contents"],
+            true
+        );
+        assert_eq!(
+            body["signature"]["byte_range"]["has_later_incremental_updates"],
+            true
+        );
+        assert!(
+            body["findings"]
+                .as_array()
+                .expect("findings")
+                .iter()
+                .any(|finding| finding["code"] == "rendered_document_not_covered")
+        );
     }
 
     #[tokio::test]

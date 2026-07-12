@@ -24,6 +24,7 @@ use chancela_cades::{
 use crate::error::PadesError;
 use crate::renewal::{LtvRenewalDeadlineStatus, LtvRenewalPolicy, plan_ltv_renewal_with_policy};
 use crate::sign::MAX_CONTENTS_BYTES;
+use crate::validate::PdfSignatureCoverage;
 use crate::{
     DocTimeStampFailureReason, DocTimeStampReport, DocTimeStampSemanticStatus, DssEvidence,
     DssReport, ImageSeal, LtvRenewalPlanAction, LtvRenewalPlanInput, LtvRenewalPlanScope,
@@ -484,6 +485,43 @@ fn byte_range_excludes_exactly_the_contents_placeholder() {
         lt + 1 + MAX_CONTENTS_BYTES * 2 + 1,
         "range2 starts after '>'"
     );
+}
+
+#[test]
+fn coverage_verdicts_distinguish_rendered_document_binding() {
+    let signer = TestSigner::new_rsa("PAdES Coverage", 24);
+    let signed = sign_with(&base_pdf(), &signer, &SignOptions::default());
+
+    let report = validate_pdf_signature(&signed).expect("validate whole-document signature");
+    assert_eq!(report.coverage, PdfSignatureCoverage::WholeDocument);
+    assert!(report.coverage.covers_rendered_document());
+
+    let with_ts = add_fixture_timestamp(&signed);
+    let evidence = fixture_dss_evidence(&signer);
+    let with_dss = add_dss_revision(&with_ts, &evidence).expect("DSS append");
+    let report = validate_pdf_signature(&with_dss).expect("validate LTV-augmented signature");
+    assert_eq!(
+        report.coverage,
+        PdfSignatureCoverage::LtvAugmentedSignedRevision
+    );
+    assert!(report.coverage.covers_rendered_document());
+
+    let content_override = append_object_override(
+        &signed,
+        3,
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 72 72] /Resources << >> >>",
+    );
+    let report = validate_pdf_signature(&content_override).expect("validate altered PDF");
+    assert_eq!(report.coverage, PdfSignatureCoverage::AlteredAfterSigning);
+    assert!(!report.coverage.covers_rendered_document());
+    assert!(report.covers_signed_revision_except_contents);
+    assert!(report.has_later_incremental_updates);
+
+    let overwide_gap = sign_with_overwide_gap(&signer);
+    let report = validate_pdf_signature(&overwide_gap).expect("validate overwide ByteRange gap");
+    assert_eq!(report.coverage, PdfSignatureCoverage::Malformed);
+    assert!(!report.coverage.covers_rendered_document());
+    assert!(!report.covers_signed_revision_except_contents);
 }
 
 #[test]
@@ -1369,4 +1407,102 @@ fn append_synthetic_sig_dictionary_with_signed_revision_len(
         .as_bytes(),
     );
     out
+}
+
+/// Append an incremental update that redefines the existing object `obj_id` with `new_body`. Later
+/// revisions win, so a viewer (and `lopdf`) renders `new_body` in place of the signed object — a
+/// content-bearing tamper the first signature never covered (C3).
+fn append_object_override(pdf: &[u8], obj_id: u32, new_body: &str) -> Vec<u8> {
+    let doc = lopdf::Document::load_mem(pdf).expect("parse PDF");
+    let root = doc
+        .trailer
+        .get(b"Root")
+        .and_then(lopdf::Object::as_reference)
+        .expect("root");
+    let prev_startxref = crate::pdf::last_startxref(pdf).expect("startxref");
+    let mut out = pdf.to_vec();
+    let obj_offset = out.len() + 1;
+    out.extend_from_slice(b"\n");
+    out.extend_from_slice(format!("{obj_id} 0 obj\n{new_body}\nendobj\n").as_bytes());
+    let xref_offset = out.len();
+    out.extend_from_slice(
+        format!(
+            "xref\n{obj_id} 1\n{obj_offset:010} 00000 n\r\ntrailer\n<< /Size {} /Root {} 0 R /Prev {prev_startxref} >>\nstartxref\n{xref_offset}\n%%EOF\n",
+            doc.max_id + 1,
+            root.0
+        )
+        .as_bytes(),
+    );
+    out
+}
+
+/// Build a self-contained signed PDF whose signature `/ByteRange` gap deliberately spans **more**
+/// than the `/Contents` token (it also excludes the space right after the closing `>`), yet whose
+/// CMS is computed over exactly that widened gap so the cryptographic check still passes. Exercises
+/// the C3 MEDIUM: a signature whose excluded gap is not exactly `/Contents` must not be reported
+/// clean.
+fn sign_with_overwide_gap(signer: &TestSigner) -> Vec<u8> {
+    // Placeholder hex-byte capacity; a self-signed CAdES-B CMS fits with zero padding.
+    const CAPACITY: usize = 4096;
+    let signing_time = fixed_time();
+    let cert = signer.cert_der();
+
+    let mut sig_body = String::from(
+        "<< /Type /Sig /Filter /Adobe.PPKLite /SubFilter /adbe.pkcs7.detached /ByteRange [0 0000000000 0000000000 0000000000] /Contents <",
+    );
+    sig_body.push_str(&"0".repeat(CAPACITY * 2));
+    sig_body.push_str("> >>");
+    let objects: [(u32, &str); 4] = [
+        (1, "<< /Type /Catalog /Pages 2 0 R >>"),
+        (2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+        (
+            3,
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << >> >>",
+        ),
+        (4, sig_body.as_str()),
+    ];
+
+    let mut buf: Vec<u8> = Vec::new();
+    buf.extend_from_slice(b"%PDF-1.7\n%\xE2\xE3\xCF\xD3\n");
+    let mut offsets = Vec::new();
+    for (id, body) in &objects {
+        offsets.push((*id, buf.len()));
+        buf.extend_from_slice(format!("{id} 0 obj\n{body}\nendobj\n").as_bytes());
+    }
+    let xref_off = buf.len();
+    buf.extend_from_slice(b"xref\n0 5\n0000000000 65535 f\r\n");
+    for id in 1..=4u32 {
+        let off = offsets.iter().find(|(i, _)| *i == id).unwrap().1;
+        buf.extend_from_slice(format!("{off:010} 00000 n\r\n").as_bytes());
+    }
+    buf.extend_from_slice(b"trailer\n<< /Size 5 /Root 1 0 R >>\n");
+    buf.extend_from_slice(format!("startxref\n{xref_off}\n%%EOF\n").as_bytes());
+
+    let lt = crate_find(&buf, b"/Contents <").unwrap() + b"/Contents ".len();
+    let hex_start = lt + 1;
+    let gt = hex_start + CAPACITY * 2;
+    assert_eq!(buf[gt], b'>', "closing '>' where expected");
+    // Widen the excluded gap one byte past '>' (the following space), so it is no longer the lone
+    // '<...>' /Contents token.
+    let l1 = lt;
+    let s2 = gt + 2;
+    let range2_len = buf.len() - s2;
+
+    let br_marker = crate_find(&buf, b"/ByteRange [0 ").unwrap() + b"/ByteRange [0 ".len();
+    let br = format!("{l1:010} {s2:010} {range2_len:010}");
+    buf[br_marker..br_marker + br.len()].copy_from_slice(br.as_bytes());
+
+    let mut hasher = Sha256::new();
+    hasher.update(&buf[0..l1]);
+    hasher.update(&buf[s2..s2 + range2_len]);
+    let digest: [u8; 32] = hasher.finalize().into();
+
+    let attrs = signed_attributes_digest(&digest, &cert, signing_time).expect("signed attrs");
+    let raw = signer.raw_signature(&attrs);
+    let cms = assemble_cades_b(&raw, &digest, signing_time).expect("cades");
+    assert!(cms.len() <= CAPACITY, "CMS must fit the placeholder");
+
+    let hex = crate::pdf::to_hex(&cms);
+    buf[hex_start..hex_start + hex.len()].copy_from_slice(&hex);
+    buf
 }
