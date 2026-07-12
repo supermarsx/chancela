@@ -5252,6 +5252,32 @@ export interface ImportOutcomeView {
   collided: boolean;
 }
 
+/** `POST /v1/books/import/preflight` response — non-mutating preview with no import id. */
+export interface BookImportPreflightView {
+  ok: boolean;
+  ready: boolean;
+  would_import: boolean;
+  would_record_ledger_event: false;
+  would_store_import_record: false;
+  policy: CollisionPolicy;
+  entity_id: string | null;
+  book_id: string | null;
+  verdict: ImportVerdictView | null;
+  source_instance_id: string | null;
+  bundle_digest: string | null;
+  collided: boolean;
+  manifest_file_count: number | null;
+  manifest_total_bytes: number | null;
+  zip_member_count: number | null;
+  event_count: number | null;
+  book_chain_verified: boolean | null;
+  book_chain_length: number | null;
+  signature_present: boolean | null;
+  errors: string[];
+  findings: string[];
+  next_step: string;
+}
+
 export interface PaperBookImportIdentity {
   entity_ref: string;
   entity_name: string;

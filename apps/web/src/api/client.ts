@@ -79,6 +79,7 @@ import type {
   LawCitationReport,
   LawSearchView,
   FollowUpView,
+  BookImportPreflightView,
   LedgerArchiveDocumentParams,
   LedgerEventsPage,
   LedgerEventView,
@@ -1020,6 +1021,9 @@ export const api = {
   // Book bundle export: a `POST` that streams `application/zip`; the retained path +
   // digest ride in `X-Chancela-Export-Path` / `X-Chancela-Bundle-Digest` headers.
   exportBook: (id: string) => fetchBlobVia(`/v1/books/${id}/export`, 'POST'),
+  // Book import preflight: raw `.zip` bytes, no mutation and no import id in the response.
+  preflightImportBook: (bytes: ArrayBuffer | Blob, policy: CollisionPolicy = 'refuse') =>
+    postBytes<BookImportPreflightView>(`/v1/books/import/preflight${query({ policy })}`, bytes),
   // Book import: raw `.zip` bytes in the body; verify-before-trust → Verified|Quarantined.
   importBook: (bytes: ArrayBuffer | Blob, policy: CollisionPolicy = 'refuse') =>
     postBytes<ImportOutcomeView>(`/v1/books/import${query({ policy })}`, bytes),

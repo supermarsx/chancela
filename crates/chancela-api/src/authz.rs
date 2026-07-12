@@ -334,6 +334,7 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ), // GET book.export@Book (read-only local manifest)
     ("/v1/books/{id}/archive/disposal", RouteClass::Gated), // GET/POST book.export@Book (dry-run only)
     ("/v1/books/{id}/export", RouteClass::Gated),           // POST book.export@Book
+    ("/v1/books/import/preflight", RouteClass::Gated),      // POST book.import@Global (read-only)
     ("/v1/books/import", RouteClass::Gated),                // POST book.import@Global
     ("/v1/books/{id}/start-over", RouteClass::Gated),       // POST book.start_over@Book + step-up
     // --- Acts -----------------------------------------------------------------------------------

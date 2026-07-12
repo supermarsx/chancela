@@ -289,6 +289,37 @@ pub struct ImportOutcome {
     pub collided: bool,
 }
 
+/// Read-only analysis of a per-book import bundle before any import record or ledger event exists.
+#[derive(Debug, Clone)]
+pub struct ImportPreflight {
+    /// The collision policy evaluated by the preflight.
+    pub policy: CollisionPolicy,
+    /// The bundle's original entity id.
+    pub entity_id: String,
+    /// The bundle's original book id.
+    pub book_id: String,
+    /// Verified, or Quarantined with the break that confirmation would record.
+    pub verdict: ImportVerdict,
+    /// The exporting install's stable id.
+    pub source_instance_id: String,
+    /// The manifest's self-digest.
+    pub bundle_digest: String,
+    /// Whether the book id currently collides with a live or imported book.
+    pub collided: bool,
+    /// Number of files declared in the manifest, excluding `manifest.json`.
+    pub manifest_file_count: usize,
+    /// Total declared bytes across manifest-listed members.
+    pub manifest_total_bytes: u64,
+    /// Number of bundle members read from the zip, including `manifest.json`.
+    pub zip_member_count: usize,
+    /// Number of parsed book-chain events when member fixity passed.
+    pub event_count: Option<usize>,
+    /// Export-time chain summary from the manifest.
+    pub book_chain: ChainSummary,
+    /// Whether the optional exporter signature field is present.
+    pub signature_present: bool,
+}
+
 /// One row of the import isolation namespace, for the api's import feed (`imported_books`).
 #[derive(Debug, Clone)]
 pub struct ImportRecord {
@@ -599,6 +630,19 @@ impl Store {
         })
     }
 
+    /// **Preflight** a per-book bundle import without mutating store state or the ledger.
+    ///
+    /// This runs the same manifest self-digest, member sha256, book-chain verification, optional
+    /// signature-field inspection, and current collision lookup used by [`Store::import_book`].
+    /// It never inserts `imported_books` rows and never appends `ledger.imported`.
+    pub fn preflight_import_book_bytes(
+        &self,
+        bundle_bytes: &[u8],
+        policy: CollisionPolicy,
+    ) -> Result<ImportPreflight, StoreError> {
+        self.analyze_import_bundle(bundle_bytes, policy)
+    }
+
     /// **Import** a per-book bundle with **verify-before-trust** (§2.5).
     ///
     /// Verifies the manifest self-digest, every member's sha256, and the BOOK chain
@@ -616,57 +660,21 @@ impl Store {
         at: OffsetDateTime,
     ) -> Result<ImportOutcome, StoreError> {
         let bundle_bytes = std::fs::read(bundle)?;
-        // Parse enough to record provenance; a truly-unparseable input is a hard error (no record).
-        let (manifest, members) = read_bundle(&bundle_bytes)?;
-        let entity_id = manifest.entity_id.clone();
-        let book_id = manifest.book_id.clone();
-        let source_instance_id = manifest.source_instance_id.clone();
-        let bundle_digest = manifest.bundle_digest.clone();
-
-        // VERIFY-BEFORE-TRUST. Any failure quarantines (never trusted), it does not error.
-        let mut verdict_break: Option<ChainBreak> = None;
-        if compute_bundle_digest(&manifest)? != manifest.bundle_digest {
-            verdict_break = Some(tamper_break(
-                &book_id,
-                "bundle_digest does not match the manifest",
-            ));
-        }
-        if verdict_break.is_none() {
-            for f in &manifest.files {
-                let ok = members
-                    .get(&f.name)
-                    .is_some_and(|bytes| hex(&Sha256::digest(bytes)) == f.sha256);
-                if !ok {
-                    verdict_break = Some(tamper_break(
-                        &book_id,
-                        &format!(
-                            "bundle member {} is missing or its digest does not match",
-                            f.name
-                        ),
-                    ));
-                    break;
-                }
-            }
-        }
-        if verdict_break.is_none() {
-            let events = parse_events_jsonl(members.get("events.jsonl").map_or(&[][..], |v| v))?;
-            let chain = ChainId::Book(book_id.clone());
-            if let Err(b) = Ledger::verify_bundle_chain(&events, &chain) {
-                verdict_break = Some(b);
-            }
-        }
-        let verdict = match &verdict_break {
-            None => ImportVerdict::Verified,
-            Some(b) => ImportVerdict::Quarantined { break_: b.clone() },
-        };
-        let verdict_str = if verdict_break.is_none() {
+        let preflight = self.analyze_import_bundle(&bundle_bytes, policy)?;
+        let entity_id = preflight.entity_id.clone();
+        let book_id = preflight.book_id.clone();
+        let source_instance_id = preflight.source_instance_id.clone();
+        let bundle_digest = preflight.bundle_digest.clone();
+        let verdict = preflight.verdict.clone();
+        let verdict_break = import_verdict_break(&verdict);
+        let verdict_str = if matches!(verdict, ImportVerdict::Verified) {
             "verified"
         } else {
             "quarantined"
         };
 
         // Collision: Refuse (default) touches nothing; QuarantineCopy keeps the isolated copy.
-        let collided = self.book_exists_anywhere(&book_id)?;
+        let collided = preflight.collided;
         if collided && matches!(policy, CollisionPolicy::Refuse) {
             return Err(StoreError::ImportCollision { book_id });
         }
@@ -1578,6 +1586,81 @@ impl Store {
         Ok(acts)
     }
 
+    /// Read-only import verification shared by preflight and the mutating import transaction.
+    fn analyze_import_bundle(
+        &self,
+        bundle_bytes: &[u8],
+        policy: CollisionPolicy,
+    ) -> Result<ImportPreflight, StoreError> {
+        // Parse enough to record provenance; a truly-unparseable input is a hard error (no record).
+        let (manifest, members) = read_bundle(bundle_bytes)?;
+        let entity_id = manifest.entity_id.clone();
+        let book_id = manifest.book_id.clone();
+        let source_instance_id = manifest.source_instance_id.clone();
+        let bundle_digest = manifest.bundle_digest.clone();
+        let manifest_file_count = manifest.files.len();
+        let manifest_total_bytes = manifest.files.iter().map(|f| f.bytes).sum();
+        let zip_member_count = members.len();
+        let book_chain = manifest.book_chain.clone();
+        let signature_present = manifest.signature.is_some();
+
+        // VERIFY-BEFORE-TRUST. Any failure quarantines (never trusted), it does not error.
+        let mut verdict_break: Option<ChainBreak> = None;
+        let mut event_count = None;
+        if compute_bundle_digest(&manifest)? != manifest.bundle_digest {
+            verdict_break = Some(tamper_break(
+                &book_id,
+                "bundle_digest does not match the manifest",
+            ));
+        }
+        if verdict_break.is_none() {
+            for f in &manifest.files {
+                let ok = members
+                    .get(&f.name)
+                    .is_some_and(|bytes| hex(&Sha256::digest(bytes)) == f.sha256);
+                if !ok {
+                    verdict_break = Some(tamper_break(
+                        &book_id,
+                        &format!(
+                            "bundle member {} is missing or its digest does not match",
+                            f.name
+                        ),
+                    ));
+                    break;
+                }
+            }
+        }
+        if verdict_break.is_none() {
+            let events = parse_events_jsonl(members.get("events.jsonl").map_or(&[][..], |v| v))?;
+            event_count = Some(events.len());
+            let chain = ChainId::Book(book_id.clone());
+            if let Err(b) = Ledger::verify_bundle_chain(&events, &chain) {
+                verdict_break = Some(b);
+            }
+        }
+        let verdict = match verdict_break {
+            None => ImportVerdict::Verified,
+            Some(b) => ImportVerdict::Quarantined { break_: b },
+        };
+        let collided = self.book_exists_anywhere(&book_id)?;
+
+        Ok(ImportPreflight {
+            policy,
+            entity_id,
+            book_id,
+            verdict,
+            source_instance_id,
+            bundle_digest,
+            collided,
+            manifest_file_count,
+            manifest_total_bytes,
+            zip_member_count,
+            event_count,
+            book_chain,
+            signature_present,
+        })
+    }
+
     /// Whether `book_id` already exists as a live book OR an imported book (collision detection).
     fn book_exists_anywhere(&self, book_id: &str) -> Result<bool, StoreError> {
         let guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
@@ -2235,6 +2318,13 @@ fn tamper_break(book_id: &str, message: &str) -> ChainBreak {
         expected_hash: None,
         actual_hash: None,
         message: message.to_owned(),
+    }
+}
+
+fn import_verdict_break(verdict: &ImportVerdict) -> Option<&ChainBreak> {
+    match verdict {
+        ImportVerdict::Verified => None,
+        ImportVerdict::Quarantined { break_ } => Some(break_),
     }
 }
 

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { renderWithProviders } from '../../test/utils';
 
 const saveFileMock = vi.hoisted(() => ({
@@ -91,7 +91,7 @@ interface Recorded {
 /** A fetch stub over the section's read endpoints; `report` chooses healthy vs broken. */
 function sectionFetch(
   report: unknown,
-  extra?: (url: string, method: string, init?: RequestInit) => Response | null,
+  extra?: (url: string, method: string, init?: RequestInit) => Promise<Response> | Response | null,
 ) {
   const calls: Recorded[] = [];
   const fn = ((input: RequestInfo | URL, init?: RequestInit) => {
@@ -115,6 +115,60 @@ async function openRestoreModal() {
 
 function restoreEndpointCalls(calls: Recorded[]) {
   return calls.filter((c) => c.url === '/v1/ledger/recovery/restore' && c.method === 'POST');
+}
+
+function importPreflightCalls(calls: Recorded[]) {
+  return calls.filter((c) => c.url.startsWith('/v1/books/import/preflight') && c.method === 'POST');
+}
+
+function importEndpointCalls(calls: Recorded[]) {
+  return calls.filter((c) => c.url.startsWith('/v1/books/import?') && c.method === 'POST');
+}
+
+function makeZipFile(name = 'bundle.zip') {
+  const file = new File(['zip'], name, { type: 'application/zip' });
+  Object.defineProperty(file, 'arrayBuffer', {
+    value: () => Promise.resolve(new ArrayBuffer(3)),
+  });
+  return file;
+}
+
+function makeImportPreflight(overrides: Record<string, unknown> = {}) {
+  return {
+    ok: true,
+    ready: true,
+    would_import: true,
+    would_record_ledger_event: false,
+    would_store_import_record: false,
+    policy: 'refuse',
+    entity_id: 'ent-1',
+    book_id: 'book-9',
+    verdict: { status: 'Verified' },
+    source_instance_id: 'other',
+    bundle_digest: 'ee'.repeat(32),
+    collided: false,
+    manifest_file_count: 4,
+    manifest_total_bytes: 1200,
+    zip_member_count: 5,
+    event_count: 2,
+    book_chain_verified: true,
+    book_chain_length: 2,
+    signature_present: false,
+    errors: [],
+    findings: ['Preflight did not append ledger.imported or store an imported_books record.'],
+    next_step: 'review and confirm',
+    ...overrides,
+  };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
 }
 
 afterEach(() => {
@@ -194,7 +248,8 @@ describe('LivrosIntegridadeSection', () => {
     });
   });
 
-  it('imports a bundle and shows the honest Quarantined verdict', async () => {
+  it('preflights a selected bundle before confirm import and shows the honest final verdict', async () => {
+    const preflight = makeImportPreflight();
     const outcome = {
       import_id: 'imp-1',
       entity_id: 'ent-1',
@@ -207,21 +262,32 @@ describe('LivrosIntegridadeSection', () => {
       bundle_digest: 'ee'.repeat(32),
       collided: false,
     };
-    const { fn } = sectionFetch(HEALTHY_REPORT, (url, method) => {
+    const { fn, calls } = sectionFetch(HEALTHY_REPORT, (url, method) => {
+      if (url.includes('/v1/books/import/preflight') && method === 'POST') {
+        return jsonResponse(preflight);
+      }
       if (url.includes('/v1/books/import') && method === 'POST') return jsonResponse(outcome);
       return null;
     });
     vi.stubGlobal('fetch', fn);
     renderWithProviders(<LivrosIntegridadeSection />);
 
-    // The file input carries the accessible "Choose bundle…" label of its wrapping button.
     const fileInput = document.querySelector('input[type=file]') as HTMLInputElement;
-    const file = new File(['zip'], 'bundle.zip', { type: 'application/zip' });
-    // jsdom's File does not implement arrayBuffer(); provide it so the import can read bytes.
-    Object.defineProperty(file, 'arrayBuffer', {
-      value: () => Promise.resolve(new ArrayBuffer(3)),
-    });
-    fireEvent.change(fileInput, { target: { files: [file] } });
+    fireEvent.change(fileInput, { target: { files: [makeZipFile()] } });
+
+    expect(importPreflightCalls(calls)).toHaveLength(0);
+    expect(importEndpointCalls(calls)).toHaveLength(0);
+    const confirm = screen.getByRole('button', { name: 'Confirmar importação' });
+    expect((confirm as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Pré-validar pacote' }));
+
+    await screen.findByText('Pacote pronto para importação');
+    expect(importPreflightCalls(calls)).toHaveLength(1);
+    expect(importEndpointCalls(calls)).toHaveLength(0);
+    expect((confirm as HTMLButtonElement).disabled).toBe(false);
+
+    fireEvent.click(confirm);
 
     expect(await screen.findByText('Em quarentena')).toBeTruthy();
     expect(
@@ -229,6 +295,184 @@ describe('LivrosIntegridadeSection', () => {
         'O pacote não passou na verificação. Foi isolado em quarentena, apenas de leitura, e nunca associado às cadeias ativas.',
       ),
     ).toBeTruthy();
+    expect(importEndpointCalls(calls)).toHaveLength(1);
+  });
+
+  it('clears a stale book import preflight when a different file is selected', async () => {
+    const preflight = makeImportPreflight({ findings: [] });
+    const { fn } = sectionFetch(HEALTHY_REPORT, (url, method) => {
+      if (url.includes('/v1/books/import/preflight') && method === 'POST') {
+        return jsonResponse(preflight);
+      }
+      return null;
+    });
+    vi.stubGlobal('fetch', fn);
+    renderWithProviders(<LivrosIntegridadeSection />);
+
+    const fileInput = document.querySelector('input[type=file]') as HTMLInputElement;
+    fireEvent.change(fileInput, { target: { files: [makeZipFile('first.zip')] } });
+    fireEvent.click(screen.getByRole('button', { name: 'Pré-validar pacote' }));
+    await screen.findByText('Pacote pronto para importação');
+    expect((screen.getByRole('button', { name: 'Confirmar importação' }) as HTMLButtonElement).disabled).toBe(
+      false,
+    );
+
+    fireEvent.change(fileInput, { target: { files: [makeZipFile('second.zip')] } });
+
+    expect(screen.queryByText('Pacote pronto para importação')).toBeNull();
+    expect((screen.getByRole('button', { name: 'Confirmar importação' }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    expect(screen.getByText('Pacote selecionado: second.zip')).toBeTruthy();
+  });
+
+  it('keeps confirm disabled when book import preflight fails', async () => {
+    const preflight = makeImportPreflight({
+      ok: false,
+      ready: false,
+      would_import: false,
+      verdict: {
+        status: 'Quarantined',
+        break: { chain: 'book:book-9', kind: 'HashMismatch', message: 'forged' },
+      },
+      event_count: null,
+      book_chain_verified: false,
+      errors: ['bundle would be quarantined by import verification: forged'],
+      next_step: 'choose another bundle',
+    });
+    const { fn, calls } = sectionFetch(HEALTHY_REPORT, (url, method) => {
+      if (url.includes('/v1/books/import/preflight') && method === 'POST') {
+        return jsonResponse(preflight);
+      }
+      if (url.includes('/v1/books/import') && method === 'POST') {
+        return jsonResponse({ error: 'import should not be called' }, 500);
+      }
+      return null;
+    });
+    vi.stubGlobal('fetch', fn);
+    renderWithProviders(<LivrosIntegridadeSection />);
+
+    const fileInput = document.querySelector('input[type=file]') as HTMLInputElement;
+    fireEvent.change(fileInput, { target: { files: [makeZipFile()] } });
+    fireEvent.click(screen.getByRole('button', { name: 'Pré-validar pacote' }));
+
+    await screen.findByText('Pacote bloqueado');
+    expect(screen.getByText('bundle would be quarantined by import verification: forged')).toBeTruthy();
+    const confirm = screen.getByRole('button', { name: 'Confirmar importação' }) as HTMLButtonElement;
+    expect(confirm.disabled).toBe(true);
+    fireEvent.click(confirm);
+    expect(importEndpointCalls(calls)).toHaveLength(0);
+  });
+
+  it('ignores a deferred import preflight when the policy changes before it resolves', async () => {
+    const firstPreflight = deferred<Response>();
+    const secondPreflight = deferred<Response>();
+    const outcome = {
+      import_id: 'imp-1',
+      entity_id: 'ent-1',
+      book_id: 'book-9',
+      verdict: { status: 'Verified' },
+      source_instance_id: 'other',
+      bundle_digest: 'ee'.repeat(32),
+      collided: false,
+    };
+    let preflightCount = 0;
+    const { fn, calls } = sectionFetch(HEALTHY_REPORT, (url, method) => {
+      if (url.includes('/v1/books/import/preflight') && method === 'POST') {
+        preflightCount += 1;
+        return preflightCount === 1 ? firstPreflight.promise : secondPreflight.promise;
+      }
+      if (url.includes('/v1/books/import') && method === 'POST') return jsonResponse(outcome);
+      return null;
+    });
+    vi.stubGlobal('fetch', fn);
+    renderWithProviders(<LivrosIntegridadeSection />);
+
+    fireEvent.change(document.querySelector('input[type=file]') as HTMLInputElement, {
+      target: { files: [makeZipFile('policy-a.zip')] },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Pré-validar pacote' }));
+    await waitFor(() => expect(importPreflightCalls(calls)).toHaveLength(1));
+
+    fireEvent.change(document.querySelector('#import-policy') as HTMLSelectElement, {
+      target: { value: 'quarantine_copy' },
+    });
+    await act(async () => {
+      firstPreflight.resolve(jsonResponse(makeImportPreflight({ policy: 'refuse' })));
+      await firstPreflight.promise;
+    });
+
+    expect(screen.queryByText('Pacote pronto para importação')).toBeNull();
+    const confirm = screen.getByRole('button', { name: 'Confirmar importação' });
+    expect((confirm as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(confirm);
+    expect(importEndpointCalls(calls)).toHaveLength(0);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Pré-validar pacote' }));
+    await waitFor(() => expect(importPreflightCalls(calls)).toHaveLength(2));
+    await act(async () => {
+      secondPreflight.resolve(jsonResponse(makeImportPreflight({ policy: 'quarantine_copy' })));
+      await secondPreflight.promise;
+    });
+
+    expect(await screen.findByText('Pacote pronto para importação')).toBeTruthy();
+    expect((confirm as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(confirm);
+    await waitFor(() => expect(importEndpointCalls(calls)).toHaveLength(1));
+  });
+
+  it('ignores a deferred import preflight when a different file is selected before it resolves', async () => {
+    const firstPreflight = deferred<Response>();
+    const secondPreflight = deferred<Response>();
+    const outcome = {
+      import_id: 'imp-1',
+      entity_id: 'ent-1',
+      book_id: 'book-9',
+      verdict: { status: 'Verified' },
+      source_instance_id: 'other',
+      bundle_digest: 'ee'.repeat(32),
+      collided: false,
+    };
+    let preflightCount = 0;
+    const { fn, calls } = sectionFetch(HEALTHY_REPORT, (url, method) => {
+      if (url.includes('/v1/books/import/preflight') && method === 'POST') {
+        preflightCount += 1;
+        return preflightCount === 1 ? firstPreflight.promise : secondPreflight.promise;
+      }
+      if (url.includes('/v1/books/import') && method === 'POST') return jsonResponse(outcome);
+      return null;
+    });
+    vi.stubGlobal('fetch', fn);
+    renderWithProviders(<LivrosIntegridadeSection />);
+
+    const fileInput = document.querySelector('input[type=file]') as HTMLInputElement;
+    fireEvent.change(fileInput, { target: { files: [makeZipFile('file-a.zip')] } });
+    fireEvent.click(screen.getByRole('button', { name: 'Pré-validar pacote' }));
+    await waitFor(() => expect(importPreflightCalls(calls)).toHaveLength(1));
+
+    fireEvent.change(fileInput, { target: { files: [makeZipFile('file-b.zip')] } });
+    await act(async () => {
+      firstPreflight.resolve(jsonResponse(makeImportPreflight()));
+      await firstPreflight.promise;
+    });
+
+    expect(screen.queryByText('Pacote pronto para importação')).toBeNull();
+    const confirm = screen.getByRole('button', { name: 'Confirmar importação' });
+    expect((confirm as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(confirm);
+    expect(importEndpointCalls(calls)).toHaveLength(0);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Pré-validar pacote' }));
+    await waitFor(() => expect(importPreflightCalls(calls)).toHaveLength(2));
+    await act(async () => {
+      secondPreflight.resolve(jsonResponse(makeImportPreflight()));
+      await secondPreflight.promise;
+    });
+
+    expect(await screen.findByText('Pacote pronto para importação')).toBeTruthy();
+    expect((confirm as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(confirm);
+    await waitFor(() => expect(importEndpointCalls(calls)).toHaveLength(1));
   });
 
   it('clicking restore preflight preserves exact passphrase and calls only preflight, not restore', async () => {

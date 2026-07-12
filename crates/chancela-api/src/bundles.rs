@@ -8,6 +8,9 @@
 //! - `POST /v1/books/{id}/export` → the bundle `.zip` bytes (`application/zip`, `attachment`
 //!   disposition; the retained path + digest ride in `X-Chancela-Export-Path` /
 //!   `X-Chancela-Bundle-Digest` headers). `422` in-memory.
+//! - `POST /v1/books/import/preflight?policy=refuse|quarantine_copy` — body is the raw bundle
+//!   `.zip` bytes. Runs the same read-only bundle verification/collision analysis available before
+//!   import and returns a no-mutation preview with no `import_id`.
 //! - `POST /v1/books/import?policy=refuse|quarantine_copy` — body is the raw bundle `.zip` bytes.
 //!   `policy` defaults to `refuse`. → [`ImportOutcomeView`] (`verdict.status` = `"Verified"` or
 //!   `"Quarantined"` with the `break`). A verified bundle's book id colliding under `refuse` ⇒ `409`.
@@ -21,7 +24,8 @@ use axum::extract::{Path, Query, State};
 use axum::http::{HeaderName, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use chancela_core::{BookId, TermoDeAbertura, open_and_seal_book};
-use chancela_store::recovery::{CollisionPolicy, ImportVerdict};
+use chancela_store::StoreError;
+use chancela_store::recovery::{CollisionPolicy, ImportPreflight, ImportVerdict};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -138,6 +142,71 @@ pub struct ImportOutcomeView {
     pub collided: bool,
 }
 
+/// Non-mutating preview of `POST /v1/books/import`; intentionally omits `import_id`.
+#[derive(Serialize)]
+pub struct ImportPreflightView {
+    pub ok: bool,
+    pub ready: bool,
+    pub would_import: bool,
+    pub would_record_ledger_event: bool,
+    pub would_store_import_record: bool,
+    pub policy: String,
+    pub entity_id: Option<String>,
+    pub book_id: Option<String>,
+    pub verdict: Option<ImportVerdictView>,
+    pub source_instance_id: Option<String>,
+    pub bundle_digest: Option<String>,
+    pub collided: bool,
+    pub manifest_file_count: Option<usize>,
+    pub manifest_total_bytes: Option<u64>,
+    pub zip_member_count: Option<usize>,
+    pub event_count: Option<usize>,
+    pub book_chain_verified: Option<bool>,
+    pub book_chain_length: Option<u64>,
+    pub signature_present: Option<bool>,
+    pub errors: Vec<String>,
+    pub findings: Vec<String>,
+    pub next_step: String,
+}
+
+/// `POST /v1/books/import/preflight` — read-only per-book bundle import preview. It receives the
+/// same raw `.zip` body and collision policy as the mutating import, runs the same manifest
+/// self-digest, member sha256, book-chain verification, optional signature-field inspection, and
+/// current collision lookup available before confirmation, and returns operator-review evidence.
+///
+/// It does not stage a durable import, append `ledger.imported`, write `imported_books`, merge live
+/// books/entities/acts/documents, or change trust state. A later confirmation can still fail if the
+/// store changes concurrently or persistence fails.
+pub async fn preflight_import_book(
+    State(state): State<AppState>,
+    Query(q): Query<ImportQuery>,
+    actor: CurrentActor,
+    body: axum::body::Bytes,
+) -> Result<Json<ImportPreflightView>, ApiError> {
+    require_permission(&state, &actor, Permission::BookImport, Scope::Global).await?;
+    let policy = parse_policy(q.policy.as_deref())?;
+    let Some(store) = state.store.clone() else {
+        return Err(ApiError::Unprocessable(
+            "pré-validação de importação requer persistência em disco".to_owned(),
+        ));
+    };
+    if body.is_empty() {
+        return Err(ApiError::Unprocessable("corpo do pacote vazio".to_owned()));
+    }
+    if body.len() > BOOK_IMPORT_BUNDLE_MAX_BYTES {
+        return Err(ApiError::Unprocessable(format!(
+            "pacote do livro tem {} bytes; o limite é {BOOK_IMPORT_BUNDLE_MAX_BYTES} bytes",
+            body.len()
+        )));
+    }
+
+    match store.preflight_import_book_bytes(&body, policy) {
+        Ok(preflight) => Ok(Json(import_preflight_view(preflight))),
+        Err(StoreError::InvalidBundle(msg)) => Ok(Json(invalid_import_preflight_view(policy, msg))),
+        Err(e) => Err(map_store_error(e)),
+    }
+}
+
 /// `POST /v1/books/import` — import a per-book bundle with **verify-before-trust** (§2.5). The body
 /// is the raw bundle `.zip` bytes. Verifies the manifest self-digest, every member's sha256, and the
 /// book chain BEFORE trusting: a clean bundle ⇒ `Verified`, any break/tamper ⇒ `Quarantined`
@@ -191,7 +260,19 @@ pub async fn import_book(
     let _ = std::fs::remove_file(&tmp);
     let outcome = outcome.map_err(map_store_error)?;
 
-    let verdict = match &outcome.verdict {
+    Ok(Json(ImportOutcomeView {
+        import_id: outcome.import_id,
+        entity_id: outcome.entity_id,
+        book_id: outcome.book_id,
+        verdict: import_verdict_view(&outcome.verdict),
+        source_instance_id: outcome.source_instance_id,
+        bundle_digest: outcome.bundle_digest,
+        collided: outcome.collided,
+    }))
+}
+
+fn import_verdict_view(verdict: &ImportVerdict) -> ImportVerdictView {
+    match verdict {
         ImportVerdict::Verified => ImportVerdictView {
             status: "Verified".to_owned(),
             break_: None,
@@ -200,16 +281,126 @@ pub async fn import_book(
             status: "Quarantined".to_owned(),
             break_: Some(ChainBreakView::from(break_)),
         },
+    }
+}
+
+fn import_policy_code(policy: CollisionPolicy) -> &'static str {
+    match policy {
+        CollisionPolicy::Refuse => "refuse",
+        CollisionPolicy::QuarantineCopy => "quarantine_copy",
+    }
+}
+
+fn import_preflight_view(preflight: ImportPreflight) -> ImportPreflightView {
+    let verdict = import_verdict_view(&preflight.verdict);
+    let mut errors = Vec::new();
+    let mut findings = Vec::new();
+    let mut ready = matches!(preflight.verdict, ImportVerdict::Verified);
+    let book_chain_verified = matches!(preflight.verdict, ImportVerdict::Verified);
+
+    if let ImportVerdict::Quarantined { break_ } = &preflight.verdict {
+        ready = false;
+        errors.push(format!(
+            "bundle would be quarantined by import verification: {}",
+            break_.message
+        ));
+    }
+    if preflight.collided {
+        if matches!(preflight.policy, CollisionPolicy::Refuse) {
+            ready = false;
+            errors.push(format!(
+                "book id {} already exists and policy=refuse would block the import",
+                preflight.book_id
+            ));
+        } else {
+            findings.push(
+                "book id already exists; policy=quarantine_copy would keep an isolated read-only copy under the original ids".to_owned(),
+            );
+        }
+    }
+
+    findings.push(
+        "Preview checked the manifest self-digest, manifest-listed member sha256 values, events.jsonl book-chain verification, optional signature field presence, and current id collision state.".to_owned(),
+    );
+    if preflight.signature_present {
+        findings.push(
+            "Bundle carries an exporter signature field, but current v1 import confirmation does not perform additional exporter-signature validation beyond existing bundle digest/member/chain checks.".to_owned(),
+        );
+    } else {
+        findings.push(
+            "No exporter signature is present; current v1 confirmation relies on existing bundle digest/member/chain checks.".to_owned(),
+        );
+    }
+    findings.push(
+        "Preflight did not append ledger.imported, store an imported_books record, merge live records, or change trust state.".to_owned(),
+    );
+    findings.push(
+        "Operator-safety preview only: not legal archive certification, not production signed-import validation beyond existing checks, and not DGLAB/legal acceptance.".to_owned(),
+    );
+
+    let next_step = if ready {
+        "review this preview and explicitly confirm the mutating import; confirmation can still fail if a concurrent change creates a collision or persistence fails".to_owned()
+    } else if preflight.collided && matches!(preflight.policy, CollisionPolicy::Refuse) {
+        "choose a different bundle or switch to quarantine_copy if an isolated read-only copy is intended, then run preflight again".to_owned()
+    } else {
+        "choose another bundle and run preflight again; this preview is not ready for confirmation"
+            .to_owned()
     };
-    Ok(Json(ImportOutcomeView {
-        import_id: outcome.import_id,
-        entity_id: outcome.entity_id,
-        book_id: outcome.book_id,
-        verdict,
-        source_instance_id: outcome.source_instance_id,
-        bundle_digest: outcome.bundle_digest,
-        collided: outcome.collided,
-    }))
+
+    ImportPreflightView {
+        ok: ready,
+        ready,
+        would_import: ready,
+        would_record_ledger_event: false,
+        would_store_import_record: false,
+        policy: import_policy_code(preflight.policy).to_owned(),
+        entity_id: Some(preflight.entity_id),
+        book_id: Some(preflight.book_id),
+        verdict: Some(verdict),
+        source_instance_id: Some(preflight.source_instance_id),
+        bundle_digest: Some(preflight.bundle_digest),
+        collided: preflight.collided,
+        manifest_file_count: Some(preflight.manifest_file_count),
+        manifest_total_bytes: Some(preflight.manifest_total_bytes),
+        zip_member_count: Some(preflight.zip_member_count),
+        event_count: preflight.event_count,
+        book_chain_verified: Some(book_chain_verified),
+        book_chain_length: Some(preflight.book_chain.length),
+        signature_present: Some(preflight.signature_present),
+        errors,
+        findings,
+        next_step,
+    }
+}
+
+fn invalid_import_preflight_view(policy: CollisionPolicy, message: String) -> ImportPreflightView {
+    ImportPreflightView {
+        ok: false,
+        ready: false,
+        would_import: false,
+        would_record_ledger_event: false,
+        would_store_import_record: false,
+        policy: import_policy_code(policy).to_owned(),
+        entity_id: None,
+        book_id: None,
+        verdict: None,
+        source_instance_id: None,
+        bundle_digest: None,
+        collided: false,
+        manifest_file_count: None,
+        manifest_total_bytes: None,
+        zip_member_count: None,
+        event_count: None,
+        book_chain_verified: None,
+        book_chain_length: None,
+        signature_present: None,
+        errors: vec![format!("invalid bundle: {message}")],
+        findings: vec![
+            "Preflight did not append ledger.imported, store an imported_books record, merge live records, or change trust state.".to_owned(),
+            "Operator-safety preview only: not legal archive certification, not production signed-import validation beyond existing checks, and not DGLAB/legal acceptance.".to_owned(),
+        ],
+        next_step: "choose a readable chancela-book-bundle/v1 zip and run preflight again".to_owned(),
+    }
 }
 
 /// Parse the collision policy query value (default `Refuse`); an unrecognized value is a `422`.

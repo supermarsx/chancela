@@ -1478,6 +1478,18 @@ export function useExportBook() {
 }
 
 /**
+ * Read-only preflight for a book bundle import (`POST /v1/books/import/preflight`, t54).
+ * It uses the same raw `.zip` bytes and collision policy but does not create an import id,
+ * append `ledger.imported`, or invalidate live data.
+ */
+export function usePreflightImportBook() {
+  return useMutation({
+    mutationFn: ({ bytes, policy }: { bytes: ArrayBuffer; policy: CollisionPolicy }) =>
+      api.preflightImportBook(bytes, policy),
+  });
+}
+
+/**
  * Import a book bundle (`POST /v1/books/import`, t54). Verify-before-trust →
  * `Verified` (into the live instance) | `Quarantined` (isolated, read-only). Refetches
  * books + ledger on success (a Quarantined verdict is still a 200 success).

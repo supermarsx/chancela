@@ -11,18 +11,20 @@
  * and is permanently disclosed" copy). Every destructive/sensitive action routes the shared
  * {@link ConfirmActionModal}; the server enforces the same gates.
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   useBooks,
   useEntities,
   useExportBook,
   useImportBook,
   useLedgerIntegrity,
+  usePreflightImportBook,
   useReanchorLedger,
   useRestoreLedger,
   useRestoreLedgerPreflight,
 } from '../../api/hooks';
 import type {
+  BookImportPreflightView,
   BookView,
   ChainStatusView,
   CollisionPolicy,
@@ -54,10 +56,17 @@ import { GateButton, scopeBook } from '../session/permissions';
 import { StartOverBookModal } from './StartOverBookModal';
 
 const MAX_PREFLIGHT_FINDINGS = 5;
+const MAX_IMPORT_PREFLIGHT_ITEMS = 5;
 
 type RestorePreflightReportView = Omit<RestorePreflightView, 'manifest'> & {
   manifest?: RestorePreflightView['manifest'] | null;
 };
+
+interface ImportPreflightSnapshot {
+  file: File;
+  policy: CollisionPolicy;
+  report: BookImportPreflightView;
+}
 
 function redactSensitiveText(value: string): string {
   return value.replace(/[a-f0-9]{32,}/gi, '[redigido]');
@@ -194,6 +203,175 @@ function RestorePreflightReport({
   );
 }
 
+function formatNullable(value: string | number | null | undefined): string {
+  return value === null || value === undefined ? 'n/a' : String(value);
+}
+
+function BookImportPreflightReport({
+  report,
+  error,
+}: {
+  report: BookImportPreflightView | null;
+  error: unknown;
+}) {
+  const t = useT();
+
+  if (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return (
+      <InlineWarning tone="error" title={t('integrity.import.preflight.errorTitle')}>
+        <p>{redactSensitiveText(message)}</p>
+      </InlineWarning>
+    );
+  }
+
+  if (!report) return null;
+
+  const errors = report.errors.slice(0, MAX_IMPORT_PREFLIGHT_ITEMS);
+  const findings = report.findings.slice(0, MAX_IMPORT_PREFLIGHT_ITEMS);
+  const hiddenErrors = Math.max(0, report.errors.length - errors.length);
+  const hiddenFindings = Math.max(0, report.findings.length - findings.length);
+  const tone = report.ready ? 'info' : report.errors.length > 0 ? 'error' : 'warn';
+
+  return (
+    <InlineWarning
+      tone={tone}
+      title={
+        report.ready
+          ? t('integrity.import.preflight.readyTitle')
+          : t('integrity.import.preflight.blockedTitle')
+      }
+    >
+      <dl className="deflist deflist--tight">
+        <div>
+          <dt>{t('integrity.restore.preflight.status')}</dt>
+          <dd>
+            <Badge tone={report.ready ? 'ok' : 'warn'}>{report.ready ? 'ready' : 'blocked'}</Badge>
+          </dd>
+        </div>
+        <div>
+          <dt>{t('integrity.import.preflight.wouldImport')}</dt>
+          <dd>{report.would_import ? t('common.yes') : t('common.no')}</dd>
+        </div>
+        <div>
+          <dt>{t('integrity.import.preflight.wouldRecordLedgerEvent')}</dt>
+          <dd>{report.would_record_ledger_event ? t('common.yes') : t('common.no')}</dd>
+        </div>
+        <div>
+          <dt>{t('integrity.import.preflight.wouldStoreImportRecord')}</dt>
+          <dd>{report.would_store_import_record ? t('common.yes') : t('common.no')}</dd>
+        </div>
+        <div>
+          <dt>{t('integrity.import.policyLabel')}</dt>
+          <dd className="mono">{report.policy}</dd>
+        </div>
+        <div>
+          <dt>{t('integrity.import.preflight.verdict')}</dt>
+          <dd className="mono">{report.verdict?.status ?? 'Invalid'}</dd>
+        </div>
+        <div>
+          <dt>{t('integrity.import.preflight.entityId')}</dt>
+          <dd className="mono">{formatNullable(report.entity_id)}</dd>
+        </div>
+        <div>
+          <dt>{t('integrity.import.preflight.bookId')}</dt>
+          <dd className="mono">{formatNullable(report.book_id)}</dd>
+        </div>
+        <div>
+          <dt>{t('integrity.import.preflight.sourceInstance')}</dt>
+          <dd className="mono">{formatNullable(report.source_instance_id)}</dd>
+        </div>
+        <div>
+          <dt>{t('integrity.import.digest')}</dt>
+          <dd>
+            {report.bundle_digest ? (
+              <Digest value={report.bundle_digest} copyable={false} />
+            ) : (
+              'n/a'
+            )}
+          </dd>
+        </div>
+        <div>
+          <dt>{t('integrity.import.collided')}</dt>
+          <dd>{report.collided ? t('common.yes') : t('common.no')}</dd>
+        </div>
+        <div>
+          <dt>{t('integrity.import.preflight.manifestFiles')}</dt>
+          <dd className="mono">{formatNullable(report.manifest_file_count)}</dd>
+        </div>
+        <div>
+          <dt>{t('integrity.import.preflight.zipMembers')}</dt>
+          <dd className="mono">{formatNullable(report.zip_member_count)}</dd>
+        </div>
+        <div>
+          <dt>{t('integrity.import.preflight.manifestBytes')}</dt>
+          <dd className="mono">{formatNullable(report.manifest_total_bytes)}</dd>
+        </div>
+        <div>
+          <dt>{t('integrity.import.preflight.eventCount')}</dt>
+          <dd className="mono">{formatNullable(report.event_count)}</dd>
+        </div>
+        <div>
+          <dt>{t('integrity.import.preflight.chainVerified')}</dt>
+          <dd>
+            {report.book_chain_verified === null
+              ? 'n/a'
+              : report.book_chain_verified
+                ? t('common.yes')
+                : t('common.no')}
+          </dd>
+        </div>
+        <div>
+          <dt>{t('integrity.import.preflight.signaturePresent')}</dt>
+          <dd>
+            {report.signature_present === null
+              ? 'n/a'
+              : report.signature_present
+                ? t('common.yes')
+                : t('common.no')}
+          </dd>
+        </div>
+        <div>
+          <dt>{t('integrity.restore.preflight.nextStep')}</dt>
+          <dd>{redactSensitiveText(report.next_step)}</dd>
+        </div>
+      </dl>
+      <div className="stack--tight">
+        {errors.length > 0 ? (
+          <>
+            <h5>{t('integrity.restore.preflight.errors')}</h5>
+            <ul className="plain-list">
+              {errors.map((item, index) => (
+                <li key={`import-error-${index}`}>{redactSensitiveText(item)}</li>
+              ))}
+            </ul>
+            {hiddenErrors > 0 ? (
+              <p className="field__hint">
+                {t('integrity.restore.preflight.errors.more', { count: hiddenErrors })}
+              </p>
+            ) : null}
+          </>
+        ) : null}
+        <h5>{t('integrity.restore.preflight.findings')}</h5>
+        {findings.length === 0 ? (
+          <p className="field__hint">{t('integrity.restore.preflight.findings.none')}</p>
+        ) : (
+          <ul className="plain-list">
+            {findings.map((finding, index) => (
+              <li key={`import-finding-${index}`}>{redactSensitiveText(finding)}</li>
+            ))}
+          </ul>
+        )}
+        {hiddenFindings > 0 ? (
+          <p className="field__hint">
+            {t('integrity.restore.preflight.findings.more', { count: hiddenFindings })}
+          </p>
+        ) : null}
+      </div>
+    </InlineWarning>
+  );
+}
+
 /** A friendly label for a canonical chain id (`global` | `application` | `company:…` | `book:…`). */
 function chainLabel(
   chain: string,
@@ -314,13 +492,28 @@ export function LivrosIntegridadeSection() {
 
   // Import / per-book restore.
   const importBook = useImportBook();
+  const importPreflight = usePreflightImportBook();
+  const importRequestGeneration = useRef(0);
+  const importFileRef = useRef<File | null>(null);
+  const importPolicyRef = useRef<CollisionPolicy>('refuse');
   const [importPolicy, setImportPolicy] = useState<CollisionPolicy>('refuse');
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importPreflightPreview, setImportPreflightPreview] =
+    useState<ImportPreflightSnapshot | null>(null);
+  const [importPreflightError, setImportPreflightError] = useState<unknown>(null);
   const [importOutcome, setImportOutcome] = useState<ImportOutcomeView | null>(null);
 
   const bookList = books.data ?? [];
   const entityList = entities.data ?? [];
   const report = integrity.data;
   const broken = report ? !report.healthy : false;
+  const currentImportPreflight =
+    importFile &&
+    importPreflightPreview?.file === importFile &&
+    importPreflightPreview.policy === importPolicy
+      ? importPreflightPreview.report
+      : null;
+  const canConfirmImport = Boolean(currentImportPreflight?.ready);
 
   const overallBadge = useMemo(() => {
     if (!report) return null;
@@ -328,6 +521,12 @@ export function LivrosIntegridadeSection() {
     if (!report.healthy) return <Badge tone="error">{t('integrity.report.broken')}</Badge>;
     return <Badge tone="ok">{t('integrity.report.healthy')}</Badge>;
   }, [report, t]);
+
+  useEffect(() => {
+    return () => {
+      importRequestGeneration.current += 1;
+    };
+  }, []);
 
   function showSaveResult(result: SaveBlobResult) {
     if (result.kind === 'cancelled') {
@@ -353,12 +552,71 @@ export function LivrosIntegridadeSection() {
     }
   }
 
-  async function onImportFile(file: File) {
+  function clearImportPreview() {
+    importRequestGeneration.current += 1;
+    setImportPreflightPreview(null);
+    setImportPreflightError(null);
+    importPreflight.reset();
+  }
+
+  function onSelectImportFile(file: File) {
+    importFileRef.current = file;
+    setImportFile(file);
     setImportOutcome(null);
+    clearImportPreview();
+  }
+
+  function isCurrentImportRequest(
+    generation: number,
+    file: File,
+    policy: CollisionPolicy,
+  ): boolean {
+    return (
+      importRequestGeneration.current === generation &&
+      importFileRef.current === file &&
+      importPolicyRef.current === policy
+    );
+  }
+
+  async function onImportPreflight() {
+    if (!importFile) return;
+    const file = importFile;
+    const policy = importPolicy;
+    const generation = importRequestGeneration.current + 1;
+    importRequestGeneration.current = generation;
+    setImportPreflightPreview(null);
+    setImportPreflightError(null);
+    importPreflight.reset();
     try {
       const bytes = await file.arrayBuffer();
-      const outcome = await importBook.mutateAsync({ bytes, policy: importPolicy });
+      if (!isCurrentImportRequest(generation, file, policy)) return;
+      const preview = await importPreflight.mutateAsync({ bytes, policy });
+      if (!isCurrentImportRequest(generation, file, policy)) return;
+      setImportPreflightPreview({ file, policy, report: preview });
+      if (preview.ready) {
+        toast.success(t('integrity.import.preflight.done'));
+      } else {
+        toast.info(t('integrity.import.preflight.blockedToast'));
+      }
+    } catch (e) {
+      if (!isCurrentImportRequest(generation, file, policy)) return;
+      setImportPreflightError(e);
+      toast.error(e);
+    }
+  }
+
+  async function onConfirmImport() {
+    if (!importFile || !canConfirmImport) return;
+    const file = importFile;
+    const policy = importPolicy;
+    try {
+      const bytes = await file.arrayBuffer();
+      if (importFileRef.current !== file || importPolicyRef.current !== policy) return;
+      const outcome = await importBook.mutateAsync({ bytes, policy });
       setImportOutcome(outcome);
+      importFileRef.current = null;
+      setImportFile(null);
+      clearImportPreview();
       toast.success(t('integrity.import.done'));
     } catch (e) {
       toast.error(e);
@@ -515,13 +773,24 @@ export function LivrosIntegridadeSection() {
             <Select
               id="import-policy"
               value={importPolicy}
-              onChange={(e) => setImportPolicy(e.target.value as CollisionPolicy)}
+              onChange={(e) => {
+                const policy = e.target.value as CollisionPolicy;
+                importPolicyRef.current = policy;
+                setImportPolicy(policy);
+                clearImportPreview();
+                setImportOutcome(null);
+              }}
               options={[
                 { value: 'refuse', label: t('integrity.import.policy.refuse') },
                 { value: 'quarantine_copy', label: t('integrity.import.policy.quarantine') },
               ]}
             />
           </Field>
+          {importFile ? (
+            <p className="field__hint">
+              {t('integrity.import.preflight.selectedFile', { name: importFile.name })}
+            </p>
+          ) : null}
           <div className="row-wrap">
             <label className="btn btn--secondary btn--icon file-btn">
               <span className="btn__icon">
@@ -535,12 +804,36 @@ export function LivrosIntegridadeSection() {
                 disabled={importBook.isPending}
                 onChange={(e) => {
                   const file = e.target.files?.[0];
-                  if (file) void onImportFile(file);
+                  if (file) onSelectImportFile(file);
                   e.target.value = '';
                 }}
               />
             </label>
+            <Button
+              type="button"
+              variant="secondary"
+              icon={<Icon.Search />}
+              disabled={!importFile || importPreflight.isPending || importBook.isPending}
+              onClick={() => void onImportPreflight()}
+            >
+              {importPreflight.isPending
+                ? t('integrity.import.preflight.pending')
+                : t('integrity.import.preflight.submit')}
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              icon={<Icon.Check />}
+              disabled={!importFile || !canConfirmImport || importBook.isPending}
+              onClick={() => void onConfirmImport()}
+            >
+              {importBook.isPending ? t('integrity.import.pending') : t('integrity.import.confirm')}
+            </Button>
           </div>
+          <BookImportPreflightReport
+            report={currentImportPreflight}
+            error={importPreflightError}
+          />
           {importOutcome ? (
             <InlineWarning
               tone={importOutcome.verdict.status === 'Verified' ? 'info' : 'error'}

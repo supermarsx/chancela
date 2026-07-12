@@ -1470,6 +1470,11 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/v1/books/{id}/export", post(bundles::export_book))
         .route(
+            "/v1/books/import/preflight",
+            post(bundles::preflight_import_book)
+                .layer(DefaultBodyLimit::max(bundles::BOOK_IMPORT_BUNDLE_MAX_BYTES)),
+        )
+        .route(
             "/v1/books/import",
             post(bundles::import_book)
                 .layer(DefaultBodyLimit::max(bundles::BOOK_IMPORT_BUNDLE_MAX_BYTES)),
@@ -1728,6 +1733,7 @@ fn degraded_gate_exempt(method: &axum::http::Method, path: &str) -> bool {
         || path == "/v1/data/reset"
         || path == "/v1/data/start-over"
         || path == "/v1/data/key-rotation/preflight"
+        || path == "/v1/books/import/preflight"
         || path == "/v1/books/import"
         || path == "/v1/books/paper-import/validate"
         || path.starts_with("/v1/session")
@@ -15705,6 +15711,76 @@ mod tests {
         out.finish().expect("finish zip").into_inner()
     }
 
+    #[derive(Debug, PartialEq, Eq)]
+    struct ImportNoMutationSnapshot {
+        ledger_len: usize,
+        ledger_imported_events: usize,
+        imported_records: usize,
+        live_entities: usize,
+        live_books: usize,
+        live_acts: usize,
+        live_documents: usize,
+        staged_uploads: Vec<String>,
+    }
+
+    fn staged_import_uploads(state: &AppState) -> Vec<String> {
+        let Some(data_dir) = state.data_dir() else {
+            return Vec::new();
+        };
+        let imports_dir = data_dir.join("imports");
+        let Ok(read_dir) = std::fs::read_dir(imports_dir) else {
+            return Vec::new();
+        };
+        let mut entries = read_dir
+            .filter_map(Result::ok)
+            .filter_map(|entry| entry.file_name().into_string().ok())
+            .collect::<Vec<_>>();
+        entries.sort();
+        entries
+    }
+
+    async fn import_no_mutation_snapshot(state: &AppState) -> ImportNoMutationSnapshot {
+        let (ledger_len, ledger_imported_events) = {
+            let ledger = state.ledger.read().await;
+            (
+                ledger.events().len(),
+                ledger
+                    .events()
+                    .iter()
+                    .filter(|event| event.kind == "ledger.imported")
+                    .count(),
+            )
+        };
+        let imported_records = state
+            .store
+            .as_ref()
+            .expect("persistent store")
+            .imported_books()
+            .expect("import feed")
+            .len();
+        ImportNoMutationSnapshot {
+            ledger_len,
+            ledger_imported_events,
+            imported_records,
+            live_entities: state.entities.read().await.len(),
+            live_books: state.books.read().await.len(),
+            live_acts: state.acts.read().await.len(),
+            live_documents: state.documents.read().await.len(),
+            staged_uploads: staged_import_uploads(state),
+        }
+    }
+
+    async fn assert_import_preflight_did_not_mutate(
+        state: &AppState,
+        before: &ImportNoMutationSnapshot,
+    ) {
+        assert_eq!(
+            import_no_mutation_snapshot(state).await,
+            *before,
+            "book import preflight must not mutate ledger, import namespace, live records, or staged uploads"
+        );
+    }
+
     #[tokio::test]
     async fn integrity_endpoint_reports_a_healthy_chain() {
         let state = persistent_state();
@@ -15782,6 +15858,171 @@ mod tests {
             StatusCode::CONFLICT,
             "valid step-up proceeds; already-valid chain → 409"
         );
+    }
+
+    #[tokio::test]
+    async fn books_import_preflight_valid_bundle_summarizes_without_mutation() {
+        let a = persistent_state();
+        let a_tok = seed_session(&a, &make_user(&a, "amelia.marques").await).await;
+        let (_eid, book_id) = seed_entity_and_book(&a, &a_tok).await;
+        seal_one_act(&a, &book_id, &a_tok).await;
+
+        let (status, ctype, bundle) = send_bytes(
+            a.clone(),
+            with_session(
+                post_raw(&format!("/v1/books/{book_id}/export"), Vec::new()),
+                &a_tok,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "export book");
+        assert!(ctype.starts_with("application/zip"), "ctype={ctype}");
+
+        let b = persistent_state();
+        let b_tok = seed_session(&b, &make_user(&b, "bruno").await).await;
+        let before = import_no_mutation_snapshot(&b).await;
+        let (status, preview) = send(
+            b.clone(),
+            with_session(post_raw("/v1/books/import/preflight", bundle), &b_tok),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK, "preflight valid bundle: {preview}");
+        assert_eq!(preview["ok"], true);
+        assert_eq!(preview["ready"], true);
+        assert_eq!(preview["would_import"], true);
+        assert_eq!(preview["would_record_ledger_event"], false);
+        assert_eq!(preview["would_store_import_record"], false);
+        assert_eq!(preview["policy"], "refuse");
+        assert_eq!(preview["book_id"], book_id);
+        assert_eq!(preview["verdict"]["status"], "Verified");
+        assert_eq!(preview["collided"], false);
+        assert!(
+            preview["bundle_digest"]
+                .as_str()
+                .is_some_and(|v| v.len() == 64)
+        );
+        assert!(
+            preview.get("import_id").is_none(),
+            "no mutation id in preview"
+        );
+        assert!(
+            preview["findings"]
+                .as_array()
+                .expect("findings")
+                .iter()
+                .any(|finding| finding
+                    .as_str()
+                    .unwrap_or_default()
+                    .contains("Preflight did not append ledger.imported")),
+            "no-mutation finding present: {preview}"
+        );
+        assert_import_preflight_did_not_mutate(&b, &before).await;
+    }
+
+    #[tokio::test]
+    async fn books_import_preflight_tampered_bundle_reports_quarantine_without_mutation() {
+        let a = persistent_state();
+        let a_tok = seed_session(&a, &make_user(&a, "amelia.marques").await).await;
+        let (_eid, book_id) = seed_entity_and_book(&a, &a_tok).await;
+        seal_one_act(&a, &book_id, &a_tok).await;
+
+        let (status, _, bundle) = send_bytes(
+            a.clone(),
+            with_session(
+                post_raw(&format!("/v1/books/{book_id}/export"), Vec::new()),
+                &a_tok,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "export book");
+
+        let c = persistent_state();
+        let c_tok = seed_session(&c, &make_user(&c, "carla").await).await;
+        let before = import_no_mutation_snapshot(&c).await;
+        let forged = tamper_bundle(&bundle);
+        let (status, preview) = send(
+            c.clone(),
+            with_session(post_raw("/v1/books/import/preflight", forged), &c_tok),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK, "preflight forged bundle: {preview}");
+        assert_eq!(preview["ok"], false);
+        assert_eq!(preview["ready"], false);
+        assert_eq!(preview["would_import"], false);
+        assert_eq!(preview["would_record_ledger_event"], false);
+        assert_eq!(preview["would_store_import_record"], false);
+        assert_eq!(preview["verdict"]["status"], "Quarantined");
+        assert_ne!(
+            preview["book_chain_verified"], true,
+            "tampered/quarantined preflight must not expose manifest verified=true as the actual verification result: {preview}"
+        );
+        assert!(
+            preview["verdict"]["break"].is_object(),
+            "break detail present"
+        );
+        assert!(
+            preview["errors"]
+                .as_array()
+                .expect("errors")
+                .iter()
+                .any(|error| error
+                    .as_str()
+                    .unwrap_or_default()
+                    .contains("would be quarantined")),
+            "quarantine blocker reported: {preview}"
+        );
+        assert_import_preflight_did_not_mutate(&c, &before).await;
+    }
+
+    #[tokio::test]
+    async fn books_import_preflight_collision_refuse_blocks_without_mutation() {
+        let state = persistent_state();
+        let token = seed_session(&state, &make_user(&state, "amelia.marques").await).await;
+        let (_eid, book_id) = seed_entity_and_book(&state, &token).await;
+        seal_one_act(&state, &book_id, &token).await;
+
+        let (status, _, bundle) = send_bytes(
+            state.clone(),
+            with_session(
+                post_raw(&format!("/v1/books/{book_id}/export"), Vec::new()),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "export book");
+
+        let before = import_no_mutation_snapshot(&state).await;
+        let (status, preview) = send(
+            state.clone(),
+            with_session(
+                post_raw("/v1/books/import/preflight?policy=refuse", bundle),
+                &token,
+            ),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK, "preflight collision: {preview}");
+        assert_eq!(preview["ok"], false);
+        assert_eq!(preview["ready"], false);
+        assert_eq!(preview["would_import"], false);
+        assert_eq!(preview["collided"], true);
+        assert_eq!(preview["policy"], "refuse");
+        assert_eq!(preview["book_id"], book_id);
+        assert_eq!(preview["verdict"]["status"], "Verified");
+        assert!(
+            preview["errors"]
+                .as_array()
+                .expect("errors")
+                .iter()
+                .any(|error| error
+                    .as_str()
+                    .unwrap_or_default()
+                    .contains("policy=refuse would block")),
+            "collision blocker reported: {preview}"
+        );
+        assert_import_preflight_did_not_mutate(&state, &before).await;
     }
 
     #[tokio::test]
