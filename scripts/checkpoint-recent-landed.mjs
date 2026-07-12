@@ -1802,6 +1802,11 @@ function assertCheckpointMap() {
   );
   assertFileContainsNormalized(
     "docs/CI-CHECKPOINTS.md",
+    "dashboard absent-owner dispatch-evidence reminders",
+    "CI checkpoints dashboard absent-owner reminder lane marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-CHECKPOINTS.md",
     "generated absent-owner evidence UI",
     "CI checkpoints generated absent-owner evidence UI lane marker",
   );
@@ -1887,12 +1892,17 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "generated-document by-id route, dispatch-evidence route, `act.read`/\n`document.generate` gates, durable/in-memory, canonical Ata preservation,\nabsent-owner communication auto-generation, dispatch-evidence store,\nidempotency, selected-recipient evidence coverage, evidence-attached headers,\nno dispatch completion, web client/hooks/panel/i18n metadata-only evidence UI,\nno send/delivery/legal-notice copy, and no-claim markers",
+    "generated-document by-id route, dispatch-evidence route, `act.read`/\n`document.generate` gates, durable/in-memory, canonical Ata preservation,\nabsent-owner communication auto-generation, dispatch-evidence store,\nidempotency, selected-recipient evidence coverage, evidence-attached headers,\nno dispatch completion, web client/hooks/panel/i18n metadata-only evidence UI,\nno send/delivery/legal-notice copy, no-claim markers, and dashboard reminder\nsource/action/no-date ordering/fixture markers",
     "CI checkpoints static generated-document dispatch-evidence marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-CHECKPOINTS.md",
+    "dashboard reminder source/action/no-date ordering/fixture markers",
+    "CI checkpoints static dashboard absent-owner reminder marker",
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "no dispatch completion, web client/hooks/panel/i18n metadata-only evidence UI,\nno send/delivery/legal-notice copy, and no-claim markers",
+    "no dispatch completion, web client/hooks/panel/i18n metadata-only evidence UI,\nno send/delivery/legal-notice copy, no-claim markers",
     "CI checkpoints static generated absent-owner evidence UI marker",
   );
   assertFileContains(
@@ -3536,6 +3546,16 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-api/src/dashboard.rs",
+    "fn dashboard_reminder_due_date_sort_key(reminder: &DashboardReminder) -> (bool, Option<Date>)",
+    "dashboard reminder no-date sort-key helper marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/dashboard.rs",
+    "(due_date.is_none(), due_date)",
+    "dashboard reminder no-date after dated sort marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/dashboard.rs",
     "policy.attendance_lookahead_days",
     "dashboard reminder policy attendance lookahead marker",
   );
@@ -3566,6 +3586,107 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-api/src/dashboard.rs",
+    "absent_owner_dispatch_evidence_reminders(",
+    "dashboard absent-owner dispatch-evidence reminder source marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/dashboard.rs",
+    "document.template_id != crate::documents::CONDOMINIUM_ABSENT_OWNER_COMMUNICATION_TEMPLATE_ID",
+    "dashboard absent-owner generated-template filter marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/dashboard.rs",
+    "act.state != ActState::Sealed || act.ata_number.is_none()",
+    "dashboard absent-owner sealed Ata filter marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/dashboard.rs",
+    '"required_pending" | "operator_evidence_partial"',
+    "dashboard absent-owner pending/partial status filter marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/dashboard.rs",
+    "absent_owner_dispatch_evidence_dashboard_reminder",
+    "dashboard absent-owner reminder builder marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/dashboard.rs",
+    "due_date: String::new()",
+    "dashboard absent-owner no due-date marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/dashboard.rs",
+    'severity: "Advisory".to_owned()',
+    "dashboard absent-owner advisory severity marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/dashboard.rs",
+    'status: "Pending".to_owned()',
+    "dashboard absent-owner pending status marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/dashboard.rs",
+    'source_rule: "absent-owner-dispatch-evidence".to_owned()',
+    "dashboard absent-owner source-rule marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/dashboard.rs",
+    'source_profile: "condominium-generated-communication".to_owned()',
+    "dashboard absent-owner source-profile marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/dashboard.rs",
+    '"open_absent_owner_dispatch_evidence"',
+    "dashboard absent-owner action kind marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/dashboard.rs",
+    '"/v1/documents/generated/{}/dispatch-evidence"',
+    "dashboard absent-owner dispatch-evidence API href marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/dashboard.rs",
+    'Some(format!("/atas/{}", act.id))',
+    "dashboard absent-owner act route marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/dashboard.rs",
+    "This dashboard reminder is advisory only and does not claim \\",
+    "dashboard absent-owner advisory no-claim reason prelude marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/dashboard.rs",
+    "sending, delivery, legal notice completion, or legal sufficiency.",
+    "dashboard absent-owner advisory no-claim reason detail marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/dashboard.rs",
+    "reminder_generated_absent_owner_dispatch_evidence_required_pending_routes_to_act_document_workflow",
+    "dashboard absent-owner required-pending coverage marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/dashboard.rs",
+    "reminder_generated_absent_owner_dispatch_evidence_partial_routes_to_act_document_workflow",
+    "dashboard absent-owner partial coverage marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/dashboard.rs",
+    "reminder_generated_absent_owner_dispatch_evidence_covered_is_suppressed",
+    "dashboard absent-owner covered suppression coverage marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/dashboard.rs",
+    "reminder_generated_absent_owner_no_due_date_does_not_evict_dated_reminders_before_limit",
+    "dashboard absent-owner no-date limit ordering coverage marker",
+  );
+  assertFileContainsNormalized(
+    "crates/chancela-api/src/dashboard.rs",
+    `assert_eq!(reminders[0].source_rule, "csc-art376-annual");
+        assert_eq!(reminders[0].due_date, "2026-03-31");`,
+    "dashboard absent-owner no-date reminder does not evict dated reminder marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/dashboard.rs",
     "let recent_events = if redaction.is_guest()",
     "dashboard guest recent-events redaction implementation marker",
   );
@@ -3593,6 +3714,46 @@ function assertCheckpointMap() {
     "apps/web/src/features/dashboard/DashboardPage.test.tsx",
     "DashboardPage",
     "dashboard unit coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/dashboard/DashboardPage.test.tsx",
+    "renders absent-owner dispatch evidence reminders with localized act routing",
+    "web dashboard absent-owner dispatch reminder coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/dashboard/DashboardPage.test.tsx",
+    "open_absent_owner_dispatch_evidence",
+    "web dashboard absent-owner action kind coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/dashboard/DashboardPage.test.tsx",
+    "expect(within(item).getByText('Sem data')).toBeTruthy();",
+    "web dashboard absent-owner no-date label coverage",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/i18n.test.ts",
+    "keeps absent-owner dispatch reminder copy advisory and status-aware",
+    "web i18n absent-owner dispatch reminder advisory coverage",
+  );
+  assertFileContains(
+    "apps/web/src/contracts/contracts.test.ts",
+    "Dashboard.reminders should include a pending no-due-date generated absent-owner fixture",
+    "web contract dashboard absent-owner no-date fixture coverage",
+  );
+  assertFileContains(
+    "contracts/dashboard.json",
+    '"source_rule": "absent-owner-dispatch-evidence"',
+    "dashboard contract absent-owner source-rule fixture marker",
+  );
+  assertFileContains(
+    "contracts/dashboard.json",
+    '"api_href": "/v1/documents/generated/generated-absent-owner-1/dispatch-evidence"',
+    "dashboard contract absent-owner dispatch-evidence href fixture marker",
+  );
+  assertFileContains(
+    "contracts/dashboard.json",
+    '"route": "/atas/2f1c8e40-0000-4000-8000-000000000020"',
+    "dashboard contract absent-owner act route fixture marker",
   );
   assertFileContains(
     "apps/web/src/features/dashboard/DashboardPage.test.tsx",
@@ -5758,7 +5919,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current working-tree generated-document by-id download and dispatch-evidence checks",
+    "Current working-tree generated-document by-id download, dispatch-evidence, and\n  dashboard absent-owner reminder checks",
     "CI/E2E hardening plan generated-document dispatch-evidence checks marker",
   );
   assertFileContains(
@@ -5783,18 +5944,23 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "`npm run test --workspace apps/web -- src/api/client.test.ts src/features/documents/ActDocumentPanel.test.tsx src/i18n/i18n.test.ts`",
+    "`npm run test --workspace apps/web -- src/api/client.test.ts src/contracts/contracts.test.ts src/features/dashboard/DashboardPage.test.tsx src/features/documents/ActDocumentPanel.test.tsx src/i18n/i18n.test.ts`",
     "CI/E2E hardening plan generated absent-owner focused web command marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "without a\n  contracts test because this slice did not change contract fixtures",
-    "CI/E2E hardening plan generated absent-owner no contracts test marker",
+    "`contracts/dashboard.json` pending no-due-date generated absent-owner\n  fixture",
+    "CI/E2E hardening plan generated absent-owner dashboard contract fixture marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "web client/panel/i18n markers",
+    "web client/panel/i18n/dashboard/contract markers",
     "CI/E2E hardening plan generated absent-owner web static-map marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "reminder_generated_absent_owner_no_due_date_does_not_evict_dated_reminders_before_limit",
+    "CI/E2E hardening plan dashboard absent-owner no-date ordering coverage marker",
   );
   assertFileContainsNormalized(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -6661,6 +6827,11 @@ function assertCheckpointMap() {
     "generates `condominio-comunicacao-ausentes/v1` automatically alongside the\n  Ata",
     "spec coverage condominium absent-owner auto-generation marker",
   );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "`GET /v1/dashboard` add `Pending`/`Advisory` no-due-date reminders",
+    "spec coverage dashboard absent-owner reminder marker",
+  );
   assertFileContains(
     "SPEC-COVERAGE.md",
     "`POST`/`GET` `/v1/documents/generated/{document_id}/dispatch-evidence`",
@@ -6683,6 +6854,21 @@ function assertCheckpointMap() {
   );
   assertFileContainsNormalized(
     "SPEC-COVERAGE.md",
+    "`operator_evidence_covered` is suppressed",
+    "spec coverage dashboard absent-owner covered suppression marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "server sorting keeps valid dated reminders ahead of no-date reminders before `dashboard_limit` truncation",
+    "spec coverage dashboard absent-owner no-date sort marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "action kind `open_absent_owner_dispatch_evidence`",
+    "spec coverage dashboard absent-owner action kind marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
     "without changing `dispatch_completed=false` or claiming send/delivery/legal-notice completion",
     "spec coverage generated absent-owner web no-claim marker",
   );
@@ -6693,7 +6879,7 @@ function assertCheckpointMap() {
   );
   assertFileContainsNormalized(
     "SPEC-COVERAGE.md",
-    "no mail, email, SMS, or provider sending, and no delivery, legal notice completion, legal sufficiency, legal effect, provider execution, registry filing, signing, bundle readiness, template legal review, threshold correctness, or law verification claim",
+    "no mail, email, SMS, or provider sending, and no delivery, legal notice completion, legal sufficiency, legal effect, provider execution, registry filing, signing, bundle readiness, template legal review, threshold correctness, law verification claim, or dashboard ledger-event append",
     "spec coverage generated-document no-claim marker",
   );
   assertFileContains(

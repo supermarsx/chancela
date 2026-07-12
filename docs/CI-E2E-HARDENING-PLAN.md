@@ -17,7 +17,7 @@ report upload UI guardrails, the raw external-validator raw-report byte download
 API, the MCP workflow provenance and draft-vs-signed comparison review aids,
 dashboard guest recent-events redaction, generated-document by-id download route,
 condominium absent-owner communication auto-generation, and operator-supplied
-dispatch-evidence recording,
+dispatch-evidence recording with dashboard reminder surfacing,
 imported-document review receipt UI, trust catalog identifier-match explanations,
 plus local ASiC inspection endpoint and ASiC ZIP decompression-bound coverage,
 plus release workflow static
@@ -923,7 +923,8 @@ settingsDefaults.test.ts contracts.test.ts`.
   and `Leitor` recent-event visibility, and continued Guest refusal from
   `/v1/ledger/events`. This is response redaction only: no permission grants,
   full anonymization, destructive erasure, or policy-completeness claim.
-- Current working-tree generated-document by-id download and dispatch-evidence checks: focused
+- Current working-tree generated-document by-id download, dispatch-evidence, and
+  dashboard absent-owner reminder checks: focused
   `cargo test -p chancela-api --locked on_demand_generate_persists_a_chosen_document_and_emits_the_event`
   and
   `cargo test -p chancela-api --locked in_memory_generated_document_download_uses_returned_url_and_keeps_canonical_ata`
@@ -944,20 +945,31 @@ settingsDefaults.test.ts contracts.test.ts`.
   evidence-attached/status headers, no dispatch-completed header claim, and the
   bounded
   `absent_owner_communication.dispatch_evidence_recorded` event false flags.
+  The `cargo test -p chancela-api --locked reminder_` lane also pins
+  `GET /v1/dashboard` absent-owner dispatch-evidence reminders for
+  `required_pending` and `operator_evidence_partial`, suppresses
+  `operator_evidence_covered`, keeps no-date reminders `Pending`/`Advisory`,
+  routes them to `/atas/{act_id}`, points `api_href` to
+  `/v1/documents/generated/{document_id}/dispatch-evidence`, and keeps valid
+  dated reminders ahead of no-date reminders before `dashboard_limit`
+  truncation through
+  `reminder_generated_absent_owner_no_due_date_does_not_evict_dated_reminders_before_limit`.
   Focused web coverage is
-  `npm run test --workspace apps/web -- src/api/client.test.ts src/features/documents/ActDocumentPanel.test.tsx src/i18n/i18n.test.ts`;
+  `npm run test --workspace apps/web -- src/api/client.test.ts src/contracts/contracts.test.ts src/features/dashboard/DashboardPage.test.tsx src/features/documents/ActDocumentPanel.test.tsx src/i18n/i18n.test.ts`;
   it pins `listGeneratedDocuments`, `getGeneratedDocumentDispatchEvidence`,
   `recordGeneratedDocumentDispatchEvidence`, generated absent-owner
   communication listing, generated PDF fetch, stored evidence rows,
   permission-gated metadata-only evidence recording, `operator_evidence_*`
-  status display, and `documents.generated.noClaim.*` localized copy without a
-  contracts test because this slice did not change contract fixtures.
+  status display, `documents.generated.noClaim.*` localized copy, dashboard
+  localized act routing, advisory absent-owner reminder copy, and the
+  `contracts/dashboard.json` pending no-due-date generated absent-owner
+  fixture.
   This is generated-document retrieval and operator-recorded dispatch-evidence
   metadata only: no sealed act, canonical Ata, or generated-byte mutation; no
   mail, email, SMS, or provider sending; no delivery, legal notice completion,
   legal sufficiency, legal effect, provider execution, registry filing, signing,
-  bundle readiness, template legal review, threshold correctness, or law
-  verification claim.
+  bundle readiness, template legal review, threshold correctness, law
+  verification claim, or dashboard ledger-event append.
 - Current working-tree external-validator raw-report checks: focused API,
   archive-package, and web Ferramentas tests now pin bounded
   `raw_report.content_base64` acceptance only when declared byte length and
@@ -1260,7 +1272,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   markers, plus generated-document by-id route, absent-owner dispatch-evidence
   route/store/idempotency/selected-recipient coverage/evidence-attached/
   no-completion/no-claim markers and focused generated absent-owner evidence
-  web client/panel/i18n markers,
+  web client/panel/i18n/dashboard/contract markers,
   plus Arquivo paged ledger route/default-limit/cursor markers,
   1000+ event first-page/load-more tests, shared list/export search (`q`),
   chain/scope filter, and limit normalization markers, numeric `next_cursor`

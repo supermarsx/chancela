@@ -48,7 +48,7 @@ metadata UI, raw-report byte download API, imported-document review receipt UI,
 trust identifier-match explanations, and read-only local DGLAB interchange
 manifest API and BookDetail JSON-download markers, generated-document by-id
 download route plus absent-owner dispatch-evidence recording and generated
-absent-owner evidence UI,
+absent-owner evidence UI and dashboard absent-owner dispatch-evidence reminders,
 compact validator-report actions, template provenance UI, release clean-source
 provenance gating, seeded role drift diagnostics, archive readability/ZK caveat
 metadata, template family/channel rule guards, MCP trust-catalog filter
@@ -96,7 +96,8 @@ It intentionally reuses existing test surfaces:
   `cargo test -p chancela-api --locked dashboard_recent_events_redacts_guest_feed_but_keeps_owner_and_reader_feed`
   including guest `recent_events: []`, retained Owner/Leitor recent events, and
   continued guest denial from `/v1/ledger/events`.
-- API generated-document by-id downloads and absent-owner dispatch evidence:
+- API generated-document by-id downloads, absent-owner dispatch evidence, and
+  dashboard reminders:
   `cargo test -p chancela-api --locked on_demand_generate_persists_a_chosen_document_and_emits_the_event`
   and
   `cargo test -p chancela-api --locked in_memory_generated_document_download_uses_returned_url_and_keeps_canonical_ata`
@@ -106,6 +107,12 @@ It intentionally reuses existing test surfaces:
   `cargo test -p chancela-api --locked absent_owner_dispatch_evidence_`
   plus
   `cargo test -p chancela-store --test store --locked generated_document_dispatch_evidence`
+  plus the `cargo test -p chancela-api --locked reminder_` lane for
+  `reminder_generated_absent_owner_dispatch_evidence_required_pending_routes_to_act_document_workflow`,
+  `reminder_generated_absent_owner_dispatch_evidence_partial_routes_to_act_document_workflow`,
+  `reminder_generated_absent_owner_dispatch_evidence_covered_is_suppressed`,
+  and
+  `reminder_generated_absent_owner_no_due_date_does_not_evict_dated_reminders_before_limit`
   plus route-classification coverage for
   `/v1/documents/generated/{document_id}` as a gated `act.read` route while the
   canonical `/v1/acts/{act_id}/document` endpoint remains the sealed Ata path,
@@ -123,7 +130,15 @@ It intentionally reuses existing test surfaces:
   communication listing, generated PDF fetch, stored evidence rows,
   metadata-only evidence form submission, `operator_evidence_*` statuses,
   `documents.generated.noClaim.*` copy, and no send/delivery/legal-notice or
-  dispatch-completion copy.
+  dispatch-completion copy. Dashboard markers pin `source_rule`
+  `absent-owner-dispatch-evidence`, `source_profile`
+  `condominium-generated-communication`, action kind
+  `open_absent_owner_dispatch_evidence`, no-date `Pending`/`Advisory`
+  semantics, `/atas/{act_id}` routing,
+  `/v1/documents/generated/{document_id}/dispatch-evidence` API hrefs,
+  `operator_evidence_covered` suppression, dated-before-no-date
+  `dashboard_limit` sorting, and the `contracts/dashboard.json` no-date
+  fixture.
 - API retained-export cleanup dry-run:
   `cargo test -p chancela-api --locked data_cleanup_`
 - API data key operations:
@@ -202,7 +217,8 @@ markers, generated-document by-id route, dispatch-evidence route, `act.read`/
 absent-owner communication auto-generation, dispatch-evidence store,
 idempotency, selected-recipient evidence coverage, evidence-attached headers,
 no dispatch completion, web client/hooks/panel/i18n metadata-only evidence UI,
-no send/delivery/legal-notice copy, and no-claim markers,
+no send/delivery/legal-notice copy, no-claim markers, and dashboard reminder
+source/action/no-date ordering/fixture markers,
 live-provider assurance markers, validator manifest,
 Arquivo paged-ledger route/default-limit/cursor markers, 1000+ event first-page
 and load-more coverage, shared list/export search (`q`), chain/scope filter,

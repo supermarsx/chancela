@@ -116,7 +116,8 @@ guidance and draft-vs-signed comparison review aid, dashboard guest
 recent-events redaction, generated-document by-id download routing,
 retention due-candidate prior bounded execution projection, automatic
 condominium absent-owner communication generation with pending dispatch
-evidence status, settings.read-gated raw external-validator raw-report byte downloads,
+evidence status and dashboard reminder surfacing, settings.read-gated raw
+external-validator raw-report byte downloads,
 imported-document review receipt rendering, and trust catalog identifier-match
 explanations, plus release clean-source provenance gating, seeded role-drift
 diagnostics, archive readability/ZK caveat metadata, template family/channel
@@ -475,13 +476,25 @@ Implementation checkpoints covered here:
   and `documents.generated.noClaim.*` copy through the web client/hooks and
   `ActDocumentPanel`; the focused web tests pin that the UI records bounded
   operator metadata without changing `dispatch_completed=false` or claiming
-  send/delivery/legal-notice completion. This is generated-document retrieval
-  plus operator-recorded dispatch-evidence metadata only: no sealed act,
+  send/delivery/legal-notice completion. Dashboard follow-on now has
+  `GET /v1/dashboard` add `Pending`/`Advisory` no-due-date reminders with
+  `source_rule` `absent-owner-dispatch-evidence`, `source_profile`
+  `condominium-generated-communication`, and action kind
+  `open_absent_owner_dispatch_evidence` for generated
+  `condominio-comunicacao-ausentes/v1` documents tied to sealed condominium
+  acts when dispatch evidence is `required_pending` or
+  `operator_evidence_partial`; `operator_evidence_covered` is suppressed. The
+  reminder routes the web UI to `/atas/{act_id}`, exposes API href
+  `/v1/documents/generated/{document_id}/dispatch-evidence`, and server
+  sorting keeps valid dated reminders ahead of no-date reminders before
+  `dashboard_limit` truncation. This is generated-document retrieval plus
+  operator-recorded dispatch-evidence metadata and dashboard advisory surfacing
+  only: no sealed act,
   canonical Ata, or generated-byte mutation; no mail, email, SMS, or provider
   sending, and no delivery, legal notice completion, legal sufficiency, legal
   effect, provider execution, registry filing, signing, bundle readiness,
-  template legal review, threshold correctness, or law verification claim is
-  added.
+  template legal review, threshold correctness, law verification claim, or
+  dashboard ledger-event append is added.
 - Working tree keeps Documents/Archive/API/CI **PARTIAL**: `GET
   /v1/books/{id}/archive/local-dglab-interchange-manifest`, gated by
   `book.export@Book`, returns a deterministic local
