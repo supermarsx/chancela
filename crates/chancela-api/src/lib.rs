@@ -119,6 +119,7 @@ mod recovery;
 mod registry;
 mod roles;
 mod scap;
+mod secretstore;
 mod session;
 mod settings;
 mod signature;
