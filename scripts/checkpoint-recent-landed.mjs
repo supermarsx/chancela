@@ -849,7 +849,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/e2e/paper-book-import-ocr.spec.ts",
-    "paper-book import preserves non-canonical package and OCR review stays auxiliary",
+    "paper-book import preserves non-canonical package, OCR review, and dossier evidence",
     "paper-book OCR review browser workflow coverage",
   );
   assertFileContains(
