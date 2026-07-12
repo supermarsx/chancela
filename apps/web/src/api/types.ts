@@ -2330,7 +2330,8 @@ export interface LawCitationReport {
 // sign-in secret (argon2id) and a PKI audit-attestation key. No secret material ever
 // crosses the wire (`UserView` carries only booleans + a key fingerprint). A session is an
 // in-memory token (`X-Chancela-Session`) minted by `POST /v1/session` that resolves the
-// current user; a password is a local tamper speed-bump, not at-rest encryption.
+// current user; a password is required for account creation and sign-in. It is a local
+// tamper speed-bump, not at-rest encryption.
 
 export interface UserView {
   id: string;
@@ -2354,6 +2355,7 @@ export interface CreateUserBody {
   username: string;
   display_name?: string;
   email?: string;
+  password: string;
 }
 
 export interface UpdateUserBody {
@@ -2568,8 +2570,8 @@ export interface SessionView {
 /**
  * One sign-in-eligible user in the UNAUTHENTICATED roster (`GET /v1/session/roster`,
  * t45-e1). Deliberately minimal — EXACTLY these four keys; it never carries secret
- * material, the attestation fingerprint, `created_at` or `active`. `has_secret` tells the
- * sign-in surface whether to prompt for a password.
+ * material, the attestation fingerprint, `created_at` or `active`. `has_secret` exposes
+ * legacy/no-hash state; sign-in still always requires a password.
  */
 export interface RosterUser {
   id: string;
@@ -2634,8 +2636,8 @@ export interface PasswordPolicyView {
 
 export interface CreateSessionBody {
   user_id: string;
-  /** Required only for users with a sign-in secret (t29); 401/429 on failure. */
-  password?: string;
+  /** Required for every sign-in; 401/409/429 on failure. */
+  password: string;
 }
 
 // Sign-in secret + attestation-key management bodies (t29). `current_password` is

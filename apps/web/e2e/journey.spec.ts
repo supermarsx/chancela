@@ -19,7 +19,7 @@ test('onboard → session → entity → book → ata → seal → Arquivo chain
   page,
 }) => {
   // --- Onboard the first user + sign in (the app requires a session) ----------
-  // On a fresh server this runs the /bem-vindo wizard (creates the passwordless operator);
+  // On a fresh server this runs the /bem-vindo wizard (creates the password-backed operator);
   // it lands signed in at the app home.
   await signInAt(page, '/');
   const username = OPERATOR.username;

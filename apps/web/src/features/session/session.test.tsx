@@ -20,7 +20,7 @@ const AMELIA: UserView = {
   display_name: 'Amélia Marques',
   created_at: '2026-07-07T12:00:00Z',
   active: true,
-  has_secret: false,
+  has_secret: true,
   has_attestation_key: false,
   has_recovery_phrase: false,
 };
@@ -105,6 +105,9 @@ function serverStub(opts: {
     }
     if (url.includes('/v1/session')) {
       if (method === 'POST') {
+        if (typeof body?.password !== 'string' || body.password.length === 0) {
+          return json({ error: 'palavra-passe obrigatória' }, 401);
+        }
         if (opts.wrongPassword !== undefined && body?.password === opts.wrongPassword) {
           return json({ error: 'credenciais inválidas' }, 401);
         }
@@ -167,9 +170,19 @@ describe('AuthGate', () => {
     expect(screen.queryByText('APP CHROME')).toBeNull();
   });
 
-  it('a passwordless user signs in with one click and the app chrome appears', async () => {
+  it('prompts for a password for every roster user and sends it', async () => {
     const { fn, calls } = serverStub({
-      roster: { onboarding_required: false, users: [{ ...AMELIA }] },
+      roster: {
+        onboarding_required: false,
+        users: [
+          {
+            id: AMELIA.id,
+            username: AMELIA.username,
+            display_name: AMELIA.display_name,
+            has_secret: false,
+          },
+        ],
+      },
       postUser: AMELIA,
     });
     vi.stubGlobal('fetch', fn);
@@ -177,12 +190,13 @@ describe('AuthGate', () => {
     renderGate();
 
     fireEvent.click(await screen.findByText('Amélia Marques'));
+    const pw = await screen.findByLabelText('Palavra-passe');
+    fireEvent.change(pw, { target: { value: 'correct-horse' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Entrar' }));
 
     expect(await screen.findByText('APP CHROME')).toBeTruthy();
     const post = calls.find((c) => c.url.includes('/v1/session') && c.method === 'POST');
-    expect(post?.body).toMatchObject({ user_id: 'u1' });
-    // No password was sent for a passwordless user.
-    expect(post?.body?.password).toBeUndefined();
+    expect(post?.body).toMatchObject({ user_id: 'u1', password: 'correct-horse' });
   });
 
   it('prompts for a password on a has_secret user and rejects a wrong one (401)', async () => {
@@ -227,14 +241,14 @@ describe('AuthGate', () => {
     expect(post?.body).toMatchObject({ user_id: 'u2', password: 'correct-horse' });
   });
 
-  it('bootstrap: empty roster → create a user unauthenticated → passwordless sign-in lands in the app', async () => {
+  it('bootstrap: empty roster → create a user with password → password sign-in lands in the app', async () => {
     const NEW: UserView = {
       id: 'u9',
       username: 'amelia.marques',
       display_name: 'Amélia Marques',
       created_at: '2026-07-08T09:00:00Z',
       active: true,
-      has_secret: false,
+      has_secret: true,
       has_attestation_key: false,
       has_recovery_phrase: false,
     };
@@ -255,17 +269,26 @@ describe('AuthGate', () => {
     fireEvent.change(await screen.findByLabelText('Nome de utilizador'), {
       target: { value: 'amelia.marques' },
     });
+    fireEvent.change(screen.getByLabelText('Nova palavra-passe'), {
+      target: { value: 'Str0ng!Vault9' },
+    });
+    fireEvent.change(screen.getByLabelText('Confirmar palavra-passe'), {
+      target: { value: 'Str0ng!Vault9' },
+    });
     fireEvent.click(screen.getByRole('button', { name: 'Criar e entrar' }));
 
-    // The passwordless bootstrap sign-in lands the new operator straight in the app.
+    // The password bootstrap sign-in lands the new operator straight in the app.
     expect(await screen.findByText('APP CHROME')).toBeTruthy();
     // `POST /v1/users` went out with NO session header — a genuinely unauthenticated create.
     const postUser = calls.find((c) => c.url.includes('/v1/users') && c.method === 'POST');
     expect(postUser?.session).toBeNull();
-    // …then the wizard's passwordless handshake (`POST /v1/session`, no password).
+    expect(postUser?.body).toMatchObject({
+      username: 'amelia.marques',
+      password: 'Str0ng!Vault9',
+    });
+    // …then the password sign-in handshake.
     const postSession = calls.find((c) => c.url.includes('/v1/session') && c.method === 'POST');
-    expect(postSession?.body).toMatchObject({ user_id: 'u9' });
-    expect(postSession?.body?.password).toBeUndefined();
+    expect(postSession?.body).toMatchObject({ user_id: 'u9', password: 'Str0ng!Vault9' });
   });
 
   it('roster present: "criar novo utilizador" routes back to sign-in — never a raw 401', async () => {

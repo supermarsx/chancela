@@ -8,14 +8,13 @@
  *   welcome → organization name → first user → mandatory password → mandatory recovery
  *   phrase → finish (mark onboarding complete).
  *
- * ## Why the backend calls are sequenced the way they are (the t41 gating reality)
+ * ## Why the backend calls are sequenced the way they are (the auth gating reality)
  * Every domain mutation now requires a session (t41), so the wizard cannot PUT the org
- * name or set a secret while signed out. The only signed-out affordances are the
- * bootstrap `POST /v1/users` (allowed when zero users exist) and the temporary passwordless
- * `POST /v1/session`. So the wizard:
- *   1. creates the first user (bootstrap) AND immediately signs in — after the "first user"
- *      step, giving every later step a live session;
- *   2. sets the mandatory password and issues the mandatory recovery phrase WHILE signed in;
+ * name or issue recovery while signed out. The only signed-out affordance is bootstrap
+ * `POST /v1/users` (allowed when zero users exist), and it requires a password. So the wizard:
+ *   1. collects the first user's identity and password, then creates the bootstrap user with
+ *      that password and immediately signs in with it;
+ *   2. issues the mandatory recovery phrase WHILE signed in;
  *   3. at finish, PUTs the org name + `onboarding.completed = true` (also session-gated),
  *      then lands the now-signed-in operator in the app.
  *
@@ -91,31 +90,6 @@ export function OnboardingWizard() {
 
   async function createUserAndSignIn() {
     if (!isValidUsername(username)) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const user = await api.createUser({
-        username,
-        display_name: displayName.trim() || undefined,
-        email: email.trim() || undefined,
-      });
-      // Sign in passwordless right away so the remaining (session-gated) steps work.
-      const result = await api.createSession({ user_id: user.id });
-      setSessionToken(result.token);
-      qc.setQueryData(keys.session, await api.getSession());
-      setUserId(user.id);
-      void qc.invalidateQueries({ queryKey: keys.roster });
-      void qc.invalidateQueries({ queryKey: keys.users });
-      setStep('password');
-    } catch (e) {
-      setError(e);
-      toast.error(e);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function submitPassword() {
     setLocalError(null);
     if (pw.length === 0) {
       setLocalError(t('onboarding.password.required'));
@@ -133,11 +107,19 @@ export function OnboardingWizard() {
       setLocalError(t('onboarding.password.mismatch'));
       return;
     }
-    if (!userId) return;
     setBusy(true);
     setError(null);
     try {
-      await api.setUserSecret(userId, { password: pw });
+      const user = await api.createUser({
+        username,
+        display_name: displayName.trim() || undefined,
+        email: email.trim() || undefined,
+        password: pw,
+      });
+      const result = await api.createSession({ user_id: user.id, password: pw });
+      setSessionToken(result.token);
+      qc.setQueryData(keys.session, await api.getSession());
+      setUserId(user.id);
       void qc.invalidateQueries({ queryKey: keys.roster });
       void qc.invalidateQueries({ queryKey: keys.users });
       setStep('key');
@@ -257,7 +239,7 @@ export function OnboardingWizard() {
               className="onboarding__body"
               onSubmit={(e) => {
                 e.preventDefault();
-                void createUserAndSignIn();
+                setStep('password');
               }}
             >
               <h1 className="onboarding__title">{t('onboarding.user.title')}</h1>
@@ -324,7 +306,7 @@ export function OnboardingWizard() {
               className="onboarding__body"
               onSubmit={(e) => {
                 e.preventDefault();
-                void submitPassword();
+                void createUserAndSignIn();
               }}
             >
               <h1 className="onboarding__title">{t('onboarding.password.title')}</h1>

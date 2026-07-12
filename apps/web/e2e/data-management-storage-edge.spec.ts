@@ -17,6 +17,8 @@ import type {
   UserView,
 } from '../src/api/types';
 
+const GESTOR_PASSWORD = 'Gestor-Forte7!Z';
+
 test('storage cleanup is settings.manage-gated and only deletes retained exports', async ({
   page,
 }) => {
@@ -42,7 +44,12 @@ test('storage cleanup is settings.manage-gated and only deletes retained exports
   const seeded = await seedStorageFixtures(dataDir, suffix);
 
   const gestor = await createGestorUser(page.request, origin, ownerSession.token, suffix);
-  const gestorSession = await createSessionForUserId(page.request, origin, gestor.id);
+  const gestorSession = await createSessionForUserId(
+    page.request,
+    origin,
+    gestor.id,
+    GESTOR_PASSWORD,
+  );
   const gestorStatus = await getDataStatus(page.request, origin, gestorSession.token);
   expect(concernById(gestorStatus, 'exports')?.file_count).toBeGreaterThanOrEqual(2);
   expect(concernById(gestorStatus, 'crash')?.file_count).toBeGreaterThanOrEqual(1);
@@ -122,12 +129,12 @@ async function createSessionForUserId(
   request: APIRequestContext,
   origin: string,
   userId: string,
-  password?: string,
+  password: string,
 ): Promise<SessionResult> {
   const response = await request.post(`${origin}/v1/session`, {
     data: {
       user_id: userId,
-      ...(password ? { password } : {}),
+      password,
     },
   });
   await expectOk(response, `session for user ${userId}`);
@@ -145,6 +152,7 @@ async function createGestorUser(
     data: {
       username: `e2e.storage.${suffix}`,
       display_name: `E2E Storage ${suffix}`,
+      password: GESTOR_PASSWORD,
     },
   });
   await expectOk(response, 'create Gestor storage user');

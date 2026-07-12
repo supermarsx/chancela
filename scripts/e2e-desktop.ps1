@@ -13,9 +13,8 @@
                                      200 text/plain API-only landing
       * GET  /v1/session/roster   -> 200 JSON, onboarding required for the fresh data dir
       * GET  /v1/session/password-policy -> 200 JSON
-      * POST /v1/users            -> bootstrap first profile (only unauthenticated create)
-      * POST /v1/session          -> temporary bootstrap session token
-      * POST /v1/users/{id}/secret   -> mandatory password, with the session header
+      * POST /v1/users            -> bootstrap first profile with mandatory password
+      * POST /v1/session          -> password-backed bootstrap session token
       * POST /v1/users/{id}/recovery -> mandatory recovery phrase, with the session header
       * POST /v1/entities         -> 201 JSON, with the session header
       * GET  /v1/entities         -> the created entity is listed, with the session header
@@ -645,37 +644,30 @@ try {
         (($r.Status -eq 200) -and ($null -ne $j) -and ($j.min_length -ge 1) -and ($null -ne $j.rules)) `
         "status=$($r.Status) min_length=$(if ($j) { $j.min_length } else { '?' }) rules=$(if ($j -and $j.rules) { @($j.rules).Count } else { '?' })"
 
-    # 5. Bootstrap the first user. This is the only unauthenticated user create.
+    # 5. Bootstrap the first user. This is the only unauthenticated user create, and it requires a password.
     $username = "smoke-$unique"
-    $body = @{ username = $username; display_name = 'Smoke Test' } | ConvertTo-Json -Compress
+    $password = 'N0tary!Vault7'
+    $body = @{ username = $username; display_name = 'Smoke Test'; password = $password } | ConvertTo-Json -Compress
     $r = Invoke-Probe -Method POST -Url "$base/v1/users" -Body $body
     $j = ConvertFrom-JsonSafe $r.Body
     $userId = if ($j) { $j.id } else { $null }
     Add-Result 'POST /v1/users -> profile' `
-        (($r.Status -in 200, 201) -and ($null -ne $userId)) `
-        "status=$($r.Status) username=$username id=$userId"
+        (($r.Status -in 200, 201) -and ($null -ne $userId) -and ($j.has_secret -eq $true)) `
+        "status=$($r.Status) username=$username id=$userId has_secret=$(if ($j) { $j.has_secret } else { '?' })"
     if (-not $userId) { throw "cannot continue the round-trip without a created user" }
 
-    # 6. Open the temporary passwordless bootstrap session. Later onboarding steps are auth-gated.
-    $body = @{ user_id = $userId } | ConvertTo-Json -Compress
+    # 6. Open a password-backed bootstrap session. Later onboarding steps are auth-gated.
+    $body = @{ user_id = $userId; password = $password } | ConvertTo-Json -Compress
     $r = Invoke-Probe -Method POST -Url "$base/v1/session" -Body $body
     $j = ConvertFrom-JsonSafe $r.Body
     $token = if ($j) { $j.token } else { $null }
-    Add-Result 'POST /v1/session -> token' `
+    Add-Result 'POST /v1/session with password -> token' `
         (($r.Status -eq 200) -and (-not [string]::IsNullOrWhiteSpace($token))) `
         "status=$($r.Status) user=$(if ($j) { $j.user.username } else { '?' }) token=$(if ($token) { 'yes' } else { 'no' })"
     if (-not $token) { throw "cannot continue the round-trip without a session token" }
     $sessionHeader = @{ 'X-Chancela-Session' = $token }
 
-    # 7. Current onboarding requires a password and a one-time recovery phrase.
-    $password = 'N0tary!Vault7'
-    $body = @{ password = $password } | ConvertTo-Json -Compress
-    $r = Invoke-Probe -Method POST -Url "$base/v1/users/$userId/secret" -Body $body -Headers $sessionHeader
-    $j = ConvertFrom-JsonSafe $r.Body
-    Add-Result 'POST /v1/users/{id}/secret -> password set' `
-        (($r.Status -eq 200) -and ($null -ne $j) -and ($j.has_secret -eq $true)) `
-        "status=$($r.Status) has_secret=$(if ($j) { $j.has_secret } else { '?' })"
-
+    # 7. Current onboarding requires a one-time recovery phrase.
     $body = @{ current_password = $password } | ConvertTo-Json -Compress
     $r = Invoke-Probe -Method POST -Url "$base/v1/users/$userId/recovery" -Body $body -Headers $sessionHeader
     $j = ConvertFrom-JsonSafe $r.Body
@@ -684,18 +676,7 @@ try {
             (-not [string]::IsNullOrWhiteSpace($j.recovery_phrase))) `
         "status=$($r.Status) has_recovery_phrase=$(if ($j) { $j.has_recovery_phrase } else { '?' }) phrase=$(if ($j -and $j.recovery_phrase) { 'yes' } else { 'no' })"
 
-    # 8. Re-open a normal password-backed session and use that token for gated API routes.
-    $body = @{ user_id = $userId; password = $password } | ConvertTo-Json -Compress
-    $r = Invoke-Probe -Method POST -Url "$base/v1/session" -Body $body
-    $j = ConvertFrom-JsonSafe $r.Body
-    $token = if ($j) { $j.token } else { $null }
-    Add-Result 'POST /v1/session with password -> token' `
-        (($r.Status -eq 200) -and (-not [string]::IsNullOrWhiteSpace($token))) `
-        "status=$($r.Status) user=$(if ($j) { $j.user.username } else { '?' }) token=$(if ($token) { 'yes' } else { 'no' })"
-    if (-not $token) { throw "cannot continue the round-trip without a password-backed session token" }
-    $sessionHeader = @{ 'X-Chancela-Session' = $token }
-
-    # 9. Create an entity, attributed to the session user.
+    # 8. Create an entity, attributed to the session user.
     $body = @{
         name = 'Encosto Estrategico Lda'
         nipc = '503004642'
@@ -710,7 +691,7 @@ try {
         "status=$($r.Status) id=$entityId"
     if (-not $entityId) { throw "cannot continue the round-trip without a created entity" }
 
-    # 10. The entity is listed by an authenticated read.
+    # 9. The entity is listed by an authenticated read.
     $r = Invoke-Probe -Method GET -Url "$base/v1/entities" -Headers $sessionHeader
     $j = ConvertFrom-JsonSafe $r.Body
     $listed = ($null -ne $j) -and (@($j | Where-Object { $_.id -eq $entityId }).Count -gt 0)
@@ -718,14 +699,14 @@ try {
         (($r.Status -eq 200) -and $listed) `
         "status=$($r.Status) count=$(if ($j) { @($j).Count } else { 0 }) found=$listed"
 
-    # 11. /v1/dashboard is auth-gated; exercise it with the session token.
+    # 10. /v1/dashboard is auth-gated; exercise it with the session token.
     $r = Invoke-Probe -Method GET -Url "$base/v1/dashboard" -Headers $sessionHeader
     $j = ConvertFrom-JsonSafe $r.Body
     Add-Result 'GET /v1/dashboard -> JSON with session' `
         (($r.Status -eq 200) -and ($null -ne $j) -and ($j.entities -ge 1)) `
         "status=$($r.Status) content-type=$($r.ContentType) json=$($null -ne $j) entities=$(if ($j) { $j.entities } else { '?' })"
 
-    # 12. Ledger attribution: the entity.created event's actor is the session user. Assign the
+    # 11. Ledger attribution: the entity.created event's actor is the session user. Assign the
     # filtered result with a direct @() (NOT via an if/else block): assigning the output of an
     # `if` statement enumerates the pipeline and would unroll a single-element array back to a
     # scalar, whose `.Count` is $null under Windows PowerShell 5.1. @($null | ...) is already [].

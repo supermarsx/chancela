@@ -8,7 +8,7 @@
  * an attestation, "não uma assinatura qualificada".
  *
  * ## Cross-user authorization (t51)
- * Editing your OWN account keeps the self-service flow: changing/removing a password (and
+ * Editing your OWN account keeps the self-service flow: changing/replacing a password (and
  * every key op once a secret exists) proves your CURRENT password. Editing ANOTHER user
  * (cross-user — the session user id differs from the edited user id) requires a proof of
  * authority on every secret/key/recovery mutation: EITHER the target's current password OR a
@@ -23,7 +23,6 @@ import { useState } from 'react';
 import type {
   AttestationKeyBody,
   IssueRecoveryBody,
-  RemoveSecretBody,
   SetSecretBody,
   UserView,
 } from '../../api/types';
@@ -32,14 +31,13 @@ import {
   useCreateAttestationKey,
   useIssueRecovery,
   useRemoveAttestationKey,
-  useRemoveUserSecret,
   useSession,
   useSetUserSecret,
 } from '../../api/hooks';
 import { useT } from '../../i18n';
 import { Badge, Button, Field, Icon, InlineWarning, Input, Select, useToast } from '../../ui';
 
-type PwMode = null | 'set' | 'change' | 'remove';
+type PwMode = null | 'set' | 'change';
 type ProofKind = 'password' | 'recovery';
 
 /**
@@ -103,7 +101,6 @@ export function UserAccessManager({ user }: { user: UserView }) {
   const toast = useToast();
   const session = useSession();
   const setSecret = useSetUserSecret(user.id);
-  const removeSecret = useRemoveUserSecret(user.id);
   const createKey = useCreateAttestationKey(user.id);
   const removeKey = useRemoveAttestationKey(user.id);
   const issueRecovery = useIssueRecovery(user.id);
@@ -133,7 +130,7 @@ export function UserAccessManager({ user }: { user: UserView }) {
   const [recForbidden, setRecForbidden] = useState(false);
   const [recPhrase, setRecPhrase] = useState<string | null>(null);
 
-  const pwBusy = setSecret.isPending || removeSecret.isPending;
+  const pwBusy = setSecret.isPending;
   const keyBusy = createKey.isPending || removeKey.isPending;
 
   function resetPw() {
@@ -183,20 +180,6 @@ export function UserAccessManager({ user }: { user: UserView }) {
     });
   }
 
-  function submitRemoveSecret() {
-    setPwForbidden(false);
-    const body: RemoveSecretBody = isCrossUser
-      ? pwProof()
-      : { current_password: current || undefined };
-    removeSecret.mutate(body, {
-      onSuccess: () => {
-        toast.success(t('toast.secret.removed'));
-        resetPw();
-      },
-      onError: handleSecretError,
-    });
-  }
-
   // Key ops: a cross-user caller proves the target's current password via the same field
   // (recovery cannot GENERATE a key — backend 403s that path — so the key block offers the
   // password proof only, which authorizes both generate and remove).
@@ -238,7 +221,7 @@ export function UserAccessManager({ user }: { user: UserView }) {
       if (recProofKind === 'recovery') body.recovery_phrase = recProofValue || undefined;
       else body.current_password = recProofValue || undefined;
     } else if (user.has_secret) {
-      // Self-service: prove the current password when one is set (free when passwordless).
+      // Self-service: prove the current password when one is set (legacy no-hash state has none).
       body.current_password = recProofValue || undefined;
     }
     issueRecovery.mutate(body, {
@@ -273,7 +256,7 @@ export function UserAccessManager({ user }: { user: UserView }) {
 
       {/* --- Password --------------------------------------------------------- */}
       {/* t51-e3: cross-user password-change proof — when editing another user the
-          change/remove/set controls collect the target's current password OR a recovery
+          change/set controls collect the target's current password OR a recovery
           phrase (ProofFields) and send it on the secret mutation; a 403 refusal renders
           inline (retryable) and toasts. Self-service keeps the current-password flow. */}
       <div className="access-manager__block">
@@ -289,62 +272,15 @@ export function UserAccessManager({ user }: { user: UserView }) {
         {pwMode === null ? (
           <div className="access-manager__actions">
             {user.has_secret ? (
-              <>
-                <Button variant="secondary" onClick={() => setPwMode('change')}>
-                  {t('users.secret.change')}
-                </Button>
-                <Button variant="ghost" icon={<Icon.Trash />} onClick={() => setPwMode('remove')}>
-                  {t('users.secret.remove')}
-                </Button>
-              </>
+              <Button variant="secondary" onClick={() => setPwMode('change')}>
+                {t('users.secret.change')}
+              </Button>
             ) : (
               <Button variant="secondary" icon={<Icon.Plus />} onClick={() => setPwMode('set')}>
                 {t('users.secret.set')}
               </Button>
             )}
           </div>
-        ) : pwMode === 'remove' ? (
-          <form
-            className="access-manager__form"
-            onSubmit={(e) => {
-              e.preventDefault();
-              submitRemoveSecret();
-            }}
-          >
-            <InlineWarning tone="warn">{t('users.access.cascadeWarning')}</InlineWarning>
-            {isCrossUser ? (
-              <ProofFields
-                idPrefix={`sec-proof-${user.id}`}
-                kind={pwProofKind}
-                onKind={setPwProofKind}
-                value={pwProofValue}
-                onValue={setPwProofValue}
-                forbidden={pwForbidden}
-              />
-            ) : (
-              <Field
-                label={t('users.secret.current')}
-                htmlFor={`sec-cur-${user.id}`}
-                hint={t('users.secret.currentHint')}
-              >
-                <Input
-                  id={`sec-cur-${user.id}`}
-                  type="password"
-                  value={current}
-                  onChange={(e) => setCurrent(e.target.value)}
-                  autoComplete="current-password"
-                />
-              </Field>
-            )}
-            <div className="access-manager__actions">
-              <Button type="button" variant="ghost" disabled={pwBusy} onClick={resetPw}>
-                {t('common.cancel')}
-              </Button>
-              <Button type="submit" variant="primary" disabled={pwBusy}>
-                {pwBusy ? t('common.saving') : t('users.secret.remove')}
-              </Button>
-            </div>
-          </form>
         ) : (
           <form
             className="access-manager__form"

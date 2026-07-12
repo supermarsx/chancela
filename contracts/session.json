@@ -5,11 +5,15 @@
     "display_name": "Amélia Marques",
     "created_at": "2026-07-07T10:15:30Z",
     "active": true,
-    "has_secret": false,
+    "has_secret": true,
     "has_attestation_key": false,
     "has_recovery_phrase": false
   },
   "permissions": [
-    { "permission": "act.advance", "scope": { "kind": "global" }, "source": "role" }
+    {
+      "permission": "act.advance",
+      "scope": { "kind": "global" },
+      "source": "role"
+    }
   ]
 }

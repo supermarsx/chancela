@@ -5,7 +5,7 @@
  *
  * The form itself lives in the reusable {@link UserCreateForm}; Settings is the authenticated
  * host. The signed-out entry-screen bootstrap path (t50 W3) mounts the same `UserCreateForm`
- * with its own `onCreated` (passwordless sign-in) — `POST /v1/users` is bootstrap-only when
+ * with its own `onCreated` (create password sign-in) — `POST /v1/users` is bootstrap-only when
  * signed out and session-gated otherwise, so that gating lives in W3's host, not here.
  */
 import { useT } from '../../i18n';

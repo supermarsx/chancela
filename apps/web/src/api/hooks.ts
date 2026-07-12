@@ -2007,19 +2007,19 @@ export function usePasswordPolicy() {
   });
 }
 
-/** Arguments for {@link useCreateSession}: the user to sign in as and, for a
- *  password-protected user (`has_secret`), their sign-in secret. */
+/** Arguments for {@link useCreateSession}: the user to sign in as and their password. */
 export interface SignInArgs {
   userId: string;
-  password?: string;
+  password: string;
 }
 
 /**
  * Sign in as a user (`POST /v1/session`, t29). The issued token is stored in memory so
  * every subsequent request carries it; the session query is primed with a full session
  * read so RBAC-gated UI has the effective permission grants immediately. A password is
- * sent only for `has_secret` users; a wrong/missing password is a **401** and too many
- * attempts a **429** (backoff) — the caller surfaces those distinctly.
+ * always sent; a wrong/missing password is a **401**, a legacy account with no password
+ * verifier is a **409**, and too many attempts a **429** (backoff) — the caller surfaces
+ * those distinctly.
  */
 export function useCreateSession() {
   const qc = useQueryClient();

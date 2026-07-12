@@ -220,6 +220,12 @@ describe('NewUserPanel (Configurações → Utilizadores → novo)', () => {
     fireEvent.change(screen.getByLabelText('E-mail (opcional)'), {
       target: { value: 'amelia@example.pt' },
     });
+    fireEvent.change(screen.getByLabelText('Nova palavra-passe'), {
+      target: { value: 'Str0ng!Vault9' },
+    });
+    fireEvent.change(screen.getByLabelText('Confirmar palavra-passe'), {
+      target: { value: 'Str0ng!Vault9' },
+    });
     fireEvent.click(screen.getByRole('button', { name: /criar utilizador/i }));
 
     await waitFor(() => expect(calls.some((c) => c.method === 'POST')).toBe(true));
@@ -229,6 +235,7 @@ describe('NewUserPanel (Configurações → Utilizadores → novo)', () => {
       username: 'amelia.marques',
       display_name: 'Amélia Marques',
       email: 'amelia@example.pt',
+      password: 'Str0ng!Vault9',
     });
     // A success toast confirms the create (t44 retrofit-b) — it fires as the page navigates
     // to the new user's edit screen (ToastProvider is above the router).
@@ -247,6 +254,12 @@ describe('NewUserPanel (Configurações → Utilizadores → novo)', () => {
 
     fireEvent.change(await screen.findByLabelText('Nome de utilizador'), {
       target: { value: 'amelia.marques' },
+    });
+    fireEvent.change(screen.getByLabelText('Nova palavra-passe'), {
+      target: { value: 'Str0ng!Vault9' },
+    });
+    fireEvent.change(screen.getByLabelText('Confirmar palavra-passe'), {
+      target: { value: 'Str0ng!Vault9' },
     });
     fireEvent.click(screen.getByRole('button', { name: /criar utilizador/i }));
 
@@ -336,6 +349,20 @@ describe('EditUserPanel (Configurações → Utilizadores → user) — identity
     const post = calls.find((c) => c.url.includes('/secret') && c.method === 'POST');
     expect(post?.url).toContain('/v1/users/u1/secret');
     expect(post?.body).toMatchObject({ password: 'password123' });
+  });
+
+  it('hides the remove-password action for users that already have a password', async () => {
+    const secured = { ...AMELIA, has_secret: true };
+    const { fn, calls } = recordingFetch((r) =>
+      r.url.endsWith('/v1/users/u1') ? jsonResponse(secured) : jsonResponse([secured]),
+    );
+    vi.stubGlobal('fetch', fn);
+
+    renderEditAt('u1');
+
+    expect(await screen.findByRole('button', { name: 'Alterar' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Remover' })).toBeNull();
+    expect(calls.some((c) => c.url.includes('/secret') && c.method === 'DELETE')).toBe(false);
   });
 
   it('blocks mismatched passwords before hitting the server', async () => {
@@ -785,7 +812,7 @@ describe('EditUserPanel — cross-user password change proof + 403 (t51)', () =>
     renderEditAt('u1');
 
     fireEvent.click(await screen.findByRole('button', { name: 'Gerar frase de recuperação' }));
-    // Self + passwordless → no proof needed; just submit.
+    // Self + legacy no-hash state → no proof exists; just submit.
     fireEvent.click(await screen.findByRole('button', { name: 'Gerar frase' }));
 
     // The phrase is shown exactly once, prominently.

@@ -1,8 +1,8 @@
 /**
  * Onboarding wizard tests (plan t44 §3.2): the frozen step flow and that finishing marks
  * onboarding complete + lands the now-signed-in operator in the app. The wizard sequences
- * its backend calls around the t41 gating: bootstrap create → passwordless sign-in → then
- * the session-gated secret / key / settings writes.
+ * its backend calls around the auth gating: bootstrap create with password → password sign-in
+ * → then the session-gated recovery/settings writes.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
@@ -18,7 +18,7 @@ const USER: UserView = {
   display_name: 'Operador',
   created_at: '2026-07-08T09:00:00Z',
   active: true,
-  has_secret: false,
+  has_secret: true,
   has_attestation_key: false,
   has_recovery_phrase: false,
 };
@@ -77,7 +77,6 @@ function wizardStub(): { fn: typeof fetch; calls: Recorded[] } {
       return json(DEFAULT_SETTINGS);
     }
     if (url.endsWith('/v1/users') && method === 'POST') return json(USER, 201);
-    if (url.includes('/v1/users/u1/secret')) return json({ ...USER, has_secret: true });
     if (url.includes('/v1/users/u1/recovery'))
       return json({
         ...USER,
@@ -85,7 +84,10 @@ function wizardStub(): { fn: typeof fetch; calls: Recorded[] } {
         has_recovery_phrase: true,
         recovery_phrase: RECOVERY_PHRASE,
       });
-    if (url.includes('/v1/session') && method === 'POST') return json({ token: 'tok', user: USER });
+    if (url.includes('/v1/session') && method === 'POST') {
+      if (body?.password !== STRONG_PASSWORD) return json({ error: 'credenciais inválidas' }, 401);
+      return json({ token: 'tok', user: USER });
+    }
     if (url.includes('/v1/session')) return json({ user: null });
     return Promise.reject(new Error(`no stub for ${url}`));
   }) as typeof fetch;
@@ -124,7 +126,7 @@ describe('OnboardingWizard', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Seguinte' }));
 
-    // User → (create + passwordless sign-in) → Password
+    // User → Password (no backend create until the password is submitted)
     fireEvent.change(await screen.findByLabelText('Nome de utilizador'), {
       target: { value: 'operador' },
     });
@@ -133,7 +135,7 @@ describe('OnboardingWizard', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Seguinte' }));
 
-    // Password → (set secret) → Recovery phrase
+    // Password → (bootstrap create + password sign-in) → Recovery phrase
     fireEvent.change(await screen.findByLabelText('Palavra-passe'), {
       target: { value: STRONG_PASSWORD },
     });
@@ -156,19 +158,19 @@ describe('OnboardingWizard', () => {
     const seq = calls.map(path);
     expect(seq).toContain('POST /v1/users');
     expect(seq).toContain('POST /v1/session');
-    expect(seq).toContain('POST /v1/users/u1/secret');
     expect(seq).toContain('POST /v1/users/u1/recovery');
-    // create user precedes sign-in precedes the session-gated secret write.
+    expect(seq).not.toContain('POST /v1/users/u1/secret');
+    // create user precedes sign-in, which precedes the session-gated recovery write.
     expect(seq.indexOf('POST /v1/users')).toBeLessThan(seq.indexOf('POST /v1/session'));
-    expect(seq.indexOf('POST /v1/session')).toBeLessThan(seq.indexOf('POST /v1/users/u1/secret'));
-    expect(seq.indexOf('POST /v1/users/u1/secret')).toBeLessThan(
-      seq.indexOf('POST /v1/users/u1/recovery'),
-    );
+    expect(seq.indexOf('POST /v1/session')).toBeLessThan(seq.indexOf('POST /v1/users/u1/recovery'));
     const createdUser = calls.find((c) => c.method === 'POST' && c.url.endsWith('/v1/users'));
     expect(createdUser?.body).toMatchObject({
       username: 'operador',
       email: 'operador@example.pt',
+      password: STRONG_PASSWORD,
     });
+    const session = calls.find((c) => c.method === 'POST' && c.url.includes('/v1/session'));
+    expect(session?.body).toMatchObject({ user_id: 'u1', password: STRONG_PASSWORD });
     const recovery = calls.find((c) => c.url.includes('/v1/users/u1/recovery'));
     expect(recovery?.body).toMatchObject({ current_password: STRONG_PASSWORD });
 
@@ -247,7 +249,8 @@ describe('OnboardingWizard', () => {
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Seguinte' }).hasAttribute('disabled')).toBe(true),
     );
-    expect(calls.some((c) => c.url.includes('/secret'))).toBe(false);
+    expect(calls.some((c) => c.method === 'POST' && c.url.endsWith('/v1/users'))).toBe(false);
+    expect(calls.some((c) => c.method === 'POST' && c.url.includes('/v1/session'))).toBe(false);
   });
 });
 

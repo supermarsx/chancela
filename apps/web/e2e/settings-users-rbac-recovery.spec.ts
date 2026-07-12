@@ -34,6 +34,8 @@ test('settings users, RBAC owner guard, and recovery/data confirmation gates', a
 
     await page.getByLabel('Nome de utilizador').fill(username);
     await page.getByLabel('Nome a apresentar (opcional)').fill(displayName);
+    await page.getByLabel('Nova palavra-passe').fill(password);
+    await page.getByLabel('Confirmar palavra-passe').fill(password);
     await page.getByRole('button', { name: 'Criar utilizador' }).click();
 
     await expect(page).toHaveURL(/\/configuracoes\?sec=utilizadores&user=[0-9a-f-]{36}$/);
@@ -47,8 +49,8 @@ test('settings users, RBAC owner guard, and recovery/data confirmation gates', a
     await expect(userRow(page, username)).toContainText(renamed);
   });
 
-  await test.step('self-service password and recovery phrase work for the new user', async () => {
-    await switchCurrentUser(page, renamed);
+  await test.step('self-service password change and recovery phrase work for the new user', async () => {
+    await switchCurrentUser(page, renamed, password);
     await expect(page.getByTestId('session-trigger')).toContainText(renamed);
 
     const access = page.locator('section#acesso');
@@ -66,7 +68,8 @@ test('settings users, RBAC owner guard, and recovery/data confirmation gates', a
     await expect(recoveryBlock.getByText('Guarde esta frase agora')).toHaveCount(0);
 
     const passwordBlock = access.locator('.access-manager__block').nth(0);
-    await passwordBlock.getByRole('button', { name: 'Definir palavra-passe' }).click();
+    await passwordBlock.getByRole('button', { name: 'Alterar' }).click();
+    await passwordBlock.getByLabel('Palavra-passe atual').fill(password);
     await passwordBlock.getByLabel('Nova palavra-passe').fill(password);
     await passwordBlock.getByLabel('Confirmar palavra-passe').fill(password);
     await passwordBlock.getByRole('button', { name: 'Guardar' }).click();
@@ -165,9 +168,11 @@ function userRow(page: Page, username: string): Locator {
   return page.getByRole('row').filter({ hasText: username });
 }
 
-async function switchCurrentUser(page: Page, displayName: string): Promise<void> {
+async function switchCurrentUser(page: Page, displayName: string, password: string): Promise<void> {
   await page.getByTestId('session-trigger').click();
   await page.getByRole('menuitemradio', { name: new RegExp(escapeRegExp(displayName)) }).click();
+  await page.locator('#picker-pw').fill(password);
+  await page.getByRole('button', { name: 'Entrar' }).click();
 }
 
 function escapeRegExp(value: string): string {

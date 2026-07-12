@@ -76,11 +76,8 @@ async function completeOnboarding(page: Page): Promise<void> {
 async function pickOperator(page: Page): Promise<void> {
   await page.getByRole('listitem').filter({ hasText: OPERATOR.displayName }).first().click();
   const password = page.getByLabel('Palavra-passe', { exact: true });
-  const appChrome = page.getByTestId('tab-bar');
-  await expect(password.or(appChrome)).toBeVisible();
-  if (await password.isVisible()) {
-    await password.fill(OPERATOR_PASSWORD);
-    await page.getByRole('button', { name: 'Entrar' }).click();
-  }
+  await expect(password).toBeVisible();
+  await password.fill(OPERATOR_PASSWORD);
+  await page.getByRole('button', { name: 'Entrar' }).click();
   await expect(page.getByTestId('tab-bar')).toBeVisible();
 }

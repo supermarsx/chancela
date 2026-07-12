@@ -60,7 +60,7 @@ async function resetBackendForTest(request: APIRequestContext, testInfo: TestInf
       confirm_phrase: 'REPOR FÁBRICA',
       export_first: false,
       skip_export_confirm: true,
-      reauth: resetUser.has_secret ? { password: OPERATOR_PASSWORD } : {},
+      reauth: { password: OPERATOR_PASSWORD },
       actor: RESET_ACTOR,
     },
   });
@@ -76,18 +76,15 @@ async function resetBackendForTest(request: APIRequestContext, testInfo: TestInf
 
 function selectResetUser(roster: SessionRoster): RosterUser {
   const operator = roster.users.find((user) => user.username === OPERATOR.username);
-  if (operator) {
-    return operator;
+  if (!operator) {
+    throw new Error(`Cannot reset E2E backend: ${OPERATOR.username} is absent from the roster.`);
   }
-
-  const passwordless = roster.users.find((user) => !user.has_secret);
-  if (passwordless) {
-    return passwordless;
+  if (!operator.has_secret) {
+    throw new Error(
+      `Cannot reset E2E backend: ${OPERATOR.username} has no configured password verifier.`,
+    );
   }
-
-  throw new Error(
-    `Cannot reset E2E backend: ${OPERATOR.username} is absent and no passwordless bootstrap user is available.`,
-  );
+  return operator;
 }
 
 async function createResetSession(
@@ -105,7 +102,7 @@ async function createResetSession(
     const response = await request.post('/v1/session', {
       data: {
         user_id: user.id,
-        ...(user.has_secret ? { password: OPERATOR_PASSWORD } : {}),
+        password: OPERATOR_PASSWORD,
       },
     });
 

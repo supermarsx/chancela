@@ -6,10 +6,9 @@
  * the whole point: the signed-out roster breaks the chicken-and-egg lockout the t43 audit
  * flagged.
  *
- * Passwordless users sign in with a single click; a `has_secret` user reveals a password
- * prompt. A wrong password is a **401** (shown inline as "palavra-passe incorreta"); a
- * backoff is a **429** whose server message (with the countdown) is surfaced as a toast.
- * A raw 401 is never rendered.
+ * Picking a user reveals a password prompt. A wrong password is a **401** (shown inline
+ * as "palavra-passe incorreta"); a legacy no-password account is a **409** and a backoff
+ * is a **429**, both surfaced as the server message. A raw 401 is never rendered.
  *
  * ## "Criar novo utilizador" from the entry screen (plan t50 W3)
  * The entry screen offers a create affordance whose honesty depends on the roster — because
@@ -17,9 +16,9 @@
  * zero users exist; otherwise it 401s "sessão requerida", t41):
  *
  *  - **Empty roster (bootstrap):** the affordance mounts the shared {@link UserCreateForm}
- *    and creates the first user unauthenticated, then runs the SAME passwordless handshake
- *    the onboarding wizard uses (`createSession` → prime the session cache → invalidate the
- *    roster/users) so the operator lands straight in the app. This is the genuine
+ *    and creates the first user unauthenticated with a password, then signs in with that
+ *    password (`createSession` → prime the session cache → invalidate the roster/users)
+ *    so the operator lands straight in the app. This is the genuine
  *    unauthenticated win — it replaces the old empty-roster dead-end. (The full onboarding
  *    wizard remains the guided first-run path; this is the lighter "just make a user"
  *    alternative — the two coexist; no wizard logic is duplicated, only its proven sequence
@@ -61,7 +60,7 @@ export function SignIn() {
   const users = roster.data?.users ?? [];
   const busy = signIn.isPending;
 
-  function attempt(user: RosterUser, secret?: string) {
+  function attempt(user: RosterUser, secret: string) {
     setWrongPassword(false);
     signIn.mutate(
       { userId: user.id, password: secret },
@@ -83,34 +82,30 @@ export function SignIn() {
   }
 
   function pick(user: RosterUser) {
-    if (user.has_secret) {
-      setSelected(user);
-      setPassword('');
-      setWrongPassword(false);
-    } else {
-      attempt(user);
-    }
+    setSelected(user);
+    setPassword('');
+    setWrongPassword(false);
   }
 
   /**
    * The bootstrap handshake, run after {@link UserCreateForm} creates the first user
-   * (empty-roster case only). It mirrors the wizard's `createUserAndSignIn` tail exactly:
-   * a passwordless `POST /v1/session`, prime the `['session']` cache so the AuthGate flips
-   * to the app without a refetch round-trip, and invalidate the roster/users. No navigation
-   * is needed — the AuthGate re-renders the app chrome as soon as the session is present.
+   * (empty-roster case only). It signs in with the just-submitted creation password, primes
+   * the `['session']` cache so the AuthGate flips to the app without a refetch round-trip,
+   * and invalidates the roster/users. No navigation is needed — the AuthGate re-renders the
+   * app chrome as soon as the session is present.
    */
-  async function bootstrapSignIn(user: UserView) {
+  async function bootstrapSignIn(user: UserView, createdPassword: string) {
     setBootstrapping(true);
     try {
-      const result = await api.createSession({ user_id: user.id });
+      const result = await api.createSession({ user_id: user.id, password: createdPassword });
       setSessionToken(result.token);
       qc.setQueryData(keys.session, await api.getSession());
       void qc.invalidateQueries({ queryKey: keys.roster });
       void qc.invalidateQueries({ queryKey: keys.users });
       toast.success(t('toast.signin.bootstrap'));
     } catch (e) {
-      // The passwordless sign-in of a just-created user should not fail, but if the roster
-      // raced (a user now exists) surface the server's PT message rather than a raw error.
+      // If the roster raced (a user now exists) surface the server's PT message rather than
+      // a raw error.
       toast.error(e);
     } finally {
       setBootstrapping(false);
@@ -147,7 +142,7 @@ export function SignIn() {
             <UserCreateForm
               autoFocus
               submitLabel={t('signin.bootstrap.submit')}
-              onCreated={(user) => void bootstrapSignIn(user)}
+              onCreated={(user, createdPassword) => void bootstrapSignIn(user, createdPassword)}
             />
             <div className="signin__actions">
               <Button
@@ -250,12 +245,10 @@ export function SignIn() {
                     <span className="signin__user-name">{u.display_name}</span>
                     <code className="mono signin__user-username">{u.username}</code>
                   </span>
-                  {u.has_secret ? (
-                    <span className="signin__user-lock" title={t('signin.requiresPassword')}>
-                      <Icon.Seal />
-                      <span className="sr-only">{t('signin.requiresPassword')}</span>
-                    </span>
-                  ) : null}
+                  <span className="signin__user-lock" title={t('signin.requiresPassword')}>
+                    <Icon.Seal />
+                    <span className="sr-only">{t('signin.requiresPassword')}</span>
+                  </span>
                 </button>
               ))}
             </div>

@@ -5,8 +5,8 @@
  * entry-screen bootstrap path (t50 W3). It owns the field state, the client-side username
  * validation that mirrors the server, and the inline 409-duplicate surface; it does NOT
  * decide what happens after a successful create — the parent's `onCreated(user)` handler
- * owns the toast + navigation (or, for the bootstrap path, the follow-on passwordless
- * sign-in). This keeps the form honest and identical in every host.
+ * owns the toast + navigation (or, for the bootstrap path, the follow-on password sign-in).
+ * This keeps the form honest and identical in every host.
  */
 import { useState } from 'react';
 import { useCreateUser } from '../../api/hooks';
@@ -22,7 +22,7 @@ export function UserCreateForm({
   autoFocus,
 }: {
   /** Called with the freshly created user; the host owns the toast + navigation. */
-  onCreated: (user: UserView) => void;
+  onCreated: (user: UserView, password: string) => void;
   /** Override the submit label (defaults to `users.create.submit`). */
   submitLabel?: string;
   /** Focus the username field on mount (dedicated create screen wants this). */
@@ -34,6 +34,9 @@ export function UserCreateForm({
   const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [password2, setPassword2] = useState('');
+  const [passwordError, setPasswordError] = useState<string | null>(null);
   const fieldError = usernameError(username);
 
   // Surface a server duplicate (409) inline against the username field.
@@ -43,16 +46,33 @@ export function UserCreateForm({
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!isValidUsername(username)) return;
+    setPasswordError(null);
+    if (password.length === 0) {
+      setPasswordError(t('onboarding.password.required'));
+      return;
+    }
+    if (password !== password2) {
+      setPasswordError(t('users.secret.mismatch'));
+      return;
+    }
     create.mutate(
-      { username, display_name: displayName.trim() || undefined, email: email.trim() || undefined },
+      {
+        username,
+        display_name: displayName.trim() || undefined,
+        email: email.trim() || undefined,
+        password,
+      },
       {
         onSuccess: (user) => {
           // R7: the inline 409 duplicate note against the field stays; the host toasts
           // the success + navigates.
+          const createdPassword = password;
           setUsername('');
           setDisplayName('');
           setEmail('');
-          onCreated(user);
+          setPassword('');
+          setPassword2('');
+          onCreated(user, createdPassword);
         },
         // R7: a non-conflict failure keeps its inline ErrorNote below AND toasts.
         onError: (e) => toast.error(e),
@@ -98,13 +118,40 @@ export function UserCreateForm({
           autoComplete="email"
         />
       </Field>
+      <Field label={t('users.secret.new')} htmlFor="user-password" hint={t('users.secret.hint')}>
+        <Input
+          id="user-password"
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          autoComplete="new-password"
+        />
+      </Field>
+      <Field
+        label={t('users.secret.confirm')}
+        htmlFor="user-password-confirm"
+        error={passwordError}
+      >
+        <Input
+          id="user-password-confirm"
+          type="password"
+          value={password2}
+          onChange={(e) => setPassword2(e.target.value)}
+          autoComplete="new-password"
+        />
+      </Field>
       {create.error && !conflict ? <ErrorNote error={create.error} /> : null}
       <div className="form__actions">
         <Button
           type="submit"
           variant="primary"
           icon={<Icon.Plus />}
-          disabled={create.isPending || !isValidUsername(username)}
+          disabled={
+            create.isPending ||
+            !isValidUsername(username) ||
+            password.length === 0 ||
+            password !== password2
+          }
         >
           {create.isPending
             ? t('users.create.submitting')

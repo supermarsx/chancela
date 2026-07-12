@@ -1,8 +1,8 @@
 /**
  * Current-user picker (plan t14 §2.8) — a compact control at the right of the fixed
  * tab bar. It shows the active user's display name, or the system actor "api" when no
- * one is signed in. Opening it lists the active users; picking one signs in
- * (`POST /v1/session`, token kept in memory), signing out clears the session
+ * one is signed in. Opening it lists the active users; picking one prompts for a password
+ * and signs in (`POST /v1/session`, token kept in memory), signing out clears the session
  * (`DELETE /v1/session`). While signed in, the API client sends `X-Chancela-Session`
  * on every request so the ledger attributes the actor to the chosen user.
  *
@@ -22,7 +22,7 @@ export function CurrentUserPicker() {
   const t = useT();
   const toast = useToast();
   const [open, setOpen] = useState(false);
-  // The user being switched TO who carries a secret — reveals an inline password prompt.
+  // The user being switched TO — reveals an inline password prompt.
   const [pending, setPending] = useState<UserView | null>(null);
   const [password, setPassword] = useState('');
   const [wrongPassword, setWrongPassword] = useState(false);
@@ -54,7 +54,7 @@ export function CurrentUserPicker() {
     setWrongPassword(false);
   }
 
-  function attempt(user: UserView, secret?: string) {
+  function attempt(user: UserView, secret: string) {
     setWrongPassword(false);
     signIn.mutate(
       { userId: user.id, password: secret },
@@ -82,13 +82,9 @@ export function CurrentUserPicker() {
       setOpen(false);
       return;
     }
-    if (user.has_secret) {
-      setPending(user);
-      setPassword('');
-      setWrongPassword(false);
-    } else {
-      attempt(user);
-    }
+    setPending(user);
+    setPassword('');
+    setWrongPassword(false);
   }
 
   function out() {
