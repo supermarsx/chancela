@@ -299,10 +299,12 @@ source/action/deep-link/no-date ordering/fixture markers, plus document-bundle
 `evidence/generated-dispatch/{document_id}.json` sidecar/index markers,
 live-provider assurance markers, validator manifest,
 Arquivo paged-ledger route/default-limit/cursor markers, 1000+ event first-page
-and load-more coverage, shared list/export search (`q`), chain/scope filter,
-and limit normalization markers, numeric `next_cursor` typing, Livro-style
-filters, icon-only clear-control markers, JSON/TXT/CSV/HTML export-format markers, and
-canonical-only PDF/A evidence boundaries, external-signing slot evidence
+and load-more coverage, `Store::ledger_events_page` persisted-pager markers,
+API after-reload/memory-clear store-pager coverage, shared list/export search
+(`q`), chain/scope filter, and limit normalization markers, numeric
+`next_cursor` typing, Livro-style filters, icon-only clear-control markers,
+JSON/TXT/CSV/HTML export-format markers, and canonical-only PDF/A evidence
+boundaries, external-signing slot evidence
 metadata rendering, pending/initiated slot operator evidence actions,
 identity-requirement-tagged row builders, no-`complete:true` PATCH payloads,
 and desktop `Cargo.lock` are present, so accidental deletion or rename of the
@@ -357,9 +359,10 @@ single OTP/PIN/SAD authorizing multiple documents, CMD multiple-sign,
 CSC/QTSP multi-hash/SAD batch, SCAP-verified representative authority,
 legal-capacity proof, API/web coverage for the core-only repeated
 remote-session helper, or legal effect for local CC batch UI evidence. The
-Arquivo markers prove bounded UI/API paging and
-filtered export behavior only; they do not prove persistent-store boot-time SQL
-paging or turn non-PDF/A exports into preserved evidence. The external invite
+Arquivo markers prove bounded UI/API paging, persisted-store SQL paging after
+reload/memory clear, and filtered export behavior only; they do not turn
+non-PDF/A exports into preserved evidence or certify legal archive/DGLAB
+acceptance. The external invite
 signed-PDF markers prove act-scoped technical signed evidence and the linked
 no-identity external slot status path only. The operator-supplied
 external-signing slot evidence markers prove stored technical evidence display

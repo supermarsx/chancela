@@ -547,10 +547,12 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
   canonical PDF/A plus JSON/TXT/CSV/HTML audit/interchange formats. Only PDF/A
   is the canonical preserved evidence export; the other formats are review or
   interchange aids.
-- Ledger archive export preserves active filters and refuses unauthorized
-  downloads. The current bounded tests prove first-page and cursor behavior for
-  1000+ in-memory log events; they do not prove persistent-store boot-time SQL
-  paging.
+- Ledger archive paging coverage now spans 1000+ in-memory log events and
+  SQL-backed persisted store pages after reopen/reload and memory clear via
+  `Store::ledger_events_page`. Ledger archive export preserves active filters,
+  shares limit normalization with the paged list, and refuses unauthorized
+  downloads. This does not make non-PDF/A exports preserved evidence or certify
+  legal archive compliance, DGLAB acceptance, or production custody.
 - Export actions that create user-owned files open the desktop/browser save
   prompt when available, return a visible cancellation state when the user backs
   out, and fall back to a safe browser download only when direct save APIs are
@@ -1412,9 +1414,10 @@ settingsDefaults.test.ts contracts.test.ts`.
   `generated_dispatch_evidence` metadata and archive
   `evidence/generated-dispatch/{document_id}.json` sidecar/index markers,
   plus Arquivo paged ledger route/default-limit/cursor markers,
-  1000+ event first-page/load-more tests, shared list/export search (`q`),
-  chain/scope filter, and limit normalization markers, numeric `next_cursor`
-  typing, Livro-style filter and
+  1000+ event first-page/load-more tests, `Store::ledger_events_page`
+  persisted-pager tests, API after-reload/memory-clear store-pager markers,
+  shared list/export search (`q`), chain/scope filter, and limit normalization
+  markers, numeric `next_cursor` typing, Livro-style filter and
   icon-only clear-control markers, and JSON/TXT/CSV/HTML export-format markers
   with canonical-only PDF/A evidence boundaries.
 

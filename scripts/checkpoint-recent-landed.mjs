@@ -6369,6 +6369,11 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-api/src/lib.rs",
+    "ledger_events_page_uses_store_pager_after_reload_and_memory_clear",
+    "ledger archive store-pager reload coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
     "ledger_archive_document_limit_matches_paged_list_for_filtered_exports",
     "ledger archive shared export/list limit coverage",
   );
@@ -6376,6 +6381,26 @@ function assertCheckpointMap() {
     "crates/chancela-api/src/lib.rs",
     "[(\"0\", 1_usize), (\"500\", 250_usize)]",
     "ledger archive page limit normalization marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/ledger_events_page.rs",
+    ".ledger_events_page(&store_query(&query))",
+    "ledger archive store-backed selector marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/src/lib.rs",
+    "pub fn ledger_events_page(",
+    "store ledger persisted pager implementation marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/tests/store.rs",
+    "ledger_events_page_walks_persisted_events_newest_first_without_duplicates",
+    "store ledger persisted newest-first paging coverage",
+  );
+  assertFileContains(
+    "crates/chancela-store/tests/store.rs",
+    "ledger_events_page_fills_sparse_chain_and_text_filtered_pages",
+    "store ledger persisted filtered sparse page coverage",
   );
   assertFileContains(
     "apps/web/src/features/recovery/LivrosIntegridadeSection.test.tsx",
