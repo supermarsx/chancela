@@ -2744,6 +2744,16 @@ export type RetentionPolicyStatus = (typeof RETENTION_POLICY_STATUSES)[number];
 export const RETENTION_EXECUTION_STATUSES = ['awaiting_review', 'blocked', 'executed'] as const;
 export type RetentionExecutionStatus = (typeof RETENTION_EXECUTION_STATUSES)[number];
 
+export const RETENTION_EXECUTION_DECISION_STATES = ['open', 'review_closed'] as const;
+export type RetentionExecutionDecisionState = (typeof RETENTION_EXECUTION_DECISION_STATES)[number];
+
+export const RETENTION_REVIEW_CLOSURE_DECISIONS = [
+  'review_evidence_acknowledged',
+  'bounded_evidence_acknowledged',
+  'blocked_evidence_acknowledged',
+] as const;
+export type RetentionReviewClosureDecision = (typeof RETENTION_REVIEW_CLOSURE_DECISIONS)[number];
+
 export const RETENTION_EVIDENCE_STATES = [
   'review_queued',
   'blocked',
@@ -2944,6 +2954,32 @@ export interface RetentionExecutionRequestBody {
   approval?: RetentionExecutionApprovalBody;
 }
 
+export interface RetentionReviewClosureEvidence {
+  label: string;
+  value: string;
+}
+
+export interface RetentionReviewClosureEffectFlags {
+  destructive_disposal_completed: false;
+  full_erasure_completed: false;
+  legal_hold_mutated: false;
+  retention_policy_mutated: false;
+}
+
+export type CloseRetentionExecutionReviewBody = (
+  | {
+      review_closure_decision: RetentionReviewClosureDecision;
+      review_closure_note: string;
+      review_closure_evidence?: RetentionReviewClosureEvidence[];
+    }
+  | {
+      review_closure_decision: RetentionReviewClosureDecision;
+      review_closure_note?: string;
+      review_closure_evidence: RetentionReviewClosureEvidence[];
+    }
+) &
+  Partial<RetentionReviewClosureEffectFlags>;
+
 /** Body of `POST /v1/privacy/retention-policies/dry-run`. */
 export interface RetentionDryRunBody {
   scope: string;
@@ -3134,13 +3170,19 @@ export interface RetentionExecutionResult {
   blocker_metadata: RetentionExecutionBlockerMetadata[];
 }
 
-export interface RetentionExecutionRecord {
+export interface RetentionExecutionRecord extends RetentionReviewClosureEffectFlags {
   id: string;
   requested_at: string;
   actor: string;
   execution_intent: RetentionExecutionIntent;
   execution_status: RetentionExecutionStatus;
   operator_review_decision: RetentionOperatorReviewDecision;
+  decision_state: RetentionExecutionDecisionState;
+  review_closure_decision?: RetentionReviewClosureDecision;
+  review_closure_evidence: RetentionReviewClosureEvidence[];
+  review_closed_by?: string;
+  review_closed_at?: string;
+  review_closure_note?: string;
   requested_policy: RetentionExecutionRequestedPolicy;
   candidate: RetentionDryRunCandidate;
   matched_records_summary: RetentionMatchedRecordsSummary;

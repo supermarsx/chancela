@@ -13,6 +13,7 @@ import { useEffect } from 'react';
 import type {
   CaeRevision,
   CloseBookBody,
+  CloseRetentionExecutionReviewBody,
   BreachPlaybookView,
   CreateBreachPlaybookBody,
   CreateDsrRequestBody,
@@ -104,6 +105,7 @@ import type {
   PatchRetentionPolicyBody,
   ProcessorRecordView,
   RetentionDryRunBody,
+  RetentionExecutionRecord,
   RetentionExecutionStatus,
   RetentionPolicyView,
   TransferControlView,
@@ -2476,6 +2478,22 @@ export function usePrivacyRetentionDueCandidates(enabled = true) {
     queryKey: keys.privacyRetentionDueCandidates,
     queryFn: () => api.listRetentionDueCandidates(),
     enabled,
+  });
+}
+
+export function useClosePrivacyRetentionExecutionReview() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, body }: { id: string; body: CloseRetentionExecutionReviewBody }) =>
+      api.closeRetentionExecutionReview(id, body),
+    onSuccess: (updated) => {
+      qc.setQueriesData<RetentionExecutionRecord[]>(
+        { queryKey: ['privacy', 'retention-executions'] },
+        (current) => current?.map((record) => (record.id === updated.id ? updated : record)),
+      );
+      void qc.invalidateQueries({ queryKey: ['privacy', 'retention-executions'] });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
   });
 }
 

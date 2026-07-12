@@ -378,6 +378,39 @@ describe('api client', () => {
 
     await api.listRetentionExecutions('blocked');
     expect(fetchMock.mock.calls[12][0]).toBe('/v1/privacy/retention-executions?status=blocked');
+
+    await api.closeRetentionExecutionReview('retention-exec-blocked', {
+      review_closure_decision: 'blocked_evidence_acknowledged',
+      review_closure_note: 'Blocked evidence acknowledged for governance review.',
+      review_closure_evidence: [
+        {
+          label: 'checklist',
+          value: 'operator reviewed retained bounded evidence',
+        },
+      ],
+      destructive_disposal_completed: false,
+      full_erasure_completed: false,
+      legal_hold_mutated: false,
+      retention_policy_mutated: false,
+    });
+    expect(fetchMock.mock.calls[13][0]).toBe(
+      '/v1/privacy/retention-executions/retention-exec-blocked/review-closure',
+    );
+    expect(fetchMock.mock.calls[13][1].method).toBe('POST');
+    expect(JSON.parse(fetchMock.mock.calls[13][1].body)).toEqual({
+      review_closure_decision: 'blocked_evidence_acknowledged',
+      review_closure_note: 'Blocked evidence acknowledged for governance review.',
+      review_closure_evidence: [
+        {
+          label: 'checklist',
+          value: 'operator reviewed retained bounded evidence',
+        },
+      ],
+      destructive_disposal_completed: false,
+      full_erasure_completed: false,
+      legal_hold_mutated: false,
+      retention_policy_mutated: false,
+    });
   });
 
   it('downloads the read-only book preservation package from the archive endpoint', async () => {

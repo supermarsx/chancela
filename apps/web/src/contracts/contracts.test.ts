@@ -44,8 +44,10 @@ import {
   PRIVACY_RISK_LEVELS,
   RETENTION_DISPOSAL_ACTIONS,
   RETENTION_EVIDENCE_STATES,
+  RETENTION_EXECUTION_DECISION_STATES,
   RETENTION_EXECUTION_STATUSES,
   RETENTION_POLICY_STATUSES,
+  RETENTION_REVIEW_CLOSURE_DECISIONS,
   SIGNATURE_FAMILIES,
   THEME_MODES,
   TSL_SERVICE_STATUS_KINDS,
@@ -182,6 +184,7 @@ import {
   type RetentionMatchedRecordsSummary,
   type RetentionOperatorEvidence,
   type RetentionOperatorWorkflow,
+  type RetentionReviewClosureEvidence,
   type RetentionRequiredApproval,
   type RetentionWorkflowBlocker,
   type TransferControlEvidenceReceipt,
@@ -824,6 +827,15 @@ const RETENTION_DUE_CANDIDATE_PRIOR_UNSAFE_NEXT_STEP_TERMS = [
 const RETENTION_DUE_SUPPRESSION_SUMMARY_NOTE =
   'Due candidates with prior safe bounded archive/no-action evidence are omitted from the active candidate list; execution history remains queryable for review.';
 
+const RETENTION_REVIEW_CLOSURE_OVERCLAIM_TERMS = [
+  'destructive disposal completed',
+  'full erasure completed',
+  'legal hold mutated',
+  'retention policy mutated',
+  'legally complete',
+  'legal disposal complete',
+] as const;
+
 function assertRetentionDueCandidatePriorExecution(
   obj: unknown,
   label: string,
@@ -1222,6 +1234,24 @@ function assertRetentionOperatorEvidence(obj: unknown, label: string): Retention
   return evidence;
 }
 
+function assertRetentionReviewClosureEvidence(
+  obj: unknown,
+  label: string,
+): RetentionReviewClosureEvidence {
+  const evidence = assertExactKeys<RetentionReviewClosureEvidence>(
+    obj,
+    { label: true, value: true },
+    label,
+  );
+  expect(evidence.label.length, `${label}.label should be non-empty`).toBeGreaterThan(0);
+  expect(evidence.value.length, `${label}.value should be non-empty`).toBeGreaterThan(0);
+  const normalized = `${evidence.label} ${evidence.value}`.toLowerCase();
+  RETENTION_REVIEW_CLOSURE_OVERCLAIM_TERMS.forEach((term) => {
+    expect(normalized, `${label} should not overclaim ${term}`).not.toContain(term);
+  });
+  return evidence;
+}
+
 function assertRetentionExecutionApproval(obj: unknown, label: string): RetentionExecutionApproval {
   const approval = assertExactKeys<RetentionExecutionApproval>(
     obj,
@@ -1348,6 +1378,12 @@ function assertRetentionExecutionRecord(obj: unknown, label: string): RetentionE
       execution_intent: true,
       execution_status: true,
       operator_review_decision: true,
+      decision_state: true,
+      review_closure_evidence: true,
+      destructive_disposal_completed: true,
+      full_erasure_completed: true,
+      legal_hold_mutated: true,
+      retention_policy_mutated: true,
       requested_policy: true,
       candidate: true,
       matched_records_summary: true,
@@ -1362,7 +1398,14 @@ function assertRetentionExecutionRecord(obj: unknown, label: string): RetentionE
       would_execute: true,
     },
     label,
-    ['operator_notes', 'approval'],
+    [
+      'operator_notes',
+      'approval',
+      'review_closure_decision',
+      'review_closed_by',
+      'review_closed_at',
+      'review_closure_note',
+    ],
   );
   expect(record.id.length, `${label}.id should be non-empty`).toBeGreaterThan(0);
   assertTimestamp(record.requested_at, `${label}.requested_at`);
@@ -1378,6 +1421,84 @@ function assertRetentionExecutionRecord(obj: unknown, label: string): RetentionE
     record.operator_review_decision,
     `${label}.operator_review_decision`,
   );
+  inEnum(RETENTION_EXECUTION_DECISION_STATES, record.decision_state, `${label}.decision_state`);
+  expect(Array.isArray(record.review_closure_evidence), `${label}.review_closure_evidence`).toBe(
+    true,
+  );
+  record.review_closure_evidence.forEach((evidence, i) =>
+    assertRetentionReviewClosureEvidence(evidence, `${label}.review_closure_evidence[${i}]`),
+  );
+  expect(
+    record.destructive_disposal_completed,
+    `${label}.destructive_disposal_completed should be false`,
+  ).toBe(false);
+  expect(record.full_erasure_completed, `${label}.full_erasure_completed should be false`).toBe(
+    false,
+  );
+  expect(record.legal_hold_mutated, `${label}.legal_hold_mutated should be false`).toBe(false);
+  expect(record.retention_policy_mutated, `${label}.retention_policy_mutated should be false`).toBe(
+    false,
+  );
+  if (record.review_closure_decision !== undefined) {
+    inEnum(
+      RETENTION_REVIEW_CLOSURE_DECISIONS,
+      record.review_closure_decision,
+      `${label}.review_closure_decision`,
+    );
+  }
+  if (record.review_closed_at !== undefined) {
+    assertTimestamp(record.review_closed_at, `${label}.review_closed_at`);
+  }
+  if (record.review_closed_by !== undefined) {
+    expect(
+      record.review_closed_by.length,
+      `${label}.review_closed_by should be non-empty`,
+    ).toBeGreaterThan(0);
+  }
+  if (record.review_closure_note !== undefined) {
+    expect(
+      record.review_closure_note.length,
+      `${label}.review_closure_note should be non-empty`,
+    ).toBeGreaterThan(0);
+    const normalizedNote = record.review_closure_note.toLowerCase();
+    RETENTION_REVIEW_CLOSURE_OVERCLAIM_TERMS.forEach((term) => {
+      expect(
+        normalizedNote,
+        `${label}.review_closure_note should not overclaim ${term}`,
+      ).not.toContain(term);
+    });
+  }
+  if (record.decision_state === 'review_closed') {
+    expect(
+      record.review_closure_decision,
+      `${label}.review_closure_decision should be present when closed`,
+    ).toBeDefined();
+    expect(
+      record.review_closed_by,
+      `${label}.review_closed_by should be present when closed`,
+    ).toBeDefined();
+    expect(
+      record.review_closed_by?.length,
+      `${label}.review_closed_by should be non-empty when closed`,
+    ).toBeGreaterThan(0);
+    expect(
+      record.review_closed_at,
+      `${label}.review_closed_at should be present when closed`,
+    ).toBeDefined();
+    if (record.review_closed_at !== undefined) {
+      assertTimestamp(record.review_closed_at, `${label}.review_closed_at`);
+    }
+    expect(
+      record.review_closure_note !== undefined || record.review_closure_evidence.length > 0,
+      `${label}.review closure needs note or evidence`,
+    ).toBe(true);
+  } else {
+    expect(record.review_closure_decision, `${label}.open closure decision`).toBeUndefined();
+    expect(record.review_closed_by, `${label}.open closure actor`).toBeUndefined();
+    expect(record.review_closed_at, `${label}.open closure timestamp`).toBeUndefined();
+    expect(record.review_closure_note, `${label}.open closure note`).toBeUndefined();
+    expect(record.review_closure_evidence, `${label}.open closure evidence`).toHaveLength(0);
+  }
   assertRetentionExecutionRequestedPolicy(record.requested_policy, `${label}.requested_policy`);
   expect(
     record.candidate.scope.length,
@@ -4888,11 +5009,26 @@ describe('contract fixtures parse through the real client', () => {
     const blocked = assertRetentionExecutionRecord(executions[0], 'RetentionExecutionRecord');
     expect(blocked.execution_status).toBe('blocked');
     expect(blocked.workflow.blockers.length).toBeGreaterThan(0);
+    expect(blocked.decision_state).toBe('review_closed');
+    expect(blocked.review_closure_decision).toBe('blocked_evidence_acknowledged');
+    expect(blocked.legal_hold_mutated).toBe(false);
+    expect(blocked.retention_policy_mutated).toBe(false);
     expect(blocked.execution_result.destructive_disposal_completed).toBe(false);
     expect(blocked.execution_result.full_erasure_completed).toBe(false);
     const executed = assertRetentionExecutionRecord(executions[1], 'RetentionExecutionRecord[1]');
     expect(executed.execution_status).toBe('executed');
     expect(executed.approval?.approval_reference).toBe('privacy-board-42');
+    expect(executed.review_closure_decision).toBe('bounded_evidence_acknowledged');
+    const openNoAction = assertRetentionExecutionRecord(
+      executions[2],
+      'RetentionExecutionRecord[2]',
+    );
+    expect(openNoAction.decision_state).toBe('open');
+    const reviewClosed = assertRetentionExecutionRecord(
+      executions[3],
+      'RetentionExecutionRecord[3]',
+    );
+    expect(reviewClosed.review_closure_decision).toBe('review_evidence_acknowledged');
   });
 
   it('session.json → SessionView (GET /v1/session, populated)', async () => {

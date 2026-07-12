@@ -6,6 +6,21 @@
     "execution_intent": "execute_supported",
     "execution_status": "blocked",
     "operator_review_decision": "blocked",
+    "decision_state": "review_closed",
+    "review_closure_decision": "blocked_evidence_acknowledged",
+    "review_closure_evidence": [
+      {
+        "label": "closure checklist",
+        "value": "blocked evidence acknowledged for separate governance review"
+      }
+    ],
+    "review_closed_by": "privacy-manager",
+    "review_closed_at": "2026-07-09T14:10:00Z",
+    "review_closure_note": "Blocked evidence acknowledged for separate governance review.",
+    "destructive_disposal_completed": false,
+    "full_erasure_completed": false,
+    "legal_hold_mutated": false,
+    "retention_policy_mutated": false,
     "requested_policy": {
       "id": "8b7c6d50-0000-4000-8000-000000000073",
       "found": true,
@@ -120,6 +135,21 @@
     "execution_intent": "execute_supported",
     "execution_status": "executed",
     "operator_review_decision": "execution_recorded",
+    "decision_state": "review_closed",
+    "review_closure_decision": "bounded_evidence_acknowledged",
+    "review_closure_evidence": [
+      {
+        "label": "closure checklist",
+        "value": "bounded archive evidence acknowledged"
+      }
+    ],
+    "review_closed_by": "privacy-manager",
+    "review_closed_at": "2026-07-09T14:15:00Z",
+    "review_closure_note": "Bounded archive evidence acknowledged.",
+    "destructive_disposal_completed": false,
+    "full_erasure_completed": false,
+    "legal_hold_mutated": false,
+    "retention_policy_mutated": false,
     "requested_policy": {
       "id": "8b7c6d50-0000-4000-8000-000000000073",
       "found": true,
@@ -212,6 +242,12 @@
     "execution_intent": "execute_supported",
     "execution_status": "executed",
     "operator_review_decision": "execution_recorded",
+    "decision_state": "open",
+    "review_closure_evidence": [],
+    "destructive_disposal_completed": false,
+    "full_erasure_completed": false,
+    "legal_hold_mutated": false,
+    "retention_policy_mutated": false,
     "requested_policy": {
       "id": "8b7c6d50-0000-4000-8000-000000000074",
       "found": true,
@@ -309,6 +345,21 @@
     "execution_intent": "review_only",
     "execution_status": "awaiting_review",
     "operator_review_decision": "review_required",
+    "decision_state": "review_closed",
+    "review_closure_decision": "review_evidence_acknowledged",
+    "review_closure_evidence": [
+      {
+        "label": "closure checklist",
+        "value": "manual review evidence acknowledged"
+      }
+    ],
+    "review_closed_by": "privacy-manager",
+    "review_closed_at": "2026-07-09T14:05:00Z",
+    "review_closure_note": "Manual review evidence acknowledged.",
+    "destructive_disposal_completed": false,
+    "full_erasure_completed": false,
+    "legal_hold_mutated": false,
+    "retention_policy_mutated": false,
     "requested_policy": {
       "id": "8b7c6d50-0000-4000-8000-000000000073",
       "found": true,

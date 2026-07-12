@@ -29,6 +29,7 @@ import type {
   TsaCatalogSearchParams,
   TsaRecordView,
   CloseBookBody,
+  CloseRetentionExecutionReviewBody,
   ComplianceIssue,
   ComplianceReport,
   CompleteFollowUpBody,
@@ -894,6 +895,11 @@ export const api = {
     get<RetentionDueCandidatesReport>('/v1/privacy/retention-due-candidates'),
   listRetentionExecutions: (status?: RetentionExecutionStatus) =>
     get<RetentionExecutionRecord[]>(`/v1/privacy/retention-executions${query({ status })}`),
+  closeRetentionExecutionReview: (id: string, body: CloseRetentionExecutionReviewBody) =>
+    post<RetentionExecutionRecord>(
+      `/v1/privacy/retention-executions/${id}/review-closure`,
+      body,
+    ),
   // Sign-in secret + attestation-key management (t29 §4). All echo the updated UserView.
   // The `current_password` (when a secret already exists) rides in the body; a DELETE
   // carries it too (the `del` helper JSON-encodes an optional body).
