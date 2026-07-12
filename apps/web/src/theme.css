@@ -1884,6 +1884,13 @@ a.btn.btn--iconOnly {
   min-width: 14rem;
 }
 
+/* The clear-filters icon button is the only icon-only button inside a `.filter` bar, on
+   every list page. Match it to the input control height so it lines up with the filter
+   inputs in the row instead of rendering as a short square below their top edge. */
+.filter .btn--iconOnly {
+  min-height: 2.35rem;
+}
+
 .entities-filters {
   min-width: 0;
   max-width: 100%;
