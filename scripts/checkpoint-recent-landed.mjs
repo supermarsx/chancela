@@ -5338,7 +5338,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/ledger/LedgerPage.test.tsx",
-    "/v1/ledger/archive/document?format=txt&chain=book%3Abook-123456789&scope=act%3A88&limit=100&order=desc",
+    "/v1/ledger/archive/document?format=txt&q=approved+digest&chain=book%3Abook-123456789&scope=act%3A88&limit=100&order=desc",
     "ledger archive filtered export request marker",
   );
   assertFileContains(

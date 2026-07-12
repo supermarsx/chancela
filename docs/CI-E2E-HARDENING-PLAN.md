@@ -1262,8 +1262,9 @@ settingsDefaults.test.ts contracts.test.ts`.
   no-completion/no-claim markers and focused generated absent-owner evidence
   web client/panel/i18n markers,
   plus Arquivo paged ledger route/default-limit/cursor markers,
-  1000+ event first-page/load-more tests, shared list/export filter and limit
-  normalization markers, numeric `next_cursor` typing, Livro-style filter and
+  1000+ event first-page/load-more tests, shared list/export search (`q`),
+  chain/scope filter, and limit normalization markers, numeric `next_cursor`
+  typing, Livro-style filter and
   icon-only clear-control markers, and JSON/TXT/CSV/HTML export-format markers
   with canonical-only PDF/A evidence boundaries.
 

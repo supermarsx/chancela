@@ -205,9 +205,9 @@ no dispatch completion, web client/hooks/panel/i18n metadata-only evidence UI,
 no send/delivery/legal-notice copy, and no-claim markers,
 live-provider assurance markers, validator manifest,
 Arquivo paged-ledger route/default-limit/cursor markers, 1000+ event first-page
-and load-more coverage, shared list/export filter and limit normalization
-markers, numeric `next_cursor` typing, Livro-style filters, icon-only
-clear-control markers, JSON/TXT/CSV/HTML export-format markers, and
+and load-more coverage, shared list/export search (`q`), chain/scope filter,
+and limit normalization markers, numeric `next_cursor` typing, Livro-style
+filters, icon-only clear-control markers, JSON/TXT/CSV/HTML export-format markers, and
 canonical-only PDF/A evidence boundaries, external-signing slot evidence
 metadata rendering, pending/initiated slot operator evidence actions,
 identity-requirement-tagged row builders, no-`complete:true` PATCH payloads,
