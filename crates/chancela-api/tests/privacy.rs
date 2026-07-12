@@ -29,8 +29,6 @@ const TRANSFER_CONTROLS_FILE: &str = "privacy-transfer-controls.json";
 const DSR_REQUESTS_FILE: &str = "privacy-dsr-requests.json";
 const RETENTION_POLICIES_FILE: &str = "retention-policies.json";
 const RETENTION_EXECUTIONS_FILE: &str = "privacy-retention-executions.json";
-const RETENTION_PRIOR_BOUNDED_ARCHIVE_NEXT_STEP: &str = "Prior bounded archive evidence is available for review; this due-candidate scan is read-only and requires separate governance approval before any operational action.";
-const RETENTION_PRIOR_BOUNDED_NO_ACTION_NEXT_STEP: &str = "Prior bounded no-action evidence is available for review; this due-candidate scan is read-only and requires separate governance approval before any operational action.";
 
 struct TempDir {
     dir: PathBuf,
@@ -2209,6 +2207,8 @@ async fn retention_due_candidates_closed_book_with_active_archive_policy_becomes
     assert_eq!(body["scope"], json!("book_archive"));
     assert_eq!(body["category"], json!("documents"));
     assert_eq!(body["candidate_count"], json!(1));
+    assert_eq!(body["suppressed_candidate_count"], json!(0));
+    assert_eq!(body["suppressed_by_bounded_evidence_count"], json!(0));
     let candidate = &body["candidates"][0];
     assert_eq!(candidate["record_id"], json!(book_id));
     assert_eq!(candidate["book_id"], json!(book_id));
@@ -2291,6 +2291,8 @@ async fn retention_due_candidates_active_legal_hold_blocks_candidate() {
     .await;
     assert_eq!(status, StatusCode::OK, "due candidates list: {body}");
     assert_eq!(body["candidate_count"], json!(1));
+    assert_eq!(body["suppressed_candidate_count"], json!(0));
+    assert_eq!(body["suppressed_by_bounded_evidence_count"], json!(0));
     let candidate = &body["candidates"][0];
     assert_eq!(candidate["record_id"], json!(book_id));
     assert_eq!(candidate["outcome"], json!("blocked_legal_hold"));
@@ -2347,6 +2349,9 @@ async fn retention_due_candidates_destructive_policy_returns_approval_metadata_a
     )
     .await;
     assert_eq!(status, StatusCode::OK, "due candidates list: {body}");
+    assert_eq!(body["candidate_count"], json!(1));
+    assert_eq!(body["suppressed_candidate_count"], json!(0));
+    assert_eq!(body["suppressed_by_bounded_evidence_count"], json!(0));
     let candidate = &body["candidates"][0];
     assert_eq!(candidate["disposal_action"], json!("delete"));
     assert_eq!(candidate["destructive_action"], json!(true));
@@ -2402,6 +2407,8 @@ async fn retention_due_candidates_unsupported_retention_period_fails_closed() {
     .await;
     assert_eq!(status, StatusCode::OK, "due candidates list: {body}");
     assert_eq!(body["candidate_count"], json!(1));
+    assert_eq!(body["suppressed_candidate_count"], json!(0));
+    assert_eq!(body["suppressed_by_bounded_evidence_count"], json!(0));
     let candidate = &body["candidates"][0];
     assert_eq!(candidate["due_date"], Value::Null);
     assert_eq!(candidate["overdue"], json!(false));
@@ -2459,6 +2466,8 @@ async fn retention_due_candidates_get_is_non_mutating() {
     .await;
     assert_eq!(status, StatusCode::OK, "due candidates list: {body}");
     assert_eq!(body["candidate_count"], json!(1));
+    assert_eq!(body["suppressed_candidate_count"], json!(0));
+    assert_eq!(body["suppressed_by_bounded_evidence_count"], json!(0));
 
     assert_eq!(
         state.retention_execution_records.read().await.len(),
@@ -2559,6 +2568,8 @@ async fn retention_due_candidates_surface_existing_review_without_mutation() {
     .await;
     assert_eq!(status, StatusCode::OK, "due candidates list: {body}");
     assert_eq!(body["candidate_count"], json!(1));
+    assert_eq!(body["suppressed_candidate_count"], json!(0));
+    assert_eq!(body["suppressed_by_bounded_evidence_count"], json!(0));
     let candidate = &body["candidates"][0];
     assert_eq!(candidate["record_id"], json!(book_id));
     assert_eq!(candidate["policy_id"], json!(policy_id));
@@ -2594,7 +2605,7 @@ async fn retention_due_candidates_surface_existing_review_without_mutation() {
 }
 
 #[tokio::test]
-async fn retention_due_candidates_project_prior_bounded_execution_without_mutation() {
+async fn retention_due_candidates_suppress_prior_bounded_archive_without_mutation() {
     let (state, _target, owner_token, _reader, _reader_token) = fixture_state().await;
     let book_id = insert_closed_book(&state, date(2000, Month::January, 15)).await;
 
@@ -2684,56 +2695,17 @@ async fn retention_due_candidates_project_prior_bounded_execution_without_mutati
     )
     .await;
     assert_eq!(status, StatusCode::OK, "due candidates list: {body}");
-    assert_eq!(body["candidate_count"], json!(1));
-    let candidate = &body["candidates"][0];
-    assert_eq!(candidate["record_id"], json!(book_id));
-    assert_eq!(candidate["policy_id"], json!(policy_id));
+    assert_eq!(body["candidate_count"], json!(0));
+    assert_eq!(body["candidates"], json!([]));
+    assert_eq!(body["suppressed_candidate_count"], json!(1));
+    assert_eq!(body["suppressed_by_bounded_evidence_count"], json!(1));
     assert_eq!(
-        candidate["candidate_evidence_state"],
-        json!("bounded_archive_recorded")
+        body["suppression_summary"]["suppressed_by_bounded_evidence_count"],
+        json!(1)
     );
-    assert_eq!(
-        candidate["evidence_next_step"],
-        json!(RETENTION_PRIOR_BOUNDED_ARCHIVE_NEXT_STEP)
-    );
-    assert_eq!(candidate["would_execute"], json!(false));
-    assert_eq!(candidate["destructive_disposal_completed"], json!(false));
-    assert_eq!(candidate["full_erasure_completed"], json!(false));
-
-    let prior_execution = &candidate["prior_execution"];
-    assert_eq!(prior_execution["execution_id"], json!(execution_id));
-    assert_eq!(prior_execution["execution_status"], json!("executed"));
-    assert_eq!(
-        prior_execution["outcome"],
-        json!("bounded_archive_recorded")
-    );
-    assert_eq!(
-        prior_execution["evidence_state"],
-        json!("bounded_archive_recorded")
-    );
-    assert_eq!(
-        prior_execution["evidence_next_step"],
-        json!(RETENTION_PRIOR_BOUNDED_ARCHIVE_NEXT_STEP)
-    );
-    assert_eq!(
-        prior_execution["requested_at"],
-        execution_record["requested_at"]
-    );
-    assert_eq!(
-        prior_execution["executed_at"],
-        execution_record["execution_result"]["executed_at"]
-    );
-    assert_eq!(prior_execution["bounded_executor"], json!(true));
-    assert_eq!(prior_execution["targets_acted_count"], json!(1));
-    assert_eq!(
-        prior_execution["destructive_disposal_completed"],
-        json!(false)
-    );
-    assert_eq!(prior_execution["full_erasure_completed"], json!(false));
-    let prior_next_step = prior_execution["next_step"]
+    let suppression_note = body["suppression_summary"]["note"]
         .as_str()
-        .expect("prior execution next step");
-    assert_eq!(prior_next_step, RETENTION_PRIOR_BOUNDED_ARCHIVE_NEXT_STEP);
+        .expect("suppression summary note");
     for unsafe_term in [
         "deletion",
         "anonymization",
@@ -2743,14 +2715,48 @@ async fn retention_due_candidates_project_prior_bounded_execution_without_mutati
         "completed",
     ] {
         assert!(
-            !prior_next_step.to_lowercase().contains(unsafe_term),
-            "prior execution next_step must not surface unsafe term {unsafe_term:?}: {prior_next_step}"
+            !suppression_note.to_lowercase().contains(unsafe_term),
+            "suppression summary must not surface unsafe term {unsafe_term:?}: {suppression_note}"
         );
     }
 
     assert_ne!(
-        prior_next_step,
+        suppression_note,
         "Legal disposal completed: source document deletion, anonymization, dispatch, and full erasure completed."
+    );
+
+    let (status, history) = send(
+        state.clone(),
+        with_session(
+            get("/v1/privacy/retention-executions?status=executed"),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "execution history lists: {history}");
+    let history = history.as_array().expect("execution history");
+    assert_eq!(history.len(), 1);
+    assert_eq!(history[0]["id"], json!(execution_id));
+    assert_eq!(history[0]["execution_status"], json!("executed"));
+    assert_eq!(history[0]["outcome"], json!("bounded_archive_recorded"));
+    assert_eq!(
+        history[0]["execution_result"]["bounded_executor"],
+        json!(true)
+    );
+    assert_eq!(
+        history[0]["execution_result"]["targets_acted"]
+            .as_array()
+            .expect("acted targets")
+            .len(),
+        1
+    );
+    assert_eq!(
+        history[0]["execution_result"]["destructive_disposal_completed"],
+        json!(false)
+    );
+    assert_eq!(
+        history[0]["execution_result"]["full_erasure_completed"],
+        json!(false)
     );
 
     assert_eq!(
@@ -2825,6 +2831,7 @@ async fn retention_due_candidates_ignore_unsafe_prior_bounded_execution_flags() 
             .get_mut(&execution_id)
             .expect("persisted execution record");
         record.execution_result.bounded_executor = false;
+        record.execution_result.targets_acted.clear();
         record.execution_result.destructive_disposal_completed = true;
         record.execution_result.full_erasure_completed = true;
     }
@@ -2836,6 +2843,8 @@ async fn retention_due_candidates_ignore_unsafe_prior_bounded_execution_flags() 
     .await;
     assert_eq!(status, StatusCode::OK, "due candidates list: {body}");
     assert_eq!(body["candidate_count"], json!(1));
+    assert_eq!(body["suppressed_candidate_count"], json!(0));
+    assert_eq!(body["suppressed_by_bounded_evidence_count"], json!(0));
     let candidate = &body["candidates"][0];
     assert_eq!(candidate["record_id"], json!(book_id));
     assert_eq!(candidate["policy_id"], json!(policy_id));
@@ -2857,7 +2866,7 @@ async fn retention_due_candidates_ignore_unsafe_prior_bounded_execution_flags() 
 }
 
 #[tokio::test]
-async fn retention_due_candidates_project_prior_bounded_no_action_recorded_without_mutation() {
+async fn retention_due_candidates_suppress_prior_bounded_no_action_without_mutation() {
     let (state, _target, owner_token, _reader, _reader_token) = fixture_state().await;
     let book_id = insert_closed_book(&state, date(2000, Month::January, 15)).await;
 
@@ -2941,47 +2950,53 @@ async fn retention_due_candidates_project_prior_bounded_no_action_recorded_witho
     )
     .await;
     assert_eq!(status, StatusCode::OK, "due candidates list: {body}");
-    assert_eq!(body["candidate_count"], json!(1));
-    let candidate = &body["candidates"][0];
-    assert_eq!(candidate["record_id"], json!(book_id));
-    assert_eq!(candidate["policy_id"], json!(policy_id));
+    assert_eq!(body["candidate_count"], json!(0));
+    assert_eq!(body["candidates"], json!([]));
+    assert_eq!(body["suppressed_candidate_count"], json!(1));
+    assert_eq!(body["suppressed_by_bounded_evidence_count"], json!(1));
     assert_eq!(
-        candidate["candidate_evidence_state"],
-        json!("bounded_no_action_recorded")
+        body["suppression_summary"]["suppressed_by_bounded_evidence_count"],
+        json!(1)
     );
     assert_eq!(
-        candidate["evidence_next_step"],
-        json!(RETENTION_PRIOR_BOUNDED_NO_ACTION_NEXT_STEP)
+        body["suppression_summary"]["note"],
+        json!(
+            "Due candidates with prior safe bounded archive/no-action evidence are omitted from the active candidate list; execution history remains queryable for review."
+        )
     );
-    assert_eq!(candidate["would_execute"], json!(false));
-    assert_eq!(candidate["destructive_disposal_completed"], json!(false));
-    assert_eq!(candidate["full_erasure_completed"], json!(false));
 
-    let prior_execution = &candidate["prior_execution"];
-    assert_eq!(prior_execution["execution_id"], json!(execution_id));
-    assert_eq!(prior_execution["execution_status"], json!("executed"));
+    let (status, history) = send(
+        state.clone(),
+        with_session(
+            get("/v1/privacy/retention-executions?status=executed"),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "execution history lists: {history}");
+    let history = history.as_array().expect("execution history");
+    assert_eq!(history.len(), 1);
+    assert_eq!(history[0]["id"], json!(execution_id));
+    assert_eq!(history[0]["execution_status"], json!("executed"));
+    assert_eq!(history[0]["outcome"], json!("bounded_no_action_recorded"));
     assert_eq!(
-        prior_execution["outcome"],
-        json!("bounded_no_action_recorded")
+        history[0]["execution_result"]["bounded_executor"],
+        json!(true)
     );
     assert_eq!(
-        prior_execution["evidence_state"],
-        json!("bounded_no_action_recorded")
+        history[0]["execution_result"]["targets_acted"]
+            .as_array()
+            .expect("acted targets")
+            .len(),
+        1
     );
     assert_eq!(
-        prior_execution["evidence_next_step"],
-        json!(RETENTION_PRIOR_BOUNDED_NO_ACTION_NEXT_STEP)
-    );
-    assert_eq!(prior_execution["bounded_executor"], json!(true));
-    assert_eq!(prior_execution["targets_acted_count"], json!(1));
-    assert_eq!(
-        prior_execution["destructive_disposal_completed"],
+        history[0]["execution_result"]["destructive_disposal_completed"],
         json!(false)
     );
-    assert_eq!(prior_execution["full_erasure_completed"], json!(false));
     assert_eq!(
-        prior_execution["next_step"],
-        json!(RETENTION_PRIOR_BOUNDED_NO_ACTION_NEXT_STEP)
+        history[0]["execution_result"]["full_erasure_completed"],
+        json!(false)
     );
 
     assert_eq!(

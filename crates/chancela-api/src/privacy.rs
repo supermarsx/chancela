@@ -45,6 +45,7 @@ const ARCHIVE_RETENTION_POLICY_CATEGORY: &str = "documents";
 const RETENTION_PRIOR_BOUNDED_ARCHIVE_NEXT_STEP: &str = "Prior bounded archive evidence is available for review; this due-candidate scan is read-only and requires separate governance approval before any operational action.";
 const RETENTION_PRIOR_BOUNDED_NO_ACTION_NEXT_STEP: &str = "Prior bounded no-action evidence is available for review; this due-candidate scan is read-only and requires separate governance approval before any operational action.";
 const RETENTION_PRIOR_BOUNDED_GENERIC_NEXT_STEP: &str = "Prior bounded retention evidence is available for review; this due-candidate scan is read-only and requires separate governance approval before any operational action.";
+const RETENTION_DUE_SUPPRESSION_SUMMARY_NOTE: &str = "Due candidates with prior safe bounded archive/no-action evidence are omitted from the active candidate list; execution history remains queryable for review.";
 pub(crate) const PROCESSORS_FILE: &str = "privacy-processors.json";
 pub(crate) const DPIAS_FILE: &str = "privacy-dpias.json";
 pub(crate) const BREACH_PLAYBOOKS_FILE: &str = "privacy-breach-playbooks.json";
@@ -1374,7 +1375,17 @@ pub struct RetentionDueCandidatesReport {
     pub scope: &'static str,
     pub category: &'static str,
     pub candidate_count: usize,
+    pub suppressed_candidate_count: usize,
+    pub suppressed_by_bounded_evidence_count: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub suppression_summary: Option<RetentionDueCandidatesSuppressionSummary>,
     pub candidates: Vec<RetentionDueCandidate>,
+}
+
+#[derive(Serialize)]
+pub struct RetentionDueCandidatesSuppressionSummary {
+    pub suppressed_by_bounded_evidence_count: usize,
+    pub note: &'static str,
 }
 
 #[derive(Serialize)]
@@ -2874,6 +2885,7 @@ pub async fn list_retention_due_candidates(
     let books = state.books.read().await;
     let prior_execution_records = state.retention_execution_records.read().await;
     let mut candidates = Vec::new();
+    let mut suppressed_by_bounded_evidence_count = 0usize;
 
     for book in books
         .values()
@@ -2891,7 +2903,11 @@ pub async fn list_retention_due_candidates(
                 &prior_execution_records,
                 today,
             ) {
-                candidates.push(candidate);
+                if retention_due_candidate_has_bounded_evidence_suppression(&candidate) {
+                    suppressed_by_bounded_evidence_count += 1;
+                } else {
+                    candidates.push(candidate);
+                }
             }
         }
     }
@@ -2903,11 +2919,21 @@ pub async fn list_retention_due_candidates(
             .then(a.policy_id.cmp(&b.policy_id))
     });
     let candidate_count = candidates.len();
+    let suppressed_candidate_count = suppressed_by_bounded_evidence_count;
+    let suppression_summary = (suppressed_by_bounded_evidence_count > 0).then_some(
+        RetentionDueCandidatesSuppressionSummary {
+            suppressed_by_bounded_evidence_count,
+            note: RETENTION_DUE_SUPPRESSION_SUMMARY_NOTE,
+        },
+    );
     Ok(Json(RetentionDueCandidatesReport {
         generated_at: now_rfc3339(),
         scope: ARCHIVE_RETENTION_POLICY_SCOPE,
         category: ARCHIVE_RETENTION_POLICY_CATEGORY,
         candidate_count,
+        suppressed_candidate_count,
+        suppressed_by_bounded_evidence_count,
+        suppression_summary,
         candidates,
     }))
 }
@@ -3273,6 +3299,33 @@ fn retention_due_candidate_for_book_policy(
         prior_execution,
         next_step,
     })
+}
+
+fn retention_due_candidate_has_bounded_evidence_suppression(
+    candidate: &RetentionDueCandidate,
+) -> bool {
+    let Some(prior_execution) = candidate.prior_execution.as_ref() else {
+        return false;
+    };
+
+    matches!(
+        (candidate.disposal_action, prior_execution.outcome.as_str()),
+        (RetentionDisposalAction::Archive, "bounded_archive_recorded")
+            | (
+                RetentionDisposalAction::NoAction,
+                "bounded_no_action_recorded"
+            )
+    ) && prior_execution.execution_status
+        == retention_execution_status_wire(RetentionExecutionStatus::Executed)
+        && prior_execution.bounded_executor
+        && prior_execution.targets_acted_count > 0
+        && !prior_execution.destructive_disposal_completed
+        && !prior_execution.full_erasure_completed
+        && candidate.due_date.is_some()
+        && !candidate.destructive_action
+        && candidate.legal_hold_blockers.is_empty()
+        && candidate.blockers.is_empty()
+        && candidate.findings.is_empty()
 }
 
 fn retention_due_book_legal_hold_blocker(hold: &LegalHold) -> RetentionDueLegalHoldBlocker {
