@@ -313,16 +313,16 @@ describe('LivrosIntegridadeSection', () => {
     fireEvent.change(fileInput, { target: { files: [makeZipFile('first.zip')] } });
     fireEvent.click(screen.getByRole('button', { name: 'Pré-validar pacote' }));
     await screen.findByText('Pacote pronto para importação');
-    expect((screen.getByRole('button', { name: 'Confirmar importação' }) as HTMLButtonElement).disabled).toBe(
-      false,
-    );
+    expect(
+      (screen.getByRole('button', { name: 'Confirmar importação' }) as HTMLButtonElement).disabled,
+    ).toBe(false);
 
     fireEvent.change(fileInput, { target: { files: [makeZipFile('second.zip')] } });
 
     expect(screen.queryByText('Pacote pronto para importação')).toBeNull();
-    expect((screen.getByRole('button', { name: 'Confirmar importação' }) as HTMLButtonElement).disabled).toBe(
-      true,
-    );
+    expect(
+      (screen.getByRole('button', { name: 'Confirmar importação' }) as HTMLButtonElement).disabled,
+    ).toBe(true);
     expect(screen.getByText('Pacote selecionado: second.zip')).toBeTruthy();
   });
 
@@ -357,8 +357,12 @@ describe('LivrosIntegridadeSection', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Pré-validar pacote' }));
 
     await screen.findByText('Pacote bloqueado');
-    expect(screen.getByText('bundle would be quarantined by import verification: forged')).toBeTruthy();
-    const confirm = screen.getByRole('button', { name: 'Confirmar importação' }) as HTMLButtonElement;
+    expect(
+      screen.getByText('bundle would be quarantined by import verification: forged'),
+    ).toBeTruthy();
+    const confirm = screen.getByRole('button', {
+      name: 'Confirmar importação',
+    }) as HTMLButtonElement;
     expect(confirm.disabled).toBe(true);
     fireEvent.click(confirm);
     expect(importEndpointCalls(calls)).toHaveLength(0);

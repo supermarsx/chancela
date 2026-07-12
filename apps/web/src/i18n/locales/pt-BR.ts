@@ -2864,7 +2864,8 @@ export const ptBR: Catalog = {
   'integrity.import.preflight.errorTitle': 'Falha na pré-validação',
   'integrity.import.confirm': 'Confirmar importação',
   'integrity.import.preflight.wouldImport': 'Importação confirmada permitida',
-  'integrity.import.preflight.wouldRecordLedgerEvent': 'Pré-validação registra evento no livro-razão',
+  'integrity.import.preflight.wouldRecordLedgerEvent':
+    'Pré-validação registra evento no livro-razão',
   'integrity.import.preflight.wouldStoreImportRecord': 'Pré-validação salva registro de importação',
   'integrity.import.preflight.verdict': 'Veredito',
   'integrity.import.preflight.entityId': 'Entidade',

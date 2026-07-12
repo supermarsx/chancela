@@ -830,10 +830,7 @@ export function LivrosIntegridadeSection() {
               {importBook.isPending ? t('integrity.import.pending') : t('integrity.import.confirm')}
             </Button>
           </div>
-          <BookImportPreflightReport
-            report={currentImportPreflight}
-            error={importPreflightError}
-          />
+          <BookImportPreflightReport report={currentImportPreflight} error={importPreflightError} />
           {importOutcome ? (
             <InlineWarning
               tone={importOutcome.verdict.status === 'Verified' ? 'info' : 'error'}

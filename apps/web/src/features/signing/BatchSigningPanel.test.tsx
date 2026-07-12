@@ -82,8 +82,7 @@ function successResponse(overrides: Partial<CcBatchSignResponse> = {}): CcBatchS
         act_id: 'act-1',
         status: 'signed',
         document_id: 'source-doc-1',
-        signed_pdf_digest:
-          'a1b2c3d4e5f60718293a4b5c6d7e8f90112233445566778899aabbccddeeff00',
+        signed_pdf_digest: 'a1b2c3d4e5f60718293a4b5c6d7e8f90112233445566778899aabbccddeeff00',
         signed_at: '2026-07-12T10:15:00Z',
         timestamp_token: true,
       },
@@ -112,12 +111,8 @@ describe('BatchSigningPanel', () => {
     addAct('act-2');
     addAct('act-2');
 
-    expect((screen.getByLabelText('Selecionar ato act-1') as HTMLInputElement).checked).toBe(
-      true,
-    );
-    expect((screen.getByLabelText('Selecionar ato act-2') as HTMLInputElement).checked).toBe(
-      true,
-    );
+    expect((screen.getByLabelText('Selecionar ato act-1') as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByLabelText('Selecionar ato act-2') as HTMLInputElement).checked).toBe(true);
     expect(screen.getAllByText('act-2').length).toBe(1);
     expect(screen.getByText('2 selecionados de 200')).toBeTruthy();
 
@@ -183,8 +178,7 @@ describe('BatchSigningPanel', () => {
         screen.getByLabelText(
           'PIN de assinatura do Cartão de Cidadão (opcional)',
         ) as HTMLInputElement
-      )
-        .value,
+      ).value,
     ).toBe('');
   });
 
@@ -236,8 +230,7 @@ describe('BatchSigningPanel', () => {
         screen.getByLabelText(
           'PIN de assinatura do Cartão de Cidadão (opcional)',
         ) as HTMLInputElement
-      )
-        .value,
+      ).value,
     ).toBe('');
     expect(bodies).toEqual([{ act_ids: ['act-1', 'act-2'], pin: '0000' }]);
   });
@@ -294,8 +287,7 @@ describe('BatchSigningPanel', () => {
         screen.getByLabelText(
           'PIN de assinatura do Cartão de Cidadão (opcional)',
         ) as HTMLInputElement
-      )
-        .value,
+      ).value,
     ).toBe('');
     expect(
       (screen.getByRole('button', { name: 'Assinar lote com CC local' }) as HTMLButtonElement)
@@ -404,9 +396,7 @@ describe('BatchSigningPanel', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Assinar lote com CC local' }));
 
-    await waitFor(() =>
-      expect(requests).toEqual([{ act_ids: ['act-1', 'act-2'], pin: '1111' }]),
-    );
+    await waitFor(() => expect(requests).toEqual([{ act_ids: ['act-1', 'act-2'], pin: '1111' }]));
 
     rerender(
       <Wrapper>
@@ -451,8 +441,7 @@ describe('BatchSigningPanel', () => {
         screen.getByLabelText(
           'PIN de assinatura do Cartão de Cidadão (opcional)',
         ) as HTMLInputElement
-      )
-        .value,
+      ).value,
     ).toBe('2222');
 
     secondBatch.resolve(
@@ -467,8 +456,7 @@ describe('BatchSigningPanel', () => {
                 act_id: 'act-next',
                 status: 'signed',
                 document_id: 'source-doc-next',
-                signed_pdf_digest:
-                  '00112233445566778899aabbccddeeffa1b2c3d4e5f60718293a4b5c6d7e8f',
+                signed_pdf_digest: '00112233445566778899aabbccddeeffa1b2c3d4e5f60718293a4b5c6d7e8f',
                 signed_at: '2026-07-12T10:20:00Z',
                 timestamp_token: true,
               },
@@ -486,8 +474,7 @@ describe('BatchSigningPanel', () => {
         screen.getByLabelText(
           'PIN de assinatura do Cartão de Cidadão (opcional)',
         ) as HTMLInputElement
-      )
-        .value,
+      ).value,
     ).toBe('');
   });
 
@@ -503,8 +490,7 @@ describe('BatchSigningPanel', () => {
         screen.getByLabelText(
           'PIN de assinatura do Cartão de Cidadão (opcional)',
         ) as HTMLInputElement
-      )
-        .value,
+      ).value,
     ).toBe('7777');
 
     fireEvent.click(screen.getByRole('button', { name: 'Limpar lote' }));
@@ -513,8 +499,7 @@ describe('BatchSigningPanel', () => {
         screen.getByLabelText(
           'PIN de assinatura do Cartão de Cidadão (opcional)',
         ) as HTMLInputElement
-      )
-        .value,
+      ).value,
     ).toBe('');
 
     fireEvent.change(screen.getByLabelText('PIN de assinatura do Cartão de Cidadão (opcional)'), {
@@ -531,8 +516,7 @@ describe('BatchSigningPanel', () => {
         screen.getByLabelText(
           'PIN de assinatura do Cartão de Cidadão (opcional)',
         ) as HTMLInputElement
-      )
-        .value,
+      ).value,
     ).toBe('');
   });
 });

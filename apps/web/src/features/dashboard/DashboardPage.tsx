@@ -293,9 +293,7 @@ function frontendRouteFromApi(path: string | null | undefined): string | undefin
 function generatedDispatchDocumentIdFromApi(path: string | null | undefined): string | undefined {
   const route = path?.trim();
   if (!route) return undefined;
-  const match = /^\/v1\/documents\/generated\/([^/?#]+)\/dispatch-evidence(?:[?#/]|$)/.exec(
-    route,
-  );
+  const match = /^\/v1\/documents\/generated\/([^/?#]+)\/dispatch-evidence(?:[?#/]|$)/.exec(route);
   if (!match) return undefined;
   try {
     return decodeURIComponent(match[1]);

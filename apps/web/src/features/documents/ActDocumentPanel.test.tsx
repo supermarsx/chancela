@@ -1078,7 +1078,9 @@ describe('ActDocumentPanel — generated absent-owner communications', () => {
     await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
     await waitFor(() => expect(document.activeElement).toBe(form));
 
-    fireEvent.click(within(firstItem as HTMLElement).getByRole('button', { name: 'Ver evidência' }));
+    fireEvent.click(
+      within(firstItem as HTMLElement).getByRole('button', { name: 'Ver evidência' }),
+    );
     await waitFor(() => expect(firstItem?.getAttribute('aria-current')).toBe('true'));
     expect(targetedItem?.getAttribute('aria-current')).toBeNull();
   });
@@ -1123,7 +1125,11 @@ describe('ActDocumentPanel — generated absent-owner communications', () => {
       const url = input.toString();
       if (url.includes('/document/bundle')) return json(bundle);
       if (url.includes('/v1/acts/act-1/documents/generated')) {
-        return json(includeTarget ? [absentOwnerCommunication, targetCommunication] : [absentOwnerCommunication]);
+        return json(
+          includeTarget
+            ? [absentOwnerCommunication, targetCommunication]
+            : [absentOwnerCommunication],
+        );
       }
       if (url.includes('/v1/documents/imported')) return json([importedDocument]);
       if (url.includes('/v1/documents/generated/') && url.includes('/dispatch-evidence')) {

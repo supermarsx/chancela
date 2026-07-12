@@ -124,8 +124,7 @@ export function actDocumentPanelTargetFromLocation(
   const generatedDocumentId =
     params.get('generated_document_id')?.trim() || params.get('generatedDocument')?.trim() || null;
   const focus =
-    params.get('focus')?.trim() === 'dispatch-evidence' ||
-    hash === '#generated-dispatch-evidence'
+    params.get('focus')?.trim() === 'dispatch-evidence' || hash === '#generated-dispatch-evidence'
       ? 'dispatch-evidence'
       : null;
 
