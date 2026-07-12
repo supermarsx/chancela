@@ -126,7 +126,8 @@ test operating checklist for driving Chancela toward release confidence.
   now returns `409` after authorization and preserves the password hash and
   attestation key; the web hides the remove-password action. This is local
   password-required account/session hardening only, not SSO, legal identity
-  proof, tenant model, email verification, or credential recovery completion.
+  proof, tenant model, email verification, credential recovery completion, broad
+  Playwright-browser-suite proof, or browser-matrix proof.
 - The current restore preflight slice is non-destructive evidence only: API/store
   verify the archive manifest, every manifest-listed member digest, and ledger
   integrity, then materialize the DB plus sidecars in a unique temp workspace to
@@ -1350,9 +1351,15 @@ settingsDefaults.test.ts contracts.test.ts`.
   Web markers pin onboarding password create/sign-in ordering, no password skip,
   sign-in password prompts, current-user password switching, settings-hosted user
   creation with password, hidden remove-password action, and E2E helpers using a
-  configured operator password. The broad Playwright browser suite timed out and
-  was not green; treat the static/unit/focused markers as the pinned slice, not
-  browser-matrix proof.
+  configured operator password. Focused Playwright auth proof pins
+  `settings-created users require passwords and switch current user with that
+  password` in `apps/web/e2e/session.spec.ts` and `fresh install requires strong
+  password onboarding, recovery phrase, then opens the app` in
+  `apps/web/e2e/first-launch-onboarding.spec.ts` via `npm run test:browser
+  --workspace apps/web -- e2e/session.spec.ts e2e/first-launch-onboarding.spec.ts`.
+  Treat the static/unit/focused markers as the pinned slice, not broad
+  Playwright-browser-suite or browser-matrix proof; the browser suite is not
+  exhaustive.
 - Current checkpoint metadata/static checks through `869e02f`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run

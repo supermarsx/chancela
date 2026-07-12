@@ -353,8 +353,11 @@ rejects legacy no-hash users without minting a token; `DELETE
 /v1/users/{id}/secret` returns `409` after authorization while preserving the
 password hash and attestation key; web onboarding, sign-in, current-user
 switching, user creation, and E2E helpers all submit passwords. These markers
-are not SSO, legal identity proof, tenant model, email verification, credential
-recovery completion, or broad Playwright-browser-suite proof.
+include focused Playwright auth proof in `apps/web/e2e/session.spec.ts` and
+`apps/web/e2e/first-launch-onboarding.spec.ts`; the broad browser suite/matrix
+remains unclaimed. They are not SSO, legal identity proof, tenant model, email
+verification, credential recovery completion, or broad Playwright-browser-suite
+proof.
 Static markers are deletion/rename guards only; the retention archive/no-action
 markers pin explicit non-destructive evidence states, bounded evidence UI
 copy/payload shape, active/suppressed candidate counts, and suppression-summary

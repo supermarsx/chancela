@@ -175,10 +175,14 @@ Implementation checkpoints covered here:
   endpoint after authorization and preserves `password_hash` plus the
   attestation key. Web onboarding, sign-in, current-user switching, settings
   user creation, and E2E helpers require passwords, while the remove-password UI
-  action is hidden. This is password-required local account/session hardening
-  only; it is not SSO, legal identity proof, tenant model, email verification,
-  credential recovery completion, or broad Playwright-browser-suite proof. The
-  broad Playwright browser suite timed out and is not green.
+  action is hidden. Focused Playwright auth proof pins
+  `fresh install requires strong password onboarding, recovery phrase, then opens
+  the app` and `settings-created users require passwords and switch current user
+  with that password` via `npm run test:browser --workspace apps/web --
+  e2e/session.spec.ts e2e/first-launch-onboarding.spec.ts`. This is
+  password-required local account/session hardening only; it is not SSO, legal
+  identity proof, tenant model, email verification, credential recovery
+  completion, broad Playwright-browser-suite proof, or browser-matrix proof.
 - Working tree keeps Architecture/Data/Roles/CI **PARTIAL**: `POST
   /v1/platform/logs/forwarded` now accepts supervisor- or operator-forwarded
   structured platform log entries into the existing platform log ring. The route

@@ -648,6 +648,16 @@ function assertCheckpointMap() {
     "browser e2e reset refuses no-password operator marker",
   );
   assertFileContains(
+    "apps/web/e2e/session.spec.ts",
+    "settings-created users require passwords and switch current user with that password",
+    "focused browser auth settings-created password user coverage",
+  );
+  assertFileContains(
+    "apps/web/e2e/first-launch-onboarding.spec.ts",
+    "fresh install requires strong password onboarding, recovery phrase, then opens the app",
+    "focused browser auth first-launch password onboarding coverage",
+  );
+  assertFileContains(
     "docs/CI-CHECKPOINTS.md",
     "password-required account creation/session static markers",
     "CI checkpoints password-required auth lane marker",
@@ -664,8 +674,18 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "broad Playwright browser suite timed out and is not green",
-    "spec coverage broad Playwright residual marker",
+    "Focused Playwright auth proof pins",
+    "spec coverage focused Playwright auth proof marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "the browser suite is not\n  exhaustive",
+    "CI/E2E hardening plan browser-suite non-exhaustive auth caveat",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "the broad browser suite/matrix\nremains unclaimed",
+    "CI checkpoints broad browser matrix unclaimed auth caveat",
   );
   assertFileContains(
     "crates/chancela-api/tests/paper_import.rs",
