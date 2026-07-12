@@ -5,6 +5,7 @@
 import { expect, test, type Locator, type Page, type Route } from './fixtures';
 import {
   DEFAULT_SETTINGS,
+  type CloseRetentionExecutionReviewBody,
   type Dashboard,
   type PermissionGrant,
   type RetentionDueCandidate,
@@ -25,6 +26,12 @@ type RouteState = {
   requests: string[];
   dryRunPosts: string[];
   retentionLifecycleMutations: string[];
+  reviewClosurePosts: {
+    id: string;
+    pathname: string;
+    body: CloseRetentionExecutionReviewBody;
+  }[];
+  retentionExecutions: RetentionExecutionRecord[];
 };
 
 test('Settings Privacidade suppresses retention candidates already covered by bounded evidence', async ({
@@ -69,6 +76,68 @@ test('Settings Privacidade suppresses retention candidates already covered by bo
   await expect(doc789Execution).toContainText('bounded_no_action_recorded');
   await expect(doc789Execution).toContainText('Bounded no-action evidence for doc-789');
 
+  const dueCandidateGetsBeforeClosure = countRouteRequests(
+    routes,
+    'GET /v1/privacy/retention-due-candidates',
+  );
+  const executionHistoryGetsBeforeClosure = countRouteRequests(
+    routes,
+    'GET /v1/privacy/retention-executions',
+  );
+
+  await doc456Execution.getByRole('button', { name: 'Registar revisão operacional' }).click();
+
+  await expect.poll(() => routes.reviewClosurePosts.length).toBe(1);
+  expect(routes.reviewClosurePosts[0]).toEqual({
+    id: 'retention-exec-doc-456',
+    pathname: '/v1/privacy/retention-executions/retention-exec-doc-456/review-closure',
+    body: {
+      review_closure_decision: 'bounded_evidence_acknowledged',
+      review_closure_note:
+        'Revisão operacional registada para evidência delimitada; esta ação não altera registos fonte.',
+      review_closure_evidence: [
+        {
+          label: 'fila_operacional',
+          value: 'registo revisto na interface de configuracoes',
+        },
+        {
+          label: 'alvo',
+          value: 'doc-456',
+        },
+      ],
+      destructive_disposal_completed: false,
+      full_erasure_completed: false,
+      legal_hold_mutated: false,
+      retention_policy_mutated: false,
+    },
+  });
+  expectClosureBodyStaysNonLegal(routes.reviewClosurePosts[0].body);
+
+  await expect
+    .poll(() => countRouteRequests(routes, 'GET /v1/privacy/retention-executions'))
+    .toBeGreaterThan(executionHistoryGetsBeforeClosure);
+  await expect(doc456Execution).toContainText('Revisão operacional registada por retention.e2e');
+  await expect(doc456Execution).toContainText(
+    'Revisão operacional registada para evidência delimitada; esta ação não altera registos fonte.',
+  );
+  await expect(doc456Execution).toContainText(
+    'fila_operacional: registo revisto na interface de configuracoes',
+  );
+  await expect(doc456Execution).toContainText('alvo: doc-456');
+  await expect(
+    doc456Execution.getByRole('button', { name: 'Registar revisão operacional' }),
+  ).toHaveCount(0);
+  await expect(doc789Execution).not.toContainText('Revisão operacional registada por retention.e2e');
+  await expect(
+    doc789Execution.getByRole('button', { name: 'Registar revisão operacional' }),
+  ).toBeVisible();
+
+  await expect(candidatesPanel).toContainText('2 candidato(s) ativo(s)');
+  await expect(candidatesPanel).toContainText('2 suprimido(s) por evidência delimitada');
+  expect(countRouteRequests(routes, 'GET /v1/privacy/retention-due-candidates')).toBe(
+    dueCandidateGetsBeforeClosure,
+  );
+
   expect(routes.dryRunPosts).toEqual([]);
   expect(routes.retentionLifecycleMutations).toEqual([]);
 });
@@ -83,11 +152,17 @@ function panelByTitle(page: Page, title: string): Locator {
   return page.locator('.panel').filter({ has: page.getByRole('heading', { name: title }) });
 }
 
+function countRouteRequests(routes: RouteState, request: string): number {
+  return routes.requests.filter((entry) => entry === request).length;
+}
+
 async function routePrivacyRetentionFixtures(page: Page): Promise<RouteState> {
   const state: RouteState = {
     requests: [],
     dryRunPosts: [],
     retentionLifecycleMutations: [],
+    reviewClosurePosts: [],
+    retentionExecutions: retentionExecutionsFixture(),
   };
 
   await page.route('**/health', async (route) => {
@@ -105,6 +180,25 @@ async function routePrivacyRetentionFixtures(page: Page): Promise<RouteState> {
     }
     if (isMutationMethod(method) && isRetentionLifecycleMutationPath(pathname)) {
       state.retentionLifecycleMutations.push(`${method} ${pathname}`);
+    }
+    if (method === 'POST' && isReviewClosurePath(pathname)) {
+      const body = JSON.parse(request.postData() ?? '{}') as CloseRetentionExecutionReviewBody;
+      const id = pathname.match(REVIEW_CLOSURE_PATH_PATTERN)?.[1] ?? '';
+      const recordIndex = state.retentionExecutions.findIndex((record) => record.id === id);
+      state.reviewClosurePosts.push({ id, pathname, body });
+      if (recordIndex === -1) {
+        await fulfillJson(route, { error: `Unknown retention execution: ${id}` }, 404);
+        return;
+      }
+      const updated = closeRetentionExecutionReviewFixture(
+        state.retentionExecutions[recordIndex],
+        body,
+      );
+      state.retentionExecutions = state.retentionExecutions.map((record, index) =>
+        index === recordIndex ? updated : record,
+      );
+      await fulfillJson(route, updated);
+      return;
     }
     if (isMutationMethod(method)) {
       await fulfillJson(route, { error: `Unexpected write in retention e2e: ${method}` }, 500);
@@ -173,7 +267,7 @@ async function routePrivacyRetentionFixtures(page: Page): Promise<RouteState> {
       return;
     }
     if (pathname === '/v1/privacy/retention-executions') {
-      await fulfillJson(route, retentionExecutionsFixture());
+      await fulfillJson(route, state.retentionExecutions);
       return;
     }
 
@@ -199,14 +293,44 @@ function isMutationMethod(method: string): boolean {
   return method === 'POST' || method === 'PATCH' || method === 'PUT' || method === 'DELETE';
 }
 
+const REVIEW_CLOSURE_PATH_PATTERN =
+  /^\/v1\/privacy\/retention-executions\/([^/]+)\/review-closure$/;
+
+function isReviewClosurePath(pathname: string): boolean {
+  return REVIEW_CLOSURE_PATH_PATTERN.test(pathname);
+}
+
 function isRetentionLifecycleMutationPath(pathname: string): boolean {
+  if (isReviewClosurePath(pathname)) return false;
   return (
     pathname.includes('/retention-executions') ||
-    pathname.includes('/retention-policies/dry-run') ||
+    pathname.includes('/retention-policies') ||
+    pathname.includes('/deletion') ||
+    pathname.includes('/delete') ||
     pathname.includes('/disposal') ||
     pathname.includes('/erasure') ||
     pathname.includes('/legal-hold')
   );
+}
+
+function expectClosureBodyStaysNonLegal(body: CloseRetentionExecutionReviewBody): void {
+  const closureText = [
+    body.review_closure_note ?? '',
+    ...(body.review_closure_evidence ?? []).flatMap((evidence) => [
+      evidence.label,
+      evidence.value,
+    ]),
+  ]
+    .join(' ')
+    .toLowerCase();
+
+  expect(closureText).not.toMatch(
+    /legal|jur[ií]dic|aprova[cç][aã]o|elimina[cç][aã]o|apag|destrui|erasure|delete|disposal|legal-hold/,
+  );
+  expect(body.destructive_disposal_completed).toBe(false);
+  expect(body.full_erasure_completed).toBe(false);
+  expect(body.legal_hold_mutated).toBe(false);
+  expect(body.retention_policy_mutated).toBe(false);
 }
 
 function permissionGrant(permission: string): PermissionGrant {
@@ -478,6 +602,8 @@ function retentionExecutionFixture(
     execution_intent: 'execute_supported',
     execution_status: 'executed',
     operator_review_decision: 'execution_recorded',
+    decision_state: 'open',
+    review_closure_evidence: [],
     requested_policy: {
       id: policyId,
       found: true,
@@ -546,5 +672,28 @@ function retentionExecutionFixture(
       blocker_metadata: [],
     },
     would_execute: false,
+    destructive_disposal_completed: false,
+    full_erasure_completed: false,
+    legal_hold_mutated: false,
+    retention_policy_mutated: false,
+  };
+}
+
+function closeRetentionExecutionReviewFixture(
+  record: RetentionExecutionRecord,
+  body: CloseRetentionExecutionReviewBody,
+): RetentionExecutionRecord {
+  return {
+    ...record,
+    decision_state: 'review_closed',
+    review_closure_decision: body.review_closure_decision,
+    review_closure_note: body.review_closure_note,
+    review_closure_evidence: body.review_closure_evidence ?? [],
+    review_closed_by: 'retention.e2e',
+    review_closed_at: '2026-07-12T10:07:00.000Z',
+    destructive_disposal_completed: false,
+    full_erasure_completed: false,
+    legal_hold_mutated: false,
+    retention_policy_mutated: false,
   };
 }
