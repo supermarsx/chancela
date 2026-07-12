@@ -1612,6 +1612,9 @@ pub enum RetentionExecutionDecisionState {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+// Variants intentionally share the `EvidenceAcknowledged` suffix: it is the serde
+// snake_case wire contract for the acknowledgement, and renaming would change the payload format.
+#[allow(clippy::enum_variant_names)]
 pub enum RetentionReviewClosureDecision {
     ReviewEvidenceAcknowledged,
     BoundedEvidenceAcknowledged,

@@ -3386,8 +3386,10 @@ mod tests {
         assert!(!act_payload_text.contains("Actual OCR text"));
 
         let dossier = build_ocr_conversion_dossier(&accepted, "rui.secretario");
-        let dossier_payload =
-            paper_book_ocr_conversion_dossier_event_payload(&dossier, &[artifact.clone()]);
+        let dossier_payload = paper_book_ocr_conversion_dossier_event_payload(
+            &dossier,
+            std::slice::from_ref(&artifact),
+        );
         assert_eq!(
             dossier_payload["bound_conversion_execution_artifacts"][0]["target_act_id"],
             artifact.target_act_id
