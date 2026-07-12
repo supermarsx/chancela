@@ -1,5 +1,6 @@
 # Rust
 /target/
+/lib*.rlib
 apps/desktop/src-tauri/target/
 apps/desktop/src-tauri/gen/
 
