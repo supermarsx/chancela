@@ -1,4 +1,4 @@
-use std::io::Write;
+use std::io::{Cursor, Read, Write};
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
@@ -29,8 +29,10 @@ use chancela_authz::{OWNER_ROLE_ID, RoleAssignment, RoleCatalog, Scope};
 use chancela_signing::asic::ASIC_ZIP_MEMBER_UNCOMPRESSED_MAX_BYTES;
 use chancela_signing::{
     ASICE_CADES_SIGNATURE_PATH, ASICE_MANIFEST_PATH, ASICE_MIMETYPE, ASICS_CADES_SIGNATURE_PATH,
-    ASICS_MIMETYPE, AsicPayload, EvidentiaryLevel, MockProvider, SignatureAlgorithm, SigningFamily,
-    build_asic_e_manifest, sha256_content_digest, sign_asic_e, sign_asic_s, sign_detached_cades,
+    ASICS_MIMETYPE, AsicEMultiSignRequest, AsicPayload, EvidentiaryLevel, MockProvider,
+    SignatureAlgorithm, SignerProvider, SigningError, SigningFamily, Timestamp, TimestampProvider,
+    XadesLevel, build_asic_e_manifest, sha256_content_digest, sign_asic_e, sign_asic_e_multi,
+    sign_asic_s, sign_asic_s_xades, sign_detached_cades,
 };
 
 const OID_SHA256_WITH_RSA: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.113549.1.1.11");
@@ -117,6 +119,34 @@ fn provider(serial: u8) -> MockProvider {
 
 fn signing_time() -> OffsetDateTime {
     OffsetDateTime::from_unix_timestamp(1_700_000_000).expect("fixed signing time")
+}
+
+struct PatchingTsa;
+
+fn patched_timestamp(digest: &[u8; 32]) -> Timestamp {
+    let tsa = chancela_tsa::TsaClient::new(chancela_tsa::MockTsaTransport::from_fixture());
+    let request = chancela_tsa::TimestampRequest::new(chancela_tsa::mock::FIXTURE_DIGEST)
+        .with_nonce(chancela_tsa::mock::FIXTURE_NONCE)
+        .without_certificate();
+    let mut ts = tsa.stamp(&request).expect("fixture timestamp");
+    let pos = ts
+        .token_der
+        .windows(chancela_tsa::mock::FIXTURE_DIGEST.len())
+        .position(|w| w == chancela_tsa::mock::FIXTURE_DIGEST)
+        .expect("fixture imprint present in token");
+    ts.token_der[pos..pos + digest.len()].copy_from_slice(digest);
+    ts
+}
+
+impl TimestampProvider for PatchingTsa {
+    fn timestamp_digest(&self, digest: &[u8; 32]) -> Result<Timestamp, SigningError> {
+        Ok(patched_timestamp(digest))
+    }
+
+    fn timestamp_data(&self, data: &[u8]) -> Result<Timestamp, SigningError> {
+        let digest: [u8; 32] = Sha256::digest(data).into();
+        Ok(patched_timestamp(&digest))
+    }
 }
 
 async fn send(state: &AppState, req: Request<Body>) -> (StatusCode, Value) {
@@ -210,6 +240,26 @@ fn zip_entries(entries: &[(&str, &[u8])]) -> Vec<u8> {
     zip.finish().expect("zip finish").into_inner()
 }
 
+fn replace_member(container: &[u8], target: &str, new_bytes: &[u8]) -> Vec<u8> {
+    let mut archive = zip::ZipArchive::new(Cursor::new(container)).expect("read zip");
+    let options = SimpleFileOptions::default()
+        .compression_method(CompressionMethod::Stored)
+        .last_modified_time(DateTime::default());
+    let mut out = ZipWriter::new(Cursor::new(Vec::new()));
+    for index in 0..archive.len() {
+        let mut file = archive.by_index(index).expect("member");
+        let name = file.name().to_owned();
+        let mut bytes = Vec::new();
+        file.read_to_end(&mut bytes).expect("read member");
+        if name == target {
+            bytes = new_bytes.to_vec();
+        }
+        out.start_file(&name, options).expect("start member");
+        out.write_all(&bytes).expect("write member");
+    }
+    out.finish().expect("zip finish").into_inner()
+}
+
 fn compressed_oversized_member_container() -> Vec<u8> {
     let payload = vec![0u8; ASIC_ZIP_MEMBER_UNCOMPRESSED_MAX_BYTES as usize + 1];
     let stored = SimpleFileOptions::default()
@@ -243,20 +293,66 @@ fn signed_asic_e_parts(serial: u8) -> (Vec<u8>, Vec<u8>) {
     (manifest, cades)
 }
 
-fn asic_s_xades_container() -> Vec<u8> {
-    zip_entries(&[
-        ("mimetype", ASICS_MIMETYPE.as_bytes()),
-        ("payload.txt", b"payload"),
-        ("META-INF/signatures.xml", b"<ds:Signature/>"),
-    ])
+fn asic_s_xades_container(serial: u8) -> Vec<u8> {
+    let provider = provider(serial);
+    sign_asic_s_xades(
+        &provider,
+        "payload.txt",
+        b"payload",
+        signing_time(),
+        XadesLevel::B,
+        None,
+    )
+    .expect("asic s xades")
 }
 
-fn asic_e_xades_container() -> Vec<u8> {
-    zip_entries(&[
-        ("mimetype", ASICE_MIMETYPE.as_bytes()),
-        ("payload.txt", b"payload"),
-        ("META-INF/signatures.xml", b"<ds:Signature/>"),
-    ])
+fn asic_e_xades_container(serial: u8) -> Vec<u8> {
+    let provider = provider(serial);
+    let payloads = [AsicPayload {
+        name: "payload.txt",
+        bytes: b"payload",
+        mime_type: Some("text/plain"),
+    }];
+    let xades_signers: [&dyn SignerProvider; 1] = [&provider];
+    sign_asic_e_multi(AsicEMultiSignRequest {
+        payloads: &payloads,
+        cades_signers: &[],
+        xades_signers: &xades_signers,
+        signing_time: signing_time(),
+        xades_level: XadesLevel::B,
+        xades_tsa: None,
+        archive_tsa: None,
+    })
+    .expect("asic e xades")
+}
+
+fn mixed_asic_e_with_archive_container() -> Vec<u8> {
+    let cades = provider(31);
+    let xades = provider(32);
+    let payloads = [
+        AsicPayload {
+            name: "minutes.txt",
+            bytes: b"approved minutes",
+            mime_type: Some("text/plain"),
+        },
+        AsicPayload {
+            name: "attachments/votes.csv",
+            bytes: b"member,vote\nA,yes\nB,yes\n",
+            mime_type: Some("text/csv"),
+        },
+    ];
+    let cades_signers: [&dyn SignerProvider; 1] = [&cades];
+    let xades_signers: [&dyn SignerProvider; 1] = [&xades];
+    sign_asic_e_multi(AsicEMultiSignRequest {
+        payloads: &payloads,
+        cades_signers: &cades_signers,
+        xades_signers: &xades_signers,
+        signing_time: signing_time(),
+        xades_level: XadesLevel::B,
+        xades_tsa: None,
+        archive_tsa: Some(&PatchingTsa),
+    })
+    .expect("mixed asic e")
 }
 
 fn asic_e_multiple_manifests_container() -> Vec<u8> {
@@ -334,17 +430,29 @@ fn unsafe_member_container() -> Vec<u8> {
 }
 
 fn assert_no_claim_boundaries(body: &Value) {
-    assert_eq!(body["scope"], "local_technical_asic_cades_profile_evidence");
+    assert_eq!(body["scope"], "local_technical_asic_signature_evidence");
     assert_eq!(body["legal_validity_claimed"], false);
     assert_eq!(body["qualified_signature_claimed"], false);
+    assert_eq!(body["qualified_electronic_signature_claimed"], false);
+    assert_eq!(body["qes_claimed"], false);
     assert_eq!(body["trust_validation"], "not_performed");
+    assert_eq!(body["trust_anchor_validation"], "not_performed");
     assert_eq!(body["revocation_validation"], "not_performed");
     assert_eq!(body["live_provider_calls"], false);
-    assert_eq!(body["xades_validation_performed"], false);
+    assert_eq!(body["live_tsl_fetching"], false);
+    assert_eq!(body["live_tsa_fetching"], false);
+    assert_eq!(body["live_ocsp_fetching"], false);
+    assert_eq!(body["live_crl_fetching"], false);
+    assert_eq!(body["provider_approval_claimed"], false);
     assert_eq!(body["b_lt_claimed"], false);
     assert_eq!(body["b_lta_claimed"], false);
+    assert_eq!(body["ltv_claimed"], false);
     assert_eq!(body["production_asic_compliance_claimed"], false);
+    assert_eq!(body["production_xades_conformance_claimed"], false);
     assert_eq!(body["eidas_legal_effect_claimed"], false);
+    assert_eq!(body["signing_performed"], false);
+    assert_eq!(body["storage_mutation_performed"], false);
+    assert_eq!(body["archive_mutation_performed"], false);
 }
 
 fn assert_cades_no_claim_boundaries(cades: &Value) {
@@ -355,6 +463,44 @@ fn assert_cades_no_claim_boundaries(cades: &Value) {
     assert_eq!(cades["qualified_signature_claimed"], false);
 }
 
+fn assert_technical_no_claim_boundaries(technical: &Value) {
+    for signature in technical["signatures"]
+        .as_array()
+        .expect("technical signatures")
+    {
+        assert_eq!(signature["evidence_scope"], "technical_evidence_only");
+        assert_eq!(signature["trust_validation"], "not_performed");
+        assert_eq!(signature["revocation_validation"], "not_performed");
+        assert_eq!(signature["provider_validation"], "not_performed");
+        assert_eq!(signature["provider_approval_claimed"], false);
+        assert_eq!(signature["legal_validity_claimed"], false);
+        assert_eq!(signature["qualified_signature_claimed"], false);
+        assert_eq!(signature["qes_claimed"], false);
+        assert_eq!(
+            signature["signature_timestamp_trust_validation"],
+            "not_performed"
+        );
+    }
+    for archive in technical["archive_timestamps"]
+        .as_array()
+        .expect("technical archive timestamps")
+    {
+        assert_eq!(archive["timestamp_trust_validation"], "not_performed");
+        assert_eq!(archive["b_lta_claimed"], false);
+        assert_eq!(archive["legal_validity_claimed"], false);
+    }
+}
+
+fn assert_technical_performed(body: &Value, cryptographically_valid: bool) {
+    let technical = &body["technical_validation"];
+    assert_eq!(technical["validation_performed"], true);
+    assert_eq!(
+        technical["cryptographically_valid"],
+        cryptographically_valid
+    );
+    assert_technical_no_claim_boundaries(technical);
+}
+
 fn assert_has_blocker(body: &Value, id: &str) {
     let blockers = body["profile"]["blockers"]
         .as_array()
@@ -362,6 +508,16 @@ fn assert_has_blocker(body: &Value, id: &str) {
     assert!(
         blockers.iter().any(|blocker| blocker["id"] == id),
         "expected blocker {id}, got {blockers:?}"
+    );
+}
+
+fn assert_no_blocker(body: &Value, id: &str) {
+    let blockers = body["profile"]["blockers"]
+        .as_array()
+        .expect("blockers array");
+    assert!(
+        blockers.iter().all(|blocker| blocker["id"] != id),
+        "unexpected blocker {id}, got {blockers:?}"
     );
 }
 
@@ -382,6 +538,8 @@ async fn asic_signature_validation_bounded_s_cades_returns_valid_local_result() 
 
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_no_claim_boundaries(&body);
+    assert_eq!(body["xades_validation_performed"], false);
+    assert_technical_performed(&body, true);
     assert_eq!(body["status"], "valid");
     assert_eq!(
         body["profile"]["profile_shape"],
@@ -403,6 +561,20 @@ async fn asic_signature_validation_bounded_s_cades_returns_valid_local_result() 
     assert_eq!(
         body["cades"]["signed_content"]["member_path"],
         "document.txt"
+    );
+    let technical_signature = &body["technical_validation"]["signatures"][0];
+    assert_eq!(technical_signature["kind"], "cades");
+    assert_eq!(technical_signature["valid"], true);
+    assert_eq!(
+        technical_signature["covered_data_objects"],
+        json!(["document.txt"])
+    );
+    assert_eq!(
+        technical_signature["signer_cert_sha256"]
+            .as_str()
+            .expect("technical cert hash")
+            .len(),
+        64
     );
     assert_eq!(
         body["cades"]["signer_cert_sha256"]
@@ -437,6 +609,8 @@ async fn asic_signature_validation_bounded_e_cades_two_payloads_validates_manife
 
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_no_claim_boundaries(&body);
+    assert_eq!(body["xades_validation_performed"], false);
+    assert_technical_performed(&body, true);
     assert_eq!(body["status"], "valid");
     assert_eq!(
         body["profile"]["profile_shape"],
@@ -452,6 +626,14 @@ async fn asic_signature_validation_bounded_e_cades_two_payloads_validates_manife
         body["cades"]["signed_content"]["member_path"],
         ASICE_MANIFEST_PATH
     );
+    let technical_signature = &body["technical_validation"]["signatures"][0];
+    assert_eq!(technical_signature["kind"], "cades");
+    assert_eq!(technical_signature["valid"], true);
+    assert_eq!(technical_signature["manifest_path"], ASICE_MANIFEST_PATH);
+    assert_eq!(
+        technical_signature["covered_data_objects"],
+        json!(["a.txt", "b.txt"])
+    );
     let refs = body["profile"]["manifest_diagnostics"][0]["data_object_references"]
         .as_array()
         .expect("data object refs");
@@ -464,25 +646,68 @@ async fn asic_signature_validation_bounded_e_cades_two_payloads_validates_manife
 }
 
 #[tokio::test]
-async fn asic_signature_validation_xades_s_and_e_are_structured_unsupported() {
+async fn asic_signature_validation_xades_s_and_e_use_technical_report() {
     let state = seeded_state();
     let token = owner_session(&state).await;
 
     for (container, shape) in [
-        (asic_s_xades_container(), "asic_s_xades"),
-        (asic_e_xades_container(), "asic_e_xades"),
+        (asic_s_xades_container(11), "asic_s_xades"),
+        (asic_e_xades_container(12), "asic_e_xades"),
     ] {
         let (status, body) = send(&state, post_asic(&token, &container)).await;
 
         assert_eq!(status, StatusCode::OK, "{body}");
         assert_no_claim_boundaries(&body);
-        assert_eq!(body["status"], "unsupported");
+        assert_eq!(body["status"], "valid");
         assert_eq!(body["profile"]["profile_shape"], shape);
         assert_eq!(body["profile"]["signature_profile"], "xades");
-        assert_has_blocker(&body, "xades_not_supported");
+        assert_no_blocker(&body, "xades_not_supported");
         assert!(body["cades"].is_null(), "{body}");
-        assert_eq!(body["xades_validation_performed"], false);
+        assert_eq!(body["xades_validation_performed"], true);
+        assert_technical_performed(&body, true);
+        assert_eq!(body["technical_validation"]["all_signatures_valid"], true);
+        assert_eq!(
+            body["technical_validation"]["signatures"][0]["kind"],
+            "xades"
+        );
+        assert_eq!(body["technical_validation"]["signatures"][0]["valid"], true);
+        assert_eq!(
+            body["technical_validation"]["signatures"][0]["xades_level"],
+            "b"
+        );
+        assert_eq!(
+            body["technical_validation"]["signatures"][0]["signer_cert_sha256"]
+                .as_str()
+                .expect("cert hash")
+                .len(),
+            64
+        );
     }
+
+    let tampered = replace_member(&asic_s_xades_container(13), "payload.txt", b"tampered");
+    let (status, body) = send(&state, post_asic(&token, &tampered)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_no_claim_boundaries(&body);
+    assert_eq!(body["status"], "invalid");
+    assert_eq!(body["xades_validation_performed"], true);
+    assert!(body["cades"].is_null(), "{body}");
+    assert_technical_performed(&body, false);
+    assert_eq!(
+        body["technical_validation"]["signatures"][0]["kind"],
+        "xades"
+    );
+    assert_eq!(
+        body["technical_validation"]["signatures"][0]["valid"],
+        false
+    );
+    assert!(
+        body["technical_validation"]["signatures"][0]["failure_reasons"]
+            .as_array()
+            .expect("failure reasons")
+            .iter()
+            .any(|reason| reason.as_str().unwrap_or_default().contains("payload.txt")),
+        "{body}"
+    );
 }
 
 #[tokio::test]
@@ -521,6 +746,7 @@ async fn asic_signature_validation_profile_blockers_remain_structured() {
 
         assert_eq!(status, StatusCode::OK, "{label}: {body}");
         assert_no_claim_boundaries(&body);
+        assert_technical_performed(&body, body["status"].as_str() == Some("valid"));
         assert_has_blocker(&body, blocker);
         assert_eq!(
             body["profile"]["bounded_supported_candidate"], false,
@@ -528,6 +754,101 @@ async fn asic_signature_validation_profile_blockers_remain_structured() {
         );
         assert!(body["cades"].is_null(), "{label}: {body}");
     }
+}
+
+#[tokio::test]
+async fn asic_signature_validation_mixed_e_cades_xades_archive_timestamp_reports_consistency() {
+    let state = seeded_state();
+    let token = owner_session(&state).await;
+    let container = mixed_asic_e_with_archive_container();
+
+    let (status, body) = send(&state, post_asic(&token, &container)).await;
+
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_no_claim_boundaries(&body);
+    assert_eq!(body["status"], "valid");
+    assert_eq!(body["profile"]["signature_profile"], "mixed");
+    assert_no_blocker(&body, "xades_not_supported");
+    assert_eq!(body["xades_validation_performed"], true);
+    assert!(body["cades"].is_null(), "{body}");
+    assert_technical_performed(&body, true);
+    let signatures = body["technical_validation"]["signatures"]
+        .as_array()
+        .expect("technical signatures");
+    assert_eq!(signatures.len(), 2, "{body}");
+    let cades = signatures
+        .iter()
+        .find(|signature| signature["kind"] == "cades")
+        .expect("cades signature");
+    assert_eq!(cades["valid"], true);
+    assert_eq!(cades["manifest_path"], "META-INF/ASiCManifest001.xml");
+    assert_eq!(
+        cades["covered_data_objects"]
+            .as_array()
+            .expect("covered objects")
+            .len(),
+        2
+    );
+    let xades = signatures
+        .iter()
+        .find(|signature| signature["kind"] == "xades")
+        .expect("xades signature");
+    assert_eq!(xades["valid"], true);
+    assert_eq!(xades["xades_level"], "b");
+    let archive = &body["technical_validation"]["archive_timestamps"][0];
+    assert_eq!(archive["manifest_path"], "META-INF/ASiCArchiveManifest.xml");
+    assert_eq!(
+        archive["timestamp_path"],
+        "META-INF/ASiCArchiveManifest.tst"
+    );
+    assert_eq!(archive["valid"], true);
+    assert_eq!(archive["imprint_matches_manifest"], true);
+    assert_eq!(archive["references_valid"], true);
+    assert_eq!(archive["timestamp_trust_validation"], "not_performed");
+    assert_eq!(archive["b_lta_claimed"], false);
+    assert_eq!(archive["legal_validity_claimed"], false);
+}
+
+#[tokio::test]
+async fn asic_signature_validation_mixed_e_archive_timestamp_tamper_is_technical_only_invalid() {
+    let state = seeded_state();
+    let token = owner_session(&state).await;
+    let container = mixed_asic_e_with_archive_container();
+    let tampered = replace_member(&container, "minutes.txt", b"tampered minutes");
+
+    let (status, body) = send(&state, post_asic(&token, &tampered)).await;
+
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_no_claim_boundaries(&body);
+    assert_eq!(body["status"], "invalid");
+    assert_eq!(body["xades_validation_performed"], true);
+    assert!(body["cades"].is_null(), "{body}");
+    assert_technical_performed(&body, false);
+    let signatures = body["technical_validation"]["signatures"]
+        .as_array()
+        .expect("technical signatures");
+    assert_eq!(signatures.len(), 2, "{body}");
+    assert!(
+        signatures
+            .iter()
+            .all(|signature| signature["valid"] == false),
+        "{body}"
+    );
+    assert!(
+        signatures.iter().any(|signature| {
+            signature["failure_reasons"]
+                .as_array()
+                .expect("failure reasons")
+                .iter()
+                .any(|reason| reason.as_str().unwrap_or_default().contains("minutes.txt"))
+        }),
+        "{body}"
+    );
+    let archive = &body["technical_validation"]["archive_timestamps"][0];
+    assert_eq!(archive["valid"], false);
+    assert_eq!(archive["references_valid"], false);
+    assert_eq!(archive["timestamp_trust_validation"], "not_performed");
+    assert_eq!(archive["b_lta_claimed"], false);
 }
 
 #[tokio::test]
@@ -547,6 +868,11 @@ async fn asic_signature_validation_blocks_oversized_uncompressed_zip_member() {
     assert_eq!(body["status"], "invalid");
     assert_has_blocker(&body, "member_uncompressed_size_exceeded");
     assert_eq!(body["profile"]["bounded_supported_candidate"], false);
+    assert_eq!(
+        body["technical_validation"]["validation_performed"], false,
+        "{body}"
+    );
+    assert_technical_no_claim_boundaries(&body["technical_validation"]);
     assert!(body["cades"].is_null(), "{body}");
 }
 
@@ -619,10 +945,14 @@ async fn asic_signature_validation_response_claim_boundaries_stay_false() {
     let (status, valid_body) = send(&state, post_asic(&token, &container)).await;
     assert_eq!(status, StatusCode::OK, "{valid_body}");
     assert_no_claim_boundaries(&valid_body);
+    assert_eq!(valid_body["xades_validation_performed"], false);
+    assert_technical_performed(&valid_body, true);
     assert_cades_no_claim_boundaries(&valid_body["cades"]);
 
-    let (status, xades_body) = send(&state, post_asic(&token, &asic_s_xades_container())).await;
+    let (status, xades_body) = send(&state, post_asic(&token, &asic_s_xades_container(41))).await;
     assert_eq!(status, StatusCode::OK, "{xades_body}");
     assert_no_claim_boundaries(&xades_body);
+    assert_eq!(xades_body["xades_validation_performed"], true);
+    assert_technical_performed(&xades_body, true);
     assert!(xades_body["cades"].is_null());
 }

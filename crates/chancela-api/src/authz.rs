@@ -376,10 +376,17 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
         RouteClass::Gated,
     ), // GET settings.read@Global
     ("/v1/signature/pdf/validate", RouteClass::Gated), // POST act.read@Global (read-only technical PDF/PAdES validation)
-    ("/v1/signature/asic/inspect", RouteClass::Gated), // POST act.read@Global (read-only technical ASiC/CAdES inspection)
+    ("/v1/signature/asic/inspect", RouteClass::Gated), // POST act.read@Global (read-only technical ASiC signature inspection)
+    ("/v1/signature/xades/sign", RouteClass::Gated), // POST signing.perform@Global (local technical XAdES)
+    ("/v1/signature/xades/validate", RouteClass::Gated), // POST act.read@Global (read-only technical XAdES/XMLDSig validation)
+    ("/v1/signature/asic/sign", RouteClass::Gated), // POST signing.perform@Global (local technical ASiC)
+    ("/v1/scap/providers", RouteClass::Gated),      // POST act.read@Global (SCAP provider lookup)
+    ("/v1/scap/attributes", RouteClass::Gated),     // POST act.read@Global (SCAP attribute lookup)
+    ("/v1/scap/sign", RouteClass::Gated), // POST signing.perform@Global (SCAP attribute signing)
     ("/v1/acts/{id}/signature/cmd/initiate", RouteClass::Gated), // POST signing.perform@Book
     ("/v1/acts/{id}/signature/cmd/confirm", RouteClass::Gated), // POST signing.perform@Book
     ("/v1/acts/{id}/signature/cc/sign", RouteClass::Gated), // POST signing.perform@Book (co-located)
+    ("/v1/signature/cc/batch-sign", RouteClass::Gated), // POST signing.perform@Book(each requested act) / co-located permission checks
     (
         "/v1/acts/{id}/signature/local/pkcs12/sign",
         RouteClass::Gated,
@@ -393,6 +400,8 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
         "/v1/acts/{id}/signature/archive-timestamp/append",
         RouteClass::Gated,
     ), // POST signing.perform@Book
+    ("/v1/acts/{id}/signature/ltv/execute", RouteClass::Gated), // POST signing.perform@Book
+    ("/v1/acts/{id}/signature/ltv/renew", RouteClass::Gated), // POST signing.perform@Book
     // Generic provider-parameterized remote signing (t59-s3): CMD + any configured CSC QTSP.
     (
         "/v1/acts/{id}/signature/remote/{provider}/initiate",

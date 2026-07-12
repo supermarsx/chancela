@@ -1,9 +1,9 @@
-//! Local technical ASiC/CAdES inspection for arbitrary ASiC ZIP containers.
+//! Local technical ASiC signature inspection for arbitrary ASiC ZIP containers.
 //!
-//! This endpoint is read-only. It classifies the ASiC member shape with `chancela-signing` and
-//! runs local CAdES validation only for the bounded ASiC-S/CAdES and ASiC-E/CAdES shapes already
-//! supported by the signing crate. It does not validate XAdES, fetch trust/revocation material,
-//! call signing providers, mutate archives, or claim legal/qualified-signature validity.
+//! This endpoint is read-only. It classifies the ASiC member shape with `chancela-signing`, then
+//! projects the local `validate_asic_container` technical report across recognised CAdES, XAdES,
+//! and archive-timestamp members. It does not fetch trust/revocation material, call signing
+//! providers, mutate archives, or claim legal/qualified-signature validity.
 
 use axum::Json;
 use axum::body::Bytes;
@@ -17,8 +17,10 @@ use chancela_signing::asic::{
     AsicSignatureProfile,
 };
 use chancela_signing::{
-    AsicContainer, BaselineProfile, EvidentiaryLevel, SignatureArtifact, SignatureFormat,
-    SigningError, SigningFamily, extract_asic_container, sha256_content_digest, validate_signature,
+    AsicArchiveTimestampValidation, AsicContainer, AsicSignatureValidation, AsicValidationReport,
+    BaselineProfile, EvidentiaryLevel, SignatureArtifact, SignatureFormat, SigningError,
+    SigningFamily, XadesLevel, extract_asic_container, sha256_content_digest,
+    validate_asic_container, validate_signature,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -36,13 +38,14 @@ pub(crate) const ASIC_SIGNATURE_INSPECTION_ENVELOPE_BYTES: usize =
     ASIC_SIGNATURE_INSPECTION_MAX_BYTES * 4 / 3 + 64 * 1024;
 
 const REPORT_KIND: &str = "asic_signature_inspection";
-const REPORT_SCOPE: &str = "local_technical_asic_cades_profile_evidence";
+const REPORT_SCOPE: &str = "local_technical_asic_signature_evidence";
 const NOT_PERFORMED: &str = "not_performed";
 const TECHNICAL_ONLY: &str = "technical_evidence_only";
-const LEGAL_NOTICE: &str = "Local technical ASiC/CAdES profile inspection only. No XAdES \
-validation, live provider call, trust-path validation, live revocation validation, qualified-status \
-decision, eIDAS legal-effect conclusion, production ASiC compliance decision, or B-LT/B-LTA claim \
-is performed or claimed.";
+const LEGAL_NOTICE: &str = "Local technical ASiC signature inspection only. No live provider call, \
+trust-path validation, live TSL/TSA/OCSP/CRL fetching, revocation validation, provider approval, \
+qualified-status decision, eIDAS legal-effect conclusion, production ASiC/XAdES compliance \
+decision, B-LT/B-LTA/LTV claim, signing, storage mutation, or archive mutation is performed or \
+claimed.";
 
 /// JSON envelope accepted by `POST /v1/signature/asic/inspect`.
 #[derive(Debug, Deserialize)]
@@ -85,14 +88,28 @@ pub struct AsicSignatureInspectionResponse {
     pub declared_size_bytes: Option<usize>,
     pub legal_validity_claimed: bool,
     pub qualified_signature_claimed: bool,
+    pub qualified_electronic_signature_claimed: bool,
+    pub qes_claimed: bool,
     pub trust_validation: &'static str,
+    pub trust_anchor_validation: &'static str,
     pub revocation_validation: &'static str,
     pub live_provider_calls: bool,
+    pub live_tsl_fetching: bool,
+    pub live_tsa_fetching: bool,
+    pub live_ocsp_fetching: bool,
+    pub live_crl_fetching: bool,
+    pub provider_approval_claimed: bool,
     pub xades_validation_performed: bool,
     pub b_lt_claimed: bool,
     pub b_lta_claimed: bool,
+    pub ltv_claimed: bool,
     pub production_asic_compliance_claimed: bool,
+    pub production_xades_conformance_claimed: bool,
     pub eidas_legal_effect_claimed: bool,
+    pub signing_performed: bool,
+    pub storage_mutation_performed: bool,
+    pub archive_mutation_performed: bool,
+    pub technical_validation: AsicTechnicalValidationReport,
     pub profile: AsicProfileInspectionReport,
     pub cades: Option<AsicCadesValidationReport>,
     pub findings: Vec<AsicInspectionFinding>,
@@ -103,7 +120,6 @@ pub struct AsicSignatureInspectionResponse {
 pub enum AsicInspectionStatus {
     Valid,
     Invalid,
-    Unsupported,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -197,6 +213,55 @@ pub struct AsicCadesSignedContentReport {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct AsicTechnicalValidationReport {
+    pub validation_performed: bool,
+    pub cryptographically_valid: bool,
+    pub all_signatures_valid: bool,
+    pub container_failure_reasons: Vec<String>,
+    pub signatures: Vec<AsicTechnicalSignatureReport>,
+    pub archive_timestamps: Vec<AsicTechnicalArchiveTimestampReport>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct AsicTechnicalSignatureReport {
+    pub path: String,
+    pub kind: &'static str,
+    pub valid: bool,
+    pub manifest_path: Option<String>,
+    pub covered_data_objects: Vec<String>,
+    pub signer_cert_sha256: Option<String>,
+    pub signer_cert_subject: Option<String>,
+    pub signing_time: Option<String>,
+    pub xades_level: Option<&'static str>,
+    pub has_signature_timestamp: bool,
+    pub signature_timestamp_trust_validation: &'static str,
+    pub failure_reasons: Vec<String>,
+    pub evidence_scope: &'static str,
+    pub trust_validation: &'static str,
+    pub revocation_validation: &'static str,
+    pub provider_validation: &'static str,
+    pub provider_approval_claimed: bool,
+    pub legal_validity_claimed: bool,
+    pub qualified_signature_claimed: bool,
+    pub qes_claimed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct AsicTechnicalArchiveTimestampReport {
+    pub manifest_path: String,
+    pub timestamp_path: String,
+    pub valid: bool,
+    pub imprint_matches_manifest: bool,
+    pub references_valid: bool,
+    pub covered_members: Vec<String>,
+    pub gen_time: Option<String>,
+    pub timestamp_trust_validation: &'static str,
+    pub b_lta_claimed: bool,
+    pub legal_validity_claimed: bool,
+    pub failure_reasons: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct AsicInspectionFinding {
     pub severity: &'static str,
     pub code: &'static str,
@@ -229,7 +294,7 @@ impl AsicInspectionFinding {
     }
 }
 
-/// `POST /v1/signature/asic/inspect` - local technical ASiC/CAdES profile inspection.
+/// `POST /v1/signature/asic/inspect` - local technical ASiC signature inspection.
 ///
 /// Accepts a JSON/base64 envelope and never persists the uploaded artifact or report.
 pub async fn inspect_asic_signature(
@@ -292,36 +357,52 @@ fn inspect_asic_signature_candidate(
 
     let report = chancela_signing::inspect_asic_profile(&bytes)
         .map_err(|e| ApiError::Unprocessable(format!("invalid ASiC inspection candidate: {e}")))?;
-    let profile = asic_profile_report(&report);
+    let technical_validation = asic_technical_validation_report(&bytes);
+    let xades_validation_performed = technical_validation.validation_performed
+        && technical_validation
+            .signatures
+            .iter()
+            .any(|signature| signature.kind == "xades");
+    let profile = asic_profile_report(
+        &report,
+        xades_validation_performed && technical_validation.cryptographically_valid,
+    );
     let mut findings = vec![AsicInspectionFinding::info(
         "technical_scope_only",
         LEGAL_NOTICE,
     )];
 
-    let (status, cades) = if report.is_bounded_supported_candidate() {
-        let cades = validate_bounded_asic_cades(&bytes);
-        let status = if cades.cryptographically_valid {
+    let status = if technical_validation.validation_performed {
+        if technical_validation.cryptographically_valid {
             findings.push(AsicInspectionFinding::info(
-                "asic_cades_valid_local_technical",
-                "Bounded ASiC/CAdES cryptographic validation succeeded locally; signer trust, qualification, revocation, and legal effect were not assessed.",
+                "asic_valid_local_technical",
+                "ASiC technical validation succeeded locally; signer trust, qualification, revocation, and legal effect were not assessed.",
             ));
             AsicInspectionStatus::Valid
         } else {
             findings.push(AsicInspectionFinding::error(
-                "asic_cades_invalid_local_technical",
-                cades
-                    .validation_error
-                    .clone()
-                    .unwrap_or_else(|| "bounded ASiC/CAdES validation failed locally".to_owned()),
+                "asic_invalid_local_technical",
+                technical_failure_summary(&technical_validation),
             ));
             AsicInspectionStatus::Invalid
-        };
-        (status, Some(cades))
+        }
     } else {
-        append_blocker_findings(&report, &mut findings);
-        (blocked_status(&report), None)
+        findings.push(AsicInspectionFinding::error(
+            "asic_validation_not_performed",
+            technical_failure_summary(&technical_validation),
+        ));
+        AsicInspectionStatus::Invalid
     };
 
+    if status != AsicInspectionStatus::Valid {
+        append_blocker_findings(&report, &mut findings);
+    }
+
+    let cades = if report.is_bounded_supported_candidate() {
+        Some(validate_bounded_asic_cades(&bytes))
+    } else {
+        None
+    };
     Ok(AsicSignatureInspectionResponse {
         report_kind: REPORT_KIND,
         scope: REPORT_SCOPE,
@@ -334,14 +415,28 @@ fn inspect_asic_signature_candidate(
         declared_size_bytes: candidate.declared_size_bytes,
         legal_validity_claimed: false,
         qualified_signature_claimed: false,
+        qualified_electronic_signature_claimed: false,
+        qes_claimed: false,
         trust_validation: NOT_PERFORMED,
+        trust_anchor_validation: NOT_PERFORMED,
         revocation_validation: NOT_PERFORMED,
         live_provider_calls: false,
-        xades_validation_performed: false,
+        live_tsl_fetching: false,
+        live_tsa_fetching: false,
+        live_ocsp_fetching: false,
+        live_crl_fetching: false,
+        provider_approval_claimed: false,
+        xades_validation_performed,
         b_lt_claimed: false,
         b_lta_claimed: false,
+        ltv_claimed: false,
         production_asic_compliance_claimed: false,
+        production_xades_conformance_claimed: false,
         eidas_legal_effect_claimed: false,
+        signing_performed: false,
+        storage_mutation_performed: false,
+        archive_mutation_performed: false,
+        technical_validation,
         profile,
         cades,
         findings,
@@ -450,7 +545,119 @@ fn bounded_signed_content(bytes: &[u8]) -> Result<AsicCadesSignedContentReport, 
     }
 }
 
-fn asic_profile_report(report: &AsicProfileReport) -> AsicProfileInspectionReport {
+fn asic_technical_validation_report(bytes: &[u8]) -> AsicTechnicalValidationReport {
+    match validate_asic_container(bytes) {
+        Ok(report) => project_asic_validation_report(&report),
+        Err(err) => AsicTechnicalValidationReport {
+            validation_performed: false,
+            cryptographically_valid: false,
+            all_signatures_valid: false,
+            container_failure_reasons: vec![err.to_string()],
+            signatures: Vec::new(),
+            archive_timestamps: Vec::new(),
+        },
+    }
+}
+
+fn project_asic_validation_report(report: &AsicValidationReport) -> AsicTechnicalValidationReport {
+    AsicTechnicalValidationReport {
+        validation_performed: true,
+        cryptographically_valid: report.is_valid(),
+        all_signatures_valid: report.all_signatures_valid(),
+        container_failure_reasons: report.failure_reasons.clone(),
+        signatures: report
+            .signatures
+            .iter()
+            .map(technical_signature_report)
+            .collect(),
+        archive_timestamps: report
+            .archive_timestamps
+            .iter()
+            .map(technical_archive_timestamp_report)
+            .collect(),
+    }
+}
+
+fn technical_signature_report(signature: &AsicSignatureValidation) -> AsicTechnicalSignatureReport {
+    AsicTechnicalSignatureReport {
+        path: signature.path.clone(),
+        kind: signature_member_kind(signature.kind),
+        valid: signature.valid,
+        manifest_path: signature.manifest_path.clone(),
+        covered_data_objects: signature.covered_data_objects.clone(),
+        signer_cert_sha256: signature.signer_cert_der.as_deref().map(sha256_hex),
+        signer_cert_subject: signature
+            .signer_cert_der
+            .as_deref()
+            .and_then(signer_cert_subject),
+        signing_time: signature
+            .signing_time
+            .and_then(|value| value.format(&Rfc3339).ok()),
+        xades_level: signature.xades_level.map(xades_level),
+        has_signature_timestamp: signature.has_signature_timestamp,
+        signature_timestamp_trust_validation: NOT_PERFORMED,
+        failure_reasons: signature.failure_reasons.clone(),
+        evidence_scope: TECHNICAL_ONLY,
+        trust_validation: NOT_PERFORMED,
+        revocation_validation: NOT_PERFORMED,
+        provider_validation: NOT_PERFORMED,
+        provider_approval_claimed: false,
+        legal_validity_claimed: false,
+        qualified_signature_claimed: false,
+        qes_claimed: false,
+    }
+}
+
+fn technical_archive_timestamp_report(
+    archive: &AsicArchiveTimestampValidation,
+) -> AsicTechnicalArchiveTimestampReport {
+    AsicTechnicalArchiveTimestampReport {
+        manifest_path: archive.manifest_path.clone(),
+        timestamp_path: archive.timestamp_path.clone(),
+        valid: archive.valid,
+        imprint_matches_manifest: archive.imprint_matches_manifest,
+        references_valid: archive.references_valid,
+        covered_members: archive.covered_members.clone(),
+        gen_time: archive
+            .gen_time
+            .and_then(|value| value.format(&Rfc3339).ok()),
+        timestamp_trust_validation: NOT_PERFORMED,
+        b_lta_claimed: false,
+        legal_validity_claimed: false,
+        failure_reasons: archive.failure_reasons.clone(),
+    }
+}
+
+fn technical_failure_summary(report: &AsicTechnicalValidationReport) -> String {
+    let mut reasons = report.container_failure_reasons.clone();
+    for signature in &report.signatures {
+        reasons.extend(
+            signature
+                .failure_reasons
+                .iter()
+                .map(|reason| format!("{}: {reason}", signature.path)),
+        );
+    }
+    for archive in &report.archive_timestamps {
+        reasons.extend(
+            archive
+                .failure_reasons
+                .iter()
+                .map(|reason| format!("{}: {reason}", archive.manifest_path)),
+        );
+    }
+
+    if reasons.is_empty() {
+        "ASiC technical validation failed locally".to_owned()
+    } else {
+        reasons.join("; ")
+    }
+}
+
+fn asic_profile_report(
+    report: &AsicProfileReport,
+    suppress_validated_xades_legacy_blocker: bool,
+) -> AsicProfileInspectionReport {
     AsicProfileInspectionReport {
         container_kind: container_kind(report.container_kind),
         mimetype: report.mimetype,
@@ -466,7 +673,15 @@ fn asic_profile_report(report: &AsicProfileReport) -> AsicProfileInspectionRepor
             xades_signatures: report.xades_signature_paths.clone(),
             unsupported_meta_inf: report.unsupported_meta_inf_paths.clone(),
         },
-        blockers: report.blocker_details.iter().map(blocker_report).collect(),
+        blockers: report
+            .blocker_details
+            .iter()
+            .filter(|blocker| {
+                !suppress_validated_xades_legacy_blocker
+                    || blocker.id != AsicDiagnosticBlockerId::XadesNotSupported
+            })
+            .map(blocker_report)
+            .collect(),
         manifest_diagnostics: report
             .manifest_diagnostics
             .iter()
@@ -530,7 +745,7 @@ fn append_blocker_findings(report: &AsicProfileReport, findings: &mut Vec<AsicIn
     {
         findings.push(AsicInspectionFinding::warning(
             "xades_not_supported",
-            "ASiC-XAdES was detected. XAdES validation was not performed by this local ASiC/CAdES inspection endpoint.",
+            "ASiC-XAdES was detected. Local technical validation does not establish signer trust, provider approval, qualification, revocation status, legal effect, or production ASiC/XAdES conformance.",
         ));
     }
 
@@ -539,27 +754,6 @@ fn append_blocker_findings(report: &AsicProfileReport, findings: &mut Vec<AsicIn
             blocker.id.as_str(),
             blocker.message.clone(),
         ));
-    }
-}
-
-fn blocked_status(report: &AsicProfileReport) -> AsicInspectionStatus {
-    let invalid_blocker = report.blocker_details.iter().any(|blocker| {
-        matches!(
-            blocker.id,
-            AsicDiagnosticBlockerId::DuplicateMember
-                | AsicDiagnosticBlockerId::EncryptedMember
-                | AsicDiagnosticBlockerId::MemberUncompressedSizeExceeded
-                | AsicDiagnosticBlockerId::TotalUncompressedSizeExceeded
-                | AsicDiagnosticBlockerId::EmptySignatureMember
-                | AsicDiagnosticBlockerId::EmptyManifestMember
-                | AsicDiagnosticBlockerId::AsicEManifestParseFailed
-                | AsicDiagnosticBlockerId::AsicEManifestDigestMismatch
-        )
-    });
-    if invalid_blocker {
-        AsicInspectionStatus::Invalid
-    } else {
-        AsicInspectionStatus::Unsupported
     }
 }
 
@@ -610,6 +804,15 @@ fn signature_member_kind(value: AsicSignatureMemberKind) -> &'static str {
         AsicSignatureMemberKind::Cades => "cades",
         AsicSignatureMemberKind::Xades => "xades",
         _ => "unknown",
+    }
+}
+
+fn xades_level(value: XadesLevel) -> &'static str {
+    match value {
+        XadesLevel::B => "b",
+        XadesLevel::T => "t",
+        XadesLevel::LT => "lt",
+        XadesLevel::LTA => "lta",
     }
 }
 
