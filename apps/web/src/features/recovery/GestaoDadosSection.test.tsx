@@ -983,8 +983,8 @@ describe('GestaoDadosSection', () => {
     );
     const drill = calls.find((c) => c.url === '/v1/backup/recovery-drills')!;
     expect(drill.method).toBe('POST');
+    expect(calls.some((c) => c.url === '/v1/ledger/recovery/restore')).toBe(false);
     for (const forbiddenUrl of [
-      '/v1/ledger/recovery/restore',
       '/v1/ledger/recovery/restore/preflight',
       '/v1/data/reset',
     ]) {
