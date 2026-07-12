@@ -10,6 +10,7 @@
  */
 import { expect, test, type Locator, type Page } from './fixtures';
 import { OPERATOR, signInAt } from './auth';
+import { fillOpenBookTermSignatories, sealActForSigning } from './book-helpers';
 
 test('seal designer: place a visible seal and carry it into the sign request', async ({ page }) => {
   test.setTimeout(180_000);
@@ -41,6 +42,7 @@ test('seal designer: place a visible seal and carry it into the sign request', a
   await page.getByRole('button', { name: 'Guardar' }).click();
   await expect(page.getByRole('button', { name: 'A guardar…' })).toHaveCount(0);
   await advanceToSigning(page);
+  await sealActForSigning(page);
 
   await test.step('the seal affordance opens the designer', async () => {
     const open = page.getByRole('button', { name: 'Posicionar selo visível' });
@@ -57,7 +59,7 @@ test('seal designer: place a visible seal and carry it into the sign request', a
     await page.getByLabel('Y (pontos)').fill('144');
     await page.getByLabel('Largura (pontos)').fill('180');
     await page.getByLabel('Altura (pontos)').fill('60');
-    await page.getByRole('textbox', { name: 'Nome' }).fill('Amélia Marques');
+    await page.getByRole('textbox', { name: 'Nome', exact: true }).fill('Amélia Marques');
     await page.getByRole('button', { name: 'Aplicar selo' }).click();
     await expect(page.getByText('Selo visível posicionado na página 1.')).toBeVisible();
   });
@@ -105,7 +107,7 @@ async function createAct(
   await expect(page).toHaveURL(/\/livros\/novo\?entidade=[0-9a-f-]{36}$/);
   await page.getByLabel('Finalidade').fill(`Atas selo ${suffix}`);
   await page.getByLabel('Data de abertura').fill('2026-02-02');
-  await page.getByLabel('Signatários do termo de abertura').fill('Presidente da Mesa\nSecretário');
+  await fillOpenBookTermSignatories(page);
   await page.getByRole('button', { name: 'Abrir livro' }).click();
   await expect(page).toHaveURL(/\/livros\/[0-9a-f-]{36}$/);
 

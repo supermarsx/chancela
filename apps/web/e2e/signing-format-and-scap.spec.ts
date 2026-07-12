@@ -14,6 +14,7 @@
  */
 import { expect, test, type Locator, type Page } from './fixtures';
 import { OPERATOR, signInAt } from './auth';
+import { fillOpenBookTermSignatories, sealActForSigning } from './book-helpers';
 
 test('signing format selector: XAdES choice reaches the request body; SCAP shows declared-not-verified', async ({
   page,
@@ -85,6 +86,7 @@ test('signing format selector: XAdES choice reaches the request body; SCAP shows
   await page.getByRole('button', { name: 'Guardar' }).click();
   await expect(page.getByRole('button', { name: 'A guardar…' })).toHaveCount(0);
   await advanceToSigning(page);
+  await sealActForSigning(page);
 
   await test.step('XAdES format/level/packaging choice reaches the xades/sign body', async () => {
     await page.getByLabel('Formato de assinatura').selectOption('xades');
@@ -117,7 +119,7 @@ test('signing format selector: XAdES choice reaches the request body; SCAP shows
 
     await expect(page.getByText('Advogado').first()).toBeVisible();
     await expect(page.getByText('Declarado — não verificado pela SCAP').first()).toBeVisible();
-    await expect(page.getByText('Verificado pela SCAP')).toHaveCount(0);
+    await expect(page.getByText('Verificado pela SCAP', { exact: true })).toHaveCount(0);
   });
 });
 
@@ -144,7 +146,7 @@ async function createAct(
   await expect(page).toHaveURL(/\/livros\/novo\?entidade=[0-9a-f-]{36}$/);
   await page.getByLabel('Finalidade').fill(`Atas formato ${suffix}`);
   await page.getByLabel('Data de abertura').fill('2026-02-02');
-  await page.getByLabel('Signatários do termo de abertura').fill('Presidente da Mesa\nSecretário');
+  await fillOpenBookTermSignatories(page);
   await page.getByRole('button', { name: 'Abrir livro' }).click();
   await expect(page).toHaveURL(/\/livros\/[0-9a-f-]{36}$/);
 
