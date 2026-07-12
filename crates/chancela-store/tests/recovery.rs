@@ -13,7 +13,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use chancela_core::{Act, ActId, Book, BookKind, Entity, EntityKind, MeetingChannel, Nipc};
 use chancela_ledger::{ChainId, Ledger};
-use chancela_store::recovery::{CollisionPolicy, ImportVerdict, ResetScope, StartOverScope};
+use chancela_store::recovery::{
+    CollisionPolicy, ImportVerdict, RECOVERY_ZIP_MEMBER_UNCOMPRESSED_MAX_BYTES, ResetScope,
+    StartOverScope,
+};
 use chancela_store::{Store, StoreError, StoredDocument, StoredSignedDocument};
 use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
@@ -686,6 +689,51 @@ fn restore_preflight_reports_bad_archive_as_evidence() {
 }
 
 #[test]
+fn restore_preflight_rejects_a_zip_bomb_backup_member_without_mutating_live_store() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let _ = seed(&store);
+    let events_before = store.load().unwrap().ledger.len();
+
+    let backup = store.backup(dir.path(), &[]).expect("backup");
+    let good = std::fs::read(&backup.path).unwrap();
+    let bomb = rebuild_backup_with_bomb_member(
+        &good,
+        "chancela.db",
+        RECOVERY_ZIP_MEMBER_UNCOMPRESSED_MAX_BYTES as usize + 1,
+    );
+    assert!(bomb.len() < 4 * 1024 * 1024, "bomb stays tiny on disk");
+    let bomb_path = dir.path().join("bomb-preflight-backup.zip");
+    std::fs::write(&bomb_path, &bomb).unwrap();
+
+    let preflight = store
+        .restore_preflight(&bomb_path, dir.path(), None)
+        .expect("zip-bomb preflight is display evidence, not a store mutation error");
+    assert!(!preflight.ok);
+    assert!(!preflight.ready);
+    assert_eq!(preflight.encrypted, Some(false));
+    assert!(
+        preflight
+            .errors
+            .iter()
+            .any(|e| e.contains("per-member decompression limit")),
+        "error identifies the decompression bound: {preflight:?}"
+    );
+
+    let live = store.load().expect("reload after refused preflight");
+    assert!(live.chain_status.is_ok());
+    assert_eq!(live.ledger.len(), events_before);
+    assert!(
+        !live
+            .ledger
+            .events()
+            .iter()
+            .any(|e| e.kind == "ledger.restored"),
+        "a refused preflight must not record a ledger.restored"
+    );
+}
+
+#[test]
 fn encrypted_backup_hides_zip_and_sqlite_and_restores_sidecars() {
     let dir = TempDir::new();
     let store = Store::open(dir.path()).expect("open");
@@ -1092,4 +1140,137 @@ fn contains_subslice(haystack: &[u8], needle: &[u8]) -> bool {
         return false;
     }
     haystack.windows(needle.len()).any(|w| w == needle)
+}
+
+// --- zip-bomb decompression bounds (finding H3) -------------------------------------------------
+
+/// Build a `.zip` with a single DEFLATE member of `uncompressed_len` zero bytes. Zeros compress
+/// ~1000:1, so the archive is a few KB on disk yet inflates to `uncompressed_len` — the "zip bomb"
+/// shape the decompression ceilings defend against. The member is written in 1 MiB chunks so the
+/// builder itself never holds the full uncompressed payload.
+fn deflate_bomb_zip(member: &str, uncompressed_len: usize) -> Vec<u8> {
+    let mut w = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    let opts = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+    w.start_file(member, opts).expect("start bomb member");
+    let chunk = vec![0u8; 1024 * 1024];
+    let mut remaining = uncompressed_len;
+    while remaining > 0 {
+        let n = remaining.min(chunk.len());
+        w.write_all(&chunk[..n]).expect("write bomb bytes");
+        remaining -= n;
+    }
+    w.finish().expect("finish bomb zip").into_inner()
+}
+
+/// Re-pack a backup `.zip`, replacing `bomb_member`'s bytes with a DEFLATE bomb while copying every
+/// other member (including the `manifest.json` that still lists `bomb_member` by name) verbatim.
+fn rebuild_backup_with_bomb_member(
+    original: &[u8],
+    bomb_member: &str,
+    uncompressed_len: usize,
+) -> Vec<u8> {
+    let mut src = zip::ZipArchive::new(std::io::Cursor::new(original)).expect("read backup zip");
+    let names: Vec<String> = (0..src.len())
+        .map(|i| src.by_index(i).unwrap().name().to_owned())
+        .collect();
+    let mut out = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    let stored = zip::write::SimpleFileOptions::default();
+    let deflated = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+    for name in names {
+        if name == bomb_member {
+            out.start_file(&name, deflated).expect("start bomb member");
+            let chunk = vec![0u8; 1024 * 1024];
+            let mut remaining = uncompressed_len;
+            while remaining > 0 {
+                let n = remaining.min(chunk.len());
+                out.write_all(&chunk[..n]).expect("write bomb bytes");
+                remaining -= n;
+            }
+        } else {
+            let mut bytes = Vec::new();
+            src.by_name(&name).unwrap().read_to_end(&mut bytes).unwrap();
+            out.start_file(&name, stored).expect("copy member");
+            out.write_all(&bytes).expect("copy member bytes");
+        }
+    }
+    out.finish().expect("finish rebuilt zip").into_inner()
+}
+
+#[test]
+fn import_book_rejects_a_zip_bomb_bundle() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let (mut ledger, _entity, _book, _act) = seed(&store);
+    let events_before = ledger.len();
+
+    // A ~KB bundle whose single member would inflate past the per-member ceiling.
+    let bomb = deflate_bomb_zip(
+        "events.jsonl",
+        RECOVERY_ZIP_MEMBER_UNCOMPRESSED_MAX_BYTES as usize + 1,
+    );
+    assert!(bomb.len() < 4 * 1024 * 1024, "bomb stays tiny on disk");
+    let bundle_path = dir.path().join("bomb-bundle.zip");
+    std::fs::write(&bundle_path, &bomb).unwrap();
+
+    let result = store.import_book(
+        &mut ledger,
+        &bundle_path,
+        CollisionPolicy::Refuse,
+        "amelia.marques",
+        at(),
+    );
+    match result {
+        Err(StoreError::InvalidBundle(msg)) => {
+            assert!(msg.contains("per-member decompression limit"), "{msg}")
+        }
+        other => panic!("expected InvalidBundle, got {other:?}"),
+    }
+
+    // Rejected before any inflation completes: nothing imported, the live spine untouched.
+    assert!(store.imported_books().unwrap().is_empty());
+    assert_eq!(ledger.len(), events_before);
+    assert!(store.load().unwrap().chain_status.is_ok());
+}
+
+#[test]
+fn restore_rejects_a_zip_bomb_backup_member() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let (mut ledger, _entity, _book, _act) = seed(&store);
+    let events_before = ledger.len();
+
+    // Take a good backup, then swap its snapshot db member for a bomb (manifest still lists it).
+    let backup = store.backup(dir.path(), &[]).expect("backup");
+    let good = std::fs::read(&backup.path).unwrap();
+    let bomb = rebuild_backup_with_bomb_member(
+        &good,
+        "chancela.db",
+        RECOVERY_ZIP_MEMBER_UNCOMPRESSED_MAX_BYTES as usize + 1,
+    );
+    assert!(bomb.len() < 4 * 1024 * 1024, "bomb stays tiny on disk");
+    let bomb_path = dir.path().join("bomb-backup.zip");
+    std::fs::write(&bomb_path, &bomb).unwrap();
+
+    let result = store.restore(&mut ledger, &bomb_path, dir.path(), "amelia.marques", at());
+    match result {
+        Err(StoreError::BadBackup(msg)) => {
+            assert!(msg.contains("per-member decompression limit"), "{msg}")
+        }
+        other => panic!("expected BadBackup, got {other:?}"),
+    }
+
+    // Verify-before-swap holds even earlier on the size bound: no swap, no ledger.restored.
+    let live = store.load().expect("reload after refused restore");
+    assert!(live.chain_status.is_ok());
+    assert_eq!(ledger.len(), events_before);
+    assert!(
+        !live
+            .ledger
+            .events()
+            .iter()
+            .any(|e| e.kind == "ledger.restored"),
+        "a refused restore must not record a ledger.restored"
+    );
 }

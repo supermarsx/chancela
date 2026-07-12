@@ -48,6 +48,33 @@ use crate::{
 /// The frozen portable-bundle format tag (a `.zip`); see the module docs and plan §2.4.
 pub const BUNDLE_FORMAT: &str = "chancela-book-bundle/v1";
 
+// -------------------------------------------------------------------------------------------------
+// Decompression bounds (zip-bomb defense)
+//
+// A portable bundle and a whole-store backup are both untrusted `.zip` input: a member can declare a
+// tiny compressed size that inflates to gigabytes (a DEFLATE "zip bomb"), so reading members with an
+// unbounded `read_to_end` can exhaust memory and OOM the process long before any digest/chain check
+// runs. Every member read below is therefore capped by [`read_zip_member_bounded`], which streams
+// through a bounded reader and fails fast the moment a member — or the running total across members —
+// crosses the ceiling, before the offending bytes are fully materialized.
+//
+// The ceilings are deliberately generous relative to real archives (a bundle carries one book's
+// documents; a backup carries the snapshot DB plus sidecar roots — cf. the 16 MiB per-document import
+// cap and the 256 MiB uncompressed-zip warning threshold in `chancela-api`) yet far below the memory
+// a bomb would consume. They mirror the ASiC container bounds in `chancela-signing` (16 MiB member /
+// 32 MiB total), scaled up for the larger legitimate payloads a bundle/backup can hold.
+// -------------------------------------------------------------------------------------------------
+
+/// Maximum uncompressed size accepted for a single member of a bundle/backup `.zip` (a large
+/// snapshot DB or document blob stays well under this; a bomb trips it before it can grow further).
+pub const RECOVERY_ZIP_MEMBER_UNCOMPRESSED_MAX_BYTES: u64 = 256 * 1024 * 1024;
+/// Maximum total uncompressed size accepted across all members of a bundle/backup `.zip`. A
+/// legitimate whole-store archive stays under this; a multi-member bomb is rejected on overflow.
+pub const RECOVERY_ZIP_TOTAL_UNCOMPRESSED_MAX_BYTES: u64 = 1024 * 1024 * 1024;
+/// Maximum number of members accepted in a bundle/backup `.zip`. Guards a many-tiny-member bomb
+/// (a huge central directory / entry count) that the byte ceilings alone would not catch.
+pub const RECOVERY_ZIP_MAX_MEMBERS: usize = 100_000;
+
 /// Audit-event kinds emitted by this module (all scope [`RECOVERY_SCOPE`] ⇒ the Application chain).
 pub const EXPORTED_EVENT_KIND: &str = "ledger.exported";
 /// See [`EXPORTED_EVENT_KIND`].
@@ -930,28 +957,55 @@ impl Store {
         } = restore;
         let mut zip = zip::ZipArchive::new(std::io::Cursor::new(archive_bytes))
             .map_err(|e| StoreError::BadBackup(format!("not a readable zip: {e}")))?;
+        if zip.len() > RECOVERY_ZIP_MAX_MEMBERS {
+            return Err(StoreError::BadBackup(format!(
+                "backup has {} members, exceeding the {RECOVERY_ZIP_MAX_MEMBERS}-member limit",
+                zip.len()
+            )));
+        }
+        let mut consumed: u64 = 0;
 
-        // Manifest.
+        // Manifest. Bounded like every other member so a bomb hidden in manifest.json cannot OOM.
         let manifest: BackupManifest = {
             let mut m = zip
                 .by_name("manifest.json")
                 .map_err(|e| StoreError::BadBackup(format!("no manifest.json: {e}")))?;
-            let mut s = String::new();
-            m.read_to_string(&mut s)?;
-            serde_json::from_str(&s)
+            let bytes = read_zip_member_bounded(
+                "manifest.json",
+                &mut m,
+                &mut consumed,
+                RECOVERY_ZIP_MEMBER_UNCOMPRESSED_MAX_BYTES,
+                RECOVERY_ZIP_TOTAL_UNCOMPRESSED_MAX_BYTES,
+                StoreError::BadBackup,
+            )?;
+            serde_json::from_slice(&bytes)
                 .map_err(|e| StoreError::BadBackup(format!("bad manifest: {e}")))?
         };
 
+        if manifest.files.len() > RECOVERY_ZIP_MAX_MEMBERS {
+            return Err(StoreError::BadBackup(format!(
+                "backup manifest lists {} members, exceeding the {RECOVERY_ZIP_MAX_MEMBERS}-member limit",
+                manifest.files.len()
+            )));
+        }
+
         // Verify every member digest BEFORE trusting the archive, and keep the verified bytes for
-        // the later db/sidecar staging phase.
+        // the later db/sidecar staging phase. Each member is read under the decompression budget so
+        // a zip-bomb backup is refused before it can exhaust memory (the live store stays untouched).
         let mut verified_members = BTreeMap::<String, Vec<u8>>::new();
         for f in &manifest.files {
             validate_backup_member_name(&f.name)?;
             let mut member = zip
                 .by_name(&f.name)
                 .map_err(|_| StoreError::BadBackup(format!("archive missing member {}", f.name)))?;
-            let mut bytes = Vec::new();
-            member.read_to_end(&mut bytes)?;
+            let bytes = read_zip_member_bounded(
+                &f.name,
+                &mut member,
+                &mut consumed,
+                RECOVERY_ZIP_MEMBER_UNCOMPRESSED_MAX_BYTES,
+                RECOVERY_ZIP_TOTAL_UNCOMPRESSED_MAX_BYTES,
+                StoreError::BadBackup,
+            )?;
             if hex(&Sha256::digest(&bytes)) != f.sha256 {
                 return Err(StoreError::BadBackup(format!(
                     "member {} digest mismatch",
@@ -1814,16 +1868,36 @@ fn verify_restore_preflight_zip(
     let mut findings = Vec::new();
     let mut zip = zip::ZipArchive::new(std::io::Cursor::new(archive_bytes))
         .map_err(|e| StoreError::BadBackup(format!("not a readable zip: {e}")))?;
+    if zip.len() > RECOVERY_ZIP_MAX_MEMBERS {
+        return Err(StoreError::BadBackup(format!(
+            "backup has {} members, exceeding the {RECOVERY_ZIP_MAX_MEMBERS}-member limit",
+            zip.len()
+        )));
+    }
     findings.push("archive structure is readable".to_owned());
+    let mut consumed: u64 = 0;
 
     let manifest: BackupManifest = {
         let mut m = zip
             .by_name("manifest.json")
             .map_err(|e| StoreError::BadBackup(format!("no manifest.json: {e}")))?;
-        let mut s = String::new();
-        m.read_to_string(&mut s)?;
-        serde_json::from_str(&s).map_err(|e| StoreError::BadBackup(format!("bad manifest: {e}")))?
+        let bytes = read_zip_member_bounded(
+            "manifest.json",
+            &mut m,
+            &mut consumed,
+            RECOVERY_ZIP_MEMBER_UNCOMPRESSED_MAX_BYTES,
+            RECOVERY_ZIP_TOTAL_UNCOMPRESSED_MAX_BYTES,
+            StoreError::BadBackup,
+        )?;
+        serde_json::from_slice(&bytes)
+            .map_err(|e| StoreError::BadBackup(format!("bad manifest: {e}")))?
     };
+    if manifest.files.len() > RECOVERY_ZIP_MAX_MEMBERS {
+        return Err(StoreError::BadBackup(format!(
+            "backup manifest lists {} members, exceeding the {RECOVERY_ZIP_MAX_MEMBERS}-member limit",
+            manifest.files.len()
+        )));
+    }
     findings.push("manifest.json parsed".to_owned());
 
     let evidence = restore_preflight_manifest_evidence(&manifest);
@@ -1833,8 +1907,14 @@ fn verify_restore_preflight_zip(
         let mut member = zip
             .by_name(&f.name)
             .map_err(|_| StoreError::BadBackup(format!("archive missing member {}", f.name)))?;
-        let mut bytes = Vec::new();
-        member.read_to_end(&mut bytes)?;
+        let bytes = read_zip_member_bounded(
+            &f.name,
+            &mut member,
+            &mut consumed,
+            RECOVERY_ZIP_MEMBER_UNCOMPRESSED_MAX_BYTES,
+            RECOVERY_ZIP_TOTAL_UNCOMPRESSED_MAX_BYTES,
+            StoreError::BadBackup,
+        )?;
         if hex(&Sha256::digest(&bytes)) != f.sha256 {
             return Err(StoreError::BadBackup(format!(
                 "member {} digest mismatch",
@@ -2040,13 +2120,59 @@ fn write_bundle_zip(
     Ok(zip.finish()?.into_inner())
 }
 
+/// Read one ZIP member fully into memory while enforcing a decompression budget (zip-bomb defense).
+///
+/// The member is inflated through a bounded reader ([`Read::take`]) that yields at most
+/// `member_max + 1` bytes: if that many arrive the member is over the per-member ceiling and is
+/// rejected *before* the rest of the (potentially gigabyte-scale) stream is materialized. The
+/// member's real size is then folded into `*consumed` and checked against `total_max`, so the sum
+/// across a whole archive is bounded too. `err` builds the caller's domain error
+/// ([`StoreError::InvalidBundle`] for a bundle, [`StoreError::BadBackup`] for a backup); genuine
+/// I/O failures stay [`StoreError::Io`].
+fn read_zip_member_bounded<R: Read>(
+    name: &str,
+    reader: &mut R,
+    consumed: &mut u64,
+    member_max: u64,
+    total_max: u64,
+    err: impl Fn(String) -> StoreError,
+) -> Result<Vec<u8>, StoreError> {
+    let mut buf = Vec::new();
+    reader.take(member_max + 1).read_to_end(&mut buf)?;
+    if buf.len() as u64 > member_max {
+        return Err(err(format!(
+            "archive member {name} exceeds the {member_max}-byte per-member decompression limit \
+             (possible zip bomb)"
+        )));
+    }
+    *consumed = consumed.saturating_add(buf.len() as u64);
+    if *consumed > total_max {
+        return Err(err(format!(
+            "archive members exceed the {total_max}-byte total decompression limit at member \
+             {name} (possible zip bomb)"
+        )));
+    }
+    Ok(buf)
+}
+
 /// Parse a bundle `.zip`'s bytes into (manifest, member-name → bytes). A truly-unparseable input
 /// (not a zip, no manifest, wrong format) is a hard [`StoreError::InvalidBundle`]; a *tampered*
 /// bundle whose manifest parses is caught later by digest/chain verification and quarantined.
+///
+/// Every member is read under [`read_zip_member_bounded`] and the entry count is capped, so a
+/// zip-bomb bundle is rejected before it can exhaust memory (verify-before-trust, but fail even
+/// earlier on the size bound).
 fn read_bundle(bytes: &[u8]) -> Result<(BundleManifest, HashMap<String, Vec<u8>>), StoreError> {
     let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes))
         .map_err(|e| StoreError::InvalidBundle(format!("not a readable zip: {e}")))?;
+    if archive.len() > RECOVERY_ZIP_MAX_MEMBERS {
+        return Err(StoreError::InvalidBundle(format!(
+            "bundle has {} members, exceeding the {RECOVERY_ZIP_MAX_MEMBERS}-member limit",
+            archive.len()
+        )));
+    }
     let mut members = HashMap::new();
+    let mut consumed: u64 = 0;
     for i in 0..archive.len() {
         let mut f = archive.by_index(i)?;
         let name = f.name().to_owned();
@@ -2055,8 +2181,14 @@ fn read_bundle(bytes: &[u8]) -> Result<(BundleManifest, HashMap<String, Vec<u8>>
                 "path-traversal in member name {name:?}"
             )));
         }
-        let mut buf = Vec::new();
-        f.read_to_end(&mut buf)?;
+        let buf = read_zip_member_bounded(
+            &name,
+            &mut f,
+            &mut consumed,
+            RECOVERY_ZIP_MEMBER_UNCOMPRESSED_MAX_BYTES,
+            RECOVERY_ZIP_TOTAL_UNCOMPRESSED_MAX_BYTES,
+            StoreError::InvalidBundle,
+        )?;
         members.insert(name, buf);
     }
     let manifest_bytes = members
@@ -2120,4 +2252,133 @@ fn reconstruct_verdict(
         None => tamper_break(book_id, "quarantined (break detail unavailable)"),
     };
     Ok(ImportVerdict::Quarantined { break_ })
+}
+
+#[cfg(test)]
+mod decompression_bound_tests {
+    //! Zip-bomb defense (finding H3): the per-member / total decompression ceilings and the
+    //! member-count cap that [`read_zip_member_bounded`] and [`read_bundle`] enforce. The
+    //! end-to-end `import_book` / `restore` rejections live in `tests/recovery.rs`.
+    use super::*;
+
+    #[test]
+    fn bounded_read_returns_bytes_within_limits() {
+        let data = b"a legitimate, small member payload";
+        let mut consumed = 0u64;
+        let out = read_zip_member_bounded(
+            "m",
+            &mut &data[..],
+            &mut consumed,
+            1024,
+            4096,
+            StoreError::InvalidBundle,
+        )
+        .expect("within-limit member is accepted");
+        assert_eq!(out, data);
+        assert_eq!(consumed, data.len() as u64);
+    }
+
+    #[test]
+    fn bounded_read_rejects_a_member_over_the_per_member_ceiling() {
+        // The reader would yield 200 bytes; the per-member ceiling is 64, so it is rejected without
+        // materializing the whole payload, and it does not count toward the running total.
+        let data = vec![0x5au8; 200];
+        let mut consumed = 0u64;
+        let err = read_zip_member_bounded(
+            "bomb",
+            &mut &data[..],
+            &mut consumed,
+            64,
+            4096,
+            StoreError::BadBackup,
+        )
+        .expect_err("over-ceiling member is rejected");
+        match err {
+            StoreError::BadBackup(msg) => {
+                assert!(msg.contains("per-member decompression limit"), "{msg}");
+                assert!(msg.contains("bomb"), "{msg}");
+            }
+            other => panic!("expected BadBackup, got {other:?}"),
+        }
+        assert_eq!(consumed, 0, "a rejected member must not advance the total");
+    }
+
+    #[test]
+    fn bounded_read_rejects_once_the_running_total_is_exceeded() {
+        // Two members, each within the per-member ceiling, that together cross the total ceiling.
+        let first = vec![1u8; 40];
+        let second = vec![2u8; 40];
+        let mut consumed = 0u64;
+        read_zip_member_bounded(
+            "first",
+            &mut &first[..],
+            &mut consumed,
+            64,
+            64,
+            StoreError::InvalidBundle,
+        )
+        .expect("first member fits");
+        let err = read_zip_member_bounded(
+            "second",
+            &mut &second[..],
+            &mut consumed,
+            64,
+            64,
+            StoreError::InvalidBundle,
+        )
+        .expect_err("second member crosses the total ceiling");
+        match err {
+            StoreError::InvalidBundle(msg) => {
+                assert!(msg.contains("total decompression limit"), "{msg}");
+                assert!(msg.contains("second"), "{msg}");
+            }
+            other => panic!("expected InvalidBundle, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn read_bundle_rejects_an_excessive_member_count() {
+        // A many-tiny-member archive is rejected on the entry-count cap before any member is read.
+        let mut w = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let opts = zip::write::SimpleFileOptions::default();
+        for i in 0..(RECOVERY_ZIP_MAX_MEMBERS + 1) {
+            w.start_file(format!("m{i}"), opts).expect("start member");
+        }
+        let bytes = w.finish().expect("finish zip").into_inner();
+        let err = read_bundle(&bytes).expect_err("too many members is rejected");
+        match err {
+            StoreError::InvalidBundle(msg) => assert!(msg.contains("member limit"), "{msg}"),
+            other => panic!("expected InvalidBundle, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn read_bundle_rejects_a_deflate_bomb_member_without_oom() {
+        // A tiny (~KB) compressed archive whose single member inflates past the per-member ceiling.
+        // The bounded reader stops at the ceiling instead of buffering the full inflated stream.
+        let mut w = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let opts = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+        w.start_file("big.bin", opts).expect("start member");
+        let chunk = vec![0u8; 1024 * 1024];
+        let mut remaining = RECOVERY_ZIP_MEMBER_UNCOMPRESSED_MAX_BYTES as usize + 1;
+        while remaining > 0 {
+            let n = remaining.min(chunk.len());
+            w.write_all(&chunk[..n]).expect("write bomb bytes");
+            remaining -= n;
+        }
+        let bomb = w.finish().expect("finish zip").into_inner();
+        assert!(
+            bomb.len() < 4 * 1024 * 1024,
+            "the compressed bomb must stay tiny ({} bytes)",
+            bomb.len()
+        );
+        let err = read_bundle(&bomb).expect_err("a zip bomb is rejected");
+        match err {
+            StoreError::InvalidBundle(msg) => {
+                assert!(msg.contains("per-member decompression limit"), "{msg}")
+            }
+            other => panic!("expected InvalidBundle, got {other:?}"),
+        }
+    }
 }
