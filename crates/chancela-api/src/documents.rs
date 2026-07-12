@@ -2761,7 +2761,7 @@ pub struct GeneratedDocumentDispatchEvidenceListView {
     pub evidence: Vec<GeneratedDocumentDispatchEvidenceView>,
 }
 
-fn dispatch_evidence_status_for_template(
+pub(crate) fn dispatch_evidence_status_for_template(
     template_id: &str,
     required_recipients: &[String],
     recorded_recipients: &[String],
@@ -2814,7 +2814,7 @@ fn dispatch_evidence_status_for_template(
     })
 }
 
-fn absent_owner_recipient_names(act: &Act) -> Vec<String> {
+pub(crate) fn absent_owner_recipient_names(act: &Act) -> Vec<String> {
     let mut seen = BTreeSet::new();
     let mut recipients = Vec::new();
     for attendee in &act.attendees {

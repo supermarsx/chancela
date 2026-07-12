@@ -278,6 +278,46 @@
         "Review the annual general meeting record.",
         "Seal or archive the annual minutes once approved."
       ]
+    },
+    {
+      "due_date": "",
+      "severity": "Advisory",
+      "status": "Pending",
+      "reason": "Generated absent-owner communication document generated-absent-owner-1 for act \"Ata da assembleia de condóminos\" has pending dispatch evidence. This dashboard reminder is advisory only and does not claim sending, delivery, legal notice completion, or legal sufficiency.",
+      "entity_id": "2f1c8e40-0000-4000-8000-000000000002",
+      "entity_name": "Condomínio Horizonte",
+      "source_rule": "absent-owner-dispatch-evidence",
+      "source_profile": "condominium-generated-communication",
+      "params": {
+        "act_id": "2f1c8e40-0000-4000-8000-000000000020",
+        "act_title": "Ata da assembleia de condóminos",
+        "book_id": "2f1c8e40-0000-4000-8000-000000000010",
+        "entity_id": "2f1c8e40-0000-4000-8000-000000000002",
+        "entity_name": "Condomínio Horizonte",
+        "document_id": "generated-absent-owner-1",
+        "template_id": "condominio-comunicacao-ausentes/v1",
+        "dispatch_evidence_status": "required_pending",
+        "required_recipient_count": "2",
+        "recorded_recipient_count": "0",
+        "missing_recipient_count": "2",
+        "missing_recipients": "Fração B, Fração C"
+      },
+      "law_refs": [],
+      "action": {
+        "kind": "open_absent_owner_dispatch_evidence",
+        "label_key": "notifications.reminder.absentOwnerDispatch.action",
+        "api_href": "/v1/documents/generated/generated-absent-owner-1/dispatch-evidence",
+        "route": "/atas/2f1c8e40-0000-4000-8000-000000000020"
+      },
+      "recommended_next_steps": [
+        "Open the sealed act's generated communication workflow.",
+        "Record operator dispatch evidence for the missing absent recipients when available."
+      ],
+      "i18n": {
+        "title_key": "notifications.reminder.absentOwnerDispatch.title",
+        "body_key": "notifications.reminder.absentOwnerDispatch.body",
+        "action_key": "notifications.reminder.absentOwnerDispatch.action"
+      }
     }
   ],
   "recent_events": [

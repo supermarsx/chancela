@@ -11,7 +11,9 @@ use chancela_core::{
 };
 use chancela_law::LawCatalog;
 use chancela_registry::RegistryExtract;
-use chancela_store::{StoredFollowUp, StoredFollowUpStatus};
+use chancela_store::{
+    StoredDocument, StoredFollowUp, StoredFollowUpStatus, StoredGeneratedDocumentDispatchEvidence,
+};
 use time::format_description::well_known::Rfc3339;
 use time::{Date, Month, OffsetDateTime};
 
@@ -29,6 +31,12 @@ use crate::settings::WorkflowReminderSettings;
 
 const REGISTRY_EXPIRY_WARNING_DAYS: i32 = 30;
 
+#[derive(Clone)]
+struct GeneratedDispatchEvidenceSnapshot {
+    document: StoredDocument,
+    evidence: Vec<StoredGeneratedDocumentDispatchEvidence>,
+}
+
 /// `GET /v1/dashboard` — aggregate counts and the last ten ledger events.
 pub async fn dashboard(
     State(state): State<AppState>,
@@ -44,6 +52,8 @@ pub async fn dashboard(
     let acts = state.acts.read().await;
     let follow_ups = state.follow_ups.read().await;
     let registry_extracts = state.registry_extracts.read().await;
+    let generated_dispatch_evidence =
+        load_generated_dispatch_evidence_snapshots(&state, &acts).await?;
     let ledger = state.ledger.read().await;
 
     let books_open = books
@@ -105,11 +115,12 @@ pub async fn dashboard(
         ledger_valid,
         today,
     );
-    let reminders = dashboard_reminders_with_follow_ups(
+    let reminders = dashboard_reminders_with_generated_dispatch_evidence(
         &entities,
         &books,
         &acts,
         &follow_ups,
+        &generated_dispatch_evidence,
         &registry_extracts,
         today,
         &reminder_policy,
@@ -131,6 +142,56 @@ pub async fn dashboard(
         reminders,
         recent_events,
     }))
+}
+
+async fn load_generated_dispatch_evidence_snapshots(
+    state: &AppState,
+    acts: &HashMap<ActId, Act>,
+) -> Result<Vec<GeneratedDispatchEvidenceSnapshot>, ApiError> {
+    if let Some(store) = &state.store {
+        let mut snapshots = Vec::new();
+        for act in acts
+            .values()
+            .filter(|act| act.state == ActState::Sealed && act.ata_number.is_some())
+        {
+            let docs = store
+                .documents_for_act(act.id)
+                .map_err(|e| ApiError::Internal(format!("document store read failed: {e}")))?;
+            for document in docs.into_iter().filter(|document| {
+                document.template_id
+                    == crate::documents::CONDOMINIUM_ABSENT_OWNER_COMMUNICATION_TEMPLATE_ID
+            }) {
+                let evidence = store
+                    .generated_document_dispatch_evidence(&document.id)
+                    .map_err(|e| {
+                        ApiError::Internal(format!("dispatch evidence store read failed: {e}"))
+                    })?;
+                snapshots.push(GeneratedDispatchEvidenceSnapshot { document, evidence });
+            }
+        }
+        return Ok(snapshots);
+    }
+
+    let documents = state
+        .documents
+        .read()
+        .await
+        .values()
+        .filter(|document| {
+            document.template_id
+                == crate::documents::CONDOMINIUM_ABSENT_OWNER_COMMUNICATION_TEMPLATE_ID
+                && acts.contains_key(&document.act_id)
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+
+    Ok(documents
+        .into_iter()
+        .map(|document| GeneratedDispatchEvidenceSnapshot {
+            document,
+            evidence: Vec::new(),
+        })
+        .collect())
 }
 
 fn dashboard_current_work(
@@ -995,6 +1056,11 @@ fn parse_dashboard_date(value: &str) -> Option<Date> {
     Date::from_calendar_date(year, month, day).ok()
 }
 
+fn dashboard_reminder_due_date_sort_key(reminder: &DashboardReminder) -> (bool, Option<Date>) {
+    let due_date = parse_dashboard_date(reminder.due_date.trim());
+    (due_date.is_none(), due_date)
+}
+
 fn rfc3339(value: OffsetDateTime) -> String {
     value.format(&Rfc3339).unwrap_or_default()
 }
@@ -1045,11 +1111,34 @@ fn dashboard_reminders(
     )
 }
 
+#[cfg(test)]
 fn dashboard_reminders_with_follow_ups(
     entities: &HashMap<EntityId, Entity>,
     books: &HashMap<BookId, Book>,
     acts: &HashMap<ActId, Act>,
     follow_ups: &HashMap<String, StoredFollowUp>,
+    registry_extracts: &HashMap<EntityId, RegistryExtract>,
+    today: Date,
+    policy: &WorkflowReminderSettings,
+) -> Vec<DashboardReminder> {
+    dashboard_reminders_with_generated_dispatch_evidence(
+        entities,
+        books,
+        acts,
+        follow_ups,
+        &[],
+        registry_extracts,
+        today,
+        policy,
+    )
+}
+
+fn dashboard_reminders_with_generated_dispatch_evidence(
+    entities: &HashMap<EntityId, Entity>,
+    books: &HashMap<BookId, Book>,
+    acts: &HashMap<ActId, Act>,
+    follow_ups: &HashMap<String, StoredFollowUp>,
+    generated_dispatch_evidence: &[GeneratedDispatchEvidenceSnapshot],
     registry_extracts: &HashMap<EntityId, RegistryExtract>,
     today: Date,
     policy: &WorkflowReminderSettings,
@@ -1079,6 +1168,12 @@ fn dashboard_reminders_with_follow_ups(
             policy.due_soon_days,
         ));
     }
+    reminders.extend(absent_owner_dispatch_evidence_reminders(
+        entities,
+        books,
+        acts,
+        generated_dispatch_evidence,
+    ));
     if policy.sources.profile_calendar {
         reminders.extend(
             entities
@@ -1098,8 +1193,8 @@ fn dashboard_reminders_with_follow_ups(
     }
 
     reminders.sort_by(|a, b| {
-        a.due_date
-            .cmp(&b.due_date)
+        dashboard_reminder_due_date_sort_key(a)
+            .cmp(&dashboard_reminder_due_date_sort_key(b))
             .then_with(|| a.entity_name.cmp(&b.entity_name))
             .then_with(|| a.entity_id.cmp(&b.entity_id))
             .then_with(|| a.source_profile.cmp(&b.source_profile))
@@ -1280,6 +1375,150 @@ fn act_attendance_law_refs(family: EntityFamily) -> Vec<DashboardLawReference> {
     match family {
         EntityFamily::CommercialCompany => law_refs(&[("csc", "63")]),
         _ => Vec::new(),
+    }
+}
+
+fn absent_owner_dispatch_evidence_reminders(
+    entities: &HashMap<EntityId, Entity>,
+    books: &HashMap<BookId, Book>,
+    acts: &HashMap<ActId, Act>,
+    generated_dispatch_evidence: &[GeneratedDispatchEvidenceSnapshot],
+) -> Vec<DashboardReminder> {
+    generated_dispatch_evidence
+        .iter()
+        .filter_map(|snapshot| {
+            absent_owner_dispatch_evidence_reminder(entities, books, acts, snapshot)
+        })
+        .collect()
+}
+
+fn absent_owner_dispatch_evidence_reminder(
+    entities: &HashMap<EntityId, Entity>,
+    books: &HashMap<BookId, Book>,
+    acts: &HashMap<ActId, Act>,
+    snapshot: &GeneratedDispatchEvidenceSnapshot,
+) -> Option<DashboardReminder> {
+    let document = &snapshot.document;
+    if document.template_id != crate::documents::CONDOMINIUM_ABSENT_OWNER_COMMUNICATION_TEMPLATE_ID
+    {
+        return None;
+    }
+    let act = acts.get(&document.act_id)?;
+    if act.state != ActState::Sealed || act.ata_number.is_none() {
+        return None;
+    }
+    let book = books.get(&act.book_id)?;
+    let entity = entities.get(&book.entity_id)?;
+    if entity.family != EntityFamily::Condominium {
+        return None;
+    }
+
+    let required_recipients = crate::documents::absent_owner_recipient_names(act);
+    if required_recipients.is_empty() {
+        return None;
+    }
+    let recorded_recipients = snapshot
+        .evidence
+        .iter()
+        .filter(|row| {
+            row.document_id == document.id
+                && row.act_id == document.act_id
+                && row.template_id == document.template_id
+        })
+        .flat_map(|row| row.recipients.iter().cloned())
+        .collect::<Vec<_>>();
+    let dispatch_status = crate::documents::dispatch_evidence_status_for_template(
+        &document.template_id,
+        &required_recipients,
+        &recorded_recipients,
+    )?;
+    if !matches!(
+        dispatch_status.status.as_str(),
+        "required_pending" | "operator_evidence_partial"
+    ) {
+        return None;
+    }
+
+    Some(absent_owner_dispatch_evidence_dashboard_reminder(
+        entity,
+        book,
+        act,
+        document,
+        &dispatch_status,
+        snapshot.evidence.len(),
+    ))
+}
+
+fn absent_owner_dispatch_evidence_dashboard_reminder(
+    entity: &Entity,
+    book: &Book,
+    act: &Act,
+    document: &StoredDocument,
+    dispatch_status: &crate::documents::DispatchEvidenceStatusView,
+    evidence_row_count: usize,
+) -> DashboardReminder {
+    let required_count = dispatch_status.required_recipients.len();
+    let recorded_count = dispatch_status.recorded_recipients.len();
+    let missing_count = dispatch_status.missing_recipients.len();
+    let missing_recipients = dispatch_status.missing_recipients.join(", ");
+
+    DashboardReminder {
+        due_date: String::new(),
+        severity: "Advisory".to_owned(),
+        status: "Pending".to_owned(),
+        reason: format!(
+            "Generated absent-owner communication document {} for act \"{}\" has dispatch \
+             evidence status {}. This dashboard reminder is advisory only and does not claim \
+             sending, delivery, legal notice completion, or legal sufficiency.",
+            document.id, act.title, dispatch_status.status
+        ),
+        entity_id: entity.id.to_string(),
+        entity_name: entity.name.clone(),
+        source_rule: "absent-owner-dispatch-evidence".to_owned(),
+        source_profile: "condominium-generated-communication".to_owned(),
+        params: dashboard_alert_params([
+            ("act_id", act.id.to_string()),
+            ("act_title", act.title.clone()),
+            ("book_id", book.id.to_string()),
+            ("entity_id", entity.id.to_string()),
+            ("entity_name", entity.name.clone()),
+            ("document_id", document.id.clone()),
+            ("template_id", document.template_id.clone()),
+            ("dispatch_evidence_status", dispatch_status.status.clone()),
+            ("required_recipient_count", required_count.to_string()),
+            ("recorded_recipient_count", recorded_count.to_string()),
+            ("missing_recipient_count", missing_count.to_string()),
+            (
+                "required_recipients",
+                dispatch_status.required_recipients.join(", "),
+            ),
+            (
+                "recorded_recipients",
+                dispatch_status.recorded_recipients.join(", "),
+            ),
+            ("missing_recipients", missing_recipients),
+            ("evidence_row_count", evidence_row_count.to_string()),
+        ]),
+        law_refs: Vec::new(),
+        action: Some(dashboard_action(
+            "open_absent_owner_dispatch_evidence",
+            "notifications.reminder.absentOwnerDispatch.action",
+            Some(format!(
+                "/v1/documents/generated/{}/dispatch-evidence",
+                document.id
+            )),
+            Some(format!("/atas/{}", act.id)),
+        )),
+        recommended_next_steps: vec![
+            "Open the sealed act's generated communication workflow.".to_owned(),
+            "Record operator dispatch evidence for the missing absent recipients when available."
+                .to_owned(),
+        ],
+        i18n: Some(alert_i18n(
+            "notifications.reminder.absentOwnerDispatch.title",
+            "notifications.reminder.absentOwnerDispatch.body",
+            Some("notifications.reminder.absentOwnerDispatch.action"),
+        )),
     }
 }
 
@@ -1726,7 +1965,10 @@ fn calendar_signal_book_kinds(family: EntityFamily) -> &'static [BookKind] {
 mod tests {
     use super::*;
     use crate::settings::WorkflowReminderSourceSettings;
-    use chancela_core::{LegalHold, MeetingChannel, Nipc, NumberingScheme, TermoDeAbertura};
+    use chancela_core::{
+        AttendanceWeight, Attendee, LegalHold, MeetingChannel, Nipc, NumberingScheme, PresenceMode,
+        SignatoryCapacity, TermoDeAbertura,
+    };
     use chancela_registry::{RegistryExtract, RegistryOfficer, RegistryProvenance};
     use time::macros::date;
 
@@ -1862,6 +2104,105 @@ mod tests {
 
     fn has_source_rule(rules: &[String], expected: &str) -> bool {
         rules.iter().any(|rule| rule == expected)
+    }
+
+    fn sealed_condominium_dispatch_fixture(
+        evidence_recipients: &[&str],
+    ) -> (
+        HashMap<EntityId, Entity>,
+        HashMap<BookId, Book>,
+        HashMap<ActId, Act>,
+        Vec<GeneratedDispatchEvidenceSnapshot>,
+    ) {
+        let entity = entity_of(EntityKind::Condominio);
+        let mut book = Book::new(entity.id, BookKind::Condominio);
+        book.state = BookState::Open;
+        let mut act = Act::draft(
+            book.id,
+            "Ata da assembleia de condóminos",
+            MeetingChannel::Physical,
+        );
+        act.state = ActState::Sealed;
+        act.ata_number = Some(12);
+        act.attendees = vec![
+            Attendee {
+                name: "Fração A".to_owned(),
+                quality: SignatoryCapacity::CondoOwner,
+                presence: PresenceMode::InPerson,
+                represented_by: None,
+                weight: Some(AttendanceWeight::Permilage(520)),
+            },
+            Attendee {
+                name: "Fração B".to_owned(),
+                quality: SignatoryCapacity::CondoOwner,
+                presence: PresenceMode::Absent,
+                represented_by: None,
+                weight: Some(AttendanceWeight::Permilage(280)),
+            },
+            Attendee {
+                name: "Fração C".to_owned(),
+                quality: SignatoryCapacity::CondoOwner,
+                presence: PresenceMode::Absent,
+                represented_by: None,
+                weight: Some(AttendanceWeight::Permilage(200)),
+            },
+        ];
+        let document = StoredDocument {
+            id: "generated-absent-owner-1".to_owned(),
+            act_id: act.id,
+            template_id: crate::documents::CONDOMINIUM_ABSENT_OWNER_COMMUNICATION_TEMPLATE_ID
+                .to_owned(),
+            pdf_digest: "ab".repeat(32),
+            profile: crate::documents::PDFA_PROFILE.to_owned(),
+            created_at: OffsetDateTime::UNIX_EPOCH,
+            pdf_bytes: b"%PDF-1.7\nabsent-owner-communication".to_vec(),
+        };
+        let evidence = if evidence_recipients.is_empty() {
+            Vec::new()
+        } else {
+            vec![StoredGeneratedDocumentDispatchEvidence {
+                document_id: document.id.clone(),
+                idempotency_key: "dispatch-evidence-key-1".to_owned(),
+                act_id: document.act_id,
+                template_id: document.template_id.clone(),
+                actor: "operator.fixture".to_owned(),
+                dispatched_at: OffsetDateTime::UNIX_EPOCH,
+                channel: Some("RegisteredLetter".to_owned()),
+                reference: Some("RR123456789PT".to_owned()),
+                evidence_reference: Some("archive:dispatch-proof-1".to_owned()),
+                imported_document_id: None,
+                recipients: evidence_recipients
+                    .iter()
+                    .map(|name| (*name).to_owned())
+                    .collect(),
+                operator_note: Some("Operator-recorded external locator only.".to_owned()),
+                recorded_at: OffsetDateTime::UNIX_EPOCH,
+            }]
+        };
+
+        (
+            HashMap::from([(entity.id, entity)]),
+            HashMap::from([(book.id, book)]),
+            HashMap::from([(act.id, act)]),
+            vec![GeneratedDispatchEvidenceSnapshot { document, evidence }],
+        )
+    }
+
+    fn reminders_for_generated_dispatch_evidence(
+        evidence_recipients: &[&str],
+    ) -> Vec<DashboardReminder> {
+        let (entities, books, acts, generated_dispatch_evidence) =
+            sealed_condominium_dispatch_fixture(evidence_recipients);
+        dashboard_reminders_with_generated_dispatch_evidence(
+            &entities,
+            &books,
+            &acts,
+            &HashMap::new(),
+            &generated_dispatch_evidence,
+            &HashMap::new(),
+            date!(2026 - 07 - 09),
+            &WorkflowReminderSettings::default(),
+        )
     }
 
     #[test]
@@ -2676,6 +3017,180 @@ mod tests {
             acts.get(&act_id).map(|sealed| sealed.state),
             Some(ActState::Sealed)
         );
+    }
+
+    #[test]
+    fn reminder_generated_absent_owner_dispatch_evidence_required_pending_routes_to_act_document_workflow()
+     {
+        let reminders = reminders_for_generated_dispatch_evidence(&[]);
+
+        assert_eq!(reminders.len(), 1);
+        let reminder = &reminders[0];
+        let expected_route = format!(
+            "/atas/{}",
+            reminder.params.get("act_id").expect("act_id param")
+        );
+        assert_eq!(reminder.source_rule, "absent-owner-dispatch-evidence");
+        assert_eq!(
+            reminder.source_profile,
+            "condominium-generated-communication"
+        );
+        assert_eq!(reminder.due_date, "");
+        assert_eq!(reminder.status, "Pending");
+        assert_eq!(reminder.severity, "Advisory");
+        assert_eq!(
+            reminder
+                .params
+                .get("dispatch_evidence_status")
+                .map(String::as_str),
+            Some("required_pending")
+        );
+        assert_eq!(
+            reminder
+                .params
+                .get("required_recipient_count")
+                .map(String::as_str),
+            Some("2")
+        );
+        assert_eq!(
+            reminder
+                .params
+                .get("recorded_recipient_count")
+                .map(String::as_str),
+            Some("0")
+        );
+        assert_eq!(
+            reminder
+                .params
+                .get("missing_recipients")
+                .map(String::as_str),
+            Some("Fração B, Fração C")
+        );
+        assert_eq!(
+            reminder.params.get("template_id").map(String::as_str),
+            Some(crate::documents::CONDOMINIUM_ABSENT_OWNER_COMMUNICATION_TEMPLATE_ID)
+        );
+        assert_eq!(
+            reminder
+                .action
+                .as_ref()
+                .map(|action| (action.kind.as_str(), action.route.as_deref())),
+            Some((
+                "open_absent_owner_dispatch_evidence",
+                Some(expected_route.as_str())
+            ))
+        );
+        assert_eq!(
+            reminder
+                .action
+                .as_ref()
+                .and_then(|action| action.api_href.as_deref()),
+            Some("/v1/documents/generated/generated-absent-owner-1/dispatch-evidence")
+        );
+        assert_eq!(
+            reminder.i18n.as_ref().map(|i18n| i18n.title_key.as_str()),
+            Some("notifications.reminder.absentOwnerDispatch.title")
+        );
+        assert!(
+            reminder
+                .reason
+                .contains("does not claim sending, delivery, legal notice completion")
+        );
+    }
+
+    #[test]
+    fn reminder_generated_absent_owner_dispatch_evidence_partial_routes_to_act_document_workflow() {
+        let reminders = reminders_for_generated_dispatch_evidence(&["Fração B"]);
+
+        assert_eq!(reminders.len(), 1);
+        let reminder = &reminders[0];
+        let expected_route = format!(
+            "/atas/{}",
+            reminder.params.get("act_id").expect("act_id param")
+        );
+        assert_eq!(
+            reminder
+                .params
+                .get("dispatch_evidence_status")
+                .map(String::as_str),
+            Some("operator_evidence_partial")
+        );
+        assert_eq!(
+            reminder
+                .params
+                .get("recorded_recipient_count")
+                .map(String::as_str),
+            Some("1")
+        );
+        assert_eq!(
+            reminder
+                .params
+                .get("missing_recipient_count")
+                .map(String::as_str),
+            Some("1")
+        );
+        assert_eq!(
+            reminder
+                .params
+                .get("recorded_recipients")
+                .map(String::as_str),
+            Some("Fração B")
+        );
+        assert_eq!(
+            reminder
+                .params
+                .get("missing_recipients")
+                .map(String::as_str),
+            Some("Fração C")
+        );
+        assert_eq!(
+            reminder
+                .action
+                .as_ref()
+                .and_then(|action| action.route.as_deref()),
+            Some(expected_route.as_str())
+        );
+    }
+
+    #[test]
+    fn reminder_generated_absent_owner_dispatch_evidence_covered_is_suppressed() {
+        let reminders = reminders_for_generated_dispatch_evidence(&["Fração B", "Fração C"]);
+
+        assert!(
+            reminders
+                .iter()
+                .all(|reminder| reminder.source_rule != "absent-owner-dispatch-evidence")
+        );
+    }
+
+    #[test]
+    fn reminder_generated_absent_owner_no_due_date_does_not_evict_dated_reminders_before_limit() {
+        let mut fixture = reminder_fixture();
+        let (entities, books, acts, generated_dispatch_evidence) =
+            sealed_condominium_dispatch_fixture(&[]);
+        fixture.entities.extend(entities);
+        fixture.books.extend(books);
+        fixture.acts.extend(acts);
+        let policy = WorkflowReminderSettings {
+            dashboard_limit: 1,
+            ..WorkflowReminderSettings::default()
+        };
+
+        let reminders = dashboard_reminders_with_generated_dispatch_evidence(
+            &fixture.entities,
+            &fixture.books,
+            &fixture.acts,
+            &fixture.follow_ups,
+            &generated_dispatch_evidence,
+            &fixture.registry_extracts,
+            date!(2026 - 07 - 09),
+            &policy,
+        );
+
+        assert_eq!(reminders.len(), 1);
+        assert_eq!(reminders[0].source_rule, "csc-art376-annual");
+        assert_eq!(reminders[0].due_date, "2026-03-31");
+        assert_eq!(reminders[0].status, "Overdue");
     }
 
     #[test]
