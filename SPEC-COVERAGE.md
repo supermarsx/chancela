@@ -208,16 +208,18 @@ Implementation checkpoints covered here:
 - Working tree keeps Data/Documents/UX/CI **PARTIAL**: `POST
   /v1/data/cleanup` export dry-runs now compute `would_delete_files`,
   `would_delete_directories`, and `would_delete_bytes` while keeping
-  `deleted_files`, `deleted_directories`, and `deleted_bytes` at zero and
-  leaving retained-export files and directories in place. The export cleanup
-  policy fields remain export-only: `dry_run`, `minimum_age_days`, and
-  `keep_latest` are still rejected for the crash cleanup target and other
-  non-export targets. Settings Data Management now uses a preview-only exports
-  request of `{ target: "exports", dry_run: true, minimum_age_days: 30,
-  keep_latest: 5 }` and renders the resulting plan with explicit copy that no
-  files were removed. The guarded execution control is exposed only after that
-  preview and shared modal confirmation, preserves the same export policy
-  fields while changing only `dry_run` to `false`, and renders execution
+  `deleted_files`, `deleted_directories`, and `deleted_bytes` at zero, returning
+  a server-bound `preview_token`, and leaving retained-export files and
+  directories in place. The export cleanup policy fields remain export-only:
+  `dry_run`, `minimum_age_days`, and `keep_latest` are still rejected for the
+  crash cleanup target and other non-export targets. Settings Data Management
+  now uses a preview-only exports request of `{ target: "exports", dry_run:
+  true, minimum_age_days: 30, keep_latest: 5 }` and renders the resulting plan
+  with explicit copy that no files were removed. Destructive retained-export
+  execution is exposed only after that server-tokened preview and shared modal
+  confirmation, posts the `preview_token`, rejects missing/stale/mismatched
+  tokens, and executes only the server-selected preview manifest instead of
+  recomputing a broad delete set from `dry_run: false`. It renders execution
   results from `deleted_*` counters rather than preview `would_delete_*`
   counters. This is retained local export file cleanup UX for existing backend
   guardrails; it is not GDPR erasure, legal disposal, archive deletion,
@@ -1490,7 +1492,8 @@ plumbing for non-Ata generated rows only, and generated dispatch-evidence
 bundle/archive indexes are metadata-only preservation pointers, not canonical
 document promotion. Retained-export cleanup dry-run
 planning/execution UX is retained local export file cleanup coverage only, with
-execution exposed after preview plus shared modal confirmation, and the post-act
+execution exposed after a server-bound preview token plus shared modal
+confirmation and limited to the server-selected preview manifest, and the post-act
 `Certidao`/`Extrato` sealed-provenance lint is Template Catalog/CI
 test/build-time coverage only. These keep the affected top-level
 areas **PARTIAL** and do not add GDPR erasure, legal disposal, archive deletion,
@@ -2103,16 +2106,18 @@ behavior, legal disposal, or legal-effect claims.
   maintenance cleanup for crash reports and retained exports only, reporting requested/skipped
   targets and byte counts without broad deletion semantics. Retained-export cleanup now has
   export-only dry-run, minimum-age, and keep-latest policy controls; dry-run reports
-  `would_delete_files`, `would_delete_directories`, and `would_delete_bytes` while every
-  `deleted_*` counter stays zero, and those options are rejected for crash cleanup. Data Management
+  `would_delete_files`, `would_delete_directories`, and `would_delete_bytes`, returns a
+  server-bound `preview_token`, keeps every `deleted_*` counter at zero, and rejects those
+  options for crash cleanup. Data Management
   renders the same status with refresh, copy-path, scan-error, browser-safe open-folder-disabled
   states, and cleanup controls, and the retained-export action first posts the
   `{ target: "exports", dry_run: true, minimum_age_days: 30, keep_latest: 5 }` preview payload
   with explicit no-files-removed copy. The execution button stays disabled until
-  that dry-run result exists, the shared confirmation modal gates execution, the
-  execution payload preserves `target: "exports"`, `minimum_age_days: 30`, and
-  `keep_latest: 5` while changing only `dry_run` to `false`, and the result copy
-  reads `deleted_*` counters instead of preview `would_delete_*` counters. This
+  that dry-run result carries a server `preview_token`, the shared confirmation
+  modal gates execution, and the execution payload includes that `preview_token`.
+  The API rejects missing, expired, data-directory-mismatched, or policy-mismatched
+  tokens and executes only the stored server-selected preview manifest; the result
+  copy reads `deleted_*` counters instead of preview `would_delete_*` counters. This
   does not add durable log retention, SQLCipher production enablement, storage
   migration tooling, arbitrary deletion, GDPR erasure, legal disposal approval,
   archive deletion, certification, legal retention execution, full data
@@ -3046,14 +3051,15 @@ behavior, legal disposal, or legal-effect claims.
   notification, approve or execute transfers, or certify GDPR compliance.
 - Data cleanup is bounded storage maintenance for crash reports and retained exports. Retained-export
   dry-run, minimum-age, and keep-latest options are policy controls for that cleanup target only; the
-  dry-run surface reports `would_delete_*` planning counters and zero `deleted_*` counters. The
-  Settings preview states that no files were removed; retained-export execution is only exposed
-  after that preview plus confirmation, preserves the policy fields with `dry_run: false`, and
+  dry-run surface reports `would_delete_*` planning counters, a server-bound `preview_token`, and zero
+  `deleted_*` counters. The Settings preview states that no files were removed; retained-export
+  execution is only exposed after that tokened preview plus confirmation, posts the `preview_token`,
+  rejects stale or mismatched tokens, executes only the server-selected preview manifest, and
   reports `deleted_*` execution counters. Guarded archive disposal execution is non-destructive
   ledger/audit evidence only; these surfaces are not GDPR erasure, legal disposal approval, archive
   deletion, certification, anonymization/redaction completion, legal retention certification,
-  certification of data-lifecycle compliance, full data deletion, or physical deletion guarantees
-  beyond the existing bounded cleanup behavior.
+  certification of data-lifecycle compliance, full data deletion, or deletion outside the bounded
+  server-selected retained-export manifest.
 - Data-status filesystem categories for `platform-logs.json` and
   `backup-recovery-drills.json` are telemetry labels for usage/status display.
   They do not change cleanup targets, execute retention, delete files, prove

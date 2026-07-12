@@ -39,7 +39,7 @@ paper-book OCR API/UI markers including accepted OCR draft to mutable draft-act
 creation plus focused paper-book OCR review browser workflow markers,
 retention duplicate review-only request guards, queued-review status surfacing,
 prior bounded execution projection, and eligible no-action bounded evidence UI,
-retained-export cleanup dry-run planning, forwarded platform-log sanitized
+retained-export cleanup preview-token/manifest gating, forwarded platform-log sanitized
 accepted/denied/rejected/suppressed audit markers, post-act template
 sealed-provenance lint, all-family standalone agenda-item templates,
 recovery/document/dashboard/notification
@@ -238,7 +238,8 @@ acceptance copy, and no-extra-route behavior, trust identifier-match explanation
 SKI markers, trust/import/static URL/body/header fail-closed markers,
 retained-export `would_delete_*`/zero-`deleted_*` dry-run planning markers,
 preview-only Settings payload/no-files-removed markers, retained-export
-execution payload/modal-gate/deleted-counter markers, post-act
+preview-token/manifest-gated execution markers without certification of physical
+deletion outside the bounded server-selected retained-export manifest, post-act
 `Certidao`/`Extrato` `ata_number`/`payload_digest` template lint markers,
 standalone agenda-item template IDs, rendering markers, and the 101-template
 census, CSC delegation/revocation template IDs/rendering markers, forwarded

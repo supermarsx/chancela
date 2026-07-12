@@ -2197,8 +2197,8 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "retained-export cleanup dry-run planning",
-    "CI checkpoints retained-export dry-run lane marker",
+    "retained-export cleanup preview-token/manifest gating",
+    "CI checkpoints retained-export preview-token manifest lane marker",
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
@@ -5153,6 +5153,14 @@ function assertCheckpointMap() {
     "const EXPORT_CLEANUP_EXECUTION_BODY =",
     "data management retained-export execution payload marker",
   );
+  assertFileContainsNormalized(
+    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    `const EXPORT_CLEANUP_EXECUTION_BODY = {
+  ...EXPORT_CLEANUP_PREVIEW_BODY,
+  dry_run: false,
+};`,
+    "data management retained-export execution flips dry-run marker",
+  );
   assertFileContains(
     "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
     "minimum_age_days: 30",
@@ -5160,8 +5168,8 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
-    "dry_run: false",
-    "data management retained-export execution dry-run false marker",
+    "preview_token: 'export-preview-token-1'",
+    "data management retained-export preview token marker",
   );
   assertFileContains(
     "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
@@ -5178,10 +5186,45 @@ function assertCheckpointMap() {
     "foram removidos",
     "data management retained-export deleted-counter execution copy marker",
   );
-  assertFileContains(
+  assertFileMatches(
     "apps/web/src/features/recovery/GestaoDadosSection.tsx",
-    "canConfirm={activeCleanup?.target !== 'exports' || hasExportCleanupPreview}",
-    "data management retained-export shared modal preview gate marker",
+    /activeCleanup\.target === 'exports'[\s\S]{0,900}cleanup\.mutateAsync\(\{[\s\S]{0,200}\.\.\.EXPORT_CLEANUP_EXECUTION_BODY,[\s\S]{0,200}preview_token:\s*exportCleanupPreviewToken,[\s\S]{0,200}\}\)/u,
+    "data management retained-export execution preview-token payload marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "keeps retained export cleanup confirmation disabled when preview has no server token",
+    "data management retained-export no-token disabled coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/data_status.rs",
+    "export cleanup execution requires a valid preview_token from a dry-run preview",
+    "API retained-export execution preview-token required marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/data_status.rs",
+    "export cleanup preview_token is invalid or expired; run preview again",
+    "API retained-export stale preview-token rejection marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/data_status.rs",
+    "export cleanup preview_token does not match the requested cleanup policy; run preview again",
+    "API retained-export mismatched preview-token rejection marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/data_status.rs",
+    "fn execute_export_cleanup_manifest",
+    "API retained-export selected preview manifest execution marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/data_status.rs",
+    "for candidate in &record.manifest.files",
+    "API retained-export selected preview manifest file deletion marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/data_status.rs",
+    "let mut directories = record.manifest.directories",
+    "API retained-export selected preview manifest directory deletion marker",
   );
   assertFileContains(
     "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
@@ -6179,8 +6222,8 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "copy, disabled execution button before preview, shared-modal confirmation\n  gate, execution payload that preserves the policy fields",
-    "CI/E2E hardening plan retained-export preview no-delete marker",
+    "payload, no-files-removed result copy, disabled execution button until a\n  tokened preview exists, shared-modal confirmation gate, execution payload with\n  that `preview_token`",
+    "CI/E2E hardening plan retained-export preview-token manifest marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -7134,13 +7177,18 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "`deleted_files`, `deleted_directories`, and `deleted_bytes` at zero",
+    "`deleted_files`, `deleted_directories`, and `deleted_bytes` at zero, returning\n  a server-bound `preview_token`",
     "spec coverage retained-export zero-deleted counters marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "preview-only exports\n  request of `{ target: \"exports\", dry_run: true, minimum_age_days: 30",
+    "preview-only exports request of `{ target: \"exports\", dry_run:\n  true, minimum_age_days: 30",
     "spec coverage retained-export preview payload marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "posts the `preview_token`,\n  rejects stale or mismatched tokens, executes only the server-selected preview manifest",
+    "spec coverage retained-export preview-token manifest execution marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
