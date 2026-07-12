@@ -302,6 +302,12 @@ const RETENTION_EXECUTION_BLOCKED: RetentionExecutionMetadata = {
   execution_intent: 'execute_supported',
   execution_status: 'blocked',
   operator_review_decision: 'blocked',
+  decision_state: 'open',
+  review_closure_evidence: [],
+  destructive_disposal_completed: false,
+  full_erasure_completed: false,
+  legal_hold_mutated: false,
+  retention_policy_mutated: false,
   requested_policy: {
     id: 'retention-1',
     found: true,
@@ -566,6 +572,10 @@ function privacyRecordIdFromUrl(
   root: 'processors' | 'dpias' | 'breach-playbooks' | 'transfer-controls' | 'retention-policies',
 ): string | undefined {
   return url.match(new RegExp(`/v1/privacy/${root}/([^/]+)`))?.[1];
+}
+
+function retentionExecutionReviewClosureIdFromUrl(url: string): string | undefined {
+  return url.match(/\/v1\/privacy\/retention-executions\/([^/]+)\/review-closure/)?.[1];
 }
 
 type TestSettings = typeof DEFAULT_SETTINGS;
@@ -1513,6 +1523,40 @@ function privacyFetch(
         }),
       );
     }
+    if (url.includes('/v1/privacy/retention-executions/') && url.includes('/review-closure')) {
+      if (method !== 'POST') {
+        return Promise.resolve(jsonResponse({ error: 'method not allowed' }, 405));
+      }
+      const id = retentionExecutionReviewClosureIdFromUrl(url);
+      const current = retentionExecutions.find((record) => record.id === id);
+      if (!current) return Promise.resolve(jsonResponse({ error: 'not found' }, 404));
+      const body = JSON.parse(init?.body as string) as {
+        review_closure_decision: string;
+        review_closure_note?: string;
+        review_closure_evidence?: { label: string; value: string }[];
+        destructive_disposal_completed?: boolean;
+        full_erasure_completed?: boolean;
+        legal_hold_mutated?: boolean;
+        retention_policy_mutated?: boolean;
+      };
+      const updated = {
+        ...current,
+        decision_state: 'review_closed',
+        review_closure_decision: body.review_closure_decision,
+        review_closure_note: body.review_closure_note,
+        review_closure_evidence: body.review_closure_evidence ?? [],
+        review_closed_by: 'amelia.marques',
+        review_closed_at: '2026-07-09T14:30:00Z',
+        destructive_disposal_completed: false,
+        full_erasure_completed: false,
+        legal_hold_mutated: false,
+        retention_policy_mutated: false,
+      };
+      retentionExecutions = retentionExecutions.map((record) =>
+        record.id === id ? updated : record,
+      );
+      return Promise.resolve(jsonResponse(updated));
+    }
     if (url.includes('/v1/privacy/retention-executions')) {
       const parsed = new URL(url, 'http://test.local');
       const status = parsed.searchParams.get('status');
@@ -1763,6 +1807,32 @@ function retentionExecutedEvidenceRecord(
   };
   record.would_execute = false;
   return { ...record, ...overrides };
+}
+
+function closedRetentionReviewRecord(
+  overrides: Partial<RetentionExecutionMetadata> = {},
+): RetentionExecutionMetadata {
+  const record = cloneJson(RETENTION_EXECUTION_AWAITING);
+  return {
+    ...record,
+    decision_state: 'review_closed',
+    review_closure_decision: 'review_evidence_acknowledged',
+    review_closure_note:
+      'Revisão operacional registada para evidência retida; esta ação não altera registos fonte.',
+    review_closure_evidence: [
+      {
+        label: 'fila_operacional',
+        value: 'registo revisto na interface de configuracoes',
+      },
+    ],
+    review_closed_by: 'privacy-manager',
+    review_closed_at: '2026-07-09T14:20:00Z',
+    destructive_disposal_completed: false,
+    full_erasure_completed: false,
+    legal_hold_mutated: false,
+    retention_policy_mutated: false,
+    ...overrides,
+  };
 }
 
 function retentionNoActionCandidate(overrides: Record<string, unknown> = {}) {
@@ -2835,6 +2905,235 @@ describe('SettingsPage', () => {
           call.method === 'POST' && call.url.endsWith('/v1/privacy/retention-policies/dry-run'),
       ),
     ).toBe(false);
+  });
+
+  it('closes an open retention execution review from the queue without mutating due candidates', async () => {
+    const { fn, calls } = privacyFetch();
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+
+    const candidatesPanel = (await screen.findByText('Candidatos de retenção vencidos')).closest(
+      'section',
+    );
+    expect(candidatesPanel).toBeTruthy();
+    expect(await within(candidatesPanel!).findByText('archive-doc-1')).toBeTruthy();
+    const dueCandidateGetsBefore = calls.filter(
+      (call) => call.method === 'GET' && call.url.endsWith('/v1/privacy/retention-due-candidates'),
+    ).length;
+
+    const executionQueue = (await screen.findByText('Fila de revisão de execução')).closest(
+      'section',
+    );
+    expect(executionQueue).toBeTruthy();
+    const reviewRow = (await within(executionQueue!).findByText('ticket-456')).closest('tr');
+    expect(reviewRow).toBeTruthy();
+    fireEvent.click(
+      within(reviewRow!).getByRole('button', { name: 'Registar revisão operacional' }),
+    );
+
+    const closurePost = await waitFor(() => {
+      const call = calls.find(
+        (c) =>
+          c.method === 'POST' &&
+          c.url.endsWith(
+            '/v1/privacy/retention-executions/retention-exec-awaiting/review-closure',
+          ),
+      );
+      expect(call).toBeTruthy();
+      return call!;
+    });
+    expect(JSON.parse(closurePost.body as string)).toEqual({
+      review_closure_decision: 'review_evidence_acknowledged',
+      review_closure_note:
+        'Revisão operacional registada para evidência retida; esta ação não altera registos fonte.',
+      review_closure_evidence: [
+        {
+          label: 'fila_operacional',
+          value: 'registo revisto na interface de configuracoes',
+        },
+        {
+          label: 'alvo',
+          value: 'ticket-456',
+        },
+      ],
+      destructive_disposal_completed: false,
+      full_erasure_completed: false,
+      legal_hold_mutated: false,
+      retention_policy_mutated: false,
+    });
+
+    expect(
+      await within(executionQueue!).findByText(
+        /Revisão operacional registada por amelia\.marques em/,
+      ),
+    ).toBeTruthy();
+    expect(
+      within(executionQueue!).getByText(
+        'Revisão operacional registada para evidência retida; esta ação não altera registos fonte.',
+      ),
+    ).toBeTruthy();
+    expect(
+      within(executionQueue!).getByText(
+        'fila_operacional: registo revisto na interface de configuracoes',
+      ),
+    ).toBeTruthy();
+    expect(within(executionQueue!).getByText('alvo: ticket-456')).toBeTruthy();
+    expect(
+      within(reviewRow!).queryByRole('button', { name: 'Registar revisão operacional' }),
+    ).toBeNull();
+
+    fireEvent.change(within(executionQueue!).getByLabelText('Pesquisar'), {
+      target: { value: 'interface de configuracoes' },
+    });
+    expect(await within(executionQueue!).findByText('ticket-456')).toBeTruthy();
+    expect(within(executionQueue!).queryByText('ticket-123')).toBeNull();
+
+    expect(await within(candidatesPanel!).findByText('archive-doc-1')).toBeTruthy();
+    expect(
+      calls.filter(
+        (call) =>
+          call.method === 'GET' && call.url.endsWith('/v1/privacy/retention-due-candidates'),
+      ).length,
+    ).toBe(dueCandidateGetsBefore);
+    expect(
+      calls.some(
+        (call) =>
+          call.method === 'POST' && call.url.endsWith('/v1/privacy/retention-policies/dry-run'),
+      ),
+    ).toBe(false);
+    expect(
+      calls.some(
+        (call) =>
+          ['POST', 'PATCH', 'DELETE'].includes(call.method) &&
+          call.url.includes('/v1/privacy/retention-policies'),
+      ),
+    ).toBe(false);
+    expect(
+      calls.some(
+        (call) => call.method !== 'GET' && /\/(disposal|erasure|legal-hold)/.test(call.url),
+      ),
+    ).toBe(false);
+    expect(calls.some((call) => call.method === 'DELETE')).toBe(false);
+  });
+
+  it('maps retention execution review closure decisions from outcome categories', async () => {
+    const { fn, calls } = privacyFetch(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      [RETENTION_EXECUTION_BLOCKED, RETENTION_EXECUTION_EXECUTED],
+    );
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+
+    const executionQueue = (await screen.findByText('Fila de revisão de execução')).closest(
+      'section',
+    );
+    expect(executionQueue).toBeTruthy();
+
+    const blockedRow = (await within(executionQueue!).findByText('ticket-123')).closest('tr');
+    expect(blockedRow).toBeTruthy();
+    fireEvent.click(
+      within(blockedRow!).getByRole('button', { name: 'Registar revisão operacional' }),
+    );
+    await waitFor(() =>
+      expect(
+        calls.some(
+          (c) =>
+            c.method === 'POST' &&
+            c.url.endsWith('/retention-exec-blocked/review-closure') &&
+            Boolean(c.body?.includes('"blocked_evidence_acknowledged"')),
+        ),
+      ).toBe(true),
+    );
+    expect(
+      await within(blockedRow!).findByText(/Revisão operacional registada por amelia\.marques em/),
+    ).toBeTruthy();
+
+    const boundedRow = (await within(executionQueue!).findByText('ticket-789')).closest('tr');
+    expect(boundedRow).toBeTruthy();
+    fireEvent.click(
+      within(boundedRow!).getByRole('button', { name: 'Registar revisão operacional' }),
+    );
+    await waitFor(() =>
+      expect(
+        calls.some(
+          (c) =>
+            c.method === 'POST' &&
+            c.url.endsWith('/retention-exec-executed/review-closure') &&
+            Boolean(c.body?.includes('"bounded_evidence_acknowledged"')),
+        ),
+      ).toBe(true),
+    );
+
+    const closureBodies = calls
+      .filter((call) => call.method === 'POST' && call.url.endsWith('/review-closure'))
+      .map((call) => JSON.parse(call.body as string));
+    expect(closureBodies).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          review_closure_decision: 'blocked_evidence_acknowledged',
+          destructive_disposal_completed: false,
+          full_erasure_completed: false,
+          legal_hold_mutated: false,
+          retention_policy_mutated: false,
+        }),
+        expect.objectContaining({
+          review_closure_decision: 'bounded_evidence_acknowledged',
+          destructive_disposal_completed: false,
+          full_erasure_completed: false,
+          legal_hold_mutated: false,
+          retention_policy_mutated: false,
+        }),
+      ]),
+    );
+  });
+
+  it('does not show the retention review closure action for already closed records', async () => {
+    const closedRecord = closedRetentionReviewRecord({
+      id: 'retention-exec-closed-ui',
+      candidate: { scope: 'support', category: 'messages', record_id: 'ticket-closed' },
+    });
+    const { fn } = privacyFetch(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      [closedRecord],
+    );
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+
+    const executionQueue = (await screen.findByText('Fila de revisão de execução')).closest(
+      'section',
+    );
+    expect(executionQueue).toBeTruthy();
+    const closedRow = (await within(executionQueue!).findByText('ticket-closed')).closest('tr');
+    expect(closedRow).toBeTruthy();
+    expect(
+      within(closedRow!).queryByRole('button', { name: 'Registar revisão operacional' }),
+    ).toBeNull();
+    expect(
+      within(closedRow!).getByText(/Revisão operacional registada por privacy-manager em/),
+    ).toBeTruthy();
+    expect(
+      within(closedRow!).getByText(
+        'Revisão operacional registada para evidência retida; esta ação não altera registos fonte.',
+      ),
+    ).toBeTruthy();
+    expect(
+      within(closedRow!).getByText(
+        'fila_operacional: registo revisto na interface de configuracoes',
+      ),
+    ).toBeTruthy();
   });
 
   it('suppresses projected bounded execution rows and leaves execution history visible', async () => {

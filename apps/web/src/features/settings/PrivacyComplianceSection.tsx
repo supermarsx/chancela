@@ -5,6 +5,7 @@ import {
   useCreatePrivacyProcessor,
   useCreatePrivacyRetentionPolicy,
   useCreatePrivacyTransferControl,
+  useClosePrivacyRetentionExecutionReview,
   useDryRunPrivacyRetentionPolicy,
   usePatchPrivacyBreachPlaybook,
   usePatchPrivacyDpia,
@@ -22,6 +23,7 @@ import {
 import {
   type BreachPlaybookView,
   type BreachEvidenceKind,
+  type CloseRetentionExecutionReviewBody,
   type CreateBreachPlaybookBody,
   PRIVACY_RECORD_STATUSES,
   PRIVACY_RISK_LEVELS,
@@ -48,10 +50,12 @@ import {
   type RetentionDueCandidatesReport,
   type RetentionDueCandidateFinding,
   type RetentionEvidenceState,
+  type RetentionExecutionOutcome,
   type RetentionExecutionRecord,
   type RetentionExecutionStatus,
   type RetentionPolicyStatus,
   type RetentionPolicyView,
+  type RetentionReviewClosureDecision,
   type TransferControlView,
 } from '../../api/types';
 import { useT, type MessageKey, type TFunction } from '../../i18n';
@@ -240,6 +244,13 @@ const RETENTION_BOUNDED_EVIDENCE_SUPPRESSED_STATES: ReadonlySet<RetentionEvidenc
     'prior_bounded_evidence_available',
   ]);
 
+const RETENTION_REVIEW_CLOSURE_FALSE_FLAGS = {
+  destructive_disposal_completed: false,
+  full_erasure_completed: false,
+  legal_hold_mutated: false,
+  retention_policy_mutated: false,
+} as const;
+
 const statusOptions = [
   { value: 'all', label: 'Todos os estados' },
   ...PRIVACY_RECORD_STATUSES.map((status) => ({ value: status, label: STATUS_LABELS[status] })),
@@ -275,6 +286,51 @@ function retentionDisposalLabel(t: TFunction, action: RetentionDisposalAction): 
 
 function retentionExecutionStatusLabel(status: RetentionExecutionStatus): string {
   return RETENTION_EXECUTION_STATUS_LABELS[status];
+}
+
+function retentionReviewClosureDecisionForOutcome(
+  outcome: RetentionExecutionOutcome,
+): RetentionReviewClosureDecision {
+  if (outcome === 'manual_review_required') return 'review_evidence_acknowledged';
+  if (
+    outcome === 'bounded_archive_recorded' ||
+    outcome === 'bounded_no_action_recorded' ||
+    outcome === 'already_executed'
+  ) {
+    return 'bounded_evidence_acknowledged';
+  }
+  return 'blocked_evidence_acknowledged';
+}
+
+function retentionReviewClosureNote(decision: RetentionReviewClosureDecision): string {
+  if (decision === 'bounded_evidence_acknowledged') {
+    return 'Revisão operacional registada para evidência delimitada; esta ação não altera registos fonte.';
+  }
+  if (decision === 'blocked_evidence_acknowledged') {
+    return 'Revisão operacional registada para evidência bloqueada; acompanhamento separado permanece fora desta ação.';
+  }
+  return 'Revisão operacional registada para evidência retida; esta ação não altera registos fonte.';
+}
+
+function retentionReviewClosureBody(
+  record: RetentionExecutionRecord,
+): CloseRetentionExecutionReviewBody {
+  const reviewClosureDecision = retentionReviewClosureDecisionForOutcome(record.outcome);
+  return {
+    review_closure_decision: reviewClosureDecision,
+    review_closure_note: retentionReviewClosureNote(reviewClosureDecision),
+    review_closure_evidence: [
+      {
+        label: 'fila_operacional',
+        value: 'registo revisto na interface de configuracoes',
+      },
+      {
+        label: 'alvo',
+        value: record.candidate.record_id?.trim() ? record.candidate.record_id : record.id,
+      },
+    ],
+    ...RETENTION_REVIEW_CLOSURE_FALSE_FLAGS,
+  };
 }
 
 function primaryValue(kind: RegisterKind, record: RegisterRecord): string {
@@ -507,6 +563,15 @@ function retentionExecutionSearchText(record: RetentionExecutionRecord): string 
       record.execution_intent,
       record.execution_status,
       record.operator_review_decision,
+      record.decision_state,
+      record.review_closure_decision ?? '',
+      record.review_closed_by ?? '',
+      record.review_closed_at ?? '',
+      record.review_closure_note ?? '',
+      ...(record.review_closure_evidence ?? []).flatMap((evidence) => [
+        evidence.label,
+        evidence.value,
+      ]),
       record.outcome,
       record.evidence_state,
       record.evidence_next_step,
@@ -2392,7 +2457,10 @@ function RetentionExecutionReviewQueue({
   onStatusFilterChange: (status: RetentionExecutionStatus | 'all') => void;
 }) {
   const t = useT();
+  const toast = useToast();
+  const closeReview = useClosePrivacyRetentionExecutionReview();
   const [search, setSearch] = useState('');
+  const [closingId, setClosingId] = useState<string | null>(null);
   const filtered = useMemo(() => {
     const q = normalizeSearch(search.trim());
     return records.filter((record) => {
@@ -2404,6 +2472,18 @@ function RetentionExecutionReviewQueue({
     value: status,
     label: retentionExecutionStatusLabel(status),
   }));
+
+  async function closeOperationalReview(record: RetentionExecutionRecord) {
+    setClosingId(record.id);
+    try {
+      await closeReview.mutateAsync({ id: record.id, body: retentionReviewClosureBody(record) });
+      toast.success('Revisão operacional registada.');
+    } catch (e) {
+      toast.error(e);
+    } finally {
+      setClosingId(null);
+    }
+  }
 
   return (
     <Card title="Fila de revisão de execução">
@@ -2435,7 +2515,7 @@ function RetentionExecutionReviewQueue({
           </Field>
         </div>
         {loading ? (
-          <SkeletonTable cols={5} />
+          <SkeletonTable cols={6} />
         ) : error ? (
           <ErrorNote error={error} />
         ) : records.length === 0 ? (
@@ -2455,6 +2535,7 @@ function RetentionExecutionReviewQueue({
                 <th>Política</th>
                 <th>Bloqueios e aprovações</th>
                 <th>Próximo passo</th>
+                <th>Revisão operacional</th>
               </tr>
             }
           >
@@ -2544,6 +2625,43 @@ function RetentionExecutionReviewQueue({
                       {String(record.execution_result.full_erasure_completed)}
                     </span>
                   </div>
+                </td>
+                <td className="users-actions">
+                  {record.decision_state === 'review_closed' ? (
+                    <div className="stack--tight">
+                      <span>
+                        Revisão operacional registada
+                        {record.review_closed_by ? ` por ${record.review_closed_by}` : ''}
+                        {record.review_closed_at
+                          ? ` em ${formatDateTime(record.review_closed_at)}`
+                          : ''}
+                        .
+                      </span>
+                      {record.review_closure_note ? (
+                        <span className="muted">{record.review_closure_note}</span>
+                      ) : null}
+                      {(record.review_closure_evidence ?? []).map((evidence) => (
+                        <span
+                          key={`${record.id}-closure-${evidence.label}-${evidence.value}`}
+                          className="muted"
+                        >
+                          {evidence.label}: {evidence.value}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      icon={<Icon.Check />}
+                      disabled={closeReview.isPending}
+                      onClick={() => void closeOperationalReview(record)}
+                    >
+                      {closingId === record.id
+                        ? 'A registar revisão'
+                        : 'Registar revisão operacional'}
+                    </Button>
+                  )}
                 </td>
               </tr>
             ))}
