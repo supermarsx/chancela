@@ -1,9 +1,9 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-11 through committed implementation snapshot `3e72e087b27aa22ef97d13e1dc003fb0a4c110ea`,
+*Updated 2026-07-12 through committed implementation snapshot `5fe98f9b883ad4029ad43e87b99fba3be5233240`,
 refreshing the `cfcb3d9` baseline, the prior `4566715` coverage point,
 and the `c66ea3f`/`5fcaedd` checkpoint snapshot
-with commits through that snapshot:
+with commits through the prior snapshot:
 `f312669` remote-signing TSA test isolation, `d9a1891` SBOM package linkage,
 `968e4e7` template family metadata drift guards, `6d68052` imported-document
 review guardrails, `2da82c2` AMA/CMD evidence-pack check mode, `0ef8447`
@@ -83,14 +83,14 @@ table usage exposure, followed by `fd70ca0` browser export-save gate unblock
 and `c1c57fe` web SQLite table-usage surfacing, then `76fc229` keyed PAdES VRI
 `/TU` evidence and `2c88b90` compact notifications/entity filter hardening,
 followed by the `35f341d` checkpoint refresh, `5db121a` compact template
-filters, and `3e72e08` compliance review tooling, plus working-tree
+filters, and `3e72e08` compliance review tooling, plus now-committed
 PAdES DSS caller validation-time attachment, PDF/UA report version 6
 structural-depth evidence, retention due-candidate duplicate review-only guard
 and queued-status surfacing,
 external-validator raw-report attachment hardening including the explicit
 Ferramentas raw-report file upload UI, and template
 representation/proxy, book-transport, dispatch-proof, and attendance-list
-catalog assets, plus working-tree web hot-backup creation UI, backup
+catalog assets, plus web hot-backup creation UI, backup
 recovery-drill receipt API/UI/contract coverage, workflow reminder policy
 default/UI/dashboard/year-boundary coverage alignment, and CAE obtainer status
 documentation cleanup, plus bounded TSL XML-DSig same-document
@@ -126,7 +126,11 @@ rule guards, MCP discoverability updates for trust-catalog filters and
 redacted external-validator report summaries, and web external-signing slot
 evidence display/operator technical evidence PATCH flow with
 identity-requirement-tagged rows and no `complete:true` payload, plus
-password-required account creation/session hardening.
+password-required account creation/session hardening, followed by `b5cb40e`
+paper-book OCR conversion execution artifact store/API evidence, `1743b25`
+contracts/fixtures for canonical-draft and conversion-dossier artifact shapes,
+and `5fe98f9` BookDetail reviewed conversion execution evidence and no-claim
+UI rendering.
 Earlier coverage text remains prior snapshot context. All top-level spec areas remain **PARTIAL**.
 This is an implementation and test coverage snapshot, not a legal certification,
 not production CMD approval, not DRE verification promotion, not full PDF/UA
@@ -134,8 +138,10 @@ delivery, and not a claim that qualified-trust production operation, live
 provider validity, provider credentials, authority approval, release
 signing/notarization/attestation, live SQLCipher encryption/rotation/migration
 across all builds, SQLCipher hardware-derived key fallback/default completion,
-legal document acceptance, signed-PDF legal validity, destructive retention
-execution, or destructive GDPR erasure is complete.*
+legal document acceptance, signed-PDF legal validity, legal archive
+certification, official DGLAB acceptance/export, paper-book OCR accuracy,
+canonical minutes/legal conversion, destructive retention execution, or
+destructive GDPR erasure is complete.*
 
 Status vocabulary:
 **IMPLEMENTED** (landed and verifiable), **PARTIAL** (usable slice landed but
@@ -225,7 +231,7 @@ Implementation checkpoints covered here:
   guardrails; it is not GDPR erasure, legal disposal, archive deletion,
   certification, anonymization/redaction completion, full data deletion,
   retention execution, or a broad deletion/legal-effect claim.
-- Working tree keeps Documents/Workflows/UX/CI **PARTIAL**: accepted
+- Current HEAD keeps Documents/Workflows/UX/CI **PARTIAL**: accepted
   paper-book OCR drafts can now create/list metadata-only, non-canonical
   conversion dossiers through `POST
   /v1/books/paper-import/{id}/ocr-drafts/{draft_id}/conversion-dossier` and
@@ -237,10 +243,25 @@ Implementation checkpoints covered here:
   only for accepted OCR drafts without an existing dossier, keeps the mutable
   draft-act creation action separate, renders the no-claim flags and notice, has
   no automatic dossier POST, and does not call document, signature, seal, or
-  archive endpoints from the dossier UI. Act, canonical-act, canonical-minutes,
-  document, signed-document, archive-package, PDF/A, PDF/UA, signature, seal,
-  and legal-validity flags stay false. This remains bounded review metadata
-  evidence only; canonical paper-book conversion is not implemented.
+  archive endpoints from the dossier UI. Dossier act, canonical-act,
+  canonical-minutes, document, signed-document, archive-package, PDF/A, PDF/UA,
+  signature, seal, and legal-validity flags stay false. Accepted OCR draft
+  promotion into a mutable `Draft` act now also writes a reviewed
+  `conversion_execution_artifact` row/view. The artifact binds `import_id`,
+  `draft_id`, optional `dossier_id`, source text digest/page spans/review
+  metadata, and the target mutable `Draft` act id/state; the promotion response
+  exposes optional `conversion_execution_artifact`, and dossier responses can
+  include `conversion_execution_artifacts` after binding. It records
+  `mutable_draft_act_created: true`,
+  `reviewed_conversion_execution_artifact: true`, no raw OCR text in artifact
+  or ledger payloads, and false canonical conversion/minutes/document,
+  signed-document, archive-package, archive-certification, PDF/A, PDF/UA,
+  signature, seal, source-certification, and legal-validity claims. BookDetail
+  renders reviewed conversion execution evidence and no-claim flags. This is
+  bounded reviewed execution evidence for a mutable drafting aid only; it is
+  not legal archive certification, official DGLAB acceptance/export, PDF/UA
+  delivery, OCR accuracy certification, canonical minutes/legal conversion,
+  signed artifact validity, or legal validity.
 - Working tree keeps Signatures/Workflows/UX/CI **PARTIAL**: SigningPanel now
   lists per-act workflow-only external-signing envelopes with order policy, slot
   labels/statuses, identity requirements, completion summary, blocking slots,
@@ -2480,10 +2501,12 @@ behavior, legal disposal, or legal-effect claims.
   list/download surface. Validation/preservation reports now include bounded canonical-conversion
   preflight evidence with explicit `not_attempted`/`blocked`/`allowed` status, named blockers, and
   false canonical-act/document/signature/legal-validity flags. Accepted OCR draft conversion dossiers
-  add API/store and BookDetail metadata-only evidence for accepted drafts with idempotent duplicate
-  creation, no raw OCR text in API responses, ledger events, or dossier UI, and false
-  act/document/PDF-A/signature/seal/legal flags. Broader OCR execution/review, reviewed canonical
-  paper-book conversion execution, and legal acceptance remain follow-up work.
+  and reviewed conversion execution artifacts add API/store, contract, and BookDetail evidence for
+  accepted drafts with idempotent duplicate dossier creation, binding from optional dossier id to
+  target mutable Draft act id, no raw OCR text in API responses, ledger events, artifact payloads,
+  or dossier UI, and false canonical/document/PDF-A/PDF-UA/signature/seal/archive/legal flags.
+  Broader OCR execution/review, canonical/legal paper-book conversion execution, and legal
+  acceptance remain follow-up work.
 - **Closed-book act immutability:** The act mutation API now explicitly rejects patch, advance,
   seal, archive, and convening-dispatch requests for acts whose owning book is no longer open. The
   focused API tests verify open-book behavior still works, closed-book mutations return conflict,
@@ -2853,9 +2876,9 @@ behavior, legal disposal, or legal-effect claims.
   beyond the bounded tagged-structure slice, `DisplayDocTitle`, `/Tabs /S`, XMP checks, and
   structural self-check plus mapped spaces, table-structure semantics, and decomposed blocker reports, richer
   structure trees/tagging/role maps/marked artifacts, broader OCR execution/review
-  operations and reviewed canonical/legal conversion beyond the
-  operator-configured local auxiliary OCR draft path, metadata-only accepted-draft
-  conversion dossiers, bounded mutable drafting aid where present, per-book import preflight preview
+  operations and canonical/legal conversion beyond the operator-configured local auxiliary OCR draft
+  path, metadata-only accepted-draft conversion dossiers, reviewed mutable-draft execution artifacts,
+  bounded mutable drafting aid where present, per-book import preflight preview
   beyond current operator-safety evidence, and preflight evidence for preserved legacy DOC and
   historical paper-book evidence, official DGLAB
   interchange/certification, actual physical deletion, broader disposal/retention policy
@@ -2879,7 +2902,8 @@ behavior, legal disposal, or legal-effect claims.
 - Workflow breadth: legal-calendar preset depth beyond the advisory dashboard reminder, broader OCR
   execution/review and canonical-conversion flows for preserved paper-book packages beyond current
   operator-configured local OCR run, non-authoritative OCR draft metadata/review UI,
-  metadata-only accepted-draft conversion dossiers, any accepted-draft mutable drafting aid,
+  metadata-only accepted-draft conversion dossiers, reviewed mutable-draft execution artifacts,
+  any accepted-draft mutable drafting aid,
   focused browser workflow regression, and preflight evidence, written-resolution legal/evidentiary
   completion beyond operator-supplied checklist/digest status binding, external signer
   provider-backed envelope signing/evidence capture and document-gated/legal completion flows, dashboard
@@ -3105,10 +3129,13 @@ behavior, legal disposal, or legal-effect claims.
 - Paper-book canonical-conversion preflight evidence classifies whether an operator-supplied
   evidence set is missing, blocked, or sufficient for a later draft step. The
   accepted-draft conversion dossier is metadata-only, and any accepted-draft
-  mutable act path remains only a drafting aid; neither path executes
-  authoritative OCR, converts paper/legacy evidence into canonical minutes,
-  creates canonical documents, signs artifacts, certifies legal acceptance, or
-  claims legal validity.
+  mutable act path remains only a drafting aid. The reviewed conversion
+  execution artifact binds accepted OCR/dossier evidence to that mutable Draft
+  act and can appear on promotion and dossier responses, but it does not execute
+  authoritative OCR, convert paper/legacy evidence into canonical minutes,
+  create canonical documents, sign artifacts, certify legal acceptance, certify
+  OCR accuracy, certify archive status, prove signed artifact validity, or claim
+  legal validity.
 - Validator corpus sidecars, projected evidence metadata, archive package `evidence/index.json`,
   document-bundle `validation_report.evidence_index`, evidence-indexing metadata,
   settings.read-gated raw technical metadata downloads, and settings.read-gated raw-report byte

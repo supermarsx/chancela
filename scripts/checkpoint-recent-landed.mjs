@@ -743,6 +743,51 @@ function assertCheckpointMap() {
     "paper import OCR conversion dossier ledger excludes raw OCR text marker",
   );
   assertFileContains(
+    "crates/chancela-store/src/schema.rs",
+    "paper_book_ocr_conversion_execution_artifacts",
+    "store paper-book OCR conversion execution artifact schema marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/tests/store.rs",
+    "paper_book_ocr_conversion_execution_artifact_round_trips_idempotent_and_binds_dossier",
+    "store paper-book OCR conversion execution artifact round-trip coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/paper_import.rs",
+    "paper_book_ocr_conversion_artifact_records_accepted_draft_act",
+    "API paper-book OCR conversion execution artifact coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/paper_import.rs",
+    "PAPER_BOOK_OCR_CONVERSION_EXECUTION_ARTIFACT_NOTICE",
+    "API paper-book OCR conversion execution artifact notice marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/paper_import.rs",
+    "conversion_execution_artifact: Option<PaperBookOcrConversionExecutionArtifactView>",
+    "API paper-book OCR conversion execution artifact response marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/paper_import.rs",
+    "conversion_execution_artifacts: Option<Vec<PaperBookOcrConversionExecutionArtifactView>>",
+    "API paper-book OCR conversion dossier artifact list marker",
+  );
+  assertFileContains(
+    "apps/web/src/contracts/contracts.test.ts",
+    "conversion_execution_artifacts[]",
+    "web contract paper-book OCR conversion dossier artifact fixture marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/books/books.test.tsx",
+    "Reviewed OCR conversion execution evidence for mutable draft promotion only",
+    "web paper-book OCR conversion execution evidence rendering coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/books/BookDetailPage.tsx",
+    "reviewed_conversion_execution_artifact",
+    "BookDetail paper-book OCR reviewed conversion artifact marker",
+  );
+  assertFileContains(
     "apps/web/src/features/books/books.test.tsx",
     "creates a metadata-only conversion dossier for an accepted OCR draft on operator action",
     "web paper-book conversion dossier operator-action coverage",
@@ -6669,7 +6714,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-12 from the current CI configuration and head `8f3310b`",
+    "Updated 2026-07-12 from the current CI configuration and head `5fe98f9`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
@@ -7194,12 +7239,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `3e72e08` plus working-tree",
+    "Current checkpoint metadata/static checks through `5fe98f9`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current working-tree paper-book OCR conversion-dossier checks",
+    "Current working-tree paper-book OCR conversion-dossier and execution-artifact\n  checks",
     "CI/E2E hardening plan paper-book conversion-dossier checks marker",
   );
   assertFileContains(
@@ -7212,9 +7257,9 @@ function assertCheckpointMap() {
     "signature validation/seal/PDF-UA/legal acceptance",
     "CI/E2E hardening plan imported-document no-claim exclusion marker",
   );
-  assertFileContains(
+  assertFileContainsNormalized(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "fallbacks for no OCR\n  draft/no accepted draft/no dossier",
+    "fallbacks for no OCR draft/no accepted draft/no dossier",
     "CI/E2E hardening plan paper-book summary fallback marker",
   );
   assertFileContains(
@@ -7569,7 +7614,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `3e72e087b27aa22ef97d13e1dc003fb0a4c110ea`",
+    "implementation snapshot `5fe98f9b883ad4029ad43e87b99fba3be5233240`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -8271,6 +8316,26 @@ function assertCheckpointMap() {
     "SPEC-COVERAGE.md",
     "no automatic dossier POST",
     "spec coverage paper-book conversion-dossier no automatic POST marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "reviewed `conversion_execution_artifact` row/view",
+    "spec coverage paper-book conversion execution artifact row marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "promotion response exposes optional `conversion_execution_artifact`, and dossier responses can include `conversion_execution_artifacts`",
+    "spec coverage paper-book conversion execution artifact response marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "`reviewed_conversion_execution_artifact: true`, no raw OCR text in artifact or ledger payloads",
+    "spec coverage paper-book conversion execution artifact redaction marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "bounded reviewed execution evidence for a mutable drafting aid only",
+    "spec coverage paper-book conversion execution artifact no-overclaim marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",

@@ -1,11 +1,12 @@
 # CI and E2E Hardening Plan
 
-Updated 2026-07-12 from the current CI configuration and head `8f3310b`,
+Updated 2026-07-12 from the current CI configuration and head `5fe98f9`,
 including coverage notes for the bounded PAdES DSS validation-time, PDF/UA v6
 structural-depth, retention due-candidate explicit evidence states, bounded
 archive/no-action evidence UI, duplicate-review guard/status surfacing, and
 prior bounded execution projection, recovery-drill custody
-receipt and optional-key contract tolerance, paper-book OCR conversion-dossier UI,
+receipt and optional-key contract tolerance, paper-book OCR conversion-dossier UI
+and reviewed conversion execution artifact evidence,
 CSC quota/delegation/revocation and standalone agenda-item template parity,
 retained-export cleanup dry-run planning, post-act template sealed-provenance lint,
 external-signing workflow-only envelope UI, workflow reminder policy, and
@@ -1117,20 +1118,29 @@ settingsDefaults.test.ts contracts.test.ts`.
   DGLAB export, government filing, UI, import flow, package validation change,
   disposal execution, PDF/A/PAdES/PDF-UA certification, authority approval, or
   legal archive claim is implemented.
-- Current working-tree paper-book OCR conversion-dossier checks: focused
-  `paper_import` and `npm run test --workspace apps/web --
-  src/features/books/books.test.tsx` coverage pins accepted matching draft
-  requirements, metadata-only response fields, idempotent duplicate creation
-  without another ledger event, raw OCR text redaction from responses, ledger
-  events, and dossier UI, false act/document/PDF-A/PDF-UA/signature/seal/legal
-  flags, the derived OCR/dossier review-depth summary with fallbacks for no OCR
-  draft/no accepted draft/no dossier, existing-dossier rendering without
-  duplicate creation, accepted-draft gating, operator-only creation with no
-  automatic POST, separate mutable draft-act creation, and no document/signature/
-  seal/archive endpoint calls from the dossier UI. This is metadata-only review
-  UI coverage; no canonical paper-book conversion, canonical act/document,
-  archive package, PDF/A, PDF/UA, signature, seal, OCR behavior, conversion
-  behavior, or legal-validity claim is implemented.
+- Current working-tree paper-book OCR conversion-dossier and execution-artifact
+  checks: focused `cargo test -p chancela-store --test store --locked
+  paper_book_ocr_conversion`, `cargo test -p chancela-api --test paper_import
+  --locked paper_book_ocr_conversion`,
+  `npm run test --workspace apps/web -- src/contracts/contracts.test.ts`, and
+  `npm run test --workspace apps/web -- src/features/books/books.test.tsx`
+  coverage pins accepted matching draft requirements, metadata-only response
+  fields, idempotent duplicate dossier creation without another ledger event,
+  v14 `paper_book_ocr_conversion_execution_artifacts` storage, accepted
+  OCR-to-mutable-Draft act artifact creation, optional dossier binding,
+  `conversion_execution_artifact` and `conversion_execution_artifacts` response
+  shapes, raw OCR text redaction from responses, ledger events, artifact
+  payloads, and dossier UI, false canonical/document/PDF-A/PDF-UA/signature/
+  seal/archive/legal flags, the derived OCR/dossier review-depth summary with
+  fallbacks for no OCR draft/no accepted draft/no dossier, existing-dossier
+  rendering without duplicate creation, accepted-draft gating, operator-only
+  creation with no automatic POST, separate mutable draft-act creation, reviewed
+  conversion execution evidence rendering, and no document/signature/seal/archive
+  endpoint calls from the dossier UI. This is metadata-only/reviewed execution
+  evidence for mutable drafting only; no legal archive certification, official
+  DGLAB acceptance/export, PDF/UA delivery, OCR accuracy certification,
+  canonical minutes/legal conversion, signed artifact validity, or legal-validity
+  claim is implemented.
 - Current working-tree external-signing envelope UI checks: focused
   `external_signer_invites` coverage pins optional envelope/slot request fields,
   first sequential slot initiation, later sequential slot 409 refusal without
@@ -1317,7 +1327,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   configured operator password. The broad Playwright browser suite timed out and
   was not green; treat the static/unit/focused markers as the pinned slice, not
   browser-matrix proof.
-- Current checkpoint metadata/static checks through `3e72e08` plus working-tree
+- Current checkpoint metadata/static checks through `5fe98f9`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
@@ -1372,9 +1382,10 @@ settingsDefaults.test.ts contracts.test.ts`.
   delegation/revocation template IDs/rendering/no-new-threshold markers, and
   post-act `Certidao`/`Extrato` sealed-provenance semantic lint markers,
   plus metadata-only
-  paper-book OCR conversion-dossier route/store/redaction/idempotency and
-  BookDetail UI accepted-draft/existing-dossier/no-automatic-POST/no-endpoint
-  guardrail markers,
+  paper-book OCR conversion-dossier route/store/redaction/idempotency, reviewed
+  conversion execution artifact store/API/contract markers, and BookDetail UI
+  accepted-draft/existing-dossier/reviewed-artifact/no-automatic-POST/
+  no-endpoint guardrail markers,
   and external signer linked-invite sequential/parallel slot-policy,
   workflow-only envelope list/create UI, safe sequential 409 rendering,
   tracking-only response markers, stored slot evidence display,

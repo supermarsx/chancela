@@ -37,7 +37,8 @@ graph markers, PDF writer spacing and PDF/UA blocker-decomposition markers,
 archive timestamp append markers, raw-byte per-book import preflight markers for
 no-mutation operator previews,
 paper-book OCR API/UI markers including accepted OCR draft to mutable draft-act
-creation plus focused paper-book OCR review browser workflow markers,
+creation, reviewed conversion execution artifacts, conversion-dossier binding,
+and focused paper-book OCR review browser workflow markers,
 retention explicit evidence-state markers (`review_queued`, `blocked`,
 `bounded_archive_recorded`, `bounded_no_action_recorded`,
 `prior_bounded_evidence_available`), duplicate review-only request guards,
@@ -84,9 +85,17 @@ It intentionally reuses existing test surfaces:
 - API paper import: `cargo test -p chancela-api --test paper_import --locked`
   including the non-canonical canonical-conversion preflight guard and
   operator-configured local OCR run coverage, plus the accepted OCR draft to
-  mutable draft-act endpoint and refusal cases. Focused Playwright coverage for
-  the non-canonical paper-book OCR review workflow is pinned statically here and
-  executed in browser jobs.
+  mutable draft-act endpoint, `conversion_execution_artifact` response/store
+  binding, optional dossier binding, and refusal cases. Focused Playwright
+  coverage for the non-canonical paper-book OCR review workflow is pinned
+  statically here and executed in browser jobs.
+- Store and contract paper-book conversion artifacts:
+  `cargo test -p chancela-store --test store --locked paper_book_ocr_conversion`
+  and
+  `npm run test --workspace apps/web -- src/contracts/contracts.test.ts` pin the
+  v14 `paper_book_ocr_conversion_execution_artifacts` table, idempotent
+  import/draft/target-act binding, canonical-draft response artifact shape, and
+  dossier `conversion_execution_artifacts` shape.
 - API archive package and `/DocTimeStamp` evidence:
   `cargo test -p chancela-api --test archive_package --locked`
   including the read-only local DGLAB interchange manifest endpoint and
@@ -104,6 +113,11 @@ It intentionally reuses existing test surfaces:
   `npm run test --workspace apps/web -- src/features/books/books.test.tsx`
   including the direct `GET /v1/books/{id}/archive/local-dglab-interchange-manifest`
   call, `.json` save behavior, and no ZIP/export/archive mutation.
+- Web BookDetail paper-book conversion evidence:
+  `npm run test --workspace apps/web -- src/features/books/books.test.tsx`
+  also pins reviewed conversion execution evidence rendering, dossier-bound
+  `conversion_execution_artifacts`, raw OCR text hiding, no-claim flags, and no
+  document/signature/seal/archive calls from that UI.
 - API external-validator report metadata, including raw metadata and raw-report
   byte downloads:
   `cargo test -p chancela-api --locked external_validator_report_metadata`
@@ -359,8 +373,9 @@ legal notice completion, generated communication legal sufficiency,
 promotion of generated dispatch-evidence metadata sidecars into canonical documents,
 canonical paper-book conversion,
 paper-book canonical act/document/archive-package creation, paper-book PDF/A/PDF-UA,
-paper-book signature/seal creation, paper-book OCR/conversion behavior, legal
-effect for mutable draft acts created from accepted OCR drafts, CMD batch
+paper-book signature/seal creation, paper-book OCR/conversion behavior beyond the
+bounded reviewed metadata/execution-artifact slices, legal effect for mutable
+draft acts created from accepted OCR drafts, CMD batch
 signing, CSC/QTSP remote batch signing, provider-certified remote batch signing,
 single OTP/PIN/SAD authorizing multiple documents, CMD multiple-sign,
 CSC/QTSP multi-hash/SAD batch, SCAP-verified representative authority,
