@@ -20,12 +20,13 @@ use chancela_ledger::{ChainId, Event, Ledger, LedgerError};
 use chancela_registry::{RegistryExtract, RegistryProvenance};
 use chancela_store::{
     GeneratedDocumentDispatchEvidenceUpsert, LedgerEventPageQuery, LedgerEventUpperBound,
-    PaperBookOcrConversionDossierUpsert, Store, StoreError, StoreKeyRotationStatus,
-    StoreOpenOptions, StoredDocument, StoredFollowUp, StoredFollowUpStatus,
-    StoredGeneratedDocumentDispatchEvidence, StoredImportedDocument, StoredImportedDocumentMeta,
-    StoredImportedDocumentReviewStatus, StoredPaperBookImport, StoredPaperBookImportMeta,
-    StoredPaperBookOcrConversionDossier, StoredPaperBookOcrDraft, StoredPaperBookOcrPageSpan,
-    StoredPaperBookOcrReviewStatus, StoredPaperBookOcrStatus,
+    PaperBookOcrConversionDossierUpsert, PaperBookOcrConversionExecutionArtifactUpsert, Store,
+    StoreError, StoreKeyRotationStatus, StoreOpenOptions, StoredDocument, StoredFollowUp,
+    StoredFollowUpStatus, StoredGeneratedDocumentDispatchEvidence, StoredImportedDocument,
+    StoredImportedDocumentMeta, StoredImportedDocumentReviewStatus, StoredPaperBookImport,
+    StoredPaperBookImportMeta, StoredPaperBookOcrConversionDossier,
+    StoredPaperBookOcrConversionExecutionArtifact, StoredPaperBookOcrDraft,
+    StoredPaperBookOcrPageSpan, StoredPaperBookOcrReviewStatus, StoredPaperBookOcrStatus,
 };
 #[cfg(not(feature = "sqlcipher"))]
 use chancela_store::{StoreDatabaseFormat, StoreKeyConfigStatus, StoreKeyOpsPlan};
@@ -244,6 +245,44 @@ fn sample_paper_book_ocr_conversion_dossier(
         source_reviewed_by: draft.reviewed_by.clone(),
         created_at: OffsetDateTime::from_unix_timestamp(1_780_000_004).unwrap(),
         created_by: "rui.secretario".to_string(),
+    }
+}
+
+fn sample_paper_book_ocr_conversion_execution_artifact(
+    artifact_id: &str,
+    draft: &StoredPaperBookOcrDraft,
+    target_act_id: &str,
+    dossier_id: Option<&str>,
+) -> StoredPaperBookOcrConversionExecutionArtifact {
+    StoredPaperBookOcrConversionExecutionArtifact {
+        artifact_id: artifact_id.to_string(),
+        import_id: draft.import_id.clone(),
+        draft_id: draft.draft_id.clone(),
+        dossier_id: dossier_id.map(str::to_string),
+        source_text_digest: draft.text_digest.clone(),
+        source_page_spans: draft.page_spans.clone(),
+        source_review_status: StoredPaperBookOcrReviewStatus::Accepted,
+        source_reviewed_at: draft.reviewed_at,
+        source_reviewed_by: draft.reviewed_by.clone(),
+        target_act_id: target_act_id.to_string(),
+        target_act_state: "Draft".to_string(),
+        mutable_draft_act_created: true,
+        created_at: OffsetDateTime::from_unix_timestamp(1_780_000_005).unwrap(),
+        created_by: "rui.secretario".to_string(),
+        canonical_conversion_claimed: false,
+        canonical_minutes_claimed: false,
+        canonical_act_created: false,
+        canonical_document_created: false,
+        signed_document_created: false,
+        archive_package_created: false,
+        pdfa_created: false,
+        pdfua_created: false,
+        signature_created: false,
+        seal_created: false,
+        archive_certification_claimed: false,
+        legal_validity_claimed: false,
+        source_extracted_text_in_artifact: false,
+        source_extracted_text_in_ledger_event: false,
     }
 }
 
@@ -1481,9 +1520,10 @@ fn schema_version_is_current() {
     // preserved paper-book imports landed as schema v8; paper-book OCR drafts landed as schema v9;
     // paper-book original numbering/linking metadata landed as schema v10; imported-document
     // operator review metadata landed as schema v11; paper-book OCR conversion dossiers landed as
-    // schema v12; generated-document dispatch evidence landed as schema v13.
+    // schema v12; generated-document dispatch evidence landed as schema v13; paper-book OCR
+    // conversion execution artifacts landed as schema v14.
     // A fresh DB is stamped with the current version.
-    assert_eq!(chancela_store::schema::SCHEMA_VERSION, 13);
+    assert_eq!(chancela_store::schema::SCHEMA_VERSION, 14);
     let dir = TempDir::new();
     Store::open(dir.path()).expect("open fresh");
     let raw = rusqlite::Connection::open(dir.path().join("chancela.db")).unwrap();
@@ -1494,7 +1534,7 @@ fn schema_version_is_current() {
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(stamped, "13");
+    assert_eq!(stamped, "14");
     let ocr_draft_table: i64 = raw
         .query_row(
             "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'paper_book_ocr_drafts'",
@@ -1544,6 +1584,22 @@ fn schema_version_is_current() {
         )
         .unwrap();
     assert_eq!(generated_dispatch_evidence_table, 1);
+    let ocr_conversion_execution_artifact_table: i64 = raw
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'paper_book_ocr_conversion_execution_artifacts'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(ocr_conversion_execution_artifact_table, 1);
+    let ocr_conversion_execution_artifact_unique_index: i64 = raw
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_paper_book_ocr_conversion_execution_artifacts_import_draft_act'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(ocr_conversion_execution_artifact_unique_index, 1);
 }
 
 #[test]
@@ -2354,6 +2410,153 @@ fn paper_book_ocr_conversion_dossier_round_trips_idempotent_metadata_only() {
         .paper_book_ocr_conversion_dossiers(&import.meta.import_id)
         .expect("list reopened dossiers");
     assert_eq!(reopened_dossiers, vec![dossier]);
+}
+
+#[test]
+fn paper_book_ocr_conversion_execution_artifact_round_trips_idempotent_and_binds_dossier() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let import = sample_paper_book_import(
+        "33333333-3333-4333-8333-333333333339",
+        b"%PDF-1.7\nhistorical paper book scan package\n%%EOF",
+    );
+    let raw_ocr_text = "Ata manuscrita transcrita por OCR.";
+    let mut draft = sample_paper_book_ocr_draft(
+        "44444444-4444-4444-8444-444444444446",
+        &import.meta.import_id,
+    );
+    draft.review_status = StoredPaperBookOcrReviewStatus::Accepted;
+    draft.reviewed_at = Some(OffsetDateTime::from_unix_timestamp(1_780_000_003).unwrap());
+    draft.reviewed_by = Some("rui.secretario".to_string());
+    draft.review_note = Some("Checked against the scan.".to_string());
+    let target_act_id = "99999999-9999-4999-8999-999999999999";
+    let artifact = sample_paper_book_ocr_conversion_execution_artifact(
+        "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        &draft,
+        target_act_id,
+        None,
+    );
+
+    let first_insert = store
+        .persist_result(|tx| {
+            tx.upsert_paper_book_import(&import)?;
+            tx.upsert_paper_book_ocr_draft(&draft)?;
+            tx.upsert_paper_book_ocr_conversion_execution_artifact(&artifact)
+        })
+        .expect("persist reviewed OCR conversion execution artifact");
+    assert_eq!(
+        first_insert,
+        PaperBookOcrConversionExecutionArtifactUpsert::Inserted(artifact.clone())
+    );
+    assert!(first_insert.inserted());
+    assert_eq!(first_insert.artifact(), &artifact);
+
+    let by_target = store
+        .paper_book_ocr_conversion_execution_artifact(
+            &import.meta.import_id,
+            &draft.draft_id,
+            target_act_id,
+        )
+        .expect("read artifact by import/draft/target act")
+        .expect("artifact present");
+    assert_eq!(by_target, artifact);
+    assert_eq!(by_target.source_text_digest, draft.text_digest);
+    assert_eq!(by_target.source_page_spans, draft.page_spans);
+    assert_eq!(
+        by_target.source_review_status,
+        StoredPaperBookOcrReviewStatus::Accepted
+    );
+    assert_eq!(by_target.target_act_state, "Draft");
+    assert!(by_target.mutable_draft_act_created);
+    assert!(!by_target.canonical_conversion_claimed);
+    assert!(!by_target.canonical_minutes_claimed);
+    assert!(!by_target.canonical_act_created);
+    assert!(!by_target.canonical_document_created);
+    assert!(!by_target.signed_document_created);
+    assert!(!by_target.archive_package_created);
+    assert!(!by_target.pdfa_created);
+    assert!(!by_target.pdfua_created);
+    assert!(!by_target.signature_created);
+    assert!(!by_target.seal_created);
+    assert!(!by_target.archive_certification_claimed);
+    assert!(!by_target.legal_validity_claimed);
+    assert!(!by_target.source_extracted_text_in_artifact);
+    assert!(!by_target.source_extracted_text_in_ledger_event);
+    assert!(
+        !format!("{by_target:?}").contains(raw_ocr_text),
+        "stored artifact model must not carry raw OCR text"
+    );
+
+    let mut duplicate = artifact.clone();
+    duplicate.artifact_id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb".to_string();
+    let duplicate_insert = store
+        .persist_result(|tx| tx.upsert_paper_book_ocr_conversion_execution_artifact(&duplicate))
+        .expect("duplicate import/draft/target-act artifact is idempotent");
+    assert_eq!(
+        duplicate_insert,
+        PaperBookOcrConversionExecutionArtifactUpsert::Existing(artifact.clone()),
+        "duplicate insert returns the first stored artifact row"
+    );
+    assert!(!duplicate_insert.inserted());
+
+    let dossier =
+        sample_paper_book_ocr_conversion_dossier("55555555-5555-4555-8555-555555555556", &draft);
+    let bound = store
+        .persist_result(|tx| {
+            tx.upsert_paper_book_ocr_conversion_dossier(&dossier)?;
+            tx.bind_paper_book_ocr_conversion_execution_artifacts_to_dossier(
+                &import.meta.import_id,
+                &draft.draft_id,
+                &dossier.dossier_id,
+            )
+        })
+        .expect("bind existing artifact to dossier");
+    assert_eq!(bound.len(), 1);
+    assert_eq!(
+        bound[0].dossier_id.as_deref(),
+        Some(dossier.dossier_id.as_str())
+    );
+
+    let listed = store
+        .paper_book_ocr_conversion_execution_artifacts_for_draft(
+            &import.meta.import_id,
+            &draft.draft_id,
+        )
+        .expect("list artifacts");
+    assert_eq!(listed.len(), 1);
+    assert_eq!(
+        listed[0].dossier_id.as_deref(),
+        Some(dossier.dossier_id.as_str())
+    );
+    assert!(
+        !format!("{listed:?}").contains(raw_ocr_text),
+        "listed artifacts must not expose raw OCR text"
+    );
+
+    let mut bad_claim = artifact.clone();
+    bad_claim.target_act_id = "99999999-9999-4999-8999-999999999998".to_string();
+    bad_claim.canonical_minutes_claimed = true;
+    let err = store
+        .persist_result(|tx| tx.upsert_paper_book_ocr_conversion_execution_artifact(&bad_claim))
+        .expect_err("canonical/legal claim flags are refused");
+    assert!(
+        err.to_string().contains("canonical_minutes_claimed"),
+        "error names forbidden claim flag: {err}"
+    );
+
+    drop(store);
+    let reopened = Store::open(dir.path()).expect("reopen");
+    let reopened_artifacts = reopened
+        .paper_book_ocr_conversion_execution_artifacts_for_draft(
+            &import.meta.import_id,
+            &draft.draft_id,
+        )
+        .expect("list reopened artifacts");
+    assert_eq!(reopened_artifacts.len(), 1);
+    assert_eq!(
+        reopened_artifacts[0].dossier_id.as_deref(),
+        Some(dossier.dossier_id.as_str())
+    );
 }
 
 #[test]

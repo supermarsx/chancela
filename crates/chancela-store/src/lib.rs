@@ -1259,6 +1259,68 @@ impl PaperBookOcrConversionDossierUpsert {
     }
 }
 
+/// Reviewed, metadata-only execution artifact for accepted paper-book OCR draft promotion.
+///
+/// The artifact binds the source import/draft, optional conversion dossier, and target mutable
+/// draft act. It deliberately stores no raw OCR text and carries explicit false claim flags for
+/// canonical/legal/PDF/signature/archive assertions.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredPaperBookOcrConversionExecutionArtifact {
+    pub artifact_id: String,
+    pub import_id: String,
+    pub draft_id: String,
+    pub dossier_id: Option<String>,
+    pub source_text_digest: Option<String>,
+    pub source_page_spans: Vec<StoredPaperBookOcrPageSpan>,
+    pub source_review_status: StoredPaperBookOcrReviewStatus,
+    pub source_reviewed_at: Option<OffsetDateTime>,
+    pub source_reviewed_by: Option<String>,
+    pub target_act_id: String,
+    pub target_act_state: String,
+    pub mutable_draft_act_created: bool,
+    pub created_at: OffsetDateTime,
+    pub created_by: String,
+    pub canonical_conversion_claimed: bool,
+    pub canonical_minutes_claimed: bool,
+    pub canonical_act_created: bool,
+    pub canonical_document_created: bool,
+    pub signed_document_created: bool,
+    pub archive_package_created: bool,
+    pub pdfa_created: bool,
+    pub pdfua_created: bool,
+    pub signature_created: bool,
+    pub seal_created: bool,
+    pub archive_certification_claimed: bool,
+    pub legal_validity_claimed: bool,
+    pub source_extracted_text_in_artifact: bool,
+    pub source_extracted_text_in_ledger_event: bool,
+}
+
+/// Result of idempotently inserting a paper-book OCR conversion execution artifact.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PaperBookOcrConversionExecutionArtifactUpsert {
+    /// The row was inserted by this transaction.
+    Inserted(StoredPaperBookOcrConversionExecutionArtifact),
+    /// A row for the same import/draft/target-act already existed; this is the stored row.
+    Existing(StoredPaperBookOcrConversionExecutionArtifact),
+}
+
+impl PaperBookOcrConversionExecutionArtifactUpsert {
+    /// The canonical stored execution artifact row after the idempotent write attempt.
+    #[must_use]
+    pub const fn artifact(&self) -> &StoredPaperBookOcrConversionExecutionArtifact {
+        match self {
+            Self::Inserted(artifact) | Self::Existing(artifact) => artifact,
+        }
+    }
+
+    /// Whether this transaction inserted the row.
+    #[must_use]
+    pub const fn inserted(&self) -> bool {
+        matches!(self, Self::Inserted(_))
+    }
+}
+
 /// Status of a persisted act follow-up. Serialized and stored with the contract's exact
 /// `Open`/`Completed` spelling.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -2057,6 +2119,64 @@ impl Store {
         Ok(out)
     }
 
+    /// Fetch one reviewed OCR conversion execution artifact by import/draft/target-act.
+    pub fn paper_book_ocr_conversion_execution_artifact(
+        &self,
+        import_id: &str,
+        draft_id: &str,
+        target_act_id: &str,
+    ) -> Result<Option<StoredPaperBookOcrConversionExecutionArtifact>, StoreError> {
+        let guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let mut stmt = guard.prepare(
+            "SELECT artifact_id, import_id, draft_id, dossier_id, source_text_digest, \
+             source_page_spans_json, source_review_status, source_reviewed_at, \
+             source_reviewed_by, target_act_id, target_act_state, mutable_draft_act_created, \
+             created_at, created_by, canonical_conversion_claimed, canonical_minutes_claimed, \
+             canonical_act_created, canonical_document_created, signed_document_created, \
+             archive_package_created, pdfa_created, pdfua_created, signature_created, \
+             seal_created, archive_certification_claimed, legal_validity_claimed, \
+             source_extracted_text_in_artifact, source_extracted_text_in_ledger_event \
+             FROM paper_book_ocr_conversion_execution_artifacts \
+             WHERE import_id = ?1 AND draft_id = ?2 AND target_act_id = ?3",
+        )?;
+        stmt.query_row(
+            params![import_id, draft_id, target_act_id],
+            row_to_paper_book_ocr_conversion_execution_artifact,
+        )
+        .optional()?
+        .transpose()
+    }
+
+    /// List reviewed OCR conversion execution artifacts for one import/draft pair, newest first.
+    pub fn paper_book_ocr_conversion_execution_artifacts_for_draft(
+        &self,
+        import_id: &str,
+        draft_id: &str,
+    ) -> Result<Vec<StoredPaperBookOcrConversionExecutionArtifact>, StoreError> {
+        let guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let mut stmt = guard.prepare(
+            "SELECT artifact_id, import_id, draft_id, dossier_id, source_text_digest, \
+             source_page_spans_json, source_review_status, source_reviewed_at, \
+             source_reviewed_by, target_act_id, target_act_state, mutable_draft_act_created, \
+             created_at, created_by, canonical_conversion_claimed, canonical_minutes_claimed, \
+             canonical_act_created, canonical_document_created, signed_document_created, \
+             archive_package_created, pdfa_created, pdfua_created, signature_created, \
+             seal_created, archive_certification_claimed, legal_validity_claimed, \
+             source_extracted_text_in_artifact, source_extracted_text_in_ledger_event \
+             FROM paper_book_ocr_conversion_execution_artifacts \
+             WHERE import_id = ?1 AND draft_id = ?2 ORDER BY created_at DESC, rowid DESC",
+        )?;
+        let rows = stmt.query_map(
+            params![import_id, draft_id],
+            row_to_paper_book_ocr_conversion_execution_artifact,
+        )?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row??);
+        }
+        Ok(out)
+    }
+
     /// List follow-ups for an act, open items first, then oldest-created first.
     pub fn follow_ups_for_act(&self, act_id: ActId) -> Result<Vec<StoredFollowUp>, StoreError> {
         let guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
@@ -2798,6 +2918,144 @@ impl Tx<'_> {
         }
     }
 
+    /// Insert a reviewed OCR conversion execution artifact for a mutable act draft.
+    ///
+    /// Duplicate import/draft/target-act creation is idempotent: the first row is retained and later
+    /// attempts return that stored row. The artifact stores no raw OCR text and all no-claim flags
+    /// must be explicitly false.
+    pub fn upsert_paper_book_ocr_conversion_execution_artifact(
+        &self,
+        artifact: &StoredPaperBookOcrConversionExecutionArtifact,
+    ) -> Result<PaperBookOcrConversionExecutionArtifactUpsert, StoreError> {
+        validate_paper_book_ocr_conversion_execution_artifact(artifact)?;
+        let source_page_spans_json = serde_json::to_string(&artifact.source_page_spans)?;
+        let source_reviewed_at = artifact.source_reviewed_at.map(|t| {
+            t.format(&Rfc3339)
+                .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned())
+        });
+        let created_at = artifact
+            .created_at
+            .format(&Rfc3339)
+            .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned());
+        let changed = self.txn.execute(
+            "INSERT OR IGNORE INTO paper_book_ocr_conversion_execution_artifacts \
+             (artifact_id, import_id, draft_id, dossier_id, source_text_digest, \
+              source_page_spans_json, source_review_status, source_reviewed_at, \
+              source_reviewed_by, target_act_id, target_act_state, mutable_draft_act_created, \
+              created_at, created_by, canonical_conversion_claimed, canonical_minutes_claimed, \
+              canonical_act_created, canonical_document_created, signed_document_created, \
+              archive_package_created, pdfa_created, pdfua_created, signature_created, \
+              seal_created, archive_certification_claimed, legal_validity_claimed, \
+              source_extracted_text_in_artifact, source_extracted_text_in_ledger_event) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, \
+                     ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28)",
+            params![
+                artifact.artifact_id.as_str(),
+                artifact.import_id.as_str(),
+                artifact.draft_id.as_str(),
+                artifact.dossier_id.as_deref(),
+                artifact.source_text_digest.as_deref(),
+                source_page_spans_json.as_str(),
+                artifact.source_review_status.as_str(),
+                source_reviewed_at.as_deref(),
+                artifact.source_reviewed_by.as_deref(),
+                artifact.target_act_id.as_str(),
+                artifact.target_act_state.as_str(),
+                artifact.mutable_draft_act_created,
+                created_at.as_str(),
+                artifact.created_by.as_str(),
+                artifact.canonical_conversion_claimed,
+                artifact.canonical_minutes_claimed,
+                artifact.canonical_act_created,
+                artifact.canonical_document_created,
+                artifact.signed_document_created,
+                artifact.archive_package_created,
+                artifact.pdfa_created,
+                artifact.pdfua_created,
+                artifact.signature_created,
+                artifact.seal_created,
+                artifact.archive_certification_claimed,
+                artifact.legal_validity_claimed,
+                artifact.source_extracted_text_in_artifact,
+                artifact.source_extracted_text_in_ledger_event,
+            ],
+        )?;
+        let mut stmt = self.txn.prepare(
+            "SELECT artifact_id, import_id, draft_id, dossier_id, source_text_digest, \
+             source_page_spans_json, source_review_status, source_reviewed_at, \
+             source_reviewed_by, target_act_id, target_act_state, mutable_draft_act_created, \
+             created_at, created_by, canonical_conversion_claimed, canonical_minutes_claimed, \
+             canonical_act_created, canonical_document_created, signed_document_created, \
+             archive_package_created, pdfa_created, pdfua_created, signature_created, \
+             seal_created, archive_certification_claimed, legal_validity_claimed, \
+             source_extracted_text_in_artifact, source_extracted_text_in_ledger_event \
+             FROM paper_book_ocr_conversion_execution_artifacts \
+             WHERE import_id = ?1 AND draft_id = ?2 AND target_act_id = ?3",
+        )?;
+        let stored = stmt
+            .query_row(
+                params![
+                    artifact.import_id.as_str(),
+                    artifact.draft_id.as_str(),
+                    artifact.target_act_id.as_str()
+                ],
+                row_to_paper_book_ocr_conversion_execution_artifact,
+            )
+            .optional()?
+            .transpose()?
+            .ok_or_else(|| {
+                StoreError::Io(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "paper-book OCR conversion execution artifact insert was ignored but no canonical import/draft/act row exists",
+                ))
+            })?;
+        if changed > 0 {
+            Ok(PaperBookOcrConversionExecutionArtifactUpsert::Inserted(
+                stored,
+            ))
+        } else {
+            Ok(PaperBookOcrConversionExecutionArtifactUpsert::Existing(
+                stored,
+            ))
+        }
+    }
+
+    /// Attach a conversion dossier id to existing execution artifacts for the same import/draft.
+    pub fn bind_paper_book_ocr_conversion_execution_artifacts_to_dossier(
+        &self,
+        import_id: &str,
+        draft_id: &str,
+        dossier_id: &str,
+    ) -> Result<Vec<StoredPaperBookOcrConversionExecutionArtifact>, StoreError> {
+        self.txn.execute(
+            "UPDATE paper_book_ocr_conversion_execution_artifacts \
+             SET dossier_id = ?3 \
+             WHERE import_id = ?1 AND draft_id = ?2 AND (dossier_id IS NULL OR dossier_id = ?3)",
+            params![import_id, draft_id, dossier_id],
+        )?;
+        let mut stmt = self.txn.prepare(
+            "SELECT artifact_id, import_id, draft_id, dossier_id, source_text_digest, \
+             source_page_spans_json, source_review_status, source_reviewed_at, \
+             source_reviewed_by, target_act_id, target_act_state, mutable_draft_act_created, \
+             created_at, created_by, canonical_conversion_claimed, canonical_minutes_claimed, \
+             canonical_act_created, canonical_document_created, signed_document_created, \
+             archive_package_created, pdfa_created, pdfua_created, signature_created, \
+             seal_created, archive_certification_claimed, legal_validity_claimed, \
+             source_extracted_text_in_artifact, source_extracted_text_in_ledger_event \
+             FROM paper_book_ocr_conversion_execution_artifacts \
+             WHERE import_id = ?1 AND draft_id = ?2 ORDER BY created_at DESC, rowid DESC",
+        )?;
+        let rows = stmt.query_map(
+            params![import_id, draft_id],
+            row_to_paper_book_ocr_conversion_execution_artifact,
+        )?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row??);
+        }
+        Ok(out)
+    }
+
     /// Update the review status and reviewer metadata for a non-authoritative OCR draft result.
     pub fn review_paper_book_ocr_draft(
         &self,
@@ -3528,6 +3786,136 @@ fn row_to_paper_book_ocr_conversion_dossier(
             created_by,
         })
     })())
+}
+
+/// Map one `paper_book_ocr_conversion_execution_artifacts` row to
+/// [`StoredPaperBookOcrConversionExecutionArtifact`].
+fn row_to_paper_book_ocr_conversion_execution_artifact(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<Result<StoredPaperBookOcrConversionExecutionArtifact, StoreError>> {
+    let artifact_id: String = row.get(0)?;
+    let import_id: String = row.get(1)?;
+    let draft_id: String = row.get(2)?;
+    let dossier_id: Option<String> = row.get(3)?;
+    let source_text_digest: Option<String> = row.get(4)?;
+    let source_page_spans_json: String = row.get(5)?;
+    let source_review_status_raw: String = row.get(6)?;
+    let source_reviewed_at_raw: Option<String> = row.get(7)?;
+    let source_reviewed_by: Option<String> = row.get(8)?;
+    let target_act_id: String = row.get(9)?;
+    let target_act_state: String = row.get(10)?;
+    let mutable_draft_act_created: bool = row.get(11)?;
+    let created_at_raw: String = row.get(12)?;
+    let created_by: String = row.get(13)?;
+    let canonical_conversion_claimed: bool = row.get(14)?;
+    let canonical_minutes_claimed: bool = row.get(15)?;
+    let canonical_act_created: bool = row.get(16)?;
+    let canonical_document_created: bool = row.get(17)?;
+    let signed_document_created: bool = row.get(18)?;
+    let archive_package_created: bool = row.get(19)?;
+    let pdfa_created: bool = row.get(20)?;
+    let pdfua_created: bool = row.get(21)?;
+    let signature_created: bool = row.get(22)?;
+    let seal_created: bool = row.get(23)?;
+    let archive_certification_claimed: bool = row.get(24)?;
+    let legal_validity_claimed: bool = row.get(25)?;
+    let source_extracted_text_in_artifact: bool = row.get(26)?;
+    let source_extracted_text_in_ledger_event: bool = row.get(27)?;
+    Ok((|| {
+        let artifact = StoredPaperBookOcrConversionExecutionArtifact {
+            artifact_id,
+            import_id,
+            draft_id,
+            dossier_id,
+            source_text_digest,
+            source_page_spans: serde_json::from_str(&source_page_spans_json)?,
+            source_review_status: StoredPaperBookOcrReviewStatus::parse(&source_review_status_raw)?,
+            source_reviewed_at: source_reviewed_at_raw
+                .as_deref()
+                .map(parse_rfc3339)
+                .transpose()?,
+            source_reviewed_by,
+            target_act_id,
+            target_act_state,
+            mutable_draft_act_created,
+            created_at: parse_rfc3339(&created_at_raw)?,
+            created_by,
+            canonical_conversion_claimed,
+            canonical_minutes_claimed,
+            canonical_act_created,
+            canonical_document_created,
+            signed_document_created,
+            archive_package_created,
+            pdfa_created,
+            pdfua_created,
+            signature_created,
+            seal_created,
+            archive_certification_claimed,
+            legal_validity_claimed,
+            source_extracted_text_in_artifact,
+            source_extracted_text_in_ledger_event,
+        };
+        validate_paper_book_ocr_conversion_execution_artifact(&artifact)?;
+        Ok(artifact)
+    })())
+}
+
+fn validate_paper_book_ocr_conversion_execution_artifact(
+    artifact: &StoredPaperBookOcrConversionExecutionArtifact,
+) -> Result<(), StoreError> {
+    if artifact.source_review_status != StoredPaperBookOcrReviewStatus::Accepted {
+        return Err(StoreError::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "paper-book OCR conversion execution artifact requires an accepted OCR draft",
+        )));
+    }
+    if artifact.target_act_state != "Draft" || !artifact.mutable_draft_act_created {
+        return Err(StoreError::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "paper-book OCR conversion execution artifact must target a mutable Draft act",
+        )));
+    }
+    let forbidden_claims = [
+        (
+            "canonical_conversion_claimed",
+            artifact.canonical_conversion_claimed,
+        ),
+        (
+            "canonical_minutes_claimed",
+            artifact.canonical_minutes_claimed,
+        ),
+        ("canonical_act_created", artifact.canonical_act_created),
+        (
+            "canonical_document_created",
+            artifact.canonical_document_created,
+        ),
+        ("signed_document_created", artifact.signed_document_created),
+        ("archive_package_created", artifact.archive_package_created),
+        ("pdfa_created", artifact.pdfa_created),
+        ("pdfua_created", artifact.pdfua_created),
+        ("signature_created", artifact.signature_created),
+        ("seal_created", artifact.seal_created),
+        (
+            "archive_certification_claimed",
+            artifact.archive_certification_claimed,
+        ),
+        ("legal_validity_claimed", artifact.legal_validity_claimed),
+        (
+            "source_extracted_text_in_artifact",
+            artifact.source_extracted_text_in_artifact,
+        ),
+        (
+            "source_extracted_text_in_ledger_event",
+            artifact.source_extracted_text_in_ledger_event,
+        ),
+    ];
+    if let Some((field, _)) = forbidden_claims.iter().find(|(_, claimed)| *claimed) {
+        return Err(StoreError::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("paper-book OCR conversion execution artifact must keep {field} false"),
+        )));
+    }
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]

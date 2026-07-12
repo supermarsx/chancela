@@ -56,7 +56,10 @@
 /// - **v13** — adds `generated_document_dispatch_evidence`: operator-recorded, metadata-only
 ///   dispatch evidence for generated absent-owner communications. It never mutates `documents`,
 ///   `acts`, or preserved PDF bytes, and never stores evidence bytes.
-pub const SCHEMA_VERSION: i64 = 13;
+/// - **v14** — adds `paper_book_ocr_conversion_execution_artifacts`: reviewed, metadata-only
+///   execution artifacts binding accepted OCR evidence, an optional dossier, and the mutable draft
+///   act created from that OCR. They carry explicit no-claim flags and never store raw OCR text.
+pub const SCHEMA_VERSION: i64 = 14;
 
 /// `meta` — small key/value table for the `schema_version` stamp and the app version.
 pub const CREATE_META: &str = "\
@@ -448,6 +451,49 @@ pub const CREATE_PAPER_BOOK_OCR_CONVERSION_DOSSIERS_IMPORT_DRAFT_IDX: &str = "CR
 
 pub const CREATE_PAPER_BOOK_OCR_CONVERSION_DOSSIERS_IMPORT_CREATED_AT_IDX: &str = "CREATE INDEX IF NOT EXISTS idx_paper_book_ocr_conversion_dossiers_import_created_at ON paper_book_ocr_conversion_dossiers (import_id, created_at);";
 
+/// `paper_book_ocr_conversion_execution_artifacts` — reviewed execution artifacts for accepted OCR
+/// draft promotion into mutable act drafts.
+///
+/// These rows bind a preserved paper-book import, accepted OCR draft, optional conversion dossier,
+/// and target mutable `Draft` act. They are deliberately not canonical/legal conversion records:
+/// every canonical/legal/PDF/signature/archive claim flag is stored explicitly as false. Raw OCR
+/// text is never stored here.
+pub const CREATE_PAPER_BOOK_OCR_CONVERSION_EXECUTION_ARTIFACTS: &str = "\
+CREATE TABLE IF NOT EXISTS paper_book_ocr_conversion_execution_artifacts (
+    artifact_id                           TEXT PRIMARY KEY,
+    import_id                             TEXT NOT NULL,
+    draft_id                              TEXT NOT NULL,
+    dossier_id                            TEXT,
+    source_text_digest                    TEXT,
+    source_page_spans_json                TEXT NOT NULL,
+    source_review_status                  TEXT NOT NULL,
+    source_reviewed_at                    TEXT,
+    source_reviewed_by                    TEXT,
+    target_act_id                         TEXT NOT NULL,
+    target_act_state                      TEXT NOT NULL,
+    mutable_draft_act_created             INTEGER NOT NULL,
+    created_at                            TEXT NOT NULL,
+    created_by                            TEXT NOT NULL,
+    canonical_conversion_claimed          INTEGER NOT NULL DEFAULT 0,
+    canonical_minutes_claimed             INTEGER NOT NULL DEFAULT 0,
+    canonical_act_created                 INTEGER NOT NULL DEFAULT 0,
+    canonical_document_created            INTEGER NOT NULL DEFAULT 0,
+    signed_document_created               INTEGER NOT NULL DEFAULT 0,
+    archive_package_created               INTEGER NOT NULL DEFAULT 0,
+    pdfa_created                          INTEGER NOT NULL DEFAULT 0,
+    pdfua_created                         INTEGER NOT NULL DEFAULT 0,
+    signature_created                     INTEGER NOT NULL DEFAULT 0,
+    seal_created                          INTEGER NOT NULL DEFAULT 0,
+    archive_certification_claimed         INTEGER NOT NULL DEFAULT 0,
+    legal_validity_claimed                INTEGER NOT NULL DEFAULT 0,
+    source_extracted_text_in_artifact     INTEGER NOT NULL DEFAULT 0,
+    source_extracted_text_in_ledger_event INTEGER NOT NULL DEFAULT 0
+) STRICT;";
+
+pub const CREATE_PAPER_BOOK_OCR_CONVERSION_EXECUTION_ARTIFACTS_IMPORT_DRAFT_ACT_IDX: &str = "CREATE UNIQUE INDEX IF NOT EXISTS idx_paper_book_ocr_conversion_execution_artifacts_import_draft_act ON paper_book_ocr_conversion_execution_artifacts (import_id, draft_id, target_act_id);";
+
+pub const CREATE_PAPER_BOOK_OCR_CONVERSION_EXECUTION_ARTIFACTS_IMPORT_DRAFT_IDX: &str = "CREATE INDEX IF NOT EXISTS idx_paper_book_ocr_conversion_execution_artifacts_import_draft ON paper_book_ocr_conversion_execution_artifacts (import_id, draft_id, created_at);";
+
 /// `follow_ups` — first-class task/follow-up rows tied to an act. These deliberately live outside
 /// the sealed [`chancela_core::Act`] JSON so post-deliberation task management never mutates the
 /// frozen evidentiary payload.
@@ -520,6 +566,9 @@ pub const ALL: &[&str] = &[
     CREATE_PAPER_BOOK_OCR_CONVERSION_DOSSIERS,
     CREATE_PAPER_BOOK_OCR_CONVERSION_DOSSIERS_IMPORT_DRAFT_IDX,
     CREATE_PAPER_BOOK_OCR_CONVERSION_DOSSIERS_IMPORT_CREATED_AT_IDX,
+    CREATE_PAPER_BOOK_OCR_CONVERSION_EXECUTION_ARTIFACTS,
+    CREATE_PAPER_BOOK_OCR_CONVERSION_EXECUTION_ARTIFACTS_IMPORT_DRAFT_ACT_IDX,
+    CREATE_PAPER_BOOK_OCR_CONVERSION_EXECUTION_ARTIFACTS_IMPORT_DRAFT_IDX,
     CREATE_FOLLOW_UPS,
     CREATE_FOLLOW_UPS_ACT_IDX,
     CREATE_FOLLOW_UPS_STATUS_IDX,

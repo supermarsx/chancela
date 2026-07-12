@@ -1513,7 +1513,7 @@ async fn paper_book_ocr_conversion_dossier_requires_accepted_matching_draft_and_
 }
 
 #[tokio::test]
-async fn accepted_paper_book_ocr_draft_creates_one_mutable_draft_act_and_metadata_event() {
+async fn paper_book_ocr_conversion_artifact_records_accepted_draft_act() {
     let dir = TempDir::new();
     let state = AppState::with_data_dir(dir.path());
     let token = bootstrap(&state).await;
@@ -1526,13 +1526,15 @@ async fn accepted_paper_book_ocr_draft_creates_one_mutable_draft_act_and_metadat
     .await;
     assert_eq!(status, StatusCode::CREATED, "preserve: {created}");
     let import_id = created["import_id"].as_str().expect("import id");
+    let ocr_text = "Deliberacao importada por OCR para revisao humana.";
+    let digest = hex(&Sha256::digest(ocr_text));
     let (status, draft) = create_ocr_draft(
         &state,
         &token,
         import_id,
         json!({
-            "extracted_text": "Deliberacao importada por OCR para revisao humana.",
-            "text_digest": hex(&Sha256::digest("Deliberacao importada por OCR para revisao humana.")),
+            "extracted_text": ocr_text,
+            "text_digest": digest,
             "page_spans": [{ "start_page": 1, "end_page": 3 }],
             "confidence": 0.92,
             "engine_name": "operator-supplied-ocr"
@@ -1562,20 +1564,66 @@ async fn accepted_paper_book_ocr_draft_creates_one_mutable_draft_act_and_metadat
     assert_eq!(body["act_state"], "Draft");
     assert_eq!(body["act"]["book_id"], book_id);
     assert_eq!(body["act"]["state"], "Draft");
-    assert_eq!(
-        body["act"]["deliberations"],
-        "Deliberacao importada por OCR para revisao humana."
-    );
+    assert_eq!(body["act"]["deliberations"], ocr_text);
     assert_eq!(body["ocr_text_copied_to_deliberations"], true);
     assert_eq!(body["ocr_text_in_ledger_event"], false);
     assert_eq!(body["non_canonical"], true);
     assert_eq!(body["authoritative_text_claimed"], false);
+    assert_eq!(body["canonical_conversion_claimed"], false);
     assert_eq!(body["canonical_minutes_claimed"], false);
+    assert_eq!(body["canonical_act_created"], false);
     assert_eq!(body["canonical_document_created"], false);
+    assert_eq!(body["signed_document_created"], false);
+    assert_eq!(body["archive_package_created"], false);
+    assert_eq!(body["archive_certification_claimed"], false);
     assert_eq!(body["pdfa_created"], false);
+    assert_eq!(body["pdfua_created"], false);
     assert_eq!(body["signature_created"], false);
     assert_eq!(body["seal_created"], false);
     assert_eq!(body["legal_validity_claimed"], false);
+    let act_id = body["act"]["id"].as_str().expect("act id");
+    let artifact = &body["conversion_execution_artifact"];
+    assert!(artifact["artifact_id"].as_str().is_some());
+    assert_eq!(artifact["import_id"], import_id);
+    assert_eq!(artifact["draft_id"], draft_id);
+    assert!(artifact["dossier_id"].is_null());
+    assert_eq!(artifact["source_text_digest"], digest);
+    assert_eq!(artifact["source_page_spans"][0]["start_page"], 1);
+    assert_eq!(artifact["source_page_spans"][0]["end_page"], 3);
+    assert_eq!(artifact["source_review_status"], "accepted");
+    assert!(artifact["source_reviewed_at"].as_str().is_some());
+    assert!(artifact["source_reviewed_by"].as_str().is_some());
+    assert_eq!(artifact["target_act_id"], act_id);
+    assert_eq!(artifact["target_act_state"], "Draft");
+    assert_eq!(artifact["mutable_draft_act_created"], true);
+    assert_eq!(artifact["reviewed_conversion_execution_artifact"], true);
+    assert_eq!(artifact["non_canonical"], true);
+    assert_eq!(artifact["canonical_conversion_claimed"], false);
+    assert_eq!(artifact["canonical_minutes_claimed"], false);
+    assert_eq!(artifact["canonical_act_created"], false);
+    assert_eq!(artifact["canonical_document_created"], false);
+    assert_eq!(artifact["signed_document_created"], false);
+    assert_eq!(artifact["archive_package_created"], false);
+    assert_eq!(artifact["archive_certification_claimed"], false);
+    assert_eq!(artifact["pdfa_created"], false);
+    assert_eq!(artifact["pdfua_created"], false);
+    assert_eq!(artifact["signature_created"], false);
+    assert_eq!(artifact["seal_created"], false);
+    assert_eq!(artifact["legal_validity_claimed"], false);
+    assert_eq!(artifact["source_extracted_text_in_artifact"], false);
+    assert_eq!(artifact["source_extracted_text_in_ledger_event"], false);
+    assert!(
+        artifact["artifact_notice"]
+            .as_str()
+            .is_some_and(|notice| notice.contains("mutable Draft act")
+                && notice.contains("not a canonical or legal conversion")
+                && notice.contains("PDF/UA")),
+        "artifact notice states no-claim boundary: {body}"
+    );
+    assert!(
+        !artifact.to_string().contains(ocr_text),
+        "artifact response must not include raw OCR text: {artifact}"
+    );
     assert!(
         body["notice"]
             .as_str()
@@ -1600,11 +1648,10 @@ async fn accepted_paper_book_ocr_draft_creates_one_mutable_draft_act_and_metadat
     assert!(
         !serde_json::to_string(&event_json)
             .expect("event json serializes")
-            .contains("Deliberacao importada por OCR para revisao humana."),
+            .contains(ocr_text),
         "OCR text must stay out of the ledger event envelope: {event_json}"
     );
     drop(ledger);
-    let act_id = body["act"]["id"].as_str().expect("act id");
     let stored = state
         .acts
         .read()
@@ -1613,10 +1660,63 @@ async fn accepted_paper_book_ocr_draft_creates_one_mutable_draft_act_and_metadat
         .expect("stored act")
         .clone();
     assert_eq!(stored.state, chancela_core::ActState::Draft);
+    assert_eq!(stored.deliberations, ocr_text);
+    let stored_artifacts = state
+        .store
+        .as_ref()
+        .expect("store")
+        .paper_book_ocr_conversion_execution_artifacts_for_draft(import_id, draft_id)
+        .expect("artifact list");
+    assert_eq!(stored_artifacts.len(), 1);
+    assert_eq!(stored_artifacts[0].target_act_id, act_id);
     assert_eq!(
-        stored.deliberations,
-        "Deliberacao importada por OCR para revisao humana."
+        stored_artifacts[0].source_text_digest.as_deref(),
+        Some(digest.as_str())
     );
+    assert!(stored_artifacts[0].dossier_id.is_none());
+    assert!(!stored_artifacts[0].canonical_conversion_claimed);
+    assert!(!stored_artifacts[0].canonical_minutes_claimed);
+    assert!(!stored_artifacts[0].canonical_document_created);
+    assert!(!stored_artifacts[0].archive_package_created);
+    assert!(!stored_artifacts[0].archive_certification_claimed);
+    assert!(!stored_artifacts[0].pdfa_created);
+    assert!(!stored_artifacts[0].pdfua_created);
+    assert!(!stored_artifacts[0].signature_created);
+    assert!(!stored_artifacts[0].legal_validity_claimed);
+    assert!(
+        !format!("{stored_artifacts:?}").contains(ocr_text),
+        "stored artifact model must not include raw OCR text"
+    );
+
+    let (status, dossier) =
+        create_conversion_dossier_from_ocr_draft(&state, &token, import_id, draft_id).await;
+    assert_eq!(status, StatusCode::CREATED, "dossier after act: {dossier}");
+    let dossier_id = dossier["dossier_id"].as_str().expect("dossier id");
+    let bound = dossier["conversion_execution_artifacts"]
+        .as_array()
+        .expect("bound artifacts");
+    assert_eq!(bound.len(), 1);
+    assert_eq!(bound[0]["artifact_id"], artifact["artifact_id"]);
+    assert_eq!(bound[0]["dossier_id"], dossier_id);
+    assert_eq!(bound[0]["target_act_id"], act_id);
+    assert_eq!(bound[0]["canonical_conversion_claimed"], false);
+    assert_eq!(bound[0]["canonical_minutes_claimed"], false);
+    assert_eq!(bound[0]["archive_certification_claimed"], false);
+    assert_eq!(bound[0]["pdfa_created"], false);
+    assert_eq!(bound[0]["pdfua_created"], false);
+    assert_eq!(bound[0]["signature_created"], false);
+    assert_eq!(bound[0]["legal_validity_claimed"], false);
+    assert!(
+        !bound[0].to_string().contains(ocr_text),
+        "bound artifact response must not include raw OCR text: {dossier}"
+    );
+    let stored_artifacts = state
+        .store
+        .as_ref()
+        .expect("store")
+        .paper_book_ocr_conversion_execution_artifacts_for_draft(import_id, draft_id)
+        .expect("bound artifact list");
+    assert_eq!(stored_artifacts[0].dossier_id.as_deref(), Some(dossier_id));
 }
 
 #[tokio::test]
