@@ -249,6 +249,11 @@ export const ptPT = {
   'notifications.reminder.act.attendance.body':
     '{act_title} de {entity_name} está marcada para {meeting_date} e ainda não tem registo de presenças suficiente. Registe a referência de presenças e os totais ou participantes estruturados antes de a avançar.',
   'notifications.reminder.act.attendance.action': 'Registar presenças',
+  'notifications.reminder.absentOwnerDispatch.title':
+    'Evidência de expedição pendente: {act_title}',
+  'notifications.reminder.absentOwnerDispatch.body':
+    '{act_title} tem comunicação a condóminos ausentes gerada, mas a evidência de expedição está {dispatch_evidence_status}. Destinatários em falta: {missing_recipients}. O lembrete é apenas consultivo.',
+  'notifications.reminder.absentOwnerDispatch.action': 'Abrir ata',
   'notifications.reminder.followUp.title': '{follow_up_title}',
   'notifications.reminder.followUp.body': '{entity_name} - {act_title}: {follow_up_detail}',
   'notifications.reminder.followUp.bodyNoDetail': '{entity_name} - {act_title}',
@@ -350,6 +355,7 @@ export const ptPT = {
   'dashboard.workQueue.status.overdue': 'Atrasado',
   'dashboard.workQueue.status.dueSoon': 'Próximo',
   'dashboard.workQueue.status.upcoming': 'Planeado',
+  'dashboard.workQueue.status.pending': 'Pendente',
   'dashboard.workQueue.entity.unnamed': 'Entidade sem nome',
   'dashboard.workQueue.rule.missing': 'sem regra',
   'dashboard.workQueue.profile.missing': 'sem perfil',

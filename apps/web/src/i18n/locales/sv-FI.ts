@@ -245,6 +245,11 @@ export const svFI: Catalog = {
   'notifications.reminder.act.attendance.body':
     '{act_title} för {entity_name} är daterat {meeting_date} och saknar fortfarande tillräcklig närvaroregistrering. Registrera närvaroreferensen och antingen närvarotal eller strukturerade deltagare innan du går vidare.',
   'notifications.reminder.act.attendance.action': 'Registrera närvaro',
+  'notifications.reminder.absentOwnerDispatch.title':
+    'Avsändningsbevis väntar: {act_title}',
+  'notifications.reminder.absentOwnerDispatch.body':
+    '{act_title} har ett genererat meddelande till frånvarande ägare, men operatörens avsändningsbevis är {dispatch_evidence_status}. Saknade mottagare: {missing_recipients}. Påminnelsen är endast rådgivande.',
+  'notifications.reminder.absentOwnerDispatch.action': 'Öppna akten',
   'notifications.reminder.followUp.title': '{follow_up_title}',
   'notifications.reminder.followUp.body': '{entity_name} - {act_title}: {follow_up_detail}',
   'notifications.reminder.followUp.bodyNoDetail': '{entity_name} - {act_title}',
@@ -345,6 +350,7 @@ export const svFI: Catalog = {
   'dashboard.workQueue.status.overdue': 'Försenad',
   'dashboard.workQueue.status.dueSoon': 'Snart förfallen',
   'dashboard.workQueue.status.upcoming': 'Planerad',
+  'dashboard.workQueue.status.pending': 'Väntar',
   'dashboard.workQueue.entity.unnamed': 'Namnlös enhet',
   'dashboard.workQueue.rule.missing': 'ingen regel',
   'dashboard.workQueue.profile.missing': 'ingen profil',

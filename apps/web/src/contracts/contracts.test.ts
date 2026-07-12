@@ -2387,88 +2387,95 @@ describe('contract fixtures parse through the real client', () => {
       expect(alertI18n.body_key.length).toBeGreaterThan(0);
     }
     expect(Array.isArray(dash.reminders)).toBe(true);
-    const reminder = assertExactKeys<DashboardReminder>(
-      dash.reminders[0],
-      {
-        due_date: true,
-        severity: true,
-        status: true,
-        reason: true,
-        entity_id: true,
-        entity_name: true,
-        source_rule: true,
-        source_profile: true,
-      },
-      'Dashboard.reminders[0]',
-      ['params', 'law_refs', 'action', 'recommended_next_steps', 'i18n'],
-    );
-    assertIsoDate(reminder.due_date, 'Dashboard.reminders[0].due_date');
-    inEnum(['Advisory', 'Info', 'Warning'], reminder.severity, 'Dashboard.reminders[0].severity');
-    inEnum(['Upcoming', 'DueSoon', 'Overdue'], reminder.status, 'Dashboard.reminders[0].status');
-    expect(
-      reminder.reason.length,
-      'Dashboard.reminders[0].reason should be non-empty',
-    ).toBeGreaterThan(0);
-    expect(
-      reminder.entity_id.length,
-      'Dashboard.reminders[0].entity_id should be non-empty',
-    ).toBeGreaterThan(0);
-    expect(
-      reminder.entity_name.length,
-      'Dashboard.reminders[0].entity_name should be non-empty',
-    ).toBeGreaterThan(0);
-    expect(
-      reminder.source_rule.length,
-      'Dashboard.reminders[0].source_rule should be non-empty',
-    ).toBeGreaterThan(0);
-    expect(
-      reminder.source_profile.length,
-      'Dashboard.reminders[0].source_profile should be non-empty',
-    ).toBeGreaterThan(0);
-    expect(Array.isArray(reminder.law_refs)).toBe(true);
-    if (reminder.law_refs && reminder.law_refs.length > 0) {
-      assertExactKeys<DashboardLawReference>(
-        reminder.law_refs[0],
+    expect(dash.reminders.length).toBeGreaterThan(0);
+    for (const [index, candidate] of dash.reminders.entries()) {
+      const label = `Dashboard.reminders[${index}]`;
+      const reminder = assertExactKeys<DashboardReminder>(
+        candidate,
         {
-          diploma_id: true,
-          article: true,
-          label: true,
-          heading: true,
-          verification: true,
-          source_url: true,
-          source_complete: true,
+          due_date: true,
+          severity: true,
+          status: true,
+          reason: true,
+          entity_id: true,
+          entity_name: true,
+          source_rule: true,
+          source_profile: true,
         },
-        'Dashboard.reminders[0].law_refs[0]',
+        label,
+        ['params', 'law_refs', 'action', 'recommended_next_steps', 'i18n'],
       );
-    }
-    if (reminder.action !== null && reminder.action !== undefined) {
-      assertExactKeys<DashboardAction>(
-        reminder.action,
-        { kind: true, label_key: true, api_href: true, route: true },
-        'Dashboard.reminders[0].action',
+      if (reminder.due_date !== '') {
+        assertIsoDate(reminder.due_date, `${label}.due_date`);
+      }
+      inEnum(['Advisory', 'Info', 'Warning'], reminder.severity, `${label}.severity`);
+      inEnum(['Upcoming', 'DueSoon', 'Overdue', 'Pending'], reminder.status, `${label}.status`);
+      expect(reminder.reason.length, `${label}.reason should be non-empty`).toBeGreaterThan(0);
+      expect(reminder.entity_id.length, `${label}.entity_id should be non-empty`).toBeGreaterThan(
+        0,
       );
-    }
-    expect(Array.isArray(reminder.recommended_next_steps)).toBe(true);
-    if (reminder.params !== undefined) {
-      expect(typeof reminder.params, 'Dashboard.reminders[0].params').toBe('object');
-      for (const [key, value] of Object.entries(reminder.params)) {
-        expect(key.length, 'Dashboard.reminders[0].params key should be non-empty').toBeGreaterThan(
-          0,
-        );
-        expect(typeof value, `Dashboard.reminders[0].params.${key} should be string`).toBe(
-          'string',
+      expect(
+        reminder.entity_name.length,
+        `${label}.entity_name should be non-empty`,
+      ).toBeGreaterThan(0);
+      expect(
+        reminder.source_rule.length,
+        `${label}.source_rule should be non-empty`,
+      ).toBeGreaterThan(0);
+      expect(
+        reminder.source_profile.length,
+        `${label}.source_profile should be non-empty`,
+      ).toBeGreaterThan(0);
+      expect(Array.isArray(reminder.law_refs)).toBe(true);
+      if (reminder.law_refs && reminder.law_refs.length > 0) {
+        assertExactKeys<DashboardLawReference>(
+          reminder.law_refs[0],
+          {
+            diploma_id: true,
+            article: true,
+            label: true,
+            heading: true,
+            verification: true,
+            source_url: true,
+            source_complete: true,
+          },
+          `${label}.law_refs[0]`,
         );
       }
+      if (reminder.action !== null && reminder.action !== undefined) {
+        assertExactKeys<DashboardAction>(
+          reminder.action,
+          { kind: true, label_key: true, api_href: true, route: true },
+          `${label}.action`,
+        );
+      }
+      expect(Array.isArray(reminder.recommended_next_steps)).toBe(true);
+      if (reminder.params !== undefined) {
+        expect(typeof reminder.params, `${label}.params`).toBe('object');
+        for (const [key, value] of Object.entries(reminder.params)) {
+          expect(key.length, `${label}.params key should be non-empty`).toBeGreaterThan(0);
+          expect(typeof value, `${label}.params.${key} should be string`).toBe('string');
+        }
+      }
+      if (reminder.i18n !== null && reminder.i18n !== undefined) {
+        const reminderI18n = assertExactKeys<DashboardI18n>(
+          reminder.i18n,
+          { title_key: true, body_key: true, action_key: true },
+          `${label}.i18n`,
+        );
+        expect(reminderI18n.title_key.length).toBeGreaterThan(0);
+        expect(reminderI18n.body_key.length).toBeGreaterThan(0);
+      }
     }
-    if (reminder.i18n !== null && reminder.i18n !== undefined) {
-      const reminderI18n = assertExactKeys<DashboardI18n>(
-        reminder.i18n,
-        { title_key: true, body_key: true, action_key: true },
-        'Dashboard.reminders[0].i18n',
-      );
-      expect(reminderI18n.title_key.length).toBeGreaterThan(0);
-      expect(reminderI18n.body_key.length).toBeGreaterThan(0);
-    }
+    expect(
+      dash.reminders.some(
+        (reminder) =>
+          reminder.source_rule === 'absent-owner-dispatch-evidence' &&
+          reminder.due_date === '' &&
+          reminder.status === 'Pending',
+      ),
+      'Dashboard.reminders should include a pending no-due-date generated absent-owner fixture',
+    ).toBe(true);
     expect(Array.isArray(dash.recent_events)).toBe(true);
     // recent_events reuse the ledger event shape.
     assertExactKeys<LedgerEventView>(

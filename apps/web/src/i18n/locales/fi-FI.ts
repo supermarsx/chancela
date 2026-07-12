@@ -242,6 +242,10 @@ export const fiFI: Catalog = {
   'notifications.reminder.act.attendance.body':
     '{act_title} kohteelle {entity_name} on päivätty {meeting_date}, eikä siinä ole vielä riittävää läsnäolotallennetta. Kirjaa läsnäoloviite ja joko läsnäolomäärät tai jäsennellyt osallistujat ennen etenemistä.',
   'notifications.reminder.act.attendance.action': 'Kirjaa läsnäolo',
+  'notifications.reminder.absentOwnerDispatch.title': 'Lähetysnäyttö odottaa: {act_title}',
+  'notifications.reminder.absentOwnerDispatch.body':
+    '{act_title} sisältää luodun poissaolevien omistajien viestin, mutta käyttäjän lähetysnäyttö on {dispatch_evidence_status}. Puuttuvat vastaanottajat: {missing_recipients}. Muistutus on vain neuvoa-antava.',
+  'notifications.reminder.absentOwnerDispatch.action': 'Avaa pöytäkirja',
   'notifications.reminder.followUp.title': '{follow_up_title}',
   'notifications.reminder.followUp.body': '{entity_name} - {act_title}: {follow_up_detail}',
   'notifications.reminder.followUp.bodyNoDetail': '{entity_name} - {act_title}',
@@ -342,6 +346,7 @@ export const fiFI: Catalog = {
   'dashboard.workQueue.status.overdue': 'Myöhässä',
   'dashboard.workQueue.status.dueSoon': 'Erääntyy pian',
   'dashboard.workQueue.status.upcoming': 'Suunniteltu',
+  'dashboard.workQueue.status.pending': 'Odottaa',
   'dashboard.workQueue.entity.unnamed': 'Nimetön yksikkö',
   'dashboard.workQueue.rule.missing': 'ei sääntöä',
   'dashboard.workQueue.profile.missing': 'ei profiilia',

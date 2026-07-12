@@ -243,6 +243,11 @@ export const itIT: Catalog = {
   'notifications.reminder.act.attendance.body':
     '{act_title} di {entity_name} è datato {meeting_date} e non contiene ancora una registrazione sufficiente delle presenze. Registra il riferimento delle presenze e i totali o i partecipanti strutturati prima di farlo avanzare.',
   'notifications.reminder.act.attendance.action': 'Registrare le presenze',
+  'notifications.reminder.absentOwnerDispatch.title':
+    'Prova di invio in sospeso: {act_title}',
+  'notifications.reminder.absentOwnerDispatch.body':
+    '{act_title} ha una comunicazione generata per proprietari assenti, ma la prova di invio dell’operatore è {dispatch_evidence_status}. Destinatari mancanti: {missing_recipients}. Il promemoria è solo consultivo.',
+  'notifications.reminder.absentOwnerDispatch.action': 'Apri verbale',
   'notifications.reminder.followUp.title': '{follow_up_title}',
   'notifications.reminder.followUp.body': '{entity_name} - {act_title}: {follow_up_detail}',
   'notifications.reminder.followUp.bodyNoDetail': '{entity_name} - {act_title}',
@@ -343,6 +348,7 @@ export const itIT: Catalog = {
   'dashboard.workQueue.status.overdue': 'Scaduto',
   'dashboard.workQueue.status.dueSoon': 'In scadenza',
   'dashboard.workQueue.status.upcoming': 'Pianificato',
+  'dashboard.workQueue.status.pending': 'In sospeso',
   'dashboard.workQueue.entity.unnamed': 'Entità senza nome',
   'dashboard.workQueue.rule.missing': 'nessuna regola',
   'dashboard.workQueue.profile.missing': 'nessun profilo',

@@ -240,6 +240,11 @@ export const nlNL: Catalog = {
   'notifications.reminder.act.attendance.body':
     '{act_title} van {entity_name} is gedateerd op {meeting_date} en heeft nog geen voldoende aanwezigheidsregistratie. Leg de aanwezigheidsreferentie en de totalen of gestructureerde deelnemers vast voordat u verder gaat.',
   'notifications.reminder.act.attendance.action': 'Aanwezigheid vastleggen',
+  'notifications.reminder.absentOwnerDispatch.title':
+    'Verzendbewijs in behandeling: {act_title}',
+  'notifications.reminder.absentOwnerDispatch.body':
+    '{act_title} heeft een gegenereerde mededeling voor afwezige eigenaars, maar het verzendbewijs van de operator is {dispatch_evidence_status}. Ontbrekende ontvangers: {missing_recipients}. Deze herinnering is alleen adviserend.',
+  'notifications.reminder.absentOwnerDispatch.action': 'Open akte',
   'notifications.reminder.followUp.title': '{follow_up_title}',
   'notifications.reminder.followUp.body': '{entity_name} - {act_title}: {follow_up_detail}',
   'notifications.reminder.followUp.bodyNoDetail': '{entity_name} - {act_title}',
@@ -340,6 +345,7 @@ export const nlNL: Catalog = {
   'dashboard.workQueue.status.overdue': 'Achterstallig',
   'dashboard.workQueue.status.dueSoon': 'Binnenkort verschuldigd',
   'dashboard.workQueue.status.upcoming': 'Gepland',
+  'dashboard.workQueue.status.pending': 'In behandeling',
   'dashboard.workQueue.entity.unnamed': 'Entiteit zonder naam',
   'dashboard.workQueue.rule.missing': 'geen regel',
   'dashboard.workQueue.profile.missing': 'geen profiel',

@@ -160,6 +160,7 @@ function reminderTone(reminder: DashboardReminder): NotificationTone {
 }
 
 function reminderStatusLabel(status: DashboardReminder['status'], t: TFunction): string {
+  if (status === 'Pending') return t('dashboard.workQueue.status.pending');
   if (status === 'Overdue') return t('dashboard.workQueue.status.overdue');
   if (status === 'DueSoon') return t('dashboard.workQueue.status.dueSoon');
   return t('dashboard.workQueue.status.upcoming');
@@ -181,6 +182,7 @@ function reminderDateMeta(dueDate: string, t: TFunction): string {
 
 function reminderPriority(status: DashboardReminder['status']): number {
   if (status === 'Overdue') return 1;
+  if (status === 'Pending') return 3;
   if (status === 'DueSoon') return 3;
   return 4;
 }

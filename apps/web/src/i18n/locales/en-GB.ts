@@ -241,6 +241,10 @@ export const enGB: Catalog = {
   'notifications.reminder.act.attendance.body':
     '{act_title} for {entity_name} is dated {meeting_date} and does not yet have enough attendance capture. Record the attendance reference and either presence counts or structured attendees before advancing it.',
   'notifications.reminder.act.attendance.action': 'Record attendance',
+  'notifications.reminder.absentOwnerDispatch.title': 'Dispatch evidence pending: {act_title}',
+  'notifications.reminder.absentOwnerDispatch.body':
+    '{act_title} has a generated absent-owner communication, but operator dispatch evidence is {dispatch_evidence_status}. Missing recipients: {missing_recipients}. This reminder is advisory only.',
+  'notifications.reminder.absentOwnerDispatch.action': 'Open act',
   'notifications.reminder.followUp.title': '{follow_up_title}',
   'notifications.reminder.followUp.body': '{entity_name} - {act_title}: {follow_up_detail}',
   'notifications.reminder.followUp.bodyNoDetail': '{entity_name} - {act_title}',
@@ -342,6 +346,7 @@ export const enGB: Catalog = {
   'dashboard.workQueue.status.overdue': 'Overdue',
   'dashboard.workQueue.status.dueSoon': 'Due soon',
   'dashboard.workQueue.status.upcoming': 'Planned',
+  'dashboard.workQueue.status.pending': 'Pending',
   'dashboard.workQueue.entity.unnamed': 'Unnamed entity',
   'dashboard.workQueue.rule.missing': 'no rule',
   'dashboard.workQueue.profile.missing': 'no profile',

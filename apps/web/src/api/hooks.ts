@@ -885,6 +885,7 @@ export function useRecordGeneratedDocumentDispatchEvidence() {
           evidence: alreadyPresent ? rows : [...rows, response.evidence],
         };
       });
+      void qc.invalidateQueries({ queryKey: keys.dashboard });
       void qc.invalidateQueries({ queryKey: keys.generatedDocuments(actId) });
       void qc.invalidateQueries({ queryKey: keys.generatedDocumentDispatchEvidence(documentId) });
       void qc.invalidateQueries({ queryKey: keys.importedDocuments(actId) });

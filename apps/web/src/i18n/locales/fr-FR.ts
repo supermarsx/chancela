@@ -243,6 +243,11 @@ export const frFR: Catalog = {
   'notifications.reminder.act.attendance.body':
     '{act_title} de {entity_name} est daté du {meeting_date} et ne contient pas encore de relevé de présence suffisant. Renseignez la référence de présence et les totaux ou participants structurés avant de le faire avancer.',
   'notifications.reminder.act.attendance.action': 'Enregistrer la présence',
+  'notifications.reminder.absentOwnerDispatch.title':
+    'Preuve d’envoi en attente : {act_title}',
+  'notifications.reminder.absentOwnerDispatch.body':
+    '{act_title} comporte une communication générée pour les copropriétaires absents, mais la preuve d’envoi opérateur est {dispatch_evidence_status}. Destinataires manquants : {missing_recipients}. Le rappel est seulement consultatif.',
+  'notifications.reminder.absentOwnerDispatch.action': 'Ouvrir le procès-verbal',
   'notifications.reminder.followUp.title': '{follow_up_title}',
   'notifications.reminder.followUp.body': '{entity_name} - {act_title}: {follow_up_detail}',
   'notifications.reminder.followUp.bodyNoDetail': '{entity_name} - {act_title}',
@@ -343,6 +348,7 @@ export const frFR: Catalog = {
   'dashboard.workQueue.status.overdue': 'En retard',
   'dashboard.workQueue.status.dueSoon': 'Bientôt exigible',
   'dashboard.workQueue.status.upcoming': 'Planifié',
+  'dashboard.workQueue.status.pending': 'En attente',
   'dashboard.workQueue.entity.unnamed': 'Entité sans nom',
   'dashboard.workQueue.rule.missing': 'aucune règle',
   'dashboard.workQueue.profile.missing': 'aucun profil',

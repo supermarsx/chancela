@@ -241,6 +241,11 @@ export const daDK: Catalog = {
   'notifications.reminder.act.attendance.body':
     '{act_title} for {entity_name} er dateret {meeting_date} og har endnu ikke tilstrækkelig fremmøderegistrering. Registrer fremmødereferencen og enten fremmødetal eller strukturerede deltagere, før du fører det videre.',
   'notifications.reminder.act.attendance.action': 'Registrer fremmøde',
+  'notifications.reminder.absentOwnerDispatch.title':
+    'Afsendelsesbevis afventer: {act_title}',
+  'notifications.reminder.absentOwnerDispatch.body':
+    '{act_title} har en genereret meddelelse til fraværende ejere, men operatørens afsendelsesbevis er {dispatch_evidence_status}. Manglende modtagere: {missing_recipients}. Påmindelsen er kun rådgivende.',
+  'notifications.reminder.absentOwnerDispatch.action': 'Åbn akt',
   'notifications.reminder.followUp.title': '{follow_up_title}',
   'notifications.reminder.followUp.body': '{entity_name} - {act_title}: {follow_up_detail}',
   'notifications.reminder.followUp.bodyNoDetail': '{entity_name} - {act_title}',
@@ -341,6 +346,7 @@ export const daDK: Catalog = {
   'dashboard.workQueue.status.overdue': 'Forsinket',
   'dashboard.workQueue.status.dueSoon': 'Snart forfalden',
   'dashboard.workQueue.status.upcoming': 'Planlagt',
+  'dashboard.workQueue.status.pending': 'Afventer',
   'dashboard.workQueue.entity.unnamed': 'Enhed uden navn',
   'dashboard.workQueue.rule.missing': 'ingen regel',
   'dashboard.workQueue.profile.missing': 'ingen profil',

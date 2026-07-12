@@ -242,6 +242,11 @@ export const ptBR: Catalog = {
   'notifications.reminder.act.attendance.body':
     '{act_title} de {entity_name} está marcada para {meeting_date} e ainda não tem registro de presença suficiente. Registre a referência de presença e os totais ou participantes estruturados antes de avançá-la.',
   'notifications.reminder.act.attendance.action': 'Registrar presenças',
+  'notifications.reminder.absentOwnerDispatch.title':
+    'Evidência de envio pendente: {act_title}',
+  'notifications.reminder.absentOwnerDispatch.body':
+    '{act_title} tem comunicação a condôminos ausentes gerada, mas a evidência de envio está {dispatch_evidence_status}. Destinatários ausentes: {missing_recipients}. O lembrete é apenas consultivo.',
+  'notifications.reminder.absentOwnerDispatch.action': 'Abrir ata',
   'notifications.reminder.followUp.title': '{follow_up_title}',
   'notifications.reminder.followUp.body': '{entity_name} - {act_title}: {follow_up_detail}',
   'notifications.reminder.followUp.bodyNoDetail': '{entity_name} - {act_title}',
@@ -343,6 +348,7 @@ export const ptBR: Catalog = {
   'dashboard.workQueue.status.overdue': 'Atrasado',
   'dashboard.workQueue.status.dueSoon': 'Próximo',
   'dashboard.workQueue.status.upcoming': 'Planejado',
+  'dashboard.workQueue.status.pending': 'Pendente',
   'dashboard.workQueue.entity.unnamed': 'Entidade sem nome',
   'dashboard.workQueue.rule.missing': 'sem regra',
   'dashboard.workQueue.profile.missing': 'sem perfil',

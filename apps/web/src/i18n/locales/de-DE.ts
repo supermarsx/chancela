@@ -244,6 +244,11 @@ export const deDE: Catalog = {
   'notifications.reminder.act.attendance.body':
     '{act_title} von {entity_name} ist auf den {meeting_date} datiert und hat noch keine ausreichende Anwesenheitserfassung. Erfassen Sie die Anwesenheitsreferenz und entweder Anwesenheitszahlen oder strukturierte Teilnehmer, bevor Sie ihn weiterführen.',
   'notifications.reminder.act.attendance.action': 'Anwesenheit erfassen',
+  'notifications.reminder.absentOwnerDispatch.title':
+    'Versandnachweis ausstehend: {act_title}',
+  'notifications.reminder.absentOwnerDispatch.body':
+    '{act_title} hat eine generierte Mitteilung an abwesende Eigentümer, aber der Versandnachweis des Operators ist {dispatch_evidence_status}. Fehlende Empfänger: {missing_recipients}. Diese Erinnerung ist nur ein Hinweis.',
+  'notifications.reminder.absentOwnerDispatch.action': 'Akt öffnen',
   'notifications.reminder.followUp.title': '{follow_up_title}',
   'notifications.reminder.followUp.body': '{entity_name} - {act_title}: {follow_up_detail}',
   'notifications.reminder.followUp.bodyNoDetail': '{entity_name} - {act_title}',
@@ -344,6 +349,7 @@ export const deDE: Catalog = {
   'dashboard.workQueue.status.overdue': 'Überfällig',
   'dashboard.workQueue.status.dueSoon': 'Bald fällig',
   'dashboard.workQueue.status.upcoming': 'Geplant',
+  'dashboard.workQueue.status.pending': 'Ausstehend',
   'dashboard.workQueue.entity.unnamed': 'Entität ohne Namen',
   'dashboard.workQueue.rule.missing': 'keine Regel',
   'dashboard.workQueue.profile.missing': 'kein Profil',

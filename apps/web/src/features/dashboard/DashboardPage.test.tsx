@@ -591,6 +591,71 @@ describe('DashboardPage', () => {
     expect(within(item).getByText('Fonte act-attendance-missing / csc-commercial')).toBeTruthy();
   });
 
+  it('renders absent-owner dispatch evidence reminders with localized act routing', async () => {
+    const dashboard: Dashboard = {
+      ...baseDashboard,
+      reminders: [
+        {
+          due_date: '',
+          severity: 'Advisory',
+          status: 'Pending',
+          reason: 'Raw backend dispatch fallback.',
+          entity_id: 'entity-1',
+          entity_name: 'Condomínio Acme',
+          source_rule: 'absent-owner-dispatch-evidence',
+          source_profile: 'condominium-generated-communication',
+          params: {
+            act_id: 'act-absent-1',
+            act_title: 'Ata da assembleia de condóminos',
+            book_id: 'book-1',
+            document_id: 'generated-absent-1',
+            template_id: 'condominio-comunicacao-ausentes/v1',
+            dispatch_evidence_status: 'operator_evidence_partial',
+            required_recipient_count: '2',
+            recorded_recipient_count: '1',
+            missing_recipient_count: '1',
+            missing_recipients: 'Fração C',
+          },
+          action: {
+            kind: 'open_absent_owner_dispatch_evidence',
+            label_key: 'notifications.reminder.absentOwnerDispatch.action',
+            api_href: '/v1/documents/generated/generated-absent-1/dispatch-evidence',
+            route: '/atas/act-absent-1',
+          },
+          i18n: {
+            title_key: 'notifications.reminder.absentOwnerDispatch.title',
+            body_key: 'notifications.reminder.absentOwnerDispatch.body',
+            action_key: 'notifications.reminder.absentOwnerDispatch.action',
+          },
+        },
+      ],
+    };
+
+    vi.stubGlobal('fetch', fetchTable([{ match: '/v1/dashboard', body: dashboard }]));
+    renderDashboard();
+    await openDashboardTab('Fila de trabalho');
+
+    const queue = await screen.findByRole('list', { name: 'Fila de trabalho do painel' });
+    const item = within(queue).getByRole('listitem');
+    const link = within(item).getByRole('link', {
+      name: 'Evidência de expedição pendente: Ata da assembleia de condóminos',
+    });
+    expect(link.getAttribute('href')).toBe('/atas/act-absent-1');
+    expect(within(item).getByText('Pendente')).toBeTruthy();
+    expect(
+      within(item).getByText(
+        'Ata da assembleia de condóminos tem comunicação a condóminos ausentes gerada, mas a evidência de expedição está operator_evidence_partial. Destinatários em falta: Fração C. O lembrete é apenas consultivo.',
+      ),
+    ).toBeTruthy();
+    expect(within(item).queryByText('Raw backend dispatch fallback.')).toBeNull();
+    expect(within(item).getByText('Sem data')).toBeTruthy();
+    expect(
+      within(item).getByText(
+        'Fonte absent-owner-dispatch-evidence / condominium-generated-communication',
+      ),
+    ).toBeTruthy();
+  });
+
   it('shows an empty work-queue state when dashboard data exposes no operator work', async () => {
     vi.stubGlobal('fetch', fetchTable([{ match: '/v1/dashboard', body: baseDashboard }]));
     renderDashboard();

@@ -1530,7 +1530,7 @@ export interface DashboardI18n {
 }
 
 export type DashboardReminderSeverity = 'Advisory' | 'Info' | 'Warning';
-export type DashboardReminderStatus = 'Upcoming' | 'DueSoon' | 'Overdue';
+export type DashboardReminderStatus = 'Upcoming' | 'DueSoon' | 'Overdue' | 'Pending';
 
 export interface DashboardReminder {
   due_date: string;

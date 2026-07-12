@@ -45,6 +45,20 @@ describe('catalog completeness matrix', () => {
     expect(ptPT['notifications.reminder.act.attendance.body']).not.toContain('Registre');
   });
 
+  it('keeps absent-owner dispatch reminder copy advisory and status-aware', () => {
+    expect(ptPT['notifications.reminder.absentOwnerDispatch.title']).toBe(
+      'Evidência de expedição pendente: {act_title}',
+    );
+    expect(ptPT['notifications.reminder.absentOwnerDispatch.body']).toContain(
+      'O lembrete é apenas consultivo.',
+    );
+    expect(ptPT['dashboard.workQueue.status.pending']).toBe('Pendente');
+    expect(enUS['notifications.reminder.absentOwnerDispatch.body']).toContain(
+      'This reminder is advisory only.',
+    );
+    expect(enUS['dashboard.workQueue.status.pending']).toBe('Pending');
+  });
+
   it('keeps PDF validator copy localized in the English catalog', () => {
     expect(enUS['tools.section.pdfValidator']).toBe('PDF validator');
     expect(enUS['pdfValidator.file.label']).toBe('Signed PDF');

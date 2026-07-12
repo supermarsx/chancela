@@ -242,6 +242,11 @@ export const esES: Catalog = {
   'notifications.reminder.act.attendance.body':
     '{act_title} de {entity_name} tiene fecha {meeting_date} y aún no cuenta con un registro de asistencia suficiente. Registre la referencia de asistencia y los totales o asistentes estructurados antes de avanzarla.',
   'notifications.reminder.act.attendance.action': 'Registrar asistencia',
+  'notifications.reminder.absentOwnerDispatch.title':
+    'Evidencia de envío pendiente: {act_title}',
+  'notifications.reminder.absentOwnerDispatch.body':
+    '{act_title} tiene una comunicación generada para propietarios ausentes, pero la evidencia de envío del operador está {dispatch_evidence_status}. Destinatarios faltantes: {missing_recipients}. El recordatorio es solo consultivo.',
+  'notifications.reminder.absentOwnerDispatch.action': 'Abrir acta',
   'notifications.reminder.followUp.title': '{follow_up_title}',
   'notifications.reminder.followUp.body': '{entity_name} - {act_title}: {follow_up_detail}',
   'notifications.reminder.followUp.bodyNoDetail': '{entity_name} - {act_title}',
@@ -342,6 +347,7 @@ export const esES: Catalog = {
   'dashboard.workQueue.status.overdue': 'Vencido',
   'dashboard.workQueue.status.dueSoon': 'Próximo',
   'dashboard.workQueue.status.upcoming': 'Planificado',
+  'dashboard.workQueue.status.pending': 'Pendiente',
   'dashboard.workQueue.entity.unnamed': 'Entidad sin nombre',
   'dashboard.workQueue.rule.missing': 'sin regla',
   'dashboard.workQueue.profile.missing': 'sin perfil',

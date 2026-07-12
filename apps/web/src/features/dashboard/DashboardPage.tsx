@@ -200,6 +200,7 @@ function reminderTone(reminder: DashboardReminder): 'neutral' | 'accent' | 'warn
 }
 
 function reminderStatusLabel(status: DashboardReminder['status'], t: TFunction): string {
+  if (status === 'Pending') return t('dashboard.workQueue.status.pending');
   if (status === 'Overdue') return t('dashboard.workQueue.status.overdue');
   if (status === 'DueSoon') return t('dashboard.workQueue.status.dueSoon');
   return t('dashboard.workQueue.status.upcoming');
@@ -244,6 +245,7 @@ function reminderDateMeta(dueDate: string, t: TFunction): string {
 
 function reminderPriority(status: DashboardReminder['status']): number {
   if (status === 'Overdue') return 1;
+  if (status === 'Pending') return 3;
   if (status === 'DueSoon') return 3;
   return 4;
 }
@@ -790,6 +792,7 @@ function reminderSortValue(reminder: DashboardReminder): number {
   const date = parseReminderDate(reminder.due_date);
   if (date !== null) return date;
   if (reminder.status === 'Overdue') return Number.NEGATIVE_INFINITY;
+  if (reminder.status === 'Pending') return Number.POSITIVE_INFINITY - 1;
   return Number.POSITIVE_INFINITY;
 }
 

@@ -242,6 +242,11 @@ export const plPL: Catalog = {
   'notifications.reminder.act.attendance.body':
     '{act_title} dla {entity_name} ma datę {meeting_date} i nie ma jeszcze wystarczającej ewidencji obecności. Uzupełnij odniesienie do obecności oraz liczby obecnych lub ustrukturyzowanych uczestników przed przejściem dalej.',
   'notifications.reminder.act.attendance.action': 'Zarejestruj obecność',
+  'notifications.reminder.absentOwnerDispatch.title':
+    'Dowód wysyłki oczekuje: {act_title}',
+  'notifications.reminder.absentOwnerDispatch.body':
+    '{act_title} ma wygenerowaną komunikację do nieobecnych właścicieli, ale dowód wysyłki operatora ma stan {dispatch_evidence_status}. Brakujący odbiorcy: {missing_recipients}. Przypomnienie ma charakter wyłącznie doradczy.',
+  'notifications.reminder.absentOwnerDispatch.action': 'Otwórz akt',
   'notifications.reminder.followUp.title': '{follow_up_title}',
   'notifications.reminder.followUp.body': '{entity_name} - {act_title}: {follow_up_detail}',
   'notifications.reminder.followUp.bodyNoDetail': '{entity_name} - {act_title}',
@@ -343,6 +348,7 @@ export const plPL: Catalog = {
   'dashboard.workQueue.status.overdue': 'Zaległe',
   'dashboard.workQueue.status.dueSoon': 'Wkrótce',
   'dashboard.workQueue.status.upcoming': 'Zaplanowane',
+  'dashboard.workQueue.status.pending': 'Oczekuje',
   'dashboard.workQueue.entity.unnamed': 'Podmiot bez nazwy',
   'dashboard.workQueue.rule.missing': 'brak reguły',
   'dashboard.workQueue.profile.missing': 'brak profilu',
