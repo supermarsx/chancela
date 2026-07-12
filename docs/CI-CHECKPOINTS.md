@@ -62,6 +62,10 @@ markers for `RemoteSigningSource` initiate/confirm one-digest flow,
 per-document activation, helper/types/tests, core-only no-API/no-web boundary,
 and no provider-certified remote batch / single OTP/PIN/SAD / CMD
 multiple-sign / CSC/QTSP multi-hash/SAD / SCAP/legal-capacity claim,
+pending-session provider identity bridge markers for additive
+`GET /v1/acts/{id}/signature` metadata (`provider_id`, `family`, and optional
+`activation_hint`) plus web reload adoption routing to the dedicated CMD
+confirm path or generic CSC/QTSP remote confirm path,
 seeded role drift diagnostics, archive readability/ZK caveat
 metadata, template family/channel rule guards, MCP trust-catalog filter
 discoverability, redacted external-validator report summary tools, external
@@ -232,7 +236,9 @@ per-document result rendering, auth-mode reporting, and declared-capacity
 evidence display, `chancela-signing` repeated remote-session helper/types/tests
 for one `RemoteSigningSource::initiate` and one
 `RemoteSigningSource::confirm` per document plus per-document activation
-no-claim copy, dashboard subtab markers,
+no-claim copy, pending-session provider bridge markers for `PendingInfo`,
+`pending_provider_info`, `providerFromPending`, and reload confirm routing,
+dashboard subtab markers,
 dashboard/notification icon-only markers, template law-reference UI markers,
 password-required account creation/session API and web markers,
 structured registry chronology graph markers, mapped PDF inter-word space,
@@ -361,6 +367,12 @@ and PATCH recording for pending/initiated slots with required identity-tagged
 rows and no `complete:true`; they do not prove provider calls, trust-list
 checks, QES/qualified status, legal validity, provider completion, act
 finalization, provider-backed slot signing, or full envelope legal completion.
+The pending-session provider identity bridge markers prove only that additive
+pending-session metadata can route an already-open CMD or CSC/QTSP session
+after reload to the matching confirm endpoint; they do not prove production
+provider approval, live CSC readiness, trust-list/legal validation,
+SCAP/legal-capacity verification, remote batch, qualified-signature
+certification, act finalization, or legal-validity.
 Run only that static portion with
 `npm run test:checkpoint:recent-landed:static`.
 

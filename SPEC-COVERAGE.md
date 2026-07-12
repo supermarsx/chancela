@@ -951,6 +951,16 @@ Implementation checkpoints covered here:
   batch, not single OTP/PIN/SAD authorizing multiple documents, not CMD
   multiple-sign, not CSC/QTSP multi-hash/SAD batch, and not SCAP/legal-capacity
   proof.
+- Current worktree keeps Signatures/Trust/API/UX **PARTIAL**: `GET
+  /v1/acts/{id}/signature` returns additive pending-session provider metadata
+  so the web can resume already-open CMD or CSC/QTSP sessions after reload and
+  call the matching confirm endpoint. The pending status now carries
+  `provider_id`, `family`, and optional `activation_hint`; the web adopts that
+  pending session into either the dedicated CMD confirm path or the generic
+  remote-provider confirm path. This is pending-session adoption/routing only:
+  no production provider approval, live CSC readiness, trust-list/legal
+  validation, SCAP/legal-capacity verification, remote batch,
+  qualified-signature certification, act finalization, or legal-validity claim.
 - `2451730` keeps Workflows/Documents/UX/CI **PARTIAL**: focused browser E2E now
   covers preserving a paper-book package as non-canonical evidence, creating and
   accepting an auxiliary OCR draft only after acknowledgement, refusing an

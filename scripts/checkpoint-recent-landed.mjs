@@ -2688,6 +2688,71 @@ function assertCheckpointMap() {
     "signing core repeated remote-session secret-free pending coverage",
   );
   assertFileContains(
+    "crates/chancela-api/src/signature.rs",
+    "pub struct PendingInfo",
+    "API pending signature info response marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/signature.rs",
+    "pub provider_id: String",
+    "API pending signature provider_id marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/signature.rs",
+    "pub family: String",
+    "API pending signature family marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/signature.rs",
+    "pub activation_hint: Option<String>",
+    "API pending signature activation_hint marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/signature.rs",
+    "fn pending_provider_info(pending: &PendingCmdSession) -> PendingProviderInfo",
+    "API pending_provider_info bridge marker",
+  );
+  assertFileContains(
+    "apps/web/src/api/types.ts",
+    "provider_id?: string",
+    "web PendingInfo provider_id type marker",
+  );
+  assertFileContains(
+    "apps/web/src/api/types.ts",
+    "family?: string",
+    "web PendingInfo family type marker",
+  );
+  assertFileContains(
+    "apps/web/src/api/types.ts",
+    "activation_hint?: string",
+    "web PendingInfo activation_hint type marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/signing/SigningPanel.tsx",
+    "function providerFromPending",
+    "web providerFromPending reload-adoption marker",
+  );
+  assertFileMatches(
+    "apps/web/src/features/signing/SigningPanel.test.tsx",
+    /restores (?:a reloaded CMD pending session|an older CMD pending session without provider metadata) through the dedicated confirm path/u,
+    "web restores a reloaded CMD pending session through the dedicated confirm path marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/signing/SigningPanel.test.tsx",
+    "restores a reloaded CSC pending session through the generic remote confirm path",
+    "web CSC pending session generic remote confirm reload-adoption coverage",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "`GET\n  /v1/acts/{id}/signature` returns additive pending-session provider metadata",
+    "spec coverage pending-session provider identity bridge marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "This is pending-session adoption/routing only",
+    "spec coverage pending-session provider identity no-claim marker",
+  );
+  assertFileContains(
     "SPEC-COVERAGE.md",
     "Core repeated remote-session orchestration seam",
     "spec coverage repeated remote-session seam marker",
@@ -2706,6 +2771,16 @@ function assertCheckpointMap() {
     "docs/CI-E2E-HARDENING-PLAN.md",
     "Each document still opens and confirms its\n  own remote session/activation",
     "CI/E2E hardening repeated remote-session per-document marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "`GET /v1/acts/{id}/signature` returns additive pending-session provider\n  metadata",
+    "CI/E2E hardening pending-session provider identity bridge marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "This is reload\n  adoption/routing only",
+    "CI/E2E hardening pending-session provider identity no-claim marker",
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",

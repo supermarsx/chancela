@@ -590,6 +590,12 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
   not provider-certified remote batch, not single OTP/PIN/SAD authorizing
   multiple documents, not CMD multiple-sign, not CSC/QTSP multi-hash/SAD batch,
   and not SCAP/legal-capacity proof.
+- `GET /v1/acts/{id}/signature` returns additive pending-session provider
+  metadata so the web can resume already-open CMD or CSC/QTSP sessions after
+  reload and call the matching confirm endpoint. This is reload
+  adoption/routing only: no production provider approval, live CSC readiness,
+  trust-list/legal validation, SCAP/legal-capacity verification, remote batch,
+  qualified-signature certification, act finalization, or legal-validity claim.
 - Trust policy rejects unknown, withdrawn, stale, or invalid TSL states before
   signing.
 - TSA diagnostics use offline fixtures in CI and do not make live timestamp
@@ -1372,7 +1378,9 @@ settingsDefaults.test.ts contracts.test.ts`.
   evidence display, and local-CC-only boundary copy markers, plus
   `chancela-signing` repeated remote-session helper/types/tests for per-document
   `RemoteSigningSource` initiate/confirm activation and core-only no-batch-claim
-  boundary markers, plus ASiC inspect
+  boundary markers, plus pending-session provider identity bridge markers for
+  additive `GET /v1/acts/{id}/signature` provider metadata and reload
+  CMD/CSC-QTSP confirm routing, plus ASiC inspect
   route/base64/fixity/
   malformed-ZIP/unsafe-path checks, bounded profile/member/manifest/signature
   diagnostics, `technical_validation` from `validate_asic_container` across
