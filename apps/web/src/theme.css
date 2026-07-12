@@ -6075,17 +6075,17 @@ a.btn--primary {
    pinned to each visible edge, hinting at more sub-tabs when the strip overflows. The wrapper
    owns the placement (margin/align that `.subnav` otherwise carries) so the inner pill can
    flex to its natural width and scroll inside. Ferramentas keeps its own `.ferramentas-subnav`
-   markup (no wrapper) and is untouched. */
+   markup (no wrapper) and is untouched.
+   The strip stays flush to the content edge: overflow is handled entirely by the scroll,
+   the floating edge arrows and the gradient fades (::before/::after, sized to cover the arrow
+   zone), so no side padding is reserved around the scroller — that reserved gutter only read
+   as dead margin indenting the first/last tab on the edge that currently has no arrow. */
 .subnav-wrap {
   position: relative;
   display: inline-flex;
   max-width: 100%;
   align-self: flex-start;
   margin-top: 1.1rem;
-}
-
-.subnav-wrap[data-scrollable='true'] {
-  padding-inline: 1.85rem;
 }
 
 .subnav-wrap > .subnav {
