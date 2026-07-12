@@ -1,10 +1,11 @@
 # CI and E2E Hardening Plan
 
-Updated 2026-07-12 from the current CI configuration and head `c3e450d`,
+Updated 2026-07-12 from the current CI configuration and head `869e02f`,
 including coverage notes for the bounded PAdES DSS validation-time, PDF/UA v6
 structural-depth, retention due-candidate explicit evidence states, bounded
 archive/no-action evidence UI, duplicate-review guard/status surfacing, and
-prior bounded execution suppression with active/suppressed candidate counts,
+prior bounded execution suppression with active/suppressed candidate counts plus
+retention execution review closure,
 recovery-drill custody
 receipt and optional-key contract tolerance, paper-book OCR conversion-dossier UI
 and reviewed conversion execution artifact evidence,
@@ -937,7 +938,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   guardrails. These remain review/status/UI markers only; they do not claim
   destructive retention execution, hardware-key custody, production SQLCipher
   completion, live trust validation, PDF/UA, or legal validity.
-- Current retention evidence checks through `c3e450d`: API and Settings markers
+- Current retention evidence checks through `869e02f`: API and Settings markers
   pin read-only `GET /v1/privacy/retention-due-candidates` for closed-book
   archive/document candidates selected from active retention policies, closing
   date plus supported retention periods, legal-hold blockers, required
@@ -971,11 +972,26 @@ settingsDefaults.test.ts contracts.test.ts`.
   the dry-run endpoint, candidate/policy identifiers, and
   `execution_mode: "execute_supported"`; ineligible rows remain review-only,
   disabled, queued-review, or existing-evidence badge paths.
-  This remains non-destructive scanner/review/bounded archive/no-action evidence
-  UI only: no physical deletion, anonymization, redaction completion,
-  destructive GDPR erasure, full erasure, legal disposal completion, legal
-  disposal approval, disposal execution, persisted resolved flag,
-  legal-hold/policy mutation, or candidate disposal is implemented.
+  `POST /v1/privacy/retention-executions/{id}/review-closure` records separate
+  review closure fields for an existing execution record without changing
+  `execution_status` or `outcome`. Focused API coverage pins review-only,
+  bounded, and blocked closure decisions, idempotent same-closure repeats,
+  conflict on different closure evidence, authorization/unknown-field/unsafe
+  claim rejection, data-dir persistence, and due-candidate reads that stay
+  non-mutating after closure. Contract/client/Settings coverage pins
+  `review_closure_decision`, note/evidence, closed actor/time, the
+  `closeRetentionExecutionReview` client route, false destructive/full-erasure/
+  legal-hold/policy-mutation flags, outcome-category decision mapping, closure
+  history rendering, and hidden closure actions for already closed records.
+  Route-mocked browser coverage proves the operational closure action posts only
+  the review-closure endpoint, keeps due-candidate counts stable, keeps closure
+  copy non-legal/non-destructive, and makes no dry-run, destructive, disposal,
+  erasure, policy, or legal-hold mutation calls. This remains non-destructive
+  scanner/review/bounded archive/no-action evidence UI plus operational closure
+  only: no physical deletion, anonymization, redaction completion, destructive
+  GDPR erasure, full erasure, legal disposal completion, legal approval,
+  disposal execution, persisted resolved flag, legal-hold/policy mutation,
+  candidate disposal, or FULL coverage is implemented.
 - Current working-tree AI provenance checks: MCP/API draft creation now carries
   deterministic `ai_provenance.statement_sources[]` rows, the API persists those
   rows while clamping unsafe row-level human-verified, authoritative-source, and
@@ -1337,7 +1353,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   configured operator password. The broad Playwright browser suite timed out and
   was not green; treat the static/unit/focused markers as the pinned slice, not
   browser-matrix proof.
-- Current checkpoint metadata/static checks through `5fe98f9`
+- Current checkpoint metadata/static checks through `869e02f`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
@@ -1356,7 +1372,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   markers, web SQLite table-usage rows, keyed VRI `/TU` evidence markers,
   compact notification/bell badge assertions, and entity filter nowrap/mobile
   wrap markers, compact template filter markers, structured book termo signatory
-  markers, retention execution review-queue markers, retention due-candidate
+  markers, retention execution review-queue and review-closure markers, retention due-candidate
   bounded archive/no-action evidence and explicit evidence-state markers,
   backend database-encryption
   key-source/hardware-fallback markers, and PDF verifier DSS/VRI `/TU` plus

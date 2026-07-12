@@ -3433,6 +3433,136 @@ function assertCheckpointMap() {
     "API retention concurrent duplicate one-ledger marker",
   );
   assertFileContains(
+    "crates/chancela-api/src/authz.rs",
+    '"/v1/privacy/retention-executions/{id}/review-closure"',
+    "API retention review-closure route classification marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/privacy.rs",
+    "`POST /v1/privacy/retention-executions/{id}/review-closure` — close operator review evidence without executing disposal.",
+    "API retention review-closure no-disposal handler marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/privacy.rs",
+    "retention execution review closure already exists with different evidence",
+    "API retention review-closure conflict marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/privacy.rs",
+    "review_closure_note or review_closure_evidence is required",
+    "API retention review-closure evidence-required marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/privacy.rs",
+    "review closure records bounded evidence only",
+    "API retention review-closure no-overclaim marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/privacy.rs",
+    "retention_execution_review_closure_records_review_only_and_idempotent_duplicate",
+    "API retention review-closure idempotent review-only coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/privacy.rs",
+    "retention_execution_review_closure_accepts_bounded_and_blocked_categories",
+    "API retention review-closure outcome-category coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/privacy.rs",
+    "retention_execution_review_closure_rejects_claims_flags_unknowns_and_authz",
+    "API retention review-closure authz/overclaim coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/privacy.rs",
+    "retention_execution_review_closure_persists_and_due_candidates_stay_non_mutating",
+    "API retention review-closure persistence/non-mutating coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/privacy.rs",
+    "idempotent duplicate must not append another ledger event",
+    "API retention review-closure no-duplicate-ledger marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/privacy.rs",
+    "due-candidate GET must not write execution records",
+    "API retention review-closure due-candidate no-write marker",
+  );
+  assertFileContains(
+    "apps/web/src/api/client.ts",
+    "closeRetentionExecutionReview: (id: string, body: CloseRetentionExecutionReviewBody)",
+    "web retention review-closure client route marker",
+  );
+  assertFileContains(
+    "apps/web/src/api/types.ts",
+    "export const RETENTION_REVIEW_CLOSURE_DECISIONS = [",
+    "web retention review-closure decision enum marker",
+  );
+  assertFileContains(
+    "apps/web/src/contracts/contracts.test.ts",
+    "RETENTION_REVIEW_CLOSURE_OVERCLAIM_TERMS",
+    "web retention review-closure contract overclaim marker",
+  );
+  assertFileContains(
+    "apps/web/src/contracts/contracts.test.ts",
+    "`${label}.review closure needs note or evidence`",
+    "web retention review-closure contract evidence-required marker",
+  );
+  assertFileContains(
+    "contracts/retention.executions.json",
+    '"decision_state": "review_closed"',
+    "retention executions fixture review-closed marker",
+  );
+  assertFileContains(
+    "contracts/retention.executions.json",
+    '"review_closure_decision": "bounded_evidence_acknowledged"',
+    "retention executions fixture bounded closure marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/PrivacyComplianceSection.tsx",
+    "function retentionReviewClosureDecisionForOutcome",
+    "Settings retention review-closure decision mapper marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/PrivacyComplianceSection.tsx",
+    "RETENTION_REVIEW_CLOSURE_FALSE_FLAGS",
+    "Settings retention review-closure false flags marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/PrivacyComplianceSection.tsx",
+    "Registar revisão operacional",
+    "Settings retention review-closure action copy marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/SettingsPage.test.tsx",
+    "maps retention execution review closure decisions from outcome categories",
+    "Settings retention review-closure outcome mapping coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/SettingsPage.test.tsx",
+    "does not show the retention review closure action for already closed records",
+    "Settings retention review-closure hidden action coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/SettingsPage.test.tsx",
+    "/v1/privacy/retention-executions/retention-exec-awaiting/review-closure",
+    "Settings retention review-closure POST route coverage",
+  );
+  assertFileContains(
+    "apps/web/e2e/settings-privacy-retention-suppression.spec.ts",
+    "expectClosureBodyStaysNonLegal",
+    "browser retention review-closure non-legal assertion marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/settings-privacy-retention-suppression.spec.ts",
+    "routes.retentionLifecycleMutations).toEqual([])",
+    "browser retention review-closure no lifecycle mutations marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/settings-privacy-retention-suppression.spec.ts",
+    "countRouteRequests(routes, 'GET /v1/privacy/retention-due-candidates')).toBe(",
+    "browser retention review-closure stable due-candidate count marker",
+  );
+  assertFileContains(
     "crates/chancela-api/tests/privacy.rs",
     "evidence_receipts",
     "privacy evidence receipt persistence coverage",
@@ -6799,7 +6929,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-12 from the current CI configuration and head `c3e450d`",
+    "Updated 2026-07-12 from the current CI configuration and head `869e02f`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
@@ -7339,7 +7469,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `5fe98f9`",
+    "Current checkpoint metadata/static checks through `869e02f`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -7664,7 +7794,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current retention evidence checks through `c3e450d`",
+    "Current retention evidence checks through `869e02f`",
     "CI/E2E hardening plan retention due-candidates checks marker",
   );
   assertFileContains(
@@ -7714,8 +7844,28 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "bounded archive/no-action evidence\n  UI only: no physical deletion, anonymization, redaction completion",
+    "scanner/review/bounded archive/no-action evidence UI plus operational closure\n  only: no physical deletion, anonymization, redaction completion",
     "CI/E2E hardening plan retention due-candidates no-disposal caveat marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "`POST /v1/privacy/retention-executions/{id}/review-closure` records separate\n  review closure fields",
+    "CI/E2E hardening plan retention review-closure route marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "idempotent same-closure repeats,\n  conflict on different closure evidence",
+    "CI/E2E hardening plan retention review-closure idempotency marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "keeps due-candidate counts stable",
+    "CI/E2E hardening plan retention review-closure browser count marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "retention\nreview-closure route/client/contract/Settings/browser markers",
+    "CI checkpoints retention review-closure static marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -7734,7 +7884,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `c3e450d0c0e4ab4a58bb39202b5d7e0c86c13947`",
+    "implementation snapshot `869e02f897f54730df86db739193f86c372e0e19`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -8391,6 +8541,21 @@ function assertCheckpointMap() {
     "SPEC-COVERAGE.md",
     "legal disposal\n  completion, or GDPR erasure",
     "spec coverage retention due-candidates no-resolution caveat marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "**Retention execution review closure:** `POST\n  /v1/privacy/retention-executions/{id}/review-closure`",
+    "spec coverage retention review-closure section marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "same closure is idempotent and keeps the\n  original close actor/time plus the single closure ledger event",
+    "spec coverage retention review-closure idempotency marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "does not change the execution status/outcome, perform or approve\n  disposal",
+    "spec coverage retention review-closure no-overclaim marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",

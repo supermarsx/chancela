@@ -44,7 +44,9 @@ retention explicit evidence-state markers (`review_queued`, `blocked`,
 `prior_bounded_evidence_available`), duplicate review-only request guards,
 queued-review status surfacing, prior bounded execution suppression, and eligible
 bounded archive/no-action evidence UI, plus active/suppressed candidate counts
-and suppression-summary copy for safe bounded evidence omissions,
+and suppression-summary copy for safe bounded evidence omissions, retention
+review-closure route/client/contract/Settings/browser markers with separate
+closure fields and false mutation flags,
 retained-export cleanup preview-token/manifest gating, forwarded platform-log sanitized
 accepted/denied/rejected/suppressed audit markers, post-act template
 sealed-provenance lint, all-family standalone agenda-item templates,
@@ -133,7 +135,12 @@ It intentionally reuses existing test surfaces:
   `suppressed_candidate_count`, `suppressed_by_bounded_evidence_count`,
   optional `suppression_summary`, bounded archive/no-action
   `execute_supported` records, safe internal evidence gating, non-mutating GET
-  behavior, and queryable execution history without a persisted `resolved` flag.
+  behavior, queryable execution history without a persisted `resolved` flag, and
+  review-closure coverage for `POST
+  /v1/privacy/retention-executions/{id}/review-closure`: idempotent same
+  closure, conflict on different closure evidence, outcome-category decision
+  mapping, persistence, authorization/unknown-field/overclaim rejection, and
+  due-candidate reads that stay non-mutating after closure.
 - API dashboard guest event redaction:
   `cargo test -p chancela-api --locked dashboard_recent_events_redacts_guest_feed_but_keeps_owner_and_reader_feed`
   including guest `recent_events: []`, retained Owner/Leitor recent events, and
@@ -351,8 +358,11 @@ recovery completion, or broad Playwright-browser-suite proof.
 Static markers are deletion/rename guards only; the retention archive/no-action
 markers pin explicit non-destructive evidence states, bounded evidence UI
 copy/payload shape, active/suppressed candidate counts, and suppression-summary
-copy, not physical deletion, anonymization, GDPR erasure, legal disposal
-completion, persisted resolution, or candidate disposal execution.
+copy. Review-closure markers pin separate operational closure fields and false
+destructive/full-erasure/legal-hold/policy-mutation flags only. They are not
+physical deletion, anonymization, GDPR erasure, legal disposal completion, legal
+approval, legal-hold mutation, policy mutation, persisted resolution, or
+candidate disposal execution.
 The backup recovery-drill markers pin isolated preflight material/readback
 evidence only: DB snapshot materialized/opened/loaded, ledger/readback counts,
 sidecar materialized file/byte counts, cleanup verification, redaction, and
