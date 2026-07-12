@@ -2080,6 +2080,7 @@ function RetentionDueCandidatesPanel({
   ) => Promise<void>;
 }) {
   const candidates: RetentionDueCandidate[] = report?.candidates ?? [];
+  const suppressedByBoundedEvidenceCount = report?.suppressed_by_bounded_evidence_count ?? 0;
 
   return (
     <Card title="Candidatos de retenção vencidos">
@@ -2091,7 +2092,20 @@ function RetentionDueCandidatesPanel({
         {report ? (
           <p className="muted">
             Gerado em {formatDateTime(report.generated_at)} · {report.scope} / {report.category} ·{' '}
-            {report.candidate_count} candidato(s)
+            {report.candidate_count} candidato(s) ativo(s) ·{' '}
+            {suppressedByBoundedEvidenceCount} suprimido(s) por evidência delimitada
+          </p>
+        ) : null}
+        {report && report.suppressed_candidate_count > 0 ? (
+          <p className="muted">
+            Candidatos suprimidos por evidência delimitada não são listados na tabela e não recebem
+            botões de ação; reveja a evidência na fila/histórico de execução.
+            {report.suppression_summary ? (
+              <>
+                {' '}
+                Resumo: {report.suppression_summary.note}
+              </>
+            ) : null}
           </p>
         ) : null}
         {loading ? (
