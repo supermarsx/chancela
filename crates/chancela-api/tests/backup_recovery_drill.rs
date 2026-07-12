@@ -126,6 +126,32 @@ fn assert_raw_secret_free(path: &Path, forbidden: &[&str]) {
     }
 }
 
+fn assert_no_overclaim_flags(receipt: &Value) {
+    for flag in [
+        "restore_executed",
+        "live_db_swapped",
+        "sidecars_staged",
+        "ledger_restored_appended",
+        "data_deleted",
+        "offsite_custody_proven",
+        "legal_archive_certified",
+    ] {
+        assert_eq!(receipt[flag], false, "{flag} must stay false");
+    }
+}
+
+fn assert_bounded_messages(value: &Value, field: &str) {
+    let messages = value[field].as_array().expect("message array");
+    assert!(messages.len() <= 8, "{field} is bounded: {messages:?}");
+    for message in messages {
+        let message = message.as_str().expect("message text");
+        assert!(
+            message.len() <= 512,
+            "{field} message exceeds receipt bound: {message}"
+        );
+    }
+}
+
 #[tokio::test]
 async fn backup_recovery_drill_creates_receipt_from_preflight_and_persists_whitelist_only() {
     let tmp = TempDir::new("create");
@@ -186,17 +212,45 @@ async fn backup_recovery_drill_creates_receipt_from_preflight_and_persists_white
     assert!(receipt["manifest"].get("path").is_none());
     assert!(receipt["manifest"].get("app_version").is_none());
     assert!(receipt["manifest"].get("files").is_none());
-    for flag in [
-        "restore_executed",
-        "live_db_swapped",
-        "sidecars_staged",
-        "ledger_restored_appended",
-        "data_deleted",
-        "offsite_custody_proven",
-        "legal_archive_certified",
-    ] {
-        assert_eq!(receipt[flag], false, "{flag} must stay false");
-    }
+    assert_eq!(receipt["isolated_restore_verified"], true);
+    let isolated = &receipt["isolated_restore_verification"];
+    assert_eq!(isolated["status"], "verified");
+    assert_eq!(isolated["db_snapshot_materialized"], true);
+    assert_eq!(isolated["db_snapshot_opened"], true);
+    assert_eq!(isolated["state_loaded"], true);
+    assert_eq!(isolated["ledger_verified"], true);
+    assert_eq!(isolated["cleanup_verified"], true);
+    assert!(isolated["sidecar_root_count"].as_u64().unwrap() >= 1);
+    assert!(
+        isolated["sidecar_materialized_file_count"]
+            .as_u64()
+            .unwrap()
+            >= 1
+    );
+    assert!(isolated["sidecar_materialized_bytes"].as_u64().unwrap() > 0);
+    assert!(isolated["temp_dir_name"].is_null());
+    assert!(isolated["errors"].as_array().unwrap().is_empty());
+    assert!(
+        isolated["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|finding| finding
+                .as_str()
+                .unwrap()
+                .contains("isolated database snapshot")),
+        "receipt includes isolated snapshot findings: {isolated}"
+    );
+    assert!(
+        isolated["next_step"]
+            .as_str()
+            .unwrap()
+            .contains("preflight-only"),
+        "receipt does not certify a recovery execution: {isolated}"
+    );
+    assert_bounded_messages(isolated, "findings");
+    assert_bounded_messages(isolated, "errors");
+    assert_no_overclaim_flags(&receipt);
     assert_secret_free(
         &receipt,
         &[
@@ -205,11 +259,23 @@ async fn backup_recovery_drill_creates_receipt_from_preflight_and_persists_white
             "sha256",
             manifest.app_version.as_str(),
             "ledger_head",
+            "ledger.restored",
         ],
     );
 
     let receipt_path = tmp.dir.join("backup-recovery-drills.json");
     assert!(receipt_path.is_file(), "receipt sidecar persisted");
+    let persisted: Value = serde_json::from_str(
+        &std::fs::read_to_string(&receipt_path).expect("receipt sidecar readable"),
+    )
+    .expect("receipt sidecar JSON");
+    let persisted_receipt = &persisted.as_array().unwrap()[0];
+    assert_eq!(persisted_receipt["isolated_restore_verified"], true);
+    assert_eq!(
+        persisted_receipt["isolated_restore_verification"]["status"],
+        "verified"
+    );
+    assert_no_overclaim_flags(persisted_receipt);
     assert_raw_secret_free(
         &receipt_path,
         &[
@@ -218,6 +284,7 @@ async fn backup_recovery_drill_creates_receipt_from_preflight_and_persists_white
             "sha256",
             manifest.app_version.as_str(),
             "ledger_head",
+            "ledger.restored",
         ],
     );
     assert_eq!(
@@ -251,6 +318,12 @@ async fn backup_recovery_drill_creates_receipt_from_preflight_and_persists_white
     assert_eq!(status, StatusCode::OK, "list response: {list}");
     assert_eq!(list["durable"], true);
     assert_eq!(list["receipts"].as_array().unwrap().len(), 1);
+    let listed_receipt = &list["receipts"].as_array().unwrap()[0];
+    assert_eq!(listed_receipt["isolated_restore_verified"], true);
+    assert_eq!(
+        listed_receipt["isolated_restore_verification"]["status"],
+        "verified"
+    );
     assert_secret_free(
         &list,
         &[
@@ -259,7 +332,185 @@ async fn backup_recovery_drill_creates_receipt_from_preflight_and_persists_white
             "sha256",
             manifest.app_version.as_str(),
             "ledger_head",
+            "ledger.restored",
         ],
+    );
+}
+
+#[tokio::test]
+async fn backup_recovery_drill_loads_old_receipts_as_isolated_restore_not_recorded() {
+    let tmp = TempDir::new("legacy");
+    std::fs::write(
+        tmp.dir.join("backup-recovery-drills.json"),
+        json!([{
+            "id": "legacy-receipt",
+            "created_at": "2026-07-12T00:00:00Z",
+            "archive": "backups/legacy.zip",
+            "preflight_ok": true,
+            "preflight_ready": true,
+            "encrypted": false,
+            "ledger_verified": true,
+            "manifest": null,
+            "restore_executed": true,
+            "live_db_swapped": true,
+            "sidecars_staged": true,
+            "ledger_restored_appended": true,
+            "data_deleted": true,
+            "offsite_custody_proven": true,
+            "legal_archive_certified": true
+        }])
+        .to_string(),
+    )
+    .expect("legacy receipt sidecar");
+    let state = AppState::with_data_dir(tmp.dir.clone());
+    let token = seed_owner_session(&state, "drill.legacy").await;
+
+    let (status, list) = send(state, with_session(get(DRILL_PATH), &token)).await;
+
+    assert_eq!(status, StatusCode::OK, "legacy list response: {list}");
+    assert_eq!(list["receipts"].as_array().unwrap().len(), 1);
+    let receipt = &list["receipts"].as_array().unwrap()[0];
+    assert_eq!(receipt["isolated_restore_verified"], false);
+    assert_eq!(
+        receipt["isolated_restore_verification"]["status"],
+        "not_recorded"
+    );
+    assert_eq!(
+        receipt["isolated_restore_verification"]["next_step"],
+        "run a new recovery drill to record isolated snapshot verification"
+    );
+    assert_no_overclaim_flags(receipt);
+}
+
+#[tokio::test]
+async fn backup_recovery_drill_wrong_passphrase_records_failed_isolated_evidence_only() {
+    let tmp = TempDir::new("wrong-passphrase");
+    let state = AppState::with_data_dir(tmp.dir.clone());
+    let token = seed_owner_session(&state, "drill.wrong.passphrase").await;
+    let sidecar_name = "failed-secret-member-name.json";
+    let sidecar_path = tmp.dir.join(sidecar_name);
+    std::fs::write(&sidecar_path, br#"{"operator":"local-only-failed"}"#).expect("sidecar");
+    let passphrase = "correct-passphrase-not-persisted";
+    let wrong_passphrase = "wrong-passphrase-not-persisted";
+    let manifest = state
+        .store
+        .as_ref()
+        .expect("durable store")
+        .backup_encrypted(&tmp.dir, std::slice::from_ref(&sidecar_path), passphrase)
+        .expect("encrypted backup");
+    let archive = manifest.path.clone();
+    let db_path = tmp.dir.join(chancela_store::DB_FILE);
+    let db_before = std::fs::read(&db_path).expect("db before");
+    let sidecar_before = std::fs::read(&sidecar_path).expect("sidecar before");
+
+    let (status, receipt) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                DRILL_PATH,
+                json!({
+                    "archive": archive,
+                    "passphrase": wrong_passphrase
+                }),
+            ),
+            &token,
+        ),
+    )
+    .await;
+
+    assert_eq!(
+        status,
+        StatusCode::CREATED,
+        "failed receipt response: {receipt}"
+    );
+    assert_eq!(receipt["preflight_ok"], false);
+    assert_eq!(receipt["preflight_ready"], false);
+    assert_eq!(receipt["encrypted"], true);
+    assert_eq!(receipt["ledger_verified"], false);
+    assert!(receipt["manifest"].is_null());
+    assert_eq!(receipt["isolated_restore_verified"], false);
+    let isolated = &receipt["isolated_restore_verification"];
+    assert_eq!(isolated["status"], "failed");
+    assert_eq!(isolated["db_snapshot_materialized"], false);
+    assert_eq!(isolated["db_snapshot_opened"], false);
+    assert_eq!(isolated["state_loaded"], false);
+    assert_eq!(isolated["ledger_verified"], false);
+    assert_eq!(isolated["cleanup_verified"], false);
+    assert_eq!(isolated["sidecar_root_count"], 0);
+    assert_eq!(isolated["sidecar_materialized_file_count"], 0);
+    assert_eq!(isolated["sidecar_materialized_bytes"], 0);
+    assert_eq!(isolated["errors"].as_array().unwrap().len(), 1);
+    assert!(
+        isolated["errors"][0]
+            .as_str()
+            .unwrap()
+            .contains("isolated snapshot verification"),
+        "failed receipt stores bounded generic evidence: {isolated}"
+    );
+    assert_bounded_messages(isolated, "findings");
+    assert_bounded_messages(isolated, "errors");
+    assert_no_overclaim_flags(&receipt);
+    assert_secret_free(
+        &receipt,
+        &[
+            passphrase,
+            wrong_passphrase,
+            sidecar_name,
+            "sha256",
+            manifest.app_version.as_str(),
+            "ledger_head",
+            "ledger.restored",
+        ],
+    );
+
+    let receipt_path = tmp.dir.join("backup-recovery-drills.json");
+    assert!(receipt_path.is_file(), "failed receipt sidecar persisted");
+    let persisted: Value = serde_json::from_str(
+        &std::fs::read_to_string(&receipt_path).expect("receipt sidecar readable"),
+    )
+    .expect("receipt sidecar JSON");
+    let persisted_receipt = &persisted.as_array().unwrap()[0];
+    assert_eq!(persisted_receipt["isolated_restore_verified"], false);
+    assert_eq!(
+        persisted_receipt["isolated_restore_verification"]["status"],
+        "failed"
+    );
+    assert_no_overclaim_flags(persisted_receipt);
+    assert_raw_secret_free(
+        &receipt_path,
+        &[
+            passphrase,
+            wrong_passphrase,
+            sidecar_name,
+            "sha256",
+            manifest.app_version.as_str(),
+            "ledger_head",
+            "ledger.restored",
+        ],
+    );
+    assert_eq!(
+        std::fs::read(&db_path).expect("db after"),
+        db_before,
+        "failed drill receipt must not swap or rewrite the live database"
+    );
+    assert_eq!(
+        std::fs::read(&sidecar_path).expect("sidecar after"),
+        sidecar_before,
+        "failed drill receipt must not stage or replace sidecars"
+    );
+    let loaded = state
+        .store
+        .as_ref()
+        .unwrap()
+        .load()
+        .expect("load live store");
+    assert!(
+        !loaded
+            .ledger
+            .events()
+            .iter()
+            .any(|event| event.kind == "ledger.restored"),
+        "failed drill receipt must not append ledger.restored"
     );
 }
 

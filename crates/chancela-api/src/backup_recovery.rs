@@ -9,7 +9,10 @@ use axum::Json;
 use axum::extract::State;
 use axum::http::StatusCode;
 use chancela_authz::{Permission, Scope};
-use chancela_store::recovery::RestorePreflightManifestEvidence;
+use chancela_store::recovery::{
+    RestorePreflightIsolatedRestoreEvidence, RestorePreflightManifestEvidence,
+    RestorePreflightOutcome,
+};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
@@ -26,6 +29,11 @@ const MAX_RECEIPTS: usize = 50;
 const MAX_ARCHIVE_REF_BYTES: usize = 1024;
 const MAX_OPERATOR_NOTES_BYTES: usize = 2000;
 const MAX_CUSTODY_LOCATION_BYTES: usize = 512;
+const MAX_VERIFICATION_MESSAGES: usize = 8;
+const MAX_VERIFICATION_MESSAGE_BYTES: usize = 512;
+const ISOLATED_RESTORE_STATUS_VERIFIED: &str = "verified";
+const ISOLATED_RESTORE_STATUS_FAILED: &str = "failed";
+const ISOLATED_RESTORE_STATUS_NOT_RECORDED: &str = "not_recorded";
 
 /// Secret-free manifest evidence persisted in a recovery-drill receipt.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -57,6 +65,134 @@ impl From<RestorePreflightManifestEvidence> for BackupRecoveryDrillManifestEvide
     }
 }
 
+/// Secret-free isolated snapshot verification evidence for a recovery-drill receipt.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BackupRecoveryDrillIsolatedRestoreVerification {
+    #[serde(default = "default_isolated_restore_status")]
+    pub status: String,
+    #[serde(default)]
+    pub db_snapshot_materialized: bool,
+    #[serde(default)]
+    pub db_snapshot_opened: bool,
+    #[serde(default)]
+    pub state_loaded: bool,
+    #[serde(default)]
+    pub ledger_verified: bool,
+    #[serde(default)]
+    pub cleanup_verified: bool,
+    #[serde(default)]
+    pub entity_count: usize,
+    #[serde(default)]
+    pub book_count: usize,
+    #[serde(default)]
+    pub act_count: usize,
+    #[serde(default)]
+    pub sidecar_root_count: usize,
+    #[serde(default)]
+    pub sidecar_materialized_file_count: usize,
+    #[serde(default)]
+    pub sidecar_materialized_bytes: u64,
+    #[serde(default)]
+    pub sqlcipher_encryption_verified: Option<bool>,
+    #[serde(default)]
+    pub findings: Vec<String>,
+    #[serde(default)]
+    pub errors: Vec<String>,
+    #[serde(default = "default_isolated_restore_not_recorded_next_step")]
+    pub next_step: String,
+}
+
+impl BackupRecoveryDrillIsolatedRestoreVerification {
+    fn from_preflight_outcome(outcome: &RestorePreflightOutcome) -> Self {
+        match outcome.isolated_restore.as_ref() {
+            Some(isolated) => Self::from_isolated_evidence(outcome, isolated),
+            None if !outcome.ok => Self {
+                status: ISOLATED_RESTORE_STATUS_FAILED.to_owned(),
+                findings: bounded_verification_messages(&outcome.findings),
+                errors: generic_preflight_errors(outcome),
+                next_step: failure_next_step(outcome),
+                ..Self::default()
+            },
+            None => Self {
+                status: ISOLATED_RESTORE_STATUS_FAILED.to_owned(),
+                errors: vec!["isolated snapshot verification evidence was not produced".to_owned()],
+                next_step: "run the recovery drill again before relying on this receipt".to_owned(),
+                ..Self::default()
+            },
+        }
+    }
+
+    fn from_isolated_evidence(
+        outcome: &RestorePreflightOutcome,
+        isolated: &RestorePreflightIsolatedRestoreEvidence,
+    ) -> Self {
+        let verified = preflight_and_isolated_snapshot_verified(outcome, isolated);
+        let status = if verified {
+            ISOLATED_RESTORE_STATUS_VERIFIED
+        } else {
+            ISOLATED_RESTORE_STATUS_FAILED
+        };
+        Self {
+            status: status.to_owned(),
+            db_snapshot_materialized: isolated.db_materialized,
+            db_snapshot_opened: isolated.db_opened,
+            state_loaded: isolated.state_loaded,
+            ledger_verified: isolated.ledger_verified,
+            cleanup_verified: isolated.cleanup_verified,
+            entity_count: isolated.entity_count,
+            book_count: isolated.book_count,
+            act_count: isolated.act_count,
+            sidecar_root_count: isolated.sidecar_root_count,
+            sidecar_materialized_file_count: isolated.sidecar_materialized_file_count,
+            sidecar_materialized_bytes: isolated.sidecar_materialized_bytes,
+            sqlcipher_encryption_verified: isolated.sqlcipher_encryption_verified,
+            findings: isolated_verification_findings(outcome, isolated),
+            errors: if verified {
+                Vec::new()
+            } else {
+                generic_preflight_errors(outcome)
+            },
+            next_step: if verified {
+                "record as preflight-only isolated snapshot evidence; authorize any recovery execution separately".to_owned()
+            } else {
+                failure_next_step(outcome)
+            },
+        }
+    }
+
+    fn is_verified(&self) -> bool {
+        self.status == ISOLATED_RESTORE_STATUS_VERIFIED
+            && self.db_snapshot_materialized
+            && self.db_snapshot_opened
+            && self.state_loaded
+            && self.ledger_verified
+            && self.cleanup_verified
+    }
+}
+
+impl Default for BackupRecoveryDrillIsolatedRestoreVerification {
+    fn default() -> Self {
+        Self {
+            status: ISOLATED_RESTORE_STATUS_NOT_RECORDED.to_owned(),
+            db_snapshot_materialized: false,
+            db_snapshot_opened: false,
+            state_loaded: false,
+            ledger_verified: false,
+            cleanup_verified: false,
+            entity_count: 0,
+            book_count: 0,
+            act_count: 0,
+            sidecar_root_count: 0,
+            sidecar_materialized_file_count: 0,
+            sidecar_materialized_bytes: 0,
+            sqlcipher_encryption_verified: None,
+            findings: Vec::new(),
+            errors: Vec::new(),
+            next_step: default_isolated_restore_not_recorded_next_step(),
+        }
+    }
+}
+
 /// Persisted operator receipt for a non-destructive backup recovery drill.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BackupRecoveryDrillReceipt {
@@ -68,6 +204,10 @@ pub struct BackupRecoveryDrillReceipt {
     pub encrypted: Option<bool>,
     pub ledger_verified: bool,
     pub manifest: Option<BackupRecoveryDrillManifestEvidence>,
+    #[serde(default)]
+    pub isolated_restore_verified: bool,
+    #[serde(default)]
+    pub isolated_restore_verification: BackupRecoveryDrillIsolatedRestoreVerification,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub operator_notes: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -182,6 +322,9 @@ pub async fn create_backup_recovery_drill(
     let outcome = store
         .restore_preflight(&archive, &data_dir, req.passphrase.as_deref())
         .map_err(crate::recovery::map_store_error)?;
+    let isolated_restore_verification =
+        BackupRecoveryDrillIsolatedRestoreVerification::from_preflight_outcome(&outcome);
+    let isolated_restore_verified = isolated_restore_verification.is_verified();
 
     let receipt = BackupRecoveryDrillReceipt {
         id: Uuid::new_v4().to_string(),
@@ -196,6 +339,8 @@ pub async fn create_backup_recovery_drill(
         manifest: outcome
             .manifest
             .map(BackupRecoveryDrillManifestEvidence::from),
+        isolated_restore_verified,
+        isolated_restore_verification,
         operator_notes,
         custody_location,
         restore_executed: false,
@@ -291,6 +436,9 @@ fn normalize_loaded_receipt(
         normalize_loaded_optional(receipt.operator_notes, MAX_OPERATOR_NOTES_BYTES);
     receipt.custody_location =
         normalize_loaded_optional(receipt.custody_location, MAX_CUSTODY_LOCATION_BYTES);
+    receipt.isolated_restore_verification =
+        normalize_loaded_isolated_restore_verification(receipt.isolated_restore_verification);
+    receipt.isolated_restore_verified = receipt.isolated_restore_verification.is_verified();
     receipt.restore_executed = false;
     receipt.live_db_swapped = false;
     receipt.sidecars_staged = false;
@@ -299,6 +447,37 @@ fn normalize_loaded_receipt(
     receipt.offsite_custody_proven = false;
     receipt.legal_archive_certified = false;
     Some(receipt)
+}
+
+fn normalize_loaded_isolated_restore_verification(
+    mut verification: BackupRecoveryDrillIsolatedRestoreVerification,
+) -> BackupRecoveryDrillIsolatedRestoreVerification {
+    verification.status = match verification.status.as_str() {
+        ISOLATED_RESTORE_STATUS_VERIFIED => ISOLATED_RESTORE_STATUS_VERIFIED.to_owned(),
+        ISOLATED_RESTORE_STATUS_FAILED => ISOLATED_RESTORE_STATUS_FAILED.to_owned(),
+        ISOLATED_RESTORE_STATUS_NOT_RECORDED => ISOLATED_RESTORE_STATUS_NOT_RECORDED.to_owned(),
+        _ => ISOLATED_RESTORE_STATUS_NOT_RECORDED.to_owned(),
+    };
+    verification.findings = normalize_loaded_messages(verification.findings);
+    verification.errors = normalize_loaded_messages(verification.errors);
+    verification.next_step =
+        normalize_loaded_scalar(verification.next_step, MAX_VERIFICATION_MESSAGE_BYTES)
+            .unwrap_or_else(default_isolated_restore_not_recorded_next_step);
+    if verification.status == ISOLATED_RESTORE_STATUS_NOT_RECORDED {
+        return BackupRecoveryDrillIsolatedRestoreVerification::default();
+    }
+    if verification.status == ISOLATED_RESTORE_STATUS_VERIFIED && !verification.is_verified() {
+        verification.status = ISOLATED_RESTORE_STATUS_FAILED.to_owned();
+    }
+    verification
+}
+
+fn normalize_loaded_messages(messages: Vec<String>) -> Vec<String> {
+    messages
+        .into_iter()
+        .filter_map(|message| normalize_loaded_scalar(message, MAX_VERIFICATION_MESSAGE_BYTES))
+        .take(MAX_VERIFICATION_MESSAGES)
+        .collect()
 }
 
 fn normalize_loaded_scalar(value: String, max_bytes: usize) -> Option<String> {
@@ -402,4 +581,77 @@ fn has_forbidden_control(value: &str, allow_newlines: bool) -> bool {
     value
         .chars()
         .any(|ch| ch.is_control() && !(allow_newlines && matches!(ch, '\n' | '\r' | '\t')))
+}
+
+fn preflight_and_isolated_snapshot_verified(
+    outcome: &RestorePreflightOutcome,
+    isolated: &RestorePreflightIsolatedRestoreEvidence,
+) -> bool {
+    outcome.ok
+        && outcome.ready
+        && outcome.ledger_verified
+        && outcome.manifest.as_ref().is_some_and(|manifest| {
+            manifest.ledger_verified && manifest.db_member_present && manifest.member_count > 0
+        })
+        && isolated.db_materialized
+        && isolated.db_opened
+        && isolated.state_loaded
+        && isolated.ledger_verified
+        && isolated.cleanup_verified
+}
+
+fn isolated_verification_findings(
+    outcome: &RestorePreflightOutcome,
+    isolated: &RestorePreflightIsolatedRestoreEvidence,
+) -> Vec<String> {
+    let mut findings = Vec::new();
+    if outcome.manifest.is_some() {
+        findings
+            .push("archive manifest and listed members passed store preflight checks".to_owned());
+    }
+    if isolated.db_materialized && isolated.db_opened && isolated.state_loaded {
+        findings.push("isolated database snapshot was materialized, opened, and loaded".to_owned());
+    }
+    if isolated.ledger_verified {
+        findings.push("isolated snapshot ledger verified".to_owned());
+    }
+    if isolated.sidecar_materialized_file_count > 0 {
+        findings.push(format!(
+            "isolated sidecar readback covered {} file(s)",
+            isolated.sidecar_materialized_file_count
+        ));
+    }
+    if isolated.cleanup_verified {
+        findings.push("isolated verification temp directory was removed".to_owned());
+    }
+    findings
+}
+
+fn generic_preflight_errors(outcome: &RestorePreflightOutcome) -> Vec<String> {
+    if outcome.errors.is_empty() {
+        return vec!["restore preflight did not verify the isolated snapshot".to_owned()];
+    }
+    vec![format!(
+        "restore preflight failed before isolated snapshot verification completed ({} error(s))",
+        outcome.errors.len()
+    )]
+}
+
+fn bounded_verification_messages(messages: &[String]) -> Vec<String> {
+    normalize_loaded_messages(messages.to_vec())
+}
+
+fn failure_next_step(outcome: &RestorePreflightOutcome) -> String {
+    normalize_loaded_scalar(outcome.next_step.clone(), MAX_VERIFICATION_MESSAGE_BYTES)
+        .unwrap_or_else(|| {
+            "fix the archive material or passphrase and run the recovery drill again".to_owned()
+        })
+}
+
+fn default_isolated_restore_status() -> String {
+    ISOLATED_RESTORE_STATUS_NOT_RECORDED.to_owned()
+}
+
+fn default_isolated_restore_not_recorded_next_step() -> String {
+    "run a new recovery drill to record isolated snapshot verification".to_owned()
 }
