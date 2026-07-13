@@ -212,13 +212,14 @@ const WRITTEN_RESOLUTION_FALSE_CLAIM_FLAGS = {
   authority_certified_claimed: false,
 } as const;
 
-const WRITTEN_RESOLUTION_REVIEW_STATUS_OPTIONS: {
-  value: WrittenResolutionReviewStatus;
-  label: string;
-}[] = [
-  { value: 'reviewed', label: 'Reviewed local metadata' },
-  { value: 'needs_follow_up', label: 'Needs follow-up' },
-];
+function writtenResolutionReviewStatusOptions(
+  t: ReturnType<typeof useT>,
+): { value: WrittenResolutionReviewStatus; label: string }[] {
+  return [
+    { value: 'reviewed', label: t('acts.writtenResolution.reviewStatusOption.reviewed') },
+    { value: 'needs_follow_up', label: t('acts.writtenResolution.reviewStatusOption.needsFollowUp') },
+  ];
+}
 
 interface WrittenResolutionReceiptDraft {
   reviewer: string;
@@ -1017,14 +1018,17 @@ function AttachmentsEditor({
   );
 }
 
-function writtenResolutionReviewStatusLabel(status: WrittenResolutionReviewStatus): string {
+function writtenResolutionReviewStatusLabel(
+  t: ReturnType<typeof useT>,
+  status: WrittenResolutionReviewStatus,
+): string {
   switch (status) {
     case 'reviewed':
-      return 'Reviewed';
+      return t('acts.writtenResolution.status.reviewed');
     case 'needs_follow_up':
-      return 'Needs follow-up';
+      return t('acts.writtenResolution.status.needsFollowUp');
     default:
-      return (status as string)?.trim() || 'Not recorded';
+      return (status as string)?.trim() || t('acts.writtenResolution.status.notRecorded');
   }
 }
 
@@ -1047,6 +1051,7 @@ function WrittenResolutionReceiptEditor({
   onDraftChange: (next: WrittenResolutionReceiptDraft) => void;
   onSubmit: () => void;
 }) {
+  const t = useT();
   const receipts = act.written_resolution_evidence?.review_receipts ?? [];
   const ready = receiptDraftReady(receiptDraft) && !pending;
   const setReceipt = <K extends keyof WrittenResolutionReceiptDraft>(
@@ -1061,9 +1066,9 @@ function WrittenResolutionReceiptEditor({
 
   return (
     <div className="stack--tight">
-      <section className="stack--tight" aria-label="Written-resolution receipt history">
+      <section className="stack--tight" aria-label={t('acts.writtenResolution.history.label')}>
         <div className="row-wrap">
-          <span className="card__label">Written-resolution receipt history</span>
+          <span className="card__label">{t('acts.writtenResolution.history.label')}</span>
           <Badge tone={receipts.length > 0 ? 'ok' : 'warn'}>{receipts.length}</Badge>
         </div>
         {receipts.length > 0 ? (
@@ -1072,7 +1077,7 @@ function WrittenResolutionReceiptEditor({
               <li key={`${receipt.reviewed_at}-${receipt.reviewer}-${i}`} className="stack--tight">
                 <div className="row-wrap">
                   <Badge tone={receipt.status === 'reviewed' ? 'ok' : 'warn'}>
-                    {writtenResolutionReviewStatusLabel(receipt.status)}
+                    {writtenResolutionReviewStatusLabel(t, receipt.status)}
                   </Badge>
                   <span className="mono">{receipt.reviewer}</span>
                   <time className="mono" dateTime={receipt.reviewed_at}>
@@ -1081,7 +1086,7 @@ function WrittenResolutionReceiptEditor({
                 </div>
                 <dl className="deflist deflist--tight">
                   <div>
-                    <dt>Reviewed evidence</dt>
+                    <dt>{t('acts.writtenResolution.receipt.reviewedEvidence')}</dt>
                     <dd>
                       {(receipt.evidence ?? []).length > 0
                         ? (receipt.evidence ?? [])
@@ -1095,15 +1100,15 @@ function WrittenResolutionReceiptEditor({
                                 .join(' | '),
                             )
                             .join('; ')
-                        : 'Not recorded'}
+                        : t('acts.writtenResolution.receipt.notRecorded')}
                     </dd>
                   </div>
                   <div>
-                    <dt>Note</dt>
-                    <dd>{receipt.note?.trim() || 'No note recorded'}</dd>
+                    <dt>{t('acts.writtenResolution.receipt.note')}</dt>
+                    <dd>{receipt.note?.trim() || t('acts.writtenResolution.receipt.noNote')}</dd>
                   </div>
                   <div>
-                    <dt>Boundary flags</dt>
+                    <dt>{t('acts.writtenResolution.receipt.boundaryFlags')}</dt>
                     <dd className="mono">
                       consent_proof_claimed=false; quorum_proof_claimed=false;
                       identity_proof_claimed=false; legal_acceptance_claimed=false;
@@ -1116,15 +1121,19 @@ function WrittenResolutionReceiptEditor({
             ))}
           </ol>
         ) : (
-          <p className="muted">No written-resolution review receipts recorded.</p>
+          <p className="muted">{t('acts.writtenResolution.history.empty')}</p>
         )}
       </section>
 
       {!readOnly ? (
-        <form className="stack--tight" onSubmit={submit} aria-label="Add written-resolution receipt">
+        <form
+          className="stack--tight"
+          onSubmit={submit}
+          aria-label={t('acts.writtenResolution.form.label')}
+        >
           {error ? <ErrorNote error={error} /> : null}
           <div className="rowline">
-            <Field label="Reviewer" htmlFor="wr-receipt-reviewer">
+            <Field label={t('acts.writtenResolution.field.reviewer')} htmlFor="wr-receipt-reviewer">
               <Input
                 id="wr-receipt-reviewer"
                 value={receiptDraft.reviewer}
@@ -1132,7 +1141,10 @@ function WrittenResolutionReceiptEditor({
                 onChange={(e) => setReceipt('reviewer', e.target.value)}
               />
             </Field>
-            <Field label="Reviewed at" htmlFor="wr-receipt-reviewed-at">
+            <Field
+              label={t('acts.writtenResolution.field.reviewedAt')}
+              htmlFor="wr-receipt-reviewed-at"
+            >
               <Input
                 id="wr-receipt-reviewed-at"
                 value={receiptDraft.reviewed_at}
@@ -1141,19 +1153,25 @@ function WrittenResolutionReceiptEditor({
               />
             </Field>
           </div>
-          <Field label="Review status" htmlFor="wr-receipt-status">
+          <Field
+            label={t('acts.writtenResolution.field.reviewStatus')}
+            htmlFor="wr-receipt-status"
+          >
             <Select
               id="wr-receipt-status"
               value={receiptDraft.status}
               disabled={pending}
-              options={WRITTEN_RESOLUTION_REVIEW_STATUS_OPTIONS}
+              options={writtenResolutionReviewStatusOptions(t)}
               onChange={(e) =>
                 setReceipt('status', e.target.value as WrittenResolutionReviewStatus)
               }
             />
           </Field>
           <div className="rowline">
-            <Field label="Evidence label" htmlFor="wr-receipt-evidence-label">
+            <Field
+              label={t('acts.writtenResolution.field.evidenceLabel')}
+              htmlFor="wr-receipt-evidence-label"
+            >
               <Input
                 id="wr-receipt-evidence-label"
                 value={receiptDraft.evidence_label}
@@ -1161,7 +1179,10 @@ function WrittenResolutionReceiptEditor({
                 onChange={(e) => setReceipt('evidence_label', e.target.value)}
               />
             </Field>
-            <Field label="Evidence reference" htmlFor="wr-receipt-evidence-locator">
+            <Field
+              label={t('acts.writtenResolution.field.evidenceReference')}
+              htmlFor="wr-receipt-evidence-locator"
+            >
               <Input
                 id="wr-receipt-evidence-locator"
                 value={receiptDraft.evidence_locator}
@@ -1170,7 +1191,10 @@ function WrittenResolutionReceiptEditor({
               />
             </Field>
           </div>
-          <Field label="Evidence digest" htmlFor="wr-receipt-evidence-digest">
+          <Field
+            label={t('acts.writtenResolution.field.evidenceDigest')}
+            htmlFor="wr-receipt-evidence-digest"
+          >
             <Input
               id="wr-receipt-evidence-digest"
               value={receiptDraft.evidence_digest}
@@ -1178,7 +1202,7 @@ function WrittenResolutionReceiptEditor({
               onChange={(e) => setReceipt('evidence_digest', e.target.value)}
             />
           </Field>
-          <Field label="Receipt notes" htmlFor="wr-receipt-note">
+          <Field label={t('acts.writtenResolution.field.receiptNotes')} htmlFor="wr-receipt-note">
             <TextArea
               id="wr-receipt-note"
               rows={3}
@@ -1194,8 +1218,7 @@ function WrittenResolutionReceiptEditor({
               disabled={pending}
               onChange={(e) => setReceipt('guardrail_acknowledged', e.target.checked)}
             />
-            Local metadata only; proof, legal-sufficiency, provider, authority, completion, signing,
-            seal, and archive claims stay false.
+            {t('acts.writtenResolution.guardrail')}
           </label>
           <p className="mono">
             consent_proof_claimed=false; quorum_proof_claimed=false;
@@ -1211,7 +1234,9 @@ function WrittenResolutionReceiptEditor({
             icon={<Icon.Check />}
             disabled={!ready}
           >
-            {pending ? 'Recording receipt' : 'Record local receipt'}
+            {pending
+              ? t('acts.writtenResolution.submit.recording')
+              : t('acts.writtenResolution.submit.record')}
           </GateButton>
         </form>
       ) : null}
@@ -2408,7 +2433,7 @@ export function AtaEditorPage() {
           </Card>
 
           {showWrittenResolutionReceipts ? (
-            <Card title="Written-resolution evidence receipts">
+            <Card title={t('acts.writtenResolution.card.title')}>
               <WrittenResolutionReceiptEditor
                 act={a}
                 receiptDraft={writtenResolutionReceipt}
