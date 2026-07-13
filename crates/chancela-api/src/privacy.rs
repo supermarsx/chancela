@@ -753,25 +753,25 @@ pub(crate) fn dpia_advisory_review(
         .max_by_key(|(date, _)| *date);
 
     DpiaAdvisoryReviewSummary {
-        review: advisory_review_summary(
-            record.status,
+        review: advisory_review_summary(AdvisoryReviewSummaryInput {
+            record_status: record.status,
             latest_local_evidence,
-            last_reviewed_at.map(|(_, value)| value),
-            last_drill_at.map(|(_, value)| value),
+            last_reviewed_at: last_reviewed_at.map(|(_, value)| value),
+            last_drill_at: last_drill_at.map(|(_, value)| value),
             today,
             due_soon_days,
-            record.evidence_receipts.len(),
-            record
+            receipt_count: record.evidence_receipts.len(),
+            review_receipt_count: record
                 .evidence_receipts
                 .iter()
                 .filter(|receipt| receipt.evidence_type == DpiaEvidenceKind::Review)
                 .count(),
-            record
+            drill_receipt_count: record
                 .evidence_receipts
                 .iter()
                 .filter(|receipt| receipt.evidence_type == DpiaEvidenceKind::Drill)
                 .count(),
-        ),
+        }),
         authority_filing_claimed: false,
         legal_acceptance_claimed: false,
         legal_certification_claimed: false,
@@ -807,25 +807,25 @@ pub(crate) fn breach_playbook_advisory_review(
         .flatten()
         .max_by_key(|(date, _)| *date);
 
-    advisory_review_summary(
-        record.status,
+    advisory_review_summary(AdvisoryReviewSummaryInput {
+        record_status: record.status,
         latest_local_evidence,
-        last_reviewed_at.map(|(_, value)| value),
-        last_drill_at.map(|(_, value)| value),
+        last_reviewed_at: last_reviewed_at.map(|(_, value)| value),
+        last_drill_at: last_drill_at.map(|(_, value)| value),
         today,
         due_soon_days,
-        record.evidence_receipts.len(),
-        record
+        receipt_count: record.evidence_receipts.len(),
+        review_receipt_count: record
             .evidence_receipts
             .iter()
             .filter(|receipt| receipt.evidence_type == BreachEvidenceKind::Review)
             .count(),
-        record
+        drill_receipt_count: record
             .evidence_receipts
             .iter()
             .filter(|receipt| receipt.evidence_type == BreachEvidenceKind::Drill)
             .count(),
-    )
+    })
 }
 
 pub(crate) fn transfer_control_advisory_review(
@@ -841,20 +841,20 @@ pub(crate) fn transfer_control_advisory_review(
         })
         .max_by_key(|(date, _)| *date);
 
-    advisory_review_summary(
-        record.status,
-        last_reviewed_at.clone(),
-        last_reviewed_at.map(|(_, value)| value),
-        None,
+    advisory_review_summary(AdvisoryReviewSummaryInput {
+        record_status: record.status,
+        latest_local_evidence: last_reviewed_at.clone(),
+        last_reviewed_at: last_reviewed_at.map(|(_, value)| value),
+        last_drill_at: None,
         today,
         due_soon_days,
-        record.evidence_receipts.len(),
-        record.evidence_receipts.len(),
-        0,
-    )
+        receipt_count: record.evidence_receipts.len(),
+        review_receipt_count: record.evidence_receipts.len(),
+        drill_receipt_count: 0,
+    })
 }
 
-fn advisory_review_summary(
+struct AdvisoryReviewSummaryInput {
     record_status: PrivacyRecordStatus,
     latest_local_evidence: Option<(Date, String)>,
     last_reviewed_at: Option<String>,
@@ -864,7 +864,21 @@ fn advisory_review_summary(
     receipt_count: usize,
     review_receipt_count: usize,
     drill_receipt_count: usize,
-) -> PrivacyAdvisoryReviewSummary {
+}
+
+fn advisory_review_summary(input: AdvisoryReviewSummaryInput) -> PrivacyAdvisoryReviewSummary {
+    let AdvisoryReviewSummaryInput {
+        record_status,
+        latest_local_evidence,
+        last_reviewed_at,
+        last_drill_at,
+        today,
+        due_soon_days,
+        receipt_count,
+        review_receipt_count,
+        drill_receipt_count,
+    } = input;
+
     let (status, next_review_due_at, days_until_due) =
         if record_status == PrivacyRecordStatus::UnderReview {
             (PrivacyAdvisoryReviewStatus::UnderReview, None, None)

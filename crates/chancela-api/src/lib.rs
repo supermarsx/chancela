@@ -2593,12 +2593,14 @@ mod tests {
     #[tokio::test]
     async fn provider_credential_status_redacts_populated_store() {
         let tmp = TempDir::new();
-        let mut state = AppState::default();
-        state.provider_credentials = Arc::new(ProviderCredentialStore::load_with_db_key(
-            &tmp.dir,
-            b"provider-status-test-db-key-012345",
-            false,
-        ));
+        let state = AppState {
+            provider_credentials: Arc::new(ProviderCredentialStore::load_with_db_key(
+                &tmp.dir,
+                b"provider-status-test-db-key-012345",
+                false,
+            )),
+            ..AppState::default()
+        };
         state
             .provider_credentials
             .put(
@@ -2652,8 +2654,10 @@ mod tests {
 
     #[tokio::test]
     async fn provider_credential_status_reports_strict_no_key_fail_closed() {
-        let mut state = AppState::default();
-        state.provider_credentials = Arc::new(ProviderCredentialStore::in_memory_with_strict(true));
+        let state = AppState {
+            provider_credentials: Arc::new(ProviderCredentialStore::in_memory_with_strict(true)),
+            ..AppState::default()
+        };
 
         let (status, body) = send(state, get(PROVIDER_CREDENTIAL_STATUS_URI)).await;
         assert_eq!(status, StatusCode::OK, "{body}");
@@ -2672,12 +2676,14 @@ mod tests {
             b"{ not valid credential sidecar json ",
         )
         .expect("write corrupt sidecar");
-        let mut state = AppState::default();
-        state.provider_credentials = Arc::new(ProviderCredentialStore::load_with_db_key(
-            &tmp.dir,
-            b"provider-status-test-db-key-012345",
-            false,
-        ));
+        let state = AppState {
+            provider_credentials: Arc::new(ProviderCredentialStore::load_with_db_key(
+                &tmp.dir,
+                b"provider-status-test-db-key-012345",
+                false,
+            )),
+            ..AppState::default()
+        };
 
         let (status, body) = send(state, get(PROVIDER_CREDENTIAL_STATUS_URI)).await;
         assert_eq!(status, StatusCode::OK, "{body}");
@@ -7239,6 +7245,11 @@ mod tests {
                 "retained_export_cleanup": {
                     "minimum_age_days": 30,
                     "keep_latest": 5
+                },
+                "backup_recovery": {
+                    "max_drill_age_days": 90,
+                    "target_rpo_minutes": 1440,
+                    "target_rto_minutes": 240
                 }
             },
             "onboarding": { "completed": false, "completed_at": null }

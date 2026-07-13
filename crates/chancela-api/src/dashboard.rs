@@ -2649,8 +2649,10 @@ mod tests {
             (current_breach.id, current_breach),
         ]);
         let transfer_controls = HashMap::from([(overdue_transfer.id, overdue_transfer)]);
-        let mut policy = WorkflowReminderSettings::default();
-        policy.dashboard_limit = 10;
+        let policy = WorkflowReminderSettings {
+            dashboard_limit: 10,
+            ..WorkflowReminderSettings::default()
+        };
 
         let reminders = dashboard_reminders_with_generated_dispatch_evidence(
             ReminderInputs {
@@ -2690,7 +2692,14 @@ mod tests {
             != "privacy-breach-playbook"
             || reminder.params.get("record_label") != Some(&"Current breach drill".to_owned())));
 
-        policy.sources.privacy_control_reviews = false;
+        let disabled_policy = WorkflowReminderSettings {
+            dashboard_limit: 10,
+            sources: WorkflowReminderSourceSettings {
+                privacy_control_reviews: false,
+                ..WorkflowReminderSourceSettings::default()
+            },
+            ..WorkflowReminderSettings::default()
+        };
         let disabled = dashboard_reminders_with_generated_dispatch_evidence(
             ReminderInputs {
                 entities: &HashMap::new(),
@@ -2703,7 +2712,7 @@ mod tests {
                 transfer_controls: &transfer_controls,
             },
             date!(2026 - 07 - 09),
-            &policy,
+            &disabled_policy,
         );
         assert!(disabled.is_empty());
     }
