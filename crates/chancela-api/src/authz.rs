@@ -427,6 +427,10 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ), // GET/POST signing.perform@Book
     ("/v1/external-signing/envelopes/{id}", RouteClass::Gated), // GET/PATCH signing.perform@Book(envelope.act_id)
     ("/v1/signature/providers", RouteClass::Gated), // GET signing.perform@Global (the picker)
+    (
+        "/v1/signature/provider-credentials/status",
+        RouteClass::Gated,
+    ), // GET settings.read@Global (read-only credential storage metadata)
     ("/v1/acts/{id}/signature", RouteClass::Gated), // GET act.read@Book
     ("/v1/acts/{id}/document/signed", RouteClass::Gated), // GET act.read@Book
     ("/v1/templates", RouteClass::Gated),           // GET act.read@Global

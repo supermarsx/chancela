@@ -31,6 +31,8 @@
 //!   metadata-only dispatch evidence for generated absent-owner communications.
 //! - `POST /v1/signature/pdf/validate` — read-only local technical PDF/PAdES evidence validation.
 //! - `POST /v1/signature/asic/inspect` — read-only local technical ASiC/CAdES profile inspection.
+//! - `GET /v1/signature/provider-credentials/status` — read-only provider credential storage
+//!   metadata; secrets, ciphertext, raw keys, and live provider calls are never returned.
 //! - `POST /v1/acts/{id}/signature/archive-timestamp/append` — caller-supplied local
 //!   `/DocTimeStamp` technical evidence append; no production/legal B-LTA claim.
 //! - `GET /v1/ledger/events`, `GET /v1/ledger/verify` — the audit feed and chain probe (§2.6).
@@ -115,6 +117,7 @@ mod pdf_signature_validation;
 mod platform_logs;
 mod platform_ops;
 mod privacy;
+mod provider_credentials;
 mod recovery;
 mod registry;
 mod roles;
@@ -1465,6 +1468,10 @@ pub fn router(state: AppState) -> Router {
             get(signature::list_signature_providers),
         )
         .route(
+            "/v1/signature/provider-credentials/status",
+            get(provider_credentials::provider_credential_status),
+        )
+        .route(
             "/v1/acts/{id}/signature",
             get(signature::get_signature_status),
         )
@@ -1979,8 +1986,10 @@ mod tests {
     use sha2::{Digest, Sha256};
     use tower::ServiceExt; // for `oneshot`
     use uuid::Uuid;
+    use zeroize::Zeroizing;
 
     const DEFAULT_TEST_PASSWORD: &str = "Teste-Forte7!X";
+    const PROVIDER_CREDENTIAL_STATUS_URI: &str = "/v1/signature/provider-credentials/status";
 
     /// Send one request through a fresh router and return (status, parsed JSON body).
     /// Does NOT auto-seed a session — used by [`send`] and [`auth_token`] internally, and by
@@ -2497,6 +2506,166 @@ mod tests {
         let (status, _headers, denied) = send_raw_bytes(state, get(raw_uri)).await;
         assert_eq!(status, StatusCode::UNAUTHORIZED);
         assert_ne!(denied, raw_report);
+    }
+
+    #[tokio::test]
+    async fn provider_credential_status_requires_settings_read() {
+        use chancela_authz::{GUEST_ROLE_ID, LEITOR_ROLE_ID, RoleAssignment, RoleCatalog, Scope};
+
+        let state = AppState::default();
+        *state.roles.write().await = RoleCatalog::seeded_defaults();
+
+        let (status, _) = send_raw(state.clone(), get(PROVIDER_CREDENTIAL_STATUS_URI)).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+        let guest_id = seed_user(
+            &state,
+            "guest.provider-credential-status",
+            vec![RoleAssignment::new(GUEST_ROLE_ID, Scope::Global)],
+        )
+        .await;
+        let guest_token = seed_session(&state, &guest_id.to_string()).await;
+        let (status, body) = send_raw(
+            state.clone(),
+            with_session(get(PROVIDER_CREDENTIAL_STATUS_URI), &guest_token),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+
+        let reader_id = seed_user(
+            &state,
+            "reader.provider-credential-status",
+            vec![RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global)],
+        )
+        .await;
+        let reader_token = seed_session(&state, &reader_id.to_string()).await;
+        let (status, body) = send_raw(
+            state,
+            with_session(get(PROVIDER_CREDENTIAL_STATUS_URI), &reader_token),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+    }
+
+    #[tokio::test]
+    async fn provider_credential_status_reports_empty_store_without_key_material() {
+        let state = AppState::default();
+        let (status, body) = send(state, get(PROVIDER_CREDENTIAL_STATUS_URI)).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["report_kind"], "provider_credential_storage_status");
+        assert_eq!(body["read_only"], true);
+        assert_eq!(body["live_provider_calls"], false);
+        assert_eq!(body["production_or_legal_use_claimed"], false);
+        assert_eq!(body["redaction"]["plaintext_secrets_returned"], false);
+        assert_eq!(body["redaction"]["ciphertext_returned"], false);
+        assert_eq!(body["redaction"]["raw_key_material_returned"], false);
+        assert_eq!(body["storage"]["sidecar_status"], "available");
+        assert_eq!(body["storage"]["crypto_status"], "unavailable_fail_closed");
+        assert_eq!(body["storage"]["strict"], false);
+        assert_eq!(body["storage"]["key_failure"], "missing_key_source");
+        assert!(body["records"].as_array().expect("records").is_empty());
+    }
+
+    #[tokio::test]
+    async fn provider_credential_status_redacts_populated_store() {
+        let tmp = TempDir::new();
+        let mut state = AppState::default();
+        state.provider_credentials = Arc::new(ProviderCredentialStore::load_with_db_key(
+            &tmp.dir,
+            b"provider-status-test-db-key-012345",
+            false,
+        ));
+        state
+            .provider_credentials
+            .put(
+                CredentialMode::CscQtsp,
+                "encosto-qtsp",
+                CscCredentialFields {
+                    client_id: Some(Zeroizing::new("client-id-hidden-1234".to_owned())),
+                    client_secret: Some(Zeroizing::new("super-secret-hidden-9876".to_owned())),
+                    access_token: Some(Zeroizing::new("access-token-hidden-5555".to_owned())),
+                    ..Default::default()
+                }
+                .into_set_pairs(),
+                &[],
+            )
+            .expect("seed encrypted credentials");
+
+        let (status, body) = send(state, get(PROVIDER_CREDENTIAL_STATUS_URI)).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["storage"]["sidecar_status"], "available");
+        assert_eq!(body["storage"]["crypto_status"], "available");
+        assert_eq!(body["storage"]["protection_level"], "confidential");
+        assert!(body["storage"]["key_source_class"].is_string());
+
+        let records = body["records"].as_array().expect("records");
+        assert_eq!(records.len(), 1, "{body}");
+        let record = &records[0];
+        assert_eq!(record["mode"], "csc");
+        assert_eq!(record["provider_id"], serde_json::Value::Null);
+        assert_eq!(record["provider_id_redacted"], true);
+        assert_eq!(record["key_version"], 1);
+
+        let fields = record["fields"].as_array().expect("fields");
+        assert_eq!(fields.len(), 3, "{body}");
+        let rendered = body.to_string();
+        assert!(!rendered.contains("client-id-hidden"));
+        assert!(!rendered.contains("super-secret-hidden"));
+        assert!(!rendered.contains("access-token-hidden"));
+        assert!(!rendered.contains("encosto-qtsp"));
+        assert!(!rendered.contains("1234"));
+        assert!(!rendered.contains("9876"));
+        assert!(!rendered.contains("5555"));
+        for field in fields {
+            assert_eq!(field["configured"], true);
+            assert_eq!(field["plaintext_redacted"], true);
+            assert_eq!(field["ciphertext_redacted"], true);
+            assert_eq!(field["raw_value_returned"], false);
+            assert!(field["field_name"].is_string());
+            assert_eq!(field["last4"], serde_json::Value::Null);
+        }
+    }
+
+    #[tokio::test]
+    async fn provider_credential_status_reports_strict_no_key_fail_closed() {
+        let mut state = AppState::default();
+        state.provider_credentials = Arc::new(ProviderCredentialStore::in_memory_with_strict(true));
+
+        let (status, body) = send(state, get(PROVIDER_CREDENTIAL_STATUS_URI)).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["storage"]["strict"], true);
+        assert_eq!(body["storage"]["sidecar_status"], "available");
+        assert_eq!(body["storage"]["crypto_status"], "unavailable_fail_closed");
+        assert_eq!(body["storage"]["key_failure"], "missing_key_source");
+        assert!(body["records"].as_array().expect("records").is_empty());
+    }
+
+    #[tokio::test]
+    async fn provider_credential_status_reports_corrupt_sidecar_without_raw_details() {
+        let tmp = TempDir::new();
+        std::fs::write(
+            tmp.dir.join(secretstore_persist::CREDENTIAL_SIDECAR_FILE),
+            b"{ not valid credential sidecar json ",
+        )
+        .expect("write corrupt sidecar");
+        let mut state = AppState::default();
+        state.provider_credentials = Arc::new(ProviderCredentialStore::load_with_db_key(
+            &tmp.dir,
+            b"provider-status-test-db-key-012345",
+            false,
+        ));
+
+        let (status, body) = send(state, get(PROVIDER_CREDENTIAL_STATUS_URI)).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["storage"]["sidecar_status"], "fail_closed");
+        assert_eq!(body["storage"]["sidecar_failure"], "corrupt_sidecar");
+        assert!(body["records"].as_array().expect("records").is_empty());
+        let rendered = body.to_string();
+        assert!(!rendered.contains("not valid credential sidecar json"));
+        assert!(!rendered.contains(&tmp.dir.to_string_lossy().to_string()));
+        assert_eq!(body["redaction"]["plaintext_secrets_returned"], false);
+        assert_eq!(body["redaction"]["ciphertext_returned"], false);
+        assert_eq!(body["redaction"]["raw_key_material_returned"], false);
     }
 
     #[tokio::test]

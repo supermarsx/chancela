@@ -35,7 +35,8 @@ use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
 use crate::secretstore::{
-    CredentialKeySource, CredentialSecretStore, ProtectionLevel, SecretEnvelope, SecretStoreError,
+    CredentialKeyReadOnlyStatus, CredentialKeySource, CredentialKeyStatusFailure,
+    CredentialSecretStore, ProtectionLevel, SecretEnvelope, SecretStoreError,
 };
 
 /// File name of the encrypted credential sidecar in the data dir.
@@ -614,6 +615,31 @@ impl ProviderCredentialStore {
         self.strict
     }
 
+    /// Metadata-only status of the credential root-key source. This never creates a root envelope,
+    /// unwraps a root, decrypts a credential field, or returns key material.
+    pub(crate) fn key_status(&self) -> CredentialKeyReadOnlyStatus {
+        let cached = match self.secretstore.lock() {
+            Ok(guard) => guard.clone(),
+            Err(_) => {
+                return CredentialKeyReadOnlyStatus::unavailable(
+                    CredentialKeyStatusFailure::StoreUnavailable,
+                );
+            }
+        };
+        if let Some(store) = cached {
+            return store.read_only_status();
+        }
+
+        match &self.backing {
+            Backing::InMemory => {
+                CredentialKeyReadOnlyStatus::unavailable(CredentialKeyStatusFailure::NoKeySource)
+            }
+            Backing::DataDir {
+                data_dir, db_key, ..
+            } => crate::secretstore::inspect_key_source_read_only(data_dir, db_key.is_some()),
+        }
+    }
+
     /// Resolve (and cache) the S1 crypto core, creating the OS-sealed root on first use. Fails closed
     /// with [`SecretStoreError::NoKeySource`] when no root key is available.
     fn secretstore(&self) -> Result<CredentialSecretStore, ProviderCredentialError> {
@@ -807,8 +833,19 @@ impl ProviderCredentialStore {
     /// Test-only constructor that pre-seeds the DB key so the derived-root source resolves
     /// deterministically on hosts without an OS key store.
     #[cfg(test)]
-    fn load_with_db_key(data_dir: &Path, db_key: &[u8], strict: bool) -> Self {
+    pub(crate) fn load_with_db_key(data_dir: &Path, db_key: &[u8], strict: bool) -> Self {
         Self::load_inner(data_dir, Some(Zeroizing::new(db_key.to_vec())), strict)
+    }
+
+    /// Test-only in-memory store with an explicit strict flag and no key source.
+    #[cfg(test)]
+    pub(crate) fn in_memory_with_strict(strict: bool) -> Self {
+        Self {
+            backing: Backing::InMemory,
+            strict,
+            records: Mutex::new(Ok(RecordMap::new())),
+            secretstore: Mutex::new(None),
+        }
     }
 }
 
@@ -1131,7 +1168,12 @@ mod tests {
             .expect_err("installing over a directory must fail");
         assert!(matches!(err, ProviderCredentialError::Io { .. }));
         assert!(store.statuses().expect("statuses").is_empty());
-        assert!(store.read(CredentialMode::Scap, "").expect("read").is_none());
+        assert!(
+            store
+                .read(CredentialMode::Scap, "")
+                .expect("read")
+                .is_none()
+        );
     }
 
     #[test]
@@ -1159,12 +1201,7 @@ mod tests {
             .expect_err("installing over a directory must fail");
         assert!(matches!(err, ProviderCredentialError::Io { .. }));
         assert_eq!(store.statuses().expect("statuses").len(), 1);
-        assert!(
-            store
-                .read(CredentialMode::Cmd, "")
-                .expect("read")
-                .is_some()
-        );
+        assert!(store.read(CredentialMode::Cmd, "").expect("read").is_some());
     }
 
     #[test]

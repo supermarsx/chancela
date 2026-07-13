@@ -286,6 +286,67 @@ pub enum CredentialKeySource {
     OperatorEnv,
 }
 
+/// Read-only availability of the credential root key. This is intentionally metadata-only: it does
+/// not create an OS-sealed root, decrypt credential fields, or return key material.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct CredentialKeyReadOnlyStatus {
+    pub available: bool,
+    pub failure: Option<CredentialKeyStatusFailure>,
+    pub protection_level: Option<ProtectionLevel>,
+    pub key_source: Option<CredentialKeySource>,
+    pub key_version: Option<u32>,
+}
+
+impl CredentialKeyReadOnlyStatus {
+    pub(crate) fn available(
+        protection_level: ProtectionLevel,
+        key_source: CredentialKeySource,
+        key_version: u32,
+    ) -> Self {
+        Self {
+            available: true,
+            failure: None,
+            protection_level: Some(protection_level),
+            key_source: Some(key_source),
+            key_version: Some(key_version),
+        }
+    }
+
+    pub(crate) fn unavailable(failure: CredentialKeyStatusFailure) -> Self {
+        Self {
+            available: false,
+            failure: Some(failure),
+            protection_level: None,
+            key_source: None,
+            key_version: None,
+        }
+    }
+
+    fn unavailable_with_source(
+        failure: CredentialKeyStatusFailure,
+        key_source: CredentialKeySource,
+    ) -> Self {
+        Self {
+            available: false,
+            failure: Some(failure),
+            protection_level: None,
+            key_source: Some(key_source),
+            key_version: None,
+        }
+    }
+}
+
+/// Sanitized reason a read-only key-status probe could not establish an available key source.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CredentialKeyStatusFailure {
+    NoKeySource,
+    AmbiguousOperatorKey,
+    InvalidOperatorKey,
+    MissingRootEnvelope,
+    InvalidRootEnvelope,
+    StoreUnavailable,
+}
+
 // --- HKDF-SHA256 (RFC 5869) over the in-tree `sha2` crate -----------------------------------
 
 /// SHA-256 block size in bytes (HMAC key-padding length).
@@ -527,6 +588,15 @@ impl CredentialSecretStore {
         self.inner.current_version
     }
 
+    /// Metadata-only status of an already-resolved store.
+    pub(crate) fn read_only_status(&self) -> CredentialKeyReadOnlyStatus {
+        CredentialKeyReadOnlyStatus::available(
+            self.inner.protection_level,
+            self.inner.key_source.clone(),
+            self.inner.current_version,
+        )
+    }
+
     /// Encrypt one secret field into a [`SecretEnvelope`].
     ///
     /// The caller owns `plaintext` and should hold it in a [`Zeroizing`] buffer; this method
@@ -717,6 +787,84 @@ pub fn strict_from_env(default: bool) -> bool {
     }
 }
 
+/// Probe the credential root-key source without creating, unsealing, or deriving key material.
+pub(crate) fn inspect_key_source_read_only(
+    data_dir: &Path,
+    db_key_configured: bool,
+) -> CredentialKeyReadOnlyStatus {
+    if let Some(protector) = platform_protector() {
+        let source = CredentialKeySource::OsProtected {
+            provider: protector.provider(),
+        };
+        let path = data_dir.join(ROOT_FILE_NAME);
+        return inspect_sealed_root_envelope(&*protector, &path)
+            .map(|key_version| {
+                CredentialKeyReadOnlyStatus::available(
+                    ProtectionLevel::Confidential,
+                    source.clone(),
+                    key_version,
+                )
+            })
+            .unwrap_or_else(|failure| {
+                CredentialKeyReadOnlyStatus::unavailable_with_source(failure, source)
+            });
+    }
+
+    if db_key_configured {
+        return CredentialKeyReadOnlyStatus::available(
+            ProtectionLevel::Confidential,
+            CredentialKeySource::DerivedFromDbKey,
+            INITIAL_KEY_VERSION,
+        );
+    }
+
+    match inspect_operator_key_source_metadata() {
+        Ok(true) => CredentialKeyReadOnlyStatus::available(
+            ProtectionLevel::Obfuscation,
+            CredentialKeySource::OperatorEnv,
+            INITIAL_KEY_VERSION,
+        ),
+        Ok(false) => {
+            CredentialKeyReadOnlyStatus::unavailable(CredentialKeyStatusFailure::NoKeySource)
+        }
+        Err(failure) => CredentialKeyReadOnlyStatus::unavailable(failure),
+    }
+}
+
+fn inspect_operator_key_source_metadata() -> Result<bool, CredentialKeyStatusFailure> {
+    let key = std::env::var_os(CREDENTIAL_KEY_ENV);
+    let key_file = std::env::var_os(CREDENTIAL_KEY_FILE_ENV);
+    match (key, key_file) {
+        (None, None) => Ok(false),
+        (Some(_), Some(_)) => Err(CredentialKeyStatusFailure::AmbiguousOperatorKey),
+        (Some(raw), None) => {
+            let mut value = raw
+                .into_string()
+                .map_err(|_| CredentialKeyStatusFailure::InvalidOperatorKey)?;
+            let available = !value.trim().is_empty();
+            value.zeroize();
+            if available {
+                Ok(true)
+            } else {
+                Err(CredentialKeyStatusFailure::InvalidOperatorKey)
+            }
+        }
+        (None, Some(path)) => {
+            if path.is_empty() {
+                return Err(CredentialKeyStatusFailure::InvalidOperatorKey);
+            }
+            let path = PathBuf::from(path);
+            let metadata = std::fs::metadata(path)
+                .map_err(|_| CredentialKeyStatusFailure::InvalidOperatorKey)?;
+            if metadata.is_file() && metadata.len() > 0 {
+                Ok(true)
+            } else {
+                Err(CredentialKeyStatusFailure::InvalidOperatorKey)
+            }
+        }
+    }
+}
+
 // --- OS-sealed root envelope ---------------------------------------------------------------
 
 /// A pluggable OS current-user secret-store protector (generalizes the desktop
@@ -777,6 +925,28 @@ fn load_or_create_sealed_root(
         return load_sealed_root(protector, path);
     }
     Ok((root, INITIAL_KEY_VERSION))
+}
+
+fn inspect_sealed_root_envelope(
+    protector: &dyn RootKeyProtector,
+    path: &Path,
+) -> Result<u32, CredentialKeyStatusFailure> {
+    if !path.is_file() {
+        return Err(CredentialKeyStatusFailure::MissingRootEnvelope);
+    }
+    let raw = std::fs::read(path).map_err(|_| CredentialKeyStatusFailure::InvalidRootEnvelope)?;
+    let envelope: SealedRootEnvelope = serde_json::from_slice(&raw)
+        .map_err(|_| CredentialKeyStatusFailure::InvalidRootEnvelope)?;
+    if envelope.format != ROOT_FILE_FORMAT || envelope.provider != protector.provider() {
+        return Err(CredentialKeyStatusFailure::InvalidRootEnvelope);
+    }
+    let sealed = B64
+        .decode(&envelope.sealed_root_b64)
+        .map_err(|_| CredentialKeyStatusFailure::InvalidRootEnvelope)?;
+    if sealed.is_empty() {
+        return Err(CredentialKeyStatusFailure::InvalidRootEnvelope);
+    }
+    Ok(envelope.key_version)
 }
 
 fn load_sealed_root(
