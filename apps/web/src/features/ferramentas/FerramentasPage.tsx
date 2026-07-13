@@ -8,7 +8,8 @@
  *  - **Legislação** (t24) — a curated law shelf: the diplomas that ground the product,
  *    each with a faithful extract, official links and a last-reviewed date.
  *  - **Validador PDF** — local technical PDF/PAdES evidence validation for an uploaded
- *    PDF, backed by `POST /v1/signature/pdf/validate`.
+ *    PDF, plus read-only ASiC inspection for uploaded containers, backed by
+ *    `POST /v1/signature/pdf/validate` and `POST /v1/signature/asic/inspect`.
  *  - **Lista de confiança** — the read-only TSL trust catalog/status surface for
  *    checking the parsed scheme, provider and service trust metadata.
  *  - **Assinatura externa** — operational tracking for redacted external-signer invites
@@ -28,6 +29,7 @@ import { CaeExplorer } from '../cae/CaeExplorer';
 import { CaeCatalogPanel } from '../cae/CaeCatalogPanel';
 import { LegislacaoPage } from '../legislacao/LegislacaoPage';
 import { PdfSignatureValidatorPanel } from './PdfSignatureValidatorPanel';
+import { AsicSignatureInspectorPanel } from './AsicSignatureInspectorPanel';
 import { ExternalValidatorReportsPanel } from './ExternalValidatorReportsPanel';
 import { TrustCatalogPage } from './TrustCatalogPage';
 import { ExternalSigningWorkflowsPage } from './ExternalSigningWorkflowsPage';
@@ -173,6 +175,7 @@ export function FerramentasPage() {
         ) : section === 'pdf' ? (
           <div className="stack">
             <PdfSignatureValidatorPanel />
+            <AsicSignatureInspectorPanel />
             <ExternalValidatorReportsPanel />
           </div>
         ) : section === 'external-signing' ? (

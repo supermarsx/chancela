@@ -9370,6 +9370,51 @@ function assertCheckpointMap() {
     "spec coverage ASiC underdeclared ZIP blocker marker",
   );
   assertFileContains(
+    "apps/web/src/api/client.ts",
+    "post<AsicSignatureInspectionResponse>('/v1/signature/asic/inspect', body)",
+    "web ASiC inspector client route marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/ferramentas/AsicSignatureInspectorPanel.tsx",
+    "Inspetor técnico ASiC",
+    "web ASiC inspector panel title marker",
+  );
+  assertFileContainsNormalized(
+    "apps/web/src/features/ferramentas/AsicSignatureInspectorPanel.tsx",
+    "Não assina, não guarda artefactos, não chama prestadores e não consulta TSL/TSA/OCSP/CRL ao vivo.",
+    "web ASiC inspector no-call/no-mutation boundary marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/ferramentas/AsicSignatureInspectorPanel.tsx",
+    "Limitações explícitas",
+    "web ASiC inspector visible limitations marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/ferramentas/ferramentas.test.tsx",
+    "uploads an ASiC container as base64 with declared SHA-256 and size",
+    "web ASiC inspector request body coverage marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/ferramentas/ferramentas.test.tsx",
+    "unreferenced_timestamp_token_member",
+    "web ASiC inspector unreferenced timestamp marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/ferramentas/ferramentas.test.tsx",
+    "archive timestamp META-INF/ASiCArchiveManifest.tst could not be parsed",
+    "web ASiC inspector archive timestamp diagnostic marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "Ferramentas now exposes this as a sibling read-only ASiC inspector on the signature tools surface",
+    "spec coverage ASiC inspector UI checkpoint marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "diagnostic/caveat rendering, and fail-closed endpoint refusals",
+    "spec coverage ASiC inspector caveat/fail-closed marker",
+  );
+  assertFileContains(
     "SPEC-COVERAGE.md",
     "read-only local `POST /v1/signature/asic/inspect` ASiC profile inspection",
     "spec coverage matrix ASiC inspect route marker",

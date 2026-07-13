@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { renderWithProviders } from '../../test/utils';
 import type {
+  AsicSignatureInspectionResponse,
   CaeCatalogView,
   CaeEntryView,
   CaeNode,
@@ -306,6 +307,204 @@ const PDF_VALIDATION_RESPONSE: PdfSignatureValidationResponse = {
   ],
 };
 
+const ASIC_INSPECTION_RESPONSE: AsicSignatureInspectionResponse = {
+  report_kind: 'asic_signature_inspection',
+  scope: 'local_technical_asic_signature_evidence',
+  legal_notice:
+    'Local technical ASiC signature inspection only. No live provider call, trust-path validation, live TSL/TSA/OCSP/CRL fetching, revocation validation, provider approval, qualified-status decision, eIDAS legal-effect conclusion, production ASiC/XAdES compliance decision, B-LT/B-LTA/LTV claim, signing, storage mutation, or archive mutation is performed or claimed.',
+  status: 'invalid',
+  filename: 'sample.asice',
+  sha256: '9'.repeat(64),
+  size_bytes: 8,
+  declared_sha256: '9'.repeat(64),
+  declared_size_bytes: 8,
+  legal_validity_claimed: false,
+  qualified_signature_claimed: false,
+  qualified_electronic_signature_claimed: false,
+  qes_claimed: false,
+  trust_validation: 'not_performed',
+  trust_anchor_validation: 'not_performed',
+  revocation_validation: 'not_performed',
+  live_provider_calls: false,
+  live_tsl_fetching: false,
+  live_tsa_fetching: false,
+  live_ocsp_fetching: false,
+  live_crl_fetching: false,
+  provider_approval_claimed: false,
+  xades_validation_performed: true,
+  b_lt_claimed: false,
+  b_lta_claimed: false,
+  ltv_claimed: false,
+  production_asic_compliance_claimed: false,
+  production_xades_conformance_claimed: false,
+  eidas_legal_effect_claimed: false,
+  signing_performed: false,
+  storage_mutation_performed: false,
+  archive_mutation_performed: false,
+  technical_validation: {
+    validation_performed: true,
+    cryptographically_valid: false,
+    all_signatures_valid: false,
+    container_failure_reasons: [],
+    signatures: [
+      {
+        path: 'META-INF/signatures.xml',
+        kind: 'xades',
+        valid: false,
+        manifest_path: null,
+        covered_data_objects: ['payload.txt'],
+        signer_cert_sha256: 'a'.repeat(64),
+        signer_cert_subject: 'CN=ASiC Signer',
+        signing_time: '2026-07-10T10:00:00Z',
+        xades_level: 't',
+        has_signature_timestamp: true,
+        signature_timestamp_trust_validation: 'not_performed',
+        failure_reasons: ['XAdES signature META-INF/signatures.xml has a bad reference digest'],
+        evidence_scope: 'technical_evidence_only',
+        trust_validation: 'not_performed',
+        revocation_validation: 'not_performed',
+        provider_validation: 'not_performed',
+        provider_approval_claimed: false,
+        legal_validity_claimed: false,
+        qualified_signature_claimed: false,
+        qes_claimed: false,
+      },
+    ],
+    archive_timestamps: [
+      {
+        manifest_path: 'META-INF/ASiCArchiveManifest.xml',
+        timestamp_path: 'META-INF/ASiCArchiveManifest.tst',
+        valid: false,
+        imprint_matches_manifest: false,
+        references_valid: false,
+        covered_members: [],
+        gen_time: null,
+        timestamp_trust_validation: 'not_performed',
+        b_lta_claimed: false,
+        legal_validity_claimed: false,
+        failure_reasons: [
+          'archive timestamp META-INF/ASiCArchiveManifest.tst could not be parsed: malformed token',
+        ],
+      },
+    ],
+    embedded_evidence: {
+      evidence_scope: 'technical_evidence_only',
+      indicators: [
+        {
+          code: 'xades_signature_timestamp',
+          source_path: 'META-INF/signatures.xml',
+          evidence_kind: 'signature_timestamp',
+          message: 'XAdES member contains 1 SignatureTimeStamp element(s)',
+        },
+      ],
+      blockers: [
+        {
+          code: 'unreferenced_timestamp_token_member',
+          source_path: 'META-INF/orphan.tst',
+          message: 'timestamp token member is present but no ASiCArchiveManifest references it',
+        },
+      ],
+      trust_validation: 'not_performed',
+      revocation_validation: 'not_performed',
+      timestamp_trust_validation: 'not_performed',
+      live_tsl_fetching: false,
+      live_tsa_fetching: false,
+      live_ocsp_fetching: false,
+      live_crl_fetching: false,
+      b_lt_claimed: false,
+      b_lta_claimed: false,
+      ltv_claimed: false,
+      legal_validity_claimed: false,
+      qualified_signature_claimed: false,
+    },
+  },
+  profile: {
+    container_kind: 'asic_e',
+    mimetype: 'application/vnd.etsi.asic-e+zip',
+    signature_profile: 'xades',
+    profile_shape: 'asic_e_xades',
+    bounded_profile: null,
+    bounded_supported_candidate: false,
+    member_paths: {
+      all: [
+        'payload.txt',
+        'META-INF/signatures.xml',
+        'META-INF/ASiCArchiveManifest.xml',
+        'META-INF/ASiCArchiveManifest.tst',
+        'META-INF/orphan.tst',
+      ],
+      payloads: ['payload.txt'],
+      manifests: [],
+      cades_signatures: [],
+      xades_signatures: ['META-INF/signatures.xml'],
+      unsupported_meta_inf: ['META-INF/orphan.tst'],
+    },
+    blockers: [
+      {
+        id: 'xades_not_supported',
+        message:
+          'ASiC-XAdES is local technical validation only and does not establish production conformance.',
+        member_path: 'META-INF/signatures.xml',
+      },
+    ],
+    manifest_diagnostics: [
+      {
+        path: 'META-INF/ASiCArchiveManifest.xml',
+        size: 512,
+        signature_references: [
+          {
+            uri: 'META-INF/ASiCArchiveManifest.tst',
+            member_present: true,
+            member_kind: null,
+          },
+        ],
+        data_object_references: [
+          {
+            uri: 'payload.txt',
+            mime_type: 'text/plain',
+            payload_present: true,
+            sha256_digest: 'b'.repeat(64),
+            digest_matches: false,
+          },
+        ],
+        blockers: [
+          {
+            id: 'asic_e_manifest_digest_mismatch',
+            message: 'manifest digest mismatch for payload.txt',
+            member_path: 'payload.txt',
+          },
+        ],
+      },
+    ],
+    signature_diagnostics: [
+      {
+        path: 'META-INF/signatures.xml',
+        member_kind: 'xades',
+        size: 1024,
+        referenced_by_manifest_paths: [],
+        blockers: [],
+      },
+    ],
+  },
+  cades: null,
+  findings: [
+    {
+      severity: 'info',
+      code: 'technical_scope_only',
+      message: 'Local ASiC inspection only; no legal or qualified status is claimed.',
+    },
+    {
+      severity: 'error',
+      code: 'asic_invalid_local_technical',
+      message: 'XAdES reference digest mismatch and archive timestamp parsing failed.',
+    },
+  ],
+};
+
+function asicInspectionResponse(filename: string): AsicSignatureInspectionResponse {
+  return { ...ASIC_INSPECTION_RESPONSE, filename };
+}
+
 const EMPTY_EXTERNAL_VALIDATOR_REPORTS: ExternalValidatorReportsResponse = {
   storage: 'durable',
   status: 'ok',
@@ -352,6 +551,188 @@ function pdfValidatorFetch(response: Response): typeof fetch {
     return Promise.reject(new Error(`no stub for ${url}`));
   }) as typeof fetch;
 }
+
+function asicInspectorFetch(response: Response): typeof fetch {
+  return ((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : input.toString();
+    const method = init?.method ?? 'GET';
+    if (url.includes('/v1/external-validator-reports') && method === 'GET') {
+      return Promise.resolve(jsonResponse(EMPTY_EXTERNAL_VALIDATOR_REPORTS));
+    }
+    if (url.includes('/v1/signature/asic/inspect') && method === 'POST') {
+      return Promise.resolve(response);
+    }
+    return Promise.reject(new Error(`no stub for ${url}`));
+  }) as typeof fetch;
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((settle) => {
+    resolve = settle;
+  });
+  return { promise, resolve };
+}
+
+describe('Ferramentas — ASiC signature inspector', () => {
+  it('renders the ASiC inspector with the action disabled until a container is selected', async () => {
+    vi.stubGlobal('fetch', asicInspectorFetch(jsonResponse(ASIC_INSPECTION_RESPONSE)));
+    renderWithProviders(<FerramentasPage />, ['/ferramentas?tool=pdf']);
+
+    expect(screen.getByText('Inspetor técnico ASiC')).toBeTruthy();
+    expect(screen.getByText('Inspeção técnica local')).toBeTruthy();
+    expect(
+      (screen.getByRole('button', { name: 'Inspecionar ASiC' }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    expect(await screen.findByText('Sem relatórios de validador externo')).toBeTruthy();
+  });
+
+  it('uploads an ASiC container as base64 with declared SHA-256 and size', async () => {
+    const fetchMock = vi.fn(asicInspectorFetch(jsonResponse(ASIC_INSPECTION_RESPONSE)));
+    vi.stubGlobal('fetch', fetchMock);
+    renderWithProviders(<FerramentasPage />, ['/ferramentas?tool=pdf']);
+
+    const file = new File(['asic zip'], 'sample.asice', { type: 'application/zip' });
+    fireEvent.change(await screen.findByLabelText('Contentor ASiC'), {
+      target: { files: [file] },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Inspecionar ASiC' }));
+
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(([url]) => String(url).includes('/v1/signature/asic/inspect')),
+      ).toBe(true),
+    );
+    const [url, init] = fetchMock.mock.calls.find(([callUrl]) =>
+      String(callUrl).includes('/v1/signature/asic/inspect'),
+    ) as [string, RequestInit];
+    const body = JSON.parse(String(init.body)) as {
+      content_base64: string;
+      filename: string;
+      declared_sha256: string | null;
+      declared_size_bytes: number;
+    };
+    expect(url).toBe('/v1/signature/asic/inspect');
+    expect(init.method).toBe('POST');
+    expect(body.content_base64).toBe('YXNpYyB6aXA=');
+    expect(body.filename).toBe('sample.asice');
+    expect(body.declared_size_bytes).toBe(8);
+    expect(body.declared_sha256).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it('renders ASiC diagnostics and visible no-claim caveats from the backend response', async () => {
+    vi.stubGlobal('fetch', asicInspectorFetch(jsonResponse(ASIC_INSPECTION_RESPONSE)));
+    renderWithProviders(<FerramentasPage />, ['/ferramentas?tool=pdf']);
+
+    const file = new File(['asic zip'], 'sample.asice', { type: 'application/zip' });
+    fireEvent.change(await screen.findByLabelText('Contentor ASiC'), {
+      target: { files: [file] },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Inspecionar ASiC' }));
+
+    expect(await screen.findByText('Resultado ASiC')).toBeTruthy();
+    expect(screen.getAllByText('sample.asice').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('local_technical_asic_signature_evidence')).toBeTruthy();
+    expect(screen.getByText('Limitações explícitas')).toBeTruthy();
+    expect(screen.getAllByText('not_performed').length).toBeGreaterThan(5);
+    expect(screen.getByText('unreferenced_timestamp_token_member')).toBeTruthy();
+    expect(screen.getAllByText('META-INF/orphan.tst').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText(/archive timestamp .* malformed token/i)).toBeTruthy();
+    expect(screen.getByText('asic_e_manifest_digest_mismatch')).toBeTruthy();
+    expect(screen.getByText('Mutação de armazenamento')).toBeTruthy();
+    expect(screen.getByText('Assinatura executada')).toBeTruthy();
+    expect(screen.queryByText(/legalmente válido/i)).toBeNull();
+    expect(screen.queryByText(/assinatura qualificada validada/i)).toBeNull();
+  });
+
+  it('renders ASiC endpoint refusal as a fail-closed error state', async () => {
+    vi.stubGlobal(
+      'fetch',
+      asicInspectorFetch(
+        jsonResponse(
+          { error: 'declared ASiC SHA-256 digest does not match the received bytes' },
+          422,
+        ),
+      ),
+    );
+    renderWithProviders(<FerramentasPage />, ['/ferramentas?tool=pdf']);
+
+    const file = new File(['asic zip'], 'mismatch.asice', { type: 'application/zip' });
+    fireEvent.change(await screen.findByLabelText('Contentor ASiC'), {
+      target: { files: [file] },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Inspecionar ASiC' }));
+
+    expect(await screen.findByText('Validação recusada')).toBeTruthy();
+    expect(screen.getByText(/nenhum artefacto foi assinado, guardado ou alterado/i)).toBeTruthy();
+    expect(screen.getByText(/ASiC SHA-256 digest does not match/i)).toBeTruthy();
+    expect(screen.queryByText('Resultado ASiC')).toBeNull();
+  });
+
+  it('does not render a delayed ASiC result after the selected file changes', async () => {
+    const staleInspection = deferred<Response>();
+    const freshInspection = deferred<Response>();
+    const inspectionBodies: unknown[] = [];
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      const method = init?.method ?? 'GET';
+      if (url.includes('/v1/external-validator-reports') && method === 'GET') {
+        return Promise.resolve(jsonResponse(EMPTY_EXTERNAL_VALIDATOR_REPORTS));
+      }
+      if (url.includes('/v1/signature/asic/inspect') && method === 'POST') {
+        inspectionBodies.push(JSON.parse(String(init?.body)));
+        return inspectionBodies.length === 1
+          ? staleInspection.promise
+          : freshInspection.promise;
+      }
+      return Promise.reject(new Error(`no stub for ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    renderWithProviders(<FerramentasPage />, ['/ferramentas?tool=pdf']);
+
+    const input = await screen.findByLabelText('Contentor ASiC');
+    fireEvent.change(input, {
+      target: { files: [new File(['stale asic'], 'stale.asice', { type: 'application/zip' })] },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Inspecionar ASiC' }));
+    await waitFor(() => expect(inspectionBodies).toHaveLength(1));
+
+    fireEvent.change(input, {
+      target: { files: [new File(['fresh asic'], 'fresh.asice', { type: 'application/zip' })] },
+    });
+    expect(screen.getByText('fresh.asice')).toBeTruthy();
+
+    await act(async () => {
+      staleInspection.resolve(jsonResponse(asicInspectionResponse('stale.asice')));
+      await staleInspection.promise;
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await expect(screen.findByText('Resultado ASiC', {}, { timeout: 100 })).rejects.toThrow();
+    expect(screen.queryByText('stale.asice')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Inspecionar ASiC' }));
+    await waitFor(() => expect(inspectionBodies).toHaveLength(2));
+
+    await act(async () => {
+      freshInspection.resolve(jsonResponse(asicInspectionResponse('fresh.asice')));
+      await freshInspection.promise;
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(await screen.findByText('Resultado ASiC')).toBeTruthy();
+    expect(screen.getAllByText('fresh.asice').length).toBeGreaterThanOrEqual(1);
+
+    fireEvent.change(input, {
+      target: { files: [new File(['later asic'], 'later.asice', { type: 'application/zip' })] },
+    });
+    expect(screen.getByText('later.asice')).toBeTruthy();
+    expect(screen.queryByText('Resultado ASiC')).toBeNull();
+    expect(screen.queryByText('fresh.asice')).toBeNull();
+  });
+});
 
 function externalValidatorReportsFetch(
   options: {

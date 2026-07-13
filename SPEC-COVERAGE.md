@@ -717,10 +717,18 @@ Implementation checkpoints covered here:
   enforces both per-member and aggregate actual decompressed-size caps across
   payloads, manifests, CAdES signatures, XAdES signatures, unsupported
   `META-INF` members, and other non-directory members, so underdeclared ZIP
-  entries cannot bypass inspection blockers. This is local technical inspection
-  only: no signing, storage, archive mutation, live provider call, TSA/TSL/OCSP/
-  CRL fetching, trust anchoring, legal validity, QES, B-LT/B-LTA, eIDAS
-  legal-effect, or production ASiC/XAdES conformance claim is implemented.
+  entries cannot bypass inspection blockers. Ferramentas now exposes this as a
+  sibling read-only ASiC inspector on the signature tools surface: the web client
+  posts transient base64 uploads to `/v1/signature/asic/inspect`, renders profile
+  member paths, signature and manifest diagnostics, archive timestamp failures,
+  embedded evidence indicators/blockers including unreferenced timestamp token
+  members, and visible false/`not_performed` no-claim fields. Focused
+  Ferramentas tests pin disabled-until-file selection, request body fixity,
+  diagnostic/caveat rendering, and fail-closed endpoint refusals. This is local
+  technical inspection only: no signing, storage, archive mutation, live provider
+  call, TSA/TSL/OCSP/CRL fetching, trust anchoring, legal validity, QES,
+  B-LT/B-LTA, eIDAS legal-effect, or production ASiC/XAdES conformance claim is
+  implemented.
 - Working tree keeps Signatures/Trust/UX/CI **PARTIAL**: identifier-filtered
   TSL/TSA catalog rows can now include optional `identifier_match` explanations
   for the technical field that matched. The API omits `identifier_match` when no

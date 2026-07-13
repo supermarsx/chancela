@@ -1203,6 +1203,221 @@ export interface PdfSignatureValidationResponse {
   findings: PdfSignatureValidationFinding[];
 }
 
+// --- Arbitrary ASiC technical inspection ---------------------------------------
+
+export interface AsicSignatureInspectionBody {
+  content_base64: string;
+  filename?: string | null;
+  declared_sha256?: string | null;
+  declared_size_bytes?: number | null;
+}
+
+export type AsicInspectionStatus = 'valid' | 'invalid';
+
+export interface AsicMemberPathsReport {
+  all: string[];
+  payloads: string[];
+  manifests: string[];
+  cades_signatures: string[];
+  xades_signatures: string[];
+  unsupported_meta_inf: string[];
+}
+
+export interface AsicBlockerReport {
+  id: string;
+  message: string;
+  member_path: string | null;
+}
+
+export interface AsicManifestSignatureReferenceReport {
+  uri: string;
+  member_present: boolean;
+  member_kind: string | null;
+}
+
+export interface AsicManifestDataObjectReferenceReport {
+  uri: string;
+  mime_type: string | null;
+  payload_present: boolean;
+  sha256_digest: string;
+  digest_matches: boolean | null;
+}
+
+export interface AsicManifestDiagnosticReport {
+  path: string;
+  size: number;
+  signature_references: AsicManifestSignatureReferenceReport[];
+  data_object_references: AsicManifestDataObjectReferenceReport[];
+  blockers: AsicBlockerReport[];
+}
+
+export interface AsicSignatureDiagnosticReport {
+  path: string;
+  member_kind: string;
+  size: number;
+  referenced_by_manifest_paths: string[];
+  blockers: AsicBlockerReport[];
+}
+
+export interface AsicProfileInspectionReport {
+  container_kind: string;
+  mimetype: string;
+  signature_profile: string;
+  profile_shape: string;
+  bounded_profile: string | null;
+  bounded_supported_candidate: boolean;
+  member_paths: AsicMemberPathsReport;
+  blockers: AsicBlockerReport[];
+  manifest_diagnostics: AsicManifestDiagnosticReport[];
+  signature_diagnostics: AsicSignatureDiagnosticReport[];
+}
+
+export interface AsicCadesSignedContentReport {
+  kind: string;
+  member_path: string;
+  sha256: string;
+}
+
+export interface AsicCadesValidationReport {
+  status: string;
+  validation_performed: boolean;
+  validation_error: string | null;
+  cryptographically_valid: boolean;
+  signed_content: AsicCadesSignedContentReport;
+  signer_cert_sha256: string | null;
+  signer_cert_subject: string | null;
+  signing_time: string | null;
+  has_signature_timestamp: boolean;
+  evidence_scope: string;
+  trust_validation: string;
+  revocation_validation: string;
+  legal_validity_claimed: boolean;
+  qualified_signature_claimed: boolean;
+}
+
+export interface AsicTechnicalSignatureReport {
+  path: string;
+  kind: string;
+  valid: boolean;
+  manifest_path: string | null;
+  covered_data_objects: string[];
+  signer_cert_sha256: string | null;
+  signer_cert_subject: string | null;
+  signing_time: string | null;
+  xades_level: string | null;
+  has_signature_timestamp: boolean;
+  signature_timestamp_trust_validation: string;
+  failure_reasons: string[];
+  evidence_scope: string;
+  trust_validation: string;
+  revocation_validation: string;
+  provider_validation: string;
+  provider_approval_claimed: boolean;
+  legal_validity_claimed: boolean;
+  qualified_signature_claimed: boolean;
+  qes_claimed: boolean;
+}
+
+export interface AsicTechnicalArchiveTimestampReport {
+  manifest_path: string;
+  timestamp_path: string;
+  valid: boolean;
+  imprint_matches_manifest: boolean;
+  references_valid: boolean;
+  covered_members: string[];
+  gen_time: string | null;
+  timestamp_trust_validation: string;
+  b_lta_claimed: boolean;
+  legal_validity_claimed: boolean;
+  failure_reasons: string[];
+}
+
+export interface AsicEmbeddedEvidenceIndicatorReport {
+  code: string;
+  source_path: string;
+  evidence_kind: string;
+  message: string;
+}
+
+export interface AsicEmbeddedEvidenceBlockerReport {
+  code: string;
+  source_path: string;
+  message: string;
+}
+
+export interface AsicEmbeddedEvidenceReport {
+  evidence_scope: string;
+  indicators: AsicEmbeddedEvidenceIndicatorReport[];
+  blockers: AsicEmbeddedEvidenceBlockerReport[];
+  trust_validation: string;
+  revocation_validation: string;
+  timestamp_trust_validation: string;
+  live_tsl_fetching: boolean;
+  live_tsa_fetching: boolean;
+  live_ocsp_fetching: boolean;
+  live_crl_fetching: boolean;
+  b_lt_claimed: boolean;
+  b_lta_claimed: boolean;
+  ltv_claimed: boolean;
+  legal_validity_claimed: boolean;
+  qualified_signature_claimed: boolean;
+}
+
+export interface AsicTechnicalValidationReport {
+  validation_performed: boolean;
+  cryptographically_valid: boolean;
+  all_signatures_valid: boolean;
+  container_failure_reasons: string[];
+  signatures: AsicTechnicalSignatureReport[];
+  archive_timestamps: AsicTechnicalArchiveTimestampReport[];
+  embedded_evidence: AsicEmbeddedEvidenceReport;
+}
+
+export interface AsicInspectionFinding {
+  severity: 'error' | 'warning' | 'info' | string;
+  code: string;
+  message: string;
+}
+
+export interface AsicSignatureInspectionResponse {
+  report_kind: 'asic_signature_inspection' | string;
+  scope: 'local_technical_asic_signature_evidence' | string;
+  legal_notice: string;
+  status: AsicInspectionStatus;
+  filename: string | null;
+  sha256: string;
+  size_bytes: number;
+  declared_sha256: string | null;
+  declared_size_bytes: number | null;
+  legal_validity_claimed: boolean;
+  qualified_signature_claimed: boolean;
+  qualified_electronic_signature_claimed: boolean;
+  qes_claimed: boolean;
+  trust_validation: string;
+  trust_anchor_validation: string;
+  revocation_validation: string;
+  live_provider_calls: boolean;
+  live_tsl_fetching: boolean;
+  live_tsa_fetching: boolean;
+  live_ocsp_fetching: boolean;
+  live_crl_fetching: boolean;
+  provider_approval_claimed: boolean;
+  xades_validation_performed: boolean;
+  b_lt_claimed: boolean;
+  b_lta_claimed: boolean;
+  ltv_claimed: boolean;
+  production_asic_compliance_claimed: boolean;
+  production_xades_conformance_claimed: boolean;
+  eidas_legal_effect_claimed: boolean;
+  signing_performed: boolean;
+  storage_mutation_performed: boolean;
+  archive_mutation_performed: boolean;
+  technical_validation: AsicTechnicalValidationReport;
+  profile: AsicProfileInspectionReport;
+  cades: AsicCadesValidationReport | null;
+  findings: AsicInspectionFinding[];
+}
+
 // --- External validator technical report metadata ------------------------------
 
 /** Raw external-validator report fixity summary. Bytes are never listed inline. */

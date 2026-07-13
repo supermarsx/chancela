@@ -68,6 +68,7 @@ import type {
   PaperBookOcrRunView,
   PaperBookOcrStatus,
   PdfSignatureValidationBody,
+  AsicSignatureInspectionBody,
   PlatformControllableServiceId,
   PlatformLogsQueryParams,
   PlatformServiceAction,
@@ -194,6 +195,7 @@ export const keys = {
   tsaCatalog: ['trust', 'tsa'] as const,
   tsaSearch: (params: TsaCatalogSearchParams) => ['trust', 'tsa', 'search', params] as const,
   pdfSignatureValidation: ['signature', 'pdf', 'validate'] as const,
+  asicSignatureInspection: ['signature', 'asic', 'inspect'] as const,
   externalValidatorReports: ['external-validator-reports'] as const,
   lawManifest: ['law', 'manifest'] as const,
   lawCorpus: ['law', 'corpus'] as const,
@@ -657,6 +659,13 @@ export function useValidatePdfSignature() {
   return useMutation({
     mutationKey: keys.pdfSignatureValidation,
     mutationFn: (body: PdfSignatureValidationBody) => api.validatePdfSignature(body),
+  });
+}
+
+export function useInspectAsicSignature() {
+  return useMutation({
+    mutationKey: keys.asicSignatureInspection,
+    mutationFn: (body: AsicSignatureInspectionBody) => api.inspectAsicSignature(body),
   });
 }
 

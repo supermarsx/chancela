@@ -103,6 +103,8 @@ import type {
   PaperBookOcrStatusView,
   PdfSignatureValidationBody,
   PdfSignatureValidationResponse,
+  AsicSignatureInspectionBody,
+  AsicSignatureInspectionResponse,
   PlatformControllableServiceId,
   PlatformControlResponse,
   PlatformLogsQueryParams,
@@ -774,6 +776,8 @@ export const api = {
     postTextDownload('/v1/signature/external-invites/document/working-copy', { token }),
   validatePdfSignature: (body: PdfSignatureValidationBody) =>
     post<PdfSignatureValidationResponse>('/v1/signature/pdf/validate', body),
+  inspectAsicSignature: (body: AsicSignatureInspectionBody) =>
+    post<AsicSignatureInspectionResponse>('/v1/signature/asic/inspect', body),
   listExternalValidatorReports: () =>
     get<ExternalValidatorReportsResponse>('/v1/external-validator-reports'),
   uploadExternalValidatorReport: (body: ExternalValidatorReportUploadRequest) =>
@@ -897,10 +901,7 @@ export const api = {
   listRetentionExecutions: (status?: RetentionExecutionStatus) =>
     get<RetentionExecutionRecord[]>(`/v1/privacy/retention-executions${query({ status })}`),
   closeRetentionExecutionReview: (id: string, body: CloseRetentionExecutionReviewBody) =>
-    post<RetentionExecutionRecord>(
-      `/v1/privacy/retention-executions/${id}/review-closure`,
-      body,
-    ),
+    post<RetentionExecutionRecord>(`/v1/privacy/retention-executions/${id}/review-closure`, body),
   // Sign-in secret + attestation-key management (t29 §4). All echo the updated UserView.
   // The `current_password` (when a secret already exists) rides in the body; a DELETE
   // carries it too (the `del` helper JSON-encodes an optional body).
