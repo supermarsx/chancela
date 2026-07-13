@@ -343,7 +343,7 @@ export const frFR: Catalog = {
   'dashboard.workQueue.integrity.badge': 'Intégrité',
   'dashboard.workQueue.integrity.title': 'Vérifier la chaîne du registre',
   'dashboard.workQueue.integrity.detail':
-    'Le tableau de bord signale un échec d’intégrité du registre; cette file renvoie seulement à la revue de l’archive.',
+    'Le tableau de bord signale un échec d’intégrité du registre ; cette file renvoie seulement à la revue de l’archive.',
   'dashboard.workQueue.integrity.meta': 'Source : indicateur d’intégrité du tableau de bord',
   'dashboard.workQueue.status.overdue': 'En retard',
   'dashboard.workQueue.status.dueSoon': 'Bientôt exigible',
@@ -478,25 +478,25 @@ export const frFR: Catalog = {
   'entities.registrySection': 'Registre du commerce',
   'entities.booksCard': 'Registres',
   'entities.chronology.title': 'Chronologie et graphe',
-  'entities.chronology.loading': 'Chargement de la chronologie...',
+  'entities.chronology.loading': 'Chargement de la chronologie…',
   'entities.chronology.none': '—',
   'entities.chronology.boundary':
-    'Lecture technique dérivée du certificat de registre importé. Ces graphes sont une preuve de provenance et de navigation; ils ne remplacent pas le certificat et n ajoutent aucune validité juridique.',
+    'Lecture technique dérivée du certificat de registre importé. Ces graphes sont une preuve de provenance et de navigation ; ils ne remplacent pas le certificat et n’ajoutent aucune validité juridique.',
   'entities.chronology.analytics.title': 'Synthèse analytique locale',
   'entities.chronology.analytics.notice':
-    'Comptages techniques dérivés uniquement des événements et graphes structurés de ce certificat importé; ils ne certifient ni priorité, ni titularité, ni validité juridique, ni approbation d autorité.',
+    'Comptages techniques dérivés uniquement des événements et graphes structurés de ce certificat importé ; ils ne certifient ni priorité, ni titularité, ni validité juridique, ni approbation d’autorité.',
   'entities.chronology.analytics.totalEvents': 'Événements',
   'entities.chronology.analytics.datedEvents': 'Datés',
   'entities.chronology.analytics.undatedEvents': 'Non datés',
   'entities.chronology.analytics.sourceInscriptions': 'Inscriptions sources',
-  'entities.chronology.analytics.eventKinds': 'Types d événement',
+  'entities.chronology.analytics.eventKinds': 'Types d’événement',
   'entities.chronology.analytics.sourceList': 'Inscriptions utilisées',
   'entities.chronology.analytics.graphCounts': 'Comptages des graphes',
   'entities.chronology.analytics.kindCount': '{kind}: {count}',
   'entities.chronology.analytics.graphCount':
     '{label}: {nodes} nœuds / {edges} liens / {warnings} avertissements',
   'entities.chronology.events.empty':
-    'Le certificat n expose aucun événement chronologique normalisé.',
+    'Le certificat n’expose aucun événement chronologique normalisé.',
   'entities.chronology.table.date': 'Date',
   'entities.chronology.table.kind': 'Type',
   'entities.chronology.table.description': 'Description',
@@ -775,12 +775,28 @@ export const frFR: Catalog = {
   'acts.sealing.ready': 'Le procès-verbal est conforme et en signature — il peut être scellé.',
   'acts.sealing.readyWithWarnings':
     'Le procès-verbal contient des avertissements de conformité non bloquants. Examinez-les et reconnaissez-les explicitement avant de sceller.',
-  'acts.sealing.warningAck.title': 'Confirmer les avertissements de conformité',
+  'acts.sealing.warningAck.title': 'Confirm manual sealing',
   'acts.sealing.warningAck.body':
-    'Des avertissements de conformité non bloquants existent. Le scellement ne continue qu’après confirmation de leur examen.',
+    'Record the local reference for where the manually signed original is kept. This metadata does not validate the signature or certify the archive.',
   'acts.sealing.warningAck.checkbox':
-    'Je reconnais explicitement ces avertissements de conformité et veux sceller le procès-verbal.',
-  'acts.sealing.warningAck.confirm': 'Sceller avec avertissements',
+    'I confirm the manual-signature original reference has been captured and want to seal the minute.',
+  'acts.sealing.warningAck.checkboxWithWarnings':
+    'I confirm I reviewed the compliance warnings, the manual-signature original reference has been captured, and I want to seal the minute.',
+  'acts.sealing.warningAck.confirm': 'Confirm and seal minute',
+  'acts.manualSignature.originalReference.label': 'Signed original reference',
+  'acts.manualSignature.originalReference.hint':
+    'Location, archive, folder, document id, or another internal reference.',
+  'acts.manualSignature.originalReference.tooLong':
+    'The signed original reference must be at most 512 characters.',
+  'acts.manualSignature.originalReference.controlCharacters':
+    'The signed original reference must not contain control characters.',
+  'acts.manualSignature.originalReference.displayLabel': 'Signed original',
+  'acts.manualSignature.custodian.label': 'Custodian',
+  'acts.manualSignature.custodian.hint': 'Responsible person, team, or service, if applicable.',
+  'acts.manualSignature.custodian.displayLabel': 'Custodian',
+  'acts.manualSignature.note.label': 'Note',
+  'acts.manualSignature.note.hint': 'Optional local context; do not record legal validation.',
+  'acts.manualSignature.note.displayLabel': 'Note',
   'acts.sealing.unavailableState':
     'Le scellement n’est disponible que dans l’état « En signature ».',
   'acts.sealing.fixErrors': 'Corrigez les erreurs de conformité pour pouvoir sceller.',
@@ -833,7 +849,7 @@ export const frFR: Catalog = {
   'acts.aiReview.noClaim.legal':
     'Ne confirme pas la validité juridique, l’exactitude factuelle ni une revue juridique automatisée.',
   'acts.aiReview.noClaim.workflow':
-    'La revue humaine déverrouille seulement l’étape suivante du flux; elle ne signe, ne scelle ni ne valide la confiance.',
+    'La revue humaine déverrouille seulement l’étape suivante du flux ; elle ne signe, ne scelle ni ne valide la confiance.',
 
   // --- Compliance panel (chrome only; issue text stays backend-authored, UX-21) --
   'compliance.rules': 'Règles : {rulePack}',
@@ -871,7 +887,7 @@ export const frFR: Catalog = {
   'ledger.to.label': "Jusqu'à",
   'ledger.limit.label': 'Événements par page',
   'ledger.status.loaded': '{shown} événements chargés',
-  'ledger.status.loadedMore': '{shown} événements chargés; autres disponibles',
+  'ledger.status.loadedMore': '{shown} événements chargés ; autres disponibles',
   'ledger.loadMore': 'Charger les événements plus anciens',
   'ledger.loadMore.loading': 'Chargement…',
   'ledger.filteredEmpty.title': 'Aucun résultat',
@@ -1839,9 +1855,9 @@ export const frFR: Catalog = {
   'enum.severity.Warning': 'Avertissement',
   'enum.severity.Error': 'Erreur',
   // Signature families
-  'enum.signatureFamily.CartaoCidadao': 'Carte de Citoyen',
-  'enum.signatureFamily.CartaoDeCidadao': 'Carte de Citoyen',
-  'enum.signatureFamily.ChaveMovelDigital': 'Clé Mobile Numérique',
+  'enum.signatureFamily.CartaoCidadao': 'Cartão de Cidadão',
+  'enum.signatureFamily.CartaoDeCidadao': 'Cartão de Cidadão',
+  'enum.signatureFamily.ChaveMovelDigital': 'Chave Móvel Digital',
   'enum.signatureFamily.OtherQualified': 'Autre certificat qualifié',
   'enum.signatureFamily.QualifiedCertificate': 'Certificat qualifié (prestataire)',
   'enum.signatureFamily.Manual': 'Signature manuelle',
@@ -3169,7 +3185,7 @@ export const frFR: Catalog = {
   'documents.generated.form.recipients': 'Destinataires',
   'documents.generated.form.operatorNote': 'Note de l’opérateur',
   'documents.generated.form.submit': 'Enregistrer la preuve',
-  'documents.generated.form.submitting': 'Enregistrement...',
+  'documents.generated.form.submitting': 'Enregistrement…',
   'documents.generated.form.toast.success': 'Preuve enregistrée par l’opérateur sauvegardée.',
   'documents.import.sectionAria': 'Documents importés de référence',
   'documents.import.title': 'Documents importés',
@@ -3178,7 +3194,7 @@ export const frFR: Catalog = {
   'documents.import.serverValidation':
     'Le serveur valide le contenu avant l’enregistrement ; les rejets ne sont pas conservés.',
   'documents.import.nonCanonicalEvidence': 'Preuve non canonique',
-  'documents.import.pending': 'Importation...',
+  'documents.import.pending': 'Importation…',
   'documents.import.choose': 'Importer une preuve',
   'documents.import.empty.title': 'Aucun document importé',
   'documents.import.empty.body': 'Ce procès-verbal n’a pas encore de preuve ou de référence importée.',
@@ -3219,25 +3235,25 @@ export const frFR: Catalog = {
   'documents.import.guardrails.checklist.noPromotion':
     'OCR or conversion output is not promoted to canonical records.',
   'documents.import.guardrails.checklist.unknown': 'Technical limit: {code}',
-  'documents.import.validationAria': 'Rapport de validation du document importe',
-  'documents.import.validationTitle': 'Validation technique de l import',
-  'documents.import.validationRejectedTitle': 'Import refuse par la validation',
+  'documents.import.validationAria': 'Rapport de validation du document importé',
+  'documents.import.validationTitle': 'Validation technique de l’import',
+  'documents.import.validationRejectedTitle': 'Import refusé par la validation',
   'documents.import.validationRejectedBody':
-    'Le fichier n a pas ete enregistre; examinez les erreurs techniques ci-dessous.',
+    'Le fichier n’a pas été enregistré ; examinez les erreurs techniques ci-dessous.',
   'documents.import.legacyWord.title': 'Ancien Microsoft Word .doc/OLE CFB',
   'documents.import.legacyWord.body':
-    'Un ancien Microsoft Word .doc/OLE CFB est conserve uniquement comme preuve non canonique. Les macros et les objets integres ne sont pas executes. Aucune conversion DOC-vers-PDF/A ni remplacement canonique n a ete effectue.',
-  'documents.import.legacyWord.detectedType': 'Type detecte',
+    'Un ancien Microsoft Word .doc/OLE CFB est conservé uniquement comme preuve non canonique. Les macros et les objets intégrés ne sont pas exécutés. Aucune conversion DOC-vers-PDF/A ni remplacement canonique n’a été effectué.',
+  'documents.import.legacyWord.detectedType': 'Type détecté',
   'documents.import.legacyWord.oleCfb': 'OLE CFB',
   'documents.import.legacyWord.legacyDoc': 'Ancien Word .doc',
-  'documents.import.legacyWord.macrosExecuted': 'Macros/objets executes',
+  'documents.import.legacyWord.macrosExecuted': 'Macros/objets exécutés',
   'documents.import.legacyWord.conversion': 'Conversion DOC-vers-PDF/A',
-  'documents.import.legacyWord.canonicalPdfa': 'PDF/A canonique genere',
+  'documents.import.legacyWord.canonicalPdfa': 'PDF/A canonique généré',
   'documents.import.findings': 'Constats de validation',
-  'documents.import.toast.success': 'Document importe comme preuve non canonique.',
+  'documents.import.toast.success': 'Document importé comme preuve non canonique.',
   'documents.import.toast.validationRejected':
-    'Document refuse par la validation; il n a pas ete importe.',
-  'documents.import.readError.imported': 'Impossible de lire le fichier importe.',
+    'Document refusé par la validation ; il n’a pas été importé.',
+  'documents.import.readError.imported': 'Impossible de lire le fichier importé.',
   'documents.import.readError.file': 'Impossible de lire le fichier.',
   'externalInvite.crumbs': 'Signature externe',
   'externalInvite.title': 'Invitation externe',
@@ -3251,7 +3267,7 @@ export const frFR: Catalog = {
     'Le lien a expiré, a été révoqué ou ne correspond à aucune invitation externe active.',
   'externalInvite.missingToken.title': 'Lien sans jeton',
   'externalInvite.missingToken.body': 'Ouvrez le lien complet envoyé par l’opérateur du procès-verbal.',
-  'externalInvite.loading': 'Validation de l’invitation...',
+  'externalInvite.loading': 'Validation de l’invitation…',
   'externalInvite.toast.accepted': 'Réponse d’acceptation enregistrée.',
   'externalInvite.toast.declined': 'Refus enregistré.',
   'externalInvite.tracking.title': 'Tracking only',
@@ -3274,7 +3290,7 @@ export const frFR: Catalog = {
   'externalInvite.workingCopy.title': 'Copie de travail',
   'externalInvite.workingCopy.body':
     'L’aperçu disponible est du Markdown non canonique. Le PDF/A préservé et tout PDF signé ne sont pas fournis par cette invitation.',
-  'externalInvite.workingCopy.loading': 'Chargement de la copie...',
+  'externalInvite.workingCopy.loading': 'Chargement de la copie…',
   'externalInvite.workingCopy.preview': 'Aperçu de la copie .md',
   'externalInvite.documentUnavailable.title': 'Document indisponible',
   'externalInvite.documentUnavailable.body':
