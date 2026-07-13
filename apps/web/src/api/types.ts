@@ -544,7 +544,7 @@ export interface ActSealMetadata {
   profile: EntityKind;
 }
 
-export type WrittenResolutionReviewStatus = 'reviewed' | 'needs_follow_up' | string;
+export type WrittenResolutionReviewStatus = 'reviewed' | 'needs_follow_up';
 
 export interface WrittenResolutionEvidenceStatusView {
   status: 'not_applicable' | 'missing' | 'referenced_only' | 'bound_present' | string;
@@ -597,6 +597,42 @@ export interface WrittenResolutionEvidenceView {
   checklist?: WrittenResolutionEvidenceItemView[];
   review_receipts?: WrittenResolutionReviewReceiptView[];
   note: string | null;
+}
+
+export interface WrittenResolutionEvidenceItemInput {
+  label: string;
+  reference?: string | null;
+  digest?: string | null;
+  note?: string | null;
+}
+
+export interface WrittenResolutionReviewEvidenceLocatorInput {
+  label: string;
+  locator?: string | null;
+  digest?: string | null;
+}
+
+export interface WrittenResolutionReviewReceiptInput {
+  reviewer: string;
+  reviewed_at: string;
+  status: WrittenResolutionReviewStatus;
+  guardrail_acknowledgements: string[];
+  evidence: WrittenResolutionReviewEvidenceLocatorInput[];
+  note?: string | null;
+  consent_proof_claimed: false;
+  quorum_proof_claimed: false;
+  identity_proof_claimed: false;
+  legal_acceptance_claimed: false;
+  legal_sufficiency_claimed: false;
+  external_validation_claimed: false;
+  automatic_approval_claimed: false;
+  authority_certified_claimed: false;
+}
+
+export interface WrittenResolutionEvidenceInput {
+  checklist?: WrittenResolutionEvidenceItemInput[];
+  review_receipts?: WrittenResolutionReviewReceiptInput[];
+  note?: string | null;
 }
 
 export const AI_HUMAN_VERIFICATION_STATUSES = [
@@ -3880,6 +3916,7 @@ export interface UpdateActBody {
   members_present?: number | null;
   members_represented?: number | null;
   referenced_documents?: ActDocumentReference[];
+  written_resolution_evidence?: WrittenResolutionEvidenceInput | null;
   deliberations?: string;
   deliberation_items?: ActDeliberationItem[];
   telematic_evidence?: string | null;

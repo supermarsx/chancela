@@ -607,6 +607,17 @@ describe('AtaEditorPage — AI human review gate', () => {
 });
 
 describe('AtaEditorPage — written-resolution evidence review', () => {
+  const falseWrittenResolutionReceiptFlags = {
+    consent_proof_claimed: false,
+    quorum_proof_claimed: false,
+    identity_proof_claimed: false,
+    legal_acceptance_claimed: false,
+    legal_sufficiency_claimed: false,
+    external_validation_claimed: false,
+    automatic_approval_claimed: false,
+    authority_certified_claimed: false,
+  } as const;
+
   it('renders local review receipt depth from compliance without proof wording', async () => {
     const { fetchImpl } = stateful(
       {
@@ -641,6 +652,127 @@ describe('AtaEditorPage — written-resolution evidence review', () => {
     expect(screen.getByText(/No consent, quorum, identity, legal sufficiency/i)).toBeTruthy();
     expect(screen.queryByText(/legal acceptance/i)).toBeNull();
     expect(screen.queryByText(/automatic approval is granted/i)).toBeNull();
+  });
+
+  it('appends local receipt metadata through the existing patch contract without overclaiming', async () => {
+    const existingReceipt: NonNullable<
+      NonNullable<ActView['written_resolution_evidence']>['review_receipts']
+    >[number] = {
+      reviewer: 'existing.operator@example.pt',
+      reviewed_at: '2026-07-12T09:00:00Z',
+      status: 'needs_follow_up',
+      guardrail_acknowledgements: ['local_metadata_only'],
+      evidence: [
+        {
+          label: 'Existing written approvals folder',
+          locator: 'folder:written-approvals',
+          digest: null,
+        },
+      ],
+      note: 'Existing receipt remains in the history.',
+      ...falseWrittenResolutionReceiptFlags,
+    };
+    const shared = stateful({
+      ...baseAct,
+      channel: 'WrittenResolution',
+      mesa: { presidente: 'Ana', secretarios: [] },
+      written_resolution_evidence: {
+        status: {
+          status: 'referenced_only',
+          boundary: 'workflow_evidence_status_only',
+          signed_signatory_slots: 0,
+          digested_attachments: 0,
+          checklist_items: 1,
+          digested_checklist_items: 0,
+          referenced_checklist_items: 1,
+          bound_count: 0,
+          referenced_only_count: 1,
+          review_receipts: 1,
+          latest_review_status: 'needs_follow_up',
+          reviewed_evidence_locators: 1,
+          reviewed_evidence_digests: 0,
+        },
+        checklist: [
+          {
+            label: 'Approval pack',
+            reference: 'doc:approval-pack',
+            digest: null,
+            note: 'Retained outside this editor.',
+          },
+        ],
+        review_receipts: [existingReceipt],
+        note: 'Existing evidence note.',
+      },
+    });
+    vi.stubGlobal('fetch', shared.fetchImpl);
+    renderEditor();
+
+    expect(await screen.findByLabelText('Written-resolution receipt history')).toBeTruthy();
+    expect(screen.getByText('existing.operator@example.pt')).toBeTruthy();
+    expect(screen.getByText(/Existing receipt remains in the history/i)).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText('Reviewer'), {
+      target: { value: 'operator@example.pt' },
+    });
+    fireEvent.change(screen.getByLabelText('Reviewed at'), {
+      target: { value: '2026-07-13T10:15:00Z' },
+    });
+    fireEvent.change(screen.getByLabelText('Evidence label'), {
+      target: { value: 'Approval pack review receipt' },
+    });
+    fireEvent.change(screen.getByLabelText('Evidence reference'), {
+      target: { value: 'doc:approval-pack' },
+    });
+    fireEvent.change(screen.getByLabelText('Receipt notes'), {
+      target: { value: 'Reviewed local metadata only.' },
+    });
+    fireEvent.click(screen.getByLabelText(/Local metadata only/i));
+    fireEvent.click(screen.getByRole('button', { name: 'Record local receipt' }));
+
+    await waitFor(() => expect(shared.patches).toHaveLength(1));
+    const patch = shared.patches[0];
+    expect(Object.keys(patch)).toEqual(['written_resolution_evidence']);
+    const evidence = patch.written_resolution_evidence as Record<string, unknown>;
+    expect(evidence.note).toBe('Existing evidence note.');
+    expect(evidence.checklist).toEqual([
+      {
+        label: 'Approval pack',
+        reference: 'doc:approval-pack',
+        digest: null,
+        note: 'Retained outside this editor.',
+      },
+    ]);
+
+    const receipts = evidence.review_receipts as Record<string, unknown>[];
+    expect(receipts).toHaveLength(2);
+    expect(receipts[0]).toMatchObject(existingReceipt);
+    expect(receipts[1]).toEqual({
+      reviewer: 'operator@example.pt',
+      reviewed_at: '2026-07-13T10:15:00Z',
+      status: 'reviewed',
+      guardrail_acknowledgements: [
+        'local_metadata_only',
+        'no_consent_quorum_identity_or_legal_proof',
+        'no_external_validation_provider_authority_or_completion_claim',
+      ],
+      evidence: [
+        {
+          label: 'Approval pack review receipt',
+          locator: 'doc:approval-pack',
+          digest: null,
+        },
+      ],
+      note: 'Reviewed local metadata only.',
+      ...falseWrittenResolutionReceiptFlags,
+    });
+    expect(receipts[1]).toMatchObject(falseWrittenResolutionReceiptFlags);
+
+    const pageText = document.body.textContent ?? '';
+    expect(pageText).toContain('legal_sufficiency_claimed=false');
+    expect(pageText).not.toMatch(/legal sufficiency confirmed/i);
+    expect(pageText).not.toMatch(/legal acceptance/i);
+    expect(pageText).not.toMatch(/external validation completed/i);
+    expect(pageText).not.toMatch(/authority certified/i);
   });
 });
 

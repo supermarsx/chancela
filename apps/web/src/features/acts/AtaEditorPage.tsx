@@ -65,6 +65,10 @@ import {
   type HumanVerificationDecision,
   type MeetingChannel,
   type SignatoryCapacity,
+  type WrittenResolutionEvidenceInput,
+  type WrittenResolutionReviewReceiptInput,
+  type WrittenResolutionReviewReceiptView,
+  type WrittenResolutionReviewStatus,
 } from '../../api/types';
 import { formatAtaNumber } from '../../format';
 import { useT } from '../../i18n';
@@ -187,6 +191,127 @@ function orNullNum(s: string): number | null {
   if (trimmed === '') return null;
   const n = Number(trimmed);
   return Number.isFinite(n) ? n : null;
+}
+
+const WRITTEN_RESOLUTION_GUARDRAIL_ACKNOWLEDGEMENTS = [
+  'local_metadata_only',
+  'no_consent_quorum_identity_or_legal_proof',
+  'no_external_validation_provider_authority_or_completion_claim',
+] as const;
+
+const WRITTEN_RESOLUTION_FALSE_CLAIM_FLAGS = {
+  consent_proof_claimed: false,
+  quorum_proof_claimed: false,
+  identity_proof_claimed: false,
+  legal_acceptance_claimed: false,
+  legal_sufficiency_claimed: false,
+  external_validation_claimed: false,
+  automatic_approval_claimed: false,
+  authority_certified_claimed: false,
+} as const;
+
+const WRITTEN_RESOLUTION_REVIEW_STATUS_OPTIONS: {
+  value: WrittenResolutionReviewStatus;
+  label: string;
+}[] = [
+  { value: 'reviewed', label: 'Reviewed local metadata' },
+  { value: 'needs_follow_up', label: 'Needs follow-up' },
+];
+
+interface WrittenResolutionReceiptDraft {
+  reviewer: string;
+  reviewed_at: string;
+  status: WrittenResolutionReviewStatus;
+  evidence_label: string;
+  evidence_locator: string;
+  evidence_digest: string;
+  note: string;
+  guardrail_acknowledged: boolean;
+}
+
+function nowRfc3339(): string {
+  return new Date().toISOString();
+}
+
+function newWrittenResolutionReceiptDraft(): WrittenResolutionReceiptDraft {
+  return {
+    reviewer: '',
+    reviewed_at: nowRfc3339(),
+    status: 'reviewed',
+    evidence_label: '',
+    evidence_locator: '',
+    evidence_digest: '',
+    note: '',
+    guardrail_acknowledged: false,
+  };
+}
+
+function receiptDraftReady(draft: WrittenResolutionReceiptDraft): boolean {
+  return (
+    draft.reviewer.trim() !== '' &&
+    draft.reviewed_at.trim() !== '' &&
+    draft.evidence_label.trim() !== '' &&
+    (draft.evidence_locator.trim() !== '' || draft.evidence_digest.trim() !== '') &&
+    draft.guardrail_acknowledged
+  );
+}
+
+function existingWrittenResolutionReceiptToInput(
+  receipt: WrittenResolutionReviewReceiptView,
+): WrittenResolutionReviewReceiptInput {
+  return {
+    reviewer: receipt.reviewer,
+    reviewed_at: receipt.reviewed_at,
+    status: receipt.status,
+    guardrail_acknowledgements: receipt.guardrail_acknowledgements,
+    evidence: (receipt.evidence ?? []).map((evidence) => ({
+      label: evidence.label,
+      locator: evidence.locator,
+      digest: evidence.digest,
+    })),
+    note: receipt.note,
+    ...WRITTEN_RESOLUTION_FALSE_CLAIM_FLAGS,
+  };
+}
+
+function receiptDraftToInput(
+  draft: WrittenResolutionReceiptDraft,
+): WrittenResolutionReviewReceiptInput {
+  return {
+    reviewer: draft.reviewer.trim(),
+    reviewed_at: draft.reviewed_at.trim(),
+    status: draft.status,
+    guardrail_acknowledgements: [...WRITTEN_RESOLUTION_GUARDRAIL_ACKNOWLEDGEMENTS],
+    evidence: [
+      {
+        label: draft.evidence_label.trim(),
+        locator: orNull(draft.evidence_locator),
+        digest: orNull(draft.evidence_digest),
+      },
+    ],
+    note: orNull(draft.note),
+    ...WRITTEN_RESOLUTION_FALSE_CLAIM_FLAGS,
+  };
+}
+
+function writtenResolutionEvidencePatch(
+  act: ActView,
+  receiptDraft: WrittenResolutionReceiptDraft,
+): WrittenResolutionEvidenceInput {
+  const current = act.written_resolution_evidence;
+  return {
+    note: current?.note ?? null,
+    checklist: (current?.checklist ?? []).map((item) => ({
+      label: item.label,
+      reference: item.reference,
+      digest: item.digest,
+      note: item.note,
+    })),
+    review_receipts: [
+      ...(current?.review_receipts ?? []).map(existingWrittenResolutionReceiptToInput),
+      receiptDraftToInput(receiptDraft),
+    ],
+  };
 }
 
 /** The next lifecycle target, capped at Signing (Sealed/Archived need the seal flow). */
@@ -890,6 +1015,208 @@ function AttachmentsEditor({
   );
 }
 
+function writtenResolutionReviewStatusLabel(status: WrittenResolutionReviewStatus): string {
+  switch (status) {
+    case 'reviewed':
+      return 'Reviewed';
+    case 'needs_follow_up':
+      return 'Needs follow-up';
+    default:
+      return status?.trim() || 'Not recorded';
+  }
+}
+
+function WrittenResolutionReceiptEditor({
+  act,
+  receiptDraft,
+  readOnly,
+  pending,
+  error,
+  scope,
+  onDraftChange,
+  onSubmit,
+}: {
+  act: ActView;
+  receiptDraft: WrittenResolutionReceiptDraft;
+  readOnly: boolean;
+  pending: boolean;
+  error: unknown;
+  scope: CanScope;
+  onDraftChange: (next: WrittenResolutionReceiptDraft) => void;
+  onSubmit: () => void;
+}) {
+  const receipts = act.written_resolution_evidence?.review_receipts ?? [];
+  const ready = receiptDraftReady(receiptDraft) && !pending;
+  const setReceipt = <K extends keyof WrittenResolutionReceiptDraft>(
+    key: K,
+    value: WrittenResolutionReceiptDraft[K],
+  ) => onDraftChange({ ...receiptDraft, [key]: value });
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (ready) onSubmit();
+  }
+
+  return (
+    <div className="stack--tight">
+      <section className="stack--tight" aria-label="Written-resolution receipt history">
+        <div className="row-wrap">
+          <span className="card__label">Written-resolution receipt history</span>
+          <Badge tone={receipts.length > 0 ? 'ok' : 'warn'}>{receipts.length}</Badge>
+        </div>
+        {receipts.length > 0 ? (
+          <ol className="stack--tight">
+            {receipts.map((receipt, i) => (
+              <li key={`${receipt.reviewed_at}-${receipt.reviewer}-${i}`} className="stack--tight">
+                <div className="row-wrap">
+                  <Badge tone={receipt.status === 'reviewed' ? 'ok' : 'warn'}>
+                    {writtenResolutionReviewStatusLabel(receipt.status)}
+                  </Badge>
+                  <span className="mono">{receipt.reviewer}</span>
+                  <time className="mono" dateTime={receipt.reviewed_at}>
+                    {receipt.reviewed_at}
+                  </time>
+                </div>
+                <dl className="deflist deflist--tight">
+                  <div>
+                    <dt>Reviewed evidence</dt>
+                    <dd>
+                      {(receipt.evidence ?? []).length > 0
+                        ? (receipt.evidence ?? [])
+                            .map((evidence) =>
+                              [
+                                evidence.label,
+                                evidence.locator ? `locator:${evidence.locator}` : null,
+                                evidence.digest ? `digest:${evidence.digest}` : null,
+                              ]
+                                .filter(Boolean)
+                                .join(' | '),
+                            )
+                            .join('; ')
+                        : 'Not recorded'}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Note</dt>
+                    <dd>{receipt.note?.trim() || 'No note recorded'}</dd>
+                  </div>
+                  <div>
+                    <dt>Boundary flags</dt>
+                    <dd className="mono">
+                      consent_proof_claimed=false; quorum_proof_claimed=false;
+                      identity_proof_claimed=false; legal_acceptance_claimed=false;
+                      legal_sufficiency_claimed=false; external_validation_claimed=false;
+                      automatic_approval_claimed=false; authority_certified_claimed=false
+                    </dd>
+                  </div>
+                </dl>
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <p className="muted">No written-resolution review receipts recorded.</p>
+        )}
+      </section>
+
+      {!readOnly ? (
+        <form className="stack--tight" onSubmit={submit} aria-label="Add written-resolution receipt">
+          {error ? <ErrorNote error={error} /> : null}
+          <div className="rowline">
+            <Field label="Reviewer" htmlFor="wr-receipt-reviewer">
+              <Input
+                id="wr-receipt-reviewer"
+                value={receiptDraft.reviewer}
+                disabled={pending}
+                onChange={(e) => setReceipt('reviewer', e.target.value)}
+              />
+            </Field>
+            <Field label="Reviewed at" htmlFor="wr-receipt-reviewed-at">
+              <Input
+                id="wr-receipt-reviewed-at"
+                value={receiptDraft.reviewed_at}
+                disabled={pending}
+                onChange={(e) => setReceipt('reviewed_at', e.target.value)}
+              />
+            </Field>
+          </div>
+          <Field label="Review status" htmlFor="wr-receipt-status">
+            <Select
+              id="wr-receipt-status"
+              value={receiptDraft.status}
+              disabled={pending}
+              options={WRITTEN_RESOLUTION_REVIEW_STATUS_OPTIONS}
+              onChange={(e) =>
+                setReceipt('status', e.target.value as WrittenResolutionReviewStatus)
+              }
+            />
+          </Field>
+          <div className="rowline">
+            <Field label="Evidence label" htmlFor="wr-receipt-evidence-label">
+              <Input
+                id="wr-receipt-evidence-label"
+                value={receiptDraft.evidence_label}
+                disabled={pending}
+                onChange={(e) => setReceipt('evidence_label', e.target.value)}
+              />
+            </Field>
+            <Field label="Evidence reference" htmlFor="wr-receipt-evidence-locator">
+              <Input
+                id="wr-receipt-evidence-locator"
+                value={receiptDraft.evidence_locator}
+                disabled={pending}
+                onChange={(e) => setReceipt('evidence_locator', e.target.value)}
+              />
+            </Field>
+          </div>
+          <Field label="Evidence digest" htmlFor="wr-receipt-evidence-digest">
+            <Input
+              id="wr-receipt-evidence-digest"
+              value={receiptDraft.evidence_digest}
+              disabled={pending}
+              onChange={(e) => setReceipt('evidence_digest', e.target.value)}
+            />
+          </Field>
+          <Field label="Receipt notes" htmlFor="wr-receipt-note">
+            <TextArea
+              id="wr-receipt-note"
+              rows={3}
+              value={receiptDraft.note}
+              disabled={pending}
+              onChange={(e) => setReceipt('note', e.target.value)}
+            />
+          </Field>
+          <label className="checkline">
+            <input
+              type="checkbox"
+              checked={receiptDraft.guardrail_acknowledged}
+              disabled={pending}
+              onChange={(e) => setReceipt('guardrail_acknowledged', e.target.checked)}
+            />
+            Local metadata only; proof, legal-sufficiency, provider, authority, completion, signing,
+            seal, and archive claims stay false.
+          </label>
+          <p className="mono">
+            consent_proof_claimed=false; quorum_proof_claimed=false;
+            identity_proof_claimed=false; legal_sufficiency_claimed=false;
+            external_validation_claimed=false; automatic_approval_claimed=false;
+            authority_certified_claimed=false
+          </p>
+          <GateButton
+            perm="act.edit"
+            scope={scope}
+            type="submit"
+            variant="primary"
+            icon={<Icon.Check />}
+            disabled={!ready}
+          >
+            {pending ? 'Recording receipt' : 'Record local receipt'}
+          </GateButton>
+        </form>
+      ) : null}
+    </div>
+  );
+}
+
 function ConveningEditor({
   convening,
   disabled,
@@ -1552,13 +1879,18 @@ export function AtaEditorPage() {
   const [humanReviewDecision, setHumanReviewDecision] = useState<HumanVerificationDecision | null>(
     null,
   );
+  const [writtenResolutionReceipt, setWrittenResolutionReceipt] =
+    useState<WrittenResolutionReceiptDraft>(() => newWrittenResolutionReceiptDraft());
   const [sealWarningsOpen, setSealWarningsOpen] = useState(false);
   const [sealWarningsAcknowledged, setSealWarningsAcknowledged] = useState(false);
 
   // Seed the working copy once per act identity; refetches of the same act (after an
   // advance/seal) update the read-only header via the cache without clobbering edits.
   useEffect(() => {
-    if (act.data) setDraft(toDraft(act.data));
+    if (act.data) {
+      setDraft(toDraft(act.data));
+      setWrittenResolutionReceipt(newWrittenResolutionReceiptDraft());
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [act.data?.id]);
 
@@ -1594,6 +1926,20 @@ export function AtaEditorPage() {
       onSuccess: () => toast.success(t('toast.ata.saved')),
       onError: (e) => toast.error(e),
     });
+  }
+
+  function onSubmitWrittenResolutionReceipt() {
+    if (!receiptDraftReady(writtenResolutionReceipt)) return;
+    update.mutate(
+      { written_resolution_evidence: writtenResolutionEvidencePatch(a, writtenResolutionReceipt) },
+      {
+        onSuccess: () => {
+          setWrittenResolutionReceipt(newWrittenResolutionReceiptDraft());
+          toast.success(t('toast.ata.saved'));
+        },
+        onError: (e) => toast.error(e),
+      },
+    );
   }
 
   function onAdvance(to: ActState) {
@@ -1659,6 +2005,8 @@ export function AtaEditorPage() {
   const warningCount = complianceWarningCount(compliance.data);
   const hasComplianceWarnings = warningCount > 0;
   const warningItems = sealWarningItems(compliance.data);
+  const showWrittenResolutionReceipts =
+    a.channel === 'WrittenResolution' || a.written_resolution_evidence != null;
 
   return (
     <div className="stack">
@@ -1902,6 +2250,21 @@ export function AtaEditorPage() {
               onChange={(next) => set('referenced_documents', next)}
             />
           </Card>
+
+          {showWrittenResolutionReceipts ? (
+            <Card title="Written-resolution evidence receipts">
+              <WrittenResolutionReceiptEditor
+                act={a}
+                receiptDraft={writtenResolutionReceipt}
+                readOnly={readOnly}
+                pending={update.isPending}
+                error={update.error}
+                scope={bookScope}
+                onDraftChange={setWrittenResolutionReceipt}
+                onSubmit={onSubmitWrittenResolutionReceipt}
+              />
+            </Card>
+          ) : null}
 
           <Card title={t('acts.signatories')}>
             <SignatoriesEditor
