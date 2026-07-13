@@ -91,6 +91,7 @@ mod books;
 mod bundles;
 mod cae;
 mod chronology;
+mod credential_resolve;
 mod dashboard;
 mod data;
 mod data_status;
