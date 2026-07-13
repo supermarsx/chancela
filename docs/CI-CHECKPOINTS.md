@@ -247,6 +247,22 @@ It intentionally reuses existing test surfaces:
   `operator_evidence_covered` suppression, dated-before-no-date
   `dashboard_limit` sorting, and the `contracts/dashboard.json` no-date
   fixture.
+- API and web privacy control review reminders:
+  `cargo test -p chancela-api --locked privacy_control_review_reminders_cover_missing_overdue_and_source_toggle`
+  plus the focused web unit lane for
+  `apps/web/src/features/dashboard/DashboardPage.test.tsx` and
+  `apps/web/src/features/settings/SettingsPage.test.tsx`. Focused
+  route-stubbed browser proof is guarded by
+  `apps/web/e2e/privacy-control-review-reminders.spec.ts` and pins Settings >
+  Privacidade rendering for breach/transfer/DPIA advisory review fixtures,
+  local review badges/no-claim copy, dashboard work-queue reminders for
+  `privacy-breach-playbook-review` and `privacy-transfer-control-review`, and
+  Gestão suppression through
+  `workflow.reminders.sources.privacy_control_reviews=false` without privacy
+  record mutation. These markers remain local advisory reminder evidence only:
+  they do not notify authorities or data subjects, approve or execute
+  transfers, file or complete DPIAs, complete legal approval, deliver
+  provider/calendar/email/webhooks, or certify privacy compliance.
 - API retained-export cleanup dry-run:
   `cargo test -p chancela-api --locked data_cleanup_`
 - API data key operations:
@@ -392,7 +408,8 @@ MCP trust-catalog structured-filter and redacted external-validator summary
 markers, MCP draft-vs-signed comparison review prompt/resource plus deterministic
 local comparison report/no-call/no-claim markers, dashboard guest
 `recent_events: []` redaction and no-permission-grant
-markers, generated-document by-id route, dispatch-evidence route, `act.read`/
+markers, privacy control review reminder source-rule/dashboard/browser markers,
+generated-document by-id route, dispatch-evidence route, `act.read`/
 `document.generate` gates, durable/in-memory, canonical Ata preservation,
 absent-owner communication auto-generation, dispatch-evidence store,
 idempotency, selected-recipient evidence coverage, evidence-attached headers,

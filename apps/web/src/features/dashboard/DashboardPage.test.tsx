@@ -710,6 +710,82 @@ describe('DashboardPage', () => {
     ).toBeTruthy();
   });
 
+  it('renders privacy control review reminders with settings routing and source markers', async () => {
+    const dashboard: Dashboard = {
+      ...baseDashboard,
+      reminders: [
+        {
+          due_date: '2026-07-10',
+          severity: 'Warning',
+          status: 'Overdue',
+          reason:
+            'Local breach playbook review reminder only; no authority or data-subject notification is claimed.',
+          entity_id: 'breach-review-1',
+          entity_name: 'Supplier token breach playbook',
+          source_rule: 'privacy-breach-playbook-review',
+          source_profile: 'breach:breach-review-1',
+          action: {
+            kind: 'open_settings_privacy',
+            label_key: 'settings.privacy.title',
+            api_href: '/v1/privacy/breach-playbooks/breach-review-1',
+            route: '/configuracoes?sec=privacidade',
+          },
+        },
+        {
+          due_date: '',
+          severity: 'Advisory',
+          status: 'Pending',
+          reason:
+            'Local transfer-control review reminder only; no transfer approval or execution is claimed.',
+          entity_id: 'transfer-review-1',
+          entity_name: 'UK support access transfer review',
+          source_rule: 'privacy-transfer-control-review',
+          source_profile: 'transfer:transfer-review-1',
+          action: {
+            kind: 'open_settings_privacy',
+            label_key: 'settings.privacy.title',
+            api_href: '/v1/privacy/transfer-controls/transfer-review-1',
+            route: '/configuracoes?sec=privacidade',
+          },
+        },
+      ],
+    };
+
+    vi.stubGlobal('fetch', fetchTable([{ match: '/v1/dashboard', body: dashboard }]));
+    renderDashboard();
+    await openDashboardTab('Fila de trabalho');
+
+    const queue = await screen.findByRole('list', { name: 'Fila de trabalho do painel' });
+    expect(within(queue).getAllByRole('listitem')).toHaveLength(2);
+
+    const breach = within(queue).getByText('Supplier token breach playbook').closest('li');
+    expect(breach).toBeTruthy();
+    expect(within(breach!).getByText('Atrasado')).toBeTruthy();
+    expect(
+      within(breach!).getByText('Fonte privacy-breach-playbook-review / breach:breach-review-1'),
+    ).toBeTruthy();
+    expect(
+      within(breach!)
+        .getByRole('link', { name: 'Supplier token breach playbook' })
+        .getAttribute('href'),
+    ).toBe('/configuracoes?sec=privacidade');
+
+    const transfer = within(queue).getByText('UK support access transfer review').closest('li');
+    expect(transfer).toBeTruthy();
+    expect(within(transfer!).getByText('Pendente')).toBeTruthy();
+    expect(within(transfer!).getByText('Sem data')).toBeTruthy();
+    expect(
+      within(transfer!).getByText(
+        'Fonte privacy-transfer-control-review / transfer:transfer-review-1',
+      ),
+    ).toBeTruthy();
+    expect(
+      within(transfer!)
+        .getByRole('link', { name: 'UK support access transfer review' })
+        .getAttribute('href'),
+    ).toBe('/configuracoes?sec=privacidade');
+  });
+
   it('shows an empty work-queue state when dashboard data exposes no operator work', async () => {
     vi.stubGlobal('fetch', fetchTable([{ match: '/v1/dashboard', body: baseDashboard }]));
     renderDashboard();

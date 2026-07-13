@@ -4163,6 +4163,26 @@ function assertCheckpointMap() {
     "dashboard privacy review reminder unit coverage marker",
   );
   assertFileContains(
+    "apps/web/src/features/dashboard/DashboardPage.test.tsx",
+    "renders privacy control review reminders with settings routing and source markers",
+    "web dashboard privacy review reminder source-rule unit marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/privacy-control-review-reminders.spec.ts",
+    "privacy control review reminders stay local and follow the settings source toggle",
+    "privacy control review reminder browser proof marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/privacy-control-review-reminders.spec.ts",
+    "privacyRecordMutations",
+    "privacy control review reminder browser no-mutation marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/privacy-control-review-reminders.spec.ts",
+    "PRIVACY_TRANSFER_REVIEW_RULE",
+    "privacy transfer control review browser reminder marker",
+  );
+  assertFileContains(
     "contracts/privacy.breach-playbooks.json",
     '"advisory_review":',
     "breach advisory review contract fixture marker",
@@ -10191,7 +10211,22 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "does not notify\n  authorities or data subjects, approve transfers, execute transfers, certify\n  adequacy/compliance, file DPIAs with an authority",
+    "Focused route-stubbed browser proof now pins Settings > Privacidade rendering",
+    "spec coverage privacy reminder browser proof marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "apps/web/e2e/privacy-control-review-reminders.spec.ts",
+    "CI checkpoints privacy reminder browser proof marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "without privacy\n  record mutation",
+    "CI checkpoints privacy reminder no-mutation marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "does not notify authorities or data subjects, approve transfers, execute transfers, certify adequacy/compliance, file DPIAs with an authority",
     "spec coverage privacy advisory no-claim caveat marker",
   );
   assertFileContains(

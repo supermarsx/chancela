@@ -229,12 +229,17 @@ Implementation checkpoints covered here:
   `workflow.reminders.sources.privacy_control_reviews` lets Settings suppress
   only that reminder family. The Settings privacy register rows render the
   local review badge and derived dates beside the existing lifecycle status.
-  This is deterministic local advisory state only: it does not notify
-  authorities or data subjects, approve transfers, execute transfers, certify
-  adequacy/compliance, file DPIAs with an authority, accept or certify legal
-  review, complete DPIAs, make external calls, deliver calendar/email/webhooks,
-  or perform destructive retention, erasure, disposal, or legal-completion
-  action.
+  Focused route-stubbed browser proof now pins Settings > Privacidade rendering
+  for breach/transfer/DPIA advisory fixtures, dashboard work-queue reminders for
+  `privacy-breach-playbook-review` and `privacy-transfer-control-review`, and
+  Gestão suppression through
+  `workflow.reminders.sources.privacy_control_reviews=false` without privacy
+  record mutation. This is deterministic local advisory state only: it does not
+  notify authorities or data subjects, approve transfers, execute transfers,
+  certify adequacy/compliance, file DPIAs with an authority, accept or certify
+  legal review, complete DPIAs, make external calls, deliver
+  calendar/email/webhooks, or perform destructive retention, erasure, disposal,
+  or legal-completion action.
 - Password-required account creation/session slice keeps Data/Roles/UX/CI
   **PARTIAL**: `POST /v1/users` now requires a password, validates it through
   the server password policy, hashes it with the existing verifier-seed path, and
@@ -3125,7 +3130,9 @@ behavior, legal disposal, or legal-effect claims.
   PKCS#12 API signing tests, multi-signature PAdES renewal-plan API tests, bounded retention execution, due-candidate archive/no-action evidence, and retention review-closure tests, Settings retention policy list/create/patch/dry-run/closure UI markers, explicit retention evidence-state markers, and non-destructive payload assertions, privacy breach/transfer review-receipt tests, TSL XML-DSig hardening tests including bounded same-document `URI="#id"` fragment markers and raw P-256 ECDSA-SHA256 `r||s` signature markers, trust/import/static hardening markers for unsafe TSL/TSA URL refusal, scoped test-only loopback, import fail-closed cache preservation, `/v1/books/import` body limits, security headers, and CC signing invalid-TSL refusal, MCP
   per-book raw-byte import preflight route/no-mutation/API tests and web preview-confirm stale-guard
   markers, resource/prompt tests, API dashboard reminder policy/default/source-toggle/window/year-boundary
-  tests, web contract/client/settings-default/dashboard/ferramentas/signing/i18n/trust tests,
+  tests, route-stubbed privacy control review reminder browser proof plus
+  Dashboard privacy reminder source-rule unit markers,
+  web contract/client/settings-default/dashboard/ferramentas/signing/i18n/trust tests,
   external-signing envelope UI/link-safety tests,
   backup recovery-drill receipt API tests plus Data Management, restore-modal, and contract
   checks for bounded receipts, nullable manifests, optional operator notes/custody location keys,
