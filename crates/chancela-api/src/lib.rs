@@ -9082,12 +9082,19 @@ mod tests {
     #[tokio::test]
     async fn delegation_contributes_to_effective_permissions() {
         use chancela_authz::{
-            Delegation, LEITOR_ROLE_ID, NoBooks, Permission, RoleAssignment, Scope, has_permission,
+            Delegation, GESTOR_ROLE_ID, LEITOR_ROLE_ID, NoBooks, Permission, RoleAssignment, Scope,
+            has_permission,
         };
         let tmp = TempDir::new();
         let state = AppState::with_data_dir(tmp.dir.clone());
         let now = time::OffsetDateTime::UNIX_EPOCH;
 
+        let grantor_id = seed_user(
+            &state,
+            "bruno.dias",
+            vec![RoleAssignment::new(GESTOR_ROLE_ID, Scope::Global)],
+        )
+        .await;
         // A Leitor (read-only) who receives a delegated act.advance.
         let leitor_id = seed_user(
             &state,
@@ -9105,7 +9112,7 @@ mod tests {
                     now.format(&time::format_description::well_known::Rfc3339)
                         .unwrap(),
                     Delegation::new(
-                        chancela_authz::UserId(Uuid::from_u128(9)),
+                        chancela_authz::UserId(grantor_id.0),
                         chancela_authz::UserId(leitor_id.0),
                         Permission::ActAdvance,
                         Scope::Global,

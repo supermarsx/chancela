@@ -201,7 +201,8 @@ pub(crate) fn bootstrap_assignment(bootstrap: bool) -> RoleAssignment {
 ///
 /// `principal` is the resolved user id — a session user (via [`resolve_principal_id`]) or, for t65,
 /// the user an api-key is bound to. Reads that user's `role_assignments`, the live [`RoleCatalog`],
-/// and the **active** delegations addressed to `principal`, and folds them through
+/// and the **active** delegations addressed to `principal`, revalidating each delegation's grantor
+/// against current active users + direct role authority, and folds them through
 /// [`chancela_authz::effective_permissions`] evaluated at `now`.
 ///
 /// **Fail-closed:** an unknown or **inactive** principal yields an EMPTY [`ScopedPermissionSet`]
@@ -214,20 +215,49 @@ pub async fn effective_permissions_for(
     now: OffsetDateTime,
 ) -> ScopedPermissionSet {
     // The principal's role assignments, or an empty authority for an unknown / inactive user.
-    let assignments: Vec<RoleAssignment> = {
+    let (assignments, grantor_assignments): (
+        Vec<RoleAssignment>,
+        HashMap<AuthzUserId, Vec<RoleAssignment>>,
+    ) = {
         let users = state.users.read().await;
-        match users.get(&principal) {
+        let assignments = match users.get(&principal) {
             Some(u) if u.active => u.role_assignments.clone(),
             _ => return ScopedPermissionSet::new(),
-        }
+        };
+        let grantor_assignments = users
+            .values()
+            .filter(|u| u.active)
+            .map(|u| (AuthzUserId(u.id.0), u.role_assignments.clone()))
+            .collect();
+        (assignments, grantor_assignments)
     };
 
-    let delegations: Vec<Delegation> = {
+    let stored_delegations: Vec<Delegation> = {
         let table = state.delegations.read().await;
         table.values().map(|d| d.authz().clone()).collect()
     };
 
+    let book_relation = current_book_relation(state).await;
+    let books = |b: AuthzBookId| book_relation.get(&b).copied();
     let roles = state.roles.read().await;
+    let grantor_role_authority: HashMap<AuthzUserId, ScopedPermissionSet> = grantor_assignments
+        .iter()
+        .map(|(&grantor, assignments)| {
+            (
+                grantor,
+                effective_permissions(grantor, assignments, &roles, &[], now),
+            )
+        })
+        .collect();
+    let delegations: Vec<Delegation> = stored_delegations
+        .into_iter()
+        .filter(|d| {
+            grantor_role_authority
+                .get(&d.from)
+                .is_some_and(|eff| eff.has_via_role(d.permission, d.scope, &books))
+        })
+        .collect();
+
     effective_permissions(
         AuthzUserId(principal.0),
         &assignments,
@@ -235,6 +265,14 @@ pub async fn effective_permissions_for(
         &delegations,
         now,
     )
+}
+
+async fn current_book_relation(state: &AppState) -> HashMap<AuthzBookId, AuthzEntityId> {
+    let books = state.books.read().await;
+    books
+        .values()
+        .map(|b| (AuthzBookId(b.id.0), AuthzEntityId(b.entity_id.0)))
+        .collect()
 }
 
 /// **FROZEN (t64-E2).** Resolve the session user behind a [`CurrentActor`] to their [`UserId`].
@@ -952,7 +990,9 @@ pub async fn unassign_role(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::delegations::{DelegationId, StoredDelegation};
     use crate::users::SecretSource;
+    use time::format_description::well_known::Rfc3339;
 
     fn user(id: u128, created_at: &str, assignments: Vec<RoleAssignment>) -> User {
         User {
@@ -972,6 +1012,204 @@ mod tests {
 
     fn map(users: Vec<User>) -> HashMap<UserId, User> {
         users.into_iter().map(|u| (u.id, u)).collect()
+    }
+
+    fn custom_role(id: u128, name: &str, permissions: &[Permission]) -> Role {
+        Role {
+            id: RoleId(Uuid::from_u128(id)),
+            name: name.to_owned(),
+            permission_set: permissions.iter().copied().collect(),
+            protected: false,
+        }
+    }
+
+    fn stored_delegation(
+        id: u128,
+        from: UserId,
+        to: UserId,
+        permission: Permission,
+        scope: Scope,
+        now: OffsetDateTime,
+    ) -> StoredDelegation {
+        let did = DelegationId(Uuid::from_u128(id));
+        StoredDelegation::new(
+            did,
+            now.format(&Rfc3339).expect("valid timestamp"),
+            Delegation::new(AuthzUserId(from.0), AuthzUserId(to.0), permission, scope),
+        )
+    }
+
+    async fn state_with_rbac(
+        users: Vec<User>,
+        roles: RoleCatalog,
+        delegations: Vec<StoredDelegation>,
+    ) -> AppState {
+        let state = AppState::default();
+        *state.users.write().await = map(users);
+        *state.roles.write().await = roles;
+        *state.delegations.write().await = delegations.into_iter().map(|d| (d.id, d)).collect();
+        state
+    }
+
+    fn permits(eff: &ScopedPermissionSet, permission: Permission, scope: Scope) -> bool {
+        chancela_authz::has_permission(eff, permission, scope, &chancela_authz::NoBooks)
+    }
+
+    #[tokio::test]
+    async fn e4_delegation_roles_active_grantor_with_direct_role_still_works() {
+        let now = OffsetDateTime::UNIX_EPOCH;
+        let act_role = custom_role(0xA11CE, "Act operator", &[Permission::ActAdvance]);
+        let grantor = user(
+            1,
+            "2026-01-01T00:00:00Z",
+            vec![RoleAssignment::new(act_role.id, Scope::Global)],
+        );
+        let grantee = user(2, "2026-01-02T00:00:00Z", vec![]);
+        let delegation = stored_delegation(
+            1,
+            grantor.id,
+            grantee.id,
+            Permission::ActAdvance,
+            Scope::Global,
+            now,
+        );
+        let state = state_with_rbac(
+            vec![grantor, grantee.clone()],
+            [act_role].into_iter().collect(),
+            vec![delegation],
+        )
+        .await;
+
+        let eff = effective_permissions_for(&state, grantee.id, now).await;
+
+        assert!(permits(&eff, Permission::ActAdvance, Scope::Global));
+        assert!(
+            eff.delegated_grants()
+                .any(|(p, s)| p == Permission::ActAdvance && s == Scope::Global)
+        );
+    }
+
+    #[tokio::test]
+    async fn e4_delegation_roles_drops_delegation_when_grantor_is_inactive() {
+        let now = OffsetDateTime::UNIX_EPOCH;
+        let act_role = custom_role(0xA11CE, "Act operator", &[Permission::ActAdvance]);
+        let mut grantor = user(
+            1,
+            "2026-01-01T00:00:00Z",
+            vec![RoleAssignment::new(act_role.id, Scope::Global)],
+        );
+        grantor.active = false;
+        let grantee = user(2, "2026-01-02T00:00:00Z", vec![]);
+        let delegation = stored_delegation(
+            1,
+            grantor.id,
+            grantee.id,
+            Permission::ActAdvance,
+            Scope::Global,
+            now,
+        );
+        let state = state_with_rbac(
+            vec![grantor, grantee.clone()],
+            [act_role].into_iter().collect(),
+            vec![delegation],
+        )
+        .await;
+
+        let eff = effective_permissions_for(&state, grantee.id, now).await;
+
+        assert!(!permits(&eff, Permission::ActAdvance, Scope::Global));
+        assert_eq!(state.delegations.read().await.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn e4_delegation_roles_drops_delegation_when_grantor_loses_role_permission() {
+        let now = OffsetDateTime::UNIX_EPOCH;
+        let narrowed_role = custom_role(0xA11CE, "Act operator", &[Permission::ActRead]);
+        let grantor = user(
+            1,
+            "2026-01-01T00:00:00Z",
+            vec![RoleAssignment::new(narrowed_role.id, Scope::Global)],
+        );
+        let grantee = user(2, "2026-01-02T00:00:00Z", vec![]);
+        let delegation = stored_delegation(
+            1,
+            grantor.id,
+            grantee.id,
+            Permission::ActAdvance,
+            Scope::Global,
+            now,
+        );
+        let state = state_with_rbac(
+            vec![grantor, grantee.clone()],
+            [narrowed_role].into_iter().collect(),
+            vec![delegation],
+        )
+        .await;
+
+        let eff = effective_permissions_for(&state, grantee.id, now).await;
+
+        assert!(!permits(&eff, Permission::ActAdvance, Scope::Global));
+        assert_eq!(state.delegations.read().await.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn e4_delegation_roles_grantor_cannot_bootstrap_from_received_delegation() {
+        let now = OffsetDateTime::UNIX_EPOCH;
+        let act_role = custom_role(0xA11CE, "Act operator", &[Permission::ActAdvance]);
+        let delegation_manager = custom_role(
+            0xDE1E6A7E,
+            "Delegation manager",
+            &[Permission::DelegationGrant],
+        );
+        let owner = user(
+            1,
+            "2026-01-01T00:00:00Z",
+            vec![RoleAssignment::new(act_role.id, Scope::Global)],
+        );
+        let middle = user(
+            2,
+            "2026-01-02T00:00:00Z",
+            vec![RoleAssignment::new(delegation_manager.id, Scope::Global)],
+        );
+        let grantee = user(3, "2026-01-03T00:00:00Z", vec![]);
+        let received = stored_delegation(
+            1,
+            owner.id,
+            middle.id,
+            Permission::ActAdvance,
+            Scope::Global,
+            now,
+        );
+        let attempted_bootstrap = stored_delegation(
+            2,
+            middle.id,
+            grantee.id,
+            Permission::ActAdvance,
+            Scope::Global,
+            now,
+        );
+        let state = state_with_rbac(
+            vec![owner, middle.clone(), grantee.clone()],
+            [act_role, delegation_manager].into_iter().collect(),
+            vec![received, attempted_bootstrap],
+        )
+        .await;
+
+        let middle_eff = effective_permissions_for(&state, middle.id, now).await;
+        assert!(permits(&middle_eff, Permission::ActAdvance, Scope::Global));
+        assert!(!middle_eff.has_via_role(
+            Permission::ActAdvance,
+            Scope::Global,
+            &chancela_authz::NoBooks
+        ));
+
+        let grantee_eff = effective_permissions_for(&state, grantee.id, now).await;
+        assert!(!permits(
+            &grantee_eff,
+            Permission::ActAdvance,
+            Scope::Global
+        ));
+        assert_eq!(state.delegations.read().await.len(), 2);
     }
 
     #[test]
