@@ -1023,7 +1023,7 @@ function writtenResolutionReviewStatusLabel(status: WrittenResolutionReviewStatu
     case 'needs_follow_up':
       return 'Needs follow-up';
     default:
-      return status?.trim() || 'Not recorded';
+      return (status as string)?.trim() || 'Not recorded';
   }
 }
 
