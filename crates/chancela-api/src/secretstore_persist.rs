@@ -459,6 +459,32 @@ pub struct DecryptedCredentialRecord {
     pub fields: BTreeMap<String, Zeroizing<String>>,
 }
 
+/// A non-secret, **non-decrypting** metadata view of one credential entry, for the write/management
+/// API (plan §3). Reports the entry's ordering/label/enabled/endpoint/selectors plus, per stored
+/// field, the field NAME and its non-secret `last4` hint. Never carries ciphertext or plaintext and
+/// never touches key material — it is built purely from the loaded record.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CredentialEntryMetadataView {
+    /// The entry id.
+    pub entry_id: String,
+    /// Non-secret label.
+    pub label: String,
+    /// Failover/priority order.
+    pub priority: i32,
+    /// Whether the entry is eligible for use.
+    pub enabled: bool,
+    /// Optional non-secret endpoint override.
+    pub endpoint: Option<String>,
+    /// Non-secret per-mode selectors.
+    pub selectors: EntrySelectors,
+    /// Per configured field: `(field_name, last4)`. `last4` is the non-secret ≤4-char display hint.
+    pub fields: Vec<(String, Option<String>)>,
+    /// RFC 3339 creation timestamp.
+    pub created_at: String,
+    /// RFC 3339 last-update timestamp.
+    pub updated_at: String,
+}
+
 /// One decrypted credential entry, returned by [`ProviderCredentialStore::read_entries`]. Every
 /// secret value is held in a [`Zeroizing`] buffer; the metadata is non-secret.
 pub struct DecryptedCredentialEntry {
@@ -1137,6 +1163,42 @@ impl ProviderCredentialStore {
                         key_version: record.key_version,
                         fields,
                     })
+                })
+                .collect())
+        })
+    }
+
+    /// Non-secret, **non-decrypting** metadata for every entry of `(mode, provider_id)`, in the
+    /// stored priority order (plan §3 management list / write-response bodies). Returns an empty vec
+    /// when no record exists. Never decrypts and never returns ciphertext or plaintext, so it needs
+    /// no key source; still fails closed on a corrupt sidecar.
+    pub fn entry_metadata(
+        &self,
+        mode: CredentialMode,
+        provider_id: &str,
+    ) -> Result<Vec<CredentialEntryMetadataView>, ProviderCredentialError> {
+        let key = (mode.as_str().to_owned(), provider_id.to_owned());
+        self.with_records(|records| {
+            let Some(record) = records.get(&key) else {
+                return Ok(Vec::new());
+            };
+            Ok(record
+                .entries
+                .iter()
+                .map(|entry| CredentialEntryMetadataView {
+                    entry_id: entry.id.clone(),
+                    label: entry.label.clone(),
+                    priority: entry.priority,
+                    enabled: entry.enabled,
+                    endpoint: entry.endpoint.clone(),
+                    selectors: entry.selectors.clone(),
+                    fields: entry
+                        .fields
+                        .iter()
+                        .map(|(name, stored)| (name.clone(), stored.last4.clone()))
+                        .collect(),
+                    created_at: entry.created_at.clone(),
+                    updated_at: entry.updated_at.clone(),
                 })
                 .collect())
         })

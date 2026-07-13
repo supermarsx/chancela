@@ -118,6 +118,7 @@ mod platform_logs;
 mod platform_ops;
 mod privacy;
 mod provider_credentials;
+mod provider_credentials_write;
 mod recovery;
 mod registry;
 mod roles;
@@ -1472,6 +1473,23 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/v1/signature/provider-credentials/status",
             get(provider_credentials::provider_credential_status),
+        )
+        .route(
+            "/v1/signature/provider-credentials",
+            get(provider_credentials_write::list_provider_credentials),
+        )
+        .route(
+            "/v1/signature/provider-credentials/{mode}/{provider_id}/entries",
+            post(provider_credentials_write::create_entry),
+        )
+        .route(
+            "/v1/signature/provider-credentials/{mode}/{provider_id}/entries/reorder",
+            post(provider_credentials_write::reorder_entries),
+        )
+        .route(
+            "/v1/signature/provider-credentials/{mode}/{provider_id}/entries/{entry_id}",
+            patch(provider_credentials_write::update_entry)
+                .delete(provider_credentials_write::delete_entry),
         )
         .route(
             "/v1/acts/{id}/signature",
@@ -7175,7 +7193,7 @@ mod tests {
                         "configured": false,
                         "production_blocked": true,
                         "local_only": false,
-                        "note": "No CSC/QTSP provider is configured in the environment."
+                        "note": "No CSC/QTSP provider is configured in protected storage or environment."
                     },
                     {
                         "id": "soft_pkcs12",
@@ -7410,6 +7428,125 @@ mod tests {
             "last4",
             "ciphertext",
         ] {
+            assert!(
+                !rendered.contains(forbidden),
+                "settings metadata leaked {forbidden}: {rendered}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn settings_provider_metadata_counts_stored_cmd_credentials_without_secret_status_leaks()
+    {
+        let tmp = TempDir::new();
+        let state = AppState {
+            provider_credentials: Arc::new(ProviderCredentialStore::load_with_db_key(
+                &tmp.dir,
+                b"settings-cmd-credential-db-key",
+                false,
+            )),
+            ..AppState::default()
+        };
+        state.settings.write().await.signing.cmd.application_id = None;
+        state
+            .provider_credentials
+            .put(
+                CredentialMode::Cmd,
+                "",
+                CmdCredentialFields {
+                    application_id: Some(Zeroizing::new(
+                        "stored-cmd-application-hidden-abcd".to_owned(),
+                    )),
+                    ..Default::default()
+                }
+                .into_set_pairs(),
+                &[],
+            )
+            .expect("seed encrypted CMD credentials");
+
+        let (status, body) = send(state.clone(), get("/v1/settings")).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["signing"]["cmd"]["application_id"], Value::Null);
+        let settings_cmd = body["signing"]["providers"]
+            .as_array()
+            .expect("providers")
+            .iter()
+            .find(|provider| provider["id"] == "cmd")
+            .expect("CMD provider metadata");
+        assert_eq!(settings_cmd["configured"], true, "{body}");
+
+        let (status, providers) = send(state, get("/v1/signature/providers")).await;
+        assert_eq!(status, StatusCode::OK, "{providers}");
+        let picker_cmd = providers
+            .as_array()
+            .expect("provider picker")
+            .iter()
+            .find(|provider| provider["id"] == "cmd")
+            .expect("CMD picker metadata");
+        assert_eq!(picker_cmd["configured"], settings_cmd["configured"]);
+
+        let rendered = body.to_string();
+        for forbidden in [
+            "stored-cmd-application-hidden-abcd",
+            "abcd",
+            "last4",
+            "ciphertext",
+        ] {
+            assert!(
+                !rendered.contains(forbidden),
+                "settings metadata leaked {forbidden}: {rendered}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn settings_provider_metadata_treats_blank_stored_csc_secret_as_unconfigured() {
+        let tmp = TempDir::new();
+        let mut state = AppState {
+            provider_credentials: Arc::new(ProviderCredentialStore::load_with_db_key(
+                &tmp.dir,
+                b"settings-blank-csc-credential-key",
+                false,
+            )),
+            ..AppState::default()
+        };
+        state.csc_providers = Arc::new(vec![CscConfig {
+            provider_id: "encosto-qtsp".to_owned(),
+            display_name: "Encosto QTSP".to_owned(),
+            base_url: "https://sandbox.encosto.example/csc/v2".to_owned(),
+            authorization: chancela_csc::CscAuthorization::Service,
+            sandbox: false,
+            credential_id: None,
+            scope: chancela_csc::DEFAULT_SCOPE.to_owned(),
+        }]);
+        state
+            .provider_credentials
+            .put(
+                CredentialMode::CscQtsp,
+                "encosto-qtsp",
+                CscCredentialFields {
+                    client_id: Some(Zeroizing::new("client-id-hidden-abcd".to_owned())),
+                    client_secret: Some(Zeroizing::new("   ".to_owned())),
+                    ..Default::default()
+                }
+                .into_set_pairs(),
+                &[],
+            )
+            .expect("seed encrypted CSC credentials");
+
+        let (status, body) = send(state, get("/v1/settings")).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let provider = body["signing"]["providers"]
+            .as_array()
+            .expect("providers")
+            .iter()
+            .find(|provider| provider["id"] == "encosto-qtsp")
+            .expect("CSC provider metadata");
+        assert_eq!(provider["configured"], false, "{body}");
+        assert_eq!(provider["production_blocked"], true, "{body}");
+
+        let rendered = body.to_string();
+        for forbidden in ["client-id-hidden-abcd", "abcd", "last4", "ciphertext"] {
             assert!(
                 !rendered.contains(forbidden),
                 "settings metadata leaked {forbidden}: {rendered}"
