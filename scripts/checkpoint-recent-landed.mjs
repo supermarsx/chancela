@@ -814,8 +814,13 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/books/BookDetailPage.tsx",
-    'aria-label="Resumo de profundidade OCR e dossier do livro em papel"',
-    "web paper-book OCR/dossier review-depth summary marker",
+    "books.detail.ocrSummary.sectionLabel",
+    "web paper-book OCR/dossier review-depth summary i18n key marker",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/locales/pt-PT.ts",
+    "Resumo de profundidade OCR e dossier do livro em papel",
+    "web paper-book OCR/dossier review-depth summary pt-PT catalog marker",
   );
   assertFileContains(
     "apps/web/src/features/books/BookDetailPage.tsx",
@@ -4589,8 +4594,13 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/ferramentas/TrustCatalogPage.tsx",
-    '<TrustResultGroup title="Registos TSA">',
-    "web TSA records result group marker",
+    "trust.tsa.results.aria",
+    "web TSA records result group i18n key marker",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/locales/pt-PT.ts",
+    "'trust.tsa.results.aria': 'Registos TSA'",
+    "web TSA records result group pt-PT catalog marker",
   );
   assertFileContains(
     "apps/web/src/features/ferramentas/trust.test.tsx",
