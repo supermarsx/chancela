@@ -154,6 +154,7 @@ pub fn open_and_seal_book(
 ///
 /// `acknowledge_warnings` records that the operator has seen and accepted the warnings; it
 /// has no effect when there are none.
+#[allow(clippy::too_many_arguments)]
 pub fn seal_act(
     book: &mut Book,
     act: &mut Act,
