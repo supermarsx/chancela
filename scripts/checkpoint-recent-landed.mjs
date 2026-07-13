@@ -2374,6 +2374,16 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
+    "chancela://mcp/privacy-control-review-summary",
+    "CI checkpoints MCP privacy-control review summary URI marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "makes no bridge/API/AI-provider/legal-service/provider calls",
+    "CI checkpoints MCP privacy-control no-call boundary marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
     "dashboard guest recent-events redaction",
     "CI checkpoints dashboard guest recent-events redaction lane marker",
   );
@@ -4856,6 +4866,106 @@ function assertCheckpointMap() {
     "crates/chancela-mcp/src/server.rs",
     '"ai_completed_claim": false',
     "MCP chronology no AI-completed claim marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    "chancela://mcp/privacy-control-review-summary",
+    "MCP privacy-control review summary resource URI marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    "privacy_control_review_summary_resource_payload",
+    "MCP privacy-control review summary resource payload marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    "privacy_control_review_summary_report_payload",
+    "MCP privacy-control review summary deterministic report payload marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    "resources_read_privacy_control_review_summary_returns_static_guidance_without_http_or_secret",
+    "MCP privacy-control review summary static guidance coverage",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    "resources_read_privacy_control_review_summary_accepts_arguments_and_counts_without_echoing_secrets",
+    "MCP privacy-control review summary deterministic aggregate coverage",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    "resources_read_privacy_control_review_summary_rejects_bad_arguments_and_extra_params",
+    "MCP privacy-control review summary invalid args coverage",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    '"kind": "chancela_mcp_privacy_control_review_summary_report"',
+    "MCP privacy-control deterministic summary report payload marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    '"source": "local_mcp_deterministic_privacy_control_summarizer"',
+    "MCP privacy-control local deterministic summarizer marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    '"aggregate_counts_only": true',
+    "MCP privacy-control aggregate counts only marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    '"local_json_only": true',
+    "MCP privacy-control local JSON only marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    '"legal_service_calls": false',
+    "MCP privacy-control no legal-service call marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    '"secrets_in_resource": false',
+    "MCP privacy-control no secret resource marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    '"legal_approval": false',
+    "MCP privacy-control no legal approval claim marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    '"authority_notification": false',
+    "MCP privacy-control no authority notification claim marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    '"transfer_execution": false',
+    "MCP privacy-control no transfer execution claim marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    '"dpia_completion": false',
+    "MCP privacy-control no DPIA completion claim marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    '"gdpr_compliance_completion": false',
+    "MCP privacy-control no GDPR compliance completion claim marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    '"deletion_completion": false',
+    "MCP privacy-control no deletion completion claim marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    '"redaction_completion": false',
+    "MCP privacy-control no redaction completion claim marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    '"full_erasure": false',
+    "MCP privacy-control no full erasure claim marker",
   );
   assertFileContains(
     "crates/chancela-mcp/src/server.rs",
@@ -8266,6 +8376,31 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
+    "Current working-tree MCP privacy-control review summary checks",
+    "CI/E2E hardening plan MCP privacy-control checks marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "`chancela://mcp/privacy-control-review-summary` resource",
+    "CI/E2E hardening plan MCP privacy-control resource marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "`arguments.privacy_controls`, local JSON only, secret/no-echo coverage",
+    "CI/E2E hardening plan MCP privacy-control local JSON/no-secret marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "no bridge/API/AI-provider/legal-service/provider\n  calls",
+    "CI/E2E hardening plan MCP privacy-control no-call marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "no privacy/GDPR compliance completion, no legal approval, no notification",
+    "CI/E2E hardening plan MCP privacy-control no-completion marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
     "Current working-tree dashboard guest recent-events redaction checks",
     "CI/E2E hardening plan dashboard guest redaction checks marker",
   );
@@ -9418,6 +9553,31 @@ function assertCheckpointMap() {
     "SPEC-COVERAGE.md",
     "technical comparison signal only with human review still required",
     "spec coverage MCP draft-signed technical signal only marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "`chancela://mcp/privacy-control-review-summary` resource",
+    "spec coverage MCP privacy-control resource marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "`arguments.privacy_controls` JSON it returns deterministic aggregate counts",
+    "spec coverage MCP privacy-control deterministic aggregate marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "without echoing names, notes, legal bases, recipients, subjects, data\n  categories, or secrets",
+    "spec coverage MCP privacy-control no echo marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "makes no bridge/API/AI-provider/legal-service/\n  provider calls",
+    "spec coverage MCP privacy-control no-call marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "privacy/GDPR compliance completion, compliance certification, destructive\n  disposal, deletion, anonymization, redaction, and full-erasure claims false",
+    "spec coverage MCP privacy-control no-claim marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",

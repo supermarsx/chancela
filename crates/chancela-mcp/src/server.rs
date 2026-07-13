@@ -40,6 +40,9 @@ pub const MCP_DRAFT_SIGNED_COMPARISON_REVIEW_RESOURCE_URI: &str =
 /// Read-only MCP resource URI for local chronology review summaries.
 pub const MCP_CHRONOLOGY_REVIEW_SUMMARY_RESOURCE_URI: &str =
     "chancela://mcp/chronology-review-summary";
+/// Read-only MCP resource URI for local privacy-control review summaries.
+pub const MCP_PRIVACY_CONTROL_REVIEW_SUMMARY_RESOURCE_URI: &str =
+    "chancela://mcp/privacy-control-review-summary";
 
 const DRAFT_MINUTES_REVIEW_PROMPT_NAME: &str = "draft_minutes_human_review_checklist";
 const DRAFT_MINUTES_REVIEW_PROMPT_TITLE: &str = "Draft Minutes Human Review Checklist";
@@ -361,6 +364,17 @@ impl<T: HttpTransport> McpServer<T> {
                         "audience": ["user", "assistant"],
                         "priority": 0.65,
                     },
+                },
+                {
+                    "uri": MCP_PRIVACY_CONTROL_REVIEW_SUMMARY_RESOURCE_URI,
+                    "name": "privacy_control_review_summary",
+                    "title": "Privacy Control Review Summary",
+                    "description": "Read-only local privacy-control review summary resource. Without arguments it returns static input guidance and no-claim boundaries; with privacy_controls JSON it returns deterministic aggregate counts only. Contains no secrets, performs no bridge, API, AI, legal-service, or provider calls, and makes no legal, notification, transfer, DPIA, compliance, deletion, redaction, anonymization, disposal, erasure, provider, or completion claims.",
+                    "mimeType": "application/json",
+                    "annotations": {
+                        "audience": ["user", "assistant"],
+                        "priority": 0.65,
+                    },
                 }
             ]
         })
@@ -411,6 +425,18 @@ impl<T: HttpTransport> McpServer<T> {
         } else {
             None
         };
+        let privacy_control_arguments = if uri == MCP_PRIVACY_CONTROL_REVIEW_SUMMARY_RESOURCE_URI {
+            if params.keys().any(|key| key != "uri" && key != "arguments") {
+                return JsonRpcResponse::error(
+                    id,
+                    codes::INVALID_PARAMS,
+                    "privacy-control review summary resource accepts only uri or uri plus arguments",
+                );
+            }
+            params.get("arguments")
+        } else {
+            None
+        };
         let payload = match uri {
             MCP_STATUS_RESOURCE_URI => self.status_resource_payload(),
             MCP_SPEC_09_COVERAGE_RESOURCE_URI => self.spec_09_coverage_resource_payload(),
@@ -442,6 +468,19 @@ impl<T: HttpTransport> McpServer<T> {
                     }
                 },
                 None => self.chronology_review_summary_resource_payload(),
+            },
+            MCP_PRIVACY_CONTROL_REVIEW_SUMMARY_RESOURCE_URI => match privacy_control_arguments {
+                Some(arguments) => match privacy_control_review_summary_report_payload(arguments) {
+                    Ok(payload) => payload,
+                    Err(message) => {
+                        return JsonRpcResponse::error(
+                            id,
+                            codes::INVALID_PARAMS,
+                            format!("invalid privacy-control review summary arguments: {message}"),
+                        );
+                    }
+                },
+                None => self.privacy_control_review_summary_resource_payload(),
             },
             _ => {
                 return JsonRpcResponse::error_with_data(
@@ -553,6 +592,7 @@ impl<T: HttpTransport> McpServer<T> {
                             MCP_WORKFLOW_PROVENANCE_REVIEW_RESOURCE_URI,
                             MCP_DRAFT_SIGNED_COMPARISON_REVIEW_RESOURCE_URI,
                             MCP_CHRONOLOGY_REVIEW_SUMMARY_RESOURCE_URI,
+                            MCP_PRIVACY_CONTROL_REVIEW_SUMMARY_RESOURCE_URI,
                         ],
                         "prompts": prompt_names,
                     },
@@ -592,12 +632,13 @@ impl<T: HttpTransport> McpServer<T> {
                     MCP_WORKFLOW_PROVENANCE_REVIEW_RESOURCE_URI,
                     MCP_DRAFT_SIGNED_COMPARISON_REVIEW_RESOURCE_URI,
                     MCP_CHRONOLOGY_REVIEW_SUMMARY_RESOURCE_URI,
+                    MCP_PRIVACY_CONTROL_REVIEW_SUMMARY_RESOURCE_URI,
                 ],
                 "prompts": [
                     WORKFLOW_PROVENANCE_REVIEW_PROMPT_NAME,
                     DRAFT_SIGNED_COMPARISON_REVIEW_PROMPT_NAME,
                 ],
-                "purpose": "offline_human_review_guidance_plus_deterministic_local_draft_signed_and_chronology_metadata_summaries",
+                "purpose": "offline_human_review_guidance_plus_deterministic_local_draft_signed_chronology_and_privacy_control_metadata_summaries",
                 "ai_01_claimed": false,
                 "ai_02_claimed": false,
                 "full_ai_mcp_completion_claimed": false,
@@ -790,6 +831,132 @@ impl<T: HttpTransport> McpServer<T> {
                 "Do not include credentials, API keys, secrets, or unnecessary personal data in chronology JSON.",
                 "Use the summary as advisory local review assistance only.",
                 "Normal platform permissions, lifecycle gates, source review, and human verification remain required.",
+            ],
+        })
+    }
+
+    fn privacy_control_review_summary_resource_payload(&self) -> Value {
+        json!({
+            "kind": "chancela_mcp_privacy_control_review_summary",
+            "schema_version": 1,
+            "source": "static_mcp_review_aid",
+            "offline": true,
+            "static": true,
+            "local_json_only": true,
+            "arguments": [],
+            "optional_arguments": [
+                {
+                    "name": "privacy_controls",
+                    "description": "Caller-supplied local JSON object containing optional arrays named processors, dpias, breach_playbooks, transfer_controls, retention_policies, retention_executions, and dsr_requests. The resource returns aggregate counts only and does not echo record names, notes, legal bases, recipients, subjects, data categories, or secrets.",
+                }
+            ],
+            "expected_input_shape": {
+                "resources_read_params": {
+                    "uri": MCP_PRIVACY_CONTROL_REVIEW_SUMMARY_RESOURCE_URI,
+                    "arguments": {
+                        "privacy_controls": {
+                            "processors": "array of local processor register objects",
+                            "dpias": "array of local DPIA register objects",
+                            "breach_playbooks": "array of local breach-playbook objects",
+                            "transfer_controls": "array of local transfer-control objects",
+                            "retention_policies": "array of local retention-policy objects",
+                            "retention_executions": "array of local retention-execution objects",
+                            "dsr_requests": "array of local DSR request objects"
+                        }
+                    }
+                }
+            },
+            "privacy_control_categories": [
+                "processors",
+                "dpias",
+                "breach_playbooks",
+                "transfer_controls",
+                "retention_policies",
+                "retention_executions",
+                "dsr_requests"
+            ],
+            "summary_categories": [
+                {
+                    "id": "record_counts",
+                    "title": "Record counts",
+                    "checkpoints": [
+                        "Count caller-supplied local JSON records by known privacy-control category.",
+                        "Ignore unknown top-level privacy_controls keys without echoing their values."
+                    ],
+                },
+                {
+                    "id": "risk_status_counts",
+                    "title": "Risk/status counts",
+                    "checkpoints": [
+                        "Classify recognized risk/status labels into bounded buckets.",
+                        "Bucket unrecognized values as other so caller text is not echoed."
+                    ],
+                },
+                {
+                    "id": "advisory_review_counts",
+                    "title": "Advisory review counts",
+                    "checkpoints": [
+                        "Count advisory-review status buckets and missing advisory-review status markers.",
+                        "Count review and drill receipt markers without including receipt notes or actors."
+                    ],
+                },
+                {
+                    "id": "retention_execution_counts",
+                    "title": "Retention execution counts",
+                    "checkpoints": [
+                        "Count retention execution status, outcome, and evidence-state buckets.",
+                        "Keep destructive disposal and full-erasure completion claims false."
+                    ],
+                },
+                {
+                    "id": "dsr_counts",
+                    "title": "DSR counts",
+                    "checkpoints": [
+                        "Count DSR request type, status, and outcome buckets.",
+                        "Do not echo subject identifiers, reasons, execution notes, affected collections, or legal-basis review text."
+                    ],
+                },
+                {
+                    "id": "false_claim_flags",
+                    "title": "False-claim flag counts",
+                    "checkpoints": [
+                        "Aggregate explicit false/truthy observations for fields that must not be treated as approvals, notifications, filings, certifications, compliance completion, disposal, deletion, anonymization, redaction, or erasure.",
+                        "Treat truthy caller-supplied observations as caveats only; this resource never upgrades them into completion claims."
+                    ],
+                }
+            ],
+            "bridge_calls": false,
+            "api_calls": false,
+            "provider_calls": false,
+            "ai_provider_calls": false,
+            "legal_service_calls": false,
+            "secrets_in_resource": false,
+            "claims": {
+                "legal_approval": false,
+                "legal_completion": false,
+                "authority_notification": false,
+                "data_subject_notification": false,
+                "transfer_approval": false,
+                "transfer_execution": false,
+                "dpia_authority_filing": false,
+                "dpia_completion": false,
+                "compliance_certification": false,
+                "privacy_compliance_completion": false,
+                "gdpr_compliance_completion": false,
+                "destructive_disposal": false,
+                "deletion_completion": false,
+                "anonymization_completion": false,
+                "redaction_completion": false,
+                "full_erasure": false,
+                "provider": false,
+                "legal_service": false
+            },
+            "operator_boundaries": [
+                "Use only privacy_controls JSON supplied in resources/read arguments.",
+                "Do not include credentials, API keys, secrets, raw subject identifiers, raw recipients, legal bases, notes, or data categories in caller JSON.",
+                "Use this summary as advisory local review assistance only.",
+                "No bridge, API, AI-provider, legal-service, provider, notification, transfer, filing, certification, disposal, deletion, anonymization, redaction, or erasure action is performed.",
+                "Normal platform permissions, privacy workflow gates, legal review, and human verification remain required."
             ],
         })
     }
@@ -1418,6 +1585,296 @@ const CHRONOLOGY_MISSING_EVIDENCE_PATHS: &[&str] = &[
     "source_missing",
 ];
 
+#[derive(Debug, Clone, Copy)]
+struct PrivacyFalseClaimFlagSpec {
+    id: &'static str,
+    field_names: &'static [&'static str],
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct PrivacyReceiptCounts {
+    receipt_count: usize,
+    review_receipt_count: usize,
+    drill_receipt_count: usize,
+    other_receipt_count: usize,
+}
+
+impl PrivacyReceiptCounts {
+    fn add(&mut self, other: Self) {
+        self.receipt_count += other.receipt_count;
+        self.review_receipt_count += other.review_receipt_count;
+        self.drill_receipt_count += other.drill_receipt_count;
+        self.other_receipt_count += other.other_receipt_count;
+    }
+}
+
+const PRIVACY_CONTROL_COLLECTIONS: &[&str] = &[
+    "processors",
+    "dpias",
+    "breach_playbooks",
+    "transfer_controls",
+    "retention_policies",
+    "retention_executions",
+    "dsr_requests",
+];
+const PRIVACY_RISK_PATHS: &[&str] = &[
+    "risk_level",
+    "risk",
+    "risk.rating",
+    "risk.level",
+    "assessment.risk",
+    "assessment.risk_level",
+];
+const PRIVACY_STATUS_PATHS: &[&str] = &[
+    "status",
+    "state",
+    "lifecycle_status",
+    "execution_status",
+    "decision_state",
+];
+const PRIVACY_ADVISORY_REVIEW_STATUS_PATHS: &[&str] = &[
+    "advisory_review.status",
+    "advisory_review_status",
+    "review.status",
+    "review_status",
+    "review.advisory_status",
+];
+const PRIVACY_RECEIPT_ARRAY_PATHS: &[&str] = &[
+    "evidence_receipts",
+    "review_receipts",
+    "receipts",
+    "review.receipts",
+    "advisory_review.receipts",
+];
+const PRIVACY_RECEIPT_KIND_PATHS: &[&str] = &["evidence_type", "receipt_type", "type", "kind"];
+const PRIVACY_RETENTION_EXECUTION_STATUS_PATHS: &[&str] =
+    &["execution_status", "status", "workflow.status"];
+const PRIVACY_RETENTION_EXECUTION_OUTCOME_PATHS: &[&str] =
+    &["outcome", "execution_outcome", "result.outcome"];
+const PRIVACY_RETENTION_EVIDENCE_STATE_PATHS: &[&str] = &[
+    "evidence_state",
+    "candidate_evidence_state",
+    "prior_execution.evidence_state",
+];
+const PRIVACY_DSR_TYPE_PATHS: &[&str] = &["request_type", "type", "dsr_type"];
+const PRIVACY_DSR_STATUS_PATHS: &[&str] = &["status", "state"];
+const PRIVACY_DSR_OUTCOME_PATHS: &[&str] = &["outcome", "execution_outcome"];
+
+const PRIVACY_RISK_LABELS: &[&str] = &[
+    "low", "medium", "high", "critical", "severe", "none", "missing", "unknown",
+];
+const PRIVACY_STATUS_LABELS: &[&str] = &[
+    "draft",
+    "active",
+    "under_review",
+    "retired",
+    "pending",
+    "completed",
+    "awaiting_review",
+    "blocked",
+    "executed",
+    "open",
+    "review_closed",
+    "current",
+    "due_soon",
+    "overdue",
+    "no_receipt",
+    "missing",
+    "unknown",
+];
+const PRIVACY_ADVISORY_STATUS_LABELS: &[&str] = &[
+    "no_receipt",
+    "current",
+    "due_soon",
+    "overdue",
+    "under_review",
+    "missing",
+    "unknown",
+];
+const PRIVACY_RECEIPT_KIND_LABELS: &[&str] = &["review", "drill", "missing", "unknown"];
+const PRIVACY_RETENTION_EXECUTION_STATUS_LABELS: &[&str] = &[
+    "awaiting_review",
+    "blocked",
+    "executed",
+    "missing",
+    "unknown",
+];
+const PRIVACY_RETENTION_EXECUTION_OUTCOME_LABELS: &[&str] = &[
+    "blocked_missing_policy",
+    "blocked_stale_policy",
+    "blocked_policy_mismatch",
+    "blocked_legal_hold",
+    "blocked_destructive_action",
+    "blocked_approval_mismatch",
+    "blocked_missing_target",
+    "manual_review_required",
+    "bounded_archive_recorded",
+    "bounded_no_action_recorded",
+    "already_executed",
+    "missing",
+    "unknown",
+];
+const PRIVACY_RETENTION_EVIDENCE_STATE_LABELS: &[&str] = &[
+    "review_queued",
+    "blocked",
+    "bounded_archive_recorded",
+    "bounded_no_action_recorded",
+    "prior_bounded_evidence_available",
+    "missing",
+    "unknown",
+];
+const PRIVACY_DSR_TYPE_LABELS: &[&str] = &[
+    "export",
+    "rectification",
+    "erasure",
+    "restriction",
+    "missing",
+    "unknown",
+];
+const PRIVACY_DSR_STATUS_LABELS: &[&str] = &["pending", "completed", "missing", "unknown"];
+const PRIVACY_DSR_OUTCOME_LABELS: &[&str] = &[
+    "fulfilled",
+    "partially_fulfilled",
+    "rejected",
+    "no_action_required",
+    "missing",
+    "unknown",
+];
+
+const PRIVACY_FALSE_CLAIM_FLAG_SPECS: &[PrivacyFalseClaimFlagSpec] = &[
+    PrivacyFalseClaimFlagSpec {
+        id: "legal_approval",
+        field_names: &[
+            "legal_approval",
+            "legal_approval_claimed",
+            "legal_review_accepted",
+            "legal_acceptance_claimed",
+            "legal_disposal_approved",
+        ],
+    },
+    PrivacyFalseClaimFlagSpec {
+        id: "legal_completion",
+        field_names: &[
+            "legal_completion",
+            "legal_completion_claimed",
+            "legal_certification_completed",
+            "legal_certification_claimed",
+            "legal_disposal_completed",
+        ],
+    },
+    PrivacyFalseClaimFlagSpec {
+        id: "authority_notification",
+        field_names: &[
+            "authority_notified",
+            "authority_notification",
+            "authority_notification_claimed",
+            "authority_notification_completed",
+        ],
+    },
+    PrivacyFalseClaimFlagSpec {
+        id: "data_subject_notification",
+        field_names: &[
+            "subjects_notified",
+            "subject_notification_claimed",
+            "data_subject_notification",
+            "data_subject_notification_claimed",
+            "data_subjects_notified",
+        ],
+    },
+    PrivacyFalseClaimFlagSpec {
+        id: "transfer_approval",
+        field_names: &["transfer_approved", "transfer_approval_claimed"],
+    },
+    PrivacyFalseClaimFlagSpec {
+        id: "transfer_execution",
+        field_names: &[
+            "data_transfer_executed",
+            "transfer_executed",
+            "transfer_execution_claimed",
+        ],
+    },
+    PrivacyFalseClaimFlagSpec {
+        id: "dpia_authority_filing",
+        field_names: &[
+            "authority_filing_completed",
+            "authority_filing_claimed",
+            "dpia_authority_filing",
+            "dpia_authority_filing_claimed",
+        ],
+    },
+    PrivacyFalseClaimFlagSpec {
+        id: "dpia_completion",
+        field_names: &[
+            "dpia_completed",
+            "dpia_completion",
+            "dpia_completion_claimed",
+            "completion_claimed",
+        ],
+    },
+    PrivacyFalseClaimFlagSpec {
+        id: "compliance_certification",
+        field_names: &[
+            "compliance_certification_completed",
+            "compliance_certification_claimed",
+        ],
+    },
+    PrivacyFalseClaimFlagSpec {
+        id: "privacy_compliance_completion",
+        field_names: &[
+            "privacy_compliance_completed",
+            "privacy_compliance_completion_claimed",
+        ],
+    },
+    PrivacyFalseClaimFlagSpec {
+        id: "gdpr_compliance_completion",
+        field_names: &[
+            "gdpr_compliance_completed",
+            "gdpr_compliance_completion_claimed",
+        ],
+    },
+    PrivacyFalseClaimFlagSpec {
+        id: "destructive_disposal",
+        field_names: &[
+            "destructive_disposal_completed",
+            "destructive_disposal_claimed",
+            "disposal_completed",
+        ],
+    },
+    PrivacyFalseClaimFlagSpec {
+        id: "deletion_completion",
+        field_names: &[
+            "deletion_completed",
+            "delete_completed",
+            "data_deleted",
+            "deletion_claimed",
+        ],
+    },
+    PrivacyFalseClaimFlagSpec {
+        id: "anonymization_completion",
+        field_names: &[
+            "anonymization_completed",
+            "anonymize_completed",
+            "anonymization_claimed",
+        ],
+    },
+    PrivacyFalseClaimFlagSpec {
+        id: "redaction_completion",
+        field_names: &[
+            "redaction_completed",
+            "redacted_completed",
+            "redaction_claimed",
+        ],
+    },
+    PrivacyFalseClaimFlagSpec {
+        id: "full_erasure",
+        field_names: &[
+            "full_erasure_completed",
+            "full_erasure_claimed",
+            "destructive_mutation_completed",
+        ],
+    },
+];
+
 fn draft_signed_comparison_report_payload(arguments: &Value) -> Result<Value, String> {
     let args = arguments
         .as_object()
@@ -1492,6 +1949,248 @@ fn draft_signed_comparison_report_payload(arguments: &Value) -> Result<Value, St
             "Missing and unknown fields are reported without inferring completion.",
             "Digest, status, timestamp, and reference matches or differences are technical review signals only.",
             "No legal validity, trust validation, signature validity, qualified signature status, provider completion, or notarization is claimed."
+        ]
+    }))
+}
+
+fn privacy_control_review_summary_report_payload(arguments: &Value) -> Result<Value, String> {
+    let args = arguments
+        .as_object()
+        .ok_or_else(|| "arguments must be an object".to_string())?;
+    let privacy_controls = args
+        .get("privacy_controls")
+        .ok_or_else(|| "privacy_controls must be supplied".to_string())?;
+    let privacy_controls = privacy_controls
+        .as_object()
+        .ok_or_else(|| "privacy_controls must be an object".to_string())?;
+
+    let mut total_records = 0usize;
+    let mut record_counts = BTreeMap::new();
+    let mut risk_counts = BTreeMap::new();
+    let mut status_counts = BTreeMap::new();
+    let mut risk_counts_by_category = BTreeMap::new();
+    let mut status_counts_by_category = BTreeMap::new();
+    let mut advisory_review_status_counts = BTreeMap::new();
+    let mut advisory_review_status_counts_by_category = BTreeMap::new();
+    let mut missing_advisory_review_counts = BTreeMap::new();
+    let mut missing_advisory_review_total = 0usize;
+    let mut receipt_counts = PrivacyReceiptCounts::default();
+    let mut receipt_counts_by_category = BTreeMap::new();
+    let mut retention_execution_status_counts = BTreeMap::new();
+    let mut retention_execution_outcome_counts = BTreeMap::new();
+    let mut retention_execution_evidence_state_counts = BTreeMap::new();
+    let mut dsr_type_counts = BTreeMap::new();
+    let mut dsr_status_counts = BTreeMap::new();
+    let mut dsr_outcome_counts = BTreeMap::new();
+    let mut false_claim_flag_counts = initial_privacy_false_claim_flag_counts();
+
+    for collection in PRIVACY_CONTROL_COLLECTIONS {
+        let records = privacy_control_records(privacy_controls, collection)?;
+        total_records += records.len();
+        record_counts.insert((*collection).to_string(), records.len());
+
+        let mut category_risk_counts = BTreeMap::new();
+        let mut category_status_counts = BTreeMap::new();
+        let mut category_advisory_counts = BTreeMap::new();
+        let mut category_missing_advisory = 0usize;
+        let mut category_receipt_counts = PrivacyReceiptCounts::default();
+
+        for record in records {
+            let risk = privacy_bounded_classification(
+                first_located_value(record, PRIVACY_RISK_PATHS),
+                "missing",
+                PRIVACY_RISK_LABELS,
+            );
+            increment_count(&mut risk_counts, risk.clone());
+            increment_count(&mut category_risk_counts, risk);
+
+            let status = privacy_bounded_classification(
+                first_located_value(record, PRIVACY_STATUS_PATHS),
+                "missing",
+                PRIVACY_STATUS_LABELS,
+            );
+            increment_count(&mut status_counts, status.clone());
+            increment_count(&mut category_status_counts, status);
+
+            let advisory_status = privacy_bounded_classification(
+                first_located_value(record, PRIVACY_ADVISORY_REVIEW_STATUS_PATHS),
+                "missing",
+                PRIVACY_ADVISORY_STATUS_LABELS,
+            );
+            if advisory_status == "missing" {
+                category_missing_advisory += 1;
+                missing_advisory_review_total += 1;
+            }
+            increment_count(&mut advisory_review_status_counts, advisory_status.clone());
+            increment_count(&mut category_advisory_counts, advisory_status);
+
+            let record_receipt_counts = privacy_receipt_counts(collection, record);
+            category_receipt_counts.add(record_receipt_counts);
+            receipt_counts.add(record_receipt_counts);
+
+            for spec in PRIVACY_FALSE_CLAIM_FLAG_SPECS {
+                if let Some(counts) = false_claim_flag_counts.get_mut(spec.id) {
+                    count_privacy_false_claim_flag_observations(record, spec, counts);
+                }
+            }
+
+            if *collection == "retention_executions" {
+                let status = privacy_bounded_classification(
+                    first_located_value(record, PRIVACY_RETENTION_EXECUTION_STATUS_PATHS),
+                    "missing",
+                    PRIVACY_RETENTION_EXECUTION_STATUS_LABELS,
+                );
+                increment_count(&mut retention_execution_status_counts, status);
+
+                let outcome = privacy_bounded_classification(
+                    first_located_value(record, PRIVACY_RETENTION_EXECUTION_OUTCOME_PATHS),
+                    "missing",
+                    PRIVACY_RETENTION_EXECUTION_OUTCOME_LABELS,
+                );
+                increment_count(&mut retention_execution_outcome_counts, outcome);
+
+                let evidence_state = privacy_bounded_classification(
+                    first_located_value(record, PRIVACY_RETENTION_EVIDENCE_STATE_PATHS),
+                    "missing",
+                    PRIVACY_RETENTION_EVIDENCE_STATE_LABELS,
+                );
+                increment_count(
+                    &mut retention_execution_evidence_state_counts,
+                    evidence_state,
+                );
+            }
+
+            if *collection == "dsr_requests" {
+                let request_type = privacy_bounded_classification(
+                    first_located_value(record, PRIVACY_DSR_TYPE_PATHS),
+                    "missing",
+                    PRIVACY_DSR_TYPE_LABELS,
+                );
+                increment_count(&mut dsr_type_counts, request_type);
+
+                let status = privacy_bounded_classification(
+                    first_located_value(record, PRIVACY_DSR_STATUS_PATHS),
+                    "missing",
+                    PRIVACY_DSR_STATUS_LABELS,
+                );
+                increment_count(&mut dsr_status_counts, status);
+
+                let outcome = privacy_bounded_classification(
+                    first_located_value(record, PRIVACY_DSR_OUTCOME_PATHS),
+                    "missing",
+                    PRIVACY_DSR_OUTCOME_LABELS,
+                );
+                increment_count(&mut dsr_outcome_counts, outcome);
+            }
+        }
+
+        risk_counts_by_category.insert((*collection).to_string(), category_risk_counts);
+        status_counts_by_category.insert((*collection).to_string(), category_status_counts);
+        advisory_review_status_counts_by_category
+            .insert((*collection).to_string(), category_advisory_counts);
+        missing_advisory_review_counts.insert((*collection).to_string(), category_missing_advisory);
+        receipt_counts_by_category.insert(
+            (*collection).to_string(),
+            privacy_receipt_counts_value(category_receipt_counts),
+        );
+    }
+    record_counts.insert("total_records".to_string(), total_records);
+
+    let false_claim_explicit_false_total = false_claim_flag_counts
+        .values()
+        .map(|counts| counts.get("explicit_false").copied().unwrap_or(0))
+        .sum::<usize>();
+    let false_claim_truthy_total = false_claim_flag_counts
+        .values()
+        .map(|counts| counts.get("truthy").copied().unwrap_or(0))
+        .sum::<usize>();
+    let false_claim_other_present_total = false_claim_flag_counts
+        .values()
+        .map(|counts| counts.get("other_present").copied().unwrap_or(0))
+        .sum::<usize>();
+
+    Ok(json!({
+        "kind": "chancela_mcp_privacy_control_review_summary_report",
+        "schema_version": 1,
+        "source": "local_mcp_deterministic_privacy_control_summarizer",
+        "offline": true,
+        "local_json_only": true,
+        "deterministic": true,
+        "aggregate_counts_only": true,
+        "bridge_calls": false,
+        "api_calls": false,
+        "provider_calls": false,
+        "ai_provider_calls": false,
+        "legal_service_calls": false,
+        "secrets_in_resource": false,
+        "claims": {
+            "legal_approval": false,
+            "legal_completion": false,
+            "authority_notification": false,
+            "data_subject_notification": false,
+            "transfer_approval": false,
+            "transfer_execution": false,
+            "dpia_authority_filing": false,
+            "dpia_completion": false,
+            "compliance_certification": false,
+            "privacy_compliance_completion": false,
+            "gdpr_compliance_completion": false,
+            "destructive_disposal": false,
+            "deletion_completion": false,
+            "anonymization_completion": false,
+            "redaction_completion": false,
+            "full_erasure": false,
+            "provider": false,
+            "legal_service": false
+        },
+        "privacy_control_summary": {
+            "record_counts": record_counts,
+            "risk_counts": risk_counts,
+            "risk_counts_by_category": risk_counts_by_category,
+            "status_counts": status_counts,
+            "status_counts_by_category": status_counts_by_category,
+            "advisory_review_status_counts": advisory_review_status_counts,
+            "advisory_review_status_counts_by_category": advisory_review_status_counts_by_category,
+            "missing_advisory_review_counts": {
+                "total_records_missing_advisory_review_status": missing_advisory_review_total,
+                "by_category": missing_advisory_review_counts
+            },
+            "review_drill_receipt_counts": {
+                "total": privacy_receipt_counts_value(receipt_counts),
+                "by_category": receipt_counts_by_category
+            },
+            "false_claim_flag_counts": {
+                "by_flag": false_claim_flag_counts,
+                "totals": {
+                    "explicit_false": false_claim_explicit_false_total,
+                    "truthy": false_claim_truthy_total,
+                    "other_present": false_claim_other_present_total
+                }
+            },
+            "retention_execution_counts": {
+                "record_count": record_counts.get("retention_executions").copied().unwrap_or(0),
+                "execution_status_counts": retention_execution_status_counts,
+                "outcome_counts": retention_execution_outcome_counts,
+                "evidence_state_counts": retention_execution_evidence_state_counts
+            },
+            "dsr_request_counts": {
+                "record_count": record_counts.get("dsr_requests").copied().unwrap_or(0),
+                "request_type_counts": dsr_type_counts,
+                "status_counts": dsr_status_counts,
+                "outcome_counts": dsr_outcome_counts
+            }
+        },
+        "privacy_review_caveats": [
+            "This is a deterministic local aggregate summary over caller-supplied privacy_controls JSON only.",
+            "The report does not echo record names, titles, notes, legal bases, recipients, subjects, data categories, actor names, raw evidence text, or secrets.",
+            "Unrecognized risk, status, receipt, retention, and DSR labels are counted as other instead of being echoed.",
+            "Truthy caller-supplied no-claim fields are counted as caveats only and do not create approval, notification, transfer, filing, certification, completion, disposal, deletion, anonymization, redaction, or erasure claims.",
+            "Counts do not validate legal sufficiency, authority notification, data-subject notification, transfer approval, transfer execution, DPIA filing, DPIA completion, compliance certification, privacy/GDPR compliance completion, destructive disposal, deletion, anonymization, redaction, or full erasure."
+        ],
+        "operator_boundaries": [
+            "No bridge, API, AI-provider, legal-service, provider, notification, transfer, filing, certification, disposal, deletion, anonymization, redaction, or erasure calls were made.",
+            "No legal approval, legal completion, authority notification, data-subject notification, transfer approval, transfer execution, DPIA authority filing, DPIA completion, compliance certification, privacy/GDPR compliance completion, destructive disposal, deletion, anonymization, redaction, or full erasure is claimed.",
+            "Human review, legal review, normal platform permissions, and source evidence checks remain required."
         ]
     }))
 }
@@ -1733,6 +2432,191 @@ fn is_explicit_missing_evidence_marker_value(value: &Value) -> bool {
 
 fn increment_count(counts: &mut BTreeMap<String, usize>, key: String) {
     *counts.entry(key).or_insert(0) += 1;
+}
+
+fn privacy_control_records<'a>(
+    privacy_controls: &'a serde_json::Map<String, Value>,
+    collection: &str,
+) -> Result<&'a [Value], String> {
+    let Some(records) = privacy_controls.get(collection) else {
+        return Ok(&[]);
+    };
+    let records = records
+        .as_array()
+        .ok_or_else(|| format!("privacy_controls.{collection} must be an array"))?;
+    if let Some(index) = records.iter().position(|record| !record.is_object()) {
+        return Err(format!(
+            "privacy_controls.{collection}[{index}] must be an object"
+        ));
+    }
+    Ok(records.as_slice())
+}
+
+fn privacy_bounded_classification(
+    value: Option<LocatedValue<'_>>,
+    missing_label: &str,
+    allowed_labels: &[&str],
+) -> String {
+    let Some(located) = value else {
+        return missing_label.to_string();
+    };
+    if is_unknown_comparison_value(located.value) {
+        return "unknown".to_string();
+    }
+    let normalized = match located.value {
+        Value::String(value) => normalize_chronology_label(value),
+        Value::Bool(value) => value.to_string(),
+        Value::Number(value) => value.to_string(),
+        Value::Array(_) => "present_array".to_string(),
+        Value::Object(_) => "present_object".to_string(),
+        Value::Null => "unknown".to_string(),
+    };
+    if allowed_labels.contains(&normalized.as_str()) {
+        normalized
+    } else {
+        "other".to_string()
+    }
+}
+
+fn initial_privacy_false_claim_flag_counts() -> BTreeMap<String, BTreeMap<String, usize>> {
+    PRIVACY_FALSE_CLAIM_FLAG_SPECS
+        .iter()
+        .map(|spec| {
+            (
+                spec.id.to_string(),
+                BTreeMap::from([
+                    ("explicit_false".to_string(), 0usize),
+                    ("truthy".to_string(), 0usize),
+                    ("other_present".to_string(), 0usize),
+                ]),
+            )
+        })
+        .collect()
+}
+
+fn count_privacy_false_claim_flag_observations(
+    value: &Value,
+    spec: &PrivacyFalseClaimFlagSpec,
+    counts: &mut BTreeMap<String, usize>,
+) {
+    match value {
+        Value::Object(map) => {
+            for (key, child) in map {
+                if spec.field_names.contains(&key.as_str()) {
+                    let bucket = match privacy_boolean_observation(child) {
+                        Some(false) => "explicit_false",
+                        Some(true) => "truthy",
+                        None => "other_present",
+                    };
+                    *counts.entry(bucket.to_string()).or_insert(0) += 1;
+                }
+                count_privacy_false_claim_flag_observations(child, spec, counts);
+            }
+        }
+        Value::Array(values) => {
+            for child in values {
+                count_privacy_false_claim_flag_observations(child, spec, counts);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn privacy_boolean_observation(value: &Value) -> Option<bool> {
+    match value {
+        Value::Bool(value) => Some(*value),
+        Value::Number(value) => value
+            .as_i64()
+            .map(|value| value != 0)
+            .or_else(|| value.as_u64().map(|value| value != 0)),
+        Value::String(value) => match normalize_chronology_label(value).as_str() {
+            "true" | "yes" | "y" | "1" | "approved" | "accepted" | "completed" | "complete"
+            | "executed" | "notified" | "filed" | "certified" => Some(true),
+            "false" | "no" | "n" | "0" | "none" | "not_applicable" | "not_completed"
+            | "pending" | "review_only" => Some(false),
+            _ => None,
+        },
+        Value::Null | Value::Array(_) | Value::Object(_) => None,
+    }
+}
+
+fn privacy_receipt_counts(collection: &str, record: &Value) -> PrivacyReceiptCounts {
+    let mut counts = PrivacyReceiptCounts::default();
+    for path in PRIVACY_RECEIPT_ARRAY_PATHS {
+        let Some(value) = value_at_dotted_path(record, path) else {
+            continue;
+        };
+        let Some(receipts) = value.as_array() else {
+            continue;
+        };
+        for receipt in receipts {
+            counts.receipt_count += 1;
+            if !receipt.is_object() {
+                counts.other_receipt_count += 1;
+                continue;
+            }
+            let mut kind = privacy_bounded_classification(
+                first_located_value(receipt, PRIVACY_RECEIPT_KIND_PATHS),
+                "missing",
+                PRIVACY_RECEIPT_KIND_LABELS,
+            );
+            if kind == "missing" && collection == "transfer_controls" {
+                kind = "review".to_string();
+            }
+            match kind.as_str() {
+                "review" => counts.review_receipt_count += 1,
+                "drill" => counts.drill_receipt_count += 1,
+                _ => counts.other_receipt_count += 1,
+            }
+        }
+    }
+    if counts.receipt_count == 0 {
+        privacy_advisory_summary_receipt_counts(record)
+    } else {
+        counts
+    }
+}
+
+fn privacy_advisory_summary_receipt_counts(record: &Value) -> PrivacyReceiptCounts {
+    let receipt_count = usize_at_paths(record, &["advisory_review.receipt_count", "receipt_count"]);
+    let review_receipt_count = usize_at_paths(
+        record,
+        &[
+            "advisory_review.review_receipt_count",
+            "review_receipt_count",
+        ],
+    );
+    let drill_receipt_count = usize_at_paths(
+        record,
+        &["advisory_review.drill_receipt_count", "drill_receipt_count"],
+    );
+    PrivacyReceiptCounts {
+        receipt_count: receipt_count.unwrap_or(0),
+        review_receipt_count: review_receipt_count.unwrap_or(0),
+        drill_receipt_count: drill_receipt_count.unwrap_or(0),
+        other_receipt_count: receipt_count
+            .unwrap_or(0)
+            .saturating_sub(review_receipt_count.unwrap_or(0) + drill_receipt_count.unwrap_or(0)),
+    }
+}
+
+fn usize_at_paths(record: &Value, paths: &[&str]) -> Option<usize> {
+    paths
+        .iter()
+        .find_map(|path| value_at_dotted_path(record, path).and_then(usize_from_value))
+}
+
+fn usize_from_value(value: &Value) -> Option<usize> {
+    value.as_u64().and_then(|value| usize::try_from(value).ok())
+}
+
+fn privacy_receipt_counts_value(counts: PrivacyReceiptCounts) -> Value {
+    json!({
+        "receipt_count": counts.receipt_count,
+        "review_receipt_count": counts.review_receipt_count,
+        "drill_receipt_count": counts.drill_receipt_count,
+        "other_receipt_count": counts.other_receipt_count,
+    })
 }
 
 fn compare_draft_signed_field(spec: &DraftSignedFieldSpec, draft: &Value, signed: &Value) -> Value {
@@ -2769,7 +3653,7 @@ mod tests {
             .unwrap();
         let result = resp.result.unwrap();
         let resources = result["resources"].as_array().unwrap();
-        assert_eq!(resources.len(), 5);
+        assert_eq!(resources.len(), 6);
         let by_uri = |uri: &str| {
             resources
                 .iter()
@@ -2804,6 +3688,12 @@ mod tests {
         assert_eq!(chronology["mimeType"], json!("application/json"));
         assert_eq!(
             chronology["annotations"]["audience"],
+            json!(["user", "assistant"])
+        );
+        let privacy = by_uri(MCP_PRIVACY_CONTROL_REVIEW_SUMMARY_RESOURCE_URI);
+        assert_eq!(privacy["mimeType"], json!("application/json"));
+        assert_eq!(
+            privacy["annotations"]["audience"],
             json!(["user", "assistant"])
         );
         assert!(server.bridge_recorded().is_empty());
@@ -3425,6 +4315,759 @@ mod tests {
     }
 
     #[test]
+    fn resources_read_privacy_control_review_summary_returns_static_guidance_without_http_or_secret()
+     {
+        let server = McpServer::from_config(&enabled_cfg(), MockTransport::new(200, "{}")).unwrap();
+        let resp = server
+            .handle(&req(
+                "resources/read",
+                64,
+                json!({ "uri": MCP_PRIVACY_CONTROL_REVIEW_SUMMARY_RESOURCE_URI }),
+            ))
+            .unwrap();
+        let result = resp.result.unwrap();
+        let contents = result["contents"].as_array().unwrap();
+        assert_eq!(contents.len(), 1);
+        assert_eq!(
+            contents[0]["uri"],
+            json!(MCP_PRIVACY_CONTROL_REVIEW_SUMMARY_RESOURCE_URI)
+        );
+        assert_eq!(contents[0]["mimeType"], json!("application/json"));
+        let text = contents[0]["text"].as_str().unwrap();
+        assert!(!text.contains("chk_ab12cd_secretsecret"));
+        assert!(!text.contains("secretsecret"));
+
+        let review: Value = serde_json::from_str(text).unwrap();
+        assert_eq!(
+            review["kind"],
+            json!("chancela_mcp_privacy_control_review_summary")
+        );
+        assert_eq!(review["offline"], json!(true));
+        assert_eq!(review["static"], json!(true));
+        assert_eq!(review["local_json_only"], json!(true));
+        assert_eq!(review["arguments"], json!([]));
+        assert_eq!(
+            review["optional_arguments"][0]["name"],
+            json!("privacy_controls")
+        );
+        assert_eq!(
+            review["expected_input_shape"]["resources_read_params"]["uri"],
+            json!(MCP_PRIVACY_CONTROL_REVIEW_SUMMARY_RESOURCE_URI)
+        );
+        assert_eq!(review["bridge_calls"], json!(false));
+        assert_eq!(review["api_calls"], json!(false));
+        assert_eq!(review["provider_calls"], json!(false));
+        assert_eq!(review["ai_provider_calls"], json!(false));
+        assert_eq!(review["legal_service_calls"], json!(false));
+        assert_eq!(review["secrets_in_resource"], json!(false));
+
+        for claim in [
+            "legal_approval",
+            "legal_completion",
+            "authority_notification",
+            "data_subject_notification",
+            "transfer_approval",
+            "transfer_execution",
+            "dpia_authority_filing",
+            "dpia_completion",
+            "compliance_certification",
+            "privacy_compliance_completion",
+            "gdpr_compliance_completion",
+            "destructive_disposal",
+            "deletion_completion",
+            "anonymization_completion",
+            "redaction_completion",
+            "full_erasure",
+            "provider",
+            "legal_service",
+        ] {
+            assert_eq!(
+                review["claims"][claim],
+                json!(false),
+                "claim {claim} should be pinned false: {review}"
+            );
+        }
+
+        let categories = review["privacy_control_categories"].as_array().unwrap();
+        for expected in [
+            "processors",
+            "dpias",
+            "breach_playbooks",
+            "transfer_controls",
+            "retention_policies",
+            "retention_executions",
+            "dsr_requests",
+        ] {
+            assert!(
+                categories.iter().any(|category| category == expected),
+                "resource should include privacy category {expected:?}: {review}"
+            );
+        }
+        assert!(server.bridge_recorded().is_empty());
+    }
+
+    #[test]
+    fn resources_read_privacy_control_review_summary_accepts_arguments_and_counts_without_echoing_secrets()
+     {
+        let server = McpServer::from_config(&enabled_cfg(), MockTransport::new(200, "{}")).unwrap();
+        let privacy_controls_a = json!({
+            "processors": [
+                {
+                    "name": "Sensitive Processor SA",
+                    "purpose": "Payroll secret purpose",
+                    "legal_basis": "GDPR-Art-6-secret",
+                    "data_categories": ["employee identifiers", "payroll details"],
+                    "risk_level": "High",
+                    "status": "Active"
+                }
+            ],
+            "dpias": [
+                {
+                    "title": "Payroll DPIA secret title",
+                    "legal_basis": "DPIA legal secret",
+                    "data_categories": ["biometrics secret"],
+                    "risk_level": "Critical",
+                    "status": "Active",
+                    "advisory_review": {
+                        "status": "current",
+                        "receipt_count": 2,
+                        "review_receipt_count": 1,
+                        "drill_receipt_count": 1,
+                        "authority_filing_claimed": false,
+                        "legal_acceptance_claimed": false,
+                        "legal_certification_claimed": false,
+                        "completion_claimed": false,
+                        "compliance_certification_claimed": false,
+                        "legal_completion_claimed": false
+                    },
+                    "evidence_receipts": [
+                        {
+                            "evidence_type": "drill",
+                            "notes": "password_hash=secret",
+                            "authority_filing_completed": false,
+                            "legal_review_accepted": false,
+                            "legal_certification_completed": false,
+                            "external_delivery_completed": false,
+                            "dpia_completed": false,
+                            "compliance_certification_completed": false
+                        },
+                        {
+                            "evidence_type": "review",
+                            "notes": "api-key-secret",
+                            "authority_filing_completed": false,
+                            "legal_review_accepted": false,
+                            "legal_certification_completed": false,
+                            "external_delivery_completed": false,
+                            "dpia_completed": false,
+                            "compliance_certification_completed": false
+                        }
+                    ]
+                }
+            ],
+            "breach_playbooks": [
+                {
+                    "title": "Incident secret title",
+                    "notification_roles": ["DPO secret"],
+                    "risk_level": "High",
+                    "status": "under_review",
+                    "advisory_review": {
+                        "status": "under_review",
+                        "receipt_count": 2,
+                        "review_receipt_count": 1,
+                        "drill_receipt_count": 1,
+                        "authority_notification_claimed": false,
+                        "subject_notification_claimed": false,
+                        "legal_completion_claimed": false
+                    },
+                    "evidence_receipts": [
+                        {
+                            "evidence_type": "drill",
+                            "notes": "authority secret note",
+                            "authority_notified": false,
+                            "subjects_notified": false
+                        },
+                        {
+                            "evidence_type": "review",
+                            "notes": "subject secret note",
+                            "authority_notified": false,
+                            "subjects_notified": false
+                        }
+                    ]
+                }
+            ],
+            "transfer_controls": [
+                {
+                    "name": "Transfer secret",
+                    "recipient": "UK Support Ltd secret recipient",
+                    "legal_basis": "Transfer legal secret",
+                    "data_categories": ["support tickets secret"],
+                    "risk_level": "Medium",
+                    "status": "Draft",
+                    "advisory_review": {
+                        "status": "current",
+                        "receipt_count": 1,
+                        "review_receipt_count": 1,
+                        "drill_receipt_count": 0,
+                        "transfer_approval_claimed": false,
+                        "transfer_execution_claimed": false,
+                        "legal_completion_claimed": false
+                    },
+                    "evidence_receipts": [
+                        {
+                            "notes": "approval secret note",
+                            "transfer_approved": true,
+                            "data_transfer_executed": false
+                        }
+                    ]
+                }
+            ],
+            "retention_policies": [
+                {
+                    "name": "Retention secret",
+                    "legal_basis": "Retention legal secret",
+                    "risk_level": "password_hash=secret",
+                    "status": "active",
+                    "disposal_action": "delete"
+                }
+            ],
+            "retention_executions": [
+                {
+                    "execution_status": "awaiting_review",
+                    "outcome": "manual_review_required",
+                    "evidence_state": "review_queued",
+                    "review_closure_evidence": [
+                        { "label": "secret label", "value": "secret value" }
+                    ],
+                    "destructive_disposal_completed": false,
+                    "full_erasure_completed": false,
+                    "would_execute": false
+                },
+                {
+                    "execution_status": "executed",
+                    "outcome": "bounded_archive_recorded",
+                    "evidence_state": "bounded_archive_recorded",
+                    "deletion_completed": true,
+                    "destructive_disposal_completed": false,
+                    "full_erasure_completed": false,
+                    "would_execute": false
+                }
+            ],
+            "dsr_requests": [
+                {
+                    "subject_user_id": "subject-secret",
+                    "request_type": "erasure",
+                    "status": "completed",
+                    "outcome": "partially_fulfilled",
+                    "execution_notes": "dsr secret note",
+                    "erasure_preflight": {
+                        "destructive_mutation_completed": false,
+                        "full_erasure_completed": false
+                    }
+                },
+                {
+                    "subject_user_id": "subject-secret-2",
+                    "request_type": "export",
+                    "status": "pending",
+                    "reason": "export reason secret"
+                }
+            ],
+            "unknown_local_extra": [
+                {
+                    "name": "ignored secret extra"
+                }
+            ]
+        });
+        let privacy_controls_b = json!({
+            "unknown_local_extra": [
+                {
+                    "name": "ignored secret extra"
+                }
+            ],
+            "dsr_requests": [
+                {
+                    "reason": "export reason secret",
+                    "status": "pending",
+                    "request_type": "export",
+                    "subject_user_id": "subject-secret-2"
+                },
+                {
+                    "erasure_preflight": {
+                        "full_erasure_completed": false,
+                        "destructive_mutation_completed": false
+                    },
+                    "execution_notes": "dsr secret note",
+                    "outcome": "partially_fulfilled",
+                    "status": "completed",
+                    "request_type": "erasure",
+                    "subject_user_id": "subject-secret"
+                }
+            ],
+            "retention_executions": [
+                {
+                    "would_execute": false,
+                    "full_erasure_completed": false,
+                    "destructive_disposal_completed": false,
+                    "review_closure_evidence": [
+                        { "value": "secret value", "label": "secret label" }
+                    ],
+                    "evidence_state": "review_queued",
+                    "outcome": "manual_review_required",
+                    "execution_status": "awaiting_review"
+                },
+                {
+                    "would_execute": false,
+                    "full_erasure_completed": false,
+                    "destructive_disposal_completed": false,
+                    "deletion_completed": true,
+                    "evidence_state": "bounded_archive_recorded",
+                    "outcome": "bounded_archive_recorded",
+                    "execution_status": "executed"
+                }
+            ],
+            "retention_policies": [
+                {
+                    "disposal_action": "delete",
+                    "status": "active",
+                    "risk_level": "password_hash=secret",
+                    "legal_basis": "Retention legal secret",
+                    "name": "Retention secret"
+                }
+            ],
+            "transfer_controls": [
+                {
+                    "evidence_receipts": [
+                        {
+                            "data_transfer_executed": false,
+                            "transfer_approved": true,
+                            "notes": "approval secret note"
+                        }
+                    ],
+                    "advisory_review": {
+                        "legal_completion_claimed": false,
+                        "transfer_execution_claimed": false,
+                        "transfer_approval_claimed": false,
+                        "drill_receipt_count": 0,
+                        "review_receipt_count": 1,
+                        "receipt_count": 1,
+                        "status": "current"
+                    },
+                    "status": "Draft",
+                    "risk_level": "Medium",
+                    "data_categories": ["support tickets secret"],
+                    "legal_basis": "Transfer legal secret",
+                    "recipient": "UK Support Ltd secret recipient",
+                    "name": "Transfer secret"
+                }
+            ],
+            "breach_playbooks": [
+                {
+                    "evidence_receipts": [
+                        {
+                            "subjects_notified": false,
+                            "authority_notified": false,
+                            "notes": "authority secret note",
+                            "evidence_type": "drill"
+                        },
+                        {
+                            "subjects_notified": false,
+                            "authority_notified": false,
+                            "notes": "subject secret note",
+                            "evidence_type": "review"
+                        }
+                    ],
+                    "advisory_review": {
+                        "legal_completion_claimed": false,
+                        "subject_notification_claimed": false,
+                        "authority_notification_claimed": false,
+                        "drill_receipt_count": 1,
+                        "review_receipt_count": 1,
+                        "receipt_count": 2,
+                        "status": "under_review"
+                    },
+                    "status": "under_review",
+                    "risk_level": "High",
+                    "notification_roles": ["DPO secret"],
+                    "title": "Incident secret title"
+                }
+            ],
+            "dpias": [
+                {
+                    "evidence_receipts": [
+                        {
+                            "compliance_certification_completed": false,
+                            "dpia_completed": false,
+                            "external_delivery_completed": false,
+                            "legal_certification_completed": false,
+                            "legal_review_accepted": false,
+                            "authority_filing_completed": false,
+                            "notes": "password_hash=secret",
+                            "evidence_type": "drill"
+                        },
+                        {
+                            "compliance_certification_completed": false,
+                            "dpia_completed": false,
+                            "external_delivery_completed": false,
+                            "legal_certification_completed": false,
+                            "legal_review_accepted": false,
+                            "authority_filing_completed": false,
+                            "notes": "api-key-secret",
+                            "evidence_type": "review"
+                        }
+                    ],
+                    "advisory_review": {
+                        "legal_completion_claimed": false,
+                        "compliance_certification_claimed": false,
+                        "completion_claimed": false,
+                        "legal_certification_claimed": false,
+                        "legal_acceptance_claimed": false,
+                        "authority_filing_claimed": false,
+                        "drill_receipt_count": 1,
+                        "review_receipt_count": 1,
+                        "receipt_count": 2,
+                        "status": "current"
+                    },
+                    "status": "Active",
+                    "risk_level": "Critical",
+                    "data_categories": ["biometrics secret"],
+                    "legal_basis": "DPIA legal secret",
+                    "title": "Payroll DPIA secret title"
+                }
+            ],
+            "processors": [
+                {
+                    "status": "Active",
+                    "risk_level": "High",
+                    "data_categories": ["employee identifiers", "payroll details"],
+                    "legal_basis": "GDPR-Art-6-secret",
+                    "purpose": "Payroll secret purpose",
+                    "name": "Sensitive Processor SA"
+                }
+            ]
+        });
+        let params_a = json!({
+            "uri": MCP_PRIVACY_CONTROL_REVIEW_SUMMARY_RESOURCE_URI,
+            "arguments": {
+                "privacy_controls": privacy_controls_a
+            }
+        });
+        let params_b = json!({
+            "arguments": {
+                "privacy_controls": privacy_controls_b
+            },
+            "uri": MCP_PRIVACY_CONTROL_REVIEW_SUMMARY_RESOURCE_URI
+        });
+
+        let response_a = server
+            .handle(&req("resources/read", 65, params_a))
+            .unwrap()
+            .result
+            .unwrap();
+        let response_b = server
+            .handle(&req("resources/read", 66, params_b))
+            .unwrap()
+            .result
+            .unwrap();
+        let text_a = response_a["contents"][0]["text"].as_str().unwrap();
+        let text_b = response_b["contents"][0]["text"].as_str().unwrap();
+        assert_eq!(text_a, text_b, "summary output must be deterministic");
+        for secret in [
+            "Sensitive Processor SA",
+            "Payroll secret purpose",
+            "GDPR-Art-6-secret",
+            "employee identifiers",
+            "Payroll DPIA secret title",
+            "password_hash=secret",
+            "api-key-secret",
+            "UK Support Ltd secret recipient",
+            "subject-secret",
+            "ignored secret extra",
+        ] {
+            assert!(
+                !text_a.contains(secret),
+                "summary must not echo caller value {secret:?}: {text_a}"
+            );
+        }
+        assert!(!text_a.contains("\"legal_approval\": true"));
+        assert!(!text_a.contains("\"legal_completion\": true"));
+        assert!(!text_a.contains("\"authority_notification\": true"));
+        assert!(!text_a.contains("\"data_subject_notification\": true"));
+        assert!(!text_a.contains("\"transfer_approval\": true"));
+        assert!(!text_a.contains("\"transfer_execution\": true"));
+        assert!(!text_a.contains("\"dpia_authority_filing\": true"));
+        assert!(!text_a.contains("\"dpia_completion\": true"));
+        assert!(!text_a.contains("\"compliance_certification\": true"));
+        assert!(!text_a.contains("\"privacy_compliance_completion\": true"));
+        assert!(!text_a.contains("\"gdpr_compliance_completion\": true"));
+        assert!(!text_a.contains("\"destructive_disposal\": true"));
+        assert!(!text_a.contains("\"deletion_completion\": true"));
+        assert!(!text_a.contains("\"anonymization_completion\": true"));
+        assert!(!text_a.contains("\"redaction_completion\": true"));
+        assert!(!text_a.contains("\"full_erasure\": true"));
+
+        let report: Value = serde_json::from_str(text_a).unwrap();
+        assert_eq!(
+            report["kind"],
+            json!("chancela_mcp_privacy_control_review_summary_report")
+        );
+        assert_eq!(
+            report["source"],
+            json!("local_mcp_deterministic_privacy_control_summarizer")
+        );
+        assert_eq!(report["offline"], json!(true));
+        assert_eq!(report["local_json_only"], json!(true));
+        assert_eq!(report["deterministic"], json!(true));
+        assert_eq!(report["aggregate_counts_only"], json!(true));
+        assert_eq!(report["bridge_calls"], json!(false));
+        assert_eq!(report["api_calls"], json!(false));
+        assert_eq!(report["provider_calls"], json!(false));
+        assert_eq!(report["ai_provider_calls"], json!(false));
+        assert_eq!(report["legal_service_calls"], json!(false));
+        assert_eq!(report["secrets_in_resource"], json!(false));
+
+        for claim in [
+            "legal_approval",
+            "legal_completion",
+            "authority_notification",
+            "data_subject_notification",
+            "transfer_approval",
+            "transfer_execution",
+            "dpia_authority_filing",
+            "dpia_completion",
+            "compliance_certification",
+            "privacy_compliance_completion",
+            "gdpr_compliance_completion",
+            "destructive_disposal",
+            "deletion_completion",
+            "anonymization_completion",
+            "redaction_completion",
+            "full_erasure",
+            "provider",
+            "legal_service",
+        ] {
+            assert_eq!(
+                report["claims"][claim],
+                json!(false),
+                "report claim {claim} should be false: {report}"
+            );
+        }
+
+        let summary = &report["privacy_control_summary"];
+        assert_eq!(summary["record_counts"]["total_records"], json!(9));
+        assert_eq!(summary["record_counts"]["processors"], json!(1));
+        assert_eq!(summary["record_counts"]["retention_executions"], json!(2));
+        assert_eq!(summary["record_counts"]["dsr_requests"], json!(2));
+        assert_eq!(summary["risk_counts"]["high"], json!(2));
+        assert_eq!(summary["risk_counts"]["critical"], json!(1));
+        assert_eq!(summary["risk_counts"]["medium"], json!(1));
+        assert_eq!(summary["risk_counts"]["other"], json!(1));
+        assert_eq!(summary["risk_counts"]["missing"], json!(4));
+        assert_eq!(summary["status_counts"]["active"], json!(3));
+        assert_eq!(summary["status_counts"]["under_review"], json!(1));
+        assert_eq!(summary["status_counts"]["draft"], json!(1));
+        assert_eq!(summary["status_counts"]["awaiting_review"], json!(1));
+        assert_eq!(summary["status_counts"]["executed"], json!(1));
+        assert_eq!(summary["status_counts"]["completed"], json!(1));
+        assert_eq!(summary["status_counts"]["pending"], json!(1));
+        assert_eq!(
+            summary["advisory_review_status_counts"]["current"],
+            json!(2)
+        );
+        assert_eq!(
+            summary["advisory_review_status_counts"]["under_review"],
+            json!(1)
+        );
+        assert_eq!(
+            summary["advisory_review_status_counts"]["missing"],
+            json!(6)
+        );
+        assert_eq!(
+            summary["missing_advisory_review_counts"]["total_records_missing_advisory_review_status"],
+            json!(6)
+        );
+        assert_eq!(
+            summary["missing_advisory_review_counts"]["by_category"]["retention_executions"],
+            json!(2)
+        );
+        assert_eq!(
+            summary["missing_advisory_review_counts"]["by_category"]["dsr_requests"],
+            json!(2)
+        );
+        assert_eq!(
+            summary["review_drill_receipt_counts"]["total"]["receipt_count"],
+            json!(5)
+        );
+        assert_eq!(
+            summary["review_drill_receipt_counts"]["total"]["review_receipt_count"],
+            json!(3)
+        );
+        assert_eq!(
+            summary["review_drill_receipt_counts"]["total"]["drill_receipt_count"],
+            json!(2)
+        );
+        assert_eq!(
+            summary["review_drill_receipt_counts"]["by_category"]["transfer_controls"]["review_receipt_count"],
+            json!(1)
+        );
+        assert_eq!(
+            summary["retention_execution_counts"]["record_count"],
+            json!(2)
+        );
+        assert_eq!(
+            summary["retention_execution_counts"]["execution_status_counts"]["awaiting_review"],
+            json!(1)
+        );
+        assert_eq!(
+            summary["retention_execution_counts"]["execution_status_counts"]["executed"],
+            json!(1)
+        );
+        assert_eq!(
+            summary["retention_execution_counts"]["outcome_counts"]["manual_review_required"],
+            json!(1)
+        );
+        assert_eq!(
+            summary["retention_execution_counts"]["outcome_counts"]["bounded_archive_recorded"],
+            json!(1)
+        );
+        assert_eq!(
+            summary["retention_execution_counts"]["evidence_state_counts"]["review_queued"],
+            json!(1)
+        );
+        assert_eq!(
+            summary["retention_execution_counts"]["evidence_state_counts"]["bounded_archive_recorded"],
+            json!(1)
+        );
+        assert_eq!(summary["dsr_request_counts"]["record_count"], json!(2));
+        assert_eq!(
+            summary["dsr_request_counts"]["request_type_counts"]["erasure"],
+            json!(1)
+        );
+        assert_eq!(
+            summary["dsr_request_counts"]["request_type_counts"]["export"],
+            json!(1)
+        );
+        assert_eq!(
+            summary["dsr_request_counts"]["status_counts"]["completed"],
+            json!(1)
+        );
+        assert_eq!(
+            summary["dsr_request_counts"]["status_counts"]["pending"],
+            json!(1)
+        );
+        assert_eq!(
+            summary["dsr_request_counts"]["outcome_counts"]["partially_fulfilled"],
+            json!(1)
+        );
+        assert_eq!(
+            summary["dsr_request_counts"]["outcome_counts"]["missing"],
+            json!(1)
+        );
+        assert_eq!(
+            summary["false_claim_flag_counts"]["by_flag"]["transfer_approval"]["explicit_false"],
+            json!(1)
+        );
+        assert_eq!(
+            summary["false_claim_flag_counts"]["by_flag"]["transfer_approval"]["truthy"],
+            json!(1)
+        );
+        assert_eq!(
+            summary["false_claim_flag_counts"]["by_flag"]["transfer_execution"]["explicit_false"],
+            json!(2)
+        );
+        assert_eq!(
+            summary["false_claim_flag_counts"]["by_flag"]["deletion_completion"]["truthy"],
+            json!(1)
+        );
+        assert_eq!(
+            summary["false_claim_flag_counts"]["by_flag"]["full_erasure"]["explicit_false"],
+            json!(4)
+        );
+        assert_eq!(
+            summary["false_claim_flag_counts"]["totals"]["truthy"],
+            json!(2)
+        );
+        assert!(server.bridge_recorded().is_empty());
+    }
+
+    #[test]
+    fn resources_read_privacy_control_review_summary_rejects_bad_arguments_and_extra_params() {
+        let server = McpServer::from_config(&enabled_cfg(), MockTransport::new(200, "{}")).unwrap();
+
+        let missing_privacy_controls = server
+            .handle(&req(
+                "resources/read",
+                67,
+                json!({
+                    "uri": MCP_PRIVACY_CONTROL_REVIEW_SUMMARY_RESOURCE_URI,
+                    "arguments": { "case_id": "privacy-7" }
+                }),
+            ))
+            .unwrap();
+        let error = missing_privacy_controls.error.unwrap();
+        assert_eq!(error.code, codes::INVALID_PARAMS);
+        assert!(error.message.contains("privacy_controls must be supplied"));
+
+        let non_array_collection = server
+            .handle(&req(
+                "resources/read",
+                68,
+                json!({
+                    "uri": MCP_PRIVACY_CONTROL_REVIEW_SUMMARY_RESOURCE_URI,
+                    "arguments": {
+                        "privacy_controls": {
+                            "processors": {}
+                        }
+                    }
+                }),
+            ))
+            .unwrap();
+        let error = non_array_collection.error.unwrap();
+        assert_eq!(error.code, codes::INVALID_PARAMS);
+        assert!(
+            error
+                .message
+                .contains("privacy_controls.processors must be an array")
+        );
+
+        let non_object_record = server
+            .handle(&req(
+                "resources/read",
+                69,
+                json!({
+                    "uri": MCP_PRIVACY_CONTROL_REVIEW_SUMMARY_RESOURCE_URI,
+                    "arguments": {
+                        "privacy_controls": {
+                            "dpias": [null]
+                        }
+                    }
+                }),
+            ))
+            .unwrap();
+        let error = non_object_record.error.unwrap();
+        assert_eq!(error.code, codes::INVALID_PARAMS);
+        assert!(
+            error
+                .message
+                .contains("privacy_controls.dpias[0] must be an object")
+        );
+
+        let extra_param = server
+            .handle(&req(
+                "resources/read",
+                70,
+                json!({
+                    "uri": MCP_PRIVACY_CONTROL_REVIEW_SUMMARY_RESOURCE_URI,
+                    "cursor": "ignored"
+                }),
+            ))
+            .unwrap();
+        let error = extra_param.error.unwrap();
+        assert_eq!(error.code, codes::INVALID_PARAMS);
+        assert!(error.message.contains("uri plus arguments"));
+
+        assert!(server.bridge_recorded().is_empty());
+    }
+
+    #[test]
     fn resources_read_draft_signed_comparison_report_rejects_bad_arguments_and_extra_params() {
         let server = McpServer::from_config(&enabled_cfg(), MockTransport::new(200, "{}")).unwrap();
 
@@ -3516,7 +5159,8 @@ mod tests {
                 MCP_SPEC_09_COVERAGE_RESOURCE_URI,
                 MCP_WORKFLOW_PROVENANCE_REVIEW_RESOURCE_URI,
                 MCP_DRAFT_SIGNED_COMPARISON_REVIEW_RESOURCE_URI,
-                MCP_CHRONOLOGY_REVIEW_SUMMARY_RESOURCE_URI
+                MCP_CHRONOLOGY_REVIEW_SUMMARY_RESOURCE_URI,
+                MCP_PRIVACY_CONTROL_REVIEW_SUMMARY_RESOURCE_URI
             ])
         );
         assert!(
@@ -3538,7 +5182,8 @@ mod tests {
             json!([
                 MCP_WORKFLOW_PROVENANCE_REVIEW_RESOURCE_URI,
                 MCP_DRAFT_SIGNED_COMPARISON_REVIEW_RESOURCE_URI,
-                MCP_CHRONOLOGY_REVIEW_SUMMARY_RESOURCE_URI
+                MCP_CHRONOLOGY_REVIEW_SUMMARY_RESOURCE_URI,
+                MCP_PRIVACY_CONTROL_REVIEW_SUMMARY_RESOURCE_URI
             ])
         );
         assert_eq!(

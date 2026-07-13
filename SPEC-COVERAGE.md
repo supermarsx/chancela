@@ -622,6 +622,26 @@ Implementation checkpoints covered here:
   advisory review signal only, not chronology certification, ownership
   determination, legal validity, AI/MCP completion, registry/provider assurance,
   or source certification.
+- Working tree keeps AI/MCP/Legal/Compliance/Data/CI **PARTIAL**: MCP now
+  advertises the read-only
+  `chancela://mcp/privacy-control-review-summary` resource. With no arguments it
+  returns local input-shape guidance and no-claim boundaries; with
+  `arguments.privacy_controls` JSON it returns deterministic aggregate counts
+  only for processors, DPIAs, breach playbooks, transfer controls, retention
+  policies, retention executions, and DSR requests. The report counts
+  risk/status buckets, advisory-review statuses, review/drill receipts, missing
+  advisory-review markers, no-claim flag observations, retention execution
+  status/outcome/evidence-state buckets, and DSR type/status/outcome buckets
+  without echoing names, notes, legal bases, recipients, subjects, data
+  categories, or secrets. It makes no bridge/API/AI-provider/legal-service/
+  provider calls and keeps legal approval/completion, authority/data-subject
+  notification, transfer approval/execution, DPIA authority filing/completion,
+  privacy/GDPR compliance completion, compliance certification, destructive
+  disposal, deletion, anonymization, redaction, and full-erasure claims false.
+  This is caller-supplied local JSON review signal only, not privacy/GDPR
+  compliance completion, legal approval, notification, transfer execution,
+  DPIA filing/completion, disposal, deletion, redaction, anonymization, erasure,
+  AI/MCP completion, or provider/legal-service assurance.
 - Working tree keeps Data/Roles/Workflows/CI **PARTIAL**: `GET /v1/dashboard`
   now returns `recent_events: []` for guest/minimal redaction callers while
   Owner and `Leitor` sessions keep the recent ledger-event feed. Guest remains

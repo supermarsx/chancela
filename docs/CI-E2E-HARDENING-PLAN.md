@@ -244,6 +244,22 @@ test operating checklist for driving Chancela toward release confidence.
   validation, external validation, signature validation, signature
   qualification, provider assurance, signed-artifact certification, or AI/MCP
   completion.
+- The current MCP privacy-control review summary slice adds the read-only
+  `chancela://mcp/privacy-control-review-summary` resource. With no arguments
+  it returns local input-shape guidance and no-claim boundaries; with
+  `arguments.privacy_controls` it returns deterministic aggregate counts only
+  for local processors, DPIAs, breach playbooks, transfer controls, retention
+  policies, retention executions, and DSR requests. It echoes no record names,
+  notes, legal bases, recipients, subjects, data categories, or secrets; makes
+  no bridge/API/AI-provider/legal-service/provider calls; and keeps legal
+  approval/completion, notification, transfer execution, DPIA
+  filing/completion, compliance certification, privacy/GDPR completion,
+  destructive disposal, deletion, anonymization, redaction, and full-erasure
+  claims false. Treat this as caller-supplied local JSON review signal only,
+  not privacy/GDPR compliance completion, legal approval, notification,
+  transfer execution, DPIA filing/completion, disposal, deletion, redaction,
+  anonymization, erasure, AI/MCP completion, or provider/legal-service
+  assurance.
 - The current dashboard guest redaction slice returns `recent_events: []` from
   `GET /v1/dashboard` for guest/minimal redaction callers, while Owner and
   `Leitor` sessions keep recent events. Guest still lacks `GET /v1/ledger/events`.
@@ -1058,6 +1074,22 @@ settingsDefaults.test.ts contracts.test.ts`.
   provider assurance, no trust validation, no external validation, no signature
   validation, no qualified signature status, and no signed-artifact
   certification.
+- Current working-tree MCP privacy-control review summary checks: focused
+  `cargo test -p chancela-mcp --locked privacy_control_review_summary` coverage
+  pins the read-only `chancela://mcp/privacy-control-review-summary` resource,
+  static no-argument input guidance, deterministic aggregate report mode for
+  `arguments.privacy_controls`, local JSON only, secret/no-echo coverage,
+  no extra resource params, no bridge/API/AI-provider/legal-service/provider
+  calls, aggregate counts for privacy records, advisory review status,
+  review/drill receipts, missing advisory review, no-claim flags, retention
+  execution status/outcome/evidence state, and DSR type/status/outcome, plus
+  false legal approval/completion, notification, transfer, DPIA, compliance,
+  disposal, deletion, anonymization, redaction, full-erasure, provider, and
+  legal-service claims. This is caller-supplied local JSON review signal only:
+  no privacy/GDPR compliance completion, no legal approval, no notification,
+  no transfer execution, no DPIA filing/completion, no disposal, no deletion,
+  no redaction, no anonymization, no erasure, no provider/legal-service
+  assurance, and no AI or MCP completion claim.
 - Current working-tree dashboard guest recent-events redaction checks: focused
   `cargo test -p chancela-api --locked dashboard_recent_events_redacts_guest_feed_but_keeps_owner_and_reader_feed`
   coverage pins `recent_events: []` for guest/minimal dashboard readers, Owner

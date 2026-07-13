@@ -310,7 +310,16 @@ It intentionally reuses existing test surfaces:
   legal/source/provider/trust/external-validation/signature-qualification
   claims, plus the read-only `chancela://mcp/chronology-review-summary`
   human-review resource for static chronology guidance and caller-supplied
-  local aggregate counts only.
+  local aggregate counts only, plus
+  `chancela://mcp/privacy-control-review-summary` static guidance and
+  caller-supplied `arguments.privacy_controls` aggregate counts for
+  processors, DPIAs, breach playbooks, transfer controls, retention policies,
+  retention executions, and DSR requests. The privacy-control resource is local
+  JSON only, makes no bridge/API/AI-provider/legal-service/provider calls,
+  echoes no names, notes, legal bases, recipients, subjects, data categories,
+  or secrets, and keeps legal approval/completion, notification,
+  transfer/DPIA/compliance, disposal, deletion, anonymization, redaction, and
+  full-erasure claims false.
 - Template catalog metadata/semantic lint:
   `cargo test -p chancela-templates --locked`
 - Web client/contract/books/dashboard/document/entity/Ferramentas/notification/recovery/settings/signing/templates/i18n/subnav
