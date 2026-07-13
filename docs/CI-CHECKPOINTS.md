@@ -502,6 +502,13 @@ claiming stdout/stderr, MCP process logs, supervisor lifecycle coverage,
 hardware-ID-derived key security, production key custody, legal validity, or
 complete UX/spec coverage.
 
+Settings platform operations now also has a focused route-stubbed browser proof:
+`npm run test:browser --workspace apps/web -- e2e/platform-operations.spec.ts`.
+It verifies API/MCP row rendering, the MCP `start` desired-state POST returning
+`supervisor_required`, and settings autosave for an MCP log override only. It
+does not prove live supervisor integration, process start/stop/restart control,
+stdout/stderr capture, MCP child-process logging, or production observability.
+
 ## Release Hardening Artifacts
 
 The CI `supply-chain` job now generates and validates a CycloneDX dependency

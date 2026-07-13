@@ -527,6 +527,10 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - Platform service controls show unsupported and supervisor-required outcomes
   exactly as returned by the backend; the UI must not present API self-restart or
   MCP stdio start as if Chancela directly controls those processes.
+- The focused `e2e/platform-operations.spec.ts` browser proof is route-stubbed:
+  it renders API/MCP service rows, posts only the MCP desired-state `start`
+  action, shows `supervisor_required`, autosaves a log-level override, and does
+  not prove live supervisor or process lifecycle control.
 - Global logging level `off` suppresses service log output even if stale
   per-service overrides remain stored; explicit service overrides take effect
   only when the global/area level allows logging.

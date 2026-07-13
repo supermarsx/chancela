@@ -7261,6 +7261,36 @@ function assertCheckpointMap() {
     "platform operations effective logging CSS marker",
   );
   assertFileContains(
+    "apps/web/e2e/platform-operations.spec.ts",
+    "platform operations renders API/MCP rows and records MCP start as supervisor-required only",
+    "platform operations route-stubbed browser proof marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/platform-operations.spec.ts",
+    "/v1/platform/services/mcp_stdio/actions/start",
+    "platform operations MCP desired-state POST browser marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/platform-operations.spec.ts",
+    "service_overrides",
+    "platform operations log override autosave browser marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "focused `e2e/platform-operations.spec.ts` browser proof is route-stubbed",
+    "CI/E2E hardening plan platform operations browser proof marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "e2e/platform-operations.spec.ts",
+    "CI checkpoints platform operations browser command marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "focused\n  browser proof in `apps/web/e2e/platform-operations.spec.ts` is route-stubbed",
+    "spec coverage platform operations browser proof marker",
+  );
+  assertFileContains(
     "package.json",
     "check:encrypted-build-defaults",
     "encrypted build defaults package script",

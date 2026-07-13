@@ -1849,8 +1849,10 @@ behavior, legal disposal, or legal-effect claims.
 - **Platform service-control UI clarification:** the Settings platform operations
   surface now hides non-meaningful desired-state action buttons, still lists the
   backend's unsupported/restart/supervisor-required action capabilities, and
-  shows effective per-service log levels with global-off suppression. This is
-  UI honesty and regression coverage only, not real process supervision,
+  shows effective per-service log levels with global-off suppression. A focused
+  route-stubbed browser proof now renders the API/MCP rows, records MCP `start`
+  as `supervisor_required`, autosaves an MCP log override, and asserts no real
+  process-start claim. This is UI honesty and regression coverage only, not real process supervision,
   stdout/stderr capture, MCP process log forwarding, or historical log storage.
 - **Dashboard dates tab:** dated reminders are split out of current work into a
   dedicated dashboard `Datas` tab, while current work keeps open-book and
@@ -2507,7 +2509,9 @@ behavior, legal disposal, or legal-effect claims.
   writer. The web Settings
   `Operações` tab exposes the same status, log controls, and action buttons, plus an AI/MCP
   assurance panel for managers covering dual gates, API-key RBAC, non-authoritative draft output,
-  and technical-only signature-bundle scope without exposing secrets. This is honest
+  and technical-only signature-bundle scope without exposing secrets. The focused
+  browser proof in `apps/web/e2e/platform-operations.spec.ts` is route-stubbed and
+  proves browser rendering/submission/autosave only. This is honest
   desired-state/control evidence plus an API-owned log tail only: it is not historical
   stdout/stderr, does not tail or capture stdout/stderr, does not control process lifecycle, does
   not add a production supervisor/SIEM/HA/observability guarantee, and is not a complete durable/live
