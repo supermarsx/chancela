@@ -768,12 +768,14 @@ export const svSE: Catalog = {
   'acts.sealing.ready': 'Protokollet följer kraven och är under underskrift — det kan förseglas.',
   'acts.sealing.readyWithWarnings':
     'Protokollet har icke-blockerande efterlevnadsvarningar. Granska och bekräfta dem uttryckligen före försegling.',
-  'acts.sealing.warningAck.title': 'Bekräfta efterlevnadsvarningar',
+  'acts.sealing.warningAck.title': 'Confirm manual sealing',
   'acts.sealing.warningAck.body':
-    'Det finns icke-blockerande efterlevnadsvarningar. Förseglingen fortsätter först när du bekräftar att du har granskat dem.',
+    'Record the local reference for where the manually signed original is kept. This metadata does not validate the signature or certify the archive.',
   'acts.sealing.warningAck.checkbox':
-    'Jag bekräftar uttryckligen dessa efterlevnadsvarningar och vill försegla protokollet.',
-  'acts.sealing.warningAck.confirm': 'Försegla protokoll med varningar',
+    'I confirm the manual-signature original reference has been captured and want to seal the minute.',
+  'acts.sealing.warningAck.checkboxWithWarnings':
+    'I confirm I reviewed the compliance warnings, the manual-signature original reference has been captured, and I want to seal the minute.',
+  'acts.sealing.warningAck.confirm': 'Confirm and seal minute',
   'acts.manualSignature.originalReference.label': 'Signed original reference',
   'acts.manualSignature.originalReference.hint':
     'Location, archive, folder, document id, or another internal reference.',
@@ -785,7 +787,8 @@ export const svSE: Catalog = {
   'acts.manualSignature.custodian.displayLabel': 'Custodian',
   'acts.manualSignature.note.label': 'Note',
   'acts.manualSignature.note.hint': 'Optional local context; do not record legal validation.',
-  'acts.manualSignature.note.displayLabel': 'Note',  'acts.sealing.unavailableState':
+  'acts.manualSignature.note.displayLabel': 'Note',
+  'acts.sealing.unavailableState':
     'Försegling är endast tillgänglig i tillståndet ”Under underskrift”.',
   'acts.sealing.fixErrors': 'Åtgärda efterlevnadsfelen innan du kan försegla.',
   'acts.sealing.sealing': 'Förseglar…',
@@ -2165,7 +2168,7 @@ export const svSE: Catalog = {
   // Toast notifications — registry/CAE/law/users/session (t44 retrofit-b)
   'toast.registry.imported': 'Enhet importerad från registret.',
   'toast.registry.enriched': 'Enhet uppdaterad utifrån intyget.',
-  'toast.cae.refreshed': 'CAE-katalog uppdaterat.',
+  'toast.cae.refreshed': 'CAE-katalogen uppdaterad.',
   'toast.cae.upToDate': 'CAE-katalogen är redan uppdaterad.',
   'toast.law.stored': 'PDF sparad lokalt.',
   'toast.user.created': 'Användare skapad.',
@@ -3212,26 +3215,26 @@ export const svSE: Catalog = {
   'documents.import.guardrails.checklist.noPromotion':
     'OCR or conversion output is not promoted to canonical records.',
   'documents.import.guardrails.checklist.unknown': 'Technical limit: {code}',
-  'documents.import.validationAria': 'Valideringsrapport for importerat dokument',
+  'documents.import.validationAria': 'Valideringsrapport för importerat dokument',
   'documents.import.validationTitle': 'Teknisk importvalidering',
   'documents.import.validationRejectedTitle': 'Import avvisad av valideringen',
   'documents.import.validationRejectedBody':
     'Filen sparades inte; granska de tekniska felen nedan.',
-  'documents.import.legacyWord.title': 'Aldre Microsoft Word .doc/OLE CFB',
+  'documents.import.legacyWord.title': 'Äldre Microsoft Word .doc/OLE CFB',
   'documents.import.legacyWord.body':
-    'Aldre Microsoft Word .doc/OLE CFB bevaras endast som icke-kanoniskt bevis. Makron och inbaddade objekt kors inte. Ingen DOC-till-PDF/A-konvertering eller kanonisk ersattning utfordes.',
+    'Äldre Microsoft Word .doc/OLE CFB bevaras endast som icke-kanoniskt bevis. Makron och inbäddade objekt körs inte. Ingen DOC-till-PDF/A-konvertering eller kanonisk ersättning utfördes.',
   'documents.import.legacyWord.detectedType': 'Identifierad typ',
   'documents.import.legacyWord.oleCfb': 'OLE CFB',
-  'documents.import.legacyWord.legacyDoc': 'Aldre Word .doc',
-  'documents.import.legacyWord.macrosExecuted': 'Makron/objekt korda',
+  'documents.import.legacyWord.legacyDoc': 'Äldre Word .doc',
+  'documents.import.legacyWord.macrosExecuted': 'Makron/objekt körda',
   'documents.import.legacyWord.conversion': 'DOC-till-PDF/A-konvertering',
   'documents.import.legacyWord.canonicalPdfa': 'Kanonisk PDF/A genererad',
   'documents.import.findings': 'Valideringsfynd',
   'documents.import.toast.success': 'Dokument importerat som icke-kanoniskt bevis.',
   'documents.import.toast.validationRejected':
     'Dokument avvisades av valideringen; det importerades inte.',
-  'documents.import.readError.imported': 'Kunde inte lasa den importerade filen.',
-  'documents.import.readError.file': 'Kunde inte lasa filen.',
+  'documents.import.readError.imported': 'Kunde inte läsa den importerade filen.',
+  'documents.import.readError.file': 'Kunde inte läsa filen.',
   'externalInvite.crumbs': 'Extern underskrift',
   'externalInvite.title': 'Extern inbjudan',
   'externalInvite.status.pending': 'Väntar',
