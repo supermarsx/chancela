@@ -3288,12 +3288,48 @@ describe('contract fixtures parse through the real client', () => {
     expect(
       dash.reminders.some(
         (reminder) =>
+          reminder.source_rule === 'csc-art376-annual' &&
+          reminder.source_profile === 'csc-commercial' &&
+          reminder.due_date === '2026-03-31' &&
+          reminder.params?.calendar_preset_support === 'supported' &&
+          reminder.params?.preset_id === 'csc-art376-annual' &&
+          reminder.params?.local_due_date_rule_configured === 'true' &&
+          reminder.params?.local_due_date_calculated === 'true' &&
+          reminder.params?.legal_deadline_calculated === 'true' &&
+          reminder.params?.months_after_fiscal_year_end === '3' &&
+          reminder.params?.fiscal_year_end === '12-31' &&
+          reminder.params?.due_year === '2026' &&
+          reminder.params?.due_basis === 'default_fiscal_year_end_missing_recorded_value' &&
+          reminder.params?.local_advisory_only === 'true' &&
+          reminder.params?.legal_calendar_authority_claimed === 'false' &&
+          reminder.params?.external_delivery_claimed === 'false' &&
+          reminder.params?.external_calendar_sync_claimed === 'false' &&
+          reminder.params?.webhook_delivery_claimed === 'false' &&
+          reminder.params?.workflow_completion_claimed === 'false' &&
+          reminder.params?.compliance_status_claimed === 'false',
+      ),
+      'Dashboard.reminders should include supported profile-calendar local coverage metadata',
+    ).toBe(true);
+    expect(
+      dash.reminders.some(
+        (reminder) =>
           reminder.source_rule === 'condominio-annual' &&
           reminder.source_profile === 'condominio-dl268' &&
           reminder.due_date === '' &&
           reminder.status === 'Pending' &&
+          reminder.params?.calendar_preset_support === 'unsupported' &&
           reminder.params?.local_due_date_rule_configured === 'false' &&
+          reminder.params?.local_due_date_calculated === 'false' &&
           reminder.params?.legal_deadline_calculated === 'false' &&
+          reminder.params?.legal_calendar_authority_claimed === 'false' &&
+          reminder.params?.external_delivery_claimed === 'false' &&
+          reminder.params?.external_calendar_sync_claimed === 'false' &&
+          reminder.params?.webhook_delivery_claimed === 'false' &&
+          reminder.params?.workflow_completion_claimed === 'false' &&
+          reminder.params?.compliance_status_claimed === 'false' &&
+          reminder.params?.unsupported_reason === 'missing_local_due_date_rule' &&
+          reminder.params?.due_year === undefined &&
+          reminder.params?.due_basis === undefined &&
           reminder.reason.includes('does not calculate a legal deadline'),
       ),
       'Dashboard.reminders should include a pending no-due-date unsupported profile-calendar advisory',

@@ -1468,6 +1468,12 @@ Implementation checkpoints covered here:
   removing other dashboard data, and source toggles suppress only their
   matching local family. Gestão exposes compact controls for those fields, and
   reminder status now uses absolute calendar-day deltas across year boundaries.
+  Profile-calendar reminders expose local preset coverage/status params
+  (`calendar_preset_support`, preset id/label, local due-rule/calculation
+  flags, supported due-year/basis/fiscal-year offset fields, and false
+  legal-authority/external-delivery/calendar-sync/webhook/workflow-completion
+  claim flags); unsupported presets remain pending no-date advisories with no
+  due-year or due-basis.
   This is policy/default/UI/checkpoint coverage only, not full reminder or
   calendar completion.
 - `225f5c6` keeps Signatures **PARTIAL**: external-signing envelopes can require
@@ -2952,10 +2958,12 @@ behavior, legal disposal, or legal-effect claims.
   no reminder. Due dates use the entity's recorded fiscal-year end when valid, fall back explicitly to
   the default calendar-year model when absent/invalid, clamp leap-day edge cases deterministically,
   suppress reminders when a sealed/archive act already provides a recent calendar signal, and now
-  carry i18n keys so the web notification/dashboard copy is resolved through the locale catalog. The
-  reminder remains advisory and bounded by current calendar preset data; unsupported presets do not
-  calculate legal deadlines, legal-calendar authority, DRE/registry filing, meeting completion, or
-  external notification. Settings now expose the bounded `workflow.reminders` policy for existing
+  carry local coverage/status params so supported presets expose the encoded due-year/basis while
+  unsupported presets stay pending/no-date with no due-year or due-basis. The reminder remains
+  advisory and bounded by current calendar preset data; unsupported presets do not calculate legal
+  deadlines, and all profile-calendar reminder coverage metadata keeps legal-calendar authority,
+  external delivery/calendar sync/webhook, compliance status, and workflow-completion claim flags
+  false. Settings now expose the bounded `workflow.reminders` policy for existing
   local advisory reminder families: default enabled behavior preserves the prior limit 5 / due-soon 45 /
   attendance-lookahead 45 output, `enabled=false` suppresses reminder feed/cards without breaking
   other dashboard data, source toggles suppress only profile-calendar, act-follow-up, or

@@ -1888,18 +1888,30 @@ fn profile_calendar_reminder(
         return None;
     }
 
-    let fiscal_year_note = match (
+    let (fiscal_year_note, due_basis) = match (
         entity.fiscal_year_end.as_deref(),
         parsed_fiscal_year_end.is_some(),
     ) {
-        (Some(_), true) => "using the entity's recorded fiscal_year_end",
-        (Some(_), false) => {
-            "using the default Dec 31 fiscal-year end because the recorded fiscal_year_end could not be read"
-        }
-        (None, _) => {
-            "using the default Dec 31 fiscal-year end because no fiscal_year_end is recorded"
-        }
+        (Some(_), true) => (
+            "using the entity's recorded fiscal_year_end",
+            "recorded_fiscal_year_end",
+        ),
+        (Some(_), false) => (
+            "using the default Dec 31 fiscal-year end because the recorded fiscal_year_end could not be read",
+            "default_fiscal_year_end_unreadable_recorded_value",
+        ),
+        (None, _) => (
+            "using the default Dec 31 fiscal-year end because no fiscal_year_end is recorded",
+            "default_fiscal_year_end_missing_recorded_value",
+        ),
     };
+    let params = supported_profile_calendar_params(
+        preset,
+        months_after_fiscal_year_end,
+        fiscal_year_end,
+        due_date,
+        due_basis,
+    );
     Some(DashboardReminder {
         due_date: format_date(due_date),
         severity: "Advisory".to_owned(),
@@ -1919,7 +1931,7 @@ fn profile_calendar_reminder(
         entity_name: entity.name.clone(),
         source_rule: preset.id.to_owned(),
         source_profile: profile.template_family.to_owned(),
-        params: BTreeMap::new(),
+        params,
         law_refs: calendar_law_refs(profile.family, preset.id),
         action: Some(dashboard_action(
             "open_entity",
@@ -1937,14 +1949,11 @@ fn unsupported_profile_calendar_advisory(
     profile: &EntityProfile,
     preset: &CalendarPreset,
 ) -> DashboardReminder {
-    let mut params = BTreeMap::new();
-    params.insert("preset_id".to_owned(), preset.id.to_owned());
-    params.insert("preset_label".to_owned(), preset.label.to_owned());
+    let mut params = unsupported_profile_calendar_params(preset);
     params.insert(
-        "local_due_date_rule_configured".to_owned(),
-        "false".to_owned(),
+        "unsupported_reason".to_owned(),
+        "missing_local_due_date_rule".to_owned(),
     );
-    params.insert("legal_deadline_calculated".to_owned(), "false".to_owned());
 
     DashboardReminder {
         due_date: String::new(),
@@ -1977,6 +1986,73 @@ fn unsupported_profile_calendar_advisory(
         ],
         i18n: None,
     }
+}
+
+fn supported_profile_calendar_params(
+    preset: &CalendarPreset,
+    months_after_fiscal_year_end: u8,
+    fiscal_year_end: FiscalYearEnd,
+    due_date: Date,
+    due_basis: &str,
+) -> BTreeMap<String, String> {
+    let mut params = profile_calendar_preset_params(preset, "supported", true, true, true);
+    params.insert(
+        "months_after_fiscal_year_end".to_owned(),
+        months_after_fiscal_year_end.to_string(),
+    );
+    params.insert(
+        "fiscal_year_end".to_owned(),
+        format_fiscal_year_end(fiscal_year_end),
+    );
+    params.insert("due_year".to_owned(), due_date.year().to_string());
+    params.insert("due_basis".to_owned(), due_basis.to_owned());
+    params
+}
+
+fn unsupported_profile_calendar_params(preset: &CalendarPreset) -> BTreeMap<String, String> {
+    profile_calendar_preset_params(preset, "unsupported", false, false, false)
+}
+
+fn profile_calendar_preset_params(
+    preset: &CalendarPreset,
+    support_status: &str,
+    local_due_date_rule_configured: bool,
+    local_due_date_calculated: bool,
+    legal_deadline_calculated: bool,
+) -> BTreeMap<String, String> {
+    let mut params = BTreeMap::new();
+    params.insert(
+        "calendar_preset_support".to_owned(),
+        support_status.to_owned(),
+    );
+    params.insert("preset_id".to_owned(), preset.id.to_owned());
+    params.insert("preset_label".to_owned(), preset.label.to_owned());
+    params.insert(
+        "local_due_date_rule_configured".to_owned(),
+        local_due_date_rule_configured.to_string(),
+    );
+    params.insert(
+        "local_due_date_calculated".to_owned(),
+        local_due_date_calculated.to_string(),
+    );
+    params.insert(
+        "legal_deadline_calculated".to_owned(),
+        legal_deadline_calculated.to_string(),
+    );
+    params.insert("local_advisory_only".to_owned(), "true".to_owned());
+    params.insert(
+        "legal_calendar_authority_claimed".to_owned(),
+        "false".to_owned(),
+    );
+    params.insert("external_delivery_claimed".to_owned(), "false".to_owned());
+    params.insert(
+        "external_calendar_sync_claimed".to_owned(),
+        "false".to_owned(),
+    );
+    params.insert("webhook_delivery_claimed".to_owned(), "false".to_owned());
+    params.insert("workflow_completion_claimed".to_owned(), "false".to_owned());
+    params.insert("compliance_status_claimed".to_owned(), "false".to_owned());
+    params
 }
 
 fn calendar_law_refs(family: EntityFamily, preset_id: &str) -> Vec<DashboardLawReference> {
@@ -2144,6 +2220,10 @@ fn fiscal_year_end_date(year: i32, fiscal_year_end: FiscalYearEnd) -> Date {
         .day
         .min(days_in_month(year, fiscal_year_end.month));
     Date::from_calendar_date(year, month, day).expect("clamped fiscal year end date is valid")
+}
+
+fn format_fiscal_year_end(fiscal_year_end: FiscalYearEnd) -> String {
+    format!("{:02}-{:02}", fiscal_year_end.month, fiscal_year_end.day)
 }
 
 fn add_months_clamped(date: Date, months: u8) -> Date {
@@ -3249,6 +3329,104 @@ mod tests {
     }
 
     #[test]
+    fn profile_calendar_supported_preset_exposes_local_coverage_basis() {
+        let mut entity = entity_of(EntityKind::SociedadeAnonima);
+        entity.fiscal_year_end = Some("08-31".to_owned());
+        let mut entities = HashMap::new();
+        entities.insert(entity.id, entity);
+
+        let reminders = dashboard_reminders(
+            &entities,
+            &HashMap::new(),
+            &HashMap::new(),
+            &HashMap::new(),
+            date!(2026 - 07 - 09),
+        );
+
+        assert_eq!(reminders.len(), 1);
+        let reminder = &reminders[0];
+        assert_eq!(reminder.source_rule, "csc-art376-annual");
+        assert_eq!(reminder.due_date, "2026-11-30");
+        assert_eq!(reminder.status, "Upcoming");
+        assert_eq!(
+            reminder
+                .params
+                .get("calendar_preset_support")
+                .map(String::as_str),
+            Some("supported")
+        );
+        assert_eq!(
+            reminder.params.get("preset_id").map(String::as_str),
+            Some("csc-art376-annual")
+        );
+        assert_eq!(
+            reminder.params.get("preset_label").map(String::as_str),
+            Some("Assembleia geral anual (CSC art. 376.º)")
+        );
+        assert_eq!(
+            reminder
+                .params
+                .get("local_due_date_rule_configured")
+                .map(String::as_str),
+            Some("true")
+        );
+        assert_eq!(
+            reminder
+                .params
+                .get("local_due_date_calculated")
+                .map(String::as_str),
+            Some("true")
+        );
+        assert_eq!(
+            reminder
+                .params
+                .get("months_after_fiscal_year_end")
+                .map(String::as_str),
+            Some("3")
+        );
+        assert_eq!(
+            reminder.params.get("fiscal_year_end").map(String::as_str),
+            Some("08-31")
+        );
+        assert_eq!(
+            reminder.params.get("due_year").map(String::as_str),
+            Some("2026")
+        );
+        assert_eq!(
+            reminder.params.get("due_basis").map(String::as_str),
+            Some("recorded_fiscal_year_end")
+        );
+        assert_eq!(
+            reminder
+                .params
+                .get("legal_deadline_calculated")
+                .map(String::as_str),
+            Some("true")
+        );
+        assert_eq!(
+            reminder
+                .params
+                .get("local_advisory_only")
+                .map(String::as_str),
+            Some("true")
+        );
+        for key in [
+            "legal_calendar_authority_claimed",
+            "external_delivery_claimed",
+            "external_calendar_sync_claimed",
+            "webhook_delivery_claimed",
+            "workflow_completion_claimed",
+            "compliance_status_claimed",
+        ] {
+            assert_eq!(
+                reminder.params.get(key).map(String::as_str),
+                Some("false"),
+                "{key} must remain false for profile-calendar reminders"
+            );
+        }
+    }
+
+    #[test]
     fn open_draft_act_missing_attendance_surfaces_work_queue_reminder() {
         let entity = entity_of(EntityKind::SociedadeEmNomeColetivo);
         let mut book = Book::new(entity.id, BookKind::AssembleiaGeral);
@@ -3448,8 +3626,12 @@ mod tests {
      {
         let reminders = reminders_for_generated_dispatch_evidence(&[]);
 
-        assert_eq!(reminders.len(), 1);
-        let reminder = &reminders[0];
+        let absent_owner_reminders = reminders
+            .iter()
+            .filter(|reminder| reminder.source_rule == "absent-owner-dispatch-evidence")
+            .collect::<Vec<_>>();
+        assert_eq!(absent_owner_reminders.len(), 1);
+        let reminder = absent_owner_reminders[0];
         let expected_route = format!(
             "/atas/{}",
             reminder.params.get("act_id").expect("act_id param")
@@ -3526,8 +3708,12 @@ mod tests {
     fn reminder_generated_absent_owner_dispatch_evidence_partial_routes_to_act_document_workflow() {
         let reminders = reminders_for_generated_dispatch_evidence(&["Fração B"]);
 
-        assert_eq!(reminders.len(), 1);
-        let reminder = &reminders[0];
+        let absent_owner_reminders = reminders
+            .iter()
+            .filter(|reminder| reminder.source_rule == "absent-owner-dispatch-evidence")
+            .collect::<Vec<_>>();
+        assert_eq!(absent_owner_reminders.len(), 1);
+        let reminder = absent_owner_reminders[0];
         let expected_route = format!(
             "/atas/{}",
             reminder.params.get("act_id").expect("act_id param")
@@ -3906,6 +4092,21 @@ mod tests {
         assert_eq!(
             reminder
                 .params
+                .get("calendar_preset_support")
+                .map(String::as_str),
+            Some("unsupported")
+        );
+        assert_eq!(
+            reminder.params.get("preset_id").map(String::as_str),
+            Some("condominio-annual")
+        );
+        assert_eq!(
+            reminder.params.get("preset_label").map(String::as_str),
+            Some("Assembleia ordinária anual de condóminos (DL 268/94)")
+        );
+        assert_eq!(
+            reminder
+                .params
                 .get("local_due_date_rule_configured")
                 .map(String::as_str),
             Some("false")
@@ -3917,6 +4118,42 @@ mod tests {
                 .map(String::as_str),
             Some("false")
         );
+        assert_eq!(
+            reminder
+                .params
+                .get("local_due_date_calculated")
+                .map(String::as_str),
+            Some("false")
+        );
+        assert_eq!(
+            reminder
+                .params
+                .get("unsupported_reason")
+                .map(String::as_str),
+            Some("missing_local_due_date_rule")
+        );
+        assert!(
+            !reminder.params.contains_key("due_year"),
+            "unsupported presets must not invent a due year"
+        );
+        assert!(
+            !reminder.params.contains_key("due_basis"),
+            "unsupported presets must not invent a due basis"
+        );
+        for key in [
+            "legal_calendar_authority_claimed",
+            "external_delivery_claimed",
+            "external_calendar_sync_claimed",
+            "webhook_delivery_claimed",
+            "workflow_completion_claimed",
+            "compliance_status_claimed",
+        ] {
+            assert_eq!(
+                reminder.params.get(key).map(String::as_str),
+                Some("false"),
+                "{key} must remain false for unsupported profile-calendar reminders"
+            );
+        }
         assert!(
             reminder
                 .reason

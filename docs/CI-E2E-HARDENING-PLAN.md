@@ -1353,7 +1353,13 @@ settingsDefaults.test.ts contracts.test.ts`.
   families, `enabled=false` suppression of reminder output without removing
   other dashboard current-work data, per-source suppression limited to the
   matching local reminder family, numeric limit/window behavior, and absolute
-  calendar-day reminder status across year boundaries. Focused
+  calendar-day reminder status across year boundaries. Focused `cargo test -p
+  chancela-api --locked profile_calendar_` coverage pins the new
+  profile-calendar metadata. Profile-calendar
+  coverage/status metadata now distinguishes supported local-rule presets from
+  unsupported pending/no-date presets while keeping legal-authority, external
+  delivery/calendar-sync/webhook, compliance-status, and workflow-completion
+  claim flags false. Focused
   `settingsDefaults.test.ts` and `SettingsPage.test.tsx` coverage pins the web
   defaults and compact Gestão controls for the master switch, limit, due-soon
   window, attendance lookahead, and three source toggles. This remains local

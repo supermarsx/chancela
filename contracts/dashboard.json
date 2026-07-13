@@ -257,6 +257,25 @@
       "entity_name": "Encosto Estratégico, S.A.",
       "source_rule": "csc-art376-annual",
       "source_profile": "csc-commercial",
+      "params": {
+        "calendar_preset_support": "supported",
+        "preset_id": "csc-art376-annual",
+        "preset_label": "Assembleia geral anual (CSC art. 376.º)",
+        "local_due_date_rule_configured": "true",
+        "local_due_date_calculated": "true",
+        "legal_deadline_calculated": "true",
+        "local_advisory_only": "true",
+        "legal_calendar_authority_claimed": "false",
+        "external_delivery_claimed": "false",
+        "external_calendar_sync_claimed": "false",
+        "webhook_delivery_claimed": "false",
+        "workflow_completion_claimed": "false",
+        "compliance_status_claimed": "false",
+        "months_after_fiscal_year_end": "3",
+        "fiscal_year_end": "12-31",
+        "due_year": "2026",
+        "due_basis": "default_fiscal_year_end_missing_recorded_value"
+      },
       "law_refs": [
         {
           "diploma_id": "csc",
@@ -289,10 +308,20 @@
       "source_rule": "condominio-annual",
       "source_profile": "condominio-dl268",
       "params": {
+        "calendar_preset_support": "unsupported",
         "preset_id": "condominio-annual",
         "preset_label": "Assembleia ordinária anual de condóminos (DL 268/94)",
         "local_due_date_rule_configured": "false",
-        "legal_deadline_calculated": "false"
+        "local_due_date_calculated": "false",
+        "legal_deadline_calculated": "false",
+        "local_advisory_only": "true",
+        "legal_calendar_authority_claimed": "false",
+        "external_delivery_claimed": "false",
+        "external_calendar_sync_claimed": "false",
+        "webhook_delivery_claimed": "false",
+        "workflow_completion_claimed": "false",
+        "compliance_status_claimed": "false",
+        "unsupported_reason": "missing_local_due_date_rule"
       },
       "law_refs": [],
       "action": {

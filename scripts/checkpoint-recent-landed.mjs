@@ -5048,8 +5048,23 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-api/src/dashboard.rs",
+    "profile_calendar_preset_params(",
+    "dashboard profile-calendar preset coverage metadata helper marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/dashboard.rs",
+    '"calendar_preset_support"',
+    "dashboard profile-calendar support status param marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/dashboard.rs",
     "does not calculate a legal deadline for this preset",
     "dashboard profile-calendar unsupported-preset no-deadline copy marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/dashboard.rs",
+    "profile_calendar_supported_preset_exposes_local_coverage_basis",
+    "dashboard profile-calendar supported-preset coverage basis test marker",
   );
   assertFileContains(
     "crates/chancela-api/src/dashboard.rs",
@@ -5065,6 +5080,16 @@ function assertCheckpointMap() {
     "contracts/dashboard.json",
     '"source_rule": "condominio-annual"',
     "dashboard contract profile-calendar unsupported-preset advisory fixture marker",
+  );
+  assertFileContains(
+    "contracts/dashboard.json",
+    '"calendar_preset_support": "supported"',
+    "dashboard contract profile-calendar supported coverage metadata fixture marker",
+  );
+  assertFileContains(
+    "contracts/dashboard.json",
+    '"unsupported_reason": "missing_local_due_date_rule"',
+    "dashboard contract profile-calendar unsupported no-rule metadata fixture marker",
   );
   assertFileContains(
     "crates/chancela-api/src/dashboard.rs",
@@ -8591,6 +8616,11 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
+    "Profile-calendar\n  coverage/status metadata now distinguishes supported local-rule presets",
+    "CI/E2E hardening plan profile-calendar coverage metadata marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
     "no new legal-calendar rules, law-source\n  authority, threshold verification",
     "CI/E2E hardening plan workflow reminder caveat marker",
   );
@@ -9998,6 +10028,16 @@ function assertCheckpointMap() {
     "SPEC-COVERAGE.md",
     "absolute calendar-day\n  deltas across year boundaries",
     "spec coverage workflow reminder year-boundary marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Profile-calendar reminders expose local preset coverage/status params",
+    "spec coverage profile-calendar coverage metadata marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "unsupported presets remain pending no-date advisories with no\n  due-year or due-basis",
+    "spec coverage profile-calendar unsupported no-date/no-basis marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
