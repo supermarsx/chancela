@@ -9,22 +9,22 @@ import type { Catalog } from '../types';
 
 export const nlNL: Catalog = {
   // --- Permissions / RBAC gating (t64) ------------------------------------------
-  'perm.denied.action': 'Je hebt geen toestemming voor deze actie',
+  'perm.denied.action': 'U hebt geen toestemming voor deze actie',
   'perm.denied.title': 'Geen toestemming',
-  'perm.denied.body': 'Je hebt geen toestemming om deze bewerking uit te voeren.',
+  'perm.denied.body': 'U hebt geen toestemming om deze bewerking uit te voeren.',
   // --- RBAC management (t64-E6) ---------------------------------------------------
   'rbac.funcoes.tab': 'Rollen',
   'rbac.delegacoes.tab': 'Delegaties',
   'rbac.scope.label': 'Bereik',
   'rbac.scope.global': 'Globaal (hele instantie)',
-  'rbac.scope.entity': 'Rechtspersoon',
+  'rbac.scope.entity': 'Entiteit',
   'rbac.scope.book': 'Boek',
   'rbac.scope.global.desc': 'Geldt voor de hele instantie.',
-  'rbac.scope.entity.desc': 'Geldt voor de rechtspersoon en zijn boeken.',
+  'rbac.scope.entity.desc': 'Geldt voor de entiteit en haar boeken.',
   'rbac.scope.book.desc': 'Geldt alleen voor dit boek.',
-  'rbac.scope.entity.pick': 'Rechtspersoon kiezen',
+  'rbac.scope.entity.pick': 'Entiteit kiezen',
   'rbac.scope.book.pick': 'Boek kiezen',
-  'rbac.group.entity': 'Rechtspersonen',
+  'rbac.group.entity': 'Entiteiten',
   'rbac.group.book': 'Boeken',
   'rbac.group.act': 'Akten',
   'rbac.group.signing': 'Ondertekening',
@@ -769,24 +769,29 @@ export const nlNL: Catalog = {
   'acts.sealing.ready': 'De notulen zijn conform en in ondertekening — ze kunnen worden verzegeld.',
   'acts.sealing.readyWithWarnings':
     'De notulen hebben niet-blokkerende nalevingswaarschuwingen. Controleer en erken ze expliciet voordat u verzegelt.',
-  'acts.sealing.warningAck.title': 'Nalevingswaarschuwingen bevestigen',
+  'acts.sealing.warningAck.title': 'Confirm manual sealing',
   'acts.sealing.warningAck.body':
-    'Er zijn niet-blokkerende nalevingswaarschuwingen. Verzegelen gaat pas verder nadat u bevestigt dat u ze hebt gecontroleerd.',
+    'Record the local reference for where the manually signed original is kept. This metadata does not validate the signature or certify the archive.',
   'acts.sealing.warningAck.checkbox':
-    'Ik erken deze nalevingswaarschuwingen expliciet en wil de notulen verzegelen.',
-  'acts.sealing.warningAck.confirm': 'Notulen met waarschuwingen verzegelen',
+    'I confirm the manual-signature original reference has been captured and want to seal the minute.',
+  'acts.sealing.warningAck.checkboxWithWarnings':
+    'I confirm I reviewed the compliance warnings, the manual-signature original reference has been captured, and I want to seal the minute.',
+  'acts.sealing.warningAck.confirm': 'Confirm and seal minute',
   'acts.manualSignature.originalReference.label': 'Signed original reference',
   'acts.manualSignature.originalReference.hint':
     'Location, archive, folder, document id, or another internal reference.',
   'acts.manualSignature.originalReference.tooLong':
     'The signed original reference must be at most 512 characters.',
+  'acts.manualSignature.originalReference.controlCharacters':
+    'The signed original reference must not contain control characters.',
   'acts.manualSignature.originalReference.displayLabel': 'Signed original',
   'acts.manualSignature.custodian.label': 'Custodian',
   'acts.manualSignature.custodian.hint': 'Responsible person, team, or service, if applicable.',
   'acts.manualSignature.custodian.displayLabel': 'Custodian',
   'acts.manualSignature.note.label': 'Note',
   'acts.manualSignature.note.hint': 'Optional local context; do not record legal validation.',
-  'acts.manualSignature.note.displayLabel': 'Note',  'acts.sealing.unavailableState': 'Verzegelen is alleen beschikbaar in de status “Ondertekenen”.',
+  'acts.manualSignature.note.displayLabel': 'Note',
+  'acts.sealing.unavailableState': 'Verzegelen is alleen beschikbaar in de status “Ondertekenen”.',
   'acts.sealing.fixErrors': 'Los de nalevingsfouten op voordat u kunt verzegelen.',
   'acts.sealing.sealing': 'Verzegelen…',
   'acts.sealing.seal': 'Notulen verzegelen',
@@ -1754,7 +1759,7 @@ export const nlNL: Catalog = {
   'settings.saveNow': 'Nu opslaan',
   'settings.autosave.pending': 'Niet-opgeslagen wijzigingen…',
   'settings.autosave.error':
-    'Automatisch opslaan is mislukt. Je wijzigingen blijven behouden en kunnen opnieuw worden geprobeerd.',
+    'Automatisch opslaan is mislukt. Uw wijzigingen blijven behouden en kunnen opnieuw worden geprobeerd.',
 
   // --- Formatting ----------------------------------------------------------------
   'format.ataNumber': 'Notulen nr. {padded}/{year}',
