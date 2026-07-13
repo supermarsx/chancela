@@ -91,6 +91,7 @@ mod books;
 mod bundles;
 mod cae;
 mod chronology;
+#[allow(dead_code)]
 mod credential_resolve;
 mod dashboard;
 mod data;
@@ -129,6 +130,7 @@ mod secretstore_persist;
 mod session;
 mod settings;
 mod signature;
+mod signature_pkcs12_stored;
 mod trust;
 mod users;
 mod xades_signature;
@@ -1435,6 +1437,10 @@ pub fn router(state: AppState) -> Router {
             post(signature::sign_local_pkcs12_signature).layer(DefaultBodyLimit::max(
                 signature::LOCAL_PKCS12_SIGN_ENVELOPE_BYTES,
             )),
+        )
+        .route(
+            "/v1/acts/{id}/signature/local/pkcs12/sign-stored",
+            post(signature_pkcs12_stored::sign_local_pkcs12_stored_signature),
         )
         .route(
             "/v1/acts/{id}/signature/external-invites",
