@@ -499,7 +499,7 @@ const SETTINGS_SECTIONS: SettingsSectionNav[] = [
   { id: 'assinaturas', label: 'settings.signing.cardTitle', icon: <Icon.PenNib /> },
   { id: 'gestao', label: 'settings.management.cardTitle', icon: <Icon.Sliders /> },
   { id: 'operacoes', label: 'settings.platform.cardTitle', icon: <Icon.Power /> },
-  { id: 'privacidade', literal: 'Privacidade', icon: <Icon.Seal /> },
+  { id: 'privacidade', label: 'settings.privacy.tab', icon: <Icon.Seal /> },
   { id: 'utilizadores', label: 'settings.users.cardTitle', icon: <Icon.Users /> },
   { id: 'chaves-api', label: 'settings.apiKeys.cardTitle', icon: <Icon.Seal /> },
   { id: 'funcoes', label: 'rbac.funcoes.tab', icon: <Icon.Scale /> },
@@ -1730,23 +1730,20 @@ export function SettingsPage() {
                   </div>
                 </div>
               </Card>
-              <Card title="Lembretes do painel">
+              <Card title={t('settings.reminders.cardTitle')}>
                 <div className="form">
                   <Toggle
-                    label="Gerar lembretes locais"
+                    label={t('settings.reminders.enabled.label')}
                     checked={reminderPolicy.enabled}
                     onChange={(enabled) => setWorkflowReminder('enabled', enabled)}
                   />
-                  <p className="field__hint">
-                    Política local e consultiva; não agenda calendários externos nem declara
-                    suficiência legal.
-                  </p>
+                  <p className="field__hint">{t('settings.reminders.note')}</p>
 
                   <div className="registry-auto-update-grid">
                     <Field
-                      label="Limite no painel"
+                      label={t('settings.reminders.dashboardLimit.label')}
                       htmlFor="workflow-reminders-dashboard-limit"
-                      hint="Número máximo de cartões de lembrete devolvidos pelo painel."
+                      hint={t('settings.reminders.dashboardLimit.hint')}
                     >
                       <Input
                         id="workflow-reminders-dashboard-limit"
@@ -1763,9 +1760,9 @@ export function SettingsPage() {
                       />
                     </Field>
                     <Field
-                      label="Prazo breve"
+                      label={t('settings.reminders.dueSoon.label')}
                       htmlFor="workflow-reminders-due-soon-days"
-                      hint="Dias até ao vencimento para classificar como breve."
+                      hint={t('settings.reminders.dueSoon.hint')}
                     >
                       <Input
                         id="workflow-reminders-due-soon-days"
@@ -1782,9 +1779,9 @@ export function SettingsPage() {
                       />
                     </Field>
                     <Field
-                      label="Janela de presenças"
+                      label={t('settings.reminders.attendanceLookahead.label')}
                       htmlFor="workflow-reminders-attendance-lookahead-days"
-                      hint="Dias futuros analisados para atos com presenças por completar."
+                      hint={t('settings.reminders.attendanceLookahead.hint')}
                     >
                       <Input
                         id="workflow-reminders-attendance-lookahead-days"
@@ -1803,33 +1800,33 @@ export function SettingsPage() {
                   </div>
 
                   <div className="stack--tight">
-                    <p className="card__label">Fontes</p>
+                    <p className="card__label">{t('settings.reminders.sources.title')}</p>
                     <div
                       className="checkbox-grid"
                       role="group"
-                      aria-label="Fontes de lembretes do painel"
+                      aria-label={t('settings.reminders.sources.aria')}
                     >
                       <Toggle
-                        label="Calendário do perfil"
+                        label={t('settings.reminders.sources.profileCalendar')}
                         checked={reminderPolicy.sources.profile_calendar}
                         onChange={(checked) =>
                           setWorkflowReminderSource('profile_calendar', checked)
                         }
                       />
                       <Toggle
-                        label="Seguimentos de atas"
+                        label={t('settings.reminders.sources.actFollowUps')}
                         checked={reminderPolicy.sources.act_follow_ups}
                         onChange={(checked) => setWorkflowReminderSource('act_follow_ups', checked)}
                       />
                       <Toggle
-                        label="Higiene de presenças"
+                        label={t('settings.reminders.sources.attendanceHygiene')}
                         checked={reminderPolicy.sources.attendance_hygiene}
                         onChange={(checked) =>
                           setWorkflowReminderSource('attendance_hygiene', checked)
                         }
                       />
                       <Toggle
-                        label="Revisões de privacidade"
+                        label={t('settings.reminders.sources.privacyReviews')}
                         checked={reminderPolicy.sources.privacy_control_reviews}
                         onChange={(checked) =>
                           setWorkflowReminderSource('privacy_control_reviews', checked)
@@ -1839,18 +1836,14 @@ export function SettingsPage() {
                   </div>
                 </div>
               </Card>
-              <Card title="Política de limpeza de exportações retidas">
+              <Card title={t('settings.retainedExportCleanup.cardTitle')}>
                 <div className="form">
-                  <p className="field__hint">
-                    Valores padrão usados apenas na pré-visualização de limpeza de exportações
-                    locais retidas. Não aprovam retenção legal, eliminação de arquivo, descarte ou
-                    apagamento RGPD.
-                  </p>
+                  <p className="field__hint">{t('settings.retainedExportCleanup.note')}</p>
                   <div className="registry-auto-update-grid">
                     <Field
-                      label="Idade mínima das exportações"
+                      label={t('settings.retainedExportCleanup.minimumAge.label')}
                       htmlFor="retained-export-cleanup-minimum-age-days"
-                      hint="Dias mínimos antes de uma exportação local retida poder aparecer como elegível na pré-visualização."
+                      hint={t('settings.retainedExportCleanup.minimumAge.hint')}
                     >
                       <Input
                         id="retained-export-cleanup-minimum-age-days"
@@ -1872,9 +1865,9 @@ export function SettingsPage() {
                       />
                     </Field>
                     <Field
-                      label="Exportações recentes a preservar"
+                      label={t('settings.retainedExportCleanup.keepLatest.label')}
                       htmlFor="retained-export-cleanup-keep-latest"
-                      hint="Número de ficheiros de exportação mais recentes que ficam fora da limpeza, mesmo quando já têm idade suficiente."
+                      hint={t('settings.retainedExportCleanup.keepLatest.hint')}
                     >
                       <Input
                         id="retained-export-cleanup-keep-latest"
@@ -1898,18 +1891,14 @@ export function SettingsPage() {
                   </div>
                 </div>
               </Card>
-              <Card title="Política local de recuperação de backups">
+              <Card title={t('settings.backupRecovery.cardTitle')}>
                 <div className="form">
-                  <p className="field__hint">
-                    Metas declaradas pelo operador para avisos locais de frescura dos ensaios. Não
-                    executam restauro, não trocam a base de dados, não provam custódia off-site e
-                    não certificam RPO/RTO nem política de backup de produção.
-                  </p>
+                  <p className="field__hint">{t('settings.backupRecovery.note')}</p>
                   <div className="registry-auto-update-grid">
                     <Field
-                      label="Idade máxima do ensaio"
+                      label={t('settings.backupRecovery.maxDrillAge.label')}
                       htmlFor="backup-recovery-max-drill-age-days"
-                      hint="Dias máximos antes do último recibo de ensaio verificado aparecer como desatualizado."
+                      hint={t('settings.backupRecovery.maxDrillAge.hint')}
                     >
                       <Input
                         id="backup-recovery-max-drill-age-days"
@@ -1931,9 +1920,9 @@ export function SettingsPage() {
                       />
                     </Field>
                     <Field
-                      label="RPO alvo"
+                      label={t('settings.backupRecovery.targetRpo.label')}
                       htmlFor="backup-recovery-target-rpo-minutes"
-                      hint="Minutos declarados para o objetivo local de perda máxima de dados."
+                      hint={t('settings.backupRecovery.targetRpo.hint')}
                     >
                       <Input
                         id="backup-recovery-target-rpo-minutes"
@@ -1955,9 +1944,9 @@ export function SettingsPage() {
                       />
                     </Field>
                     <Field
-                      label="RTO alvo"
+                      label={t('settings.backupRecovery.targetRto.label')}
                       htmlFor="backup-recovery-target-rto-minutes"
-                      hint="Minutos declarados para o objetivo local de tempo máximo de recuperação."
+                      hint={t('settings.backupRecovery.targetRto.hint')}
                     >
                       <Input
                         id="backup-recovery-target-rto-minutes"

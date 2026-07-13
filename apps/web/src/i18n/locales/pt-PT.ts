@@ -1615,6 +1615,45 @@ export const ptPT = {
   'settings.platform.logs.column.message': 'Mensagem',
   'settings.platform.logs.context.show': 'Contexto',
   'settings.platform.logs.context.empty': 'Sem contexto',
+  'settings.reminders.cardTitle': 'Lembretes do painel',
+  'settings.reminders.enabled.label': 'Gerar lembretes locais',
+  'settings.reminders.note':
+    'Política local e consultiva; não agenda calendários externos nem declara suficiência legal.',
+  'settings.reminders.dashboardLimit.label': 'Limite no painel',
+  'settings.reminders.dashboardLimit.hint':
+    'Número máximo de cartões de lembrete devolvidos pelo painel.',
+  'settings.reminders.dueSoon.label': 'Prazo breve',
+  'settings.reminders.dueSoon.hint': 'Dias até ao vencimento para classificar como breve.',
+  'settings.reminders.attendanceLookahead.label': 'Janela de presenças',
+  'settings.reminders.attendanceLookahead.hint':
+    'Dias futuros analisados para atos com presenças por completar.',
+  'settings.reminders.sources.title': 'Fontes',
+  'settings.reminders.sources.aria': 'Fontes de lembretes do painel',
+  'settings.reminders.sources.profileCalendar': 'Calendário do perfil',
+  'settings.reminders.sources.actFollowUps': 'Seguimentos de atas',
+  'settings.reminders.sources.attendanceHygiene': 'Higiene de presenças',
+  'settings.reminders.sources.privacyReviews': 'Revisões de privacidade',
+  'settings.retainedExportCleanup.cardTitle': 'Política de limpeza de exportações retidas',
+  'settings.retainedExportCleanup.note':
+    'Valores padrão usados apenas na pré-visualização de limpeza de exportações locais retidas. Não aprovam retenção legal, eliminação de arquivo, descarte ou apagamento RGPD.',
+  'settings.retainedExportCleanup.minimumAge.label': 'Idade mínima das exportações',
+  'settings.retainedExportCleanup.minimumAge.hint':
+    'Dias mínimos antes de uma exportação local retida poder aparecer como elegível na pré-visualização.',
+  'settings.retainedExportCleanup.keepLatest.label': 'Exportações recentes a preservar',
+  'settings.retainedExportCleanup.keepLatest.hint':
+    'Número de ficheiros de exportação mais recentes que ficam fora da limpeza, mesmo quando já têm idade suficiente.',
+  'settings.backupRecovery.cardTitle': 'Política local de recuperação de backups',
+  'settings.backupRecovery.note':
+    'Metas declaradas pelo operador para avisos locais de frescura dos ensaios. Não executam restauro, não trocam a base de dados, não provam custódia off-site e não certificam RPO/RTO nem política de backup de produção.',
+  'settings.backupRecovery.maxDrillAge.label': 'Idade máxima do ensaio',
+  'settings.backupRecovery.maxDrillAge.hint':
+    'Dias máximos antes do último recibo de ensaio verificado aparecer como desatualizado.',
+  'settings.backupRecovery.targetRpo.label': 'RPO alvo',
+  'settings.backupRecovery.targetRpo.hint':
+    'Minutos declarados para o objetivo local de perda máxima de dados.',
+  'settings.backupRecovery.targetRto.label': 'RTO alvo',
+  'settings.backupRecovery.targetRto.hint':
+    'Minutos declarados para o objetivo local de tempo máximo de recuperação.',
   'settings.entityTable.title': 'Tabela de entidades',
   'settings.entityTable.hint': 'Escolha as colunas visíveis na lista de entidades registadas.',
   'settings.entityTable.columns.aria': 'Colunas da tabela de entidades',
@@ -1716,6 +1755,7 @@ export const ptPT = {
   'settings.registryAutoUpdate.attempt.failures': 'Falhas consecutivas',
   'settings.registryAutoUpdate.yes': 'Sim',
   'settings.registryAutoUpdate.no': 'Não',
+  'settings.privacy.tab': 'Privacidade',
   'settings.privacy.title': 'Privacidade e conformidade',
   'settings.privacy.notice.title': 'Registos auditáveis',
   'settings.privacy.notice.body':
