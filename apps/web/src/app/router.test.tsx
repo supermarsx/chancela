@@ -42,7 +42,12 @@ describe('route error fallback', () => {
 
     render(<RouterProvider router={router} />);
 
-    expect(await screen.findByRole('heading', { name: 'Ocorreu um erro' })).toBeTruthy();
+    const crashHeading = await screen.findByRole('heading', { name: 'Ocorreu um erro' });
+    const main = screen.getByRole('main');
+
+    expect(main.id).toBe('main-content');
+    expect(document.getElementById('main-content')).toBe(main);
+    expect(main.contains(crashHeading)).toBe(true);
     expect(screen.getByText('lazy chunk unavailable')).toBeTruthy();
     expect(screen.queryByText(/Unexpected Application Error/i)).toBeNull();
     expect(screen.queryByText(/Hey developer/i)).toBeNull();

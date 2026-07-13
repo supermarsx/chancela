@@ -9,9 +9,10 @@
  * Crash resilience (t26): two nested error boundaries. The OUTER
  * {@link ShellErrorBoundary} wraps the whole shell — including the title bar — so a
  * title-bar crash still leaves working window controls. The INNER
- * {@link PageErrorBoundary} wraps only the routed content, BELOW the title bar, so a
- * page crash leaves the title bar (drag/min/max/close) fully functional. In safe mode
- * the appearance layers are bypassed entirely and a persistent banner is shown.
+ * {@link PageErrorBoundary} wraps only the routed outlet inside the main landmark, BELOW
+ * the title bar, so a page crash leaves both the title bar (drag/min/max/close) and the
+ * skip-link target fully functional. In safe mode the appearance layers are bypassed
+ * entirely and a persistent banner is shown.
  */
 import { useEffect, useRef } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
@@ -112,22 +113,24 @@ export function Layout() {
         {/* The single inner scroll container — the window itself never scrolls. */}
         <div className="app-scroll">
           <div className="app">
-            <PageErrorBoundary key={pathname}>
-              {/* Keyed on the pathname so the routed content remounts and replays the
-                  `.route-transition` enter on every navigation. The key is set here on the
-                  wrapper itself (not left implicit in the boundary's remount) so the
-                  re-trigger is explicit; `data-route-key` exposes it for tests. */}
-              <main
-                ref={mainRef}
-                id="main-content"
-                tabIndex={-1}
-                className="route-transition"
-                key={pathname}
-                data-route-key={pathname}
-              >
+            {/* Keyed on the pathname so the routed content remounts and replays the
+                `.route-transition` enter on every navigation. The key is set here on the
+                wrapper itself (not left implicit in the boundary's remount) so the
+                re-trigger is explicit; `data-route-key` exposes it for tests. The page
+                error boundary sits INSIDE the landmark so the skip-link target survives
+                route crashes. */}
+            <main
+              ref={mainRef}
+              id="main-content"
+              tabIndex={-1}
+              className="route-transition"
+              key={pathname}
+              data-route-key={pathname}
+            >
+              <PageErrorBoundary key={pathname}>
                 <Outlet />
-              </main>
-            </PageErrorBoundary>
+              </PageErrorBoundary>
+            </main>
 
             <footer className="footer">{t('common.footer')}</footer>
           </div>

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, screen } from '@testing-library/react';
-import { Route, Routes } from 'react-router-dom';
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
+import { Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { Layout } from './layout';
 import { EntitiesPage } from '../features/entities/EntitiesPage';
 import { renderWithProviders, fetchTable } from '../test/utils';
@@ -35,6 +35,50 @@ const shellDashboard: Dashboard = {
   recent_events: [],
 };
 
+function stubSignedInShellFetch() {
+  vi.stubGlobal(
+    'fetch',
+    fetchTable([
+      { match: '/v1/session/roster', body: { onboarding_required: false, users: [] } },
+      { match: '/v1/settings', body: DEFAULT_SETTINGS },
+      {
+        match: '/v1/session',
+        body: {
+          user: {
+            id: 'u1',
+            username: 'operador',
+            display_name: 'Operador',
+            created_at: '2026-07-08T00:00:00Z',
+            active: true,
+            has_secret: false,
+            has_attestation_key: false,
+          },
+        },
+      },
+      { match: '/v1/dashboard', body: shellDashboard },
+      { match: '/v1', body: [] },
+    ]),
+  );
+}
+
+function CrashingRoute(): never {
+  throw new Error('rota rebentou');
+}
+
+function SamePathControls() {
+  const navigate = useNavigate();
+  const { search, hash } = useLocation();
+
+  return (
+    <div>
+      <button type="button" onClick={() => navigate('/?view=detalhe#secao')}>
+        Ajustar vista
+      </button>
+      <p>{search || hash ? `${search}${hash}` : 'sem parametros'}</p>
+    </div>
+  );
+}
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -45,29 +89,7 @@ describe('Layout', () => {
     // The chrome is behind the AuthGate now, so the layout renders it only when signed in:
     // an active session + a non-onboarding roster. (Order matters — the roster substring is
     // matched before the bare `/v1/session`.)
-    vi.stubGlobal(
-      'fetch',
-      fetchTable([
-        { match: '/v1/session/roster', body: { onboarding_required: false, users: [] } },
-        { match: '/v1/settings', body: DEFAULT_SETTINGS },
-        {
-          match: '/v1/session',
-          body: {
-            user: {
-              id: 'u1',
-              username: 'operador',
-              display_name: 'Operador',
-              created_at: '2026-07-08T00:00:00Z',
-              active: true,
-              has_secret: false,
-              has_attestation_key: false,
-            },
-          },
-        },
-        { match: '/v1/dashboard', body: shellDashboard },
-        { match: '/v1', body: [] },
-      ]),
-    );
+    stubSignedInShellFetch();
     renderWithProviders(
       <Routes>
         <Route element={<Layout />}>
@@ -94,35 +116,36 @@ describe('Layout', () => {
     }
   });
 
+  it('keeps the skip-link target mounted when routed content crashes', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    stubSignedInShellFetch();
+
+    renderWithProviders(
+      <Routes>
+        <Route element={<Layout />}>
+          <Route index element={<CrashingRoute />} />
+        </Route>
+      </Routes>,
+      ['/'],
+    );
+
+    const crashHeading = await screen.findByRole('heading', { name: 'Ocorreu um erro' });
+    const skipLink = screen.getByRole('link', { name: 'Saltar para o conteúdo' });
+    const main = screen.getByRole('main');
+
+    expect(skipLink.getAttribute('href')).toBe('#main-content');
+    expect(main.id).toBe('main-content');
+    expect(document.getElementById('main-content')).toBe(main);
+    expect(main.contains(crashHeading)).toBe(true);
+  });
+
   it('re-keys the route-transition wrapper on navigation and gates it via the class', async () => {
     // The page-enter motion is a single CSS animation on `.route-transition`; both
     // kill-switches (prefers-reduced-motion + [data-safe-mode]) zero `animation` on that
     // class, so asserting the class + the per-route re-key proves the structure without
     // touching pixels: navigation swaps the keyed node (fresh mount ⇒ the enter replays),
     // and the collapse is CSS-governed off the same class.
-    vi.stubGlobal(
-      'fetch',
-      fetchTable([
-        { match: '/v1/session/roster', body: { onboarding_required: false, users: [] } },
-        { match: '/v1/settings', body: DEFAULT_SETTINGS },
-        {
-          match: '/v1/session',
-          body: {
-            user: {
-              id: 'u1',
-              username: 'operador',
-              display_name: 'Operador',
-              created_at: '2026-07-08T00:00:00Z',
-              active: true,
-              has_secret: false,
-              has_attestation_key: false,
-            },
-          },
-        },
-        { match: '/v1/dashboard', body: shellDashboard },
-        { match: '/v1', body: [] },
-      ]),
-    );
+    stubSignedInShellFetch();
     const { container } = renderWithProviders(
       <Routes>
         <Route element={<Layout />}>
@@ -147,6 +170,49 @@ describe('Layout', () => {
     expect(after?.classList.contains('route-transition')).toBe(true);
     expect(after?.getAttribute('data-route-key')).toBe('/entidades');
     expect(after).not.toBe(before);
+  });
+
+  it('focuses the main landmark after pathname navigation', async () => {
+    stubSignedInShellFetch();
+    renderWithProviders(
+      <Routes>
+        <Route element={<Layout />}>
+          <Route index element={<div>painel</div>} />
+          <Route path="entidades" element={<div>entidades</div>} />
+        </Route>
+      </Routes>,
+      ['/'],
+    );
+
+    await screen.findByText('painel');
+
+    fireEvent.click(screen.getByRole('link', { name: 'Entidades' }));
+    await screen.findByText('entidades');
+
+    const main = screen.getByRole('main');
+    await waitFor(() => expect(document.activeElement).toBe(main));
+  });
+
+  it('does not steal focus on same-path query and hash navigation', async () => {
+    stubSignedInShellFetch();
+    renderWithProviders(
+      <Routes>
+        <Route element={<Layout />}>
+          <Route index element={<SamePathControls />} />
+        </Route>
+      </Routes>,
+      ['/'],
+    );
+
+    await screen.findByText('sem parametros');
+    const control = screen.getByRole('button', { name: 'Ajustar vista' });
+    control.focus();
+    expect(document.activeElement).toBe(control);
+
+    fireEvent.click(control);
+    await screen.findByText('?view=detalhe#secao');
+
+    expect(document.activeElement).toBe(control);
   });
 });
 

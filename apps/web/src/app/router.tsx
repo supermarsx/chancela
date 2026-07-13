@@ -15,6 +15,7 @@ import {
 import { Layout } from './layout';
 import { RouteLoading } from './RouteLoading';
 import { CrashScreen } from './CrashScreen';
+import { useT } from '../i18n';
 
 /**
  * React Router `errorElement` for the top-level routes. In a v6 DATA router, an error
@@ -23,17 +24,25 @@ import { CrashScreen } from './CrashScreen';
  * boundary wrapped around `<RouterProvider>`. Without this, RR shows its built-in default
  * error page (or, for the routes OUTSIDE `Layout`, an unguarded blank screen).
  *
- * Reuses the editorial {@link CrashScreen} (read-only). It renders without an initialised
- * i18n store: `i18nStore.message()` falls back to the statically-imported pt-PT catalog,
- * so the fallback is safe even when a crash happens before anything else is ready.
+ * Reuses the editorial {@link CrashScreen} (read-only). React Router renders this INSTEAD
+ * OF the route element, so the normal {@link Layout} landmark may not exist; provide the
+ * same `main#main-content` skip-link target here for data-router failures.
  */
 export function RouteCrash() {
+  const t = useT();
   const error = useRouteError();
   return (
-    <CrashScreen
-      error={error instanceof Error ? error : new Error(String(error))}
-      componentStack={null}
-    />
+    <>
+      <a className="skip-link" href="#main-content">
+        {t('nav.skipToContent')}
+      </a>
+      <main id="main-content" tabIndex={-1} className="route-transition">
+        <CrashScreen
+          error={error instanceof Error ? error : new Error(String(error))}
+          componentStack={null}
+        />
+      </main>
+    </>
   );
 }
 
