@@ -1470,6 +1470,14 @@ export function useCreateBackupRecoveryDrill() {
   });
 }
 
+export function useBackupRecoveryDrills() {
+  return useQuery({
+    queryKey: keys.backupRecoveryDrills,
+    queryFn: () => api.listBackupRecoveryDrills(),
+    staleTime: 60_000,
+  });
+}
+
 /**
  * Export one book as a self-verifying bundle (`POST /v1/books/{id}/export`, t54). Returns
  * the `.zip` blob + response headers (the retained export path / bundle digest); the caller

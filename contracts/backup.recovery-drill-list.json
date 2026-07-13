@@ -1,0 +1,79 @@
+{
+  "receipts": [
+    {
+      "id": "7a6b5c40-0000-4000-8000-000000000091",
+      "created_at": "2026-07-10T10:40:00Z",
+      "archive": "/data/backups/chancela-backup-20260710T103000Z.zip",
+      "preflight_ok": true,
+      "preflight_ready": true,
+      "encrypted": false,
+      "ledger_verified": true,
+      "manifest": {
+        "schema": "chancela-backup-manifest/v1",
+        "version": 1,
+        "store_schema_version": 12,
+        "ledger_length": 42,
+        "ledger_verified": true,
+        "member_count": 3,
+        "sidecar_member_count": 2,
+        "db_member_present": true,
+        "total_member_bytes": 12288
+      },
+      "isolated_restore_verified": true,
+      "isolated_restore_verification": {
+        "status": "verified",
+        "db_snapshot_materialized": true,
+        "db_snapshot_opened": true,
+        "state_loaded": true,
+        "ledger_verified": true,
+        "cleanup_verified": true,
+        "entity_count": 4,
+        "book_count": 2,
+        "act_count": 12,
+        "sidecar_root_count": 2,
+        "sidecar_materialized_file_count": 2,
+        "sidecar_materialized_bytes": 4096,
+        "sqlcipher_encryption_verified": null,
+        "findings": [
+          "archive manifest and listed members passed store preflight checks",
+          "isolated database snapshot was materialized, opened, and loaded",
+          "isolated snapshot ledger verified",
+          "isolated sidecar readback covered 2 file(s)",
+          "isolated verification temp directory was removed"
+        ],
+        "errors": [],
+        "next_step": "record as preflight-only isolated snapshot evidence; authorize any recovery execution separately"
+      },
+      "operator_notes": "Quarterly recovery drill. Preflight only; no live restore was executed.",
+      "custody_location": "Evidence safe A / shelf 3",
+      "restore_executed": false,
+      "live_db_swapped": false,
+      "sidecars_staged": false,
+      "ledger_restored_appended": false,
+      "data_deleted": false,
+      "offsite_custody_proven": false,
+      "legal_archive_certified": false
+    }
+  ],
+  "durable": true,
+  "max_receipts": 50,
+  "freshness": {
+    "generated_at": "2026-07-10T10:45:00Z",
+    "policy": {
+      "max_drill_age_days": 90,
+      "target_rpo_minutes": 1440,
+      "target_rto_minutes": 240
+    },
+    "status": "fresh",
+    "latest_receipt_id": "7a6b5c40-0000-4000-8000-000000000091",
+    "latest_receipt_at": "2026-07-10T10:40:00Z",
+    "latest_receipt_age_days": 0,
+    "latest_receipt_preflight_ready": true,
+    "latest_receipt_isolated_restore_verified": true,
+    "restore_performed": false,
+    "db_swap_performed": false,
+    "offsite_custody_verified": false,
+    "rpo_rto_certified": false,
+    "production_backup_policy_certified": false
+  }
+}

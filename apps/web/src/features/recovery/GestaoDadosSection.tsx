@@ -24,6 +24,7 @@ import { type FormEvent, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   useCleanDataStorage,
+  useBackupRecoveryDrills,
   useCreateBackupRecoveryDrill,
   useCreateBackup,
   useDataKeyRotationExecution,
@@ -36,6 +37,7 @@ import {
 import {
   DEFAULT_SETTINGS,
   RESET_PHRASE,
+  type BackupRecoveryFreshnessReview,
   type BackupRecoveryDrillBody,
   type BackupRecoveryDrillReceipt,
   type BackupManifest,
@@ -73,8 +75,7 @@ import { resetFrontend } from './frontendReset';
 
 type Dialog = 'none' | 'frontend' | 'startover' | 'domain' | 'factory' | 'full';
 
-const DEFAULT_EXPORT_CLEANUP_POLICY =
-  DEFAULT_SETTINGS.data_management.retained_export_cleanup;
+const DEFAULT_EXPORT_CLEANUP_POLICY = DEFAULT_SETTINGS.data_management.retained_export_cleanup;
 
 function exportCleanupBody(
   policy: typeof DEFAULT_EXPORT_CLEANUP_POLICY,
@@ -616,6 +617,87 @@ function RecoveryDrillReceiptReport({
   );
 }
 
+function recoveryFreshnessLabel(status: BackupRecoveryFreshnessReview['status']): string {
+  switch (status) {
+    case 'fresh':
+      return 'Ensaio dentro da política';
+    case 'stale':
+      return 'Ensaio desatualizado';
+    case 'failed':
+      return 'Último ensaio sem verificação';
+    case 'no_receipt':
+    default:
+      return 'Sem recibo local';
+  }
+}
+
+function RecoveryFreshnessReviewReport({
+  freshness,
+  locale,
+}: {
+  freshness: BackupRecoveryFreshnessReview;
+  locale: string;
+}) {
+  const warning = freshness.status !== 'fresh';
+  return (
+    <InlineWarning tone={warning ? 'warn' : 'info'} title="Política local de recuperação">
+      <div className="stack--tight">
+        <dl className="deflist data-status-summary">
+          <div>
+            <dt>Estado do ensaio</dt>
+            <dd>
+              <Badge tone={warning ? 'warn' : 'ok'}>
+                {recoveryFreshnessLabel(freshness.status)}
+              </Badge>
+            </dd>
+          </div>
+          <div>
+            <dt>Idade máxima configurada</dt>
+            <dd>{freshness.policy.max_drill_age_days} dias</dd>
+          </div>
+          <div>
+            <dt>RPO alvo declarado</dt>
+            <dd>{freshness.policy.target_rpo_minutes} min</dd>
+          </div>
+          <div>
+            <dt>RTO alvo declarado</dt>
+            <dd>{freshness.policy.target_rto_minutes} min</dd>
+          </div>
+          <div>
+            <dt>Último recibo</dt>
+            <dd>
+              {freshness.latest_receipt_at
+                ? formatTimestamp(freshness.latest_receipt_at, locale)
+                : 'Sem recibo local'}
+            </dd>
+          </div>
+          <div>
+            <dt>Idade do último recibo</dt>
+            <dd>
+              {freshness.latest_receipt_age_days === null
+                ? '—'
+                : `${freshness.latest_receipt_age_days} dias`}
+            </dd>
+          </div>
+          <div>
+            <dt>Pré-validação do último recibo</dt>
+            <dd>{freshness.latest_receipt_preflight_ready === true ? 'Sim' : 'Não'}</dd>
+          </div>
+          <div>
+            <dt>Snapshot isolado verificado</dt>
+            <dd>{freshness.latest_receipt_isolated_restore_verified === true ? 'Sim' : 'Não'}</dd>
+          </div>
+        </dl>
+        <p className="field__hint">
+          Resumo local derivado de recibos de ensaio: sem restauro executado, sem troca da base de
+          dados, sem prova de custódia off-site, sem certificação de RPO/RTO e sem certificação de
+          política de backup de produção.
+        </p>
+      </div>
+    </InlineWarning>
+  );
+}
+
 function DataKeyRotationPreflightReport({
   report,
   t,
@@ -968,6 +1050,7 @@ function DataStatusPanel() {
   const settings = useSettings();
   const backup = useCreateBackup();
   const recoveryDrill = useCreateBackupRecoveryDrill();
+  const recoveryDrills = useBackupRecoveryDrills();
   const cleanup = useCleanDataStorage();
   const keyRotationPreflight = useDataKeyRotationPreflight();
   const keyRotationExecution = useDataKeyRotationExecution();
@@ -1326,6 +1409,16 @@ function DataStatusPanel() {
                 </p>
               </div>
             </div>
+            {recoveryDrills.isLoading ? (
+              <Loading label="A carregar política de recuperação" />
+            ) : null}
+            {recoveryDrills.error ? <ErrorNote error={recoveryDrills.error} /> : null}
+            {recoveryDrills.data ? (
+              <RecoveryFreshnessReviewReport
+                freshness={recoveryDrills.data.freshness}
+                locale={locale}
+              />
+            ) : null}
             <form className="form" onSubmit={(event) => void submitRecoveryDrill(event)}>
               <div className="data-status-usage-groups">
                 <Field

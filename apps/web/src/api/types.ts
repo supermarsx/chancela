@@ -3803,8 +3803,15 @@ export interface RetainedExportCleanupSettings {
   keep_latest: number;
 }
 
+export interface BackupRecoveryPolicySettings {
+  max_drill_age_days: number;
+  target_rpo_minutes: number;
+  target_rto_minutes: number;
+}
+
 export interface DataManagementSettings {
   retained_export_cleanup: RetainedExportCleanupSettings;
+  backup_recovery: BackupRecoveryPolicySettings;
 }
 
 export type RegistryAutoUpdateStatus =
@@ -5286,6 +5293,11 @@ export const DEFAULT_SETTINGS: Settings = {
       minimum_age_days: 30,
       keep_latest: 5,
     },
+    backup_recovery: {
+      max_drill_age_days: 90,
+      target_rpo_minutes: 24 * 60,
+      target_rto_minutes: 4 * 60,
+    },
   },
   appearance: {
     theme: 'system',
@@ -5518,11 +5530,30 @@ export interface BackupRecoveryDrillReceipt {
   legal_archive_certified: false;
 }
 
+export type BackupRecoveryFreshnessStatus = 'no_receipt' | 'fresh' | 'stale' | 'failed';
+
+export interface BackupRecoveryFreshnessReview {
+  generated_at: string;
+  policy: BackupRecoveryPolicySettings;
+  status: BackupRecoveryFreshnessStatus;
+  latest_receipt_id: string | null;
+  latest_receipt_at: string | null;
+  latest_receipt_age_days: number | null;
+  latest_receipt_preflight_ready: boolean | null;
+  latest_receipt_isolated_restore_verified: boolean | null;
+  restore_performed: false;
+  db_swap_performed: false;
+  offsite_custody_verified: false;
+  rpo_rto_certified: false;
+  production_backup_policy_certified: false;
+}
+
 /** `GET /v1/backup/recovery-drills` response. */
 export interface BackupRecoveryDrillList {
   receipts: BackupRecoveryDrillReceipt[];
   durable: boolean;
   max_receipts: number;
+  freshness: BackupRecoveryFreshnessReview;
 }
 
 // --- Hot backup (§3.2, plan t30) ------------------------------------------------

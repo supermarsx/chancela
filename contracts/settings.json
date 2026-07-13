@@ -141,6 +141,11 @@
     "retained_export_cleanup": {
       "minimum_age_days": 30,
       "keep_latest": 5
+    },
+    "backup_recovery": {
+      "max_drill_age_days": 90,
+      "target_rpo_minutes": 1440,
+      "target_rto_minutes": 240
     }
   },
   "appearance": {

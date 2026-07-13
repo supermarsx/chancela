@@ -6586,6 +6586,26 @@ function assertCheckpointMap() {
     "API backup recovery drill list handler marker",
   );
   assertFileContains(
+    "crates/chancela-api/src/settings.rs",
+    "pub backup_recovery: BackupRecoveryPolicySettings",
+    "API backup recovery local policy settings marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/backup_recovery.rs",
+    "pub freshness: BackupRecoveryFreshnessReview",
+    "API backup recovery drill freshness review marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/backup_recovery.rs",
+    "pub rpo_rto_certified: bool",
+    "API backup recovery freshness no RPO/RTO certification marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/backup_recovery_drill.rs",
+    "backup_recovery_drill_list_reports_stale_verified_receipt_against_policy",
+    "API backup recovery stale freshness coverage",
+  );
+  assertFileContains(
     "crates/chancela-api/src/backup_recovery.rs",
     'reject_true_flag("restore_executed", req.restore_executed)?;',
     "API backup recovery drill restore-executed overclaim refusal marker",
@@ -6676,6 +6696,16 @@ function assertCheckpointMap() {
     "backup recovery drill contract custody false marker",
   );
   assertFileContains(
+    "contracts/backup.recovery-drill-list.json",
+    '"rpo_rto_certified": false',
+    "backup recovery drill list contract RPO/RTO no-claim marker",
+  );
+  assertFileContains(
+    "contracts/settings.json",
+    '"backup_recovery": {',
+    "settings contract backup recovery policy marker",
+  );
+  assertFileContains(
     "apps/web/src/api/client.ts",
     "createBackupRecoveryDrill: (body: BackupRecoveryDrillBody)",
     "web backup recovery drill client marker",
@@ -6701,9 +6731,29 @@ function assertCheckpointMap() {
     "web backup recovery drill false restore flag contract marker",
   );
   assertFileContains(
+    "apps/web/src/api/types.ts",
+    "export interface BackupRecoveryFreshnessReview",
+    "web backup recovery freshness contract marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/SettingsPage.tsx",
+    "Política local de recuperação de backups",
+    "web settings backup recovery policy UI marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "function RecoveryFreshnessReviewReport",
+    "web recovery freshness summary UI marker",
+  );
+  assertFileContains(
     "apps/web/src/contracts/contracts.test.ts",
     "backup.recovery-drill.json → BackupRecoveryDrillReceipt",
     "web backup recovery drill fixture contract coverage",
+  );
+  assertFileContains(
+    "apps/web/src/contracts/contracts.test.ts",
+    "backup.recovery-drill-list.json → BackupRecoveryDrillList",
+    "web backup recovery drill list contract coverage",
   );
   assertFileContains(
     "apps/web/src/contracts/contracts.test.ts",
@@ -6764,6 +6814,16 @@ function assertCheckpointMap() {
     "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
     "expect(calls.some((c) => c.url === '/v1/ledger/recovery/restore')).toBe(false);",
     "web backup recovery drill no live restore call coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/SettingsPage.test.tsx",
+    "renders and autosaves local backup recovery freshness policy defaults",
+    "web settings backup recovery policy coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "renders local backup recovery policy freshness without claiming restore or RPO/RTO certification",
+    "web recovery freshness no-claim coverage",
   );
   assertFileContains(
     "apps/web/src/features/recovery/LivrosIntegridadeSection.test.tsx",
@@ -9259,7 +9319,7 @@ function assertCheckpointMap() {
     "Recovery/backup matrix note",
     "spec coverage recovery backup matrix note marker",
   );
-  assertFileContains(
+  assertFileContainsNormalized(
     "SPEC-COVERAGE.md",
     "swap the live DB, stage/replace live sidecars",
     "spec coverage recovery drill no destructive restore caveat marker",

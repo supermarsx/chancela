@@ -22,6 +22,7 @@ use crate::AppState;
 use crate::actor::CurrentActor;
 use crate::authz::require_permission;
 use crate::error::ApiError;
+use crate::settings::BackupRecoveryPolicySettings;
 
 pub(crate) const BACKUP_RECOVERY_DRILLS_FILE: &str = "backup-recovery-drills.json";
 
@@ -258,6 +259,33 @@ pub struct BackupRecoveryDrillList {
     pub receipts: Vec<BackupRecoveryDrillReceipt>,
     pub durable: bool,
     pub max_receipts: usize,
+    pub freshness: BackupRecoveryFreshnessReview,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BackupRecoveryFreshnessStatus {
+    NoReceipt,
+    Fresh,
+    Stale,
+    Failed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct BackupRecoveryFreshnessReview {
+    pub generated_at: String,
+    pub policy: BackupRecoveryPolicySettings,
+    pub status: BackupRecoveryFreshnessStatus,
+    pub latest_receipt_id: Option<String>,
+    pub latest_receipt_at: Option<String>,
+    pub latest_receipt_age_days: Option<u32>,
+    pub latest_receipt_preflight_ready: Option<bool>,
+    pub latest_receipt_isolated_restore_verified: Option<bool>,
+    pub restore_performed: bool,
+    pub db_swap_performed: bool,
+    pub offsite_custody_verified: bool,
+    pub rpo_rto_certified: bool,
+    pub production_backup_policy_certified: bool,
 }
 
 /// `GET /v1/backup/recovery-drills` — list persisted non-destructive drill receipts.
@@ -268,11 +296,70 @@ pub async fn list_backup_recovery_drills(
     require_permission(&state, &actor, Permission::LedgerRecover, Scope::Global).await?;
     let mut receipts = state.backup_recovery_drill_receipts.read().await.clone();
     receipts.sort_by(|a, b| b.created_at.cmp(&a.created_at).then(a.id.cmp(&b.id)));
+    let policy = state
+        .settings
+        .read()
+        .await
+        .data_management
+        .backup_recovery
+        .clone();
+    let now = OffsetDateTime::now_utc();
     Ok(Json(BackupRecoveryDrillList {
+        freshness: backup_recovery_freshness_review(&receipts, policy, now),
         receipts,
         durable: state.backup_recovery_drill_receipts_path.is_some(),
         max_receipts: MAX_RECEIPTS,
     }))
+}
+
+fn backup_recovery_freshness_review(
+    receipts: &[BackupRecoveryDrillReceipt],
+    policy: BackupRecoveryPolicySettings,
+    now: OffsetDateTime,
+) -> BackupRecoveryFreshnessReview {
+    let latest = receipts.first();
+    let latest_receipt_age_days = latest
+        .and_then(|receipt| OffsetDateTime::parse(&receipt.created_at, &Rfc3339).ok())
+        .map(|created_at| {
+            let age_days = (now - created_at).whole_days().max(0);
+            age_days.min(u32::MAX as i64) as u32
+        });
+    let status = match latest {
+        None => BackupRecoveryFreshnessStatus::NoReceipt,
+        Some(receipt)
+            if !receipt.preflight_ready
+                || !receipt.preflight_ok
+                || !receipt.isolated_restore_verified
+                || receipt.isolated_restore_verification.status
+                    != ISOLATED_RESTORE_STATUS_VERIFIED =>
+        {
+            BackupRecoveryFreshnessStatus::Failed
+        }
+        Some(_) if latest_receipt_age_days.is_none() => BackupRecoveryFreshnessStatus::Failed,
+        Some(_)
+            if latest_receipt_age_days.unwrap_or(u32::MAX) > policy.max_drill_age_days as u32 =>
+        {
+            BackupRecoveryFreshnessStatus::Stale
+        }
+        Some(_) => BackupRecoveryFreshnessStatus::Fresh,
+    };
+
+    BackupRecoveryFreshnessReview {
+        generated_at: now.format(&Rfc3339).unwrap_or_default(),
+        policy,
+        status,
+        latest_receipt_id: latest.map(|receipt| receipt.id.clone()),
+        latest_receipt_at: latest.map(|receipt| receipt.created_at.clone()),
+        latest_receipt_age_days,
+        latest_receipt_preflight_ready: latest.map(|receipt| receipt.preflight_ready),
+        latest_receipt_isolated_restore_verified: latest
+            .map(|receipt| receipt.isolated_restore_verified),
+        restore_performed: false,
+        db_swap_performed: false,
+        offsite_custody_verified: false,
+        rpo_rto_certified: false,
+        production_backup_policy_certified: false,
+    }
 }
 
 /// `POST /v1/backup/recovery-drills` — run restore preflight and persist a bounded receipt.

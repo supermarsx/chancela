@@ -199,11 +199,16 @@ pub const DEFAULT_WORKFLOW_REMINDER_DUE_SOON_DAYS: u16 = 45;
 pub const DEFAULT_WORKFLOW_REMINDER_ATTENDANCE_LOOKAHEAD_DAYS: u16 = 45;
 pub const DEFAULT_RETAINED_EXPORT_CLEANUP_MINIMUM_AGE_DAYS: u16 = 30;
 pub const DEFAULT_RETAINED_EXPORT_CLEANUP_KEEP_LATEST: u16 = 5;
+pub const DEFAULT_BACKUP_RECOVERY_MAX_DRILL_AGE_DAYS: u16 = 90;
+pub const DEFAULT_BACKUP_RECOVERY_TARGET_RPO_MINUTES: u32 = 24 * 60;
+pub const DEFAULT_BACKUP_RECOVERY_TARGET_RTO_MINUTES: u32 = 4 * 60;
 
 const MAX_WORKFLOW_REMINDER_DASHBOARD_LIMIT: u16 = 50;
 const MAX_WORKFLOW_REMINDER_DAYS: u16 = 365;
 const MAX_RETAINED_EXPORT_CLEANUP_MINIMUM_AGE_DAYS: u16 = 3650;
 const MAX_RETAINED_EXPORT_CLEANUP_KEEP_LATEST: u16 = 100;
+const MAX_BACKUP_RECOVERY_MAX_DRILL_AGE_DAYS: u16 = 3650;
+const MAX_BACKUP_RECOVERY_TARGET_MINUTES: u32 = 60 * 24 * 365;
 
 /// Local workflow controls. These are advisory settings for in-app surfaces only; they do not
 /// create legal-calendar authority, external delivery guarantees, or workflow-completion gates.
@@ -305,11 +310,15 @@ impl Default for WorkflowReminderSourceSettings {
 pub struct DataManagementSettings {
     /// Default policy for retained local export-file cleanup previews.
     pub retained_export_cleanup: RetainedExportCleanupSettings,
+    /// Operator-declared local backup recovery review policy. It only drives local freshness
+    /// warnings; it does not execute restore, prove custody, or certify production DR targets.
+    pub backup_recovery: BackupRecoveryPolicySettings,
 }
 
 impl DataManagementSettings {
     pub(crate) fn validate(&self) -> Result<(), ApiError> {
-        self.retained_export_cleanup.validate()
+        self.retained_export_cleanup.validate()?;
+        self.backup_recovery.validate()
     }
 }
 
@@ -344,6 +353,59 @@ impl RetainedExportCleanupSettings {
             return Err(ApiError::Unprocessable(format!(
                 "data_management.retained_export_cleanup.keep_latest must be between 0 and {}, got {}",
                 MAX_RETAINED_EXPORT_CLEANUP_KEEP_LATEST, self.keep_latest
+            )));
+        }
+        Ok(())
+    }
+}
+
+/// Local policy used to review recovery-drill freshness. These are operator targets only: the
+/// application derives warning metadata from receipts but does not certify RPO/RTO compliance.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct BackupRecoveryPolicySettings {
+    /// Maximum age, in days, before the latest successful local drill receipt is considered stale.
+    pub max_drill_age_days: u16,
+    /// Operator-declared target recovery point objective in minutes.
+    pub target_rpo_minutes: u32,
+    /// Operator-declared target recovery time objective in minutes.
+    pub target_rto_minutes: u32,
+}
+
+impl Default for BackupRecoveryPolicySettings {
+    fn default() -> Self {
+        BackupRecoveryPolicySettings {
+            max_drill_age_days: DEFAULT_BACKUP_RECOVERY_MAX_DRILL_AGE_DAYS,
+            target_rpo_minutes: DEFAULT_BACKUP_RECOVERY_TARGET_RPO_MINUTES,
+            target_rto_minutes: DEFAULT_BACKUP_RECOVERY_TARGET_RTO_MINUTES,
+        }
+    }
+}
+
+impl BackupRecoveryPolicySettings {
+    fn validate(&self) -> Result<(), ApiError> {
+        if self.max_drill_age_days == 0
+            || self.max_drill_age_days > MAX_BACKUP_RECOVERY_MAX_DRILL_AGE_DAYS
+        {
+            return Err(ApiError::Unprocessable(format!(
+                "data_management.backup_recovery.max_drill_age_days must be between 1 and {}, got {}",
+                MAX_BACKUP_RECOVERY_MAX_DRILL_AGE_DAYS, self.max_drill_age_days
+            )));
+        }
+        if self.target_rpo_minutes == 0
+            || self.target_rpo_minutes > MAX_BACKUP_RECOVERY_TARGET_MINUTES
+        {
+            return Err(ApiError::Unprocessable(format!(
+                "data_management.backup_recovery.target_rpo_minutes must be between 1 and {}, got {}",
+                MAX_BACKUP_RECOVERY_TARGET_MINUTES, self.target_rpo_minutes
+            )));
+        }
+        if self.target_rto_minutes == 0
+            || self.target_rto_minutes > MAX_BACKUP_RECOVERY_TARGET_MINUTES
+        {
+            return Err(ApiError::Unprocessable(format!(
+                "data_management.backup_recovery.target_rto_minutes must be between 1 and {}, got {}",
+                MAX_BACKUP_RECOVERY_TARGET_MINUTES, self.target_rto_minutes
             )));
         }
         Ok(())
@@ -2123,6 +2185,27 @@ mod tests {
     }
 
     #[test]
+    fn settings_default_includes_backup_recovery_policy() {
+        let settings = Settings::default();
+
+        assert_eq!(
+            settings.data_management.backup_recovery.max_drill_age_days,
+            DEFAULT_BACKUP_RECOVERY_MAX_DRILL_AGE_DAYS
+        );
+        assert_eq!(
+            settings.data_management.backup_recovery.target_rpo_minutes,
+            DEFAULT_BACKUP_RECOVERY_TARGET_RPO_MINUTES
+        );
+        assert_eq!(
+            settings.data_management.backup_recovery.target_rto_minutes,
+            DEFAULT_BACKUP_RECOVERY_TARGET_RTO_MINUTES
+        );
+        settings
+            .validate()
+            .expect("default settings should validate");
+    }
+
+    #[test]
     fn legacy_settings_json_defaults_retained_export_cleanup_policy() {
         let settings: Settings =
             serde_json::from_str(r#"{"schema_version":1}"#).expect("legacy settings");
@@ -2137,6 +2220,25 @@ mod tests {
         assert_eq!(
             settings.data_management.retained_export_cleanup.keep_latest,
             DEFAULT_RETAINED_EXPORT_CLEANUP_KEEP_LATEST
+        );
+    }
+
+    #[test]
+    fn legacy_settings_json_defaults_backup_recovery_policy() {
+        let settings: Settings =
+            serde_json::from_str(r#"{"schema_version":1}"#).expect("legacy settings");
+
+        assert_eq!(
+            settings.data_management.backup_recovery.max_drill_age_days,
+            DEFAULT_BACKUP_RECOVERY_MAX_DRILL_AGE_DAYS
+        );
+        assert_eq!(
+            settings.data_management.backup_recovery.target_rpo_minutes,
+            DEFAULT_BACKUP_RECOVERY_TARGET_RPO_MINUTES
+        );
+        assert_eq!(
+            settings.data_management.backup_recovery.target_rto_minutes,
+            DEFAULT_BACKUP_RECOVERY_TARGET_RTO_MINUTES
         );
     }
 
@@ -2169,6 +2271,41 @@ mod tests {
         match err {
             ApiError::Unprocessable(message) => {
                 assert!(message.contains("data_management.retained_export_cleanup.keep_latest"));
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn backup_recovery_policy_rejects_out_of_range_values() {
+        let mut settings = Settings::default();
+        settings.data_management.backup_recovery.max_drill_age_days = 0;
+
+        let err = settings.validate().expect_err("zero drill age should fail");
+        match err {
+            ApiError::Unprocessable(message) => {
+                assert!(message.contains("data_management.backup_recovery.max_drill_age_days"));
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+
+        let mut settings = Settings::default();
+        settings.data_management.backup_recovery.target_rpo_minutes =
+            MAX_BACKUP_RECOVERY_TARGET_MINUTES + 1;
+        let err = settings.validate().expect_err("oversized RPO should fail");
+        match err {
+            ApiError::Unprocessable(message) => {
+                assert!(message.contains("data_management.backup_recovery.target_rpo_minutes"));
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+
+        let mut settings = Settings::default();
+        settings.data_management.backup_recovery.target_rto_minutes = 0;
+        let err = settings.validate().expect_err("zero RTO should fail");
+        match err {
+            ApiError::Unprocessable(message) => {
+                assert!(message.contains("data_management.backup_recovery.target_rto_minutes"));
             }
             other => panic!("unexpected error: {other:?}"),
         }

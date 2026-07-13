@@ -1686,11 +1686,12 @@ Implementation checkpoints covered here:
 Recovery/backup matrix note: the current recovery-drill receipt slice belongs to
 the Data, Architecture, Workflow, UX, and Legal/Compliance boundaries as bounded
 preflight receipt evidence, now including isolated restore materialization,
-snapshot readback, sidecar readback, and cleanup proof. It does not reduce the
-remaining PARTIAL status for destructive restore success, live DB swap, live
-sidecar staging, `ledger.restored` append, SQLCipher-at-rest proof, off-site
-custody proof, RPO/RTO certification, production backup policy, legal archive
-certification, or FULL coverage.
+snapshot readback, sidecar readback, cleanup proof, and settings-declared local
+freshness policy/status metadata (max drill age plus RPO/RTO targets). It does
+not reduce the remaining PARTIAL status for destructive restore success, live DB
+swap, live sidecar staging, `ledger.restored` append, SQLCipher-at-rest proof,
+off-site custody proof, RPO/RTO certification, production backup policy, legal
+archive certification, or FULL coverage.
 
 Current matrix alignment note: the `platform_logs` and
 `backup_recovery_drills` data-status categories are Data/Architecture telemetry
@@ -1779,15 +1780,22 @@ behavior, legal disposal, or legal-effect claims.
   passphrase after submit while preserving exact bytes in the request, handles
   null manifest evidence safely, rejects true overclaim
   flags, and keeps restore/live-swap/sidecar/ledger-append/deletion/custody/legal
-  certification flags false. The related CAE obtainer status comment was also
-  updated as acceptance cleanup so it no longer describes implemented Rev.3/Rev.4
-  obtain logic as a skeleton. This is UI/status/documentation hygiene,
-  non-destructive restore preflight evidence, and bounded recovery-drill receipt
-  evidence only, not live restore execution, destructive restore success, live
-  DB swap, live sidecar staging, `ledger.restored` append, RPO/RTO
-  certification, production backup policy, DR readiness, backup custody proof,
-  SQLCipher-at-rest proof, legal archive certification, FULL coverage, or new
-  CAE provider behavior.
+  certification flags false. Settings now also stores an operator-declared local
+  recovery freshness policy (`max_drill_age_days`, `target_rpo_minutes`,
+  `target_rto_minutes`), and `GET /v1/backup/recovery-drills` derives a
+  `freshness` summary (`no_receipt`/`fresh`/`stale`/`failed`) from the latest
+  receipt while keeping restore performed, DB swap, off-site custody, RPO/RTO
+  certification, and production backup-policy certification false. Data
+  Management and Settings render that local warning/summary. The related CAE
+  obtainer status comment was also updated as acceptance cleanup so it no longer
+  describes implemented Rev.3/Rev.4 obtain logic as a skeleton. This is
+  UI/status/documentation hygiene, non-destructive restore preflight evidence,
+  bounded recovery-drill receipt evidence, and local operator-policy freshness
+  metadata only, not live restore execution, destructive restore success, live DB
+  swap, live sidecar staging, `ledger.restored` append, RPO/RTO certification,
+  production backup policy, DR readiness, backup custody proof,
+  SQLCipher-at-rest proof, legal archive certification, FULL coverage, or new CAE
+  provider behavior.
 - **Trust-source provider management:** Settings now exposes settings-backed
   management for multiple TSL sources and TSA providers, with localized labels
   and focused `SettingsPage` coverage for rendering, autosave, default TSA
@@ -2990,7 +2998,9 @@ behavior, legal disposal, or legal-effect claims.
   external-signing envelope UI/link-safety tests,
   backup recovery-drill receipt API tests plus Data Management, restore-modal, and contract
   checks for bounded receipts, nullable manifests, optional operator notes/custody location keys,
-  exact transient passphrase submit/clear behavior, false overclaim flags, and no live restore call from the drill action,
+  exact transient passphrase submit/clear behavior, false overclaim flags, settings-managed local
+  freshness policy defaults/validation, derived no-receipt/fresh/stale/failed freshness status,
+  recovery/settings freshness UI copy, and no live restore call from the drill action,
   external-validator report metadata API tests including data-dir sidecar reload, settings.read raw
   metadata download, settings.read raw-report byte download with attachment headers, manifest-only
   404, malformed/unsafe/duplicate fail-closed behavior, and malformed sidecar counting, the static
@@ -3332,12 +3342,14 @@ behavior, legal disposal, or legal-effect claims.
   member digests, ledger integrity, isolated DB open/load/readback, sidecar
   material/readback counts, and temp cleanup; the receipt route records only
   bounded manifest plus `isolated_restore_verified` /
-  `isolated_restore_verification` evidence; and the web surfaces expose bounded
-  manifest/evidence before destructive restore. They do not execute restore,
-  swap the live DB, stage/replace live sidecars, append `ledger.restored`, delete
-  data, prove SQLCipher at rest, prove off-site custody, certify RPO/RTO or
-  production backup policy, establish disaster-recovery readiness, provide legal
-  archive acceptance, certify data-lifecycle compliance, or make coverage FULL.
+  `isolated_restore_verification` evidence; settings declare local max-drill-age
+  and RPO/RTO targets; the drill-list route derives no-receipt/fresh/stale/failed
+  freshness metadata from the latest receipt; and the web surfaces expose bounded
+  manifest/evidence before destructive restore. They do not execute restore, swap
+  the live DB, stage/replace live sidecars, append `ledger.restored`, delete data,
+  prove SQLCipher at rest, prove off-site custody, certify RPO/RTO or production
+  backup policy, establish disaster-recovery readiness, provide legal archive
+  acceptance, certify data-lifecycle compliance, or make coverage FULL.
 - Per-book import preflight is an operator-safety preview only. It does not create or certify a
   legal archive, provide official DGLAB acceptance or legal acceptance, stage or retain imported
   bundles, create an `import_id`, add `ledger.imported`, persist `imported_books`, or validate a

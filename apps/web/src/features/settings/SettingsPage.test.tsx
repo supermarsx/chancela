@@ -693,6 +693,10 @@ function materializeSettings(value: unknown): TestSettings {
         ...DEFAULT_SETTINGS.data_management.retained_export_cleanup,
         ...(dataManagement.retained_export_cleanup ?? {}),
       },
+      backup_recovery: {
+        ...DEFAULT_SETTINGS.data_management.backup_recovery,
+        ...(dataManagement.backup_recovery ?? {}),
+      },
     },
     platform: {
       ...DEFAULT_SETTINGS.platform,
@@ -2241,6 +2245,52 @@ describe('SettingsPage', () => {
     );
   });
 
+  it('renders and autosaves local backup recovery freshness policy defaults', async () => {
+    const olderSettings = cloneJson(DEFAULT_SETTINGS) as Partial<typeof DEFAULT_SETTINGS>;
+    olderSettings.data_management = {
+      retained_export_cleanup: DEFAULT_SETTINGS.data_management.retained_export_cleanup,
+    } as typeof DEFAULT_SETTINGS.data_management;
+    const { fn, calls } = settingsFetch(olderSettings);
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=gestao']);
+
+    expect(
+      await screen.findByRole('heading', {
+        name: 'Política local de recuperação de backups',
+      }),
+    ).toBeTruthy();
+    expect((screen.getByLabelText('Idade máxima do ensaio') as HTMLInputElement).value).toBe('90');
+    expect((screen.getByLabelText('RPO alvo') as HTMLInputElement).value).toBe('1440');
+    expect((screen.getByLabelText('RTO alvo') as HTMLInputElement).value).toBe('240');
+    expect(screen.getByText(/não provam custódia off-site/i)).toBeTruthy();
+    expect(screen.getByText(/não certificam RPO\/RTO/i)).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText('Idade máxima do ensaio'), {
+      target: { value: '120' },
+    });
+    fireEvent.change(screen.getByLabelText('RPO alvo'), {
+      target: { value: '720' },
+    });
+    fireEvent.change(screen.getByLabelText('RTO alvo'), {
+      target: { value: '180' },
+    });
+
+    await waitFor(
+      () => {
+        const put = calls.filter((c) => c.method === 'PUT').at(-1);
+        expect(put).toBeTruthy();
+        const sent = JSON.parse(put!.body as string) as typeof DEFAULT_SETTINGS;
+        expect(sent.data_management.backup_recovery).toEqual({
+          max_drill_age_days: 120,
+          target_rpo_minutes: 720,
+          target_rto_minutes: 180,
+        });
+      },
+      { timeout: 3000 },
+    );
+  });
+
   it('shows platform API and MCP status with honest control limitations', async () => {
     const { fn } = settingsFetch();
     vi.stubGlobal('fetch', fn);
@@ -3000,9 +3050,7 @@ describe('SettingsPage', () => {
       await screen.findByText('Estado local de legal hold e descarte')
     ).closest('section');
     expect(legalHoldStatusPanel).toBeTruthy();
-    expect(
-      within(legalHoldStatusPanel!).getByText(/Evidência operacional local/),
-    ).toBeTruthy();
+    expect(within(legalHoldStatusPanel!).getByText(/Evidência operacional local/)).toBeTruthy();
     expect(
       within(legalHoldStatusPanel!).getByText(/não aprova descarte, não resolve candidatos/i),
     ).toBeTruthy();

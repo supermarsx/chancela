@@ -125,10 +125,15 @@ describe('DEFAULT_SETTINGS.workflow', () => {
 });
 
 describe('DEFAULT_SETTINGS.data_management', () => {
-  it('defaults retained-export cleanup preview policy to the bounded storage-maintenance values', () => {
+  it('defaults retained-export cleanup and recovery policies to bounded local values', () => {
     expect(DEFAULT_SETTINGS.data_management.retained_export_cleanup).toEqual({
       minimum_age_days: 30,
       keep_latest: 5,
+    });
+    expect(DEFAULT_SETTINGS.data_management.backup_recovery).toEqual({
+      max_drill_age_days: 90,
+      target_rpo_minutes: 1440,
+      target_rto_minutes: 240,
     });
   });
 });

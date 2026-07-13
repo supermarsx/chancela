@@ -181,6 +181,27 @@ const permissionStatus: DataStatusResponse = {
   },
 };
 
+const defaultRecoveryDrillList = {
+  receipts: [],
+  durable: true,
+  max_receipts: 50,
+  freshness: {
+    generated_at: '2026-07-13T10:00:00Z',
+    policy: DEFAULT_SETTINGS.data_management.backup_recovery,
+    status: 'no_receipt',
+    latest_receipt_id: null,
+    latest_receipt_at: null,
+    latest_receipt_age_days: null,
+    latest_receipt_preflight_ready: null,
+    latest_receipt_isolated_restore_verified: null,
+    restore_performed: false,
+    db_swap_performed: false,
+    offsite_custody_verified: false,
+    rpo_rto_certified: false,
+    production_backup_policy_certified: false,
+  },
+};
+
 function installFetch(
   statuses: DataStatusResponse[] = [durableStatus],
   extra?: (url: string, init: RequestInit | undefined) => Response | Promise<Response> | null,
@@ -199,6 +220,9 @@ function installFetch(
     }
     if (url.includes('/v1/settings')) {
       return Promise.resolve(jsonResponse(settings));
+    }
+    if (url === '/v1/backup/recovery-drills' && method === 'GET') {
+      return Promise.resolve(jsonResponse(defaultRecoveryDrillList));
     }
     const response = extra?.(url, init);
     if (response) return Promise.resolve(response);
@@ -228,6 +252,22 @@ describe('GestaoDadosSection', () => {
       expect((await screen.findAllByRole('button', { name })).length).toBeGreaterThan(0);
     }
     expect(await screen.findByText('Estado do armazenamento')).toBeTruthy();
+  });
+
+  it('renders local backup recovery policy freshness without claiming restore or RPO/RTO certification', async () => {
+    installFetch();
+    renderWithProviders(<GestaoDadosSection />);
+
+    expect(await screen.findByText('Política local de recuperação')).toBeTruthy();
+    expect(screen.getByText('Estado do ensaio')).toBeTruthy();
+    expect(screen.getAllByText('Sem recibo local').length).toBeGreaterThan(0);
+    expect(screen.getByText('RPO alvo declarado')).toBeTruthy();
+    expect(screen.getByText('RTO alvo declarado')).toBeTruthy();
+    expect(document.body.textContent).toContain('sem restauro executado');
+    expect(document.body.textContent).toContain('sem certificação de RPO/RTO');
+    expect(document.body.textContent).toContain(
+      'sem certificação de política de backup de produção',
+    );
   });
 
   it('renders durable storage, folder affordances, ledger state and usage breakdown', async () => {
@@ -828,7 +868,9 @@ describe('GestaoDadosSection', () => {
       calls.every(
         (c) =>
           c.method === 'GET' &&
-          (c.url.includes('/v1/data/status') || c.url.includes('/v1/settings')),
+          (c.url.includes('/v1/data/status') ||
+            c.url.includes('/v1/settings') ||
+            c.url.includes('/v1/backup/recovery-drills')),
       ),
     ).toBe(true);
     expect(calls.some((c) => c.url.includes('/v1/settings') && c.method === 'GET')).toBe(true);
@@ -1008,13 +1050,10 @@ describe('GestaoDadosSection', () => {
     await waitFor(() =>
       expect(calls.some((c) => c.url === '/v1/backup/recovery-drills')).toBe(true),
     );
-    const drill = calls.find((c) => c.url === '/v1/backup/recovery-drills')!;
+    const drill = calls.find((c) => c.url === '/v1/backup/recovery-drills' && c.method === 'POST')!;
     expect(drill.method).toBe('POST');
     expect(calls.some((c) => c.url === '/v1/ledger/recovery/restore')).toBe(false);
-    for (const forbiddenUrl of [
-      '/v1/ledger/recovery/restore/preflight',
-      '/v1/data/reset',
-    ]) {
+    for (const forbiddenUrl of ['/v1/ledger/recovery/restore/preflight', '/v1/data/reset']) {
       expect(calls.some((c) => c.url === forbiddenUrl)).toBe(false);
     }
 

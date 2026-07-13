@@ -140,6 +140,18 @@ fn assert_no_overclaim_flags(receipt: &Value) {
     }
 }
 
+fn assert_no_freshness_overclaim_flags(freshness: &Value) {
+    for flag in [
+        "restore_performed",
+        "db_swap_performed",
+        "offsite_custody_verified",
+        "rpo_rto_certified",
+        "production_backup_policy_certified",
+    ] {
+        assert_eq!(freshness[flag], false, "{flag} must stay false");
+    }
+}
+
 fn assert_bounded_messages(value: &Value, field: &str) {
     let messages = value[field].as_array().expect("message array");
     assert!(messages.len() <= 8, "{field} is bounded: {messages:?}");
@@ -318,6 +330,31 @@ async fn backup_recovery_drill_creates_receipt_from_preflight_and_persists_white
     assert_eq!(status, StatusCode::OK, "list response: {list}");
     assert_eq!(list["durable"], true);
     assert_eq!(list["receipts"].as_array().unwrap().len(), 1);
+    assert_eq!(list["freshness"]["status"], "fresh");
+    assert_eq!(
+        list["freshness"]["policy"]["max_drill_age_days"],
+        chancela_api::DEFAULT_BACKUP_RECOVERY_MAX_DRILL_AGE_DAYS
+    );
+    assert_eq!(
+        list["freshness"]["policy"]["target_rpo_minutes"],
+        chancela_api::DEFAULT_BACKUP_RECOVERY_TARGET_RPO_MINUTES
+    );
+    assert_eq!(
+        list["freshness"]["policy"]["target_rto_minutes"],
+        chancela_api::DEFAULT_BACKUP_RECOVERY_TARGET_RTO_MINUTES
+    );
+    assert_eq!(list["freshness"]["latest_receipt_id"], receipt["id"]);
+    assert_eq!(
+        list["freshness"]["latest_receipt_at"],
+        receipt["created_at"]
+    );
+    assert_eq!(list["freshness"]["latest_receipt_preflight_ready"], true);
+    assert_eq!(
+        list["freshness"]["latest_receipt_isolated_restore_verified"],
+        true
+    );
+    assert!(list["freshness"]["latest_receipt_age_days"].is_number());
+    assert_no_freshness_overclaim_flags(&list["freshness"]);
     let listed_receipt = &list["receipts"].as_array().unwrap()[0];
     assert_eq!(listed_receipt["isolated_restore_verified"], true);
     assert_eq!(
@@ -335,6 +372,86 @@ async fn backup_recovery_drill_creates_receipt_from_preflight_and_persists_white
             "ledger.restored",
         ],
     );
+}
+
+#[tokio::test]
+async fn backup_recovery_drill_list_reports_no_receipt_freshness_with_default_policy() {
+    let tmp = TempDir::new("no-receipt");
+    let state = AppState::with_data_dir(tmp.dir.clone());
+    let token = seed_owner_session(&state, "drill.no.receipt").await;
+
+    let (status, list) = send(state, with_session(get(DRILL_PATH), &token)).await;
+
+    assert_eq!(status, StatusCode::OK, "empty list response: {list}");
+    assert_eq!(list["receipts"].as_array().unwrap().len(), 0);
+    assert_eq!(list["freshness"]["status"], "no_receipt");
+    assert!(list["freshness"]["latest_receipt_id"].is_null());
+    assert!(list["freshness"]["latest_receipt_at"].is_null());
+    assert!(list["freshness"]["latest_receipt_age_days"].is_null());
+    assert_eq!(
+        list["freshness"]["policy"]["max_drill_age_days"],
+        chancela_api::DEFAULT_BACKUP_RECOVERY_MAX_DRILL_AGE_DAYS
+    );
+    assert_no_freshness_overclaim_flags(&list["freshness"]);
+}
+
+#[tokio::test]
+async fn backup_recovery_drill_list_reports_stale_verified_receipt_against_policy() {
+    let tmp = TempDir::new("stale");
+    std::fs::write(
+        tmp.dir.join("backup-recovery-drills.json"),
+        json!([{
+            "id": "stale-receipt",
+            "created_at": "2000-01-01T00:00:00Z",
+            "archive": "backups/stale.zip",
+            "preflight_ok": true,
+            "preflight_ready": true,
+            "encrypted": false,
+            "ledger_verified": true,
+            "manifest": null,
+            "isolated_restore_verified": true,
+            "isolated_restore_verification": {
+                "status": "verified",
+                "db_snapshot_materialized": true,
+                "db_snapshot_opened": true,
+                "state_loaded": true,
+                "ledger_verified": true,
+                "cleanup_verified": true,
+                "findings": [],
+                "errors": [],
+                "next_step": "record as preflight-only isolated snapshot evidence; authorize any recovery execution separately"
+            },
+            "restore_executed": false,
+            "live_db_swapped": false,
+            "sidecars_staged": false,
+            "ledger_restored_appended": false,
+            "data_deleted": false,
+            "offsite_custody_proven": false,
+            "legal_archive_certified": false
+        }])
+        .to_string(),
+    )
+    .expect("stale receipt sidecar");
+    let state = AppState::with_data_dir(tmp.dir.clone());
+    let token = seed_owner_session(&state, "drill.stale").await;
+
+    let (status, list) = send(state, with_session(get(DRILL_PATH), &token)).await;
+
+    assert_eq!(status, StatusCode::OK, "stale list response: {list}");
+    assert_eq!(list["freshness"]["status"], "stale");
+    assert_eq!(list["freshness"]["latest_receipt_id"], "stale-receipt");
+    assert_eq!(list["freshness"]["latest_receipt_preflight_ready"], true);
+    assert_eq!(
+        list["freshness"]["latest_receipt_isolated_restore_verified"],
+        true
+    );
+    assert!(
+        list["freshness"]["latest_receipt_age_days"]
+            .as_u64()
+            .unwrap()
+            > chancela_api::DEFAULT_BACKUP_RECOVERY_MAX_DRILL_AGE_DAYS as u64
+    );
+    assert_no_freshness_overclaim_flags(&list["freshness"]);
 }
 
 #[tokio::test]
@@ -512,6 +629,17 @@ async fn backup_recovery_drill_wrong_passphrase_records_failed_isolated_evidence
             .any(|event| event.kind == "ledger.restored"),
         "failed drill receipt must not append ledger.restored"
     );
+
+    let (status, list) = send(state, with_session(get(DRILL_PATH), &token)).await;
+    assert_eq!(status, StatusCode::OK, "failed list response: {list}");
+    assert_eq!(list["freshness"]["status"], "failed");
+    assert_eq!(list["freshness"]["latest_receipt_id"], receipt["id"]);
+    assert_eq!(list["freshness"]["latest_receipt_preflight_ready"], false);
+    assert_eq!(
+        list["freshness"]["latest_receipt_isolated_restore_verified"],
+        false
+    );
+    assert_no_freshness_overclaim_flags(&list["freshness"]);
 }
 
 #[tokio::test]

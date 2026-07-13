@@ -69,8 +69,11 @@ import {
   type BackupFile,
   type BackupManifest,
   type BackupRecoveryDrillIsolatedRestoreVerification,
+  type BackupRecoveryDrillList,
   type BackupRecoveryDrillManifestEvidence,
   type BackupRecoveryDrillReceipt,
+  type BackupRecoveryFreshnessReview,
+  type BackupRecoveryPolicySettings,
   type BookView,
   type BreachPlaybookEvidenceReceipt,
   type BreachPlaybookView,
@@ -3499,7 +3502,7 @@ describe('contract fixtures parse through the real client', () => {
     expect(typeof sources.privacy_control_reviews).toBe('boolean');
     const dataManagement = assertExactKeys<DataManagementSettings>(
       settings.data_management,
-      { retained_export_cleanup: true },
+      { retained_export_cleanup: true, backup_recovery: true },
       'Settings.data_management',
     );
     const retainedExportCleanup = assertExactKeys<RetainedExportCleanupSettings>(
@@ -3522,6 +3525,33 @@ describe('contract fixtures parse through the real client', () => {
     ).toBe(true);
     expect(retainedExportCleanup.keep_latest).toBeGreaterThanOrEqual(0);
     expect(retainedExportCleanup.keep_latest).toBeLessThanOrEqual(100);
+    const backupRecovery = assertExactKeys<BackupRecoveryPolicySettings>(
+      dataManagement.backup_recovery,
+      {
+        max_drill_age_days: true,
+        target_rpo_minutes: true,
+        target_rto_minutes: true,
+      },
+      'Settings.data_management.backup_recovery',
+    );
+    expect(
+      Number.isInteger(backupRecovery.max_drill_age_days),
+      'Settings.data_management.backup_recovery.max_drill_age_days should be an integer',
+    ).toBe(true);
+    expect(backupRecovery.max_drill_age_days).toBeGreaterThanOrEqual(1);
+    expect(backupRecovery.max_drill_age_days).toBeLessThanOrEqual(3650);
+    expect(
+      Number.isInteger(backupRecovery.target_rpo_minutes),
+      'Settings.data_management.backup_recovery.target_rpo_minutes should be an integer',
+    ).toBe(true);
+    expect(backupRecovery.target_rpo_minutes).toBeGreaterThanOrEqual(1);
+    expect(backupRecovery.target_rpo_minutes).toBeLessThanOrEqual(525600);
+    expect(
+      Number.isInteger(backupRecovery.target_rto_minutes),
+      'Settings.data_management.backup_recovery.target_rto_minutes should be an integer',
+    ).toBe(true);
+    expect(backupRecovery.target_rto_minutes).toBeGreaterThanOrEqual(1);
+    expect(backupRecovery.target_rto_minutes).toBeLessThanOrEqual(525600);
     const appearance = assertExactKeys<AppearanceSettings>(
       settings.appearance,
       { theme: true, leather_texture: true, texture_intensity: true, button_texture: true },
@@ -4836,6 +4866,75 @@ describe('contract fixtures parse through the real client', () => {
     expect(receipt.legal_archive_certified).toBe(false);
   });
 
+  it('backup.recovery-drill-list.json → BackupRecoveryDrillList (GET /v1/backup/recovery-drills)', async () => {
+    stubFetch(fixture('backup.recovery-drill-list.json'));
+    const list: BackupRecoveryDrillList = await api.listBackupRecoveryDrills();
+    assertExactKeys<BackupRecoveryDrillList>(
+      list,
+      {
+        receipts: true,
+        durable: true,
+        max_receipts: true,
+        freshness: true,
+      },
+      'BackupRecoveryDrillList',
+    );
+    expect(Array.isArray(list.receipts)).toBe(true);
+    expect(list.receipts.length).toBeGreaterThan(0);
+    expect(typeof list.durable).toBe('boolean');
+    expect(typeof list.max_receipts).toBe('number');
+    const freshness = assertExactKeys<BackupRecoveryFreshnessReview>(
+      list.freshness,
+      {
+        generated_at: true,
+        policy: true,
+        status: true,
+        latest_receipt_id: true,
+        latest_receipt_at: true,
+        latest_receipt_age_days: true,
+        latest_receipt_preflight_ready: true,
+        latest_receipt_isolated_restore_verified: true,
+        restore_performed: true,
+        db_swap_performed: true,
+        offsite_custody_verified: true,
+        rpo_rto_certified: true,
+        production_backup_policy_certified: true,
+      },
+      'BackupRecoveryDrillList.freshness',
+    );
+    assertTimestamp(freshness.generated_at, 'BackupRecoveryDrillList.freshness.generated_at');
+    expect(['no_receipt', 'fresh', 'stale', 'failed']).toContain(freshness.status);
+    const policy = assertExactKeys<BackupRecoveryPolicySettings>(
+      freshness.policy,
+      {
+        max_drill_age_days: true,
+        target_rpo_minutes: true,
+        target_rto_minutes: true,
+      },
+      'BackupRecoveryDrillList.freshness.policy',
+    );
+    expect(policy.max_drill_age_days).toBeGreaterThanOrEqual(1);
+    expect(policy.target_rpo_minutes).toBeGreaterThanOrEqual(1);
+    expect(policy.target_rto_minutes).toBeGreaterThanOrEqual(1);
+    if (freshness.latest_receipt_at !== null) {
+      assertTimestamp(freshness.latest_receipt_at, 'BackupRecoveryDrillList.latest_receipt_at');
+    }
+    if (freshness.latest_receipt_age_days !== null) {
+      expect(freshness.latest_receipt_age_days).toBeGreaterThanOrEqual(0);
+    }
+    if (freshness.latest_receipt_preflight_ready !== null) {
+      expect(typeof freshness.latest_receipt_preflight_ready).toBe('boolean');
+    }
+    if (freshness.latest_receipt_isolated_restore_verified !== null) {
+      expect(typeof freshness.latest_receipt_isolated_restore_verified).toBe('boolean');
+    }
+    expect(freshness.restore_performed).toBe(false);
+    expect(freshness.db_swap_performed).toBe(false);
+    expect(freshness.offsite_custody_verified).toBe(false);
+    expect(freshness.rpo_rto_certified).toBe(false);
+    expect(freshness.production_backup_policy_certified).toBe(false);
+  });
+
   it('data.status.json → DataStatusResponse (GET /v1/data/status)', async () => {
     stubFetch(fixture('data.status.json'));
     const status: DataStatusResponse = await api.dataStatus();
@@ -5418,6 +5517,7 @@ describe('contract fixtures — cross-cutting guarantees', () => {
       'law.search.json',
       'backup.manifest.json',
       'backup.recovery-drill.json',
+      'backup.recovery-drill-list.json',
       'data.status.json',
       'user.json',
       'session.json',

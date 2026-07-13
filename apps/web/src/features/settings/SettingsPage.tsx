@@ -43,6 +43,7 @@ import {
   THEME_MODES,
   type AiSettings,
   type AppearanceSettings,
+  type BackupRecoveryPolicySettings,
   type CatalogSettings,
   type DataManagementSettings,
   type DocumentSettings,
@@ -126,6 +127,8 @@ const TRUST_SOURCE_ID_PREFIX = 'trust-source';
 const TSA_PROVIDER_ID_PREFIX = 'tsa-provider';
 const RETAINED_EXPORT_CLEANUP_MAXIMUM_AGE_DAYS = 3650;
 const RETAINED_EXPORT_CLEANUP_MAX_KEEP_LATEST = 100;
+const BACKUP_RECOVERY_MAX_DRILL_AGE_DAYS = 3650;
+const BACKUP_RECOVERY_MAX_TARGET_MINUTES = 60 * 24 * 365;
 
 function normalizeConfigId(value: string): string {
   const normalized = value
@@ -263,8 +266,9 @@ type SettingsWithMaybeAi = Omit<
       })
     | null;
   data_management?:
-    | (Partial<Omit<DataManagementSettings, 'retained_export_cleanup'>> & {
+    | (Partial<Omit<DataManagementSettings, 'retained_export_cleanup' | 'backup_recovery'>> & {
         retained_export_cleanup?: Partial<RetainedExportCleanupSettings> | null;
+        backup_recovery?: Partial<BackupRecoveryPolicySettings> | null;
       })
     | null;
   signing: Omit<SigningSettings, 'providers' | 'tsl_sources' | 'tsa_providers'> &
@@ -279,6 +283,7 @@ function withSettingsDefaults(settings: SettingsWithMaybeAi): Settings {
   const workflowReminderSources = workflowReminders.sources ?? {};
   const dataManagement = settings.data_management ?? {};
   const retainedExportCleanup = dataManagement.retained_export_cleanup ?? {};
+  const backupRecovery = dataManagement.backup_recovery ?? {};
   return {
     ...settings,
     signing: {
@@ -346,6 +351,10 @@ function withSettingsDefaults(settings: SettingsWithMaybeAi): Settings {
       retained_export_cleanup: {
         ...DEFAULT_SETTINGS.data_management.retained_export_cleanup,
         ...retainedExportCleanup,
+      },
+      backup_recovery: {
+        ...DEFAULT_SETTINGS.data_management.backup_recovery,
+        ...backupRecovery,
       },
     },
   };
@@ -434,6 +443,26 @@ function toWireBody(draft: Settings): Settings {
           DEFAULT_SETTINGS.data_management.retained_export_cleanup.keep_latest,
           0,
           RETAINED_EXPORT_CLEANUP_MAX_KEEP_LATEST,
+        ),
+      },
+      backup_recovery: {
+        max_drill_age_days: boundedNumberValue(
+          String(draft.data_management.backup_recovery.max_drill_age_days),
+          DEFAULT_SETTINGS.data_management.backup_recovery.max_drill_age_days,
+          1,
+          BACKUP_RECOVERY_MAX_DRILL_AGE_DAYS,
+        ),
+        target_rpo_minutes: boundedNumberValue(
+          String(draft.data_management.backup_recovery.target_rpo_minutes),
+          DEFAULT_SETTINGS.data_management.backup_recovery.target_rpo_minutes,
+          1,
+          BACKUP_RECOVERY_MAX_TARGET_MINUTES,
+        ),
+        target_rto_minutes: boundedNumberValue(
+          String(draft.data_management.backup_recovery.target_rto_minutes),
+          DEFAULT_SETTINGS.data_management.backup_recovery.target_rto_minutes,
+          1,
+          BACKUP_RECOVERY_MAX_TARGET_MINUTES,
         ),
       },
     },
@@ -967,6 +996,24 @@ export function SettingsPage() {
           }
         : d,
     );
+  const setBackupRecoveryPolicy = <K extends keyof BackupRecoveryPolicySettings>(
+    key: K,
+    value: BackupRecoveryPolicySettings[K],
+  ) =>
+    setDraft((d) =>
+      d
+        ? {
+            ...d,
+            data_management: {
+              ...d.data_management,
+              backup_recovery: {
+                ...d.data_management.backup_recovery,
+                [key]: value,
+              },
+            },
+          }
+        : d,
+    );
   const setPlatform = (platform: PlatformSettings) => setDraft((d) => (d ? { ...d, platform } : d));
   const setTslSources = (updater: (sources: TslSourceSettings[]) => TslSourceSettings[]) =>
     setDraft((d) =>
@@ -1040,6 +1087,7 @@ export function SettingsPage() {
   const a = draft.appearance;
   const reminderPolicy = draft.workflow.reminders;
   const retainedExportCleanupPolicy = draft.data_management.retained_export_cleanup;
+  const backupRecoveryPolicy = draft.data_management.backup_recovery;
 
   return (
     <div className="stack">
@@ -1841,6 +1889,89 @@ export function SettingsPage() {
                               retainedExportCleanupPolicy.keep_latest,
                               0,
                               RETAINED_EXPORT_CLEANUP_MAX_KEEP_LATEST,
+                            ),
+                          )
+                        }
+                      />
+                    </Field>
+                  </div>
+                </div>
+              </Card>
+              <Card title="Política local de recuperação de backups">
+                <div className="form">
+                  <p className="field__hint">
+                    Metas declaradas pelo operador para avisos locais de frescura dos ensaios. Não
+                    executam restauro, não trocam a base de dados, não provam custódia off-site e
+                    não certificam RPO/RTO nem política de backup de produção.
+                  </p>
+                  <div className="registry-auto-update-grid">
+                    <Field
+                      label="Idade máxima do ensaio"
+                      htmlFor="backup-recovery-max-drill-age-days"
+                      hint="Dias máximos antes do último recibo de ensaio verificado aparecer como desatualizado."
+                    >
+                      <Input
+                        id="backup-recovery-max-drill-age-days"
+                        type="number"
+                        min={1}
+                        max={BACKUP_RECOVERY_MAX_DRILL_AGE_DAYS}
+                        value={backupRecoveryPolicy.max_drill_age_days}
+                        onChange={(e) =>
+                          setBackupRecoveryPolicy(
+                            'max_drill_age_days',
+                            boundedNumberValue(
+                              e.target.value,
+                              backupRecoveryPolicy.max_drill_age_days,
+                              1,
+                              BACKUP_RECOVERY_MAX_DRILL_AGE_DAYS,
+                            ),
+                          )
+                        }
+                      />
+                    </Field>
+                    <Field
+                      label="RPO alvo"
+                      htmlFor="backup-recovery-target-rpo-minutes"
+                      hint="Minutos declarados para o objetivo local de perda máxima de dados."
+                    >
+                      <Input
+                        id="backup-recovery-target-rpo-minutes"
+                        type="number"
+                        min={1}
+                        max={BACKUP_RECOVERY_MAX_TARGET_MINUTES}
+                        value={backupRecoveryPolicy.target_rpo_minutes}
+                        onChange={(e) =>
+                          setBackupRecoveryPolicy(
+                            'target_rpo_minutes',
+                            boundedNumberValue(
+                              e.target.value,
+                              backupRecoveryPolicy.target_rpo_minutes,
+                              1,
+                              BACKUP_RECOVERY_MAX_TARGET_MINUTES,
+                            ),
+                          )
+                        }
+                      />
+                    </Field>
+                    <Field
+                      label="RTO alvo"
+                      htmlFor="backup-recovery-target-rto-minutes"
+                      hint="Minutos declarados para o objetivo local de tempo máximo de recuperação."
+                    >
+                      <Input
+                        id="backup-recovery-target-rto-minutes"
+                        type="number"
+                        min={1}
+                        max={BACKUP_RECOVERY_MAX_TARGET_MINUTES}
+                        value={backupRecoveryPolicy.target_rto_minutes}
+                        onChange={(e) =>
+                          setBackupRecoveryPolicy(
+                            'target_rto_minutes',
+                            boundedNumberValue(
+                              e.target.value,
+                              backupRecoveryPolicy.target_rto_minutes,
+                              1,
+                              BACKUP_RECOVERY_MAX_TARGET_MINUTES,
                             ),
                           )
                         }

@@ -186,12 +186,14 @@ pub use secretstore_persist::{
 };
 pub use settings::{
     AiSettings, AppearanceSettings, CaeSourceEntry, CatalogSettings, CmdEnvSetting,
-    DocumentSettings, Locale, OnboardingSettings, OrganizationSettings, PlatformAuditEvent,
-    PlatformControlOutcomeKind, PlatformLogLevel, PlatformLoggingSettings, PlatformServiceAction,
-    PlatformServiceControlSettings, PlatformServiceDesiredState, PlatformServiceLastAction,
-    PlatformSettings, RegistryAutoUpdateCadence, RegistryAutoUpdateEntityDefaults,
-    RegistryAutoUpdateSettings, RegistryAutoUpdateWeekday, Settings, SignatureFamily,
-    SigningCmdSettings, SigningSettings, ThemeMode,
+    DEFAULT_BACKUP_RECOVERY_MAX_DRILL_AGE_DAYS, DEFAULT_BACKUP_RECOVERY_TARGET_RPO_MINUTES,
+    DEFAULT_BACKUP_RECOVERY_TARGET_RTO_MINUTES, DocumentSettings, Locale, OnboardingSettings,
+    OrganizationSettings, PlatformAuditEvent, PlatformControlOutcomeKind, PlatformLogLevel,
+    PlatformLoggingSettings, PlatformServiceAction, PlatformServiceControlSettings,
+    PlatformServiceDesiredState, PlatformServiceLastAction, PlatformSettings,
+    RegistryAutoUpdateCadence, RegistryAutoUpdateEntityDefaults, RegistryAutoUpdateSettings,
+    RegistryAutoUpdateWeekday, Settings, SignatureFamily, SigningCmdSettings, SigningSettings,
+    ThemeMode,
 };
 #[cfg(debug_assertions)]
 pub use trust::{LocalTrustUrlTestAllowance, allow_local_trust_url_for_tests};
