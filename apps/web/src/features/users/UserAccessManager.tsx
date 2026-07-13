@@ -19,7 +19,7 @@
  * The recovery phrase is generated server-side and returned exactly once; we show it once,
  * with a copy affordance and honest "cannot be retrieved later" copy, and never persist it.
  */
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type {
   AttestationKeyBody,
   IssueRecoveryBody,
@@ -39,6 +39,35 @@ import { Badge, Button, Field, Icon, InlineWarning, Input, Select, useToast } fr
 
 type PwMode = null | 'set' | 'change';
 type ProofKind = 'password' | 'recovery';
+
+/** How long the once-shown recovery phrase may sit on the clipboard before a best-effort wipe. */
+const CLIPBOARD_CLEAR_MS = 60_000;
+
+/**
+ * Best-effort defense-in-depth: after {@link CLIPBOARD_CLEAR_MS}, wipe the clipboard IFF it still
+ * holds exactly `secret`, so the once-shown recovery phrase does not linger indefinitely. Never
+ * throws, never blocks, and never clears unrelated content — if clipboard read-back is unavailable
+ * or denied it silently does nothing. The pending timer lives in `ref` so a re-copy or an unmount
+ * can cancel it.
+ */
+function scheduleClipboardClear(
+  ref: { current: ReturnType<typeof setTimeout> | null },
+  secret: string,
+): void {
+  if (ref.current) clearTimeout(ref.current);
+  ref.current = setTimeout(() => {
+    ref.current = null;
+    void (async () => {
+      try {
+        if (typeof navigator === 'undefined' || !navigator.clipboard?.readText) return;
+        const current = await navigator.clipboard.readText();
+        if (current === secret) await navigator.clipboard.writeText('');
+      } catch {
+        /* read-back unavailable or denied — leave the clipboard untouched */
+      }
+    })();
+  }, CLIPBOARD_CLEAR_MS);
+}
 
 /**
  * The cross-user proof control: pick the proof kind (the target's current password or a
@@ -129,6 +158,14 @@ export function UserAccessManager({ user }: { user: UserView }) {
   const [recProofValue, setRecProofValue] = useState('');
   const [recForbidden, setRecForbidden] = useState(false);
   const [recPhrase, setRecPhrase] = useState<string | null>(null);
+  const recClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Cancel any pending recovery-phrase clipboard wipe when this manager unmounts.
+  useEffect(() => {
+    return () => {
+      if (recClearTimerRef.current) clearTimeout(recClearTimerRef.current);
+    };
+  }, []);
 
   const pwBusy = setSecret.isPending;
   const keyBusy = createKey.isPending || removeKey.isPending;
@@ -239,9 +276,13 @@ export function UserAccessManager({ user }: { user: UserView }) {
 
   function copyPhrase() {
     if (recPhrase && navigator.clipboard) {
+      const phrase = recPhrase;
       void navigator.clipboard
-        .writeText(recPhrase)
-        .then(() => toast.success(t('users.recovery.copied')))
+        .writeText(phrase)
+        .then(() => {
+          toast.success(t('users.recovery.copied'));
+          scheduleClipboardClear(recClearTimerRef, phrase);
+        })
         .catch(() => {
           /* clipboard denied — the phrase is still visible to copy manually */
         });

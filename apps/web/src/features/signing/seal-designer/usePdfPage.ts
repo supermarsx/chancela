@@ -84,7 +84,10 @@ export function usePdfPage(options: UsePdfPageOptions): UsePdfPageResult {
     (async () => {
       try {
         const pdfjs = await loadPdfjs();
-        const doc = await pdfjs.getDocument({ data: bytes }).promise;
+        // Defense-in-depth: forbid the worker from evaluating strings as JavaScript, so a
+        // relaxed CSP can never let a crafted act PDF reach `eval`. This only disables a pdf.js
+        // performance shortcut for PDF functions — it does not change what we render.
+        const doc = await pdfjs.getDocument({ data: bytes, isEvalSupported: false }).promise;
         if (cancelled) {
           await doc.destroy();
           return;

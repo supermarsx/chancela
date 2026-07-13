@@ -5,7 +5,7 @@
  * local component state only, shows it in an explicit "save now" panel, and clears mutation state
  * immediately after success so the metadata query cache never receives secret material.
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type {
   ApiKeyCreated,
   ApiKeyGrantView,
@@ -40,6 +40,34 @@ import { GateButton, useCan } from '../session/permissions';
 import { ScopePicker } from '../rbac/ScopePicker';
 
 const initialScope: PermissionScope = { kind: 'global' };
+
+/** How long a once-shown secret may sit on the clipboard before we best-effort wipe it. */
+const CLIPBOARD_CLEAR_MS = 60_000;
+
+/**
+ * Best-effort defense-in-depth: after {@link CLIPBOARD_CLEAR_MS}, wipe the clipboard IFF it still
+ * holds exactly `secret`, so a once-shown secret does not linger indefinitely. Never throws, never
+ * blocks, and never clears unrelated content — if clipboard read-back is unavailable or denied it
+ * silently does nothing. The pending timer lives in `ref` so a new copy or an unmount can cancel it.
+ */
+function scheduleClipboardClear(
+  ref: { current: ReturnType<typeof setTimeout> | null },
+  secret: string,
+): void {
+  if (ref.current) clearTimeout(ref.current);
+  ref.current = setTimeout(() => {
+    ref.current = null;
+    void (async () => {
+      try {
+        if (typeof navigator === 'undefined' || !navigator.clipboard?.readText) return;
+        const current = await navigator.clipboard.readText();
+        if (current === secret) await navigator.clipboard.writeText('');
+      } catch {
+        /* read-back unavailable or denied — leave the clipboard untouched */
+      }
+    })();
+  }, CLIPBOARD_CLEAR_MS);
+}
 
 function formatDateTime(value: string | undefined, locale: string, fallback: string): string {
   if (!value) return fallback;
@@ -333,11 +361,20 @@ function CreateApiKeyForm({
 function SecretPanel({ apiKey, onDone }: { apiKey: ApiKeyCreated; onDone: () => void }) {
   const t = useT();
   const toast = useToast();
+  const clearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Cancel any pending clipboard wipe when the panel unmounts.
+  useEffect(() => {
+    return () => {
+      if (clearTimerRef.current) clearTimeout(clearTimerRef.current);
+    };
+  }, []);
 
   async function copySecret() {
     try {
       await navigator.clipboard.writeText(apiKey.secret);
       toast.success(t('settings.apiKeys.secret.copied'));
+      scheduleClipboardClear(clearTimerRef, apiKey.secret);
     } catch (e) {
       toast.error(e);
     }
