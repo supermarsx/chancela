@@ -180,8 +180,6 @@ function importedDownloadName(document: ImportedDocumentView): string {
   return metadataText(document.filename) ?? `documento-importado-${slug(document.id)}.bin`;
 }
 
-const IMPORTED_DOCUMENT_REVIEW_NOTICE =
-  'A revisão regista apenas uma decisão de preservação operacional; não executa OCR, não converte bytes, não substitui o PDF/A canónico e não declara aceitação legal.';
 const IMPORTED_DOCUMENT_REVIEW_NOTE_LIMIT = 2000;
 const FALLBACK_IMPORTED_DOCUMENT_REVIEW_GUARDRAILS: ImportedDocumentReviewGuardrail[] = [
   'preserved_original_bytes_remain_non_canonical_evidence',
@@ -190,19 +188,21 @@ const FALLBACK_IMPORTED_DOCUMENT_REVIEW_GUARDRAILS: ImportedDocumentReviewGuardr
   'ocr_or_conversion_output_is_not_promoted_to_canonical_records',
 ];
 
-const importedDocumentReviewOptions: {
+function buildImportedDocumentReviewOptions(t: TFunction): {
   value: ImportedDocumentReviewPatchStatus;
   label: string;
-}[] = [
-  {
-    value: 'reviewed_non_canonical_original_only',
-    label: 'Revisto: original preservado apenas como evidência não canónica',
-  },
-  {
-    value: 'rejected_non_canonical_evidence',
-    label: 'Rejeitado como evidência não canónica',
-  },
-];
+}[] {
+  return [
+    {
+      value: 'reviewed_non_canonical_original_only',
+      label: t('documents.import.review.status.reviewedNonCanonical'),
+    },
+    {
+      value: 'rejected_non_canonical_evidence',
+      label: t('documents.import.review.status.rejected'),
+    },
+  ];
+}
 
 const ABSENT_OWNER_COMMUNICATION_TEMPLATE_ID = 'condominio-comunicacao-ausentes/v1';
 const DISPATCH_EVIDENCE_NOTE_LIMIT = 2000;
@@ -275,20 +275,20 @@ function generatedDocumentDownloadName(document: GeneratedDocumentView): string 
   return `generated-${slug(document.template_id)}-${slug(document.id)}.pdf`;
 }
 
-function importedReviewStatusLabel(status: unknown): string {
+function importedReviewStatusLabel(status: unknown, t: TFunction): string {
   switch (metadataText(status)) {
     case 'operator_review_required':
-      return 'Revisão do operador necessária';
+      return t('documents.import.review.status.operatorRequired');
     case 'ocr_review_required':
-      return 'Revisão do operador necessária para imagem preservada';
+      return t('documents.import.review.status.ocrRequired');
     case 'canonical_conversion_review_required':
-      return 'Revisão do operador necessária para ficheiro legado';
+      return t('documents.import.review.status.legacyRequired');
     case 'reviewed_non_canonical_original_only':
-      return 'Revisto: original preservado apenas como evidência não canónica';
+      return t('documents.import.review.status.reviewedNonCanonical');
     case 'rejected_non_canonical_evidence':
-      return 'Rejeitado como evidência não canónica';
+      return t('documents.import.review.status.rejected');
     default:
-      return metadataText(status) ?? 'Revisão não indicada';
+      return metadataText(status) ?? t('documents.import.review.status.notIndicated');
   }
 }
 
@@ -425,31 +425,31 @@ function shouldShowCanonicalConversionPreflight(
   );
 }
 
-function canonicalConversionPreflightStatusLabel(status: unknown): string {
+function canonicalConversionPreflightStatusLabel(status: unknown, t: TFunction): string {
   switch (metadataText(status)) {
     case 'blocked':
-      return 'bloqueado';
+      return t('documents.import.preflight.status.blocked');
     case 'not_attempted':
-      return 'não tentado';
+      return t('documents.import.preflight.status.notAttempted');
     case null:
-      return 'não indicado';
+      return t('documents.import.preflight.notIndicated');
     default:
-      return metadataText(status) ?? 'não indicado';
+      return metadataText(status) ?? t('documents.import.preflight.notIndicated');
   }
 }
 
-function canonicalConversionPreflightSourceLabel(source: unknown): string {
+function canonicalConversionPreflightSourceLabel(source: unknown, t: TFunction): string {
   switch (metadataText(source)) {
     case 'legacy_word_doc':
-      return 'DOC legado';
+      return t('documents.import.preflight.source.legacyDoc');
     case 'ole_compound_file':
-      return 'OLE CFB';
+      return t('documents.import.preflight.source.ole');
     case 'not_legacy_doc_or_ole':
-      return 'não DOC/OLE';
+      return t('documents.import.preflight.source.notLegacy');
     case null:
-      return 'não indicado';
+      return t('documents.import.preflight.notIndicated');
     default:
-      return metadataText(source) ?? 'não indicado';
+      return metadataText(source) ?? t('documents.import.preflight.notIndicated');
   }
 }
 
@@ -467,22 +467,19 @@ function CanonicalConversionPreflightEvidence({
 
   return (
     <div className="stack--tight">
-      <p className="card__label">Pré-flight local de conversão canónica</p>
-      <p className="field__hint">
-        Evidência local de metadados apenas; não converte DOC, não cria PDF/A, não executa OCR, não
-        valida assinaturas, não chama fornecedores e não declara aceitação legal.
-      </p>
+      <p className="card__label">{t('documents.import.preflight.title')}</p>
+      <p className="field__hint">{t('documents.import.preflight.hint')}</p>
       <dl className="deflist deflist--tight">
         <div>
-          <dt>Estado</dt>
-          <dd>{canonicalConversionPreflightStatusLabel(preflight?.status)}</dd>
+          <dt>{t('documents.import.preflight.field.status')}</dt>
+          <dd>{canonicalConversionPreflightStatusLabel(preflight?.status, t)}</dd>
         </div>
         <div>
-          <dt>Formato avaliado</dt>
-          <dd>{canonicalConversionPreflightSourceLabel(preflight?.source_format)}</dd>
+          <dt>{t('documents.import.preflight.field.format')}</dt>
+          <dd>{canonicalConversionPreflightSourceLabel(preflight?.source_format, t)}</dd>
         </div>
         <div>
-          <dt>Base de evidência</dt>
+          <dt>{t('documents.import.preflight.field.evidenceBasis')}</dt>
           <dd>
             {preflight?.bounded_evidence_status ? (
               <code className="mono">{preflight.bounded_evidence_status}</code>
@@ -492,41 +489,41 @@ function CanonicalConversionPreflightEvidence({
           </dd>
         </div>
         <div>
-          <dt>Bytes originais preservados</dt>
+          <dt>{t('documents.import.preflight.field.originalBytes')}</dt>
           <dd>{yesNo(Boolean(preflight?.original_bytes_preserved), t)}</dd>
         </div>
         <div>
-          <dt>Conversão canónica executada</dt>
+          <dt>{t('documents.import.preflight.field.conversion')}</dt>
           <dd>{yesNo(Boolean(preflight?.canonical_conversion_performed), t)}</dd>
         </div>
         <div>
-          <dt>PDF/A criado</dt>
+          <dt>{t('documents.import.preflight.field.pdfa')}</dt>
           <dd>{yesNo(Boolean(preflight?.canonical_pdfa_generated), t)}</dd>
         </div>
         <div>
-          <dt>Validação de assinatura</dt>
+          <dt>{t('documents.import.preflight.field.signatureValidation')}</dt>
           <dd>{yesNo(Boolean(preflight?.signature_validation_performed), t)}</dd>
         </div>
         <div>
-          <dt>OCR executado</dt>
+          <dt>{t('documents.import.preflight.field.ocr')}</dt>
           <dd>{yesNo(Boolean(preflight?.ocr_performed), t)}</dd>
         </div>
         <div>
-          <dt>Aceitação legal declarada</dt>
+          <dt>{t('documents.import.preflight.field.legalAcceptance')}</dt>
           <dd>{yesNo(Boolean(preflight?.legal_acceptance_claimed), t)}</dd>
         </div>
         <div>
-          <dt>Fornecedor externo contactado</dt>
+          <dt>{t('documents.import.preflight.field.externalProvider')}</dt>
           <dd>{yesNo(Boolean(preflight?.external_provider_contacted), t)}</dd>
         </div>
         <div>
-          <dt>Registo canónico substituído</dt>
+          <dt>{t('documents.import.preflight.field.recordReplaced')}</dt>
           <dd>{yesNo(Boolean(preflight?.canonical_record_replaced), t)}</dd>
         </div>
       </dl>
       {preflight?.evidence_basis?.length ? (
         <div className="stack--tight">
-          <p className="card__label">Evidência observada</p>
+          <p className="card__label">{t('documents.import.preflight.evidenceObserved')}</p>
           <ul className="plain-list">
             {preflight.evidence_basis.map((evidence) => (
               <li key={evidence}>
@@ -538,7 +535,7 @@ function CanonicalConversionPreflightEvidence({
       ) : null}
       {preflight?.blockers?.length ? (
         <div className="stack--tight">
-          <p className="card__label">Bloqueios</p>
+          <p className="card__label">{t('documents.import.preflight.blockers')}</p>
           <ul className="plain-list">
             {preflight.blockers.map((blocker) => (
               <li key={blocker}>
@@ -682,15 +679,15 @@ function ImportedDocumentReviewReceipt({
   const reviewedBy = metadataText(document.operator_reviewed_by);
   const reviewNote = metadataText(document.operator_review_note);
   const receiptStatus = hasReceipt
-    ? importedReviewStatusLabel(document.operator_review_status)
-    : 'Sem recibo de revisão';
+    ? importedReviewStatusLabel(document.operator_review_status, t)
+    : t('documents.import.receipt.none');
 
   return (
-    <div className="stack--tight" role="group" aria-label="Recibo de revisão">
-      <p className="card__label">Recibo de revisão</p>
+    <div className="stack--tight" role="group" aria-label={t('documents.import.receipt.title')}>
+      <p className="card__label">{t('documents.import.receipt.title')}</p>
       <dl className="deflist deflist--tight">
         <div>
-          <dt>Estado do recibo</dt>
+          <dt>{t('documents.import.receipt.status')}</dt>
           <dd>
             <Badge
               tone={
@@ -704,40 +701,48 @@ function ImportedDocumentReviewReceipt({
         {hasReceipt ? (
           <>
             <div>
-              <dt>Revisto em</dt>
+              <dt>{t('documents.import.review.reviewedAt')}</dt>
               <dd>
                 {reviewedAt ? (
                   <time className="mono" dateTime={reviewedAt}>
                     {reviewedAt}
                   </time>
                 ) : (
-                  <span className="muted">Não indicado no recibo</span>
+                  <span className="muted">{t('documents.import.receipt.notInReceipt')}</span>
                 )}
               </dd>
             </div>
             <div>
-              <dt>Revisto por</dt>
-              <dd>{reviewedBy ?? <span className="muted">Não indicado no recibo</span>}</dd>
+              <dt>{t('documents.import.review.reviewedBy')}</dt>
+              <dd>
+                {reviewedBy ?? (
+                  <span className="muted">{t('documents.import.receipt.notInReceipt')}</span>
+                )}
+              </dd>
             </div>
             <div>
-              <dt>Nota registada</dt>
-              <dd>{reviewNote ?? <span className="muted">Sem nota registada</span>}</dd>
+              <dt>{t('documents.import.receipt.noteRecorded')}</dt>
+              <dd>
+                {reviewNote ?? (
+                  <span className="muted">{t('documents.import.receipt.noNote')}</span>
+                )}
+              </dd>
             </div>
             <div>
-              <dt>Limites exigidos</dt>
+              <dt>{t('documents.import.review.requiredGuardrails')}</dt>
               <dd>
                 <GuardrailList
-                  empty="Sem limites exigidos indicados"
+                  empty={t('documents.import.receipt.noRequiredGuardrails')}
                   guardrails={requiredGuardrails}
                   t={t}
                 />
               </dd>
             </div>
             <div>
-              <dt>Limites reconhecidos</dt>
+              <dt>{t('documents.import.review.acknowledgedGuardrails')}</dt>
               <dd>
                 <GuardrailList
-                  empty="Sem limites reconhecidos no recibo"
+                  empty={t('documents.import.receipt.noAcknowledgedGuardrails')}
                   guardrails={acknowledgedGuardrails}
                   t={t}
                 />
@@ -746,33 +751,38 @@ function ImportedDocumentReviewReceipt({
           </>
         ) : null}
         <div>
-          <dt>OCR</dt>
+          <dt>{t('documents.import.receipt.field.ocr')}</dt>
           <dd>
-            <Badge tone="neutral">Não</Badge> Não efetuado por esta revisão.
+            <Badge tone="neutral">{t('common.no')}</Badge>{' '}
+            {t('documents.import.receipt.notPerformed')}
           </dd>
         </div>
         <div>
-          <dt>Conversão</dt>
+          <dt>{t('documents.import.receipt.field.conversion')}</dt>
           <dd>
-            <Badge tone="neutral">Não</Badge> Não efetuada por esta revisão.
+            <Badge tone="neutral">{t('common.no')}</Badge>{' '}
+            {t('documents.import.receipt.notPerformedFem')}
           </dd>
         </div>
         <div>
-          <dt>Substituição do PDF/A canónico</dt>
+          <dt>{t('documents.import.receipt.field.pdfaReplacement')}</dt>
           <dd>
-            <Badge tone="neutral">Não</Badge> Não substituído por este documento.
+            <Badge tone="neutral">{t('common.no')}</Badge>{' '}
+            {t('documents.import.receipt.notReplaced')}
           </dd>
         </div>
         <div>
-          <dt>PDF assinado</dt>
+          <dt>{t('documents.import.receipt.field.signedPdf')}</dt>
           <dd>
-            <Badge tone="neutral">Não</Badge> Não criado nem validado por esta revisão.
+            <Badge tone="neutral">{t('common.no')}</Badge>{' '}
+            {t('documents.import.receipt.notCreated')}
           </dd>
         </div>
         <div>
-          <dt>Aceitação legal</dt>
+          <dt>{t('documents.import.receipt.field.legalAcceptance')}</dt>
           <dd>
-            <Badge tone="neutral">Não</Badge> Não declarada por esta revisão.
+            <Badge tone="neutral">{t('common.no')}</Badge>{' '}
+            {t('documents.import.receipt.notClaimed')}
           </dd>
         </div>
       </dl>
@@ -790,12 +800,10 @@ function ImportedDocumentReviewHistory({
   const history = document.review_history ?? [];
 
   return (
-    <div className="stack--tight" role="group" aria-label="Histórico técnico de revisão">
-      <p className="card__label">Histórico técnico de revisão</p>
+    <div className="stack--tight" role="group" aria-label={t('documents.import.history.title')}>
+      <p className="card__label">{t('documents.import.history.title')}</p>
       {history.length === 0 ? (
-        <p className="muted">
-          Sem histórico técnico registado para além dos metadados atuais da revisão.
-        </p>
+        <p className="muted">{t('documents.import.history.empty')}</p>
       ) : (
         <ol className="stack--tight">
           {history.map((entry) => {
@@ -810,15 +818,15 @@ function ImportedDocumentReviewHistory({
               <li key={entry.decision_index} className="stack--tight">
                 <dl className="deflist deflist--tight">
                   <div>
-                    <dt>Decisão</dt>
+                    <dt>{t('documents.import.history.decision')}</dt>
                     <dd>
                       <Badge tone={importedReviewStatusTone(entry.review_status)}>
-                        {importedReviewStatusLabel(entry.review_status)}
+                        {importedReviewStatusLabel(entry.review_status, t)}
                       </Badge>
                     </dd>
                   </div>
                   <div>
-                    <dt>Registada em</dt>
+                    <dt>{t('documents.import.history.recordedAt')}</dt>
                     <dd>
                       {reviewedAt ? (
                         <time className="mono" dateTime={reviewedAt}>
@@ -830,7 +838,7 @@ function ImportedDocumentReviewHistory({
                     </dd>
                   </div>
                   <div>
-                    <dt>Registada por</dt>
+                    <dt>{t('documents.import.history.recordedBy')}</dt>
                     <dd>
                       {reviewedBy ?? (
                         <span className="muted">{t('documents.import.notIndicated')}</span>
@@ -838,7 +846,7 @@ function ImportedDocumentReviewHistory({
                     </dd>
                   </div>
                   <div>
-                    <dt>Nota histórica</dt>
+                    <dt>{t('documents.import.history.note')}</dt>
                     <dd>
                       {reviewNote ?? (
                         <span className="muted">{t('documents.import.notIndicated')}</span>
@@ -846,22 +854,18 @@ function ImportedDocumentReviewHistory({
                     </dd>
                   </div>
                   <div>
-                    <dt>Limites reconhecidos</dt>
+                    <dt>{t('documents.import.review.acknowledgedGuardrails')}</dt>
                     <dd>
                       <GuardrailList
-                        empty="Sem limites reconhecidos nesta decisão"
+                        empty={t('documents.import.history.noAcknowledgedGuardrails')}
                         guardrails={acknowledgedGuardrails}
                         t={t}
                       />
                     </dd>
                   </div>
                   <div>
-                    <dt>Âmbito técnico</dt>
-                    <dd>
-                      Histórico de revisão metadata-only para evidência não canónica; sem OCR,
-                      conversão, substituição de PDF/A, validação de assinatura, selo, PDF/UA,
-                      certificação ou aceitação legal.
-                    </dd>
+                    <dt>{t('documents.import.history.scope')}</dt>
+                    <dd>{t('documents.import.history.scopeBody')}</dd>
                   </div>
                 </dl>
               </li>
@@ -885,8 +889,8 @@ function ImportedDocumentReviewDepthSummary({
     document.preservation_policy?.original_bytes_preservation_status,
   );
   const originalBytesSummary = originalBytesStatus
-    ? `Bytes preservados (${originalBytesStatus})`
-    : 'Preservação dos bytes originais não indicada nos metadados carregados';
+    ? t('documents.import.depth.bytesPreserved', { status: originalBytesStatus })
+    : t('documents.import.depth.bytesNotIndicated');
   const hasReceipt = importedDocumentHasReviewReceipt(document);
   const historyCount = document.review_history?.length ?? 0;
 
@@ -894,52 +898,57 @@ function ImportedDocumentReviewDepthSummary({
     <div
       className="stack--tight"
       role="group"
-      aria-label="Resumo de profundidade da revisão importada"
+      aria-label={t('documents.import.depth.aria')}
     >
-      <p className="card__label">Resumo de profundidade da revisão</p>
+      <p className="card__label">{t('documents.import.depth.title')}</p>
       <dl className="deflist deflist--tight">
         <div>
-          <dt>Inclui</dt>
+          <dt>{t('documents.import.depth.includes')}</dt>
           <dd>
-            {originalBytesSummary}, digest SHA-256, estado de revisão{' '}
-            {hasReceipt ? 'registado' : 'pendente'} e nota do operador{' '}
-            {reviewNote ? 'registada' : 'não indicada'}. Histórico técnico:{' '}
-            {historyCount > 0 ? `${historyCount} decisão(ões) preservada(s)` : 'sem decisões'}.
+            {t('documents.import.depth.includesValue', {
+              bytes: originalBytesSummary,
+              receipt: hasReceipt
+                ? t('documents.import.depth.recorded')
+                : t('documents.import.depth.pending'),
+              note: reviewNote
+                ? t('documents.import.depth.noteRecorded')
+                : t('documents.import.depth.noteNotIndicated'),
+              history:
+                historyCount > 0
+                  ? t('documents.import.depth.decisionsPreserved', {
+                      count: String(historyCount),
+                    })
+                  : t('documents.import.depth.noDecisions'),
+            })}
           </dd>
         </div>
         <div>
-          <dt>Digest revisto</dt>
+          <dt>{t('documents.import.depth.reviewedDigest')}</dt>
           <dd>
             <Digest value={document.sha256} />
           </dd>
         </div>
         <div>
-          <dt>Estado derivado</dt>
+          <dt>{t('documents.import.depth.derivedStatus')}</dt>
           <dd>
             <Badge tone={importedReviewStatusTone(document.operator_review_status)}>
-              {importedReviewStatusLabel(document.operator_review_status)}
+              {importedReviewStatusLabel(document.operator_review_status, t)}
             </Badge>
           </dd>
         </div>
         <div>
-          <dt>Nota do operador</dt>
+          <dt>{t('documents.import.depth.operatorNote')}</dt>
           <dd>
             {reviewNote ?? <span className="muted">{t('documents.import.notIndicated')}</span>}
           </dd>
         </div>
         <div>
-          <dt>Exclui</dt>
-          <dd>
-            OCR, conversão, substituição de PDF/A, PDF assinado, validação de assinatura, selo,
-            PDF/UA e aceitação legal.
-          </dd>
+          <dt>{t('documents.import.depth.excludes')}</dt>
+          <dd>{t('documents.import.depth.excludesValue')}</dd>
         </div>
         <div>
-          <dt>Flags sem reivindicação</dt>
-          <dd>
-            OCR: não · conversão: não · PDF/A substituído: não · PDF assinado: não · assinatura: não
-            · selo: não · PDF/UA: não · aceitação legal: não.
-          </dd>
+          <dt>{t('documents.import.depth.noClaimFlags')}</dt>
+          <dd>{t('documents.import.depth.noClaimFlagsValue')}</dd>
         </div>
       </dl>
     </div>
@@ -1420,7 +1429,8 @@ function ImportedDocumentDetails({
   const importedBy = metadataText(document.imported_by);
   const legalNotice = metadataText(document.legal_notice) ?? t('documents.import.notice');
   const reviewNotice =
-    metadataText(document.operator_review_notice) ?? IMPORTED_DOCUMENT_REVIEW_NOTICE;
+    metadataText(document.operator_review_notice) ??
+    t('documents.import.review.noticeFallback');
   const reviewedAt = metadataText(document.operator_reviewed_at);
   const reviewedBy = metadataText(document.operator_reviewed_by);
   const reviewNote = metadataText(document.operator_review_note);
@@ -1491,19 +1501,19 @@ function ImportedDocumentDetails({
             </dd>
           </div>
           <div>
-            <dt>Revisão do operador</dt>
+            <dt>{t('documents.import.review.operatorReview')}</dt>
             <dd>
               <Badge tone={importedReviewStatusTone(document.operator_review_status)}>
-                {importedReviewStatusLabel(document.operator_review_status)}
+                {importedReviewStatusLabel(document.operator_review_status, t)}
               </Badge>
             </dd>
           </div>
           <div>
-            <dt>Aviso de revisão</dt>
+            <dt>{t('documents.import.review.reviewNotice')}</dt>
             <dd>{reviewNotice}</dd>
           </div>
           <div>
-            <dt>Revisto em</dt>
+            <dt>{t('documents.import.review.reviewedAt')}</dt>
             <dd>
               {reviewedAt ? (
                 <time className="mono" dateTime={reviewedAt}>
@@ -1515,13 +1525,13 @@ function ImportedDocumentDetails({
             </dd>
           </div>
           <div>
-            <dt>Revisto por</dt>
+            <dt>{t('documents.import.review.reviewedBy')}</dt>
             <dd>
               {reviewedBy ?? <span className="muted">{t('documents.import.notIndicated')}</span>}
             </dd>
           </div>
           <div>
-            <dt>Nota da revisão</dt>
+            <dt>{t('documents.import.review.note')}</dt>
             <dd>
               {reviewNote ?? <span className="muted">{t('documents.import.notIndicated')}</span>}
             </dd>
@@ -1631,29 +1641,33 @@ function ImportedDocumentReviewForm({
   return (
     <form
       className="form"
-      aria-label="Revisão operacional do documento importado"
+      aria-label={t('documents.import.review.formAria')}
       onSubmit={(event) => {
         event.preventDefault();
         onSubmit();
       }}
     >
-      <InlineWarning tone="info" title="Revisão conservadora">
-        {metadataText(document.operator_review_notice) ?? IMPORTED_DOCUMENT_REVIEW_NOTICE}
+      <InlineWarning tone="info" title={t('documents.import.review.conservativeTitle')}>
+        {metadataText(document.operator_review_notice) ??
+          t('documents.import.review.noticeFallback')}
       </InlineWarning>
-      <Field label="Estado de revisão" htmlFor={`${controlId}-status`}>
+      <Field label={t('documents.import.review.statusLabel')} htmlFor={`${controlId}-status`}>
         <Select
           id={`${controlId}-status`}
           value={status}
-          options={importedDocumentReviewOptions}
+          options={buildImportedDocumentReviewOptions(t)}
           onChange={(event) =>
             onStatusChange(event.target.value as ImportedDocumentReviewPatchStatus)
           }
         />
       </Field>
       <Field
-        label="Nota da revisão"
+        label={t('documents.import.review.note')}
         htmlFor={`${controlId}-note`}
-        hint={`${note.length}/${IMPORTED_DOCUMENT_REVIEW_NOTE_LIMIT} caracteres. Registe apenas a decisão operacional; não declare OCR, conversão ou aceitação legal.`}
+        hint={t('documents.import.review.noteHint', {
+          count: String(note.length),
+          limit: String(IMPORTED_DOCUMENT_REVIEW_NOTE_LIMIT),
+        })}
       >
         <TextArea
           id={`${controlId}-note`}
@@ -1664,7 +1678,7 @@ function ImportedDocumentReviewForm({
         />
       </Field>
       <div className="stack--tight">
-        <p className="card__label">Limites a reconhecer</p>
+        <p className="card__label">{t('documents.import.review.guardrailsToAck')}</p>
         <ul className="plain-list">
           {requiredGuardrails.map((guardrail) => (
             <li key={guardrail}>{importedGuardrailLabel(guardrail, t)}</li>
@@ -1678,8 +1692,7 @@ function ImportedDocumentReviewForm({
             disabled={isPending}
             onChange={(event) => onAcknowledgedChange(event.target.checked)}
           />
-          Confirmo que revi estes limites e que a decisão não promove o documento importado a
-          registo canónico, PDF/A substituto, PDF assinado ou aceitação legal.
+          {t('documents.import.review.ackLabel')}
         </label>
       </div>
       {error ? <ErrorNote error={error} /> : null}
@@ -1691,7 +1704,9 @@ function ImportedDocumentReviewForm({
         icon={<Icon.Pencil />}
         disabled={isPending || !acknowledged}
       >
-        {isPending ? 'A guardar revisão' : 'Guardar revisão'}
+        {isPending
+          ? t('documents.import.review.saving')
+          : t('documents.import.review.save')}
       </GateButton>
     </form>
   );
@@ -2064,7 +2079,7 @@ export function ActDocumentPanel({
         onSuccess: (document) => {
           setSelectedImportId(document.id);
           setReviewGuardrailsAcknowledged(false);
-          toast.success('Revisão do documento importado guardada.');
+          toast.success(t('documents.import.review.toast.saved'));
         },
         onError: (error) => toast.error(error),
       },
@@ -2407,7 +2422,7 @@ export function ActDocumentPanel({
                               : t('documents.import.imported')}
                           </Badge>
                           <Badge tone={importedReviewStatusTone(document.operator_review_status)}>
-                            {importedReviewStatusLabel(document.operator_review_status)}
+                            {importedReviewStatusLabel(document.operator_review_status, t)}
                           </Badge>
                           <Truncate text={displayName} />
                         </p>
