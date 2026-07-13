@@ -778,7 +778,18 @@ export const esES: Catalog = {
   'acts.sealing.warningAck.checkbox':
     'Reconozco explícitamente estos avisos de conformidad y quiero sellar el acta.',
   'acts.sealing.warningAck.confirm': 'Sellar acta con avisos',
-  'acts.sealing.unavailableState': 'El sellado solo está disponible en el estado «En firma».',
+  'acts.manualSignature.originalReference.label': 'Signed original reference',
+  'acts.manualSignature.originalReference.hint':
+    'Location, archive, folder, document id, or another internal reference.',
+  'acts.manualSignature.originalReference.tooLong':
+    'The signed original reference must be at most 512 characters.',
+  'acts.manualSignature.originalReference.displayLabel': 'Signed original',
+  'acts.manualSignature.custodian.label': 'Custodian',
+  'acts.manualSignature.custodian.hint': 'Responsible person, team, or service, if applicable.',
+  'acts.manualSignature.custodian.displayLabel': 'Custodian',
+  'acts.manualSignature.note.label': 'Note',
+  'acts.manualSignature.note.hint': 'Optional local context; do not record legal validation.',
+  'acts.manualSignature.note.displayLabel': 'Note',  'acts.sealing.unavailableState': 'El sellado solo está disponible en el estado «En firma».',
   'acts.sealing.fixErrors': 'Corrija los errores de conformidad para poder sellar.',
   'acts.sealing.sealing': 'Sellando…',
   'acts.sealing.seal': 'Sellar acta',
@@ -3164,7 +3175,7 @@ export const esES: Catalog = {
   'documents.generated.form.submit': 'Registrar evidencia',
   'documents.generated.form.submitting': 'Registrando...',
   'documents.generated.form.toast.success': 'Evidencia registrada por el operador guardada.',
-  'documents.import.sectionAria': 'Documentos importados de referência',
+  'documents.import.sectionAria': 'Documentos importados de referencia',
   'documents.import.title': 'Documentos importados',
   'documents.import.notice':
     'Los documentos importados se guardan como evidencia o referencia no canónica. No sustituyen el PDF/A preservado ni ningún PDF firmado; la importación no declara validez legal, conformidad PDF/A ni validez de firma.',
