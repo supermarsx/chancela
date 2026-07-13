@@ -24,6 +24,7 @@ import {
   CAE_LEVELS,
   CAE_REVISIONS,
   CAE_ROLES,
+  DATA_PAYLOAD_ESTIMATE_METHODS,
   DATA_PERSISTENCE_MODES,
   DATA_USAGE_BASES,
   DSR_REQUEST_OUTCOMES,
@@ -99,6 +100,7 @@ import {
   type DashboardTargetLinks,
   type DataManagementSettings,
   type DataDirStatus,
+  type DataPayloadStats,
   type DataPermissionCheck,
   type DataPermissionStatus,
   type DataPersistenceStatus,
@@ -510,7 +512,7 @@ function assertDataUsageConcern(obj: unknown, label: string): DataUsageConcern {
       relative_roots: true,
     },
     label,
-    ['kind', 'row_count'],
+    ['kind', 'row_count', 'payload_stats'],
   );
   expect(concern.id.length, `${label}.id should be non-empty`).toBeGreaterThan(0);
   if (concern.kind !== undefined) {
@@ -529,6 +531,9 @@ function assertDataUsageConcern(obj: unknown, label: string): DataUsageConcern {
   if (concern.row_count !== undefined) {
     expect(Number.isInteger(concern.row_count), `${label}.row_count should be integer`).toBe(true);
   }
+  if (concern.payload_stats !== undefined) {
+    assertDataPayloadStats(concern.payload_stats, `${label}.payload_stats`);
+  }
   expect(Array.isArray(concern.relative_roots), `${label}.relative_roots should be array`).toBe(
     true,
   );
@@ -536,6 +541,49 @@ function assertDataUsageConcern(obj: unknown, label: string): DataUsageConcern {
     expect(root.length, `${label}.relative_roots[] should be non-empty`).toBeGreaterThan(0);
   }
   return concern;
+}
+
+function assertDataPayloadStats(obj: unknown, label: string): DataPayloadStats {
+  const stats = assertExactKeys<DataPayloadStats>(
+    obj,
+    {
+      table_name: true,
+      estimated_payload_bytes: true,
+      row_count: true,
+      average_bytes_per_row: true,
+      estimate_method: true,
+      estimate_basis: true,
+    },
+    label,
+  );
+  expect(stats.table_name.length, `${label}.table_name should be non-empty`).toBeGreaterThan(0);
+  expect(
+    Number.isInteger(stats.estimated_payload_bytes),
+    `${label}.estimated_payload_bytes should be integer`,
+  ).toBe(true);
+  expect(
+    stats.estimated_payload_bytes,
+    `${label}.estimated_payload_bytes should be non-negative`,
+  ).toBeGreaterThanOrEqual(0);
+  expect(Number.isInteger(stats.row_count), `${label}.row_count should be integer`).toBe(true);
+  expect(stats.row_count, `${label}.row_count should be non-negative`).toBeGreaterThanOrEqual(0);
+  if (stats.average_bytes_per_row !== null) {
+    expect(
+      Number.isInteger(stats.average_bytes_per_row),
+      `${label}.average_bytes_per_row should be integer or null`,
+    ).toBe(true);
+    expect(
+      stats.average_bytes_per_row,
+      `${label}.average_bytes_per_row should be non-negative`,
+    ).toBeGreaterThanOrEqual(0);
+  }
+  inEnum(
+    DATA_PAYLOAD_ESTIMATE_METHODS,
+    stats.estimate_method,
+    `${label}.estimate_method`,
+  );
+  inEnum(DATA_USAGE_BASES, stats.estimate_basis, `${label}.estimate_basis`);
+  return stats;
 }
 
 function assertPrivacyRecordBase(
@@ -5030,6 +5078,7 @@ describe('contract fixtures parse through the real client', () => {
       status.usage,
       { total_bytes: true, filesystem: true, sqlite_logical: true, scan_errors: true },
       'DataStatusResponse.usage',
+      ['sqlite_largest_payload_table'],
     );
     expect(Number.isInteger(usage.total_bytes), 'usage.total_bytes integer').toBe(true);
     expect(usage.total_bytes, 'usage.total_bytes non-negative').toBeGreaterThanOrEqual(0);
@@ -5041,6 +5090,22 @@ describe('contract fixtures parse through the real client', () => {
     }
     for (const concern of usage.sqlite_logical) {
       assertDataUsageConcern(concern, 'DataStatusResponse.usage.sqlite_logical[]');
+    }
+    const tablePayload = usage.sqlite_logical.find(
+      (concern) => concern.kind === 'sqlite_logical_table',
+    );
+    expect(tablePayload, 'fixture should include a SQLite table payload row').toBeTruthy();
+    expect(tablePayload?.payload_stats?.estimate_method).toBe('local_loaded_payload_estimate');
+    expect(tablePayload?.payload_stats?.estimate_basis).toBe('sqlite_logical_payload');
+    expect(tablePayload?.payload_stats?.estimated_payload_bytes).toBe(tablePayload?.bytes);
+    expect(tablePayload?.payload_stats?.row_count).toBe(tablePayload?.row_count);
+    if (usage.sqlite_largest_payload_table !== undefined) {
+      const largest = assertDataPayloadStats(
+        usage.sqlite_largest_payload_table,
+        'DataStatusResponse.usage.sqlite_largest_payload_table',
+      );
+      expect(largest.estimate_method).toBe('local_loaded_payload_estimate');
+      expect(largest.estimate_basis).toBe('sqlite_logical_payload');
     }
     for (const error of usage.scan_errors) {
       expect(error.length, 'DataStatusResponse.usage.scan_errors[] non-empty').toBeGreaterThan(0);

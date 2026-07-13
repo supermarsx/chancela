@@ -11764,6 +11764,38 @@ mod tests {
             .unwrap_or_else(|| panic!("missing domain logical usage in {body}"));
         assert!(domain["row_count"].as_u64().expect("domain rows") >= 3);
         assert!(domain["bytes"].as_u64().expect("domain bytes") > 0);
+        let event_table = sqlite_logical
+            .iter()
+            .find(|entry| entry["id"] == "sqlite_table_events")
+            .unwrap_or_else(|| panic!("missing events table logical usage in {body}"));
+        assert_eq!(event_table["kind"], "sqlite_logical_table");
+        assert_eq!(
+            event_table["payload_stats"]["estimate_method"],
+            "local_loaded_payload_estimate"
+        );
+        assert_eq!(
+            event_table["payload_stats"]["estimate_basis"],
+            "sqlite_logical_payload"
+        );
+        assert_eq!(event_table["payload_stats"]["table_name"], "events");
+        assert_eq!(
+            event_table["payload_stats"]["estimated_payload_bytes"],
+            event_table["bytes"]
+        );
+        assert_eq!(
+            event_table["payload_stats"]["row_count"],
+            event_table["row_count"]
+        );
+        assert!(
+            event_table["payload_stats"]["average_bytes_per_row"]
+                .as_u64()
+                .expect("events average bytes per row")
+                > 0
+        );
+        assert_eq!(
+            body["usage"]["sqlite_largest_payload_table"]["estimate_method"],
+            "local_loaded_payload_estimate"
+        );
 
         assert!(body["usage"]["total_bytes"].as_u64().expect("total bytes") > 0);
         assert!(

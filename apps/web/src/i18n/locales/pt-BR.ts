@@ -2721,7 +2721,14 @@ export const ptBR: Catalog = {
   'data.status.usage.total': 'Total',
   'data.status.usage.filesystem': 'Sistema de ficheiros',
   'data.status.usage.sqliteLogical': 'SQLite lógico',
-  'data.status.usage.empty': 'Sem dados reportados.',
+  'data.status.usage.sqliteLogicalHint':
+    'Estimativas locais por tabela calculadas a partir da carga carregada; não comprovam exclusão, retenção, custódia ou criptografia em repouso.',
+  'data.status.usage.sqliteLargestTable':
+    'Maior tabela local estimada: {table} · {bytes} · {rows} linhas',
+  'data.status.usage.sqliteAverage': 'Média: {bytes}/linha',
+  'data.status.usage.sqliteAverageUnavailable': 'Média: —',
+  'data.status.usage.sqliteEstimateMethod.localLoadedPayload':
+    'Método: estimativa local da carga carregada',  'data.status.usage.empty': 'Sem dados reportados.',
   'data.status.basis.filesystem': 'ficheiros',
   'data.status.basis.sqlite_file': 'ficheiro SQLite',
   'data.status.basis.sqlite_logical_payload': 'payload SQLite lógico',

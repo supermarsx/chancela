@@ -4013,9 +4013,34 @@ function assertCheckpointMap() {
     "data status SQLite logical payload basis marker",
   );
   assertFileContains(
+    "crates/chancela-api/src/data_status.rs",
+    "pub struct DataPayloadStats",
+    "data status SQLite payload stats DTO marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/data_status.rs",
+    "PayloadEstimateMethod::LocalLoadedPayloadEstimate",
+    "data status SQLite payload stats local estimate method marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/data_status.rs",
+    "fn largest_sqlite_payload_table",
+    "data status SQLite largest payload table helper marker",
+  );
+  assertFileContains(
     "crates/chancela-api/src/lib.rs",
     'assert_eq!(ledger["basis"], "sqlite_logical_payload");',
     "API data status SQLite logical payload response coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    'event_table["payload_stats"]["estimate_method"]',
+    "API data status SQLite payload stats response coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    'body["usage"]["sqlite_largest_payload_table"]["estimate_method"]',
+    "API data status SQLite largest table response coverage",
   );
   assertFileContains(
     "crates/chancela-api/src/lib.rs",
@@ -6492,13 +6517,38 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/contracts/contracts.test.ts",
-    "['kind', 'row_count']",
-    "web data status contract optional kind tolerance marker",
+    "['kind', 'row_count', 'payload_stats']",
+    "web data status contract optional payload stats tolerance marker",
+  );
+  assertFileContains(
+    "apps/web/src/contracts/contracts.test.ts",
+    "assertDataPayloadStats",
+    "web data status payload stats contract helper marker",
+  );
+  assertFileContains(
+    "contracts/data.status.json",
+    '"sqlite_largest_payload_table"',
+    "data status contract largest SQLite payload table fixture marker",
   );
   assertFileContains(
     "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
     "kind: 'sqlite_logical_table'",
     "web data status sqlite logical table fixture marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "sqlite_largest_payload_table",
+    "web data status sqlite largest table fixture marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "Média: 256 B/linha",
+    "web data status sqlite average bytes rendering coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "não provam eliminação, retenção, custódia",
+    "web data status sqlite local-estimate no-claim copy coverage",
   );
   assertFileContains(
     "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
@@ -6534,6 +6584,16 @@ function assertCheckpointMap() {
     "apps/web/src/features/recovery/GestaoDadosSection.tsx",
     "function SqliteTablePayloadList",
     "web data status sqlite table list component marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "function sqlitePayloadStats",
+    "web data status sqlite payload stats helper marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "data.status.usage.sqliteLogicalHint",
+    "web data status sqlite local-estimate caveat marker",
   );
   assertFileContains(
     "crates/chancela-store/src/recovery.rs",
@@ -9813,6 +9873,21 @@ function assertCheckpointMap() {
     "SPEC-COVERAGE.md",
     "`2187a67` keeps Data/Architecture/CI **PARTIAL**",
     "spec coverage SQLite logical usage checkpoint marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "additive per-table `payload_stats` with\n  `estimated_payload_bytes`, `row_count`, `average_bytes_per_row`",
+    "spec coverage data-status payload stats working-tree marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "`local_loaded_payload_estimate`, and `sqlite_largest_payload_table` summary\n  metadata",
+    "spec coverage data-status local estimate and largest table marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "read-only local payload telemetry only; it does not add cleanup execution,\n  deletion/retention semantics",
+    "spec coverage data-status payload stats no-claim marker",
   );
   assertFileExists(
     "docs/fixtures/validator-corpus/manifest.json",

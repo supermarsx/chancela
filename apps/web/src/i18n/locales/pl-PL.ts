@@ -2716,7 +2716,14 @@ export const plPL: Catalog = {
   'data.status.usage.total': 'Total',
   'data.status.usage.filesystem': 'Filesystem',
   'data.status.usage.sqliteLogical': 'SQLite logical',
-  'data.status.usage.empty': 'No data reported.',
+  'data.status.usage.sqliteLogicalHint':
+    'Local per-table estimates calculated from the loaded payload; they do not prove deletion, retention, custody, or at-rest encryption.',
+  'data.status.usage.sqliteLargestTable':
+    'Largest local estimated table: {table} · {bytes} · {rows} rows',
+  'data.status.usage.sqliteAverage': 'Average: {bytes}/row',
+  'data.status.usage.sqliteAverageUnavailable': 'Average: —',
+  'data.status.usage.sqliteEstimateMethod.localLoadedPayload':
+    'Method: local loaded-payload estimate',  'data.status.usage.empty': 'No data reported.',
   'data.status.basis.filesystem': 'filesystem',
   'data.status.basis.sqlite_file': 'SQLite file',
   'data.status.basis.sqlite_logical_payload': 'SQLite logical payload',

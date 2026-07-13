@@ -6103,6 +6103,9 @@ export type DataPersistenceMode = (typeof DATA_PERSISTENCE_MODES)[number];
 export const DATA_USAGE_BASES = ['filesystem', 'sqlite_logical_payload', 'sqlite_file'] as const;
 export type DataUsageBasis = (typeof DATA_USAGE_BASES)[number];
 
+export const DATA_PAYLOAD_ESTIMATE_METHODS = ['local_loaded_payload_estimate'] as const;
+export type DataPayloadEstimateMethod = (typeof DATA_PAYLOAD_ESTIMATE_METHODS)[number];
+
 export interface DataPersistenceStatus {
   mode: DataPersistenceMode;
   data_dir_configured: boolean;
@@ -6134,6 +6137,15 @@ export interface DataPermissionStatus {
   sqlite_store_open: DataPermissionCheck;
 }
 
+export interface DataPayloadStats {
+  table_name: string;
+  estimated_payload_bytes: number;
+  row_count: number;
+  average_bytes_per_row: number | null;
+  estimate_method: DataPayloadEstimateMethod;
+  estimate_basis: DataUsageBasis;
+}
+
 export interface DataUsageConcern {
   id: string;
   kind?: string;
@@ -6144,6 +6156,7 @@ export interface DataUsageConcern {
   file_count: number;
   directory_count: number;
   row_count?: number;
+  payload_stats?: DataPayloadStats;
   relative_roots: string[];
 }
 
@@ -6151,6 +6164,7 @@ export interface DataUsageStatus {
   total_bytes: number;
   filesystem: DataUsageConcern[];
   sqlite_logical: DataUsageConcern[];
+  sqlite_largest_payload_table?: DataPayloadStats;
   scan_errors: string[];
 }
 

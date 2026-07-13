@@ -147,12 +147,16 @@ pub struct UsageStatus {
     pub total_bytes: u64,
     pub filesystem: Vec<ConcernUsage>,
     pub sqlite_logical: Vec<ConcernUsage>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sqlite_largest_payload_table: Option<DataPayloadStats>,
     pub scan_errors: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ConcernUsage {
     pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<UsageConcernKind>,
     pub label: String,
     pub bytes: u64,
     pub basis: UsageBasis,
@@ -161,7 +165,31 @@ pub struct ConcernUsage {
     pub directory_count: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub row_count: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub payload_stats: Option<DataPayloadStats>,
     pub relative_roots: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UsageConcernKind {
+    SqliteLogicalTable,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct DataPayloadStats {
+    pub table_name: String,
+    pub estimated_payload_bytes: u64,
+    pub row_count: u64,
+    pub average_bytes_per_row: Option<u64>,
+    pub estimate_method: PayloadEstimateMethod,
+    pub estimate_basis: UsageBasis,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PayloadEstimateMethod {
+    LocalLoadedPayloadEstimate,
 }
 
 #[derive(Debug, Deserialize)]
@@ -220,7 +248,7 @@ impl fmt::Debug for DataKeyRotationExecuteRequest {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum UsageBasis {
     Filesystem,
@@ -1393,6 +1421,7 @@ fn inspect_unconfigured_data_dir(durable_store_open: bool) -> FsInspection {
             total_bytes: 0,
             filesystem: Vec::new(),
             sqlite_logical: Vec::new(),
+            sqlite_largest_payload_table: None,
             scan_errors: Vec::new(),
         },
     }
@@ -1417,6 +1446,7 @@ fn inspect_data_dir(dir: PathBuf, store: Option<chancela_store::Store>) -> FsIns
     let mut usage = scan_filesystem_usage(&dir);
     if let Some(store) = store.as_ref() {
         usage.sqlite_logical = scan_sqlite_logical_usage(store, &mut usage.scan_errors);
+        usage.sqlite_largest_payload_table = largest_sqlite_payload_table(&usage.sqlite_logical);
     }
     scan_errors.append(&mut usage.scan_errors);
     usage.scan_errors = scan_errors;
@@ -1546,6 +1576,7 @@ fn scan_filesystem_usage(dir: &Path) -> UsageStatus {
             total_bytes: 0,
             filesystem: Vec::new(),
             sqlite_logical: Vec::new(),
+            sqlite_largest_payload_table: None,
             scan_errors,
         };
     }
@@ -1557,6 +1588,7 @@ fn scan_filesystem_usage(dir: &Path) -> UsageStatus {
         total_bytes = total_bytes.saturating_add(acc.bytes);
         filesystem.push(ConcernUsage {
             id: def.id.to_owned(),
+            kind: None,
             label: def.label.to_owned(),
             bytes: acc.bytes,
             basis: def.basis,
@@ -1564,6 +1596,7 @@ fn scan_filesystem_usage(dir: &Path) -> UsageStatus {
             file_count: acc.file_count,
             directory_count: acc.directory_count,
             row_count: None,
+            payload_stats: None,
             relative_roots: acc.relative_roots.into_keys().collect(),
         });
     }
@@ -1572,6 +1605,7 @@ fn scan_filesystem_usage(dir: &Path) -> UsageStatus {
         total_bytes,
         filesystem,
         sqlite_logical: Vec::new(),
+        sqlite_largest_payload_table: None,
         scan_errors,
     }
 }
@@ -1893,6 +1927,7 @@ fn sqlite_logical_concern(
 ) -> ConcernUsage {
     ConcernUsage {
         id: id.to_owned(),
+        kind: None,
         label: label.to_owned(),
         bytes,
         basis: UsageBasis::SqliteLogicalPayload,
@@ -1900,13 +1935,23 @@ fn sqlite_logical_concern(
         file_count: 0,
         directory_count: 0,
         row_count: Some(row_count),
+        payload_stats: None,
         relative_roots: tables.into_iter().map(str::to_owned).collect(),
     }
 }
 
 fn sqlite_logical_table(table: &str, row_count: u64, bytes: u64) -> ConcernUsage {
+    let payload_stats = DataPayloadStats {
+        table_name: table.to_owned(),
+        estimated_payload_bytes: bytes,
+        row_count,
+        average_bytes_per_row: (row_count > 0).then(|| bytes / row_count),
+        estimate_method: PayloadEstimateMethod::LocalLoadedPayloadEstimate,
+        estimate_basis: UsageBasis::SqliteLogicalPayload,
+    };
     ConcernUsage {
         id: format!("sqlite_table_{table}"),
+        kind: Some(UsageConcernKind::SqliteLogicalTable),
         label: format!("SQLite table: {table}"),
         bytes,
         basis: UsageBasis::SqliteLogicalPayload,
@@ -1914,8 +1959,23 @@ fn sqlite_logical_table(table: &str, row_count: u64, bytes: u64) -> ConcernUsage
         file_count: 0,
         directory_count: 0,
         row_count: Some(row_count),
+        payload_stats: Some(payload_stats),
         relative_roots: vec![table.to_owned()],
     }
+}
+
+fn largest_sqlite_payload_table(usage: &[ConcernUsage]) -> Option<DataPayloadStats> {
+    usage
+        .iter()
+        .filter_map(|entry| entry.payload_stats.as_ref())
+        .max_by_key(|stats| {
+            (
+                stats.estimated_payload_bytes,
+                stats.row_count,
+                stats.table_name.len(),
+            )
+        })
+        .cloned()
 }
 
 fn json_len_estimate(value: &impl Serialize) -> u64 {
@@ -2372,11 +2432,22 @@ mod tests {
 
         let events = sqlite_usage_entry(&usage, "sqlite_table_events");
         assert_eq!(events.label, "SQLite table: events");
+        assert_eq!(events.kind, Some(UsageConcernKind::SqliteLogicalTable));
         assert!(matches!(events.basis, UsageBasis::SqliteLogicalPayload));
         assert!(!events.exact);
         assert_eq!(events.row_count, Some(1));
         assert!(events.bytes > 0);
         assert_eq!(events.relative_roots, vec!["events".to_owned()]);
+        let event_stats = events.payload_stats.as_ref().expect("events payload stats");
+        assert_eq!(event_stats.table_name, "events");
+        assert_eq!(event_stats.row_count, 1);
+        assert_eq!(event_stats.estimated_payload_bytes, events.bytes);
+        assert_eq!(event_stats.average_bytes_per_row, Some(events.bytes));
+        assert_eq!(
+            event_stats.estimate_method,
+            PayloadEstimateMethod::LocalLoadedPayloadEstimate
+        );
+        assert_eq!(event_stats.estimate_basis, UsageBasis::SqliteLogicalPayload);
 
         let entities = sqlite_usage_entry(&usage, "sqlite_table_entities");
         assert_eq!(entities.row_count, Some(1));
@@ -2386,6 +2457,21 @@ mod tests {
         let books = sqlite_usage_entry(&usage, "sqlite_table_books");
         assert_eq!(books.row_count, Some(0));
         assert_eq!(books.bytes, 0);
+        assert_eq!(
+            books
+                .payload_stats
+                .as_ref()
+                .expect("books payload stats")
+                .average_bytes_per_row,
+            None
+        );
+
+        let largest = largest_sqlite_payload_table(&usage).expect("largest payload table");
+        assert!(largest.estimated_payload_bytes >= event_stats.estimated_payload_bytes);
+        assert_eq!(
+            largest.estimate_method,
+            PayloadEstimateMethod::LocalLoadedPayloadEstimate
+        );
     }
 
     #[test]

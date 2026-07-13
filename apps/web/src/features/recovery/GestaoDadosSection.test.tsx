@@ -107,6 +107,14 @@ const durableStatus: DataStatusResponse = {
         file_count: 0,
         directory_count: 0,
         row_count: 3,
+        payload_stats: {
+          table_name: 'ledger_events',
+          estimated_payload_bytes: 768,
+          row_count: 3,
+          average_bytes_per_row: 256,
+          estimate_method: 'local_loaded_payload_estimate',
+          estimate_basis: 'sqlite_logical_payload',
+        },
         relative_roots: ['ledger_events'],
       },
       {
@@ -119,9 +127,25 @@ const durableStatus: DataStatusResponse = {
         file_count: 0,
         directory_count: 0,
         row_count: 12,
+        payload_stats: {
+          table_name: 'entity_enrichment_cache_with_a_very_long_table_name',
+          estimated_payload_bytes: 256,
+          row_count: 12,
+          average_bytes_per_row: 21,
+          estimate_method: 'local_loaded_payload_estimate',
+          estimate_basis: 'sqlite_logical_payload',
+        },
         relative_roots: ['entity_enrichment_cache_with_a_very_long_table_name'],
       },
     ],
+    sqlite_largest_payload_table: {
+      table_name: 'ledger_events',
+      estimated_payload_bytes: 768,
+      row_count: 3,
+      average_bytes_per_row: 256,
+      estimate_method: 'local_loaded_payload_estimate',
+      estimate_basis: 'sqlite_logical_payload',
+    },
     scan_errors: ['failed to read exports: access denied'],
   },
 };
@@ -315,6 +339,12 @@ describe('GestaoDadosSection', () => {
     expect(tablePayloads).toBeTruthy();
     const tableRows = tablePayloads.querySelectorAll('.data-status-sqlite-table-row');
     expect(tableRows).toHaveLength(2);
+    expect(
+      within(sqliteGroup as HTMLElement).getByText(/não provam eliminação, retenção, custódia/),
+    ).toBeTruthy();
+    expect(
+      within(sqliteGroup as HTMLElement).getByText(/Maior tabela local estimada: ledger_events/),
+    ).toBeTruthy();
     expect(within(tablePayloads as HTMLElement).getByText('ledger_events')).toBeTruthy();
     expect(
       within(tablePayloads as HTMLElement).getByText(
@@ -323,6 +353,12 @@ describe('GestaoDadosSection', () => {
     ).toBeTruthy();
     expect(within(tablePayloads as HTMLElement).getByText('Linhas: 12')).toBeTruthy();
     expect(within(tablePayloads as HTMLElement).getByText('768 B')).toBeTruthy();
+    expect(within(tablePayloads as HTMLElement).getByText('Média: 256 B/linha')).toBeTruthy();
+    expect(
+      within(tablePayloads as HTMLElement).getAllByText(
+        'Método: estimativa local da carga carregada',
+      ).length,
+    ).toBe(2);
     expect(tablePayloads.textContent).not.toContain('SQLite table ledger_events');
     expect(screen.getByText('failed to read exports: access denied')).toBeTruthy();
 

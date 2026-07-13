@@ -48,6 +48,7 @@ import {
   type DataKeyRotationExecution,
   type DataKeyRotationPreflight,
   type DataKeyRotationPreflightBody,
+  type DataPayloadStats,
   type DataPermissionCheck,
   type DataPermissionStatus,
   type DataPersistenceMode,
@@ -289,6 +290,21 @@ function sqliteTableLabel(concern: DataUsageConcern): string {
   const root = concern.relative_roots.find((candidate) => candidate.trim().length > 0);
   const label = stripSqliteTablePrefix(root ?? concern.label);
   return label || stripSqliteTablePrefix(concern.id);
+}
+
+function sqlitePayloadStats(concern: DataUsageConcern): DataPayloadStats {
+  const rowCount = concern.payload_stats?.row_count ?? concern.row_count ?? 0;
+  const bytes = concern.payload_stats?.estimated_payload_bytes ?? concern.bytes;
+  return {
+    table_name: concern.payload_stats?.table_name ?? sqliteTableLabel(concern),
+    estimated_payload_bytes: bytes,
+    row_count: rowCount,
+    average_bytes_per_row:
+      concern.payload_stats?.average_bytes_per_row ??
+      (rowCount > 0 ? Math.floor(bytes / rowCount) : null),
+    estimate_method: concern.payload_stats?.estimate_method ?? 'local_loaded_payload_estimate',
+    estimate_basis: concern.payload_stats?.estimate_basis ?? concern.basis,
+  };
 }
 
 function usageForTarget(
@@ -982,17 +998,25 @@ function SqliteTablePayloadList({
   return (
     <ul className="data-status-sqlite-table-list" aria-label={t('data.status.usage.sqliteLogical')}>
       {concerns.map((concern) => {
-        const label = sqliteTableLabel(concern);
+        const stats = sqlitePayloadStats(concern);
+        const label = stats.table_name || sqliteTableLabel(concern);
         const rowCount =
-          concern.row_count === undefined
+          stats.row_count === undefined
             ? '—'
             : t('data.status.rows', {
-                count: new Intl.NumberFormat(locale).format(concern.row_count),
+                count: new Intl.NumberFormat(locale).format(stats.row_count),
+              });
+        const average =
+          stats.average_bytes_per_row === null
+            ? t('data.status.usage.sqliteAverageUnavailable')
+            : t('data.status.usage.sqliteAverage', {
+                bytes: formatBytes(stats.average_bytes_per_row, locale),
               });
         const meta = [
           label,
-          formatBytes(concern.bytes, locale),
+          formatBytes(stats.estimated_payload_bytes, locale),
           ...concernMetaItems(concern, t, locale),
+          average,
         ];
         return (
           <li
@@ -1005,7 +1029,11 @@ function SqliteTablePayloadList({
             </span>
             <span className="data-status-sqlite-table-row__rows">{rowCount}</span>
             <span className="data-status-sqlite-table-row__bytes mono">
-              {formatBytes(concern.bytes, locale)}
+              {formatBytes(stats.estimated_payload_bytes, locale)}
+            </span>
+            <span className="data-status-sqlite-table-row__average">{average}</span>
+            <span className="data-status-sqlite-table-row__method">
+              {t('data.status.usage.sqliteEstimateMethod.localLoadedPayload')}
             </span>
           </li>
         );
@@ -1016,10 +1044,12 @@ function SqliteTablePayloadList({
 
 function SqliteLogicalUsageList({
   concerns,
+  largestPayloadTable,
   locale,
   t,
 }: {
   concerns: DataUsageConcern[];
+  largestPayloadTable?: DataPayloadStats;
   locale: string;
   t: TFunction;
 }) {
@@ -1029,9 +1059,24 @@ function SqliteLogicalUsageList({
 
   const tableConcerns = concerns.filter(isSqliteTableConcern);
   const summaryConcerns = concerns.filter((concern) => !isSqliteTableConcern(concern));
+  const largest =
+    largestPayloadTable ??
+    tableConcerns
+      .map(sqlitePayloadStats)
+      .sort((left, right) => right.estimated_payload_bytes - left.estimated_payload_bytes)[0];
 
   return (
     <div className="data-status-sqlite-usage">
+      <p className="data-status-section__hint">{t('data.status.usage.sqliteLogicalHint')}</p>
+      {largest ? (
+        <p className="data-status-sqlite-table-summary">
+          {t('data.status.usage.sqliteLargestTable', {
+            table: largest.table_name,
+            bytes: formatBytes(largest.estimated_payload_bytes, locale),
+            rows: new Intl.NumberFormat(locale).format(largest.row_count),
+          })}
+        </p>
+      ) : null}
       {summaryConcerns.length > 0 ? (
         <UsageList concerns={summaryConcerns} locale={locale} t={t} />
       ) : null}
@@ -1354,6 +1399,7 @@ function DataStatusPanel() {
                 <h5>{t('data.status.usage.sqliteLogical')}</h5>
                 <SqliteLogicalUsageList
                   concerns={data.usage.sqlite_logical}
+                  largestPayloadTable={data.usage.sqlite_largest_payload_table}
                   locale={locale}
                   t={t}
                 />

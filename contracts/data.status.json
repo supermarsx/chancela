@@ -77,8 +77,56 @@
         "directory_count": 0,
         "row_count": 3,
         "relative_roots": ["ledger_events"]
+      },
+      {
+        "id": "sqlite_table_events",
+        "kind": "sqlite_logical_table",
+        "label": "SQLite table: events",
+        "bytes": 1024,
+        "basis": "sqlite_logical_payload",
+        "exact": false,
+        "file_count": 0,
+        "directory_count": 0,
+        "row_count": 3,
+        "payload_stats": {
+          "table_name": "events",
+          "estimated_payload_bytes": 1024,
+          "row_count": 3,
+          "average_bytes_per_row": 341,
+          "estimate_method": "local_loaded_payload_estimate",
+          "estimate_basis": "sqlite_logical_payload"
+        },
+        "relative_roots": ["events"]
+      },
+      {
+        "id": "sqlite_table_books",
+        "kind": "sqlite_logical_table",
+        "label": "SQLite table: books",
+        "bytes": 0,
+        "basis": "sqlite_logical_payload",
+        "exact": false,
+        "file_count": 0,
+        "directory_count": 0,
+        "row_count": 0,
+        "payload_stats": {
+          "table_name": "books",
+          "estimated_payload_bytes": 0,
+          "row_count": 0,
+          "average_bytes_per_row": null,
+          "estimate_method": "local_loaded_payload_estimate",
+          "estimate_basis": "sqlite_logical_payload"
+        },
+        "relative_roots": ["books"]
       }
     ],
+    "sqlite_largest_payload_table": {
+      "table_name": "events",
+      "estimated_payload_bytes": 1024,
+      "row_count": 3,
+      "average_bytes_per_row": 341,
+      "estimate_method": "local_loaded_payload_estimate",
+      "estimate_basis": "sqlite_logical_payload"
+    },
     "scan_errors": ["failed to read exports: access denied"]
   }
 }
