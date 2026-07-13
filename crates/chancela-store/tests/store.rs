@@ -435,7 +435,7 @@ fn ledger_events_page_walks_persisted_events_newest_first_without_duplicates() {
         );
     }
 
-    let expected_len = ledger.len() as usize;
+    let expected_len = ledger.len();
     assert!(expected_len > 1_000);
     drop(store);
     let store = Store::open(dir.path()).expect("reopen");
