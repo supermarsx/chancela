@@ -448,8 +448,6 @@ mod tests {
         store: &ProviderCredentialStore,
         provider_id: &str,
         entry_id: &str,
-        priority: i32,
-        enabled: bool,
         pfx: &[u8],
         stored_password: &str,
         selectors: EntrySelectors,
@@ -462,8 +460,8 @@ mod tests {
                 entry_id,
                 Some(EntryMetadata {
                     label: format!("entry-{entry_id}"),
-                    priority,
-                    enabled,
+                    priority: 0,
+                    enabled: true,
                     endpoint: None,
                     selectors,
                 }),
@@ -789,16 +787,7 @@ mod tests {
             crate::credential_resolve::SELECTOR_PKCS12_LOCAL_KEY_ID_HEX.to_owned(),
             hex_encode(&second),
         );
-        put_pkcs12_entry_raw(
-            &store,
-            "amelia",
-            "multi",
-            0,
-            true,
-            &pfx,
-            PFX_PASSWORD,
-            selectors,
-        );
+        put_pkcs12_entry_raw(&store, "amelia", "multi", &pfx, PFX_PASSWORD, selectors);
 
         let err = select_stored_pkcs12_candidate(&store, "amelia", None).expect_err(
             "an ambiguous local_key_id selection must be refused, not silently mis-signed",
@@ -824,16 +813,7 @@ mod tests {
             crate::credential_resolve::SELECTOR_PKCS12_FRIENDLY_NAME.to_owned(),
             "Amélia B".to_owned(),
         );
-        put_pkcs12_entry_raw(
-            &store,
-            "amelia",
-            "multi",
-            0,
-            true,
-            &pfx,
-            PFX_PASSWORD,
-            selectors,
-        );
+        put_pkcs12_entry_raw(&store, "amelia", "multi", &pfx, PFX_PASSWORD, selectors);
 
         let chosen = select_stored_pkcs12_candidate(&store, "amelia", None)
             .expect("a unique friendly_name in a multi-identity PFX must still sign");
@@ -854,16 +834,7 @@ mod tests {
             crate::credential_resolve::SELECTOR_PKCS12_LOCAL_KEY_ID_HEX.to_owned(),
             hex_encode(&lkid),
         );
-        put_pkcs12_entry_raw(
-            &store,
-            "amelia",
-            "single",
-            0,
-            true,
-            &pfx,
-            PFX_PASSWORD,
-            selectors,
-        );
+        put_pkcs12_entry_raw(&store, "amelia", "single", &pfx, PFX_PASSWORD, selectors);
 
         let chosen = select_stored_pkcs12_candidate(&store, "amelia", None)
             .expect("a single-identity PFX selected by local_key_id must still sign");
