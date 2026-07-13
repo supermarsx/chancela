@@ -299,6 +299,7 @@ async function sha256Hex(buffer: ArrayBuffer): Promise<string> {
 }
 
 function LegalHoldPanel({ bookId }: { bookId: string }) {
+  const t = useT();
   const toast = useToast();
   const hold = useBookLegalHold(bookId);
   const setHold = useSetBookLegalHold(bookId);
@@ -337,7 +338,7 @@ function LegalHoldPanel({ bookId }: { bookId: string }) {
   const workflow = hold.data?.operator_workflow;
 
   return (
-    <Card title="Retenção legal">
+    <Card title={t('books.detail.legalHold.title')}>
       <div className="stack">
         {hold.isLoading ? (
           <SkeletonDeflist />
@@ -347,7 +348,7 @@ function LegalHoldPanel({ bookId }: { bookId: string }) {
           <>
             <InlineWarning
               tone={active ? 'warn' : 'info'}
-              title={active ? 'Ativa' : 'Sem retenção'}
+              title={active ? t('books.detail.legalHold.stateActive') : t('books.detail.legalHold.stateNone')}
             >
               A retenção legal bloqueia o descarte por regras de retenção enquanto estiver ativa.
               Este painel mostra evidência local de estado/revisão e não aprova descarte nem
@@ -405,13 +406,13 @@ function LegalHoldPanel({ bookId }: { bookId: string }) {
         )}
 
         <form className="form" onSubmit={submit}>
-          <Field label="Motivo da retenção legal" htmlFor="book-legal-hold-reason">
+          <Field label={t('books.detail.legalHold.reasonLabel')} htmlFor="book-legal-hold-reason">
             <TextArea
               id="book-legal-hold-reason"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               rows={3}
-              placeholder="Ex.: litígio, auditoria ou pedido de autoridade"
+              placeholder={t('books.detail.legalHold.reasonPlaceholder')}
             />
           </Field>
           <div className="form__actions">
@@ -450,6 +451,7 @@ function PaperBookOcrDraftReviewForm({
   draft: PaperBookOcrDraftView;
   importId: string;
 }) {
+  const t = useT();
   const toast = useToast();
   const review = useReviewPaperBookOcrDraft();
   const initialStatus = isPaperBookOcrReviewPatchStatus(draft.review_status)
@@ -492,8 +494,8 @@ function PaperBookOcrDraftReviewForm({
   }
 
   return (
-    <form className="form" aria-label="Revisão OCR auxiliar" onSubmit={submit}>
-      <Field label="Estado da revisão OCR" htmlFor={`ocr-review-status-${draft.draft_id}`}>
+    <form className="form" aria-label={t('books.detail.ocrReview.formLabel')} onSubmit={submit}>
+      <Field label={t('books.detail.ocrReview.statusLabel')} htmlFor={`ocr-review-status-${draft.draft_id}`}>
         <Select
           id={`ocr-review-status-${draft.draft_id}`}
           value={status}
@@ -503,9 +505,9 @@ function PaperBookOcrDraftReviewForm({
       </Field>
       {superseded ? (
         <Field
-          label="Rascunho sucessor"
+          label={t('books.detail.ocrReview.successorLabel')}
           htmlFor={`ocr-review-successor-${draft.draft_id}`}
-          hint="Obrigatório apenas quando a revisão marca este rascunho como substituído."
+          hint={t('books.detail.ocrReview.successorHint')}
         >
           <Input
             id={`ocr-review-successor-${draft.draft_id}`}
@@ -515,7 +517,7 @@ function PaperBookOcrDraftReviewForm({
         </Field>
       ) : null}
       <Field
-        label="Nota da revisão OCR"
+        label={t('books.detail.ocrReview.noteLabel')}
         htmlFor={`ocr-review-note-${draft.draft_id}`}
         hint={`${note.length}/${PAPER_BOOK_OCR_REVIEW_NOTE_LIMIT} caracteres. Registe apenas a decisão de revisão auxiliar; não declare conversão, assinatura ou validade legal.`}
       >
@@ -556,10 +558,11 @@ function PaperBookOcrConversionExecutionArtifactPanel({
 }: {
   artifact: PaperBookOcrConversionExecutionArtifactView;
 }) {
+  const t = useT();
   return (
     <section
       className="stack--tight"
-      aria-label={`Evidência de execução de conversão revista ${artifact.artifact_id}`}
+      aria-label={t('books.detail.ocrArtifact.sectionLabel', { id: artifact.artifact_id })}
     >
       <div className="row-wrap">
         <Badge tone={artifact.reviewed_conversion_execution_artifact ? 'ok' : 'warn'}>
@@ -570,7 +573,7 @@ function PaperBookOcrConversionExecutionArtifactPanel({
         </Badge>
         <Badge tone="warn">Não canónico</Badge>
       </div>
-      <InlineWarning tone="info" title="Evidência de promoção para rascunho mutável">
+      <InlineWarning tone="info" title={t('books.detail.ocrArtifact.promotionTitle')}>
         <p>{artifact.artifact_notice}</p>
         <p>{artifact.legal_notice}</p>
       </InlineWarning>
@@ -684,18 +687,19 @@ function PaperBookOcrConversionDossierPanel({
   createError: unknown;
   onCreate: (draft: PaperBookOcrDraftView) => void;
 }) {
+  const t = useT();
   if (dossier) {
     return (
       <section
         className="stack--tight"
-        aria-label={`Dossier de conversão OCR ${dossier.dossier_id}`}
+        aria-label={t('books.detail.ocrDossier.sectionLabel', { id: dossier.dossier_id })}
       >
         <div className="row-wrap">
           <Badge tone="ok">Dossier já registado</Badge>
           <Badge tone="warn">Só metadados</Badge>
           <Badge tone="warn">Não canónico</Badge>
         </div>
-        <InlineWarning tone="info" title="Dossier de conversão só de metadados">
+        <InlineWarning tone="info" title={t('books.detail.ocrDossier.metadataTitle')}>
           <p>{dossier.dossier_notice}</p>
           <p>{dossier.legal_notice}</p>
         </InlineWarning>
@@ -771,7 +775,7 @@ function PaperBookOcrConversionDossierPanel({
         {dossier.conversion_execution_artifacts?.length ? (
           <div
             className="stack--tight"
-            aria-label={`Evidências de execução de conversão revista do dossier ${dossier.dossier_id}`}
+            aria-label={t('books.detail.ocrDossier.artifactsLabel', { id: dossier.dossier_id })}
           >
             <p className="card__label">Evidência de execução de conversão revista</p>
             {dossier.conversion_execution_artifacts.map((artifact) => (
@@ -791,9 +795,9 @@ function PaperBookOcrConversionDossierPanel({
   return (
     <section
       className="stack--tight"
-      aria-label={`Criar dossier de conversão OCR para ${draft.draft_id}`}
+      aria-label={t('books.detail.ocrDossier.createSectionLabel', { id: draft.draft_id })}
     >
-      <InlineWarning tone="info" title="Dossier de conversão só de metadados">
+      <InlineWarning tone="info" title={t('books.detail.ocrDossier.metadataTitle')}>
         Cria ou devolve um dossier só com metadados, digest e evidência de revisão do rascunho OCR
         aceite. Não cria ata, documento, PDF/A, assinatura, selo, pacote de arquivo ou validade
         legal.
@@ -832,6 +836,7 @@ function PaperBookOcrDossierReviewSummary({
   drafts: PaperBookOcrDraftView[];
   loading: boolean;
 }) {
+  const t = useT();
   const acceptedDraft = drafts.find((draft) => draft.review_status === 'accepted') ?? null;
   const acceptedDossier = acceptedDraft
     ? (dossiers.find((dossier) => dossier.draft_id === acceptedDraft.draft_id) ?? null)
@@ -850,7 +855,7 @@ function PaperBookOcrDossierReviewSummary({
   return (
     <section
       className="stack--tight"
-      aria-label="Resumo de profundidade OCR e dossier do livro em papel"
+      aria-label={t('books.detail.ocrSummary.sectionLabel')}
     >
       <p className="card__label">Resumo OCR/dossier derivado</p>
       <dl className="deflist deflist--tight">
@@ -933,6 +938,7 @@ function PaperBookCanonicalConversionPreflightGate({
   drafts: PaperBookOcrDraftView[];
   loading: boolean;
 }) {
+  const t = useT();
   const acceptedDraft = drafts.find((draft) => draft.review_status === 'accepted') ?? null;
   const acceptedDossier = acceptedDraft
     ? (dossiers.find((dossier) => dossier.draft_id === acceptedDraft.draft_id) ?? null)
@@ -947,10 +953,10 @@ function PaperBookCanonicalConversionPreflightGate({
   return (
     <section
       className="stack--tight"
-      aria-label={`Preflight de conversão canónica OCR da importação ${row.import_id}`}
+      aria-label={t('books.detail.preflight.sectionLabel', { id: row.import_id })}
     >
       <p className="card__label">Preflight canónico OCR read-only</p>
-      <InlineWarning tone="info" title="Metadata-only, read-only, non-canonical">
+      <InlineWarning tone="info" title={t('books.detail.preflight.metadataOnlyTitle')}>
         Evidência bounded para revisão de conversão canónica posterior. Não executa conversão, não
         promove rascunhos e não aceita legalmente o conteúdo.
       </InlineWarning>
@@ -1019,6 +1025,7 @@ function PaperBookCanonicalConversionPreflightGate({
 }
 
 function PaperBookOcrDraftPanel({ row }: { row: PaperBookImportView }) {
+  const t = useT();
   const toast = useToast();
   const drafts = usePaperBookOcrDrafts(row.import_id);
   const dossiers = usePaperBookOcrConversionDossiers(row.import_id);
@@ -1132,8 +1139,8 @@ function PaperBookOcrDraftPanel({ row }: { row: PaperBookImportView }) {
   }
 
   return (
-    <section className="stack--tight" aria-label={`Rascunhos OCR da importação ${row.import_id}`}>
-      <InlineWarning tone="info" title="Rascunhos OCR e revisão auxiliar">
+    <section className="stack--tight" aria-label={t('books.detail.ocrDraft.sectionLabel', { id: row.import_id })}>
+      <InlineWarning tone="info" title={t('books.detail.ocrDraft.reviewTitle')}>
         {PAPER_BOOK_OCR_DRAFT_COPY}
       </InlineWarning>
       <PaperBookOcrDossierReviewSummary
@@ -1147,11 +1154,11 @@ function PaperBookOcrDraftPanel({ row }: { row: PaperBookImportView }) {
         drafts={rows}
         loading={dossiers.isLoading}
       />
-      <form className="form" aria-label="Criar rascunho OCR auxiliar" onSubmit={submit}>
+      <form className="form" aria-label={t('books.detail.ocrDraft.createFormLabel')} onSubmit={submit}>
         <Field
-          label="Texto OCR auxiliar"
+          label={t('books.detail.ocrDraft.textLabel')}
           htmlFor={`ocr-text-${row.import_id}`}
-          hint="Opcional se indicar digest; este texto é auxiliar e não é texto legal nem ata canónica."
+          hint={t('books.detail.ocrDraft.textHint')}
         >
           <TextArea
             id={`ocr-text-${row.import_id}`}
@@ -1162,18 +1169,18 @@ function PaperBookOcrDraftPanel({ row }: { row: PaperBookImportView }) {
         </Field>
         <div className="form-grid">
           <Field
-            label="Digest SHA-256 do texto"
+            label={t('books.detail.ocrDraft.digestLabel')}
             htmlFor={`ocr-digest-${row.import_id}`}
-            hint="Opcional; use quando não quiser armazenar o texto OCR auxiliar."
+            hint={t('books.detail.ocrDraft.digestHint')}
           >
             <Input
               id={`ocr-digest-${row.import_id}`}
               value={textDigest}
               onChange={(event) => setTextDigest(event.target.value)}
-              placeholder="64 caracteres hexadecimais"
+              placeholder={t('books.detail.ocrDraft.digestPlaceholder')}
             />
           </Field>
-          <Field label="Página inicial" htmlFor={`ocr-start-page-${row.import_id}`}>
+          <Field label={t('books.detail.ocrDraft.startPageLabel')} htmlFor={`ocr-start-page-${row.import_id}`}>
             <Input
               id={`ocr-start-page-${row.import_id}`}
               type="number"
@@ -1182,7 +1189,7 @@ function PaperBookOcrDraftPanel({ row }: { row: PaperBookImportView }) {
               onChange={(event) => setStartPage(event.target.value)}
             />
           </Field>
-          <Field label="Página final" htmlFor={`ocr-end-page-${row.import_id}`}>
+          <Field label={t('books.detail.ocrDraft.endPageLabel')} htmlFor={`ocr-end-page-${row.import_id}`}>
             <Input
               id={`ocr-end-page-${row.import_id}`}
               type="number"
@@ -1192,9 +1199,9 @@ function PaperBookOcrDraftPanel({ row }: { row: PaperBookImportView }) {
             />
           </Field>
           <Field
-            label="Confiança"
+            label={t('books.detail.ocrDraft.confidenceLabel')}
             htmlFor={`ocr-confidence-${row.import_id}`}
-            hint="Opcional; valor decimal de 0 a 1."
+            hint={t('books.detail.ocrDraft.confidenceHint')}
           >
             <Input
               id={`ocr-confidence-${row.import_id}`}
@@ -1206,14 +1213,14 @@ function PaperBookOcrDraftPanel({ row }: { row: PaperBookImportView }) {
               onChange={(event) => setConfidence(event.target.value)}
             />
           </Field>
-          <Field label="Motor OCR" htmlFor={`ocr-engine-${row.import_id}`}>
+          <Field label={t('books.detail.ocrDraft.engineLabel')} htmlFor={`ocr-engine-${row.import_id}`}>
             <Input
               id={`ocr-engine-${row.import_id}`}
               value={engineName}
               onChange={(event) => setEngineName(event.target.value)}
             />
           </Field>
-          <Field label="Versão do motor" htmlFor={`ocr-engine-version-${row.import_id}`}>
+          <Field label={t('books.detail.ocrDraft.engineVersionLabel')} htmlFor={`ocr-engine-version-${row.import_id}`}>
             <Input
               id={`ocr-engine-version-${row.import_id}`}
               value={engineVersion}
@@ -1248,11 +1255,11 @@ function PaperBookOcrDraftPanel({ row }: { row: PaperBookImportView }) {
       ) : drafts.error ? (
         <ErrorNote error={drafts.error} />
       ) : rows.length === 0 ? (
-        <EmptyState title="Sem rascunhos OCR registados">
+        <EmptyState title={t('books.detail.ocrDraft.emptyTitle')}>
           <p>Esta importação preservada ainda não tem OCR auxiliar para revisão.</p>
         </EmptyState>
       ) : (
-        <ul className="plain-list" aria-label="Rascunhos OCR não canónicos">
+        <ul className="plain-list" aria-label={t('books.detail.ocrDraft.listLabel')}>
           {rows.map((draft) => (
             <li key={draft.draft_id} className="chainrow">
               <div className="stack--tight">
@@ -1263,7 +1270,7 @@ function PaperBookOcrDraftPanel({ row }: { row: PaperBookImportView }) {
                   </Badge>
                   <span className="mono">{draft.draft_id}</span>
                 </div>
-                <InlineWarning tone="info" title="Aviso do rascunho OCR">
+                <InlineWarning tone="info" title={t('books.detail.ocrDraft.noticeTitle')}>
                   {draft.draft_notice || PAPER_BOOK_OCR_DRAFT_COPY}
                 </InlineWarning>
                 <dl className="deflist deflist--tight">
@@ -1339,7 +1346,7 @@ function PaperBookOcrDraftPanel({ row }: { row: PaperBookImportView }) {
                 />
                 {draft.review_status === 'accepted' ? (
                   <div className="stack--tight">
-                    <InlineWarning tone="info" title="Criar rascunho de ata">
+                    <InlineWarning tone="info" title={t('books.detail.ocrDraft.createActTitle')}>
                       Cria uma ata em estado Draft com o texto OCR como apoio de deliberações. Não
                       cria documento canónico, PDF/A, assinatura, selo nem aceitação de validade
                       legal.
@@ -1404,6 +1411,7 @@ function renderPaperBookOcrConversionExecutionArtifactPanel(
 }
 
 function PaperBookImportsPanel({ book }: { book: BookView }) {
+  const t = useT();
   const toast = useToast();
   const entity = useEntity(book.entity_id);
   const imports = usePaperBookImports(book.id);
@@ -1538,12 +1546,12 @@ function PaperBookImportsPanel({ book }: { book: BookView }) {
   }
 
   return (
-    <Card title="Importações de livro em papel preservadas">
+    <Card title={t('books.detail.imports.title')}>
       <div className="stack">
         <ConfirmActionModal
           open={localOcrCandidate !== null}
           onClose={() => setLocalOcrCandidate(null)}
-          title="Executar OCR local"
+          title={t('books.detail.imports.runOcrTitle')}
           intro={
             <div className="stack--tight">
               <p>
@@ -1556,24 +1564,24 @@ function PaperBookImportsPanel({ book }: { book: BookView }) {
               </p>
             </div>
           }
-          confirmLabel="Confirmar execução de OCR local"
-          pendingLabel="A executar OCR local"
+          confirmLabel={t('books.detail.imports.runOcrConfirm')}
+          pendingLabel={t('books.detail.imports.runOcrPending')}
           pending={runOcr.isPending}
           onConfirm={confirmRunLocalOcr}
         />
-        <InlineWarning tone="warn" title="Evidência não canónica">
+        <InlineWarning tone="warn" title={t('books.detail.imports.nonCanonicalTitle')}>
           Estes pacotes preservam cópias de livros em papel para consulta. Não substituem atas
           digitais canónicas e não declaram validade legal, PDF/A, validade de assinatura ou
           assinatura qualificada.
         </InlineWarning>
-        <InlineWarning tone="info" title="Orientação para revisão">
+        <InlineWarning tone="info" title={t('books.detail.imports.reviewGuidanceTitle')}>
           Valide datas, contagem de páginas, fixidez e contexto do livro antes de preservar. A
           ligação exibida aqui é apenas contextual: não cria nem altera cadeias de atas, nem
           transforma a importação em ata digital canónica.
         </InlineWarning>
 
         <form className="form">
-          <Field label="Pacote digitalizado" htmlFor="paper-import-file">
+          <Field label={t('books.detail.imports.fileLabel')} htmlFor="paper-import-file">
             <Input
               id="paper-import-file"
               type="file"
@@ -1587,7 +1595,7 @@ function PaperBookImportsPanel({ book }: { book: BookView }) {
             />
           </Field>
           <div className="form-grid">
-            <Field label="Data inicial" htmlFor="paper-import-from">
+            <Field label={t('books.detail.imports.dateFromLabel')} htmlFor="paper-import-from">
               <Input
                 id="paper-import-from"
                 type="date"
@@ -1598,7 +1606,7 @@ function PaperBookImportsPanel({ book }: { book: BookView }) {
                 }}
               />
             </Field>
-            <Field label="Data final" htmlFor="paper-import-to">
+            <Field label={t('books.detail.imports.dateToLabel')} htmlFor="paper-import-to">
               <Input
                 id="paper-import-to"
                 type="date"
@@ -1609,7 +1617,7 @@ function PaperBookImportsPanel({ book }: { book: BookView }) {
                 }}
               />
             </Field>
-            <Field label="Páginas" htmlFor="paper-import-pages">
+            <Field label={t('books.detail.imports.pagesLabel')} htmlFor="paper-import-pages">
               <Input
                 id="paper-import-pages"
                 type="number"
@@ -1622,9 +1630,9 @@ function PaperBookImportsPanel({ book }: { book: BookView }) {
               />
             </Field>
             <Field
-              label="Intervalo no pacote"
+              label={t('books.detail.imports.pageRangeLabel')}
               htmlFor="paper-import-page-range"
-              hint="A API atual preserva a contagem de páginas; intervalo inicial/final fica apenas como orientação local."
+              hint={t('books.detail.imports.pageRangeHint')}
             >
               <Input
                 id="paper-import-page-range"
@@ -1633,7 +1641,7 @@ function PaperBookImportsPanel({ book }: { book: BookView }) {
                 readOnly
               />
             </Field>
-            <Field label="Nome do ficheiro" htmlFor="paper-import-filename">
+            <Field label={t('books.detail.imports.filenameLabel')} htmlFor="paper-import-filename">
               <Input
                 id="paper-import-filename"
                 value={sourceFilename}
@@ -1644,12 +1652,12 @@ function PaperBookImportsPanel({ book }: { book: BookView }) {
               />
             </Field>
           </div>
-          <Field label="Notas" htmlFor="paper-import-notes">
+          <Field label={t('books.detail.imports.notesLabel')} htmlFor="paper-import-notes">
             <TextArea
               id="paper-import-notes"
               rows={3}
               value={notes}
-              placeholder="Ex.: digitalizado a partir do livro encadernado guardado no arquivo físico"
+              placeholder={t('books.detail.imports.notesPlaceholder')}
               onChange={(e) => {
                 setNotes(e.target.value);
                 resetCandidate();
@@ -1685,7 +1693,7 @@ function PaperBookImportsPanel({ book }: { book: BookView }) {
 
         {formError ? <ErrorNote error={formError} /> : null}
         {report ? (
-          <InlineWarning tone="info" title="Relatório não canónico">
+          <InlineWarning tone="info" title={t('books.detail.imports.reportTitle')}>
             <p>{report.legal_notice}</p>
             <p>
               Estado: {report.candidate_classification.preservation_status}. Validade legal
@@ -1699,7 +1707,7 @@ function PaperBookImportsPanel({ book }: { book: BookView }) {
         ) : imports.error ? (
           <ErrorNote error={imports.error} />
         ) : rows.length === 0 ? (
-          <EmptyState title="Sem importações preservadas">
+          <EmptyState title={t('books.detail.imports.emptyTitle')}>
             <p>Não há pacotes de livro em papel preservados para esta referência de livro.</p>
           </EmptyState>
         ) : (
@@ -1931,7 +1939,7 @@ export function BookDetailPage() {
         }
       />
 
-      <InlineWarning tone="info" title="Manifesto DGLAB local: só metadados">
+      <InlineWarning tone="info" title={t('books.detail.dglab.warningTitle')}>
         O manifesto DGLAB local é um scaffold JSON derivado do pacote interno. Não é exportação
         oficial DGLAB, submissão governamental, certificação arquivística legal, certificação PDF/A,
         PAdES ou PDF-UA, nem registo de descarte destrutivo.
