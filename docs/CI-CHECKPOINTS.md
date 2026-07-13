@@ -31,7 +31,10 @@ recently landed work that crosses Rust API tests, data key preflight guards,
 guardrail acknowledgements, written-resolution evidence status binding, trust
 parsing, declared signer-capacity evidence preservation, live-provider static
 assurance, MCP resource/prompt coverage including workflow provenance review
-guidance and draft-vs-signed comparison review guidance, web fixtures, ASiC
+guidance and draft-vs-signed comparison review guidance, the bounded local
+provenance panel with deterministic local counts, no bridge/API/AI-provider/hidden-provider
+calls, no secrets, and false legal/source/provider/trust/external/signature-qualification
+flags, web fixtures, ASiC
 inspect `technical_validation` and structural diagnostic markers, registry chronology
 graph markers, PDF writer spacing and PDF/UA blocker-decomposition markers,
 archive timestamp append markers, raw-byte per-book import preflight markers for

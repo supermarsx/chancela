@@ -801,6 +801,21 @@ export const esES: Catalog = {
   'acts.aiReview.provenance.label': 'Label',
   'acts.aiReview.provenance.status': 'Status',
   'acts.aiReview.provenance.flags': 'Conservative flags',
+  'acts.aiReview.provenance.statusSummary': 'Resumen por estado de revisión',
+  'acts.aiReview.localSummary': 'Resumen de revisión local',
+  'acts.aiReview.localSummary.total': 'Filas de procedencia',
+  'acts.aiReview.localSummary.pending': 'Filas pendientes/inciertas',
+  'acts.aiReview.localSummary.missing': 'Filas con campos de procedencia ausentes',
+  'acts.aiReview.localSummary.claimFlags': 'Filas con declaraciones marcadas',
+  'acts.aiReview.noClaim.title': 'Límites de la revisión local',
+  'acts.aiReview.noClaim.provider':
+    'No contacta con proveedores de IA ni registra garantía del proveedor.',
+  'acts.aiReview.noClaim.source':
+    'No certifica fuentes, instrucciones ni datos usados para construir el borrador.',
+  'acts.aiReview.noClaim.legal':
+    'No confirma validez legal, corrección factual ni revisión jurídica automatizada.',
+  'acts.aiReview.noClaim.workflow':
+    'La revisión humana solo desbloquea el siguiente paso del flujo; no firma, sella ni valida confianza.',
 
   // --- Panel de conformidad (solo interfaz; el texto de las incidencias es del backend, UX-21) --
   'compliance.rules': 'Reglas: {rulePack}',

@@ -799,6 +799,21 @@ export const plPL: Catalog = {
   'acts.aiReview.provenance.label': 'Label',
   'acts.aiReview.provenance.status': 'Status',
   'acts.aiReview.provenance.flags': 'Conservative flags',
+  'acts.aiReview.provenance.statusSummary': 'Podsumowanie według statusu przeglądu',
+  'acts.aiReview.localSummary': 'Lokalne podsumowanie przeglądu',
+  'acts.aiReview.localSummary.total': 'Wiersze pochodzenia',
+  'acts.aiReview.localSummary.pending': 'Wiersze oczekujące/niepewne',
+  'acts.aiReview.localSummary.missing': 'Wiersze z brakującymi polami pochodzenia',
+  'acts.aiReview.localSummary.claimFlags': 'Wiersze z oznaczonymi twierdzeniami',
+  'acts.aiReview.noClaim.title': 'Granice lokalnego przeglądu',
+  'acts.aiReview.noClaim.provider':
+    'Nie kontaktuje się z dostawcami AI ani nie zapisuje zapewnienia dostawcy.',
+  'acts.aiReview.noClaim.source':
+    'Nie certyfikuje źródeł, instrukcji ani danych użytych do utworzenia projektu.',
+  'acts.aiReview.noClaim.legal':
+    'Nie potwierdza ważności prawnej, poprawności faktów ani automatycznego przeglądu prawnego.',
+  'acts.aiReview.noClaim.workflow':
+    'Przegląd człowieka odblokowuje tylko następny krok przepływu; nie podpisuje, nie pieczętuje ani nie waliduje zaufania.',
 
   // --- Compliance panel (chrome only; issue text stays backend-authored, UX-21) --
   'compliance.rules': 'Reguły: {rulePack}',

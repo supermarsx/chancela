@@ -799,6 +799,21 @@ export const daDK: Catalog = {
   'acts.aiReview.provenance.label': 'Label',
   'acts.aiReview.provenance.status': 'Status',
   'acts.aiReview.provenance.flags': 'Conservative flags',
+  'acts.aiReview.provenance.statusSummary': 'Oversigt efter reviewstatus',
+  'acts.aiReview.localSummary': 'Lokal reviewoversigt',
+  'acts.aiReview.localSummary.total': 'Provenienskilder',
+  'acts.aiReview.localSummary.pending': 'Afventende/usikre rækker',
+  'acts.aiReview.localSummary.missing': 'Rækker med manglende proveniensfelter',
+  'acts.aiReview.localSummary.claimFlags': 'Rækker med markerede påstande',
+  'acts.aiReview.noClaim.title': 'Grænser for lokalt review',
+  'acts.aiReview.noClaim.provider':
+    'Kontakter ikke AI-udbydere og registrerer ikke udbydergaranti.',
+  'acts.aiReview.noClaim.source':
+    'Certificerer ikke kilder, instruktioner eller data brugt til at bygge kladden.',
+  'acts.aiReview.noClaim.legal':
+    'Bekræfter ikke juridisk gyldighed, faktuel korrekthed eller automatiseret juridisk review.',
+  'acts.aiReview.noClaim.workflow':
+    'Menneskeligt review låser kun næste workflowtrin op; det signerer, forsegler eller validerer ikke tillid.',
 
   // --- Compliance panel (chrome only; issue text stays backend-authored, UX-21) --
   'compliance.rules': 'Regler: {rulePack}',

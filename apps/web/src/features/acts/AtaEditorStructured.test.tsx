@@ -444,6 +444,46 @@ describe('AtaEditorPage — AI human review gate', () => {
     expect(within(callerSupplied as HTMLElement).getByText('1')).toBeTruthy();
   });
 
+  it('renders deterministic local review status and no-claim boundaries', async () => {
+    const shared = stateful(actWithAiReview(aiReviewStatementSources));
+    vi.stubGlobal('fetch', shared.fetchImpl);
+    renderEditor();
+
+    const localSummary = await screen.findByLabelText('Resumo da revisão local');
+    const totalRows = within(localSummary).getByText('Linhas de proveniência').closest('div')!;
+    const pendingRows = within(localSummary).getByText('Linhas pendentes/incertas').closest('div')!;
+    const missingRows = within(localSummary)
+      .getByText('Linhas com campos de proveniência em falta')
+      .closest('div')!;
+    const flaggedRows = within(localSummary)
+      .getByText('Linhas com alegações assinaladas')
+      .closest('div')!;
+    expect(within(totalRows as HTMLElement).getByText('3')).toBeTruthy();
+    expect(within(pendingRows as HTMLElement).getByText('3')).toBeTruthy();
+    expect(within(missingRows as HTMLElement).getByText('0')).toBeTruthy();
+    expect(within(flaggedRows as HTMLElement).getByText('0')).toBeTruthy();
+
+    const statusSummary = screen.getByLabelText('Resumo por estado de revisão');
+    const pendingStatus = within(statusSummary)
+      .getByText('pending_human_verification')
+      .closest('div')!;
+    expect(within(pendingStatus as HTMLElement).getByText('3')).toBeTruthy();
+
+    const pageText = document.body.textContent ?? '';
+    expect(pageText).toContain('Limites da revisão local');
+    expect(pageText).toContain('no bridge/API/AI-provider/hidden-provider calls; no secrets');
+    expect(pageText).toContain('legal_validity: false');
+    expect(pageText).toContain('source_certification: false');
+    expect(pageText).toContain('provider: false');
+    expect(pageText).toContain('trust: false');
+    expect(pageText).toContain('external_validation: false');
+    expect(pageText).toContain('signature_qualification: false');
+    expect(pageText).not.toMatch(/legal validity confirmed/i);
+    expect(pageText).not.toMatch(/source certified/i);
+    expect(pageText).not.toMatch(/provider assurance recorded/i);
+    expect(pageText).not.toMatch(/automated legal review completed/i);
+  });
+
   it('renders statement-source rows with path type label status and conservative flags', async () => {
     const shared = stateful(actWithAiReview(aiReviewStatementSources));
     vi.stubGlobal('fetch', shared.fetchImpl);
@@ -481,6 +521,14 @@ describe('AtaEditorPage — AI human review gate', () => {
     const summary = await screen.findByLabelText('Resumo por tipo de origem');
     const missingSummary = within(summary).getByText('Não indicado').closest('div')!;
     expect(within(missingSummary as HTMLElement).getByText('1')).toBeTruthy();
+
+    const localSummary = screen.getByLabelText('Resumo da revisão local');
+    const pendingRows = within(localSummary).getByText('Linhas pendentes/incertas').closest('div')!;
+    const missingRows = within(localSummary)
+      .getByText('Linhas com campos de proveniência em falta')
+      .closest('div')!;
+    expect(within(pendingRows as HTMLElement).getByText('1')).toBeTruthy();
+    expect(within(missingRows as HTMLElement).getByText('1')).toBeTruthy();
 
     const heading = screen.getByRole('heading', { name: 'Proveniência das declarações' });
     const provenanceSection = heading.closest('section')!;

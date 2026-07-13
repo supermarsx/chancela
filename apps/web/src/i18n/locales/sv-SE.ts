@@ -798,6 +798,21 @@ export const svSE: Catalog = {
   'acts.aiReview.provenance.label': 'Label',
   'acts.aiReview.provenance.status': 'Status',
   'acts.aiReview.provenance.flags': 'Conservative flags',
+  'acts.aiReview.provenance.statusSummary': 'Sammanfattning per granskningsstatus',
+  'acts.aiReview.localSummary': 'Lokal granskningssammanfattning',
+  'acts.aiReview.localSummary.total': 'Proveniensrader',
+  'acts.aiReview.localSummary.pending': 'Väntande/osäkra rader',
+  'acts.aiReview.localSummary.missing': 'Rader med saknade proveniensfält',
+  'acts.aiReview.localSummary.claimFlags': 'Rader med markerade anspråk',
+  'acts.aiReview.noClaim.title': 'Gränser för lokal granskning',
+  'acts.aiReview.noClaim.provider':
+    'Kontaktar inte AI-leverantörer och registrerar ingen leverantörsgaranti.',
+  'acts.aiReview.noClaim.source':
+    'Certifierar inte källor, instruktioner eller data som användes för att skapa utkastet.',
+  'acts.aiReview.noClaim.legal':
+    'Bekräftar inte rättslig giltighet, faktisk korrekthet eller automatiserad juridisk granskning.',
+  'acts.aiReview.noClaim.workflow':
+    'Mänsklig granskning låser bara upp nästa arbetsflödessteg; den signerar, förseglar eller validerar inte tillit.',
 
   // --- Compliance panel (chrome only; issue text stays backend-authored, UX-21) --
   'compliance.rules': 'Regler: {rulePack}',

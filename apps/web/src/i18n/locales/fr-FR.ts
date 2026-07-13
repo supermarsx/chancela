@@ -805,6 +805,21 @@ export const frFR: Catalog = {
   'acts.aiReview.provenance.label': 'Label',
   'acts.aiReview.provenance.status': 'Status',
   'acts.aiReview.provenance.flags': 'Conservative flags',
+  'acts.aiReview.provenance.statusSummary': 'Résumé par état de revue',
+  'acts.aiReview.localSummary': 'Résumé de la revue locale',
+  'acts.aiReview.localSummary.total': 'Lignes de provenance',
+  'acts.aiReview.localSummary.pending': 'Lignes en attente/incertaines',
+  'acts.aiReview.localSummary.missing': 'Lignes avec champs de provenance manquants',
+  'acts.aiReview.localSummary.claimFlags': 'Lignes avec assertions signalées',
+  'acts.aiReview.noClaim.title': 'Limites de la revue locale',
+  'acts.aiReview.noClaim.provider':
+    'Ne contacte pas de fournisseurs IA et ne consigne aucune assurance fournisseur.',
+  'acts.aiReview.noClaim.source':
+    'Ne certifie pas les sources, instructions ou données utilisées pour construire le brouillon.',
+  'acts.aiReview.noClaim.legal':
+    'Ne confirme pas la validité juridique, l’exactitude factuelle ni une revue juridique automatisée.',
+  'acts.aiReview.noClaim.workflow':
+    'La revue humaine déverrouille seulement l’étape suivante du flux; elle ne signe, ne scelle ni ne valide la confiance.',
 
   // --- Compliance panel (chrome only; issue text stays backend-authored, UX-21) --
   'compliance.rules': 'Règles : {rulePack}',

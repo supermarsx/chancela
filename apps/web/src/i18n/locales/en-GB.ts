@@ -796,6 +796,21 @@ export const enGB: Catalog = {
   'acts.aiReview.provenance.label': 'Label',
   'acts.aiReview.provenance.status': 'Status',
   'acts.aiReview.provenance.flags': 'Conservative flags',
+  'acts.aiReview.provenance.statusSummary': 'Summary by review status',
+  'acts.aiReview.localSummary': 'Local review summary',
+  'acts.aiReview.localSummary.total': 'Provenance rows',
+  'acts.aiReview.localSummary.pending': 'Pending/uncertain rows',
+  'acts.aiReview.localSummary.missing': 'Rows with missing provenance fields',
+  'acts.aiReview.localSummary.claimFlags': 'Rows with flagged claims',
+  'acts.aiReview.noClaim.title': 'Local review limits',
+  'acts.aiReview.noClaim.provider':
+    'Does not contact AI providers or record provider assurance.',
+  'acts.aiReview.noClaim.source':
+    'Does not certify sources, instructions, or data used to build the draft.',
+  'acts.aiReview.noClaim.legal':
+    'Does not confirm legal validity, factual correctness, or automated legal review.',
+  'acts.aiReview.noClaim.workflow':
+    'Human review only unlocks the next workflow step; it does not sign, seal, or validate trust.',
 
   // --- Compliance panel (chrome only; issue text stays backend-authored, UX-21) --
   'compliance.rules': 'Rules: {rulePack}',

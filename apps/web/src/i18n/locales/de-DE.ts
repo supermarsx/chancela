@@ -806,6 +806,21 @@ export const deDE: Catalog = {
   'acts.aiReview.provenance.label': 'Label',
   'acts.aiReview.provenance.status': 'Status',
   'acts.aiReview.provenance.flags': 'Conservative flags',
+  'acts.aiReview.provenance.statusSummary': 'Zusammenfassung nach Prüfstatus',
+  'acts.aiReview.localSummary': 'Lokale Prüfzusammenfassung',
+  'acts.aiReview.localSummary.total': 'Provenienzzeilen',
+  'acts.aiReview.localSummary.pending': 'Ausstehende/unsichere Zeilen',
+  'acts.aiReview.localSummary.missing': 'Zeilen mit fehlenden Provenienzfeldern',
+  'acts.aiReview.localSummary.claimFlags': 'Zeilen mit markierten Behauptungen',
+  'acts.aiReview.noClaim.title': 'Grenzen der lokalen Prüfung',
+  'acts.aiReview.noClaim.provider':
+    'Kontaktiert keine KI-Anbieter und erfasst keine Anbieterzusicherung.',
+  'acts.aiReview.noClaim.source':
+    'Zertifiziert keine Quellen, Anweisungen oder Daten, die für den Entwurf verwendet wurden.',
+  'acts.aiReview.noClaim.legal':
+    'Bestätigt keine Rechtsgültigkeit, sachliche Richtigkeit oder automatisierte Rechtsprüfung.',
+  'acts.aiReview.noClaim.workflow':
+    'Die menschliche Prüfung schaltet nur den nächsten Workflow-Schritt frei; sie signiert, versiegelt oder validiert kein Vertrauen.',
 
   // --- Compliance panel (chrome only; issue text stays backend-authored, UX-21) --
   'compliance.rules': 'Regeln: {rulePack}',

@@ -798,6 +798,21 @@ export const nlNL: Catalog = {
   'acts.aiReview.provenance.label': 'Label',
   'acts.aiReview.provenance.status': 'Status',
   'acts.aiReview.provenance.flags': 'Conservative flags',
+  'acts.aiReview.provenance.statusSummary': 'Samenvatting per beoordelingsstatus',
+  'acts.aiReview.localSummary': 'Lokale beoordelingssamenvatting',
+  'acts.aiReview.localSummary.total': 'Herkomstrijen',
+  'acts.aiReview.localSummary.pending': 'Openstaande/onzekere rijen',
+  'acts.aiReview.localSummary.missing': 'Rijen met ontbrekende herkomstvelden',
+  'acts.aiReview.localSummary.claimFlags': 'Rijen met gemarkeerde claims',
+  'acts.aiReview.noClaim.title': 'Grenzen van lokale beoordeling',
+  'acts.aiReview.noClaim.provider':
+    'Neemt geen contact op met AI-aanbieders en registreert geen aanbiederwaarborg.',
+  'acts.aiReview.noClaim.source':
+    'Certificeert geen bronnen, instructies of gegevens die voor het concept zijn gebruikt.',
+  'acts.aiReview.noClaim.legal':
+    'Bevestigt geen juridische geldigheid, feitelijke juistheid of geautomatiseerde juridische beoordeling.',
+  'acts.aiReview.noClaim.workflow':
+    'Menselijke beoordeling ontgrendelt alleen de volgende workflowstap; zij ondertekent, verzegelt of valideert geen vertrouwen.',
 
   // --- Compliance panel (chrome only; issue text stays backend-authored, UX-21) --
   'compliance.rules': 'Regels: {rulePack}',

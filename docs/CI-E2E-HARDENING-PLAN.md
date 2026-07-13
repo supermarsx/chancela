@@ -1012,15 +1012,21 @@ settingsDefaults.test.ts contracts.test.ts`.
 - Current working-tree AI provenance checks: MCP/API draft creation now carries
   deterministic `ai_provenance.statement_sources[]` rows, the API persists those
   rows while clamping unsafe row-level human-verified, authoritative-source, and
-  legal-validity claims false, and the Ata editor AI review panel renders
-  grouped provenance summary counts by `source_type`, statement-source row
-  path/type/label/status, conservative `human_verified`,
+  legal-validity claims false, and the Ata editor AI review panel renders a
+  bounded local provenance panel with deterministic local summary counts,
+  grouped provenance summary counts by `source_type`, grouped review-status
+  counts, statement-source row path/type/label/status, conservative `human_verified`,
   `authoritative_source_claimed`, and `legal_validity_claimed` flags, and
-  missing/null field fallbacks while keeping accept/reject unchanged. This
-  remains deterministic persistence/rendering coverage only: no live AI provider
-  calls, no model accuracy or AI quality assessment, no legal advice or
-  legal-validity claim, no source certification, no new provider/network or
-  non-stdio MCP behavior, no unreviewed finalization, no automated
+  missing/null field fallbacks plus explicit false no-claim markers
+  (`legal_validity: false`, `source_certification: false`, `provider: false`,
+  `trust: false`, `external_validation: false`, and
+  `signature_qualification: false`) while keeping accept/reject unchanged. This
+  remains deterministic persistence/rendering and offline/static review guidance
+  coverage only: no bridge/API/AI-provider/hidden-provider calls, no secrets,
+  no model accuracy or AI quality assessment, no legal advice or legal-validity
+  claim, no source certification, no provider assurance, no trust validation,
+  no external validation, no new provider/network or non-stdio MCP behavior, no
+  unreviewed finalization, no automated
   draft-vs-signed comparison execution, and broader extraction/compare/summarize
   remains incomplete.
 - Current working-tree MCP workflow provenance review checks: focused

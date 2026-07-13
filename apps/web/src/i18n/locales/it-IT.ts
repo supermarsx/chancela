@@ -801,6 +801,21 @@ export const itIT: Catalog = {
   'acts.aiReview.provenance.label': 'Label',
   'acts.aiReview.provenance.status': 'Status',
   'acts.aiReview.provenance.flags': 'Conservative flags',
+  'acts.aiReview.provenance.statusSummary': 'Riepilogo per stato di revisione',
+  'acts.aiReview.localSummary': 'Riepilogo della revisione locale',
+  'acts.aiReview.localSummary.total': 'Righe di provenienza',
+  'acts.aiReview.localSummary.pending': 'Righe in sospeso/incerte',
+  'acts.aiReview.localSummary.missing': 'Righe con campi di provenienza mancanti',
+  'acts.aiReview.localSummary.claimFlags': 'Righe con dichiarazioni segnalate',
+  'acts.aiReview.noClaim.title': 'Limiti della revisione locale',
+  'acts.aiReview.noClaim.provider':
+    'Non contatta provider IA né registra garanzie del provider.',
+  'acts.aiReview.noClaim.source':
+    'Non certifica fonti, istruzioni o dati usati per costruire la bozza.',
+  'acts.aiReview.noClaim.legal':
+    'Non conferma validità legale, correttezza fattuale o revisione legale automatizzata.',
+  'acts.aiReview.noClaim.workflow':
+    'La revisione umana sblocca solo il passo successivo del flusso; non firma, sigilla né valida la fiducia.',
 
   // --- Compliance panel (chrome only; issue text stays backend-authored, UX-21) --
   'compliance.rules': 'Regole: {rulePack}',

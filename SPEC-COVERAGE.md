@@ -1358,12 +1358,24 @@ Implementation checkpoints covered here:
   government ID check, or representative capacity before a slot is marked signed.
   These are recorded workflow evidence requirements only; they do not assert legal
   identity, representative authority, qualified status, or legal effect.
-- `5021110` keeps AI/UX/Workflows **PARTIAL**: the Ata editor renders AI provenance
-  and human-review status including persisted deterministic statement-source rows,
-  lets authorized operators record accept/reject decisions, and disables the move
-  to Signing while AI-assisted text is pending or rejected. The UI records the
-  existing human-review gate only; it is not AI-quality review, legal
-  certification, authoritative-source certification, or final-minute acceptance.
+- Current working-tree AI provenance panel depth keeps AI/UX/Workflows **PARTIAL**:
+  the Ata editor renders a bounded local provenance panel from existing
+  `ai_provenance.statement_sources[]` rows, with deterministic local summary
+  counts, grouped `source_type` and review-status counts, row path/type/label/status,
+  missing/null fallbacks, the conservative `human_verified`,
+  `authoritative_source_claimed=false/no claim`, and
+  `legal_validity_claimed=false/no claim` markers, and explicit false boundaries:
+  `legal_validity: false`, `source_certification: false`, `provider: false`,
+  `trust: false`, `external_validation: false`, and
+  `signature_qualification: false`. Authorized operators can still record
+  accept/reject decisions, and the move to Signing remains disabled while
+  AI-assisted text is pending or rejected. This is deterministic local and
+  offline/static review guidance only: no bridge/API/AI-provider/hidden-provider
+  calls, no secrets, no AI provider execution/model-quality review, no source
+  certification, no legal/factual/signature/trust/QES/eIDAS validity, no external
+  validation/provider assurance, no automated legal review, no workflow completion,
+  no AI-01/full AI completion, no MCP completion, no signed-artifact correctness,
+  and no acceptance of draft text as final minutes.
 - `21e76a4` keeps UX/CI **PARTIAL**: the follow-up and imported-document review
   panels were adjusted to clear hook dependency lint warnings. This is lint hygiene
   for existing UI behavior, not new compliance coverage.

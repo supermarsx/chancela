@@ -799,6 +799,21 @@ export const ptBR: Catalog = {
   'acts.aiReview.provenance.label': 'Rótulo',
   'acts.aiReview.provenance.status': 'Status',
   'acts.aiReview.provenance.flags': 'Sinalizadores conservadores',
+  'acts.aiReview.provenance.statusSummary': 'Resumo por status de revisão',
+  'acts.aiReview.localSummary': 'Resumo da revisão local',
+  'acts.aiReview.localSummary.total': 'Linhas de proveniência',
+  'acts.aiReview.localSummary.pending': 'Linhas pendentes/incertas',
+  'acts.aiReview.localSummary.missing': 'Linhas com campos de proveniência ausentes',
+  'acts.aiReview.localSummary.claimFlags': 'Linhas com alegações sinalizadas',
+  'acts.aiReview.noClaim.title': 'Limites da revisão local',
+  'acts.aiReview.noClaim.provider':
+    'Não contata provedores de IA nem registra garantia do provedor.',
+  'acts.aiReview.noClaim.source':
+    'Não certifica fontes, instruções ou dados usados para construir a minuta.',
+  'acts.aiReview.noClaim.legal':
+    'Não confirma validade legal, correção factual nem revisão jurídica automatizada.',
+  'acts.aiReview.noClaim.workflow':
+    'A revisão humana apenas desbloqueia o próximo passo do fluxo; não assina, sela ou valida confiança.',
 
   // --- Compliance panel (chrome only; issue text stays backend-authored, UX-21) --
   'compliance.rules': 'Regras: {rulePack}',

@@ -4394,6 +4394,31 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/acts/AtaEditorPage.tsx",
+    "const statusCounts = Array.from",
+    "web AI review grouped review-status counts marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/AtaEditorPage.tsx",
+    "const missingProvenanceRows = statementSources.filter(aiSourceFieldMissing).length;",
+    "web AI review missing provenance summary marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/AtaEditorPage.tsx",
+    "const pendingOrUnverifiedRows = statementSources.filter",
+    "web AI review pending/uncertain provenance summary marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/AtaEditorPage.tsx",
+    "bounded local provenance panel; deterministic local; offline/static review guidance; no bridge/API/AI-provider/hidden-provider calls; no secrets",
+    "web AI review offline/static no-provider-call boundary marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/AtaEditorPage.tsx",
+    "signature_qualification: false",
+    "web AI review false boundary flags marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/AtaEditorPage.tsx",
     "const sourceType = aiRecordedSourceValue(source.source_type, missingLabel);",
     "web AI review source_type fallback marker",
   );
@@ -4431,6 +4456,16 @@ function assertCheckpointMap() {
     "apps/web/src/features/acts/AtaEditorStructured.test.tsx",
     "renders grouped provenance summary by source_type",
     "web AI review grouped source-type summary coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/AtaEditorStructured.test.tsx",
+    "renders deterministic local review status and no-claim boundaries",
+    "web AI review local review summary/no-claim boundary coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/AtaEditorStructured.test.tsx",
+    "no bridge/API/AI-provider/hidden-provider calls; no secrets",
+    "web AI review no bridge/API/provider/no-secret coverage marker",
   );
   assertFileContains(
     "apps/web/src/features/acts/AtaEditorStructured.test.tsx",
@@ -7369,6 +7404,16 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
+    "bounded local provenance panel",
+    "CI/E2E hardening plan bounded local AI provenance panel marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "no bridge/API/AI-provider/hidden-provider calls",
+    "CI/E2E hardening plan AI provenance no provider/API call marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
     "Current working-tree MCP workflow provenance review checks",
     "CI/E2E hardening plan MCP workflow provenance checks marker",
   );
@@ -7529,7 +7574,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "no live AI provider\n  calls, no model accuracy or AI quality assessment",
+    "no bridge/API/AI-provider/hidden-provider calls, no secrets,\n  no model accuracy or AI quality assessment",
     "CI/E2E hardening plan AI provenance caveat marker",
   );
   assertFileContains(
@@ -8516,6 +8561,16 @@ function assertCheckpointMap() {
     "SPEC-COVERAGE.md",
     "not workflow completion, AI completion, MCP\n  completion, source certification",
     "spec coverage MCP workflow provenance no-completion marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "bounded local provenance panel",
+    "spec coverage bounded local AI provenance panel marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "no bridge/API/AI-provider/hidden-provider\n  calls",
+    "spec coverage AI provenance no provider/API call marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",

@@ -798,6 +798,21 @@ export const fiFI: Catalog = {
   'acts.aiReview.provenance.label': 'Label',
   'acts.aiReview.provenance.status': 'Status',
   'acts.aiReview.provenance.flags': 'Conservative flags',
+  'acts.aiReview.provenance.statusSummary': 'Yhteenveto tarkistustilan mukaan',
+  'acts.aiReview.localSummary': 'Paikallisen tarkistuksen yhteenveto',
+  'acts.aiReview.localSummary.total': 'Alkuperärivit',
+  'acts.aiReview.localSummary.pending': 'Odottavat/epävarmat rivit',
+  'acts.aiReview.localSummary.missing': 'Rivit, joilta puuttuu alkuperäkenttiä',
+  'acts.aiReview.localSummary.claimFlags': 'Rivit, joilla on merkittyjä väitteitä',
+  'acts.aiReview.noClaim.title': 'Paikallisen tarkistuksen rajat',
+  'acts.aiReview.noClaim.provider':
+    'Ei ota yhteyttä tekoälypalveluntarjoajiin eikä kirjaa tarjoajan varmistusta.',
+  'acts.aiReview.noClaim.source':
+    'Ei sertifioi lähteitä, ohjeita tai luonnoksen rakentamiseen käytettyjä tietoja.',
+  'acts.aiReview.noClaim.legal':
+    'Ei vahvista oikeudellista pätevyyttä, tosiasiallista oikeellisuutta tai automaattista oikeudellista tarkistusta.',
+  'acts.aiReview.noClaim.workflow':
+    'Ihmistarkistus avaa vain seuraavan työnkulun vaiheen; se ei allekirjoita, sinetöi tai validoi luottamusta.',
 
   // --- Compliance panel (chrome only; issue text stays backend-authored, UX-21) --
   'compliance.rules': 'Säännöt: {rulePack}',

@@ -1062,6 +1062,29 @@ function aiClaimFlagLabel(value: unknown): 'true/claimed' | 'false/no claim' {
   return value === true ? 'true/claimed' : 'false/no claim';
 }
 
+const AI_REVIEW_OFFLINE_BOUNDARY =
+  'bounded local provenance panel; deterministic local; offline/static review guidance; no bridge/API/AI-provider/hidden-provider calls; no secrets';
+
+const AI_REVIEW_FALSE_BOUNDARY_FLAGS = [
+  'legal_validity: false',
+  'source_certification: false',
+  'provider: false',
+  'trust: false',
+  'external_validation: false',
+  'signature_qualification: false',
+] as const;
+
+function aiSourceFieldMissing(
+  source: Partial<NonNullable<AiProvenanceView['statement_sources']>[number]>,
+): boolean {
+  return (
+    aiRecordedSourceValue(source.path, '') === '' ||
+    aiRecordedSourceValue(source.source_type, '') === '' ||
+    aiRecordedSourceValue(source.source_label, '') === '' ||
+    aiRecordedSourceValue(source.human_verification_status, '') === ''
+  );
+}
+
 function AiHumanReviewPanel({
   provenance,
   readOnly,
@@ -1098,6 +1121,23 @@ function AiHumanReviewPanel({
       return counts;
     }, new Map()),
   ).sort(([left], [right]) => left.localeCompare(right));
+  const statusCounts = Array.from(
+    statementSources.reduce<Map<string, number>>((counts, source) => {
+      const status = aiRecordedSourceValue(source.human_verification_status, missingLabel);
+      counts.set(status, (counts.get(status) ?? 0) + 1);
+      return counts;
+    }, new Map()),
+  ).sort(([left], [right]) => left.localeCompare(right));
+  const missingProvenanceRows = statementSources.filter(aiSourceFieldMissing).length;
+  const pendingOrUnverifiedRows = statementSources.filter(
+    (source) =>
+      source.human_verified !== true ||
+      source.human_verification_status !== 'accepted_by_human',
+  ).length;
+  const claimFlaggedRows = statementSources.filter(
+    (source) =>
+      source.authoritative_source_claimed === true || source.legal_validity_claimed === true,
+  ).length;
 
   return (
     <div className="stack--tight ai-review">
@@ -1153,6 +1193,34 @@ function AiHumanReviewPanel({
 
       <section className="stack--tight" aria-labelledby={provenanceId}>
         <h3 id={provenanceId}>{t('acts.aiReview.provenance.title')}</h3>
+        <dl className="deflist deflist--tight" aria-label={t('acts.aiReview.localSummary')}>
+          <div>
+            <dt>{t('acts.aiReview.localSummary.total')}</dt>
+            <dd>{statementSources.length}</dd>
+          </div>
+          <div>
+            <dt>{t('acts.aiReview.localSummary.pending')}</dt>
+            <dd>{pendingOrUnverifiedRows}</dd>
+          </div>
+          <div>
+            <dt>{t('acts.aiReview.localSummary.missing')}</dt>
+            <dd>{missingProvenanceRows}</dd>
+          </div>
+          <div>
+            <dt>{t('acts.aiReview.localSummary.claimFlags')}</dt>
+            <dd>{claimFlaggedRows}</dd>
+          </div>
+        </dl>
+        <InlineWarning tone="info" title={t('acts.aiReview.noClaim.title')}>
+          <ul>
+            <li>{t('acts.aiReview.noClaim.provider')}</li>
+            <li>{t('acts.aiReview.noClaim.source')}</li>
+            <li>{t('acts.aiReview.noClaim.legal')}</li>
+            <li>{t('acts.aiReview.noClaim.workflow')}</li>
+          </ul>
+          <p className="mono">{AI_REVIEW_OFFLINE_BOUNDARY}</p>
+          <p className="mono">{AI_REVIEW_FALSE_BOUNDARY_FLAGS.join(' · ')}</p>
+        </InlineWarning>
         {statementSources.length > 0 ? (
           <>
             <dl
@@ -1162,6 +1230,17 @@ function AiHumanReviewPanel({
               {sourceTypeCounts.map(([sourceType, count]) => (
                 <div key={sourceType}>
                   <dt className="mono">{sourceType}</dt>
+                  <dd>{count}</dd>
+                </div>
+              ))}
+            </dl>
+            <dl
+              className="deflist deflist--tight"
+              aria-label={t('acts.aiReview.provenance.statusSummary')}
+            >
+              {statusCounts.map(([status, count]) => (
+                <div key={status}>
+                  <dt className="mono">{status}</dt>
                   <dd>{count}</dd>
                 </div>
               ))}
