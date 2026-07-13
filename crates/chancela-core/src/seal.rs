@@ -659,6 +659,7 @@ mod tests {
                 digest: Some([11; 32]),
                 note: Some("capture note".to_owned()),
             }],
+            review_receipts: vec![],
             note: Some("operator note".to_owned()),
         });
 

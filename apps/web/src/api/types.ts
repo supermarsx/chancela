@@ -544,6 +544,61 @@ export interface ActSealMetadata {
   profile: EntityKind;
 }
 
+export type WrittenResolutionReviewStatus = 'reviewed' | 'needs_follow_up' | string;
+
+export interface WrittenResolutionEvidenceStatusView {
+  status: 'not_applicable' | 'missing' | 'referenced_only' | 'bound_present' | string;
+  boundary: string;
+  signed_signatory_slots: number;
+  digested_attachments: number;
+  checklist_items: number;
+  digested_checklist_items: number;
+  referenced_checklist_items: number;
+  bound_count: number;
+  referenced_only_count: number;
+  review_receipts: number;
+  latest_review_status: WrittenResolutionReviewStatus | null;
+  reviewed_evidence_locators: number;
+  reviewed_evidence_digests: number;
+}
+
+export interface WrittenResolutionEvidenceItemView {
+  label: string;
+  reference: string | null;
+  digest: string | null;
+  note: string | null;
+}
+
+export interface WrittenResolutionReviewEvidenceLocatorView {
+  label: string;
+  locator: string | null;
+  digest: string | null;
+}
+
+export interface WrittenResolutionReviewReceiptView {
+  reviewer: string;
+  reviewed_at: string;
+  status: WrittenResolutionReviewStatus;
+  guardrail_acknowledgements: string[];
+  evidence?: WrittenResolutionReviewEvidenceLocatorView[];
+  note: string | null;
+  consent_proof_claimed: false;
+  quorum_proof_claimed: false;
+  identity_proof_claimed: false;
+  legal_acceptance_claimed: false;
+  legal_sufficiency_claimed: false;
+  external_validation_claimed: false;
+  automatic_approval_claimed: false;
+  authority_certified_claimed: false;
+}
+
+export interface WrittenResolutionEvidenceView {
+  status: WrittenResolutionEvidenceStatusView;
+  checklist?: WrittenResolutionEvidenceItemView[];
+  review_receipts?: WrittenResolutionReviewReceiptView[];
+  note: string | null;
+}
+
 export const AI_HUMAN_VERIFICATION_STATUSES = [
   'pending_human_verification',
   'accepted_by_human',
@@ -590,6 +645,7 @@ export interface ActView {
   members_present: number | null;
   members_represented: number | null;
   referenced_documents: ActDocumentReference[];
+  written_resolution_evidence?: WrittenResolutionEvidenceView | null;
   deliberations: string;
   deliberation_items: ActDeliberationItem[];
   telematic_evidence: string | null;
@@ -643,6 +699,7 @@ export interface ComplianceReport {
   errors: number;
   warnings: number;
   seal_allowed: boolean;
+  written_resolution_evidence_status?: WrittenResolutionEvidenceStatusView;
   /** Warning-only convening advisories; omitted by the API when empty. */
   convening_advisories?: ConveningAdvisory[];
 }

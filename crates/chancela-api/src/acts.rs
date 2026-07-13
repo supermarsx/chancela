@@ -158,8 +158,20 @@ pub async fn patch_act(
     }
     if let Some(evidence) = req.written_resolution_evidence {
         next.written_resolution_evidence = match evidence {
-            Some(evidence) => Some(evidence.into_core()?),
-            None => None,
+            Some(evidence) => {
+                let evidence = evidence.into_core()?;
+                ensure_written_resolution_review_receipts_append_only(
+                    act.written_resolution_evidence.as_ref(),
+                    &evidence,
+                )?;
+                Some(evidence)
+            }
+            None => {
+                ensure_written_resolution_evidence_can_clear(
+                    act.written_resolution_evidence.as_ref(),
+                )?;
+                None
+            }
         };
     }
     if let Some(deliberations) = req.deliberations {
@@ -832,6 +844,42 @@ fn ensure_book_open_for_act_mutation(book: &Book) -> Result<(), ApiError> {
     )))
 }
 
+fn ensure_written_resolution_review_receipts_append_only(
+    current: Option<&chancela_core::WrittenResolutionEvidence>,
+    next: &chancela_core::WrittenResolutionEvidence,
+) -> Result<(), ApiError> {
+    let Some(current) = current else {
+        return Ok(());
+    };
+    if next.review_receipts.len() < current.review_receipts.len() {
+        return Err(ApiError::Unprocessable(
+            "written_resolution_evidence review_receipts are append-only".to_owned(),
+        ));
+    }
+    if !current
+        .review_receipts
+        .iter()
+        .zip(next.review_receipts.iter())
+        .all(|(current, next)| current == next)
+    {
+        return Err(ApiError::Unprocessable(
+            "written_resolution_evidence review_receipts are append-only".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn ensure_written_resolution_evidence_can_clear(
+    current: Option<&chancela_core::WrittenResolutionEvidence>,
+) -> Result<(), ApiError> {
+    if current.is_some_and(|evidence| !evidence.review_receipts.is_empty()) {
+        return Err(ApiError::Unprocessable(
+            "written_resolution_evidence with review_receipts cannot be cleared".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1006,6 +1054,29 @@ mod tests {
                     "reference": "doc:written-approvals",
                     "digest": digest,
                     "note": "retained in document store"
+                }],
+                "review_receipts": [{
+                    "reviewer": "operator@example.test",
+                    "reviewed_at": "2026-07-13T10:15:00Z",
+                    "status": "reviewed",
+                    "guardrail_acknowledgements": [
+                        "local_metadata_only",
+                        "no_consent_quorum_identity_or_legal_proof"
+                    ],
+                    "evidence": [{
+                        "label": "Approval pack digest checked",
+                        "locator": "doc:written-approvals",
+                        "digest": digest
+                    }],
+                    "note": "local evidence review completed",
+                    "consent_proof_claimed": false,
+                    "quorum_proof_claimed": false,
+                    "identity_proof_claimed": false,
+                    "legal_acceptance_claimed": false,
+                    "legal_sufficiency_claimed": false,
+                    "external_validation_claimed": false,
+                    "automatic_approval_claimed": false,
+                    "authority_certified_claimed": false
                 }]
             }
         }))
@@ -1025,10 +1096,23 @@ mod tests {
         assert_eq!(evidence.status.status, "bound_present");
         assert_eq!(evidence.status.bound_count, 1);
         assert_eq!(evidence.status.digested_checklist_items, 1);
+        assert_eq!(evidence.status.review_receipts, 1);
+        assert_eq!(
+            evidence.status.latest_review_status.as_deref(),
+            Some("reviewed")
+        );
+        assert_eq!(evidence.status.reviewed_evidence_locators, 1);
+        assert_eq!(evidence.status.reviewed_evidence_digests, 1);
         assert_eq!(
             evidence.checklist[0].digest.as_deref(),
             Some(digest.as_str())
         );
+        let receipt = &evidence.review_receipts[0];
+        assert_eq!(receipt.reviewer, "operator@example.test");
+        assert_eq!(receipt.reviewed_at, "2026-07-13T10:15:00Z");
+        assert_eq!(receipt.status, "reviewed");
+        assert!(!receipt.legal_sufficiency_claimed);
+        assert!(!receipt.authority_certified_claimed);
 
         let restarted = AppState::with_data_dir(tmp.path());
         let acts = restarted.acts.read().await;
@@ -1042,16 +1126,78 @@ mod tests {
             Some("operator-private evidence note")
         );
         assert_eq!(loaded_evidence.checklist[0].digest, Some([0x11; 32]));
+        assert_eq!(loaded_evidence.review_receipts.len(), 1);
+        assert_eq!(
+            loaded_evidence.review_receipts[0].guardrail_acknowledgements,
+            vec![
+                "local_metadata_only".to_owned(),
+                "no_consent_quorum_identity_or_legal_proof".to_owned()
+            ]
+        );
 
         drop(acts);
         let clear_req: PatchAct = serde_json::from_value(json!({
             "written_resolution_evidence": null
         }))
         .expect("clear body");
-        let Json(view) = patch_act(State(state), Path(act_id.0), actor, Json(clear_req))
-            .await
-            .expect("clear succeeds");
-        assert!(view.written_resolution_evidence.is_none());
+        let err = match patch_act(State(state), Path(act_id.0), actor, Json(clear_req)).await {
+            Ok(_) => panic!("receipt history cannot be cleared"),
+            Err(err) => err,
+        };
+        match err {
+            ApiError::Unprocessable(message) => {
+                assert!(message.contains("review_receipts"));
+                assert!(message.contains("cannot be cleared"));
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn patch_act_written_resolution_review_receipts_reject_proof_claims() {
+        let state = AppState::default();
+        let actor = seed_owner(&state).await;
+        let entity = entity_of(EntityKind::SociedadePorQuotas);
+        let book = opened_book(&entity, BookKind::AssembleiaGeral);
+        let act = Act::draft(
+            book.id,
+            "Written resolution",
+            MeetingChannel::WrittenResolution,
+        );
+        let act_id = act.id;
+
+        state.entities.write().await.insert(entity.id, entity);
+        state.books.write().await.insert(book.id, book);
+        state.acts.write().await.insert(act.id, act);
+
+        let req: PatchAct = serde_json::from_value(json!({
+            "written_resolution_evidence": {
+                "review_receipts": [{
+                    "reviewer": "operator@example.test",
+                    "reviewed_at": "2026-07-13T10:15:00Z",
+                    "status": "reviewed",
+                    "guardrail_acknowledgements": ["local_metadata_only"],
+                    "evidence": [{
+                        "label": "Approval folder",
+                        "locator": "folder:approvals"
+                    }],
+                    "legal_sufficiency_claimed": true
+                }]
+            }
+        }))
+        .expect("patch body");
+
+        let err = match patch_act(State(state), Path(act_id.0), actor, Json(req)).await {
+            Ok(_) => panic!("proof/legal claims are rejected"),
+            Err(err) => err,
+        };
+        match err {
+            ApiError::Unprocessable(message) => {
+                assert!(message.contains("legal_sufficiency_claimed"));
+                assert!(message.contains("must be false"));
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
     }
 
     #[tokio::test]
@@ -1086,6 +1232,7 @@ mod tests {
                 digest: None,
                 note: Some("reference only".to_owned()),
             }],
+            review_receipts: vec![],
             note: None,
         });
         let act_id = act.id;

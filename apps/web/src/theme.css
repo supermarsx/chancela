@@ -1833,6 +1833,21 @@ a.btn.btn--iconOnly {
   gap: 0.55rem;
 }
 
+.written-resolution-review {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.65rem 0.8rem;
+}
+
+.written-resolution-review .deflist {
+  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+  margin: 0.55rem 0 0;
+}
+
+.written-resolution-review p {
+  margin: 0.55rem 0 0;
+}
+
 /* Compliance issue list. */
 .issues {
   list-style: none;

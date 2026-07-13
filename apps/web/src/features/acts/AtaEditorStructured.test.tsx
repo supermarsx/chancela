@@ -65,7 +65,13 @@ const mesaError: ComplianceReport['issues'][number] = {
 };
 
 /** A `fetch` stub that persists PATCHes and derives compliance from the act's mesa chair. */
-function stateful(initial: ActView, options: { warnings?: ComplianceReport['issues'] } = {}) {
+function stateful(
+  initial: ActView,
+  options: {
+    warnings?: ComplianceReport['issues'];
+    writtenResolutionStatus?: ComplianceReport['written_resolution_evidence_status'];
+  } = {},
+) {
   let act = initial;
   const patches: Record<string, unknown>[] = [];
   const seals: Record<string, unknown>[] = [];
@@ -91,6 +97,7 @@ function stateful(initial: ActView, options: { warnings?: ComplianceReport['issu
         errors: hasChair ? 0 : 1,
         warnings: warnings.length,
         seal_allowed: hasChair,
+        written_resolution_evidence_status: options.writtenResolutionStatus,
       };
       return json(report);
     }
@@ -596,6 +603,44 @@ describe('AtaEditorPage — AI human review gate', () => {
         }).disabled,
       ).toBe(false),
     );
+  });
+});
+
+describe('AtaEditorPage — written-resolution evidence review', () => {
+  it('renders local review receipt depth from compliance without proof wording', async () => {
+    const { fetchImpl } = stateful(
+      {
+        ...baseAct,
+        channel: 'WrittenResolution',
+        mesa: { presidente: 'Ana', secretarios: [] },
+      },
+      {
+        writtenResolutionStatus: {
+          status: 'bound_present',
+          boundary: 'workflow_evidence_status_only',
+          signed_signatory_slots: 1,
+          digested_attachments: 0,
+          checklist_items: 1,
+          digested_checklist_items: 1,
+          referenced_checklist_items: 0,
+          bound_count: 2,
+          referenced_only_count: 0,
+          review_receipts: 1,
+          latest_review_status: 'reviewed',
+          reviewed_evidence_locators: 1,
+          reviewed_evidence_digests: 1,
+        },
+      },
+    );
+    vi.stubGlobal('fetch', fetchImpl);
+
+    renderEditor();
+
+    expect(await screen.findByLabelText('Written-resolution local evidence review')).toBeTruthy();
+    expect(screen.getByText('Receipt recorded')).toBeTruthy();
+    expect(screen.getByText(/No consent, quorum, identity, legal sufficiency/i)).toBeTruthy();
+    expect(screen.queryByText(/legal acceptance/i)).toBeNull();
+    expect(screen.queryByText(/automatic approval is granted/i)).toBeNull();
   });
 });
 

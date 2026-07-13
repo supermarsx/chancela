@@ -271,6 +271,42 @@ describe('CompliancePanel legal-source references', () => {
     expect(screen.queryByLabelText('Fonte')).toBeNull();
     expect(screen.queryByRole('link')).toBeNull();
   });
+
+  it('renders written-resolution local evidence review depth without proof claims', () => {
+    render(
+      <CompliancePanel
+        report={complianceReport({
+          written_resolution_evidence_status: {
+            status: 'bound_present',
+            boundary: 'workflow_evidence_status_only',
+            signed_signatory_slots: 0,
+            digested_attachments: 0,
+            checklist_items: 1,
+            digested_checklist_items: 1,
+            referenced_checklist_items: 0,
+            bound_count: 1,
+            referenced_only_count: 0,
+            review_receipts: 1,
+            latest_review_status: 'reviewed',
+            reviewed_evidence_locators: 2,
+            reviewed_evidence_digests: 1,
+          },
+        })}
+      />,
+    );
+
+    expect(screen.getByLabelText('Written-resolution local evidence review')).toBeTruthy();
+    expect(screen.getByText('Receipt recorded')).toBeTruthy();
+    expect(screen.getByText('Bound evidence present')).toBeTruthy();
+    expect(screen.getAllByText('Reviewed').length).toBeGreaterThan(0);
+    expect(screen.getByText('Review receipts')).toBeTruthy();
+    expect(screen.getByText('Reviewed locators')).toBeTruthy();
+    expect(screen.getByText('Reviewed digests')).toBeTruthy();
+    expect(screen.getByText(/Local metadata only/i)).toBeTruthy();
+    expect(screen.getByText(/No consent, quorum, identity, legal sufficiency/i)).toBeTruthy();
+    expect(screen.queryByText(/legal acceptance/i)).toBeNull();
+    expect(screen.queryByText(/authority certified/i)).toBeNull();
+  });
 });
 
 describe('AtaEditorPage seal gating', () => {

@@ -20,6 +20,8 @@ use chancela_authz::{Permission, ScopedPermissionSet};
 use chancela_cae::CaeCatalog;
 use chancela_core::act::{
     AiHumanVerification, AiHumanVerificationStatus, AiProvenance, AiStatementSource,
+    WrittenResolutionReviewEvidenceLocator, WrittenResolutionReviewReceipt,
+    WrittenResolutionReviewStatus,
 };
 #[cfg(test)]
 use chancela_core::book::{BookId, TermoDeAbertura};
@@ -839,6 +841,10 @@ pub struct WrittenResolutionEvidenceStatusView {
     pub referenced_checklist_items: usize,
     pub bound_count: usize,
     pub referenced_only_count: usize,
+    pub review_receipts: usize,
+    pub latest_review_status: Option<String>,
+    pub reviewed_evidence_locators: usize,
+    pub reviewed_evidence_digests: usize,
 }
 
 impl WrittenResolutionEvidenceStatusView {
@@ -853,6 +859,12 @@ impl WrittenResolutionEvidenceStatusView {
             referenced_checklist_items: summary.referenced_checklist_items,
             bound_count: summary.bound_count(),
             referenced_only_count: summary.referenced_only_count(),
+            review_receipts: summary.review_receipts,
+            latest_review_status: summary
+                .latest_review_status
+                .map(|status| status.as_str().to_owned()),
+            reviewed_evidence_locators: summary.reviewed_evidence_locators,
+            reviewed_evidence_digests: summary.reviewed_evidence_digests,
         }
     }
 }
@@ -886,12 +898,96 @@ impl WrittenResolutionEvidenceItemView {
     }
 }
 
+/// Wire view of one evidence locator reviewed in a written-resolution receipt.
+#[derive(Serialize)]
+pub struct WrittenResolutionReviewEvidenceLocatorView {
+    pub label: String,
+    pub locator: Option<String>,
+    pub digest: Option<String>,
+}
+
+impl From<&WrittenResolutionReviewEvidenceLocator> for WrittenResolutionReviewEvidenceLocatorView {
+    fn from(locator: &WrittenResolutionReviewEvidenceLocator) -> Self {
+        WrittenResolutionReviewEvidenceLocatorView {
+            label: locator.label.clone(),
+            locator: locator.locator.clone(),
+            digest: locator.digest.as_ref().map(hex),
+        }
+    }
+}
+
+impl WrittenResolutionReviewEvidenceLocatorView {
+    fn redact_sensitive(&mut self) {
+        self.label = redacted();
+        self.locator = None;
+        self.digest = None;
+    }
+}
+
+/// Wire view of one local written-resolution evidence review receipt.
+#[derive(Serialize)]
+pub struct WrittenResolutionReviewReceiptView {
+    pub reviewer: String,
+    pub reviewed_at: String,
+    pub status: String,
+    pub guardrail_acknowledgements: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub evidence: Vec<WrittenResolutionReviewEvidenceLocatorView>,
+    pub note: Option<String>,
+    pub consent_proof_claimed: bool,
+    pub quorum_proof_claimed: bool,
+    pub identity_proof_claimed: bool,
+    pub legal_acceptance_claimed: bool,
+    pub legal_sufficiency_claimed: bool,
+    pub external_validation_claimed: bool,
+    pub automatic_approval_claimed: bool,
+    pub authority_certified_claimed: bool,
+}
+
+impl From<&WrittenResolutionReviewReceipt> for WrittenResolutionReviewReceiptView {
+    fn from(receipt: &WrittenResolutionReviewReceipt) -> Self {
+        WrittenResolutionReviewReceiptView {
+            reviewer: receipt.reviewer.clone(),
+            reviewed_at: receipt.reviewed_at.format(&Rfc3339).unwrap_or_default(),
+            status: receipt.status.as_str().to_owned(),
+            guardrail_acknowledgements: receipt.guardrail_acknowledgements.clone(),
+            evidence: receipt
+                .evidence
+                .iter()
+                .map(WrittenResolutionReviewEvidenceLocatorView::from)
+                .collect(),
+            note: receipt.note.clone(),
+            consent_proof_claimed: receipt.consent_proof_claimed,
+            quorum_proof_claimed: receipt.quorum_proof_claimed,
+            identity_proof_claimed: receipt.identity_proof_claimed,
+            legal_acceptance_claimed: receipt.legal_acceptance_claimed,
+            legal_sufficiency_claimed: receipt.legal_sufficiency_claimed,
+            external_validation_claimed: receipt.external_validation_claimed,
+            automatic_approval_claimed: receipt.automatic_approval_claimed,
+            authority_certified_claimed: receipt.authority_certified_claimed,
+        }
+    }
+}
+
+impl WrittenResolutionReviewReceiptView {
+    fn redact_sensitive(&mut self) {
+        self.reviewer = redacted();
+        self.guardrail_acknowledgements.clear();
+        self.note = None;
+        for locator in &mut self.evidence {
+            locator.redact_sensitive();
+        }
+    }
+}
+
 /// Wire view of the optional written-resolution evidence metadata block.
 #[derive(Serialize)]
 pub struct WrittenResolutionEvidenceView {
     pub status: WrittenResolutionEvidenceStatusView,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub checklist: Vec<WrittenResolutionEvidenceItemView>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub review_receipts: Vec<WrittenResolutionReviewReceiptView>,
     pub note: Option<String>,
 }
 
@@ -907,6 +1003,11 @@ impl WrittenResolutionEvidenceView {
                 .iter()
                 .map(WrittenResolutionEvidenceItemView::from)
                 .collect(),
+            review_receipts: evidence
+                .review_receipts
+                .iter()
+                .map(WrittenResolutionReviewReceiptView::from)
+                .collect(),
             note: evidence.note.clone(),
         }
     }
@@ -915,6 +1016,9 @@ impl WrittenResolutionEvidenceView {
         self.note = None;
         for item in &mut self.checklist {
             item.redact_sensitive();
+        }
+        for receipt in &mut self.review_receipts {
+            receipt.redact_sensitive();
         }
     }
 }
@@ -1838,6 +1942,8 @@ pub struct WrittenResolutionEvidenceInput {
     #[serde(default)]
     pub checklist: Vec<WrittenResolutionEvidenceItemInput>,
     #[serde(default)]
+    pub review_receipts: Vec<WrittenResolutionReviewReceiptInput>,
+    #[serde(default)]
     pub note: Option<String>,
 }
 
@@ -1847,8 +1953,13 @@ impl WrittenResolutionEvidenceInput {
         for item in self.checklist {
             checklist.push(item.into_core()?);
         }
+        let mut review_receipts = Vec::with_capacity(self.review_receipts.len());
+        for receipt in self.review_receipts {
+            review_receipts.push(receipt.into_core()?);
+        }
         Ok(WrittenResolutionEvidence {
             checklist,
+            review_receipts,
             note: self.note,
         })
     }
@@ -1883,6 +1994,184 @@ impl WrittenResolutionEvidenceItemInput {
             note: self.note,
         })
     }
+}
+
+/// One local written-resolution evidence review receipt accepted on PATCH.
+#[derive(Deserialize)]
+pub struct WrittenResolutionReviewReceiptInput {
+    pub reviewer: String,
+    pub reviewed_at: String,
+    pub status: WrittenResolutionReviewStatus,
+    #[serde(default)]
+    pub guardrail_acknowledgements: Vec<String>,
+    #[serde(default)]
+    pub evidence: Vec<WrittenResolutionReviewEvidenceLocatorInput>,
+    #[serde(default)]
+    pub note: Option<String>,
+    #[serde(default)]
+    pub consent_proof_claimed: bool,
+    #[serde(default)]
+    pub quorum_proof_claimed: bool,
+    #[serde(default)]
+    pub identity_proof_claimed: bool,
+    #[serde(default)]
+    pub legal_acceptance_claimed: bool,
+    #[serde(default)]
+    pub legal_sufficiency_claimed: bool,
+    #[serde(default)]
+    pub external_validation_claimed: bool,
+    #[serde(default)]
+    pub automatic_approval_claimed: bool,
+    #[serde(default)]
+    pub authority_certified_claimed: bool,
+}
+
+impl WrittenResolutionReviewReceiptInput {
+    fn into_core(self) -> Result<WrittenResolutionReviewReceipt, ApiError> {
+        reject_true_written_resolution_claim_flags(
+            self.consent_proof_claimed,
+            self.quorum_proof_claimed,
+            self.identity_proof_claimed,
+            self.legal_acceptance_claimed,
+            self.legal_sufficiency_claimed,
+            self.external_validation_claimed,
+            self.automatic_approval_claimed,
+            self.authority_certified_claimed,
+        )?;
+
+        let reviewer = non_empty_written_resolution_field(self.reviewer, "reviewer")?;
+        let reviewed_at =
+            OffsetDateTime::parse(self.reviewed_at.trim(), &Rfc3339).map_err(|_| {
+                ApiError::Unprocessable(format!(
+                    "invalid written_resolution_evidence review_receipts reviewed_at {:?}",
+                    self.reviewed_at
+                ))
+            })?;
+        let guardrail_acknowledgements = non_empty_written_resolution_list(
+            self.guardrail_acknowledgements,
+            "guardrail_acknowledgements",
+        )?;
+        if self.evidence.is_empty() {
+            return Err(ApiError::Unprocessable(
+                "written_resolution_evidence review_receipts evidence must not be empty".to_owned(),
+            ));
+        }
+        let mut evidence = Vec::with_capacity(self.evidence.len());
+        for locator in self.evidence {
+            evidence.push(locator.into_core()?);
+        }
+
+        Ok(WrittenResolutionReviewReceipt {
+            reviewer,
+            reviewed_at,
+            status: self.status,
+            guardrail_acknowledgements,
+            evidence,
+            note: self.note,
+            consent_proof_claimed: false,
+            quorum_proof_claimed: false,
+            identity_proof_claimed: false,
+            legal_acceptance_claimed: false,
+            legal_sufficiency_claimed: false,
+            external_validation_claimed: false,
+            automatic_approval_claimed: false,
+            authority_certified_claimed: false,
+        })
+    }
+}
+
+/// One reviewed evidence locator accepted on PATCH.
+#[derive(Deserialize)]
+pub struct WrittenResolutionReviewEvidenceLocatorInput {
+    pub label: String,
+    #[serde(default)]
+    pub locator: Option<String>,
+    #[serde(default)]
+    pub digest: Option<String>,
+}
+
+impl WrittenResolutionReviewEvidenceLocatorInput {
+    fn into_core(self) -> Result<WrittenResolutionReviewEvidenceLocator, ApiError> {
+        let label = non_empty_written_resolution_field(self.label, "evidence.label")?;
+        let locator = self.locator.and_then(|locator| {
+            let trimmed = locator.trim().to_owned();
+            (!trimmed.is_empty()).then_some(trimmed)
+        });
+        let digest = match self.digest {
+            Some(s) => Some(parse_hex32(&s).ok_or_else(|| {
+                ApiError::Unprocessable(format!(
+                    "invalid written_resolution_evidence review_receipts evidence digest {s:?}"
+                ))
+            })?),
+            None => None,
+        };
+        if locator.is_none() && digest.is_none() {
+            return Err(ApiError::Unprocessable(
+                "written_resolution_evidence review_receipts evidence requires locator or digest"
+                    .to_owned(),
+            ));
+        }
+        Ok(WrittenResolutionReviewEvidenceLocator {
+            label,
+            locator,
+            digest,
+        })
+    }
+}
+
+fn non_empty_written_resolution_field(value: String, field: &str) -> Result<String, ApiError> {
+    let trimmed = value.trim().to_owned();
+    if trimmed.is_empty() {
+        return Err(ApiError::Unprocessable(format!(
+            "written_resolution_evidence review_receipts {field} must not be empty"
+        )));
+    }
+    Ok(trimmed)
+}
+
+fn non_empty_written_resolution_list(
+    values: Vec<String>,
+    field: &str,
+) -> Result<Vec<String>, ApiError> {
+    if values.is_empty() {
+        return Err(ApiError::Unprocessable(format!(
+            "written_resolution_evidence review_receipts {field} must not be empty"
+        )));
+    }
+    let mut out = Vec::with_capacity(values.len());
+    for value in values {
+        out.push(non_empty_written_resolution_field(value, field)?);
+    }
+    Ok(out)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn reject_true_written_resolution_claim_flags(
+    consent_proof_claimed: bool,
+    quorum_proof_claimed: bool,
+    identity_proof_claimed: bool,
+    legal_acceptance_claimed: bool,
+    legal_sufficiency_claimed: bool,
+    external_validation_claimed: bool,
+    automatic_approval_claimed: bool,
+    authority_certified_claimed: bool,
+) -> Result<(), ApiError> {
+    let flags = [
+        ("consent_proof_claimed", consent_proof_claimed),
+        ("quorum_proof_claimed", quorum_proof_claimed),
+        ("identity_proof_claimed", identity_proof_claimed),
+        ("legal_acceptance_claimed", legal_acceptance_claimed),
+        ("legal_sufficiency_claimed", legal_sufficiency_claimed),
+        ("external_validation_claimed", external_validation_claimed),
+        ("automatic_approval_claimed", automatic_approval_claimed),
+        ("authority_certified_claimed", authority_certified_claimed),
+    ];
+    if let Some((field, _)) = flags.iter().find(|(_, value)| *value) {
+        return Err(ApiError::Unprocessable(format!(
+            "written_resolution_evidence review_receipts {field} must be false"
+        )));
+    }
+    Ok(())
 }
 
 /// Body of `PATCH /v1/acts/{id}` (working-content edit; every field optional). Nullable
@@ -3135,6 +3424,26 @@ mod tests {
                     note: Some("private reference note".to_owned()),
                 },
             ],
+            review_receipts: vec![WrittenResolutionReviewReceipt {
+                reviewer: "private reviewer".to_owned(),
+                reviewed_at: OffsetDateTime::UNIX_EPOCH,
+                status: WrittenResolutionReviewStatus::Reviewed,
+                guardrail_acknowledgements: vec!["no legal claim".to_owned()],
+                evidence: vec![WrittenResolutionReviewEvidenceLocator {
+                    label: "private review locator".to_owned(),
+                    locator: Some("vault:private-review".to_owned()),
+                    digest: Some([8; 32]),
+                }],
+                note: Some("private review note".to_owned()),
+                consent_proof_claimed: false,
+                quorum_proof_claimed: false,
+                identity_proof_claimed: false,
+                legal_acceptance_claimed: false,
+                legal_sufficiency_claimed: false,
+                external_validation_claimed: false,
+                automatic_approval_claimed: false,
+                authority_certified_claimed: false,
+            }],
             note: Some("private written-resolution evidence note".to_owned()),
         });
         act.deliberations = "Texto de deliberação com dados pessoais".to_owned();
@@ -3203,6 +3512,11 @@ mod tests {
             "folder:referenced-approvals",
             "private reference note",
             "private written-resolution evidence note",
+            "private reviewer",
+            "no legal claim",
+            "private review locator",
+            "vault:private-review",
+            "private review note",
             "Texto de deliberação",
             "Joana Silva",
             "IP e sessão",
@@ -3231,12 +3545,31 @@ mod tests {
         assert_eq!(evidence["status"]["digested_checklist_items"], 1);
         assert_eq!(evidence["status"]["referenced_checklist_items"], 1);
         assert_eq!(evidence["status"]["bound_count"], 2);
+        assert_eq!(evidence["status"]["review_receipts"], 1);
+        assert_eq!(evidence["status"]["latest_review_status"], "reviewed");
+        assert_eq!(evidence["status"]["reviewed_evidence_locators"], 1);
+        assert_eq!(evidence["status"]["reviewed_evidence_digests"], 1);
         assert_eq!(
             evidence["checklist"][0]["reference"],
             serde_json::Value::Null
         );
         assert_eq!(evidence["checklist"][0]["digest"], serde_json::Value::Null);
         assert_eq!(evidence["checklist"][0]["note"], serde_json::Value::Null);
+        let receipt = &evidence["review_receipts"][0];
+        assert_eq!(receipt["reviewer"], REDACTED);
+        assert_eq!(
+            receipt["guardrail_acknowledgements"]
+                .as_array()
+                .expect("acknowledgements array")
+                .len(),
+            0
+        );
+        assert_eq!(receipt["note"], serde_json::Value::Null);
+        assert_eq!(receipt["evidence"][0]["label"], REDACTED);
+        assert_eq!(receipt["evidence"][0]["locator"], serde_json::Value::Null);
+        assert_eq!(receipt["evidence"][0]["digest"], serde_json::Value::Null);
+        assert_eq!(receipt["legal_sufficiency_claimed"], false);
+        assert_eq!(receipt["authority_certified_claimed"], false);
         assert_eq!(evidence["note"], serde_json::Value::Null);
     }
 }

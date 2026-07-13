@@ -1114,8 +1114,28 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-api/src/acts.rs",
+    "patch_act_written_resolution_review_receipts_reject_proof_claims",
+    "written-resolution review receipt false-claim rejection coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/acts.rs",
+    "written_resolution_evidence review_receipts are append-only",
+    "written-resolution review receipt append-only API guard",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/acts.rs",
     "compliance_reports_written_resolution_evidence_status_only",
     "written-resolution evidence compliance status coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/CompliancePanel.tsx",
+    "Written-resolution local evidence review",
+    "written-resolution review-depth compliance panel marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/AtaEditorStructured.test.tsx",
+    "renders local review receipt depth from compliance without proof wording",
+    "written-resolution editor review-depth rendering coverage",
   );
   assertFileContains(
     "crates/chancela-core/src/seal.rs",

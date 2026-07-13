@@ -1220,6 +1220,7 @@ mod tests {
                 digest: None,
                 note: Some("operator note".into()),
             }],
+            review_receipts: vec![],
             note: Some("reference retained elsewhere".into()),
         });
         let summary = written_resolution_evidence_summary(&act);

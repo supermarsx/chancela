@@ -298,6 +298,11 @@ pub struct WrittenResolutionEvidence {
     /// Operator checklist items for the written approvals/evidence retained for this act.
     #[serde(default)]
     pub checklist: Vec<WrittenResolutionEvidenceItem>,
+    /// Append-only operator review receipts for the retained evidence. These are local audit
+    /// metadata only; they do not prove consent, quorum, identity, legal sufficiency, acceptance,
+    /// or authority certification.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub review_receipts: Vec<WrittenResolutionReviewReceipt>,
     /// Operator note about the evidence capture. This is context only, not a validity claim.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
@@ -318,6 +323,78 @@ pub struct WrittenResolutionEvidenceItem {
     /// Operator note about this item. This is evidence context only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+}
+
+/// Local operator review status for written-resolution evidence receipts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WrittenResolutionReviewStatus {
+    /// The operator reviewed the retained evidence metadata.
+    Reviewed,
+    /// The operator found a gap or follow-up need in the retained evidence metadata.
+    NeedsFollowUp,
+}
+
+impl WrittenResolutionReviewStatus {
+    /// Stable wire/status string.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            WrittenResolutionReviewStatus::Reviewed => "reviewed",
+            WrittenResolutionReviewStatus::NeedsFollowUp => "needs_follow_up",
+        }
+    }
+}
+
+/// One reviewed evidence locator referenced by an operator receipt.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WrittenResolutionReviewEvidenceLocator {
+    /// Human label for the reviewed local evidence.
+    pub label: String,
+    /// Local reference/path/document id when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub locator: Option<String>,
+    /// Optional sha-256 digest for the reviewed evidence bytes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub digest: Option<[u8; 32]>,
+}
+
+/// One append-only local review receipt for written-resolution evidence.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WrittenResolutionReviewReceipt {
+    /// Operator/reviewer who recorded the local evidence review.
+    pub reviewer: String,
+    /// UTC review timestamp supplied by the operator/API caller.
+    #[serde(with = "time::serde::rfc3339")]
+    pub reviewed_at: OffsetDateTime,
+    /// Local review status. This is not legal acceptance or approval.
+    pub status: WrittenResolutionReviewStatus,
+    /// Guardrail acknowledgements recorded by the operator before saving this receipt.
+    #[serde(default)]
+    pub guardrail_acknowledgements: Vec<String>,
+    /// Evidence locators/digests considered in this local review.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub evidence: Vec<WrittenResolutionReviewEvidenceLocator>,
+    /// Operator review note. This is local evidence context only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    /// Explicit false proof/legal boundary flags.
+    #[serde(default)]
+    pub consent_proof_claimed: bool,
+    #[serde(default)]
+    pub quorum_proof_claimed: bool,
+    #[serde(default)]
+    pub identity_proof_claimed: bool,
+    #[serde(default)]
+    pub legal_acceptance_claimed: bool,
+    #[serde(default)]
+    pub legal_sufficiency_claimed: bool,
+    #[serde(default)]
+    pub external_validation_claimed: bool,
+    #[serde(default)]
+    pub automatic_approval_claimed: bool,
+    #[serde(default)]
+    pub authority_certified_claimed: bool,
 }
 
 /// Derived technical status for written-resolution evidence capture.
@@ -364,6 +441,14 @@ pub struct WrittenResolutionEvidenceSummary {
     pub digested_checklist_items: usize,
     /// Checklist items with a reference but no digest.
     pub referenced_checklist_items: usize,
+    /// Operator review receipts recorded in the optional metadata block.
+    pub review_receipts: usize,
+    /// Status from the latest operator review receipt, when present.
+    pub latest_review_status: Option<WrittenResolutionReviewStatus>,
+    /// Evidence locator rows recorded across review receipts.
+    pub reviewed_evidence_locators: usize,
+    /// Evidence locator rows carrying a digest across review receipts.
+    pub reviewed_evidence_digests: usize,
 }
 
 impl WrittenResolutionEvidenceSummary {
@@ -391,6 +476,10 @@ pub fn written_resolution_evidence_summary(act: &Act) -> WrittenResolutionEviden
         checklist_items: 0,
         digested_checklist_items: 0,
         referenced_checklist_items: 0,
+        review_receipts: 0,
+        latest_review_status: None,
+        reviewed_evidence_locators: 0,
+        reviewed_evidence_digests: 0,
     };
 
     if act.channel != MeetingChannel::WrittenResolution {
@@ -421,6 +510,22 @@ pub fn written_resolution_evidence_summary(act: &Act) -> WrittenResolutionEviden
                         .as_deref()
                         .is_some_and(|reference| !reference.trim().is_empty())
             })
+            .count();
+        summary.review_receipts = evidence.review_receipts.len();
+        summary.latest_review_status = evidence
+            .review_receipts
+            .last()
+            .map(|receipt| receipt.status);
+        summary.reviewed_evidence_locators = evidence
+            .review_receipts
+            .iter()
+            .map(|receipt| receipt.evidence.len())
+            .sum();
+        summary.reviewed_evidence_digests = evidence
+            .review_receipts
+            .iter()
+            .flat_map(|receipt| receipt.evidence.iter())
+            .filter(|evidence| evidence.digest.is_some())
             .count();
     }
 
@@ -1117,6 +1222,29 @@ mod tests {
                     note: Some("digest retained".to_owned()),
                 },
             ],
+            review_receipts: vec![WrittenResolutionReviewReceipt {
+                reviewer: "operator@example.test".to_owned(),
+                reviewed_at: OffsetDateTime::UNIX_EPOCH,
+                status: WrittenResolutionReviewStatus::Reviewed,
+                guardrail_acknowledgements: vec![
+                    "local_metadata_only".to_owned(),
+                    "no_legal_or_proof_claim".to_owned(),
+                ],
+                evidence: vec![WrittenResolutionReviewEvidenceLocator {
+                    label: "Approval pack review".to_owned(),
+                    locator: Some("doc:approval-pack".to_owned()),
+                    digest: Some([4; 32]),
+                }],
+                note: Some("reviewed local evidence metadata".to_owned()),
+                consent_proof_claimed: false,
+                quorum_proof_claimed: false,
+                identity_proof_claimed: false,
+                legal_acceptance_claimed: false,
+                legal_sufficiency_claimed: false,
+                external_validation_claimed: false,
+                automatic_approval_claimed: false,
+                authority_certified_claimed: false,
+            }],
             note: Some("operator capture note".to_owned()),
         });
 
@@ -1133,6 +1261,13 @@ mod tests {
         assert_eq!(summary.digested_checklist_items, 1);
         assert_eq!(summary.referenced_checklist_items, 1);
         assert_eq!(summary.bound_count(), 1);
+        assert_eq!(summary.review_receipts, 1);
+        assert_eq!(
+            summary.latest_review_status,
+            Some(WrittenResolutionReviewStatus::Reviewed)
+        );
+        assert_eq!(summary.reviewed_evidence_locators, 1);
+        assert_eq!(summary.reviewed_evidence_digests, 1);
 
         let mut referenced = Act::draft(
             BookId::new(),
@@ -1146,6 +1281,7 @@ mod tests {
                 digest: None,
                 note: None,
             }],
+            review_receipts: vec![],
             note: None,
         });
         assert_eq!(

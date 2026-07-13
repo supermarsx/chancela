@@ -217,6 +217,80 @@ function SourceReferences({ references }: { references: SourceReference[] }) {
   );
 }
 
+function writtenResolutionStatusLabel(status: string | null | undefined): string {
+  switch (status) {
+    case 'bound_present':
+      return 'Bound evidence present';
+    case 'referenced_only':
+      return 'Referenced only';
+    case 'missing':
+      return 'Evidence missing';
+    case 'not_applicable':
+      return 'Not applicable';
+    case 'reviewed':
+      return 'Reviewed';
+    case 'needs_follow_up':
+      return 'Needs follow-up';
+    default:
+      return status?.trim() || 'Not recorded';
+  }
+}
+
+function WrittenResolutionEvidenceReview({
+  status,
+}: {
+  status: ComplianceReport['written_resolution_evidence_status'];
+}) {
+  if (!status || status.status === 'not_applicable') return null;
+  const hasReviewReceipt = status.review_receipts > 0;
+
+  return (
+    <section
+      className="written-resolution-review"
+      aria-label="Written-resolution local evidence review"
+    >
+      <div className="row-wrap">
+        <span className="card__label">Written-resolution local evidence review</span>
+        <Badge tone={hasReviewReceipt ? 'ok' : 'warn'}>
+          {hasReviewReceipt ? 'Receipt recorded' : 'Review receipt missing'}
+        </Badge>
+        <Badge
+          tone={status.bound_count > 0 ? 'ok' : status.referenced_only_count > 0 ? 'warn' : 'error'}
+        >
+          {writtenResolutionStatusLabel(status.status)}
+        </Badge>
+        {status.latest_review_status ? (
+          <Badge tone={status.latest_review_status === 'reviewed' ? 'ok' : 'warn'}>
+            {writtenResolutionStatusLabel(status.latest_review_status)}
+          </Badge>
+        ) : null}
+      </div>
+      <dl className="deflist deflist--tight">
+        <div>
+          <dt>Review receipts</dt>
+          <dd>{status.review_receipts}</dd>
+        </div>
+        <div>
+          <dt>Reviewed locators</dt>
+          <dd>{status.reviewed_evidence_locators}</dd>
+        </div>
+        <div>
+          <dt>Reviewed digests</dt>
+          <dd>{status.reviewed_evidence_digests}</dd>
+        </div>
+        <div>
+          <dt>Bound evidence</dt>
+          <dd>{status.bound_count}</dd>
+        </div>
+      </dl>
+      <p className="muted">
+        Local metadata only. No consent, quorum, identity, legal sufficiency, external validation,
+        automatic approval, or authority certification is claimed.
+      </p>
+    </section>
+  );
+}
+
 export function CompliancePanel({ report }: { report: ComplianceReport }) {
   const t = useT();
   const conveningAdvisories = report.convening_advisories ?? [];
@@ -249,6 +323,8 @@ export function CompliancePanel({ report }: { report: ComplianceReport }) {
         ) : null}
         {clean ? <Badge tone="ok">{t('compliance.conforme')}</Badge> : null}
       </div>
+
+      <WrittenResolutionEvidenceReview status={report.written_resolution_evidence_status} />
 
       {clean ? (
         <EmptyState title={t('compliance.noIssues')} />
