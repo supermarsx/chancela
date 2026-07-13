@@ -1921,14 +1921,18 @@ behavior, legal disposal, or legal-effect claims.
   signature diagnostics, no-claim fields, and a `technical_validation` report
   projected from `validate_asic_container` / `AsicValidationReport` across CAdES,
   XAdES, mixed ASiC-E signatures, and archive timestamp imprint/reference
-  consistency. The legacy bounded `cades` report remains for compatibility with
+  consistency, plus local embedded-evidence diagnostics that report
+  caller-supplied XAdES signature-timestamp, certificate/revocation-value, and
+  archive-timestamp indicators or incomplete/unreferenced timestamp blockers as
+  technical-only presence checks. The legacy bounded `cades` report remains for compatibility with
   prior ASiC-S/CAdES and ASiC-E/CAdES callers. The ZIP reader now accounts
   actual decompressed member and aggregate sizes for payloads, manifests, CAdES
   signatures, XAdES signatures, unsupported `META-INF`, and other non-directory
   members, so underdeclared entries still produce blockers. This is technical
   diagnostics only, not signing, storage, archive mutation, CAdES/XAdES trust
-  validation, live provider or trust-network use, LTV evidence, legal validity,
-  qualified status, production ASiC/XAdES compliance, or authority approval.
+  validation, live provider or trust-network use, trust-validated LTV evidence,
+  legal validity, qualified status, production ASiC/XAdES compliance, B-LT/B-LTA
+  sufficiency, or authority approval.
 - **Accepted paper-book OCR conversion dossier:** accepted OCR draft review
   metadata can now be recorded as a metadata-only, non-canonical conversion
   dossier through `POST
@@ -3165,7 +3169,7 @@ behavior, legal disposal, or legal-effect claims.
   legal/trust/provider/QES/B-LT/B-LTA/eIDAS/production conformance beyond local
   `technical_validation` reports, ASiC inspection beyond the local read-only technical endpoint,
   ASiC-E coverage beyond the bounded CAdES-signed manifest/digest-binding path, embedded ASiC
-  LT/LTA evidence,
+  LT/LTA evidence beyond local caller-supplied technical diagnostics,
   PKCS#11/operator certificate workflows, multi-signature/archive timestamp renewal depth beyond
   caller-supplied local timestamp append and policy-driven LTV renewal timing, production
   provider-management flows, actual operator validator
@@ -3332,7 +3336,9 @@ behavior, legal disposal, or legal-effect claims.
   unsafe member paths; reports profile shape, bounded profile, blockers, member paths, manifest and
   signature diagnostics; projects `technical_validation` from
   `chancela-signing::validate_asic_container` across CAdES, XAdES, mixed ASiC-E signatures, and
-  archive timestamp imprint/reference consistency; and keeps the legacy bounded `cades` field for
+  archive timestamp imprint/reference consistency; reports local embedded-evidence indicators and
+  blockers from caller-supplied XAdES/ASiC timestamp members without fetching or trusting them; and
+  keeps the legacy bounded `cades` field for
   ASiC-S/CAdES and ASiC-E/CAdES compatibility. The endpoint and ASiC ZIP reader do not sign, store,
   mutate archives, call live providers, fetch TSA/TSL/OCSP/CRL material, anchor trust, certify legal
   validity, claim QES, claim B-LT/B-LTA, decide eIDAS legal effect, or certify production ASiC/XAdES
@@ -3340,8 +3346,9 @@ behavior, legal disposal, or legal-effect claims.
 - ASiC structural diagnostics expose member-shape classifications, manifest/signature diagnostics,
   blocker IDs, and actual decompressed-size blockers so operators/tests can understand why a package
   is outside the bounded profile slice. Technical signature/archive timestamp validation remains
-  local cryptographic evidence only; it does not establish CAdES/XAdES trust, fetch or prove LTV
-  evidence, certify broad ASiC profile compliance, or create legal/qualified-signature validity.
+  local cryptographic evidence only; embedded LT/LTA-like diagnostics report local member/element
+  indicators and blockers only; this does not establish CAdES/XAdES trust, fetch or prove LTV
+  sufficiency, certify broad ASiC profile compliance, or create legal/qualified-signature validity.
 - Template law references are bounded Pending provenance links derived from current rule-pack and
   threshold metadata; they are not exhaustive, legally verified, or a substitute for reviewing the
   generated template wording.

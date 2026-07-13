@@ -247,23 +247,48 @@ fn zip_entries(entries: &[(&str, &[u8])]) -> Vec<u8> {
 }
 
 fn replace_member(container: &[u8], target: &str, new_bytes: &[u8]) -> Vec<u8> {
+    rewrite_member(container, target, |_| new_bytes.to_vec())
+}
+
+fn rewrite_member(
+    container: &[u8],
+    target: &str,
+    rewrite: impl FnOnce(&[u8]) -> Vec<u8>,
+) -> Vec<u8> {
     let mut archive = zip::ZipArchive::new(Cursor::new(container)).expect("read zip");
     let options = SimpleFileOptions::default()
         .compression_method(CompressionMethod::Stored)
         .last_modified_time(DateTime::default());
     let mut out = ZipWriter::new(Cursor::new(Vec::new()));
+    let mut rewrite = Some(rewrite);
     for index in 0..archive.len() {
         let mut file = archive.by_index(index).expect("member");
         let name = file.name().to_owned();
         let mut bytes = Vec::new();
         file.read_to_end(&mut bytes).expect("read member");
         if name == target {
-            bytes = new_bytes.to_vec();
+            bytes = rewrite.take().expect("target rewritten once")(&bytes);
         }
         out.start_file(&name, options).expect("start member");
         out.write_all(&bytes).expect("write member");
     }
     out.finish().expect("zip finish").into_inner()
+}
+
+fn inject_xades_lt_lta_elements(container: &[u8]) -> Vec<u8> {
+    rewrite_member(container, "META-INF/signatures.xml", |xml| {
+        let text = std::str::from_utf8(xml).expect("xades utf8");
+        text.replace(
+            "</xades:UnsignedSignatureProperties>",
+            "<xades:CompleteCertificateRefs/>\
+             <xades:CompleteRevocationRefs/>\
+             <xades:CertificateValues><xades:EncapsulatedX509Certificate>AA==</xades:EncapsulatedX509Certificate></xades:CertificateValues>\
+             <xades:RevocationValues><xades:OCSPValues/></xades:RevocationValues>\
+             <xades:ArchiveTimeStamp><xades:EncapsulatedTimeStamp>AA==</xades:EncapsulatedTimeStamp></xades:ArchiveTimeStamp>\
+             </xades:UnsignedSignatureProperties>",
+        )
+        .into_bytes()
+    })
 }
 
 fn compressed_oversized_member_container() -> Vec<u8> {
@@ -495,6 +520,20 @@ fn assert_technical_no_claim_boundaries(technical: &Value) {
         assert_eq!(archive["b_lta_claimed"], false);
         assert_eq!(archive["legal_validity_claimed"], false);
     }
+    let embedded = &technical["embedded_evidence"];
+    assert_eq!(embedded["evidence_scope"], "technical_evidence_only");
+    assert_eq!(embedded["trust_validation"], "not_performed");
+    assert_eq!(embedded["revocation_validation"], "not_performed");
+    assert_eq!(embedded["timestamp_trust_validation"], "not_performed");
+    assert_eq!(embedded["live_tsl_fetching"], false);
+    assert_eq!(embedded["live_tsa_fetching"], false);
+    assert_eq!(embedded["live_ocsp_fetching"], false);
+    assert_eq!(embedded["live_crl_fetching"], false);
+    assert_eq!(embedded["b_lt_claimed"], false);
+    assert_eq!(embedded["b_lta_claimed"], false);
+    assert_eq!(embedded["ltv_claimed"], false);
+    assert_eq!(embedded["legal_validity_claimed"], false);
+    assert_eq!(embedded["qualified_signature_claimed"], false);
 }
 
 fn assert_technical_performed(body: &Value, cryptographically_valid: bool) {
@@ -714,6 +753,55 @@ async fn asic_signature_validation_xades_s_and_e_use_technical_report() {
             .any(|reason| reason.as_str().unwrap_or_default().contains("payload.txt")),
         "{body}"
     );
+}
+
+#[tokio::test]
+async fn asic_signature_validation_reports_embedded_lt_lta_diagnostics_without_claims() {
+    let state = seeded_state();
+    let token = owner_session(&state).await;
+    let provider = provider(14);
+    let container = sign_asic_s_xades(
+        &provider,
+        "payload.txt",
+        b"payload with caller-supplied LT/LTA-like diagnostics",
+        signing_time(),
+        XadesLevel::T,
+        Some(&PatchingTsa),
+    )
+    .expect("asic s xades t");
+    let container = inject_xades_lt_lta_elements(&container);
+
+    let (status, body) = send(&state, post_asic(&token, &container)).await;
+
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_no_claim_boundaries(&body);
+    assert_eq!(body["status"], "valid");
+    assert_eq!(body["xades_validation_performed"], true);
+    assert_technical_performed(&body, true);
+    let embedded = &body["technical_validation"]["embedded_evidence"];
+    let codes: Vec<_> = embedded["indicators"]
+        .as_array()
+        .expect("embedded indicators")
+        .iter()
+        .map(|indicator| indicator["code"].as_str().expect("code"))
+        .collect();
+    assert!(codes.contains(&"xades_signature_timestamp"), "{body}");
+    assert!(codes.contains(&"xades_certificate_refs"), "{body}");
+    assert!(codes.contains(&"xades_revocation_refs"), "{body}");
+    assert!(codes.contains(&"xades_certificate_values"), "{body}");
+    assert!(codes.contains(&"xades_revocation_values"), "{body}");
+    assert!(codes.contains(&"xades_archive_timestamp"), "{body}");
+    assert!(
+        embedded["blockers"]
+            .as_array()
+            .expect("embedded blockers")
+            .is_empty(),
+        "{body}"
+    );
+    assert_eq!(embedded["trust_validation"], "not_performed");
+    assert_eq!(embedded["ltv_claimed"], false);
+    assert_eq!(embedded["b_lt_claimed"], false);
+    assert_eq!(embedded["b_lta_claimed"], false);
 }
 
 #[tokio::test]

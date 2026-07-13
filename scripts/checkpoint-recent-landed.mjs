@@ -1563,6 +1563,26 @@ function assertCheckpointMap() {
     "signing ASiC validation report struct marker",
   );
   assertFileContains(
+    "crates/chancela-signing/src/asic_validate.rs",
+    "pub struct AsicEmbeddedEvidenceIndicator",
+    "signing ASiC embedded evidence indicator struct marker",
+  );
+  assertFileContains(
+    "crates/chancela-signing/src/asic_validate.rs",
+    "fn diagnose_embedded_evidence",
+    "signing ASiC embedded evidence diagnostics marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/asic_signature_validation.rs",
+    "pub embedded_evidence: AsicEmbeddedEvidenceReport",
+    "API ASiC embedded evidence technical report marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/asic_signature_validation.rs",
+    "timestamp_trust_validation: NOT_PERFORMED",
+    "API ASiC embedded evidence timestamp trust not_performed marker",
+  );
+  assertFileContains(
     "crates/chancela-api/src/asic_signature_validation.rs",
     "production_asic_compliance_claimed: false",
     "API ASiC inspection production compliance false marker",
@@ -1651,6 +1671,21 @@ function assertCheckpointMap() {
     "crates/chancela-api/tests/asic_signature_validation.rs",
     "asic_signature_validation_response_claim_boundaries_stay_false",
     "API ASiC inspection no-claim boundary coverage",
+  );
+  assertFileContains(
+    "crates/chancela-signing/tests/asic_full.rs",
+    "asic_s_xades_t_reports_embedded_lt_lta_indicators_without_claims",
+    "signing ASiC embedded LT/LTA diagnostics coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/asic_signature_validation.rs",
+    "asic_signature_validation_reports_embedded_lt_lta_diagnostics_without_claims",
+    "API ASiC embedded LT/LTA diagnostics no-claim coverage",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "embedded LT/LTA-like diagnostics report local member/element",
+    "spec coverage ASiC embedded LT/LTA technical-only marker",
   );
   assertFileContains(
     "crates/chancela-signing/src/asic.rs",

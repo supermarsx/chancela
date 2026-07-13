@@ -154,6 +154,35 @@ impl TimestampProvider for PatchingTsa {
 
 /// Rebuild a container replacing one member's bytes (used to forge a tampered payload).
 fn replace_member(container: &[u8], target: &str, new_bytes: &[u8]) -> Vec<u8> {
+    rewrite_member(container, target, |_| new_bytes.to_vec())
+}
+
+fn rewrite_member(
+    container: &[u8],
+    target: &str,
+    rewrite: impl FnOnce(&[u8]) -> Vec<u8>,
+) -> Vec<u8> {
+    let mut archive = zip::ZipArchive::new(Cursor::new(container)).expect("read zip");
+    let stored = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Stored)
+        .last_modified_time(zip::DateTime::default());
+    let mut out = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let mut rewrite = Some(rewrite);
+    for i in 0..archive.len() {
+        let mut file = archive.by_index(i).expect("member");
+        let name = file.name().to_owned();
+        let mut bytes = Vec::new();
+        file.read_to_end(&mut bytes).expect("read member");
+        if name == target {
+            bytes = rewrite.take().expect("target rewritten once")(&bytes);
+        }
+        out.start_file(&name, stored).expect("start member");
+        out.write_all(&bytes).expect("write member");
+    }
+    out.finish().expect("finish zip").into_inner()
+}
+
+fn add_member(container: &[u8], path: &str, bytes: &[u8]) -> Vec<u8> {
     let mut archive = zip::ZipArchive::new(Cursor::new(container)).expect("read zip");
     let stored = zip::write::SimpleFileOptions::default()
         .compression_method(zip::CompressionMethod::Stored)
@@ -164,13 +193,28 @@ fn replace_member(container: &[u8], target: &str, new_bytes: &[u8]) -> Vec<u8> {
         let name = file.name().to_owned();
         let mut bytes = Vec::new();
         file.read_to_end(&mut bytes).expect("read member");
-        if name == target {
-            bytes = new_bytes.to_vec();
-        }
         out.start_file(&name, stored).expect("start member");
         out.write_all(&bytes).expect("write member");
     }
+    out.start_file(path, stored).expect("start extra member");
+    out.write_all(bytes).expect("write extra member");
     out.finish().expect("finish zip").into_inner()
+}
+
+fn inject_xades_lt_lta_elements(container: &[u8]) -> Vec<u8> {
+    rewrite_member(container, "META-INF/signatures.xml", |xml| {
+        let text = std::str::from_utf8(xml).expect("xades utf8");
+        let inserted = text.replace(
+            "</xades:UnsignedSignatureProperties>",
+            "<xades:CompleteCertificateRefs/>\
+             <xades:CompleteRevocationRefs/>\
+             <xades:CertificateValues><xades:EncapsulatedX509Certificate>AA==</xades:EncapsulatedX509Certificate></xades:CertificateValues>\
+             <xades:RevocationValues><xades:OCSPValues/></xades:RevocationValues>\
+             <xades:ArchiveTimeStamp><xades:EncapsulatedTimeStamp>AA==</xades:EncapsulatedTimeStamp></xades:ArchiveTimeStamp>\
+             </xades:UnsignedSignatureProperties>",
+        );
+        inserted.into_bytes()
+    })
 }
 
 // --- ASiC-S -------------------------------------------------------------------------------------
@@ -250,6 +294,70 @@ fn asic_s_xades_t_embeds_signature_timestamp() {
     assert_eq!(sig.xades_level, Some(XadesLevel::T));
     assert!(sig.has_signature_timestamp, "XAdES-T timestamp embedded");
     assert!(sig.valid, "{:?}", sig);
+}
+
+#[test]
+fn asic_s_xades_t_reports_embedded_lt_lta_indicators_without_claims() {
+    let provider = rsa_provider(SigningFamily::ChaveMovelDigital);
+    let container = sign_asic_s_xades(
+        &provider,
+        "minutes.txt",
+        b"minutes carrying caller-supplied long-term diagnostics",
+        fixed_time(),
+        XadesLevel::T,
+        Some(&PatchingTsa),
+    )
+    .expect("sign ASiC-S/XAdES-T");
+    let container = inject_xades_lt_lta_elements(&container);
+
+    let report = validate_asic_container(&container).expect("validate ASiC-S/XAdES-T diagnostics");
+
+    assert!(report.is_valid(), "{:?}", report);
+    let mut codes: Vec<_> = report
+        .embedded_evidence_indicators
+        .iter()
+        .map(|indicator| indicator.code.as_str())
+        .collect();
+    codes.sort();
+    assert!(codes.contains(&"xades_signature_timestamp"), "{codes:?}");
+    assert!(codes.contains(&"xades_certificate_refs"), "{codes:?}");
+    assert!(codes.contains(&"xades_revocation_refs"), "{codes:?}");
+    assert!(codes.contains(&"xades_certificate_values"), "{codes:?}");
+    assert!(codes.contains(&"xades_revocation_values"), "{codes:?}");
+    assert!(codes.contains(&"xades_archive_timestamp"), "{codes:?}");
+    assert!(
+        report.embedded_evidence_blockers.is_empty(),
+        "{:?}",
+        report.embedded_evidence_blockers
+    );
+}
+
+#[test]
+fn asic_s_cades_reports_unreferenced_timestamp_token_as_local_blocker_only() {
+    let provider = rsa_provider(SigningFamily::CartaoDeCidadao);
+    let (container, _cades) = sign_asic_s(
+        &provider,
+        "minutes.txt",
+        b"payload with unrelated timestamp token",
+        fixed_time(),
+    )
+    .expect("sign ASiC-S/CAdES");
+    let container = add_member(&container, "META-INF/orphan.tst", b"not-a-referenced-token");
+
+    let report = validate_asic_container(&container).expect("validate ASiC-S/CAdES");
+
+    assert!(report.is_valid(), "{:?}", report);
+    assert!(
+        report
+            .embedded_evidence_blockers
+            .iter()
+            .any(
+                |blocker| blocker.code == "unreferenced_timestamp_token_member"
+                    && blocker.source_path == "META-INF/orphan.tst"
+            ),
+        "{:?}",
+        report.embedded_evidence_blockers
+    );
 }
 
 // --- ASiC-E multi-signature ---------------------------------------------------------------------

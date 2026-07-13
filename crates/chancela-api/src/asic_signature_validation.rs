@@ -17,10 +17,10 @@ use chancela_signing::asic::{
     AsicSignatureProfile,
 };
 use chancela_signing::{
-    AsicArchiveTimestampValidation, AsicContainer, AsicSignatureValidation, AsicValidationReport,
-    BaselineProfile, EvidentiaryLevel, SignatureArtifact, SignatureFormat, SigningError,
-    SigningFamily, XadesLevel, extract_asic_container, sha256_content_digest,
-    validate_asic_container, validate_signature,
+    AsicArchiveTimestampValidation, AsicContainer, AsicEmbeddedEvidenceBlocker,
+    AsicEmbeddedEvidenceIndicator, AsicSignatureValidation, AsicValidationReport, BaselineProfile,
+    EvidentiaryLevel, SignatureArtifact, SignatureFormat, SigningError, SigningFamily, XadesLevel,
+    extract_asic_container, sha256_content_digest, validate_asic_container, validate_signature,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -220,6 +220,7 @@ pub struct AsicTechnicalValidationReport {
     pub container_failure_reasons: Vec<String>,
     pub signatures: Vec<AsicTechnicalSignatureReport>,
     pub archive_timestamps: Vec<AsicTechnicalArchiveTimestampReport>,
+    pub embedded_evidence: AsicEmbeddedEvidenceReport,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -259,6 +260,40 @@ pub struct AsicTechnicalArchiveTimestampReport {
     pub b_lta_claimed: bool,
     pub legal_validity_claimed: bool,
     pub failure_reasons: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct AsicEmbeddedEvidenceReport {
+    pub evidence_scope: &'static str,
+    pub indicators: Vec<AsicEmbeddedEvidenceIndicatorReport>,
+    pub blockers: Vec<AsicEmbeddedEvidenceBlockerReport>,
+    pub trust_validation: &'static str,
+    pub revocation_validation: &'static str,
+    pub timestamp_trust_validation: &'static str,
+    pub live_tsl_fetching: bool,
+    pub live_tsa_fetching: bool,
+    pub live_ocsp_fetching: bool,
+    pub live_crl_fetching: bool,
+    pub b_lt_claimed: bool,
+    pub b_lta_claimed: bool,
+    pub ltv_claimed: bool,
+    pub legal_validity_claimed: bool,
+    pub qualified_signature_claimed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct AsicEmbeddedEvidenceIndicatorReport {
+    pub code: String,
+    pub source_path: String,
+    pub evidence_kind: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct AsicEmbeddedEvidenceBlockerReport {
+    pub code: String,
+    pub source_path: String,
+    pub message: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -555,6 +590,7 @@ fn asic_technical_validation_report(bytes: &[u8]) -> AsicTechnicalValidationRepo
             container_failure_reasons: vec![err.to_string()],
             signatures: Vec::new(),
             archive_timestamps: Vec::new(),
+            embedded_evidence: empty_embedded_evidence_report(),
         },
     }
 }
@@ -575,6 +611,7 @@ fn project_asic_validation_report(report: &AsicValidationReport) -> AsicTechnica
             .iter()
             .map(technical_archive_timestamp_report)
             .collect(),
+        embedded_evidence: embedded_evidence_report(report),
     }
 }
 
@@ -625,6 +662,75 @@ fn technical_archive_timestamp_report(
         b_lta_claimed: false,
         legal_validity_claimed: false,
         failure_reasons: archive.failure_reasons.clone(),
+    }
+}
+
+fn embedded_evidence_report(report: &AsicValidationReport) -> AsicEmbeddedEvidenceReport {
+    AsicEmbeddedEvidenceReport {
+        evidence_scope: TECHNICAL_ONLY,
+        indicators: report
+            .embedded_evidence_indicators
+            .iter()
+            .map(embedded_evidence_indicator_report)
+            .collect(),
+        blockers: report
+            .embedded_evidence_blockers
+            .iter()
+            .map(embedded_evidence_blocker_report)
+            .collect(),
+        trust_validation: NOT_PERFORMED,
+        revocation_validation: NOT_PERFORMED,
+        timestamp_trust_validation: NOT_PERFORMED,
+        live_tsl_fetching: false,
+        live_tsa_fetching: false,
+        live_ocsp_fetching: false,
+        live_crl_fetching: false,
+        b_lt_claimed: false,
+        b_lta_claimed: false,
+        ltv_claimed: false,
+        legal_validity_claimed: false,
+        qualified_signature_claimed: false,
+    }
+}
+
+fn empty_embedded_evidence_report() -> AsicEmbeddedEvidenceReport {
+    AsicEmbeddedEvidenceReport {
+        evidence_scope: TECHNICAL_ONLY,
+        indicators: Vec::new(),
+        blockers: Vec::new(),
+        trust_validation: NOT_PERFORMED,
+        revocation_validation: NOT_PERFORMED,
+        timestamp_trust_validation: NOT_PERFORMED,
+        live_tsl_fetching: false,
+        live_tsa_fetching: false,
+        live_ocsp_fetching: false,
+        live_crl_fetching: false,
+        b_lt_claimed: false,
+        b_lta_claimed: false,
+        ltv_claimed: false,
+        legal_validity_claimed: false,
+        qualified_signature_claimed: false,
+    }
+}
+
+fn embedded_evidence_indicator_report(
+    indicator: &AsicEmbeddedEvidenceIndicator,
+) -> AsicEmbeddedEvidenceIndicatorReport {
+    AsicEmbeddedEvidenceIndicatorReport {
+        code: indicator.code.clone(),
+        source_path: indicator.source_path.clone(),
+        evidence_kind: indicator.evidence_kind.clone(),
+        message: indicator.message.clone(),
+    }
+}
+
+fn embedded_evidence_blocker_report(
+    blocker: &AsicEmbeddedEvidenceBlocker,
+) -> AsicEmbeddedEvidenceBlockerReport {
+    AsicEmbeddedEvidenceBlockerReport {
+        code: blocker.code.clone(),
+        source_path: blocker.source_path.clone(),
+        message: blocker.message.clone(),
     }
 }
 

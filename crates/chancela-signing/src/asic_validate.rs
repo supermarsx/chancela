@@ -99,6 +99,38 @@ pub struct AsicArchiveTimestampValidation {
     pub failure_reasons: Vec<String>,
 }
 
+/// A local, caller-supplied embedded evidence indicator found inside ASiC members.
+///
+/// These indicators report member/element presence only. They do not perform trust anchoring,
+/// revocation fetching, or legal long-term-profile sufficiency checks.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct AsicEmbeddedEvidenceIndicator {
+    /// Stable snake-case diagnostic code.
+    pub code: String,
+    /// The ASiC member where the indicator was found.
+    pub source_path: String,
+    /// Technical category: `signature_timestamp`, `lt_evidence`, or `lta_evidence`.
+    pub evidence_kind: String,
+    /// Human-readable local diagnostic detail.
+    pub message: String,
+}
+
+/// A local blocker that prevents interpreting embedded ASiC evidence as a complete LT/LTA shape.
+///
+/// These blockers are not trust/legal findings; they only describe missing, malformed, or
+/// unreferenced local members/elements.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct AsicEmbeddedEvidenceBlocker {
+    /// Stable snake-case diagnostic code.
+    pub code: String,
+    /// The ASiC member most directly associated with the blocker.
+    pub source_path: String,
+    /// Human-readable local diagnostic detail.
+    pub message: String,
+}
+
 /// A technical/local ASiC container validation report.
 ///
 /// This is a technical cryptographic report only; it makes no legal qualification or
@@ -114,6 +146,10 @@ pub struct AsicValidationReport {
     pub signatures: Vec<AsicSignatureValidation>,
     /// Per-archive-manifest validation, in member order.
     pub archive_timestamps: Vec<AsicArchiveTimestampValidation>,
+    /// Local indicators for embedded signature timestamp, LT-like, or LTA-like evidence.
+    pub embedded_evidence_indicators: Vec<AsicEmbeddedEvidenceIndicator>,
+    /// Local blockers for interpreting embedded evidence as a complete LT/LTA technical shape.
+    pub embedded_evidence_blockers: Vec<AsicEmbeddedEvidenceBlocker>,
     /// Container-level failures (structure the walk could not attribute to one signature).
     pub failure_reasons: Vec<String>,
 }
@@ -189,6 +225,8 @@ pub fn validate_asic_container(container: &[u8]) -> Result<AsicValidationReport,
         let manifest = member(&members, path).expect("member enumerated from the same map");
         archive_timestamps.push(validate_archive_manifest(path, manifest, &members));
     }
+    let (embedded_evidence_indicators, embedded_evidence_blockers) =
+        diagnose_embedded_evidence(&members, &xades_paths, &archive_timestamps);
 
     if signatures.is_empty() {
         failure_reasons.push("ASiC container carries no recognised signature member".to_string());
@@ -199,6 +237,8 @@ pub fn validate_asic_container(container: &[u8]) -> Result<AsicValidationReport,
         signature_profile,
         signatures,
         archive_timestamps,
+        embedded_evidence_indicators,
+        embedded_evidence_blockers,
         failure_reasons,
     })
 }
@@ -530,6 +570,229 @@ fn validate_archive_manifest(
         valid: failure_reasons.is_empty() && imprint_matches_manifest && references_valid,
         failure_reasons,
     }
+}
+
+fn diagnose_embedded_evidence(
+    members: &[(String, Vec<u8>)],
+    xades_paths: &[&str],
+    archive_timestamps: &[AsicArchiveTimestampValidation],
+) -> (
+    Vec<AsicEmbeddedEvidenceIndicator>,
+    Vec<AsicEmbeddedEvidenceBlocker>,
+) {
+    let mut indicators = Vec::new();
+    let mut blockers = Vec::new();
+
+    for path in xades_paths {
+        let Some(xml) = member(members, path) else {
+            continue;
+        };
+        diagnose_xades_embedded_evidence(path, xml, &mut indicators, &mut blockers);
+    }
+
+    for archive in archive_timestamps {
+        indicators.push(AsicEmbeddedEvidenceIndicator {
+            code: "asic_archive_timestamp_manifest".to_string(),
+            source_path: archive.manifest_path.clone(),
+            evidence_kind: "lta_evidence".to_string(),
+            message: format!(
+                "ASiCArchiveManifest references local timestamp token {}",
+                archive.timestamp_path
+            ),
+        });
+        if archive.valid {
+            indicators.push(AsicEmbeddedEvidenceIndicator {
+                code: "asic_archive_timestamp_valid_local".to_string(),
+                source_path: archive.timestamp_path.clone(),
+                evidence_kind: "lta_evidence".to_string(),
+                message: "archive timestamp imprint and referenced member digests matched locally"
+                    .to_string(),
+            });
+        } else {
+            blockers.push(AsicEmbeddedEvidenceBlocker {
+                code: "asic_archive_timestamp_invalid_local".to_string(),
+                source_path: archive.manifest_path.clone(),
+                message: if archive.failure_reasons.is_empty() {
+                    "archive timestamp evidence is not locally consistent".to_string()
+                } else {
+                    archive.failure_reasons.join("; ")
+                },
+            });
+        }
+    }
+
+    for (path, _) in members
+        .iter()
+        .filter(|(path, _)| is_timestamp_token_path(path))
+    {
+        let referenced = archive_timestamps
+            .iter()
+            .any(|archive| archive.timestamp_path == *path);
+        if !referenced {
+            blockers.push(AsicEmbeddedEvidenceBlocker {
+                code: "unreferenced_timestamp_token_member".to_string(),
+                source_path: path.clone(),
+                message:
+                    "timestamp token member is present but no ASiCArchiveManifest references it"
+                        .to_string(),
+            });
+        }
+    }
+
+    (indicators, blockers)
+}
+
+fn diagnose_xades_embedded_evidence(
+    path: &str,
+    xml: &[u8],
+    indicators: &mut Vec<AsicEmbeddedEvidenceIndicator>,
+    blockers: &mut Vec<AsicEmbeddedEvidenceBlocker>,
+) {
+    let text = match std::str::from_utf8(xml) {
+        Ok(text) => text,
+        Err(_) => {
+            blockers.push(AsicEmbeddedEvidenceBlocker {
+                code: "xades_embedded_evidence_xml_unreadable".to_string(),
+                source_path: path.to_string(),
+                message:
+                    "XAdES member is not UTF-8, so embedded LT/LTA indicators were not inspected"
+                        .to_string(),
+            });
+            return;
+        }
+    };
+    let doc = match roxmltree::Document::parse(text) {
+        Ok(doc) => doc,
+        Err(e) => {
+            blockers.push(AsicEmbeddedEvidenceBlocker {
+                code: "xades_embedded_evidence_xml_malformed".to_string(),
+                source_path: path.to_string(),
+                message: format!(
+                    "XAdES member is malformed XML, so embedded LT/LTA indicators were not inspected: {e}"
+                ),
+            });
+            return;
+        }
+    };
+
+    let signature_timestamp_count = count_elements(&doc, "SignatureTimeStamp");
+    let complete_certificate_refs = count_elements(&doc, "CompleteCertificateRefs");
+    let complete_revocation_refs = count_elements(&doc, "CompleteRevocationRefs");
+    let certificate_values = count_elements(&doc, "CertificateValues");
+    let revocation_values = count_elements(&doc, "RevocationValues");
+    let ocsp_values = count_elements(&doc, "OCSPValues");
+    let crl_values = count_elements(&doc, "CRLValues");
+    let archive_timestamp_count = count_elements(&doc, "ArchiveTimeStamp")
+        + count_elements(&doc, "SigAndRefsTimeStamp")
+        + count_elements(&doc, "RefsOnlyTimeStamp");
+
+    if signature_timestamp_count > 0 {
+        indicators.push(AsicEmbeddedEvidenceIndicator {
+            code: "xades_signature_timestamp".to_string(),
+            source_path: path.to_string(),
+            evidence_kind: "signature_timestamp".to_string(),
+            message: format!(
+                "XAdES member contains {signature_timestamp_count} SignatureTimeStamp element(s)"
+            ),
+        });
+    }
+    if complete_certificate_refs > 0 {
+        indicators.push(AsicEmbeddedEvidenceIndicator {
+            code: "xades_certificate_refs".to_string(),
+            source_path: path.to_string(),
+            evidence_kind: "lt_evidence".to_string(),
+            message: format!(
+                "XAdES member contains {complete_certificate_refs} CompleteCertificateRefs element(s)"
+            ),
+        });
+    }
+    if complete_revocation_refs > 0 {
+        indicators.push(AsicEmbeddedEvidenceIndicator {
+            code: "xades_revocation_refs".to_string(),
+            source_path: path.to_string(),
+            evidence_kind: "lt_evidence".to_string(),
+            message: format!(
+                "XAdES member contains {complete_revocation_refs} CompleteRevocationRefs element(s)"
+            ),
+        });
+    }
+    if certificate_values > 0 {
+        indicators.push(AsicEmbeddedEvidenceIndicator {
+            code: "xades_certificate_values".to_string(),
+            source_path: path.to_string(),
+            evidence_kind: "lt_evidence".to_string(),
+            message: format!(
+                "XAdES member contains {certificate_values} CertificateValues element(s)"
+            ),
+        });
+    }
+    if revocation_values > 0 || ocsp_values > 0 || crl_values > 0 {
+        indicators.push(AsicEmbeddedEvidenceIndicator {
+            code: "xades_revocation_values".to_string(),
+            source_path: path.to_string(),
+            evidence_kind: "lt_evidence".to_string(),
+            message: format!(
+                "XAdES member contains revocation-value elements: RevocationValues={revocation_values}, OCSPValues={ocsp_values}, CRLValues={crl_values}"
+            ),
+        });
+    }
+    if archive_timestamp_count > 0 {
+        indicators.push(AsicEmbeddedEvidenceIndicator {
+            code: "xades_archive_timestamp".to_string(),
+            source_path: path.to_string(),
+            evidence_kind: "lta_evidence".to_string(),
+            message: format!(
+                "XAdES member contains {archive_timestamp_count} archive timestamp element(s)"
+            ),
+        });
+    }
+
+    let has_lt_like = complete_certificate_refs > 0
+        || complete_revocation_refs > 0
+        || certificate_values > 0
+        || revocation_values > 0
+        || ocsp_values > 0
+        || crl_values > 0;
+    if has_lt_like && signature_timestamp_count == 0 {
+        blockers.push(AsicEmbeddedEvidenceBlocker {
+            code: "xades_lt_material_without_signature_timestamp".to_string(),
+            source_path: path.to_string(),
+            message: "LT-like XAdES material is present, but no local SignatureTimeStamp element was found"
+                .to_string(),
+        });
+    }
+    if has_lt_like
+        && (certificate_values == 0 || (revocation_values + ocsp_values + crl_values) == 0)
+    {
+        blockers.push(AsicEmbeddedEvidenceBlocker {
+            code: "xades_lt_values_incomplete".to_string(),
+            source_path: path.to_string(),
+            message: "LT-like XAdES material is present, but local certificate or revocation value elements are incomplete"
+                .to_string(),
+        });
+    }
+    if archive_timestamp_count > 0 && signature_timestamp_count == 0 {
+        blockers.push(AsicEmbeddedEvidenceBlocker {
+            code: "xades_archive_timestamp_without_signature_timestamp".to_string(),
+            source_path: path.to_string(),
+            message: "LTA-like XAdES archive timestamp is present, but no local SignatureTimeStamp element was found"
+                .to_string(),
+        });
+    }
+    if archive_timestamp_count > 0 && !has_lt_like {
+        blockers.push(AsicEmbeddedEvidenceBlocker {
+            code: "xades_archive_timestamp_without_lt_material".to_string(),
+            source_path: path.to_string(),
+            message: "LTA-like XAdES archive timestamp is present, but no local LT-like certificate or revocation material was found"
+                .to_string(),
+        });
+    }
+}
+
+fn count_elements(doc: &roxmltree::Document<'_>, local_name: &str) -> usize {
+    doc.descendants()
+        .filter(|node| node.is_element() && node.tag_name().name() == local_name)
+        .count()
 }
 
 /// The `ASiCManifest` whose `SigReference` names `signature_path`, plus its bytes and parse.

@@ -59,8 +59,8 @@ pub use asic::{
 };
 pub use asic_sign::{AsicEMultiSignRequest, sign_asic_e_multi, sign_asic_s_xades};
 pub use asic_validate::{
-    AsicArchiveTimestampValidation, AsicSignatureValidation, AsicValidationReport,
-    validate_asic_container,
+    AsicArchiveTimestampValidation, AsicEmbeddedEvidenceBlocker, AsicEmbeddedEvidenceIndicator,
+    AsicSignatureValidation, AsicValidationReport, validate_asic_container,
 };
 pub use batch::{
     AuthMode, BatchCadesDocument, BatchDocumentOutcome, BatchPdfDocument, BatchReport,
