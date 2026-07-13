@@ -1539,9 +1539,10 @@ fn schema_version_is_current() {
     // paper-book original numbering/linking metadata landed as schema v10; imported-document
     // operator review metadata landed as schema v11; paper-book OCR conversion dossiers landed as
     // schema v12; generated-document dispatch evidence landed as schema v13; paper-book OCR
-    // conversion execution artifacts landed as schema v14.
+    // conversion execution artifacts landed as schema v14; imported-document review history landed
+    // as schema v15.
     // A fresh DB is stamped with the current version.
-    assert_eq!(chancela_store::schema::SCHEMA_VERSION, 14);
+    assert_eq!(chancela_store::schema::SCHEMA_VERSION, 15);
     let dir = TempDir::new();
     Store::open(dir.path()).expect("open fresh");
     let raw = rusqlite::Connection::open(dir.path().join("chancela.db")).unwrap();
@@ -1552,7 +1553,7 @@ fn schema_version_is_current() {
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(stamped, "14");
+    assert_eq!(stamped, chancela_store::schema::SCHEMA_VERSION.to_string());
     let ocr_draft_table: i64 = raw
         .query_row(
             "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'paper_book_ocr_drafts'",
@@ -1813,8 +1814,8 @@ fn an_older_schema_version_upgrades_forward_cleanly() {
         raw.execute("DROP TABLE documents", []).unwrap();
     }
 
-    // Reopening upgrades forward: the additive DDL recreates `documents` (+ import tables), the
-    // stamp advances to the current version, and the pre-existing entity row is untouched.
+    // Reopening upgrades forward: the additive DDL recreates `documents` (+ import/review tables),
+    // the stamp advances to the current version, and the pre-existing entity row is untouched.
     let store = Store::open(dir.path()).expect("reopen upgrades v1 -> current");
     {
         let raw = rusqlite::Connection::open(dir.path().join("chancela.db")).unwrap();
@@ -1825,7 +1826,11 @@ fn an_older_schema_version_upgrades_forward_cleanly() {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(stamped, "13", "stamp advanced forward");
+        assert_eq!(
+            stamped,
+            chancela_store::schema::SCHEMA_VERSION.to_string(),
+            "stamp advanced forward"
+        );
     }
     let loaded = store.load().expect("load after upgrade");
     assert_eq!(loaded.entities.get(&entity.id), Some(&entity));
@@ -2254,7 +2259,7 @@ fn older_paper_book_import_rows_gain_full_page_range_on_upgrade() {
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(stamped, "13");
+    assert_eq!(stamped, chancela_store::schema::SCHEMA_VERSION.to_string());
 }
 
 #[test]
