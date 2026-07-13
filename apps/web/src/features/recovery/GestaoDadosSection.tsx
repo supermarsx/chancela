@@ -1615,7 +1615,7 @@ function DataStatusPanel() {
                           type="button"
                           variant="secondary"
                           className="btn--danger"
-                          icon={<Icon.Wrench />}
+                          icon={<Icon.Trash />}
                           title={EXPORT_CLEANUP_EXECUTION_TOOLTIP}
                           disabled={!canClean || cleanup.isPending || !hasExportCleanupPreview}
                           onClick={() => setCleanupTarget('exports')}

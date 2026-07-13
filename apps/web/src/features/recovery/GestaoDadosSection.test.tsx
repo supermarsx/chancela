@@ -693,13 +693,23 @@ describe('GestaoDadosSection', () => {
     expect(exportsRow.querySelector('.data-status-cleanup__metric')?.textContent).toContain(
       '2 ficheiros',
     );
+    const crashRow = within(maintenanceSection).getByText('Relatórios de falha').closest('li')!;
+    const crashCleanupButton = within(crashRow).getByRole('button', { name: 'Limpar falhas' });
+    const previewButton = within(exportsRow).getByRole('button', {
+      name: 'Pré-visualizar limpeza',
+    });
     const executeBeforePreview = within(exportsRow).getByRole('button', {
       name: 'Executar limpeza destrutiva',
     }) as HTMLButtonElement;
+    expect(previewButton.classList.contains('btn--danger')).toBe(false);
+    expect(executeBeforePreview.classList.contains('btn--danger')).toBe(true);
+    expect(executeBeforePreview.querySelector('.btn__icon svg')?.innerHTML).toBe(
+      crashCleanupButton.querySelector('.btn__icon svg')?.innerHTML,
+    );
     expect(executeBeforePreview.disabled).toBe(true);
     expect(screen.getByTitle(/Executa a limpeza destrutiva/)).toBeTruthy();
 
-    fireEvent.click(within(exportsRow).getByRole('button', { name: 'Pré-visualizar limpeza' }));
+    fireEvent.click(previewButton);
 
     await waitFor(() => expect(calls.some((c) => c.url.includes('/v1/data/cleanup'))).toBe(true));
     const previewCall = calls.find((c) => c.url.includes('/v1/data/cleanup'))!;
