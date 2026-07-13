@@ -220,8 +220,8 @@ function refreshOutcomeTone(outcome: 'Success' | 'Failed'): 'ok' | 'error' {
   return outcome === 'Success' ? 'ok' : 'error';
 }
 
-function refreshOutcomeLabel(outcome: 'Success' | 'Failed'): string {
-  return outcome === 'Success' ? 'Importado' : 'Falhou';
+function refreshOutcomeLabel(outcome: 'Success' | 'Failed'): MessageKey {
+  return outcome === 'Success' ? 'trust.refresh.outcome.success' : 'trust.refresh.outcome.failed';
 }
 
 function statusTone(kind: TslServiceStatusKind): 'ok' | 'warn' | 'neutral' {
@@ -246,10 +246,10 @@ function tsaStatusTone(status: TsaStatusKind): 'ok' | 'warn' | 'error' {
   return 'error';
 }
 
-function tsaStatusLabel(status: TsaStatusKind): string {
-  if (status === 'Ready') return 'Pronto';
-  if (status === 'Unconfigured') return 'Não configurado';
-  return 'Erro';
+function tsaStatusLabel(status: TsaStatusKind): MessageKey {
+  if (status === 'Ready') return 'trust.tsa.statusReady';
+  if (status === 'Unconfigured') return 'trust.tsa.statusUnconfigured';
+  return 'trust.tsa.statusError';
 }
 
 function probeTone(status: TsaProbeStatus): 'ok' | 'warn' | 'error' {
@@ -257,9 +257,9 @@ function probeTone(status: TsaProbeStatus): 'ok' | 'warn' | 'error' {
   return 'error';
 }
 
-function probeLabel(status: TsaProbeStatus): string {
-  if (status === 'Passed') return 'Fixture OK';
-  return 'Fixture falhou';
+function probeLabel(status: TsaProbeStatus): MessageKey {
+  if (status === 'Passed') return 'trust.tsa.probePassed';
+  return 'trust.tsa.probeFailed';
 }
 
 function TsaRecordFlags({ record }: { record: TsaRecordView }) {
@@ -324,11 +324,12 @@ function TrustResultGroup({ title, children }: { title: string; children: ReactN
 }
 
 function TsaAcceptedHash({ digest }: { digest: string }) {
+  const t = useT();
   return (
     <span
       className="trust-accepted-hash"
       role="group"
-      aria-label={`Hash aceite completo: ${digest}`}
+      aria-label={t('trust.tsa.acceptedHash.aria', { digest })}
     >
       <Digest value={digest} />
     </span>
@@ -384,28 +385,29 @@ function TsaRecordDetail({ record }: { record: TsaRecordView }) {
       </p>
       <IdentifierMatchNote fields={record.identifier_match} />
 
-      <TrustDetailSection title="Resumo">
+      <TrustDetailSection title={t('trust.detail.summary')}>
         <TrustKeyValueGrid>
           <div>
-            <dt>Tipo de serviço</dt>
+            <dt>{t('trust.service.type')}</dt>
             <dd className="mono trust-opaque" title={record.service_type}>
               {record.service_type}
             </dd>
           </div>
           <div>
-            <dt>Estado desde</dt>
+            <dt>{t('trust.service.statusStartingTime')}</dt>
             <dd className="mono">
               {record.status_starting_time ?? record.status_starting_time_raw ?? '—'}
             </dd>
           </div>
           <div>
-            <dt>Concedido / efetivo</dt>
+            <dt>{t('trust.tsa.detail.grantedEffective')}</dt>
             <dd>
-              {record.granted ? 'Sim' : 'Não'} / {record.effective ? 'Sim' : 'Não'}
+              {record.granted ? t('common.yes') : t('common.no')} /{' '}
+              {record.effective ? t('common.yes') : t('common.no')}
             </dd>
           </div>
           <div>
-            <dt>Certificados</dt>
+            <dt>{t('trust.service.certificates')}</dt>
             <dd className="mono">{record.identities.certificates}</dd>
           </div>
         </TrustKeyValueGrid>
@@ -421,7 +423,7 @@ function TsaRecordDetail({ record }: { record: TsaRecordView }) {
             ))}
           </ul>
         ) : (
-          <p className="muted">Sem dados publicados.</p>
+          <p className="muted">{t('trust.detail.none')}</p>
         )}
       </TrustDetailSection>
 
@@ -432,18 +434,18 @@ function TsaRecordDetail({ record }: { record: TsaRecordView }) {
             <dd className="mono">{record.history_count}</dd>
           </div>
           <div>
-            <dt>Classificação</dt>
+            <dt>{t('trust.tsa.detail.classification')}</dt>
             <dd>{record.analysis.classification}</dd>
           </div>
           <div>
-            <dt>Base de confiança</dt>
+            <dt>{t('trust.tsa.detail.trustBasis')}</dt>
             <dd>{record.analysis.trust_basis}</dd>
           </div>
         </TrustKeyValueGrid>
       </TrustDetailSection>
 
       {record.analysis.blocking_reasons.length ? (
-        <TrustDetailSection title="Razões de bloqueio" tone="warn">
+        <TrustDetailSection title={t('trust.tsa.detail.blockingReasons')} tone="warn">
           <ul className="trust-detail-list">
             {record.analysis.blocking_reasons.map((reason) => (
               <li key={reason}>{reason}</li>
@@ -454,7 +456,7 @@ function TsaRecordDetail({ record }: { record: TsaRecordView }) {
 
       <TrustDetailSection title={t('trust.detail.identities')}>
         <div className="trust-detail-subsection">
-          <p className="field__label">Nomes de sujeito</p>
+          <p className="field__label">{t('trust.service.subjectNames')}</p>
           {record.identities.subject_names.length ? (
             <ul className="trust-detail-list">
               {record.identities.subject_names.map((name) => (
@@ -464,11 +466,11 @@ function TsaRecordDetail({ record }: { record: TsaRecordView }) {
               ))}
             </ul>
           ) : (
-            <p className="muted">Sem dados publicados.</p>
+            <p className="muted">{t('trust.detail.none')}</p>
           )}
         </div>
         <div className="trust-detail-subsection">
-          <p className="field__label">Identificadores SKI</p>
+          <p className="field__label">{t('trust.tsa.detail.ski')}</p>
           {record.identities.subject_key_ids.length ? (
             <ul className="trust-detail-list">
               {record.identities.subject_key_ids.map((ski) => (
@@ -478,7 +480,7 @@ function TsaRecordDetail({ record }: { record: TsaRecordView }) {
               ))}
             </ul>
           ) : (
-            <p className="muted">Sem dados publicados.</p>
+            <p className="muted">{t('trust.detail.none')}</p>
           )}
         </div>
       </TrustDetailSection>
@@ -566,23 +568,23 @@ function TsaToolingPanel() {
             aria-label={t('trust.tsa.summary.aria')}
           >
             <div className="trust-statusline__item trust-statusline__item--wide">
-              <span className="trust-statusline__label">URL configurado</span>
+              <span className="trust-statusline__label">{t('trust.tsa.configuredUrl')}</span>
               <span className="mono trust-opaque">{tsa.data.summary.configured_url ?? '—'}</span>
             </div>
             <div className="trust-statusline__item">
-              <span className="trust-statusline__label">Estado</span>
+              <span className="trust-statusline__label">{t('trust.tsa.status')}</span>
               <Badge tone={tsaStatusTone(tsa.data.summary.status)}>
-                {tsaStatusLabel(tsa.data.summary.status)}
+                {t(tsaStatusLabel(tsa.data.summary.status))}
               </Badge>
             </div>
             <div className="trust-statusline__item">
-              <span className="trust-statusline__label">Fixture</span>
+              <span className="trust-statusline__label">{t('trust.tsa.fixture')}</span>
               <Badge tone={probeTone(tsa.data.summary.last_probe.status)}>
-                {probeLabel(tsa.data.summary.last_probe.status)}
+                {t(probeLabel(tsa.data.summary.last_probe.status))}
               </Badge>
             </div>
             <div className="trust-statusline__item">
-              <span className="trust-statusline__label">Registos confiáveis</span>
+              <span className="trust-statusline__label">{t('trust.tsa.trustedRecords')}</span>
               <span className="mono">
                 {tsa.data.summary.trusted_records} / {tsa.data.summary.records}
               </span>
@@ -590,28 +592,28 @@ function TsaToolingPanel() {
           </div>
 
           <div className="trust-diagnostics-grid">
-            <TrustDetailSection title="Configuração">
+            <TrustDetailSection title={t('trust.tsa.configuration')}>
               <TrustKeyValueGrid>
                 <div>
-                  <dt>URL configurado</dt>
+                  <dt>{t('trust.tsa.configuredUrl')}</dt>
                   <dd className="mono">{tsa.data.summary.configured_url ?? '—'}</dd>
                 </div>
                 <div>
-                  <dt>Estado</dt>
+                  <dt>{t('trust.tsa.status')}</dt>
                   <dd>
                     <Badge tone={tsaStatusTone(tsa.data.summary.status)}>
-                      {tsaStatusLabel(tsa.data.summary.status)}
+                      {t(tsaStatusLabel(tsa.data.summary.status))}
                     </Badge>
                   </dd>
                 </div>
                 <div>
-                  <dt>Perfil</dt>
+                  <dt>{t('trust.tsa.profile')}</dt>
                   <dd>
                     {tsa.data.summary.profile.protocol} · {tsa.data.summary.profile.hash_algorithm}
                   </dd>
                 </div>
                 <div>
-                  <dt>Hash aceite</dt>
+                  <dt>{t('trust.tsa.acceptedHash')}</dt>
                   <dd className="trust-digest-cell">
                     <TsaAcceptedHash digest={tsa.data.summary.accepted_hash.digest} />
                   </dd>
@@ -619,31 +621,31 @@ function TsaToolingPanel() {
               </TrustKeyValueGrid>
             </TrustDetailSection>
 
-            <TrustDetailSection title="Fixture e prova">
+            <TrustDetailSection title={t('trust.tsa.fixtureProof')}>
               <TrustKeyValueGrid>
                 <div>
-                  <dt>Fixture</dt>
+                  <dt>{t('trust.tsa.fixture')}</dt>
                   <dd>
                     <Badge tone={probeTone(tsa.data.summary.last_probe.status)}>
-                      {probeLabel(tsa.data.summary.last_probe.status)}
+                      {t(probeLabel(tsa.data.summary.last_probe.status))}
                     </Badge>
                   </dd>
                 </div>
                 <div>
-                  <dt>Verificado em</dt>
+                  <dt>{t('trust.status.checkedAt')}</dt>
                   <dd className="mono">{tsa.data.summary.last_probe.checked_at}</dd>
                 </div>
               </TrustKeyValueGrid>
             </TrustDetailSection>
 
-            <TrustDetailSection title="Token de timestamp">
+            <TrustDetailSection title={t('trust.tsa.timestampToken')}>
               <TrustKeyValueGrid>
                 <div>
                   <dt>GenTime</dt>
                   <dd className="mono">{tsa.data.summary.timestamp?.gen_time ?? '—'}</dd>
                 </div>
                 <div>
-                  <dt>Política / série</dt>
+                  <dt>{t('trust.tsa.policySerial')}</dt>
                   <dd className="mono">
                     {tsa.data.summary.timestamp
                       ? `${tsa.data.summary.timestamp.policy} / ${tsa.data.summary.timestamp.serial_number}`
@@ -651,29 +653,38 @@ function TsaToolingPanel() {
                   </dd>
                 </div>
                 <div>
-                  <dt>Análise de política</dt>
+                  <dt>{t('trust.tsa.policyAnalysis')}</dt>
                   <dd>
                     {tsa.data.summary.policy_analysis.fixture_policy ?? '—'} ·{' '}
-                    {tsa.data.summary.policy_analysis.advisory ? 'Advisória' : 'Confiável'}
+                    {tsa.data.summary.policy_analysis.advisory
+                      ? t('trust.tsa.policyAdvisory')
+                      : t('trust.tsa.policyTrusted')}
                   </dd>
                 </div>
                 <div>
-                  <dt>Token</dt>
-                  <dd className="mono">{tsa.data.summary.timestamp?.token_bytes ?? '—'} bytes</dd>
+                  <dt>{t('trust.tsa.token')}</dt>
+                  <dd className="mono">
+                    {t('trust.tsa.tokenBytes', {
+                      bytes: tsa.data.summary.timestamp?.token_bytes ?? '—',
+                    })}
+                  </dd>
                 </div>
               </TrustKeyValueGrid>
             </TrustDetailSection>
 
-            <TrustDetailSection title="Registos TSL">
+            <TrustDetailSection title={t('trust.tsa.tslRecords')}>
               <TrustKeyValueGrid>
                 <div>
-                  <dt>Total / confiáveis</dt>
+                  <dt>{t('trust.tsa.totalTrusted')}</dt>
                   <dd className="mono">
-                    {tsa.data.summary.records} / {tsa.data.summary.trusted_records} confiáveis
+                    {t('trust.tsa.totalTrusted.value', {
+                      total: tsa.data.summary.records,
+                      trusted: tsa.data.summary.trusted_records,
+                    })}
                   </dd>
                 </div>
                 <div>
-                  <dt>Concedidos</dt>
+                  <dt>{t('trust.tsa.granted')}</dt>
                   <dd className="mono">{tsa.data.summary.granted_records}</dd>
                 </div>
               </TrustKeyValueGrid>
@@ -689,7 +700,7 @@ function TsaToolingPanel() {
 
           <div className="trust-explorer trust-explorer--tsa">
             <div className="trust-explorer__nav">
-              <TrustControlPanel title="Pesquisar registos TSA">
+              <TrustControlPanel title={t('trust.tsa.search.title')}>
                 <div className="trust-searchbox">
                   <Icon.Search />
                   <Input
@@ -754,17 +765,20 @@ function TsaToolingPanel() {
                 />
               </div>
               {tsaSearchPending ? (
-                <Loading label="A pesquisar registos TSA" />
+                <Loading label={t('trust.tsa.search.loading')} />
               ) : tsaSearchEnabled && tsaSearch.error ? (
                 <ErrorNote error={tsaSearch.error} />
               ) : (
                 <div className="trust-results" aria-live="polite">
                   <p className="trust-results__count muted">
-                    {records.length} de {tsa.data.records.length} registos TSA
+                    {t('trust.tsa.search.count', {
+                      shown: records.length,
+                      total: tsa.data.records.length,
+                    })}
                   </p>
                   {records.length ? (
-                    <TrustResultGroup title="Registos TSA">
-                      <ul className="trust-picklist" aria-label="Registos TSA">
+                    <TrustResultGroup title={t('trust.tsa.results.aria')}>
+                      <ul className="trust-picklist" aria-label={t('trust.tsa.results.aria')}>
                         {records.map((record) => (
                           <li key={record.id}>
                             <button
@@ -853,7 +867,7 @@ function TrustStatusPanel() {
           </div>
           {refresh.error ? <ErrorNote error={refresh.error} /> : null}
 
-          <div className="trust-statusline" role="group" aria-label="Resumo TSL">
+          <div className="trust-statusline" role="group" aria-label={t('trust.status.summary.aria')}>
             <div className="trust-statusline__item">
               <span className="trust-statusline__label">{t('trust.status.source')}</span>
               <Badge tone={status.data.source.kind === 'Cache' ? 'accent' : 'neutral'}>
@@ -865,7 +879,7 @@ function TrustStatusPanel() {
               <SignatureBadge status={status.data.validation.signature} />
             </div>
             <div className="trust-statusline__item">
-              <span className="trust-statusline__label">Atualidade</span>
+              <span className="trust-statusline__label">{t('trust.status.freshness')}</span>
               <Badge tone={status.data.stale ? 'warn' : 'ok'}>
                 {status.data.stale ? t('trust.status.stale') : t('trust.status.current')}
               </Badge>
@@ -880,19 +894,19 @@ function TrustStatusPanel() {
             <TrustDetailSection title={t('trust.refresh.lastAttempt')}>
               <TrustKeyValueGrid>
                 <div>
-                  <dt>Resultado</dt>
+                  <dt>{t('trust.refresh.result')}</dt>
                   <dd>
                     <Badge tone={refreshOutcomeTone(status.data.last_refresh.outcome)}>
-                      {refreshOutcomeLabel(status.data.last_refresh.outcome)}
+                      {t(refreshOutcomeLabel(status.data.last_refresh.outcome))}
                     </Badge>
                   </dd>
                 </div>
                 <div>
-                  <dt>Tentada em</dt>
+                  <dt>{t('trust.refresh.attemptedAt')}</dt>
                   <dd className="mono">{status.data.last_refresh.attempted_at}</dd>
                 </div>
                 <div>
-                  <dt>Origem</dt>
+                  <dt>{t('trust.status.source')}</dt>
                   <dd className="mono trust-opaque">
                     {status.data.last_refresh.source_url ??
                       status.data.last_refresh.source_path ??
@@ -900,20 +914,22 @@ function TrustStatusPanel() {
                   </dd>
                 </div>
                 <div>
-                  <dt>Registos</dt>
+                  <dt>{t('trust.refresh.records')}</dt>
                   <dd className="mono">
-                    {status.data.last_refresh.providers ?? '—'} prestadores ·{' '}
-                    {status.data.last_refresh.services ?? '—'} serviços
+                    {t('trust.search.count', {
+                      providers: status.data.last_refresh.providers ?? '—',
+                      services: status.data.last_refresh.services ?? '—',
+                    })}
                   </dd>
                 </div>
                 <div>
-                  <dt>Assinatura no import</dt>
+                  <dt>{t('trust.refresh.importSignature')}</dt>
                   <dd>
                     <SignatureBadge status={status.data.last_refresh.validation.signature} />
                   </dd>
                 </div>
                 <div>
-                  <dt>Confiáveis e-signature</dt>
+                  <dt>{t('trust.status.trusted')}</dt>
                   <dd className="mono">
                     {status.data.last_refresh.trusted_esignature_services ?? '—'}
                   </dd>
@@ -930,7 +946,7 @@ function TrustStatusPanel() {
           ) : null}
 
           <div className="trust-diagnostics-grid">
-            <TrustDetailSection title="Identificação da lista">
+            <TrustDetailSection title={t('trust.status.listIdentification')}>
               <TrustKeyValueGrid>
                 <div>
                   <dt>{t('trust.status.scheme')}</dt>
@@ -951,7 +967,7 @@ function TrustStatusPanel() {
               </TrustKeyValueGrid>
             </TrustDetailSection>
 
-            <TrustDetailSection title="Datas">
+            <TrustDetailSection title={t('trust.status.dates')}>
               <TrustKeyValueGrid>
                 <div>
                   <dt>{t('trust.status.issueDate')}</dt>
@@ -964,7 +980,7 @@ function TrustStatusPanel() {
               </TrustKeyValueGrid>
             </TrustDetailSection>
 
-            <TrustDetailSection title="Cobertura">
+            <TrustDetailSection title={t('trust.status.coverage')}>
               <TrustKeyValueGrid>
                 <div>
                   <dt>{t('trust.status.providers')}</dt>
@@ -1193,7 +1209,7 @@ function ProviderDetail({
         <Badge tone="accent">{t('trust.provider.kind')}</Badge>
         <h3 className="trust-detail__title">{provider.name}</h3>
       </div>
-      <TrustDetailSection title="Resumo">
+      <TrustDetailSection title={t('trust.detail.summary')}>
         <TrustKeyValueGrid>
           <div>
             <dt>{t('trust.provider.tradeNames')}</dt>
@@ -1208,18 +1224,20 @@ function ProviderDetail({
             <dd className="mono">{provider.services.length}</dd>
           </div>
           <div>
-            <dt>Análise</dt>
+            <dt>{t('trust.provider.analysis')}</dt>
             <dd>
-              {provider.analysis.granted_services} concedidos ·{' '}
-              {provider.analysis.services_with_history} com histórico ·{' '}
-              {provider.analysis.services_with_supply_points} com pontos
+              {t('trust.provider.analysis.value', {
+                granted: provider.analysis.granted_services,
+                history: provider.analysis.services_with_history,
+                supply: provider.analysis.services_with_supply_points,
+              })}
             </dd>
           </div>
         </TrustKeyValueGrid>
       </TrustDetailSection>
 
       {provider.analysis.duplicate_service_names.length ? (
-        <TrustDetailSection title="Nomes duplicados">
+        <TrustDetailSection title={t('trust.provider.duplicateNames')}>
           <ul className="trust-detail-list">
             {provider.analysis.duplicate_service_names.map((name) => (
               <li key={name}>{name}</li>
@@ -1288,7 +1306,7 @@ function ServiceDetail({
       <ServiceFlags service={service} />
       <IdentifierMatchNote fields={matchFields} />
 
-      <TrustDetailSection title="Resumo">
+      <TrustDetailSection title={t('trust.detail.summary')}>
         <TrustKeyValueGrid>
           <div>
             <dt>{t('trust.service.type')}</dt>
@@ -1340,7 +1358,7 @@ function ServiceDetail({
       <TrustDetailSection title={t('trust.detail.history')}>
         <TrustKeyValueGrid>
           <div>
-            <dt>Entradas históricas</dt>
+            <dt>{t('trust.detail.historyEntries')}</dt>
             <dd className="mono">{service.history_count}</dd>
           </div>
         </TrustKeyValueGrid>
@@ -1358,7 +1376,7 @@ function ServiceDetail({
             ))}
           </ul>
         ) : (
-          <p className="muted">Sem histórico de estado publicado.</p>
+          <p className="muted">{t('trust.detail.noStatusHistory')}</p>
         )}
       </TrustDetailSection>
 
