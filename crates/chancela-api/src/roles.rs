@@ -367,19 +367,88 @@ impl From<&Role> for RoleView {
 }
 
 fn seeded_role_drift(role: &Role) -> Option<SeededRoleDriftView> {
-    let seeded = chancela_authz::default_roles()
-        .into_iter()
-        .find(|seeded| seeded.id == role.id && !seeded.protected)?;
-    let missing_default_permissions: Vec<String> = seeded
-        .permission_set
-        .difference(&role.permission_set)
-        .map(|p| p.as_str().to_owned())
-        .collect();
+    let missing_default_permissions = seeded_missing_defaults(role).ok()?;
+    let missing_default_permissions = permission_strings(&missing_default_permissions);
     let requires_manual_review = !missing_default_permissions.is_empty();
     Some(SeededRoleDriftView {
         missing_default_permissions,
         requires_manual_review,
     })
+}
+
+/// Explicit admin-guided reconciliation proposal/apply result for an editable seeded role. The
+/// server only ever proposes/applies missing current seed defaults; extra customised permissions are
+/// preserved and removals are never proposed.
+#[derive(Debug, Serialize)]
+pub struct SeededRoleReconciliationView {
+    pub role_id: String,
+    pub role_name: String,
+    pub current_permissions: Vec<String>,
+    pub missing_default_permissions: Vec<String>,
+    pub proposed_permissions: Vec<String>,
+    pub applied_permissions: Vec<String>,
+    pub applied: bool,
+    pub requires_manual_review: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct SeededRoleReconciliationEvent {
+    role_id: String,
+    role_name: String,
+    before_permissions: Vec<String>,
+    added_permissions: Vec<String>,
+    after_permissions: Vec<String>,
+}
+
+fn permission_strings(permissions: &BTreeSet<Permission>) -> Vec<String> {
+    permissions.iter().map(|p| p.as_str().to_owned()).collect()
+}
+
+fn seeded_missing_defaults(role: &Role) -> Result<BTreeSet<Permission>, ApiError> {
+    let seeded = chancela_authz::default_roles()
+        .into_iter()
+        .find(|seeded| seeded.id == role.id)
+        .ok_or_else(|| {
+            ApiError::Conflict("a função não é uma função semeada reconciliável".to_owned())
+        })?;
+    if seeded.protected || role.protected || role.id == OWNER_ROLE_ID {
+        return Err(ApiError::Conflict(
+            "a função Proprietário está excluída da reconciliação".to_owned(),
+        ));
+    }
+    Ok(seeded
+        .permission_set
+        .difference(&role.permission_set)
+        .copied()
+        .collect())
+}
+
+fn seeded_reconciliation_proposal(
+    role: &Role,
+) -> Result<(BTreeSet<Permission>, BTreeSet<Permission>), ApiError> {
+    let missing = seeded_missing_defaults(role)?;
+    let mut proposed = role.permission_set.clone();
+    proposed.extend(missing.iter().copied());
+    Ok((missing, proposed))
+}
+
+fn seeded_reconciliation_view(
+    role: &Role,
+    missing_default_permissions: &BTreeSet<Permission>,
+    proposed_permissions: &BTreeSet<Permission>,
+    applied_permissions: &BTreeSet<Permission>,
+    applied: bool,
+) -> SeededRoleReconciliationView {
+    SeededRoleReconciliationView {
+        role_id: role.id.0.to_string(),
+        role_name: role.name.clone(),
+        current_permissions: permission_strings(&role.permission_set),
+        missing_default_permissions: permission_strings(missing_default_permissions),
+        proposed_permissions: permission_strings(proposed_permissions),
+        applied_permissions: permission_strings(applied_permissions),
+        applied,
+        requires_manual_review: !missing_default_permissions.is_empty(),
+    }
 }
 
 /// One verb in the permission catalog (`GET /v1/permissions`), tagged with whether it is a
@@ -511,6 +580,101 @@ pub async fn list_permissions(
         })
         .collect();
     Ok(Json(PermissionCatalogView { permissions }))
+}
+
+/// `GET /v1/roles/{id}/seeded-drift-reconciliation` — dry-run proposal for an editable seeded role.
+/// Gated by `role.manage` because it is the review step for a privileged write path. It never
+/// mutates state and never includes Owner.
+pub async fn seeded_role_reconciliation_proposal(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<Uuid>,
+    actor: CurrentActor,
+) -> Result<Json<SeededRoleReconciliationView>, ApiError> {
+    let authz = authorizer(&state, &actor).await?;
+    authz.require(Permission::RoleManage, Scope::Global)?;
+
+    let role_id = RoleId(id);
+    let role = state
+        .roles
+        .read()
+        .await
+        .get(role_id)
+        .cloned()
+        .ok_or(ApiError::NotFound)?;
+    let (missing, proposed) = seeded_reconciliation_proposal(&role)?;
+    Ok(Json(seeded_reconciliation_view(
+        &role,
+        &missing,
+        &proposed,
+        &BTreeSet::new(),
+        false,
+    )))
+}
+
+/// `POST /v1/roles/{id}/seeded-drift-reconciliation` — explicit admin apply for missing seeded
+/// defaults. It is idempotent, Owner-excluding, never removes permissions, and still preserves the
+/// role-authoring subset invariant against the proposed post-apply permission set.
+pub async fn apply_seeded_role_reconciliation(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<Uuid>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+) -> Result<Json<SeededRoleReconciliationView>, ApiError> {
+    let role_id = RoleId(id);
+    let authz = authorizer(&state, &actor).await?;
+    authz.require(Permission::RoleManage, Scope::Global)?;
+
+    let (before, updated, applied_permissions) = {
+        let mut roles = state.roles.write().await;
+        let before = roles.get(role_id).cloned().ok_or(ApiError::NotFound)?;
+        let (missing, proposed) = seeded_reconciliation_proposal(&before)?;
+        if !authz.can_define_role(proposed.iter()) {
+            return Err(forbidden());
+        }
+        if missing.is_empty() {
+            return Ok(Json(seeded_reconciliation_view(
+                &before,
+                &missing,
+                &proposed,
+                &BTreeSet::new(),
+                false,
+            )));
+        }
+
+        let mut updated = before.clone();
+        updated.permission_set = proposed;
+        roles.insert(updated.clone());
+        (before, updated, missing)
+    };
+    persist_roles(&state).await?;
+
+    let remaining_missing = seeded_missing_defaults(&updated)?;
+    let proposed = updated.permission_set.clone();
+    let view = seeded_reconciliation_view(
+        &updated,
+        &remaining_missing,
+        &proposed,
+        &applied_permissions,
+        true,
+    );
+    let payload = SeededRoleReconciliationEvent {
+        role_id: view.role_id.clone(),
+        role_name: view.role_name.clone(),
+        before_permissions: permission_strings(&before.permission_set),
+        added_permissions: permission_strings(&applied_permissions),
+        after_permissions: view.current_permissions.clone(),
+    };
+    record_role_event(
+        &state,
+        &view.role_id,
+        "role.seeded_drift_reconciled",
+        "admin explicitly applied seeded role drift reconciliation",
+        &payload,
+        &actor,
+        &attestor,
+    )
+    .await?;
+    Ok(Json(view))
 }
 
 /// `POST /v1/roles` — create a custom role. Gated `role.manage`\@Global, **and** the SUBSET INVARIANT:

@@ -2518,6 +2518,18 @@ export interface SeededRoleDriftView {
   requires_manual_review: boolean;
 }
 
+/** Explicit admin-guided seeded-role drift reconciliation proposal/apply result. */
+export interface SeededRoleReconciliationView {
+  role_id: string;
+  role_name: string;
+  current_permissions: string[];
+  missing_default_permissions: string[];
+  proposed_permissions: string[];
+  applied_permissions: string[];
+  applied: boolean;
+  requires_manual_review: boolean;
+}
+
 /** A role rendered for the web (`GET /v1/roles`, t64-E4). `permissions` are dotted verb ids
  *  in the role's deterministic order; `protected` marks the locked, undeletable Owner. */
 export interface RoleView {

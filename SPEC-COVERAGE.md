@@ -229,6 +229,19 @@ Implementation checkpoints covered here:
   and optional bounded JSON `context`; it rejects unknown services, unknown
   fields, raw `stdout`/`stderr` fields, blank or oversized service/target/message
   values, blank/oversized/deep context, and stream or secret-like context keys.
+- Current working tree keeps Data/Roles/UX/CI **PARTIAL**: seeded-role drift now
+  has an explicit admin-guided reconciliation path at
+  `GET`/`POST /v1/roles/{id}/seeded-drift-reconciliation`, gated by
+  `role.manage@Global` and the existing role subset invariant. The proposal and
+  apply result list only missing current seed defaults for editable non-Owner
+  seeded roles; apply is idempotent, never runs on startup, never touches Owner,
+  never removes customized permissions, and records a
+  `role.seeded_drift_reconciled` ledger event when an admin actually changes the
+  role. The RBAC UI keeps the drift warning visible and requires an explicit
+  review/apply action with copy that it only adds the listed seeded defaults.
+  This is bounded local reconciliation only; it is not an automatic migration,
+  unrestricted role editing, tenant policy certification, or proof that every
+  upgraded installation has already reconciled historical customizations.
   Accepted and retained forwarded entries append exactly one sanitized
   `platform.log.forwarded.accepted` ledger event with only the retained log
   id/seq/timestamp, service_id, level, target, message length/SHA-256, context
@@ -1710,9 +1723,15 @@ behavior, legal disposal, or legal-effect claims.
 - **Seeded role drift diagnostic:** `GET /v1/roles` now returns read-only
   `seeded_role_drift.missing_default_permissions` and
   `requires_manual_review` diagnostics for editable seeded roles whose persisted
-  permissions lag the current default seed. The RBAC UI renders a manual-review
-  warning and missing permission list. This reports drift only; it does not
-  auto-reconcile roles, grant permissions, or weaken authorization checks.
+  permissions lag the current default seed. `GET`/`POST
+  /v1/roles/{id}/seeded-drift-reconciliation` adds an explicit `role.manage`
+  review/apply path that proposes and applies only those missing seeded defaults
+  to editable non-Owner seeded roles, remains idempotent, preserves extra
+  customized permissions, preserves the subset invariant, and emits
+  `role.seeded_drift_reconciled` only when an admin explicitly applies a change.
+  The RBAC UI renders a manual-review warning, missing permission list, and
+  explicit apply step. There is still no startup auto-reconciliation, Owner edit,
+  removal, unrestricted grant, or authorization bypass.
 - **Archive readability/ZK caveat metadata:** internal archive manifests now
   carry manifest-only `readability_caveats`, reject unknown caveat fields, keep
   all overclaim flags false, and default old v1 manifests conservatively when
@@ -3283,7 +3302,9 @@ behavior, legal disposal, or legal-effect claims.
   anonymization, destructive erasure, a permission grant, or certification of
   access-control/privacy policy completeness.
 - Seeded role drift diagnostics report missing default permissions for manual
-  review only. They do not auto-reconcile persisted editable roles, grant
+  review, and the bounded reconciliation endpoint can explicitly add only those
+  missing seeded defaults after `role.manage` plus subset-invariant checks. It
+  does not auto-reconcile persisted editable roles on load, touch Owner, remove
   permissions, bypass role-management checks, or loosen authorization.
 - Database key-ops status/preflight is a secret-free configuration/build/header classification and
   startup guard with web/API/CLI/store key-env/preflight/rekey evidence. The API/web execution path

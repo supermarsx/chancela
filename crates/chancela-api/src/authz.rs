@@ -520,6 +520,10 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     // --- RBAC management (t64-E4) ---------------------------------------------------------------
     ("/v1/roles", RouteClass::Gated), // GET list (any session) · POST role.manage@Global + subset
     ("/v1/roles/{id}", RouteClass::Gated), // PATCH/DELETE role.manage@Global + subset + protected-Owner
+    (
+        "/v1/roles/{id}/seeded-drift-reconciliation",
+        RouteClass::Gated,
+    ), // GET proposal/POST apply role.manage@Global + seeded-only subset-preserving reconciliation
     ("/v1/permissions", RouteClass::Session), // GET the verb catalog (any valid session)
     ("/v1/users/{id}/roles", RouteClass::Gated), // POST/DELETE role.assign@scope + subset + last-Owner
     ("/v1/delegations", RouteClass::Gated), // GET own/all · POST delegation.grant@scope + invariant

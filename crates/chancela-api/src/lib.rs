@@ -1674,6 +1674,11 @@ pub fn router(state: AppState) -> Router {
             "/v1/roles/{id}",
             patch(roles::patch_role).delete(roles::delete_role),
         )
+        .route(
+            "/v1/roles/{id}/seeded-drift-reconciliation",
+            get(roles::seeded_role_reconciliation_proposal)
+                .post(roles::apply_seeded_role_reconciliation),
+        )
         .route("/v1/permissions", get(roles::list_permissions))
         .route(
             "/v1/users/{id}/roles",
@@ -13924,6 +13929,231 @@ mod tests {
         // ...nor delete it.
         let (status, _) = send(state.clone(), delete(&format!("/v1/roles/{owner_role}"))).await;
         assert_eq!(status, StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn seeded_role_drift_reconciliation_is_explicit_idempotent_and_audited() {
+        use chancela_authz::{Permission, Role, TENANT_ADMIN_ROLE_ID};
+
+        let state = fresh_state().await;
+        {
+            let mut tenant_admin = Role::tenant_administrator();
+            assert!(
+                tenant_admin
+                    .permission_set
+                    .remove(&Permission::EntityUpdate)
+            );
+            tenant_admin.permission_set.insert(Permission::DataExport);
+            state.roles.write().await.insert(tenant_admin);
+        }
+
+        let role_id = TENANT_ADMIN_ROLE_ID.0.to_string();
+        let uri = format!("/v1/roles/{role_id}/seeded-drift-reconciliation");
+
+        let (status, proposal) = send(state.clone(), get(&uri)).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(proposal["applied"], json!(false));
+        assert_eq!(
+            proposal["missing_default_permissions"],
+            json!(["entity.update"])
+        );
+        assert!(
+            proposal["current_permissions"]
+                .as_array()
+                .expect("current")
+                .iter()
+                .any(|p| p == "data.export"),
+            "custom extra permission is preserved in the proposal"
+        );
+
+        let (status, applied) = send(state.clone(), post_json(&uri, json!({}))).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(applied["applied"], json!(true));
+        assert_eq!(applied["applied_permissions"], json!(["entity.update"]));
+        assert_eq!(applied["missing_default_permissions"], json!([]));
+        let stored = state
+            .roles
+            .read()
+            .await
+            .get(TENANT_ADMIN_ROLE_ID)
+            .cloned()
+            .expect("tenant admin");
+        assert!(stored.permission_set.contains(&Permission::EntityUpdate));
+        assert!(
+            stored.permission_set.contains(&Permission::DataExport),
+            "reconciliation must not remove customized extra permissions"
+        );
+
+        let (status, second) = send(state.clone(), post_json(&uri, json!({}))).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(second["applied"], json!(false));
+        assert_eq!(second["applied_permissions"], json!([]));
+
+        let (_, events) = send(state.clone(), get("/v1/ledger/events?limit=1000")).await;
+        let reconcile_events: Vec<_> = events
+            .as_array()
+            .expect("events")
+            .iter()
+            .filter(|e| e["kind"] == "role.seeded_drift_reconciled")
+            .collect();
+        assert_eq!(
+            reconcile_events.len(),
+            1,
+            "only the explicit state-changing apply is audited"
+        );
+        let event = reconcile_events[0];
+        assert_eq!(event["scope"], json!(role_id));
+        assert_eq!(
+            event["justification"],
+            json!("admin explicitly applied seeded role drift reconciliation")
+        );
+        #[derive(serde::Serialize)]
+        struct ExpectedReconciliationPayload {
+            role_id: String,
+            role_name: String,
+            before_permissions: Vec<String>,
+            added_permissions: Vec<String>,
+            after_permissions: Vec<String>,
+        }
+        let expected_payload = ExpectedReconciliationPayload {
+            role_id,
+            role_name: "Tenant Administrator".to_owned(),
+            before_permissions: proposal["current_permissions"]
+                .as_array()
+                .expect("before permissions")
+                .iter()
+                .map(|p| p.as_str().expect("permission").to_owned())
+                .collect(),
+            added_permissions: vec!["entity.update".to_owned()],
+            after_permissions: applied["current_permissions"]
+                .as_array()
+                .expect("after permissions")
+                .iter()
+                .map(|p| p.as_str().expect("permission").to_owned())
+                .collect(),
+        };
+        assert_eq!(
+            event["payload_digest"],
+            audit_payload_digest(&expected_payload),
+            "audit digest commits to the explicit seeded-role reconciliation evidence"
+        );
+    }
+
+    #[tokio::test]
+    async fn seeded_role_drift_reconciliation_requires_role_manage_and_subset() {
+        use chancela_authz::{
+            Permission, Role, RoleAssignment, RoleId, Scope, TENANT_ADMIN_ROLE_ID,
+        };
+
+        let state = fresh_state().await;
+        {
+            let mut tenant_admin = Role::tenant_administrator();
+            assert!(
+                tenant_admin
+                    .permission_set
+                    .remove(&Permission::EntityUpdate)
+            );
+            state.roles.write().await.insert(tenant_admin);
+        }
+        let target = TENANT_ADMIN_ROLE_ID.0.to_string();
+        let uri = format!("/v1/roles/{target}/seeded-drift-reconciliation");
+
+        let reader = seed_user(
+            &state,
+            "amelia.marques",
+            vec![RoleAssignment::new(
+                chancela_authz::LEITOR_ROLE_ID,
+                Scope::Global,
+            )],
+        )
+        .await;
+        let reader_tok = seed_session(&state, &reader.to_string()).await;
+        let (status, _) = send_raw(
+            state.clone(),
+            with_session(post_json(&uri, json!({})), &reader_tok),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+
+        let manager_role = RoleId(Uuid::new_v4());
+        state.roles.write().await.insert(Role {
+            id: manager_role,
+            name: "Gestor de Acessos Limitado".to_owned(),
+            permission_set: [Permission::RoleManage, Permission::EntityRead]
+                .into_iter()
+                .collect(),
+            protected: false,
+        });
+        let limited = seed_user(
+            &state,
+            "bruno.dias",
+            vec![RoleAssignment::new(manager_role, Scope::Global)],
+        )
+        .await;
+        let limited_tok = seed_session(&state, &limited.to_string()).await;
+        let (status, _) = send_raw(
+            state.clone(),
+            with_session(post_json(&uri, json!({})), &limited_tok),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "role.manage does not bypass the subset invariant"
+        );
+
+        let stored = state
+            .roles
+            .read()
+            .await
+            .get(TENANT_ADMIN_ROLE_ID)
+            .cloned()
+            .expect("tenant admin");
+        assert!(!stored.permission_set.contains(&Permission::EntityUpdate));
+    }
+
+    #[tokio::test]
+    async fn seeded_role_drift_reconciliation_excludes_owner_and_custom_roles() {
+        let state = fresh_state().await;
+        let owner_role = chancela_authz::OWNER_ROLE_ID.0.to_string();
+        let (status, _) = send(
+            state.clone(),
+            post_json(
+                &format!("/v1/roles/{owner_role}/seeded-drift-reconciliation"),
+                json!({}),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert_eq!(
+            state
+                .roles
+                .read()
+                .await
+                .get(chancela_authz::OWNER_ROLE_ID)
+                .expect("owner"),
+            &chancela_authz::Role::owner()
+        );
+
+        let (status, custom) = send(
+            state.clone(),
+            post_json(
+                "/v1/roles",
+                json!({ "name": "Custom", "permissions": ["entity.read"] }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+        let custom_id = custom["id"].as_str().expect("custom id");
+        let (status, _) = send(
+            state,
+            post_json(
+                &format!("/v1/roles/{custom_id}/seeded-drift-reconciliation"),
+                json!({}),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT);
     }
 
     #[tokio::test]

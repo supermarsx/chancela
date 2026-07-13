@@ -238,8 +238,119 @@ describe('FuncoesSection — role create + gating', () => {
 
     const row = (await screen.findByText('Platform Administrator')).closest('tr')!;
     expect(within(row).getByText('Revisão manual')).toBeTruthy();
-    expect(within(row).getByText(/Faltam: platform\.logs\.write/)).toBeTruthy();
+    expect(within(row).getByText(/Defaults em falta: platform\.logs\.write/)).toBeTruthy();
     expect(within(row).queryByText(/corrigid|automatic/i)).toBeNull();
+    vi.unstubAllGlobals();
+  });
+
+  it('applies seeded role drift only after explicit admin review action', async () => {
+    const { fn, calls } = mockFetch([
+      {
+        method: 'GET',
+        match: '/v1/roles/platform-admin/seeded-drift-reconciliation',
+        body: {
+          role_id: 'platform-admin',
+          role_name: 'Platform Administrator',
+          current_permissions: ['role.manage'],
+          missing_default_permissions: ['platform.logs.write'],
+          proposed_permissions: ['role.manage', 'platform.logs.write'],
+          applied_permissions: [],
+          applied: false,
+          requires_manual_review: true,
+        },
+      },
+      {
+        method: 'GET',
+        match: '/v1/roles',
+        body: [
+          {
+            id: 'platform-admin',
+            name: 'Platform Administrator',
+            permissions: ['role.manage'],
+            protected: false,
+            seeded_role_drift: {
+              missing_default_permissions: ['platform.logs.write'],
+              requires_manual_review: true,
+            },
+          },
+        ],
+      },
+      { method: 'GET', match: '/v1/permissions', body: CATALOG },
+      {
+        method: 'POST',
+        match: '/v1/roles/platform-admin/seeded-drift-reconciliation',
+        body: {
+          role_id: 'platform-admin',
+          role_name: 'Platform Administrator',
+          current_permissions: ['role.manage', 'platform.logs.write'],
+          missing_default_permissions: [],
+          proposed_permissions: ['role.manage', 'platform.logs.write'],
+          applied_permissions: ['platform.logs.write'],
+          applied: true,
+          requires_manual_review: false,
+        },
+      },
+    ]);
+    vi.stubGlobal('fetch', fn);
+
+    renderRbac(<FuncoesSection />);
+
+    const row = (await screen.findByText('Platform Administrator')).closest('tr')!;
+    expect(calls.some((c) => c.method === 'POST')).toBe(false);
+    fireEvent.click(within(row).getByRole('button', { name: 'Rever defaults' }));
+    await waitFor(() => {
+      const proposal = calls.find((c) =>
+        c.url.includes('/v1/roles/platform-admin/seeded-drift-reconciliation'),
+      );
+      expect(proposal).toBeTruthy();
+      expect(proposal!.method).toBe('GET');
+    });
+    expect(await within(row).findByText(/Adicionar só: platform\.logs\.write/)).toBeTruthy();
+    fireEvent.click(within(row).getByRole('button', { name: 'Aplicar defaults em falta' }));
+
+    await waitFor(() => {
+      const post = calls.find(
+        (c) =>
+          c.method === 'POST' &&
+          c.url.includes('/v1/roles/platform-admin/seeded-drift-reconciliation'),
+      );
+      expect(post).toBeTruthy();
+      expect(post!.body).toEqual({});
+    });
+    expect(await screen.findByText(/Reconciliação aplicada: platform\.logs\.write/)).toBeTruthy();
+    vi.unstubAllGlobals();
+  });
+
+  it('disables seeded role drift reconciliation without role.manage', async () => {
+    const { fn } = mockFetch([
+      {
+        method: 'GET',
+        match: '/v1/roles',
+        body: [
+          {
+            id: 'platform-admin',
+            name: 'Platform Administrator',
+            permissions: ['entity.read'],
+            protected: false,
+            seeded_role_drift: {
+              missing_default_permissions: ['platform.logs.write'],
+              requires_manual_review: true,
+            },
+          },
+        ],
+      },
+      { method: 'GET', match: '/v1/permissions', body: CATALOG },
+    ]);
+    vi.stubGlobal('fetch', fn);
+
+    renderRbac(
+      <FuncoesSection />,
+      value((p) => p !== 'role.manage'),
+    );
+
+    const row = (await screen.findByText('Platform Administrator')).closest('tr')!;
+    const review = within(row).getByRole('button', { name: 'Rever defaults' });
+    expect(review.getAttribute('aria-disabled')).toBe('true');
     vi.unstubAllGlobals();
   });
 });

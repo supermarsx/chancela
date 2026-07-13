@@ -189,6 +189,7 @@ import type {
   UserView,
   VerifyAiHumanReviewBody,
   RoleView,
+  SeededRoleReconciliationView,
   PermissionCatalogView,
   CreateRoleBody,
   PatchRoleBody,
@@ -934,6 +935,10 @@ export const api = {
   createRole: (body: CreateRoleBody) => post<RoleView>('/v1/roles', body),
   patchRole: (id: string, body: PatchRoleBody) => patch<RoleView>(`/v1/roles/${id}`, body),
   deleteRole: (id: string) => del<void>(`/v1/roles/${id}`),
+  getSeededRoleReconciliation: (id: string) =>
+    get<SeededRoleReconciliationView>(`/v1/roles/${id}/seeded-drift-reconciliation`),
+  applySeededRoleReconciliation: (id: string) =>
+    post<SeededRoleReconciliationView>(`/v1/roles/${id}/seeded-drift-reconciliation`, {}),
   // Assign/unassign a `(role, scope)` to a user. Both echo the user's UPDATED assignment
   // list, so the caller keeps the shown assignments authoritative without a separate read.
   assignRole: (userId: string, body: RoleAssignmentInput) =>

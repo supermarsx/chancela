@@ -1748,14 +1748,54 @@ function assertCheckpointMap() {
     "API seeded role drift no-auto-grant coverage",
   );
   assertFileContains(
+    "crates/chancela-api/src/roles.rs",
+    "apply_seeded_role_reconciliation",
+    "API seeded role drift explicit apply handler marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/roles.rs",
+    "role.seeded_drift_reconciled",
+    "API seeded role drift explicit audit marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "/v1/roles/{id}/seeded-drift-reconciliation",
+    "API seeded role drift reconciliation route marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "seeded_role_drift_reconciliation_is_explicit_idempotent_and_audited",
+    "API seeded role drift explicit apply coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "seeded_role_drift_reconciliation_requires_role_manage_and_subset",
+    "API seeded role drift role.manage and subset coverage",
+  );
+  assertFileContains(
     "apps/web/src/features/rbac/FuncoesSection.tsx",
     "drift.requires_manual_review",
     "web RBAC seeded role drift manual-review marker",
   );
   assertFileContains(
+    "apps/web/src/features/rbac/FuncoesSection.tsx",
+    "Aplicar defaults em falta",
+    "web RBAC seeded role drift explicit apply action marker",
+  );
+  assertFileContains(
     "apps/web/src/features/rbac/rbac.test.tsx",
     "shows seeded role drift as a manual-review status",
     "web RBAC seeded role drift coverage marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/rbac/rbac.test.tsx",
+    "applies seeded role drift only after explicit admin review action",
+    "web RBAC seeded role drift explicit apply coverage",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "`GET`/`POST /v1/roles/{id}/seeded-drift-reconciliation`",
+    "spec coverage seeded role drift reconciliation marker",
   );
   assertFileContains(
     "crates/chancela-archive/src/lib.rs",
@@ -8466,8 +8506,8 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "auto-reconcile roles, grant permissions, or weaken authorization checks",
-    "spec coverage seeded role drift no-grant marker",
+    "There is still no startup auto-reconciliation, Owner edit,\n  removal, unrestricted grant, or authorization bypass",
+    "spec coverage seeded role drift bounded reconciliation caveat marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",

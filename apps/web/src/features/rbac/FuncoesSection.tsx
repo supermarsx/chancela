@@ -18,11 +18,13 @@
  */
 import { useMemo, useState } from 'react';
 import {
+  useApplySeededRoleReconciliation,
   useCreateRole,
   useDeleteRole,
   usePatchRole,
   usePermissionCatalog,
   useRoles,
+  useSeededRoleReconciliationProposal,
 } from '../../api/hooks';
 import { useT } from '../../i18n';
 import {
@@ -40,7 +42,7 @@ import {
   useToast,
 } from '../../ui';
 import { GateButton, useCan } from '../session/permissions';
-import type { PermissionInfo, RoleView } from '../../api/types';
+import type { PermissionInfo, RoleView, SeededRoleReconciliationView } from '../../api/types';
 import { PermissionMatrix } from './PermissionMatrix';
 
 /** The role editor form (shared by create + edit). Owns the name + selected-permission draft. */
@@ -139,7 +141,10 @@ function RoleDriftStatus({ role }: { role: RoleView }) {
   return (
     <span className="row-wrap">
       <Badge tone="warn">Revisão manual</Badge>
-      <span className="muted">Faltam: {drift.missing_default_permissions.join(', ')}</span>
+      <span className="muted">
+        Defaults em falta: {drift.missing_default_permissions.join(', ')}. A reconciliação é
+        guiada por admin e só adiciona estes defaults semeados.
+      </span>
     </span>
   );
 }
@@ -150,7 +155,16 @@ function RoleRow({ role, onEdit }: { role: RoleView; onEdit: (role: RoleView) =>
   const t = useT();
   const toast = useToast();
   const del = useDeleteRole();
+  const reconciliationProposal = useSeededRoleReconciliationProposal();
+  const reconcile = useApplySeededRoleReconciliation();
   const [confirming, setConfirming] = useState(false);
+  const [reviewedReconciliation, setReviewedReconciliation] =
+    useState<SeededRoleReconciliationView | null>(null);
+  const missingSeededDefaults = role.seeded_role_drift?.missing_default_permissions ?? [];
+  const hasSeededDrift =
+    !role.protected &&
+    role.seeded_role_drift?.requires_manual_review &&
+    missingSeededDefaults.length > 0;
 
   function remove() {
     del.mutate(role.id, {
@@ -162,6 +176,37 @@ function RoleRow({ role, onEdit }: { role: RoleView; onEdit: (role: RoleView) =>
         toast.error(e);
         setConfirming(false);
       },
+    });
+  }
+
+  function applyReconciliation() {
+    reconcile.mutate(role.id, {
+      onSuccess: (result) => {
+        toast.success(
+          result.applied
+            ? `Reconciliação aplicada: ${result.applied_permissions.join(', ')}`
+            : 'A função já não tem defaults semeados em falta',
+        );
+        setReviewedReconciliation(null);
+      },
+      onError: (e) => {
+        toast.error(e);
+        setReviewedReconciliation(null);
+      },
+    });
+  }
+
+  function reviewReconciliation() {
+    reconciliationProposal.mutate(role.id, {
+      onSuccess: (proposal) => {
+        if (!proposal.requires_manual_review || proposal.missing_default_permissions.length === 0) {
+          toast.success('A função já não tem defaults semeados em falta');
+          return;
+        }
+        setConfirming(false);
+        setReviewedReconciliation(proposal);
+      },
+      onError: (e) => toast.error(e),
     });
   }
 
@@ -203,6 +248,29 @@ function RoleRow({ role, onEdit }: { role: RoleView; onEdit: (role: RoleView) =>
               {t('rbac.roles.deleteConfirm')}
             </GateButton>
           </span>
+        ) : reviewedReconciliation ? (
+          <span className="row-wrap">
+            <span className="muted">
+              Adicionar só: {reviewedReconciliation.missing_default_permissions.join(', ')}
+            </span>
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={reconcile.isPending}
+              onClick={() => setReviewedReconciliation(null)}
+            >
+              {t('common.cancel')}
+            </Button>
+            <GateButton
+              perm="role.manage"
+              variant="primary"
+              icon={<Icon.Refresh />}
+              disabled={reconcile.isPending}
+              onClick={applyReconciliation}
+            >
+              Aplicar defaults em falta
+            </GateButton>
+          </span>
         ) : (
           <span className="row-wrap">
             <GateButton
@@ -221,6 +289,17 @@ function RoleRow({ role, onEdit }: { role: RoleView; onEdit: (role: RoleView) =>
             >
               {t('rbac.roles.delete')}
             </GateButton>
+            {hasSeededDrift ? (
+              <GateButton
+                perm="role.manage"
+                variant="secondary"
+                icon={<Icon.Refresh />}
+                disabled={reconciliationProposal.isPending || reconcile.isPending}
+                onClick={reviewReconciliation}
+              >
+                Rever defaults
+              </GateButton>
+            ) : null}
           </span>
         )}
       </td>

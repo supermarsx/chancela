@@ -2181,6 +2181,30 @@ export function useDeleteRole() {
   });
 }
 
+/** Apply missing current seed defaults to an editable seeded role. This is an explicit
+ * `role.manage` write path; the server still enforces the subset invariant and Owner exclusion. */
+export function useSeededRoleReconciliationProposal() {
+  return useMutation({
+    mutationFn: (id: string) => api.getSeededRoleReconciliation(id),
+  });
+}
+
+/** Apply a proposal that was explicitly reviewed through
+ * `GET /v1/roles/{id}/seeded-drift-reconciliation`. The server recomputes the missing defaults
+ * when applying, preserving the subset invariant and Owner exclusion under concurrent changes. */
+export function useApplySeededRoleReconciliation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.applySeededRoleReconciliation(id),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.roles });
+      void qc.invalidateQueries({ queryKey: keys.session });
+      void qc.invalidateQueries({ queryKey: keys.sessionPermissions });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
 /**
  * Assign a `(role, scope)` to a user (`POST /v1/users/{id}/roles`, t64-E4). Gated
  * `role.assign` at the scope + the subset invariant at that scope (server-enforced, 403). The
