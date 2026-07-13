@@ -391,4 +391,43 @@ describe('CurrentUserPicker (signed in)', () => {
     // The picker reflects the newly signed-in user.
     expect(await screen.findByText('Bruno Dias')).toBeTruthy();
   });
+
+  it('roving focus: Arrow keys, Home and End move focus among the menu items', async () => {
+    // Signed in as Amélia, with a second active user (Bruno) to roam to.
+    setSessionToken('tok-0');
+    const { fn } = serverStub({
+      roster: { onboarding_required: false, users: [{ ...AMELIA }, BRUNO_ROSTER] },
+      users: [AMELIA, BRUNO],
+      startSignedIn: true,
+    });
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<CurrentUserPicker />);
+
+    fireEvent.click(await screen.findByTestId('session-trigger'));
+
+    const amelia = await screen.findByRole('menuitemradio', { name: /Amélia/ });
+    const bruno = await screen.findByRole('menuitemradio', { name: /Bruno/ });
+
+    // On open, focus lands on the currently-checked item (Amélia).
+    await waitFor(() => expect(document.activeElement).toBe(amelia));
+
+    // ArrowDown steps to the next item…
+    fireEvent.keyDown(amelia, { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(bruno);
+
+    // …and wraps from the last back to the first.
+    fireEvent.keyDown(bruno, { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(amelia);
+
+    // ArrowUp from the first wraps to the last.
+    fireEvent.keyDown(amelia, { key: 'ArrowUp' });
+    expect(document.activeElement).toBe(bruno);
+
+    // Home jumps to the first, End jumps to the last.
+    fireEvent.keyDown(bruno, { key: 'Home' });
+    expect(document.activeElement).toBe(amelia);
+    fireEvent.keyDown(amelia, { key: 'End' });
+    expect(document.activeElement).toBe(bruno);
+  });
 });

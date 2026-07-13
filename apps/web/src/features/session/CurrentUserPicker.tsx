@@ -9,7 +9,7 @@
  * The token is deliberately never persisted (see `api/session`); a page reload returns
  * to the system actor until a user is picked again — `useSession` reflects that on load.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useCreateSession, useDeleteSession, useSession, useUsers } from '../../api/hooks';
 import { ApiError } from '../../api/client';
@@ -30,6 +30,7 @@ export function CurrentUserPicker() {
   const users = useUsers();
   const signIn = useCreateSession();
   const signOut = useDeleteSession();
+  const menuRef = useRef<HTMLDivElement | null>(null);
 
   const currentUser = session.data?.user ?? null;
   const label = currentUser ? currentUser.display_name : 'api';
@@ -47,6 +48,43 @@ export function CurrentUserPicker() {
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [open]);
+
+  /** The `role="menuitemradio"` buttons currently rendered in the open popup (list mode). */
+  function menuItems(): HTMLElement[] {
+    const root = menuRef.current;
+    if (!root) return [];
+    return Array.from(root.querySelectorAll<HTMLElement>('[role="menuitemradio"]'));
+  }
+
+  // On open (list mode), move focus to the currently-checked item, or the first — matching the
+  // ARIA menu pattern's initial-focus intent. Re-runs once the user list finishes loading so the
+  // items exist. In password mode the form's own `autoFocus` owns focus, so we skip it there.
+  useEffect(() => {
+    if (!open || pending) return;
+    const items = menuItems();
+    if (items.length === 0) return;
+    const checked = items.find((el) => el.getAttribute('aria-checked') === 'true');
+    (checked ?? items[0]).focus();
+  }, [open, pending, activeUsers.length, users.isLoading]);
+
+  // Roving focus for the ARIA menu: Arrow keys step between menuitems (wrapping at the ends),
+  // Home/End jump to the first/last. Native button tabbing (and the trap-free Tab flow) is left
+  // untouched. A no-op in password mode, where `menuItems()` is empty.
+  function onMenuKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    const { key } = e;
+    if (key !== 'ArrowDown' && key !== 'ArrowUp' && key !== 'Home' && key !== 'End') return;
+    const items = menuItems();
+    if (items.length === 0) return;
+    e.preventDefault();
+    const active = document.activeElement as HTMLElement | null;
+    const at = active ? items.indexOf(active) : -1;
+    let next: number;
+    if (key === 'Home') next = 0;
+    else if (key === 'End') next = items.length - 1;
+    else if (key === 'ArrowDown') next = at < 0 ? 0 : (at + 1) % items.length;
+    else next = at < 0 ? items.length - 1 : (at - 1 + items.length) % items.length;
+    items[next].focus();
+  }
 
   function reset() {
     setPending(null);
@@ -132,7 +170,7 @@ export function CurrentUserPicker() {
             }}
             aria-hidden="true"
           />
-          <div className="session-picker__menu" role="menu">
+          <div className="session-picker__menu" role="menu" ref={menuRef} onKeyDown={onMenuKeyDown}>
             <p className="session-picker__head">
               {currentUser ? (
                 <>
