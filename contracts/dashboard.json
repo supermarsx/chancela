@@ -318,6 +318,53 @@
         "body_key": "notifications.reminder.absentOwnerDispatch.body",
         "action_key": "notifications.reminder.absentOwnerDispatch.action"
       }
+    },
+    {
+      "due_date": "",
+      "severity": "Advisory",
+      "status": "Pending",
+      "reason": "Privacy register item \"Suspected account compromise\" has no local review or drill receipt recorded. No next review date is derived because no local review cadence anchor exists. This dashboard reminder is local and advisory only; it does not notify authorities or subjects, approve or execute transfers, certify adequacy, or claim legal completion.",
+      "entity_id": "privacy",
+      "entity_name": "Privacidade",
+      "source_rule": "privacy-breach-playbook-review",
+      "source_profile": "privacy-breach-playbook",
+      "params": {
+        "record_id": "7d3992e1-96e1-49e5-96b8-9c1c0442939a",
+        "record_label": "Suspected account compromise",
+        "record_status": "Active",
+        "review_status": "NoReceipt",
+        "next_review_due_at": "",
+        "last_local_activity_at": "no local review/drill receipt",
+        "last_reviewed_at": "",
+        "last_drill_at": "",
+        "days_until_due": "",
+        "receipt_count": "0",
+        "review_receipt_count": "0",
+        "drill_receipt_count": "0",
+        "local_advisory_only": "true",
+        "authority_notification_claimed": "false",
+        "subject_notification_claimed": "false",
+        "transfer_approval_claimed": "false",
+        "transfer_execution_claimed": "false",
+        "external_delivery_configured": "false",
+        "legal_completion_claimed": "false"
+      },
+      "law_refs": [],
+      "action": {
+        "kind": "open_privacy_review",
+        "label_key": "notifications.reminder.privacy.review.action",
+        "api_href": "/v1/privacy/breach-playbooks",
+        "route": "/configuracoes?sec=privacidade"
+      },
+      "recommended_next_steps": [
+        "Open the privacy register item.",
+        "Record a local review or drill receipt when operator evidence exists."
+      ],
+      "i18n": {
+        "title_key": "notifications.reminder.privacy.review.title",
+        "body_key": "notifications.reminder.privacy.review.body",
+        "action_key": "notifications.reminder.privacy.review.action"
+      }
     }
   ],
   "recent_events": [

@@ -40,6 +40,7 @@ import {
   PERMISSION_SOURCES,
   PLATFORM_LOG_LEVELS,
   PLATFORM_SERVICE_ACTIONS,
+  PRIVACY_ADVISORY_REVIEW_STATUSES,
   PRIVACY_RECORD_STATUSES,
   PRIVACY_RISK_LEVELS,
   RETENTION_DISPOSAL_ACTIONS,
@@ -157,6 +158,7 @@ import {
   type PlatformServiceStatus,
   type PlatformServicesResponse,
   type PlatformSettings,
+  type PrivacyAdvisoryReviewSummary,
   type ProcessorRecordView,
   type RegistryAnnotationView,
   type RegistryEventView,
@@ -637,6 +639,51 @@ function assertBreachEvidenceReceipt(obj: unknown, label: string): BreachPlayboo
   return receipt;
 }
 
+function assertPrivacyAdvisoryReview(obj: unknown, label: string): PrivacyAdvisoryReviewSummary {
+  const summary = assertExactKeys<PrivacyAdvisoryReviewSummary>(
+    obj,
+    {
+      status: true,
+      review_interval_days: true,
+      receipt_count: true,
+      review_receipt_count: true,
+      drill_receipt_count: true,
+      local_advisory_only: true,
+      authority_notification_claimed: true,
+      subject_notification_claimed: true,
+      transfer_approval_claimed: true,
+      transfer_execution_claimed: true,
+      external_delivery_configured: true,
+      legal_completion_claimed: true,
+    },
+    label,
+    ['last_reviewed_at', 'last_drill_at', 'next_review_due_at', 'days_until_due'],
+  );
+  inEnum(PRIVACY_ADVISORY_REVIEW_STATUSES, summary.status, `${label}.status`);
+  expect(summary.review_interval_days, `${label}.review_interval_days`).toBeGreaterThan(0);
+  expect(summary.receipt_count, `${label}.receipt_count`).toBeGreaterThanOrEqual(0);
+  expect(summary.review_receipt_count, `${label}.review_receipt_count`).toBeGreaterThanOrEqual(0);
+  expect(summary.drill_receipt_count, `${label}.drill_receipt_count`).toBeGreaterThanOrEqual(0);
+  if (summary.last_reviewed_at)
+    assertTimestamp(summary.last_reviewed_at, `${label}.last_reviewed_at`);
+  if (summary.last_drill_at) assertTimestamp(summary.last_drill_at, `${label}.last_drill_at`);
+  if (summary.next_review_due_at)
+    assertIsoDate(summary.next_review_due_at, `${label}.next_review_due_at`);
+  if (summary.days_until_due !== undefined) {
+    expect(Number.isInteger(summary.days_until_due), `${label}.days_until_due`).toBe(true);
+  }
+  expect(summary.local_advisory_only, `${label}.local_advisory_only`).toBe(true);
+  expect(summary.authority_notification_claimed, `${label}.authority_notification_claimed`).toBe(
+    false,
+  );
+  expect(summary.subject_notification_claimed, `${label}.subject_notification_claimed`).toBe(false);
+  expect(summary.transfer_approval_claimed, `${label}.transfer_approval_claimed`).toBe(false);
+  expect(summary.transfer_execution_claimed, `${label}.transfer_execution_claimed`).toBe(false);
+  expect(summary.external_delivery_configured, `${label}.external_delivery_configured`).toBe(false);
+  expect(summary.legal_completion_claimed, `${label}.legal_completion_claimed`).toBe(false);
+  return summary;
+}
+
 function assertBreachPlaybook(obj: unknown, label: string): BreachPlaybookView {
   const record = assertExactKeys<BreachPlaybookView>(
     obj,
@@ -650,6 +697,7 @@ function assertBreachPlaybook(obj: unknown, label: string): BreachPlaybookView {
       risk_level: true,
       status: true,
       evidence_receipts: true,
+      advisory_review: true,
       created_at: true,
       created_by: true,
       updated_at: true,
@@ -671,6 +719,7 @@ function assertBreachPlaybook(obj: unknown, label: string): BreachPlaybookView {
   expect(Array.isArray(record.evidence_receipts), `${label}.evidence_receipts`).toBe(true);
   expect(record.evidence_receipts.length, `${label}.evidence_receipts`).toBeGreaterThan(0);
   assertBreachEvidenceReceipt(record.evidence_receipts[0], `${label}.evidence_receipts[]`);
+  assertPrivacyAdvisoryReview(record.advisory_review, `${label}.advisory_review`);
   assertTimestamp(record.created_at, `${label}.created_at`);
   assertTimestamp(record.updated_at, `${label}.updated_at`);
   return record;
@@ -715,6 +764,7 @@ function assertTransferControl(obj: unknown, label: string): TransferControlView
       risk_level: true,
       status: true,
       evidence_receipts: true,
+      advisory_review: true,
       created_at: true,
       created_by: true,
       updated_at: true,
@@ -737,6 +787,7 @@ function assertTransferControl(obj: unknown, label: string): TransferControlView
   expect(Array.isArray(record.evidence_receipts), `${label}.evidence_receipts`).toBe(true);
   expect(record.evidence_receipts.length, `${label}.evidence_receipts`).toBeGreaterThan(0);
   assertTransferEvidenceReceipt(record.evidence_receipts[0], `${label}.evidence_receipts[]`);
+  assertPrivacyAdvisoryReview(record.advisory_review, `${label}.advisory_review`);
   assertTimestamp(record.created_at, `${label}.created_at`);
   assertTimestamp(record.updated_at, `${label}.updated_at`);
   return record;
@@ -871,10 +922,7 @@ function assertRetentionDueCandidatePriorExecution(
   expect(priorExecution.evidence_state, `${label}.evidence_state tracks outcome`).toBe(
     priorExecution.outcome,
   );
-  expect(
-    priorExecution.evidence_next_step,
-    `${label}.evidence_next_step should be canonical`,
-  ).toBe(
+  expect(priorExecution.evidence_next_step, `${label}.evidence_next_step should be canonical`).toBe(
     RETENTION_DUE_CANDIDATE_PRIOR_NEXT_STEPS[
       priorExecution.outcome as keyof typeof RETENTION_DUE_CANDIDATE_PRIOR_NEXT_STEPS
     ],
@@ -2176,7 +2224,9 @@ function assertPaperBookOcrConversionExecutionArtifact(
     },
     label,
   );
-  expect(artifact.artifact_id.length, `${label}.artifact_id should be non-empty`).toBeGreaterThan(0);
+  expect(artifact.artifact_id.length, `${label}.artifact_id should be non-empty`).toBeGreaterThan(
+    0,
+  );
   expect(artifact.import_id.length, `${label}.import_id should be non-empty`).toBeGreaterThan(0);
   expect(artifact.draft_id.length, `${label}.draft_id should be non-empty`).toBeGreaterThan(0);
   if (artifact.dossier_id !== null) {
@@ -2192,9 +2242,10 @@ function assertPaperBookOcrConversionExecutionArtifact(
   if (artifact.source_reviewed_at !== null) {
     assertTimestamp(artifact.source_reviewed_at, `${label}.source_reviewed_at`);
   }
-  expect(artifact.target_act_id.length, `${label}.target_act_id should be non-empty`).toBeGreaterThan(
-    0,
-  );
+  expect(
+    artifact.target_act_id.length,
+    `${label}.target_act_id should be non-empty`,
+  ).toBeGreaterThan(0);
   expect(artifact.target_act_state).toBe('Draft');
   expect(artifact.mutable_draft_act_created).toBe(true);
   assertTimestamp(artifact.created_at, `${label}.created_at`);
@@ -2720,9 +2771,7 @@ describe('contract fixtures parse through the real client', () => {
     expect(doc.review_history?.[0].review_note).toContain('retained for audit');
     expect(doc.review_history?.[1].review_note).toContain('technical evidence only');
     for (const entry of doc.review_history ?? []) {
-      expect(entry.acknowledged_guardrail_ids).toContain(
-        'canonical_pdfa_record_is_not_replaced',
-      );
+      expect(entry.acknowledged_guardrail_ids).toContain('canonical_pdfa_record_is_not_replaced');
       expect(entry.bytes_in_payload).toBe(false);
       expect(entry.ocr_performed).toBe(false);
       expect(entry.canonical_conversion_performed).toBe(false);
@@ -3378,12 +3427,14 @@ describe('contract fixtures parse through the real client', () => {
         profile_calendar: true,
         act_follow_ups: true,
         attendance_hygiene: true,
+        privacy_control_reviews: true,
       },
       'Settings.workflow.reminders.sources',
     );
     expect(typeof sources.profile_calendar).toBe('boolean');
     expect(typeof sources.act_follow_ups).toBe('boolean');
     expect(typeof sources.attendance_hygiene).toBe('boolean');
+    expect(typeof sources.privacy_control_reviews).toBe('boolean');
     const appearance = assertExactKeys<AppearanceSettings>(
       settings.appearance,
       { theme: true, leather_texture: true, texture_intensity: true, button_texture: true },

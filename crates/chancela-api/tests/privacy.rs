@@ -1882,6 +1882,27 @@ async fn breach_playbooks_allow_settings_manage_persist_and_audit() {
         created["evidence_receipts"][0]["subjects_notified"],
         json!(false)
     );
+    assert_eq!(created["advisory_review"]["status"], json!("current"));
+    assert_eq!(
+        created["advisory_review"]["last_drill_at"],
+        json!("2026-07-09T10:30:00Z")
+    );
+    assert_eq!(
+        created["advisory_review"]["next_review_due_at"],
+        json!("2027-07-09")
+    );
+    assert_eq!(
+        created["advisory_review"]["local_advisory_only"],
+        json!(true)
+    );
+    assert_eq!(
+        created["advisory_review"]["authority_notification_claimed"],
+        json!(false)
+    );
+    assert_eq!(
+        created["advisory_review"]["legal_completion_claimed"],
+        json!(false)
+    );
 
     let before_invalid =
         std::fs::read(tmp.dir.join(BREACH_PLAYBOOKS_FILE)).expect("breach sidecar before invalid");
@@ -1981,6 +2002,8 @@ async fn breach_playbooks_allow_settings_manage_persist_and_audit() {
         updated["evidence_receipts"][1]["authority_notified"],
         json!(false)
     );
+    assert_eq!(updated["advisory_review"]["status"], json!("under_review"));
+    assert_eq!(updated["advisory_review"]["receipt_count"], json!(2));
 
     let persisted: Value = serde_json::from_slice(
         &std::fs::read(tmp.dir.join(BREACH_PLAYBOOKS_FILE)).expect("breach playbooks sidecar"),
@@ -2005,6 +2028,11 @@ async fn breach_playbooks_allow_settings_manage_persist_and_audit() {
             .expect("persisted receipts")
             .len(),
         2
+    );
+    assert_eq!(list[0]["advisory_review"]["status"], json!("under_review"));
+    assert_eq!(
+        list[0]["advisory_review"]["subject_notification_claimed"],
+        json!(false)
     );
 
     let (status, events) = send(
@@ -2067,6 +2095,23 @@ async fn transfer_controls_allow_user_manage_validate_persist_and_audit() {
     );
     assert_eq!(
         created["evidence_receipts"][0]["data_transfer_executed"],
+        json!(false)
+    );
+    assert_eq!(created["advisory_review"]["status"], json!("current"));
+    assert_eq!(
+        created["advisory_review"]["last_reviewed_at"],
+        json!("2026-07-09T11:00:00Z")
+    );
+    assert_eq!(
+        created["advisory_review"]["next_review_due_at"],
+        json!("2027-07-09")
+    );
+    assert_eq!(
+        created["advisory_review"]["transfer_approval_claimed"],
+        json!(false)
+    );
+    assert_eq!(
+        created["advisory_review"]["transfer_execution_claimed"],
         json!(false)
     );
 
@@ -2186,6 +2231,8 @@ async fn transfer_controls_allow_user_manage_validate_persist_and_audit() {
         updated["evidence_receipts"][1]["data_transfer_executed"],
         json!(false)
     );
+    assert_eq!(updated["advisory_review"]["status"], json!("current"));
+    assert_eq!(updated["advisory_review"]["receipt_count"], json!(2));
 
     let persisted: Value = serde_json::from_slice(
         &std::fs::read(tmp.dir.join(TRANSFER_CONTROLS_FILE)).expect("transfer controls sidecar"),
@@ -2210,6 +2257,11 @@ async fn transfer_controls_allow_user_manage_validate_persist_and_audit() {
             .expect("persisted receipts")
             .len(),
         2
+    );
+    assert_eq!(list[0]["advisory_review"]["status"], json!("current"));
+    assert_eq!(
+        list[0]["advisory_review"]["transfer_execution_claimed"],
+        json!(false)
     );
 
     let (status, events) = send(

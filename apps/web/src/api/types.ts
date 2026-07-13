@@ -2754,6 +2754,15 @@ export type PrivacyRiskLevel = (typeof PRIVACY_RISK_LEVELS)[number];
 export const PRIVACY_RECORD_STATUSES = ['draft', 'active', 'under_review', 'retired'] as const;
 export type PrivacyRecordStatus = (typeof PRIVACY_RECORD_STATUSES)[number];
 
+export const PRIVACY_ADVISORY_REVIEW_STATUSES = [
+  'no_receipt',
+  'current',
+  'due_soon',
+  'overdue',
+  'under_review',
+] as const;
+export type PrivacyAdvisoryReviewStatus = (typeof PRIVACY_ADVISORY_REVIEW_STATUSES)[number];
+
 export const RETENTION_POLICY_STATUSES = ['draft', 'active', 'suspended', 'retired'] as const;
 export type RetentionPolicyStatus = (typeof RETENTION_POLICY_STATUSES)[number];
 
@@ -2838,6 +2847,25 @@ export interface TransferControlEvidenceReceipt {
   data_transfer_executed: false;
 }
 
+export interface PrivacyAdvisoryReviewSummary {
+  status: PrivacyAdvisoryReviewStatus;
+  last_reviewed_at?: string;
+  last_drill_at?: string;
+  next_review_due_at?: string;
+  days_until_due?: number;
+  review_interval_days: number;
+  receipt_count: number;
+  review_receipt_count: number;
+  drill_receipt_count: number;
+  local_advisory_only: true;
+  authority_notification_claimed: false;
+  subject_notification_claimed: false;
+  transfer_approval_claimed: false;
+  transfer_execution_claimed: false;
+  external_delivery_configured: false;
+  legal_completion_claimed: false;
+}
+
 export interface BreachPlaybookView {
   id: string;
   title: string;
@@ -2851,6 +2879,7 @@ export interface BreachPlaybookView {
   status: PrivacyRecordStatus;
   review_notes?: string;
   evidence_receipts: BreachPlaybookEvidenceReceipt[];
+  advisory_review: PrivacyAdvisoryReviewSummary;
   created_at: string;
   created_by: string;
   updated_at: string;
@@ -2872,6 +2901,7 @@ export interface TransferControlView {
   status: PrivacyRecordStatus;
   review_notes?: string;
   evidence_receipts: TransferControlEvidenceReceipt[];
+  advisory_review: PrivacyAdvisoryReviewSummary;
   created_at: string;
   created_by: string;
   updated_at: string;
@@ -3590,6 +3620,7 @@ export interface WorkflowReminderSourceSettings {
   profile_calendar: boolean;
   act_follow_ups: boolean;
   attendance_hygiene: boolean;
+  privacy_control_reviews: boolean;
 }
 
 export interface WorkflowReminderSettings {
@@ -5061,6 +5092,7 @@ export const DEFAULT_SETTINGS: Settings = {
         profile_calendar: true,
         act_follow_ups: true,
         attendance_hygiene: true,
+        privacy_control_reviews: true,
       },
     },
   },

@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { SettingsPage } from './SettingsPage';
-import { DEFAULT_SETTINGS } from '../../api/types';
+import {
+  DEFAULT_SETTINGS,
+  type PrivacyAdvisoryReviewStatus,
+  type PrivacyAdvisoryReviewSummary,
+} from '../../api/types';
 import { renderWithProviders } from '../../test/utils';
 import { StaticPermissionsProvider, permissionsValue } from '../session/permissions';
 
@@ -112,6 +116,36 @@ const DPIA_ONE = {
   updated_by: 'amelia.marques',
 };
 
+function advisoryReviewSummary(
+  overrides: Record<string, unknown> = {},
+): PrivacyAdvisoryReviewSummary {
+  const summary: PrivacyAdvisoryReviewSummary = {
+    status: 'current' as PrivacyAdvisoryReviewStatus,
+    last_reviewed_at: '2026-07-09T12:00:00Z',
+    next_review_due_at: '2027-07-09',
+    days_until_due: 361,
+    review_interval_days: 365,
+    receipt_count: 1,
+    review_receipt_count: 1,
+    drill_receipt_count: 0,
+    local_advisory_only: true as const,
+    authority_notification_claimed: false as const,
+    subject_notification_claimed: false as const,
+    transfer_approval_claimed: false as const,
+    transfer_execution_claimed: false as const,
+    external_delivery_configured: false as const,
+    legal_completion_claimed: false as const,
+  };
+  for (const [key, value] of Object.entries(overrides)) {
+    if (value === undefined) {
+      delete (summary as Record<string, unknown>)[key];
+    } else {
+      (summary as Record<string, unknown>)[key] = value;
+    }
+  }
+  return summary;
+}
+
 const BREACH_PLAYBOOK_ONE = {
   id: 'breach-1',
   title: 'Suspected account compromise',
@@ -135,6 +169,11 @@ const BREACH_PLAYBOOK_ONE = {
       subjects_notified: false,
     },
   ],
+  advisory_review: advisoryReviewSummary({
+    last_reviewed_at: undefined,
+    last_drill_at: '2026-07-09T12:10:00Z',
+    drill_receipt_count: 1,
+  }),
   created_at: '2026-07-09T12:00:00Z',
   created_by: 'amelia.marques',
   updated_at: '2026-07-09T12:00:00Z',
@@ -164,6 +203,9 @@ const TRANSFER_CONTROL_ONE = {
       data_transfer_executed: false,
     },
   ],
+  advisory_review: advisoryReviewSummary({
+    last_reviewed_at: '2026-07-09T12:40:00Z',
+  }),
   created_at: '2026-07-09T12:30:00Z',
   created_by: 'amelia.marques',
   updated_at: '2026-07-09T12:30:00Z',
@@ -428,7 +470,8 @@ const RETENTION_EXECUTION_AWAITING: RetentionExecutionMetadata = {
   outcome: 'manual_review_required',
   block_reason: 'retention execution request is recorded for manual review only',
   evidence_state: 'review_queued',
-  evidence_next_step: 'Review the retained evidence for manual approval; no disposal has been executed.',
+  evidence_next_step:
+    'Review the retained evidence for manual approval; no disposal has been executed.',
   workflow: {
     status: 'awaiting_manual_review',
     blockers: [],
@@ -1153,12 +1196,14 @@ function privacyFetch(
     containment_steps: [...record.containment_steps],
     notification_roles: [...record.notification_roles],
     evidence_receipts: [...record.evidence_receipts],
+    advisory_review: { ...record.advisory_review },
   }));
   let transferControls = initialTransferControls.map((record) => ({
     ...record,
     data_categories: [...record.data_categories],
     safeguards: [...record.safeguards],
     evidence_receipts: [...record.evidence_receipts],
+    advisory_review: { ...record.advisory_review },
   }));
   let retentionPolicies = initialRetentionPolicies.map((record) => ({ ...record }));
   let retentionDueCandidatesReport = cloneJson(initialRetentionDueCandidatesReport);
@@ -1222,6 +1267,25 @@ function privacyFetch(
               },
             ]
           : current.evidence_receipts,
+        advisory_review: receiptInput
+          ? advisoryReviewSummary({
+              last_reviewed_at:
+                (receiptInput.evidence_type ?? 'review') === 'review'
+                  ? '2026-07-09T13:00:00Z'
+                  : undefined,
+              last_drill_at:
+                (receiptInput.evidence_type ?? 'review') === 'drill'
+                  ? '2026-07-09T13:00:00Z'
+                  : current.advisory_review.last_drill_at,
+              receipt_count: current.evidence_receipts.length + 1,
+              review_receipt_count:
+                current.advisory_review.review_receipt_count +
+                ((receiptInput.evidence_type ?? 'review') === 'review' ? 1 : 0),
+              drill_receipt_count:
+                current.advisory_review.drill_receipt_count +
+                ((receiptInput.evidence_type ?? 'review') === 'drill' ? 1 : 0),
+            })
+          : current.advisory_review,
         updated_at: '2026-07-09T13:00:00Z',
         updated_by: 'amelia.marques',
       };
@@ -1252,6 +1316,13 @@ function privacyFetch(
               },
             ]
           : current.evidence_receipts,
+        advisory_review: receiptInput
+          ? advisoryReviewSummary({
+              last_reviewed_at: '2026-07-09T13:00:00Z',
+              receipt_count: current.evidence_receipts.length + 1,
+              review_receipt_count: current.evidence_receipts.length + 1,
+            })
+          : current.advisory_review,
         updated_at: '2026-07-09T13:00:00Z',
         updated_by: 'amelia.marques',
       };
@@ -1626,6 +1697,28 @@ function privacyFetch(
                 },
               ]
             : [],
+          advisory_review: receiptInput
+            ? advisoryReviewSummary({
+                last_reviewed_at:
+                  (receiptInput.evidence_type ?? 'review') === 'review'
+                    ? '2026-07-09T13:00:00Z'
+                    : undefined,
+                last_drill_at:
+                  (receiptInput.evidence_type ?? 'review') === 'drill'
+                    ? '2026-07-09T13:00:00Z'
+                    : undefined,
+                receipt_count: 1,
+                review_receipt_count: (receiptInput.evidence_type ?? 'review') === 'review' ? 1 : 0,
+                drill_receipt_count: (receiptInput.evidence_type ?? 'review') === 'drill' ? 1 : 0,
+              })
+            : advisoryReviewSummary({
+                status: 'no_receipt',
+                last_reviewed_at: undefined,
+                next_review_due_at: undefined,
+                days_until_due: undefined,
+                receipt_count: 0,
+                review_receipt_count: 0,
+              }),
           created_at: '2026-07-09T13:00:00Z',
           created_by: 'amelia.marques',
           updated_at: '2026-07-09T13:00:00Z',
@@ -1657,6 +1750,20 @@ function privacyFetch(
                 },
               ]
             : [],
+          advisory_review: receiptInput
+            ? advisoryReviewSummary({
+                last_reviewed_at: '2026-07-09T13:00:00Z',
+                receipt_count: 1,
+                review_receipt_count: 1,
+              })
+            : advisoryReviewSummary({
+                status: 'no_receipt',
+                last_reviewed_at: undefined,
+                next_review_due_at: undefined,
+                days_until_due: undefined,
+                receipt_count: 0,
+                review_receipt_count: 0,
+              }),
           created_at: '2026-07-09T13:00:00Z',
           created_by: 'amelia.marques',
           updated_at: '2026-07-09T13:00:00Z',
@@ -1853,7 +1960,8 @@ function retentionNoActionCandidate(overrides: Record<string, unknown> = {}) {
     outcome: 'no_action_required',
     status: 'due_no_action',
     candidate_evidence_state: 'review_queued',
-    evidence_next_step: 'Registar apenas evidência delimitada sem ação; nenhum registo fonte é alterado.',
+    evidence_next_step:
+      'Registar apenas evidência delimitada sem ação; nenhum registo fonte é alterado.',
     would_execute: false,
     destructive_disposal_completed: false,
     full_erasure_completed: false,
@@ -2031,6 +2139,9 @@ describe('SettingsPage', () => {
     expect(
       (screen.getByRole('switch', { name: 'Higiene de presenças' }) as HTMLInputElement).checked,
     ).toBe(true);
+    expect(
+      (screen.getByRole('switch', { name: 'Revisões de privacidade' }) as HTMLInputElement).checked,
+    ).toBe(true);
 
     fireEvent.click(enabled);
     fireEvent.change(screen.getByLabelText('Limite no painel'), { target: { value: '7' } });
@@ -2041,6 +2152,7 @@ describe('SettingsPage', () => {
     fireEvent.click(screen.getByRole('switch', { name: 'Calendário do perfil' }));
     fireEvent.click(screen.getByRole('switch', { name: 'Seguimentos de atas' }));
     fireEvent.click(screen.getByRole('switch', { name: 'Higiene de presenças' }));
+    fireEvent.click(screen.getByRole('switch', { name: 'Revisões de privacidade' }));
 
     await waitFor(
       () => {
@@ -2056,6 +2168,7 @@ describe('SettingsPage', () => {
             profile_calendar: false,
             act_follow_ups: false,
             attendance_hygiene: false,
+            privacy_control_reviews: false,
           },
         });
       },
@@ -2688,6 +2801,7 @@ describe('SettingsPage', () => {
     expect(breachPanel).toBeTruthy();
     expect(await within(breachPanel!).findByText('Suspected account compromise')).toBeTruthy();
     expect(await within(breachPanel!).findByText(/Sem notificação à autoridade/)).toBeTruthy();
+    expect(await within(breachPanel!).findByText('Revisão atual')).toBeTruthy();
     fireEvent.click(within(breachPanel!).getByRole('button', { name: 'Novo registo' }));
 
     let formCard = await screen.findByRole('heading', { name: 'Novo registo' });
@@ -2743,6 +2857,7 @@ describe('SettingsPage', () => {
     expect(transferPanel).toBeTruthy();
     expect(await within(transferPanel!).findByText('EU to UK support access')).toBeTruthy();
     expect(await within(transferPanel!).findByText(/Sem aprovação/)).toBeTruthy();
+    expect(await within(transferPanel!).findByText('Revisão atual')).toBeTruthy();
     fireEvent.click(within(transferPanel!).getByRole('button', { name: 'Novo registo' }));
 
     formCard = await screen.findByRole('heading', { name: 'Novo registo' });
@@ -2936,9 +3051,7 @@ describe('SettingsPage', () => {
       const call = calls.find(
         (c) =>
           c.method === 'POST' &&
-          c.url.endsWith(
-            '/v1/privacy/retention-executions/retention-exec-awaiting/review-closure',
-          ),
+          c.url.endsWith('/v1/privacy/retention-executions/retention-exec-awaiting/review-closure'),
       );
       expect(call).toBeTruthy();
       return call!;
@@ -3099,15 +3212,9 @@ describe('SettingsPage', () => {
       id: 'retention-exec-closed-ui',
       candidate: { scope: 'support', category: 'messages', record_id: 'ticket-closed' },
     });
-    const { fn } = privacyFetch(
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      [closedRecord],
-    );
+    const { fn } = privacyFetch(undefined, undefined, undefined, undefined, undefined, undefined, [
+      closedRecord,
+    ]);
     vi.stubGlobal('fetch', fn);
 
     renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
@@ -3240,9 +3347,9 @@ describe('SettingsPage', () => {
       'section',
     );
     expect(candidatesPanel).toBeTruthy();
-    const candidateRow = (
-      await within(candidatesPanel!).findByText('archive-doc-archive')
-    ).closest('tr');
+    const candidateRow = (await within(candidatesPanel!).findByText('archive-doc-archive')).closest(
+      'tr',
+    );
     expect(candidateRow).toBeTruthy();
     expect(
       within(candidateRow!).getByRole('button', { name: 'Registar evidência de arquivo' }),
@@ -3326,9 +3433,9 @@ describe('SettingsPage', () => {
     );
     expect(executionQueue).toBeTruthy();
     expect(await within(executionQueue!).findByText('archive-doc-archive')).toBeTruthy();
-    expect(
-      within(executionQueue!).getAllByText('bounded_archive_recorded').length,
-    ).toBeGreaterThan(0);
+    expect(within(executionQueue!).getAllByText('bounded_archive_recorded').length).toBeGreaterThan(
+      0,
+    );
     expect(
       calls.some(
         (call) => call.method === 'POST' && call.url.includes('/v1/privacy/retention-executions'),

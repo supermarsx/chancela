@@ -391,6 +391,8 @@ function toWireBody(draft: Settings): Settings {
           profile_calendar: draft.workflow.reminders.sources.profile_calendar === true,
           act_follow_ups: draft.workflow.reminders.sources.act_follow_ups === true,
           attendance_hygiene: draft.workflow.reminders.sources.attendance_hygiene === true,
+          privacy_control_reviews:
+            draft.workflow.reminders.sources.privacy_control_reviews === true,
         },
       },
     },
@@ -1674,6 +1676,13 @@ export function SettingsPage() {
                         checked={reminderPolicy.sources.attendance_hygiene}
                         onChange={(checked) =>
                           setWorkflowReminderSource('attendance_hygiene', checked)
+                        }
+                      />
+                      <Toggle
+                        label="Revisões de privacidade"
+                        checked={reminderPolicy.sources.privacy_control_reviews}
+                        onChange={(checked) =>
+                          setWorkflowReminderSource('privacy_control_reviews', checked)
                         }
                       />
                     </div>

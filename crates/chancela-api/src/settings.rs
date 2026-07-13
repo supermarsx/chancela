@@ -275,6 +275,8 @@ pub struct WorkflowReminderSourceSettings {
     pub act_follow_ups: bool,
     /// Draft/review act attendance hygiene reminders.
     pub attendance_hygiene: bool,
+    /// Local privacy breach/transfer review-depth reminders.
+    pub privacy_control_reviews: bool,
 }
 
 impl Default for WorkflowReminderSourceSettings {
@@ -283,6 +285,7 @@ impl Default for WorkflowReminderSourceSettings {
             profile_calendar: true,
             act_follow_ups: true,
             attendance_hygiene: true,
+            privacy_control_reviews: true,
         }
     }
 }

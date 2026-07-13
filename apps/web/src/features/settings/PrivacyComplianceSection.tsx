@@ -40,6 +40,8 @@ import {
   type PatchProcessorRecordBody,
   type PatchRetentionPolicyBody,
   type PatchTransferControlBody,
+  type PrivacyAdvisoryReviewStatus,
+  type PrivacyAdvisoryReviewSummary,
   type PrivacyRecordStatus,
   type PrivacyRiskLevel,
   type ProcessorRecordView,
@@ -214,6 +216,14 @@ const RISK_LABELS: Record<PrivacyRiskLevel, string> = {
   critical: 'Crítico',
 };
 
+const ADVISORY_REVIEW_LABELS: Record<PrivacyAdvisoryReviewStatus, string> = {
+  no_receipt: 'Sem recibo local',
+  current: 'Revisão atual',
+  due_soon: 'Revisão breve',
+  overdue: 'Revisão vencida',
+  under_review: 'Em revisão local',
+};
+
 const RETENTION_STATUS_LABEL_KEYS: Record<RetentionPolicyStatus, MessageKey> = {
   draft: 'settings.privacy.retention.status.draft',
   active: 'settings.privacy.retention.status.active',
@@ -236,13 +246,12 @@ const RETENTION_EXECUTION_STATUS_LABELS: Record<RetentionExecutionStatus, string
   executed: 'Executado',
 };
 
-const RETENTION_BOUNDED_EVIDENCE_SUPPRESSED_STATES: ReadonlySet<RetentionEvidenceState> =
-  new Set([
-    'blocked',
-    'bounded_archive_recorded',
-    'bounded_no_action_recorded',
-    'prior_bounded_evidence_available',
-  ]);
+const RETENTION_BOUNDED_EVIDENCE_SUPPRESSED_STATES: ReadonlySet<RetentionEvidenceState> = new Set([
+  'blocked',
+  'bounded_archive_recorded',
+  'bounded_no_action_recorded',
+  'prior_bounded_evidence_available',
+]);
 
 const RETENTION_REVIEW_CLOSURE_FALSE_FLAGS = {
   destructive_disposal_completed: false,
@@ -683,6 +692,37 @@ function statusTone(status: PrivacyRecordStatus): 'neutral' | 'warn' | 'ok' {
   if (status === 'active') return 'ok';
   if (status === 'under_review') return 'warn';
   return 'neutral';
+}
+
+function advisoryReviewTone(
+  status: PrivacyAdvisoryReviewStatus,
+): 'neutral' | 'accent' | 'warn' | 'ok' {
+  if (status === 'current') return 'ok';
+  if (status === 'due_soon') return 'accent';
+  if (status === 'overdue' || status === 'under_review') return 'warn';
+  return 'neutral';
+}
+
+function advisoryReviewDetail(review: PrivacyAdvisoryReviewSummary): string {
+  if (review.status === 'no_receipt') return 'Sem recibo de revisão/exercício local.';
+  if (review.status === 'under_review') return 'Estado local em revisão, sem conclusão legal.';
+  const due = review.next_review_due_at
+    ? `Próxima revisão local: ${review.next_review_due_at}.`
+    : '';
+  const last = review.last_reviewed_at ?? review.last_drill_at;
+  const lastText = last ? `Última evidência: ${formatDateTime(last)}.` : '';
+  return [due, lastText, 'Sem notificação, aprovação ou execução.'].filter(Boolean).join(' ');
+}
+
+function AdvisoryReviewBadge({ review }: { review: PrivacyAdvisoryReviewSummary }) {
+  return (
+    <div className="stack--tight">
+      <Badge tone={advisoryReviewTone(review.status)}>
+        {ADVISORY_REVIEW_LABELS[review.status]}
+      </Badge>
+      <span className="muted">{advisoryReviewDetail(review)}</span>
+    </div>
+  );
 }
 
 function retentionStatusTone(status: RetentionPolicyStatus): 'neutral' | 'warn' | 'ok' {
@@ -1437,7 +1477,12 @@ function BreachPlaybookPanel({
                       </Badge>
                     </td>
                     <td>
-                      <Badge tone={statusTone(record.status)}>{STATUS_LABELS[record.status]}</Badge>
+                      <div className="stack--tight">
+                        <Badge tone={statusTone(record.status)}>
+                          {STATUS_LABELS[record.status]}
+                        </Badge>
+                        <AdvisoryReviewBadge review={record.advisory_review} />
+                      </div>
                     </td>
                     <td className="users-actions">
                       <Button
@@ -1807,7 +1852,12 @@ function TransferControlPanel({
                       </Badge>
                     </td>
                     <td>
-                      <Badge tone={statusTone(record.status)}>{STATUS_LABELS[record.status]}</Badge>
+                      <div className="stack--tight">
+                        <Badge tone={statusTone(record.status)}>
+                          {STATUS_LABELS[record.status]}
+                        </Badge>
+                        <AdvisoryReviewBadge review={record.advisory_review} />
+                      </div>
                     </td>
                     <td className="users-actions">
                       <Button
@@ -2157,20 +2207,15 @@ function RetentionDueCandidatesPanel({
         {report ? (
           <p className="muted">
             Gerado em {formatDateTime(report.generated_at)} · {report.scope} / {report.category} ·{' '}
-            {report.candidate_count} candidato(s) ativo(s) ·{' '}
-            {suppressedByBoundedEvidenceCount} suprimido(s) por evidência delimitada
+            {report.candidate_count} candidato(s) ativo(s) · {suppressedByBoundedEvidenceCount}{' '}
+            suprimido(s) por evidência delimitada
           </p>
         ) : null}
         {report && report.suppressed_candidate_count > 0 ? (
           <p className="muted">
             Candidatos suprimidos por evidência delimitada não são listados na tabela e não recebem
             botões de ação; reveja a evidência na fila/histórico de execução.
-            {report.suppression_summary ? (
-              <>
-                {' '}
-                Resumo: {report.suppression_summary.note}
-              </>
-            ) : null}
+            {report.suppression_summary ? <> Resumo: {report.suppression_summary.note}</> : null}
           </p>
         ) : null}
         {loading ? (
@@ -2265,8 +2310,7 @@ function RetentionDueCandidatesPanel({
                           ) : null}
                           <span className="muted">{priorExecution.next_step}</span>
                           <span className="muted">
-                            Próximo passo de evidência anterior:{' '}
-                            {priorExecution.evidence_next_step}
+                            Próximo passo de evidência anterior: {priorExecution.evidence_next_step}
                           </span>
                         </>
                       ) : null}
@@ -2345,7 +2389,7 @@ function RetentionDueCandidatesPanel({
                           ? 'Apenas registo delimitado de evidência sem ação.'
                           : canRecordArchiveEvidence
                             ? 'Apenas registo delimitado de evidência de arquivo.'
-                          : 'Apenas revisão de evidência.'}
+                            : 'Apenas revisão de evidência.'}
                       </span>
                     </div>
                   </td>

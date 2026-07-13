@@ -163,6 +163,24 @@ blockers.
 
 Implementation checkpoints covered here:
 
+- Current working-tree privacy breach/transfer advisory review status and
+  reminder depth keeps Legal/Compliance/Data/Workflows/UX/CI **PARTIAL**:
+  breach playbook and transfer-control read views now include an
+  `advisory_review` summary derived only from local `evidence_receipts` and
+  record `status`. The summary exposes `no_receipt`, `current`, `due_soon`,
+  `overdue`, and `under_review` status depth, last local review/drill receipt
+  timestamps, derived next-review date, receipt counters, and explicit false
+  flags for authority notification, subject notification, transfer approval,
+  transfer execution, external delivery, and legal completion. The dashboard
+  reminder feed can surface local privacy review reminders for no-receipt,
+  due-soon, overdue, and under-review breach/transfer records, while
+  `workflow.reminders.sources.privacy_control_reviews` lets Settings suppress
+  only that reminder family. The Settings privacy register rows render the
+  local review badge and derived dates beside the existing lifecycle status.
+  This is deterministic local advisory state only: it does not notify
+  authorities or data subjects, approve transfers, execute transfers, certify
+  adequacy/compliance, make external calls, deliver calendar/email/webhooks, or
+  perform destructive retention, erasure, disposal, or legal-completion action.
 - Password-required account creation/session slice keeps Data/Roles/UX/CI
   **PARTIAL**: `POST /v1/users` now requires a password, validates it through
   the server password policy, hashes it with the existing verifier-seed path, and
@@ -1343,9 +1361,10 @@ Implementation checkpoints covered here:
 - Current working-tree workflow reminder policy keeps Workflows/UX/CI
   **PARTIAL**: settings now include `workflow.reminders` with `enabled`,
   `dashboard_limit`, `due_soon_days`, `attendance_lookahead_days`, and source
-  toggles for `profile_calendar`, `act_follow_ups`, and `attendance_hygiene`.
+  toggles for `profile_calendar`, `act_follow_ups`, `attendance_hygiene`, and
+  `privacy_control_reviews`.
   Defaults preserve the prior generated dashboard behavior: enabled, limit 5,
-  45-day due-soon status, 45-day attendance lookahead, and all three sources
+  45-day due-soon status, 45-day attendance lookahead, and all four sources
   enabled. The dashboard reads the policy only for the existing local advisory
   reminder families; `enabled=false` suppresses reminder feed/cards without
   removing other dashboard data, and source toggles suppress only their

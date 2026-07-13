@@ -118,6 +118,7 @@ describe('DEFAULT_SETTINGS.workflow', () => {
         profile_calendar: true,
         act_follow_ups: true,
         attendance_hygiene: true,
+        privacy_control_reviews: true,
       },
     });
   });

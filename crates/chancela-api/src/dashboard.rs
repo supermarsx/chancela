@@ -27,6 +27,11 @@ use crate::dto::{
     format_date, read_redaction_for_actor,
 };
 use crate::error::ApiError;
+use crate::privacy::{
+    BreachPlaybookId, BreachPlaybookRecord, PrivacyAdvisoryReviewStatus, PrivacyRecordStatus,
+    TransferControlId, TransferControlRecord, breach_playbook_advisory_review,
+    transfer_control_advisory_review,
+};
 use crate::settings::WorkflowReminderSettings;
 
 const REGISTRY_EXPIRY_WARNING_DAYS: i32 = 30;
@@ -52,6 +57,8 @@ pub async fn dashboard(
     let acts = state.acts.read().await;
     let follow_ups = state.follow_ups.read().await;
     let registry_extracts = state.registry_extracts.read().await;
+    let breach_playbooks = state.breach_playbooks.read().await;
+    let transfer_controls = state.transfer_controls.read().await;
     let generated_dispatch_evidence =
         load_generated_dispatch_evidence_snapshots(&state, &acts).await?;
     let ledger = state.ledger.read().await;
@@ -123,6 +130,8 @@ pub async fn dashboard(
             follow_ups: &follow_ups,
             generated_dispatch_evidence: &generated_dispatch_evidence,
             registry_extracts: &registry_extracts,
+            breach_playbooks: &breach_playbooks,
+            transfer_controls: &transfer_controls,
         },
         today,
         &reminder_policy,
@@ -1131,6 +1140,8 @@ fn dashboard_reminders_with_follow_ups(
             follow_ups,
             generated_dispatch_evidence: &[],
             registry_extracts,
+            breach_playbooks: &HashMap::new(),
+            transfer_controls: &HashMap::new(),
         },
         today,
         policy,
@@ -1146,6 +1157,8 @@ struct ReminderInputs<'a> {
     follow_ups: &'a HashMap<String, StoredFollowUp>,
     generated_dispatch_evidence: &'a [GeneratedDispatchEvidenceSnapshot],
     registry_extracts: &'a HashMap<EntityId, RegistryExtract>,
+    breach_playbooks: &'a HashMap<BreachPlaybookId, BreachPlaybookRecord>,
+    transfer_controls: &'a HashMap<TransferControlId, TransferControlRecord>,
 }
 
 fn dashboard_reminders_with_generated_dispatch_evidence(
@@ -1160,6 +1173,8 @@ fn dashboard_reminders_with_generated_dispatch_evidence(
         follow_ups,
         generated_dispatch_evidence,
         registry_extracts,
+        breach_playbooks,
+        transfer_controls,
     } = inputs;
     if !policy.enabled {
         return Vec::new();
@@ -1192,6 +1207,14 @@ fn dashboard_reminders_with_generated_dispatch_evidence(
         acts,
         generated_dispatch_evidence,
     ));
+    if policy.sources.privacy_control_reviews {
+        reminders.extend(privacy_control_review_reminders(
+            breach_playbooks,
+            transfer_controls,
+            today,
+            policy.due_soon_days,
+        ));
+    }
     if policy.sources.profile_calendar {
         reminders.extend(
             entities
@@ -1538,6 +1561,170 @@ fn absent_owner_dispatch_evidence_dashboard_reminder(
             Some("notifications.reminder.absentOwnerDispatch.action"),
         )),
     }
+}
+
+fn privacy_control_review_reminders(
+    breach_playbooks: &HashMap<BreachPlaybookId, BreachPlaybookRecord>,
+    transfer_controls: &HashMap<TransferControlId, TransferControlRecord>,
+    today: Date,
+    due_soon_days: u16,
+) -> Vec<DashboardReminder> {
+    let breach_reminders = breach_playbooks.values().filter_map(|record| {
+        if record.status == PrivacyRecordStatus::Retired {
+            return None;
+        }
+        let review = breach_playbook_advisory_review(record, today, due_soon_days);
+        privacy_review_reminder_from_summary(
+            "privacy-breach-playbook-review",
+            "privacy-breach-playbook",
+            &record.id.to_string(),
+            &record.title,
+            record.status,
+            &review.status,
+            review.next_review_due_at.as_deref(),
+            review.last_reviewed_at.as_deref(),
+            review.last_drill_at.as_deref(),
+            review.days_until_due,
+            review.review_receipt_count,
+            review.drill_receipt_count,
+            review.receipt_count,
+        )
+    });
+    let transfer_reminders = transfer_controls.values().filter_map(|record| {
+        if record.status == PrivacyRecordStatus::Retired {
+            return None;
+        }
+        let review = transfer_control_advisory_review(record, today, due_soon_days);
+        privacy_review_reminder_from_summary(
+            "privacy-transfer-control-review",
+            "privacy-transfer-control",
+            &record.id.to_string(),
+            &record.name,
+            record.status,
+            &review.status,
+            review.next_review_due_at.as_deref(),
+            review.last_reviewed_at.as_deref(),
+            None,
+            review.days_until_due,
+            review.review_receipt_count,
+            review.drill_receipt_count,
+            review.receipt_count,
+        )
+    });
+
+    breach_reminders.chain(transfer_reminders).collect()
+}
+
+#[allow(clippy::too_many_arguments)]
+fn privacy_review_reminder_from_summary(
+    source_rule: &str,
+    source_profile: &str,
+    record_id: &str,
+    record_label: &str,
+    record_status: PrivacyRecordStatus,
+    review_status: &PrivacyAdvisoryReviewStatus,
+    next_review_due_at: Option<&str>,
+    last_reviewed_at: Option<&str>,
+    last_drill_at: Option<&str>,
+    days_until_due: Option<i32>,
+    review_receipt_count: usize,
+    drill_receipt_count: usize,
+    receipt_count: usize,
+) -> Option<DashboardReminder> {
+    let (dashboard_status, severity, reason_prefix) = match review_status {
+        PrivacyAdvisoryReviewStatus::NoReceipt => (
+            "Pending",
+            "Advisory",
+            "has no local review or drill receipt recorded",
+        ),
+        PrivacyAdvisoryReviewStatus::DueSoon => {
+            ("DueSoon", "Info", "has a local advisory review due soon")
+        }
+        PrivacyAdvisoryReviewStatus::Overdue => {
+            ("Overdue", "Warning", "has an overdue local advisory review")
+        }
+        PrivacyAdvisoryReviewStatus::UnderReview => ("Pending", "Info", "is marked under review"),
+        PrivacyAdvisoryReviewStatus::Current => return None,
+    };
+    let next_due_text = next_review_due_at.unwrap_or("");
+    let due_phrase = if next_due_text.is_empty() {
+        "No next review date is derived because no local review cadence anchor exists.".to_owned()
+    } else {
+        format!("Next derived local review date is {next_due_text}.")
+    };
+    let last_activity = last_reviewed_at
+        .or(last_drill_at)
+        .unwrap_or("no local review/drill receipt");
+
+    Some(DashboardReminder {
+        due_date: next_due_text.to_owned(),
+        severity: severity.to_owned(),
+        status: dashboard_status.to_owned(),
+        reason: format!(
+            "Privacy register item \"{record_label}\" {reason_prefix}. {due_phrase} \
+             This dashboard reminder is local and advisory only; it does not notify authorities \
+             or subjects, approve or execute transfers, certify adequacy, or claim legal completion."
+        ),
+        entity_id: "privacy".to_owned(),
+        entity_name: "Privacidade".to_owned(),
+        source_rule: source_rule.to_owned(),
+        source_profile: source_profile.to_owned(),
+        params: dashboard_alert_params([
+            ("record_id", record_id.to_owned()),
+            ("record_label", record_label.to_owned()),
+            ("record_status", format!("{record_status:?}")),
+            ("review_status", format!("{review_status:?}")),
+            ("next_review_due_at", next_due_text.to_owned()),
+            ("last_local_activity_at", last_activity.to_owned()),
+            (
+                "last_reviewed_at",
+                last_reviewed_at.unwrap_or_default().to_owned(),
+            ),
+            (
+                "last_drill_at",
+                last_drill_at.unwrap_or_default().to_owned(),
+            ),
+            (
+                "days_until_due",
+                days_until_due
+                    .map(|value| value.to_string())
+                    .unwrap_or_default(),
+            ),
+            ("receipt_count", receipt_count.to_string()),
+            ("review_receipt_count", review_receipt_count.to_string()),
+            ("drill_receipt_count", drill_receipt_count.to_string()),
+            ("local_advisory_only", "true".to_owned()),
+            ("authority_notification_claimed", "false".to_owned()),
+            ("subject_notification_claimed", "false".to_owned()),
+            ("transfer_approval_claimed", "false".to_owned()),
+            ("transfer_execution_claimed", "false".to_owned()),
+            ("external_delivery_configured", "false".to_owned()),
+            ("legal_completion_claimed", "false".to_owned()),
+        ]),
+        law_refs: Vec::new(),
+        action: Some(dashboard_action(
+            "open_privacy_review",
+            "notifications.reminder.privacy.review.action",
+            Some(
+                match source_profile {
+                    "privacy-breach-playbook" => "/v1/privacy/breach-playbooks",
+                    "privacy-transfer-control" => "/v1/privacy/transfer-controls",
+                    _ => "/v1/privacy",
+                }
+                .to_owned(),
+            ),
+            Some("/configuracoes?sec=privacidade".to_owned()),
+        )),
+        recommended_next_steps: vec![
+            "Open the privacy register item.".to_owned(),
+            "Record a local review or drill receipt when operator evidence exists.".to_owned(),
+        ],
+        i18n: Some(alert_i18n(
+            "notifications.reminder.privacy.review.title",
+            "notifications.reminder.privacy.review.body",
+            Some("notifications.reminder.privacy.review.action"),
+        )),
+    })
 }
 
 fn follow_up_reminder(
@@ -1982,6 +2169,10 @@ fn calendar_signal_book_kinds(family: EntityFamily) -> &'static [BookKind] {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::privacy::{
+        BreachEvidenceKind, BreachPlaybookEvidenceReceipt, PrivacyRiskLevel,
+        TransferControlEvidenceReceipt,
+    };
     use crate::settings::WorkflowReminderSourceSettings;
     use chancela_core::{
         AttendanceWeight, Attendee, LegalHold, MeetingChannel, Nipc, NumberingScheme, PresenceMode,
@@ -1989,6 +2180,7 @@ mod tests {
     };
     use chancela_registry::{RegistryExtract, RegistryOfficer, RegistryProvenance};
     use time::macros::date;
+    use uuid::Uuid;
 
     struct ReminderFixture {
         entities: HashMap<EntityId, Entity>,
@@ -2223,10 +2415,166 @@ mod tests {
                 follow_ups: &HashMap::new(),
                 generated_dispatch_evidence: &generated_dispatch_evidence,
                 registry_extracts: &HashMap::new(),
+                breach_playbooks: &HashMap::new(),
+                transfer_controls: &HashMap::new(),
             },
             date!(2026 - 07 - 09),
             &WorkflowReminderSettings::default(),
         )
+    }
+
+    fn breach_playbook_record(
+        id: &str,
+        title: &str,
+        status: PrivacyRecordStatus,
+        receipts: Vec<BreachPlaybookEvidenceReceipt>,
+    ) -> BreachPlaybookRecord {
+        BreachPlaybookRecord {
+            id: BreachPlaybookId(Uuid::parse_str(id).expect("uuid")),
+            title: title.to_owned(),
+            scope: "Local breach response rehearsal".to_owned(),
+            detection_channels: vec!["support queue".to_owned()],
+            containment_steps: vec!["isolate affected process".to_owned()],
+            notification_roles: vec!["DPO".to_owned()],
+            authority_notification_window: None,
+            subject_notification_guidance: None,
+            risk_level: PrivacyRiskLevel::High,
+            status,
+            review_notes: None,
+            evidence_receipts: receipts,
+            created_at: "2025-01-01T00:00:00Z".to_owned(),
+            created_by: "operator".to_owned(),
+            updated_at: "2025-01-01T00:00:00Z".to_owned(),
+            updated_by: "operator".to_owned(),
+        }
+    }
+
+    fn transfer_control_record(
+        id: &str,
+        name: &str,
+        status: PrivacyRecordStatus,
+        receipts: Vec<TransferControlEvidenceReceipt>,
+    ) -> TransferControlRecord {
+        TransferControlRecord {
+            id: TransferControlId(Uuid::parse_str(id).expect("uuid")),
+            name: name.to_owned(),
+            purpose: "Operator review of transfer safeguards".to_owned(),
+            legal_basis: "Contract necessity review".to_owned(),
+            data_categories: vec!["member contacts".to_owned()],
+            recipient: "Processor SA".to_owned(),
+            destination_country: "PT".to_owned(),
+            transfer_mechanism: "local review register".to_owned(),
+            safeguards: vec!["least privilege".to_owned()],
+            risk_level: PrivacyRiskLevel::Medium,
+            status,
+            review_notes: None,
+            evidence_receipts: receipts,
+            created_at: "2025-01-01T00:00:00Z".to_owned(),
+            created_by: "operator".to_owned(),
+            updated_at: "2025-01-01T00:00:00Z".to_owned(),
+            updated_by: "operator".to_owned(),
+        }
+    }
+
+    #[test]
+    fn privacy_control_review_reminders_cover_missing_overdue_and_source_toggle() {
+        let missing_breach = breach_playbook_record(
+            "00000000-0000-4000-8000-000000000301",
+            "Breach playbook without receipt",
+            PrivacyRecordStatus::Active,
+            Vec::new(),
+        );
+        let current_breach = breach_playbook_record(
+            "00000000-0000-4000-8000-000000000302",
+            "Current breach drill",
+            PrivacyRecordStatus::Active,
+            vec![BreachPlaybookEvidenceReceipt {
+                id: "breach-drill-current".to_owned(),
+                evidence_type: BreachEvidenceKind::Drill,
+                recorded_at: "2026-06-01T00:00:00Z".to_owned(),
+                recorded_by: "operator".to_owned(),
+                occurred_at: None,
+                notes: None,
+                authority_notified: false,
+                subjects_notified: false,
+            }],
+        );
+        let overdue_transfer = transfer_control_record(
+            "00000000-0000-4000-8000-000000000303",
+            "Overdue transfer review",
+            PrivacyRecordStatus::Active,
+            vec![TransferControlEvidenceReceipt {
+                id: "transfer-review-old".to_owned(),
+                recorded_at: "2025-06-01T00:00:00Z".to_owned(),
+                recorded_by: "operator".to_owned(),
+                reviewed_at: Some("2025-06-01T00:00:00Z".to_owned()),
+                notes: None,
+                transfer_approved: false,
+                data_transfer_executed: false,
+            }],
+        );
+        let breach_playbooks = HashMap::from([
+            (missing_breach.id, missing_breach),
+            (current_breach.id, current_breach),
+        ]);
+        let transfer_controls = HashMap::from([(overdue_transfer.id, overdue_transfer)]);
+        let mut policy = WorkflowReminderSettings::default();
+        policy.dashboard_limit = 10;
+
+        let reminders = dashboard_reminders_with_generated_dispatch_evidence(
+            ReminderInputs {
+                entities: &HashMap::new(),
+                books: &HashMap::new(),
+                acts: &HashMap::new(),
+                follow_ups: &HashMap::new(),
+                generated_dispatch_evidence: &[],
+                registry_extracts: &HashMap::new(),
+                breach_playbooks: &breach_playbooks,
+                transfer_controls: &transfer_controls,
+            },
+            date!(2026 - 07 - 09),
+            &policy,
+        );
+
+        assert_eq!(reminders.len(), 2);
+        assert!(reminders.iter().any(|reminder| {
+            reminder.source_rule == "privacy-breach-playbook-review"
+                && reminder.status == "Pending"
+                && reminder.reason.contains("local and advisory only")
+                && reminder
+                    .params
+                    .get("authority_notification_claimed")
+                    .is_some_and(|value| value == "false")
+        }));
+        assert!(reminders.iter().any(|reminder| {
+            reminder.source_rule == "privacy-transfer-control-review"
+                && reminder.status == "Overdue"
+                && reminder.due_date == "2026-06-01"
+                && reminder
+                    .params
+                    .get("transfer_execution_claimed")
+                    .is_some_and(|value| value == "false")
+        }));
+        assert!(reminders.iter().all(|reminder| reminder.source_profile
+            != "privacy-breach-playbook"
+            || reminder.params.get("record_label") != Some(&"Current breach drill".to_owned())));
+
+        policy.sources.privacy_control_reviews = false;
+        let disabled = dashboard_reminders_with_generated_dispatch_evidence(
+            ReminderInputs {
+                entities: &HashMap::new(),
+                books: &HashMap::new(),
+                acts: &HashMap::new(),
+                follow_ups: &HashMap::new(),
+                generated_dispatch_evidence: &[],
+                registry_extracts: &HashMap::new(),
+                breach_playbooks: &breach_playbooks,
+                transfer_controls: &transfer_controls,
+            },
+            date!(2026 - 07 - 09),
+            &policy,
+        );
+        assert!(disabled.is_empty());
     }
 
     #[test]
@@ -2786,6 +3134,7 @@ mod tests {
                 profile_calendar: false,
                 act_follow_ups: false,
                 attendance_hygiene: true,
+                privacy_control_reviews: false,
             },
             ..WorkflowReminderSettings::default()
         };
@@ -3208,6 +3557,8 @@ mod tests {
                 follow_ups: &fixture.follow_ups,
                 generated_dispatch_evidence: &generated_dispatch_evidence,
                 registry_extracts: &fixture.registry_extracts,
+                breach_playbooks: &HashMap::new(),
+                transfer_controls: &HashMap::new(),
             },
             date!(2026 - 07 - 09),
             &policy,

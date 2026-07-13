@@ -56,13 +56,7 @@ const checks = [
     name: "archive local DGLAB interchange API/scaffold tests",
     command: [
       "cargo",
-      [
-        "test",
-        "-p",
-        "chancela-archive",
-        "--locked",
-        "local_dglab_interchange",
-      ],
+      ["test", "-p", "chancela-archive", "--locked", "local_dglab_interchange"],
     ],
   },
   {
@@ -193,7 +187,13 @@ const checks = [
     name: "API absent-owner generated dispatch-evidence tests",
     command: [
       "cargo",
-      ["test", "-p", "chancela-api", "--locked", "absent_owner_dispatch_evidence_"],
+      [
+        "test",
+        "-p",
+        "chancela-api",
+        "--locked",
+        "absent_owner_dispatch_evidence_",
+      ],
     ],
   },
   {
@@ -614,7 +614,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/session/session.test.tsx",
-    "roster present: \"criar novo utilizador\" routes back to sign-in",
+    'roster present: "criar novo utilizador" routes back to sign-in',
     "web signed-out non-bootstrap create refusal coverage",
   );
   assertFileContains(
@@ -1724,12 +1724,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-api/src/lib.rs",
-    "!created.to_string().contains(\"content_base64\")",
+    '!created.to_string().contains("content_base64")',
     "API external-validator raw report create response byte redaction coverage",
   );
   assertFileContains(
     "crates/chancela-api/src/lib.rs",
-    "!listed.to_string().contains(\"content_base64\")",
+    '!listed.to_string().contains("content_base64")',
     "API external-validator raw report list response byte redaction coverage",
   );
   assertFileContains(
@@ -1889,17 +1889,17 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-doc/src/tests.rs",
-    "\\\"version\\\":8",
+    '\\"version\\":8',
     "PDF accessibility report JSON v8 coverage",
   );
   assertFileContains(
     "crates/chancela-doc/src/tests.rs",
-    "\\\"structure_depth\\\":{",
+    '\\"structure_depth\\":{',
     "PDF accessibility JSON structural-depth marker",
   );
   assertFileContains(
     "crates/chancela-doc/src/tests.rs",
-    "\\\"marked_content\\\":{",
+    '\\"marked_content\\":{',
     "PDF accessibility JSON marked-content marker",
   );
   assertFileContains(
@@ -1979,37 +1979,37 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-doc/src/layout.rs",
-    "StructureRole::KeyValueTable => \"Table\"",
+    'StructureRole::KeyValueTable => "Table"',
     "PDF key-value table structure role marker",
   );
   assertFileContains(
     "crates/chancela-doc/src/layout.rs",
-    "StructureRole::TableHeaderCell => \"TH\"",
+    'StructureRole::TableHeaderCell => "TH"',
     "PDF table header cell structure role marker",
   );
   assertFileContains(
     "crates/chancela-doc/src/layout.rs",
-    "StructureRole::TableDataCell => \"TD\"",
+    'StructureRole::TableDataCell => "TD"',
     "PDF table data cell structure role marker",
   );
   assertFileContains(
     "crates/chancela-doc/src/pdfa.rs",
-    "layout::StructureRole::TableRow => \"TR\"",
+    'layout::StructureRole::TableRow => "TR"',
     "PDF structure tree table row role marker",
   );
   assertFileContains(
     "crates/chancela-doc/src/tests.rs",
-    "\\\"key_value_tables_have_table_semantics\\\":true",
+    '\\"key_value_tables_have_table_semantics\\":true',
     "PDF accessibility table semantics complete JSON marker",
   );
   assertFileContains(
     "crates/chancela-doc/src/tests.rs",
-    "\\\"pdf_ua_blockers\\\":[\\\"limited_tagged_structure\\\"]",
+    '\\"pdf_ua_blockers\\":[\\"limited_tagged_structure\\"]',
     "PDF accessibility reduced bounded blocker list marker",
   );
   assertFileDoesNotContain(
     "crates/chancela-doc/src/tests.rs",
-    "\\\"pdf_ua_blockers\\\":[\\\"no_alt_text_model\\\",\\\"limited_tagged_structure\\\"]",
+    '\\"pdf_ua_blockers\\":[\\"no_alt_text_model\\",\\"limited_tagged_structure\\"]',
     "PDF accessibility default fixture no-alt blocker removal marker",
   );
   assertFileContains(
@@ -2149,7 +2149,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-api/src/external_validator_evidence.rs",
-    "attachment; filename=\\\"{filename}\\\"",
+    'attachment; filename=\\"{filename}\\"',
     "external-validator raw report attachment disposition marker",
   );
   assertFileContains(
@@ -2624,7 +2624,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "scripts/check-release-trust.mjs",
-    "productionWithoutManifest.releaseTrust.mode = \"production\";",
+    'productionWithoutManifest.releaseTrust.mode = "production";',
     "release trust self-test package-mode production manifest-required marker",
   );
   assertFileContains(
@@ -2649,12 +2649,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-api/src/signature.rs",
-    "status_scope: \"declared_capacity_evidence_only\".to_owned()",
+    'status_scope: "declared_capacity_evidence_only".to_owned()',
     "declared signer-capacity evidence scope marker",
   );
   assertFileContains(
     "crates/chancela-api/src/signature.rs",
-    "verification_status: \"not_checked_by_scap\".to_owned()",
+    'verification_status: "not_checked_by_scap".to_owned()',
     "declared signer-capacity non-SCAP marker",
   );
   assertFileContains(
@@ -3094,7 +3094,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-pades/src/tests.rs",
-    "crate_find(&with_dss, b\"/TU (D:20260709120000Z)\")",
+    'crate_find(&with_dss, b"/TU (D:20260709120000Z)")',
     "PAdES DSS VRI /TU local evidence byte marker",
   );
   assertFileContains(
@@ -3159,12 +3159,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "contracts/retention.executions.json",
-    "\"execution_status\": \"awaiting_review\"",
+    '"execution_status": "awaiting_review"',
     "retention execution review-queue fixture awaiting marker",
   );
   assertFileContains(
     "contracts/retention.executions.json",
-    "\"destructive_disposal_completed\": false",
+    '"destructive_disposal_completed": false',
     "retention execution fixture non-destructive marker",
   );
   assertFileContains(
@@ -3574,7 +3574,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-api/tests/privacy.rs",
-    "json!(\"Bounded archive evidence recorded; no destructive operation was performed.\")",
+    'json!("Bounded archive evidence recorded; no destructive operation was performed.")',
     "API retention bounded archive no-destructive next-step marker",
   );
   assertFileContains(
@@ -3754,13 +3754,58 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "contracts/privacy.breach-playbooks.json",
-    "\"authority_notified\": false",
+    '"authority_notified": false',
     "breach playbook receipt contract fixture",
   );
   assertFileContains(
     "contracts/privacy.transfer-controls.json",
-    "\"data_transfer_executed\": false",
+    '"data_transfer_executed": false',
     "transfer control receipt contract fixture",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/privacy.rs",
+    "pub struct PrivacyAdvisoryReviewSummary",
+    "privacy advisory review summary DTO marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/privacy.rs",
+    "authority_notification_claimed: false",
+    "privacy advisory review false authority notification marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/privacy.rs",
+    "transfer_execution_claimed: false",
+    "privacy advisory review false transfer execution marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/dashboard.rs",
+    "privacy_control_review_reminders(",
+    "dashboard privacy control review reminder builder marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/dashboard.rs",
+    "This dashboard reminder is local and advisory only",
+    "dashboard privacy review advisory caveat marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/dashboard.rs",
+    "privacy_control_review_reminders_cover_missing_overdue_and_source_toggle",
+    "dashboard privacy review reminder unit coverage marker",
+  );
+  assertFileContains(
+    "contracts/privacy.breach-playbooks.json",
+    '"advisory_review":',
+    "breach advisory review contract fixture marker",
+  );
+  assertFileContains(
+    "contracts/privacy.transfer-controls.json",
+    '"advisory_review":',
+    "transfer advisory review contract fixture marker",
+  );
+  assertFileContains(
+    "contracts/dashboard.json",
+    '"source_rule": "privacy-breach-playbook-review"',
+    "dashboard privacy review reminder contract fixture marker",
   );
   assertFileContains(
     "crates/chancela-api/tests/data_key_ops.rs",
@@ -3909,27 +3954,27 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-templates/assets/csc-ponto-ordem-trabalhos.json",
-    "\"id\": \"csc-ponto-ordem-trabalhos/v1\"",
+    '"id": "csc-ponto-ordem-trabalhos/v1"',
     "commercial company agenda-item template asset",
   );
   assertFileContains(
     "crates/chancela-templates/assets/condominio-ponto-ordem-trabalhos.json",
-    "\"id\": \"condominio-ponto-ordem-trabalhos/v1\"",
+    '"id": "condominio-ponto-ordem-trabalhos/v1"',
     "condominium agenda-item template asset",
   );
   assertFileContains(
     "crates/chancela-templates/assets/assoc-ponto-ordem-trabalhos.json",
-    "\"id\": \"assoc-ponto-ordem-trabalhos/v1\"",
+    '"id": "assoc-ponto-ordem-trabalhos/v1"',
     "association agenda-item template asset",
   );
   assertFileContains(
     "crates/chancela-templates/assets/fundacao-ponto-ordem-trabalhos.json",
-    "\"id\": \"fundacao-ponto-ordem-trabalhos/v1\"",
+    '"id": "fundacao-ponto-ordem-trabalhos/v1"',
     "foundation agenda-item template asset",
   );
   assertFileContains(
     "crates/chancela-templates/assets/cooperativa-ponto-ordem-trabalhos.json",
-    "\"id\": \"cooperativa-ponto-ordem-trabalhos/v1\"",
+    '"id": "cooperativa-ponto-ordem-trabalhos/v1"',
     "cooperative agenda-item template asset",
   );
   assertFileContains(
@@ -3949,7 +3994,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-templates/src/lib.rs",
-    'reg.specs().len(),\n            101',
+    "reg.specs().len(),\n            101",
     "template catalog 101-asset census marker",
   );
   assertFileContains(
@@ -3969,22 +4014,22 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-templates/assets/csc-ata-divisao-quotas.json",
-    "\"id\": \"csc-ata-divisao-quotas/v1\"",
+    '"id": "csc-ata-divisao-quotas/v1"',
     "commercial company quota division template asset",
   );
   assertFileContains(
     "crates/chancela-templates/assets/csc-ata-divisao-quotas.json",
-    "\"rule_pack_id\": \"csc-art63/v2\"",
+    '"rule_pack_id": "csc-art63/v2"',
     "commercial company quota division rule-pack marker",
   );
   assertFileContains(
     "crates/chancela-templates/assets/csc-ata-unificacao-quotas.json",
-    "\"id\": \"csc-ata-unificacao-quotas/v1\"",
+    '"id": "csc-ata-unificacao-quotas/v1"',
     "commercial company quota unification template asset",
   );
   assertFileContains(
     "crates/chancela-templates/assets/csc-ata-unificacao-quotas.json",
-    "\"rule_pack_id\": \"csc-art63/v2\"",
+    '"rule_pack_id": "csc-art63/v2"',
     "commercial company quota unification rule-pack marker",
   );
   assertFileContains(
@@ -3994,12 +4039,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-templates/assets/csc-ata-delegacao-poderes.json",
-    "\"id\": \"csc-ata-delegacao-poderes/v1\"",
+    '"id": "csc-ata-delegacao-poderes/v1"',
     "commercial company delegation powers template asset",
   );
   assertFileContains(
     "crates/chancela-templates/assets/csc-ata-revogacao-poderes.json",
-    "\"id\": \"csc-ata-revogacao-poderes/v1\"",
+    '"id": "csc-ata-revogacao-poderes/v1"',
     "commercial company revocation powers template asset",
   );
   assertFileContains(
@@ -4009,47 +4054,47 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-templates/assets/csc-procuracao-representacao.json",
-    "\"id\": \"csc-procuracao-representacao/v1\"",
+    '"id": "csc-procuracao-representacao/v1"',
     "commercial company representation/proxy template asset",
   );
   assertFileContains(
     "crates/chancela-templates/assets/condominio-procuracao-representacao.json",
-    "\"id\": \"condominio-procuracao-representacao/v1\"",
+    '"id": "condominio-procuracao-representacao/v1"',
     "condominium representation/proxy template asset",
   );
   assertFileContains(
     "crates/chancela-templates/assets/assoc-procuracao-representacao.json",
-    "\"id\": \"assoc-procuracao-representacao/v1\"",
+    '"id": "assoc-procuracao-representacao/v1"',
     "association representation/proxy template asset",
   );
   assertFileContains(
     "crates/chancela-templates/assets/fundacao-procuracao-representacao.json",
-    "\"id\": \"fundacao-procuracao-representacao/v1\"",
+    '"id": "fundacao-procuracao-representacao/v1"',
     "foundation representation/proxy template asset",
   );
   assertFileContains(
     "crates/chancela-templates/assets/cooperativa-procuracao-representacao.json",
-    "\"id\": \"cooperativa-procuracao-representacao/v1\"",
+    '"id": "cooperativa-procuracao-representacao/v1"',
     "cooperative representation/proxy template asset",
   );
   assertFileContains(
     "crates/chancela-templates/assets/condominio-termo-transporte.json",
-    "\"id\": \"condominio-termo-transporte/v1\"",
+    '"id": "condominio-termo-transporte/v1"',
     "condominium book transport template asset",
   );
   assertFileContains(
     "crates/chancela-templates/assets/assoc-termo-transporte.json",
-    "\"id\": \"assoc-termo-transporte/v1\"",
+    '"id": "assoc-termo-transporte/v1"',
     "association book transport template asset",
   );
   assertFileContains(
     "crates/chancela-templates/assets/fundacao-termo-transporte.json",
-    "\"id\": \"fundacao-termo-transporte/v1\"",
+    '"id": "fundacao-termo-transporte/v1"',
     "foundation book transport template asset",
   );
   assertFileContains(
     "crates/chancela-templates/assets/cooperativa-termo-transporte.json",
-    "\"id\": \"cooperativa-termo-transporte/v1\"",
+    '"id": "cooperativa-termo-transporte/v1"',
     "cooperative book transport template asset",
   );
   assertFileContains(
@@ -4349,7 +4394,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-mcp/src/server.rs",
-    "\"statement_sources\": statement_sources",
+    '"statement_sources": statement_sources',
     "MCP AI draft statement-source envelope marker",
   );
   assertFileContains(
@@ -4359,7 +4404,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-mcp/src/server.rs",
-    "\"authoritative_source_claimed\": false",
+    '"authoritative_source_claimed": false',
     "MCP AI statement-source authoritative claim false marker",
   );
   assertFileContains(
@@ -4597,6 +4642,11 @@ function assertCheckpointMap() {
     "API workflow reminder attendance-hygiene source toggle marker",
   );
   assertFileContains(
+    "crates/chancela-api/src/settings.rs",
+    "pub privacy_control_reviews: bool",
+    "API workflow reminder privacy-control-review source toggle marker",
+  );
+  assertFileContains(
     "contracts/settings.json",
     '"dashboard_limit": 5',
     "settings contract workflow reminder dashboard-limit default marker",
@@ -4625,6 +4675,11 @@ function assertCheckpointMap() {
     "contracts/settings.json",
     '"attendance_hygiene": true',
     "settings contract workflow reminder attendance-hygiene source default marker",
+  );
+  assertFileContains(
+    "contracts/settings.json",
+    '"privacy_control_reviews": true',
+    "settings contract workflow reminder privacy-control-review source default marker",
   );
   assertFileContains(
     "apps/web/src/api/settingsDefaults.test.ts",
@@ -4670,6 +4725,16 @@ function assertCheckpointMap() {
     "apps/web/src/features/settings/SettingsPage.tsx",
     "setWorkflowReminderSource('attendance_hygiene', checked)",
     "Settings workflow reminder attendance-hygiene toggle marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/SettingsPage.tsx",
+    "setWorkflowReminderSource('privacy_control_reviews', checked)",
+    "Settings workflow reminder privacy-control-review toggle marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/PrivacyComplianceSection.tsx",
+    "AdvisoryReviewBadge",
+    "Settings privacy advisory review badge marker",
   );
   assertFileContains(
     "crates/chancela-api/src/dashboard.rs",
@@ -4934,7 +4999,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/documents/ActDocumentPanel.tsx",
-    "id=\"generated-dispatch-evidence\"",
+    'id="generated-dispatch-evidence"',
     "ActDocumentPanel dispatch-evidence hash target marker",
   );
   assertFileContains(
@@ -5752,7 +5817,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/entities/EntitiesPage.tsx",
-    "className=\"stack--tight entities-filters\"",
+    'className="stack--tight entities-filters"',
     "entity filter no-overflow wrapper marker",
   );
   assertFileContains(
@@ -6385,12 +6450,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-api/src/backup_recovery.rs",
-    "reject_true_flag(\"restore_executed\", req.restore_executed)?;",
+    'reject_true_flag("restore_executed", req.restore_executed)?;',
     "API backup recovery drill restore-executed overclaim refusal marker",
   );
   assertFileContains(
     "crates/chancela-api/src/backup_recovery.rs",
-    "reject_true_flag(\"offsite_custody_proven\", req.offsite_custody_proven)?;",
+    'reject_true_flag("offsite_custody_proven", req.offsite_custody_proven)?;',
     "API backup recovery drill custody overclaim refusal marker",
   );
   assertFileContains(
@@ -6450,17 +6515,17 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "contracts/backup.recovery-drill.json",
-    "\"restore_executed\": false",
+    '"restore_executed": false',
     "backup recovery drill contract restore-executed false marker",
   );
   assertFileContains(
     "contracts/backup.recovery-drill.json",
-    "\"isolated_restore_verified\": true",
+    '"isolated_restore_verified": true',
     "backup recovery drill contract isolated verified marker",
   );
   assertFileContains(
     "contracts/backup.recovery-drill.json",
-    "\"sqlcipher_encryption_verified\": null",
+    '"sqlcipher_encryption_verified": null',
     "backup recovery drill contract SQLCipher-at-rest not-proven marker",
   );
   assertFileContains(
@@ -6470,7 +6535,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "contracts/backup.recovery-drill.json",
-    "\"offsite_custody_proven\": false",
+    '"offsite_custody_proven": false',
     "backup recovery drill contract custody false marker",
   );
   assertFileContains(
@@ -6715,7 +6780,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-api/src/lib.rs",
-    "event[\"payload_digest\"]",
+    'event["payload_digest"]',
     "platform forwarded log sanitized audit digest coverage",
   );
   assertFileContains(
@@ -6825,12 +6890,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "contracts/platform.services.json",
-    "\"actual_runtime_status\": \"unknown\"",
+    '"actual_runtime_status": "unknown"',
     "platform services honest MCP status fixture",
   );
   assertFileContains(
     "contracts/platform.control.json",
-    "\"kind\": \"supervisor_required\"",
+    '"kind": "supervisor_required"',
     "platform service control supervisor-required fixture",
   );
   assertFileContains(
@@ -7004,7 +7069,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-api/src/lib.rs",
-    "[(\"0\", 1_usize), (\"500\", 250_usize)]",
+    '[("0", 1_usize), ("500", 250_usize)]',
     "ledger archive page limit normalization marker",
   );
   assertFileContains(
@@ -7064,7 +7129,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-api/src/database.rs",
-    "pub const DB_KEY_SOURCE_ENV: &str = \"CHANCELA_DB_KEY_SOURCE\";",
+    'pub const DB_KEY_SOURCE_ENV: &str = "CHANCELA_DB_KEY_SOURCE";',
     "API database encryption key-source env marker",
   );
   assertFileContains(
@@ -7074,7 +7139,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-api/src/database.rs",
-    "\"hardware\" | \"hardware_bound\" | \"hardware_derived\" | \"hardware_derived_fallback\"",
+    '"hardware" | "hardware_bound" | "hardware_derived" | "hardware_derived_fallback"',
     "API database encryption hardware fallback selector marker",
   );
   assertFileContains(
@@ -7149,7 +7214,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/templates/TemplatesCatalogPage.tsx",
-    "details className=\"templates-controls__advanced templates-advanced-filters filter-advanced\"",
+    'details className="templates-controls__advanced templates-advanced-filters filter-advanced"',
     "web template collapsed advanced filter marker",
   );
   assertFileContains(
@@ -8224,7 +8289,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "`execution_mode: \"execute_supported\"`; ineligible rows remain review-only",
+    '`execution_mode: "execute_supported"`; ineligible rows remain review-only',
     "CI/E2E hardening plan retention execute-supported payload boundary marker",
   );
   assertFileContains(
@@ -8479,7 +8544,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "preview-only exports request of `{ target: \"exports\", dry_run:\n  true, minimum_age_days: 30",
+    'preview-only exports request of `{ target: "exports", dry_run:\n  true, minimum_age_days: 30',
     "spec coverage retained-export preview payload marker",
   );
   assertFileContains(
@@ -9314,6 +9379,26 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
+    "Current working-tree privacy breach/transfer advisory review status and\n  reminder depth keeps Legal/Compliance/Data/Workflows/UX/CI **PARTIAL**",
+    "spec coverage privacy advisory review checkpoint marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "`advisory_review` summary derived only from local `evidence_receipts`",
+    "spec coverage privacy advisory review local derivation marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "`workflow.reminders.sources.privacy_control_reviews` lets Settings suppress\n  only that reminder family",
+    "spec coverage privacy reminder source toggle marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "does not notify\n  authorities or data subjects, approve transfers, execute transfers, certify\n  adequacy/compliance",
+    "spec coverage privacy advisory no-claim caveat marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
     "`workflow.reminders` with `enabled`,\n  `dashboard_limit`, `due_soon_days`, `attendance_lookahead_days`",
     "spec coverage workflow reminder settings shape marker",
   );
@@ -9329,7 +9414,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "source toggles suppress only profile-calendar, act-follow-up, or\n  attendance-hygiene reminders respectively",
+    "toggles for `profile_calendar`, `act_follow_ups`, `attendance_hygiene`, and\n  `privacy_control_reviews`",
     "spec coverage workflow reminder source-toggle boundary marker",
   );
   assertFileContains(

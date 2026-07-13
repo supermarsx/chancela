@@ -70,6 +70,7 @@ const MAX_PRIVACY_CONTROL_FIELD_CHARS: usize = 128;
 const MAX_PRIVACY_CONTROL_TEXT_CHARS: usize = 4096;
 const MAX_PRIVACY_CONTROL_LIST_ITEMS: usize = 32;
 const MAX_PRIVACY_EVIDENCE_RECEIPTS: usize = 64;
+pub(crate) const PRIVACY_ADVISORY_REVIEW_INTERVAL_DAYS: i64 = 365;
 const SENSITIVE_EVIDENCE_MARKERS: &[&str] = &[
     "password_hash",
     "recovery_hash",
@@ -621,6 +622,40 @@ pub struct TransferControlEvidenceReceipt {
     pub data_transfer_executed: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PrivacyAdvisoryReviewStatus {
+    NoReceipt,
+    Current,
+    DueSoon,
+    Overdue,
+    UnderReview,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PrivacyAdvisoryReviewSummary {
+    pub status: PrivacyAdvisoryReviewStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_reviewed_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_drill_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_review_due_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub days_until_due: Option<i32>,
+    pub review_interval_days: i64,
+    pub receipt_count: usize,
+    pub review_receipt_count: usize,
+    pub drill_receipt_count: usize,
+    pub local_advisory_only: bool,
+    pub authority_notification_claimed: bool,
+    pub subject_notification_claimed: bool,
+    pub transfer_approval_claimed: bool,
+    pub transfer_execution_claimed: bool,
+    pub external_delivery_configured: bool,
+    pub legal_completion_claimed: bool,
+}
+
 impl PrivacyRecordStatus {
     fn parse(raw: &str) -> Result<Self, ApiError> {
         match normalize_enum(raw).as_str() {
@@ -634,6 +669,142 @@ impl PrivacyRecordStatus {
             )),
         }
     }
+}
+
+pub(crate) fn breach_playbook_advisory_review(
+    record: &BreachPlaybookRecord,
+    today: Date,
+    due_soon_days: u16,
+) -> PrivacyAdvisoryReviewSummary {
+    let last_reviewed_at = record
+        .evidence_receipts
+        .iter()
+        .filter(|receipt| receipt.evidence_type == BreachEvidenceKind::Review)
+        .filter_map(|receipt| {
+            privacy_receipt_sort_key(receipt.occurred_at.as_deref(), &receipt.recorded_at)
+        })
+        .max_by_key(|(date, _)| *date);
+    let last_drill_at = record
+        .evidence_receipts
+        .iter()
+        .filter(|receipt| receipt.evidence_type == BreachEvidenceKind::Drill)
+        .filter_map(|receipt| {
+            privacy_receipt_sort_key(receipt.occurred_at.as_deref(), &receipt.recorded_at)
+        })
+        .max_by_key(|(date, _)| *date);
+    let latest_local_evidence = [last_reviewed_at.clone(), last_drill_at.clone()]
+        .into_iter()
+        .flatten()
+        .max_by_key(|(date, _)| *date);
+
+    advisory_review_summary(
+        record.status,
+        latest_local_evidence,
+        last_reviewed_at.map(|(_, value)| value),
+        last_drill_at.map(|(_, value)| value),
+        today,
+        due_soon_days,
+        record.evidence_receipts.len(),
+        record
+            .evidence_receipts
+            .iter()
+            .filter(|receipt| receipt.evidence_type == BreachEvidenceKind::Review)
+            .count(),
+        record
+            .evidence_receipts
+            .iter()
+            .filter(|receipt| receipt.evidence_type == BreachEvidenceKind::Drill)
+            .count(),
+    )
+}
+
+pub(crate) fn transfer_control_advisory_review(
+    record: &TransferControlRecord,
+    today: Date,
+    due_soon_days: u16,
+) -> PrivacyAdvisoryReviewSummary {
+    let last_reviewed_at = record
+        .evidence_receipts
+        .iter()
+        .filter_map(|receipt| {
+            privacy_receipt_sort_key(receipt.reviewed_at.as_deref(), &receipt.recorded_at)
+        })
+        .max_by_key(|(date, _)| *date);
+
+    advisory_review_summary(
+        record.status,
+        last_reviewed_at.clone(),
+        last_reviewed_at.map(|(_, value)| value),
+        None,
+        today,
+        due_soon_days,
+        record.evidence_receipts.len(),
+        record.evidence_receipts.len(),
+        0,
+    )
+}
+
+fn advisory_review_summary(
+    record_status: PrivacyRecordStatus,
+    latest_local_evidence: Option<(Date, String)>,
+    last_reviewed_at: Option<String>,
+    last_drill_at: Option<String>,
+    today: Date,
+    due_soon_days: u16,
+    receipt_count: usize,
+    review_receipt_count: usize,
+    drill_receipt_count: usize,
+) -> PrivacyAdvisoryReviewSummary {
+    let (status, next_review_due_at, days_until_due) =
+        if record_status == PrivacyRecordStatus::UnderReview {
+            (PrivacyAdvisoryReviewStatus::UnderReview, None, None)
+        } else if let Some((last_date, _)) = latest_local_evidence {
+            let next_due_date = last_date + Duration::days(PRIVACY_ADVISORY_REVIEW_INTERVAL_DAYS);
+            let days = next_due_date.to_julian_day() - today.to_julian_day();
+            let status = if days < 0 {
+                PrivacyAdvisoryReviewStatus::Overdue
+            } else if days <= i32::from(due_soon_days) {
+                PrivacyAdvisoryReviewStatus::DueSoon
+            } else {
+                PrivacyAdvisoryReviewStatus::Current
+            };
+            (status, Some(format_date(next_due_date)), Some(days))
+        } else {
+            (PrivacyAdvisoryReviewStatus::NoReceipt, None, None)
+        };
+
+    PrivacyAdvisoryReviewSummary {
+        status,
+        last_reviewed_at,
+        last_drill_at,
+        next_review_due_at,
+        days_until_due,
+        review_interval_days: PRIVACY_ADVISORY_REVIEW_INTERVAL_DAYS,
+        receipt_count,
+        review_receipt_count,
+        drill_receipt_count,
+        local_advisory_only: true,
+        authority_notification_claimed: false,
+        subject_notification_claimed: false,
+        transfer_approval_claimed: false,
+        transfer_execution_claimed: false,
+        external_delivery_configured: false,
+        legal_completion_claimed: false,
+    }
+}
+
+fn privacy_receipt_sort_key(primary_at: Option<&str>, recorded_at: &str) -> Option<(Date, String)> {
+    let selected = primary_at
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(recorded_at);
+    parse_privacy_rfc3339_date(selected).map(|date| (date, selected.to_owned()))
+}
+
+fn parse_privacy_rfc3339_date(value: &str) -> Option<Date> {
+    OffsetDateTime::parse(value, &Rfc3339)
+        .ok()
+        .map(|timestamp| timestamp.date())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -811,6 +982,7 @@ pub struct BreachPlaybookView {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub review_notes: Option<String>,
     pub evidence_receipts: Vec<BreachPlaybookEvidenceReceipt>,
+    pub advisory_review: PrivacyAdvisoryReviewSummary,
     pub created_at: String,
     pub created_by: String,
     pub updated_at: String,
@@ -832,6 +1004,11 @@ impl From<&BreachPlaybookRecord> for BreachPlaybookView {
             status: record.status,
             review_notes: record.review_notes.clone(),
             evidence_receipts: record.evidence_receipts.clone(),
+            advisory_review: breach_playbook_advisory_review(
+                record,
+                OffsetDateTime::now_utc().date(),
+                45,
+            ),
             created_at: record.created_at.clone(),
             created_by: record.created_by.clone(),
             updated_at: record.updated_at.clone(),
@@ -856,6 +1033,7 @@ pub struct TransferControlView {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub review_notes: Option<String>,
     pub evidence_receipts: Vec<TransferControlEvidenceReceipt>,
+    pub advisory_review: PrivacyAdvisoryReviewSummary,
     pub created_at: String,
     pub created_by: String,
     pub updated_at: String,
@@ -878,6 +1056,11 @@ impl From<&TransferControlRecord> for TransferControlView {
             status: record.status,
             review_notes: record.review_notes.clone(),
             evidence_receipts: record.evidence_receipts.clone(),
+            advisory_review: transfer_control_advisory_review(
+                record,
+                OffsetDateTime::now_utc().date(),
+                45,
+            ),
             created_at: record.created_at.clone(),
             created_by: record.created_by.clone(),
             updated_at: record.updated_at.clone(),
