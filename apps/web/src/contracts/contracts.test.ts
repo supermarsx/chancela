@@ -2800,6 +2800,7 @@ describe('contract fixtures parse through the real client', () => {
         review_guardrail_checklist: true,
         canonical_conversion_status: true,
         canonical_conversion_performed: true,
+        canonical_conversion_preflight: true,
         legal_acceptance_claimed: true,
         preservation_policy: true,
         legal_notice: true,
@@ -2811,6 +2812,10 @@ describe('contract fixtures parse through the real client', () => {
     assertTimestamp(doc.imported_at, 'ImportedDocumentView.imported_at');
     expect(doc.detected_content_type).toBe('image/png');
     expect(doc.evidence_family).toBe('image');
+    expect(doc.canonical_conversion_preflight.status).toBe('not_attempted');
+    expect(doc.canonical_conversion_preflight.canonical_conversion_performed).toBe(false);
+    expect(doc.canonical_conversion_preflight.canonical_pdfa_generated).toBe(false);
+    expect(doc.canonical_conversion_preflight.external_provider_contacted).toBe(false);
     expect(doc.classification).toBe('image_non_canonical_evidence');
     expect(doc.non_canonical).toBe(true);
     expect(doc.operator_review_status).toBe('reviewed_non_canonical_original_only');

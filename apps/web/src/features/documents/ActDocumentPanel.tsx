@@ -413,6 +413,145 @@ function yesNo(value: boolean, t: TFunction): string {
   return value ? t('common.yes') : t('common.no');
 }
 
+function shouldShowCanonicalConversionPreflight(
+  preflight: DocumentImportValidationReport['canonical_conversion_preflight'] | undefined,
+): boolean {
+  if (!preflight) return false;
+  const source = metadataText(preflight.source_format);
+  return (
+    source === 'legacy_word_doc' ||
+    source === 'ole_compound_file' ||
+    metadataText(preflight.status) === 'blocked'
+  );
+}
+
+function canonicalConversionPreflightStatusLabel(status: unknown): string {
+  switch (metadataText(status)) {
+    case 'blocked':
+      return 'bloqueado';
+    case 'not_attempted':
+      return 'não tentado';
+    case null:
+      return 'não indicado';
+    default:
+      return metadataText(status) ?? 'não indicado';
+  }
+}
+
+function canonicalConversionPreflightSourceLabel(source: unknown): string {
+  switch (metadataText(source)) {
+    case 'legacy_word_doc':
+      return 'DOC legado';
+    case 'ole_compound_file':
+      return 'OLE CFB';
+    case 'not_legacy_doc_or_ole':
+      return 'não DOC/OLE';
+    case null:
+      return 'não indicado';
+    default:
+      return metadataText(source) ?? 'não indicado';
+  }
+}
+
+function CanonicalConversionPreflightEvidence({
+  preflight,
+  t,
+}: {
+  preflight:
+    | DocumentImportValidationReport['canonical_conversion_preflight']
+    | ImportedDocumentView['canonical_conversion_preflight']
+    | undefined;
+  t: TFunction;
+}) {
+  if (!shouldShowCanonicalConversionPreflight(preflight)) return null;
+
+  return (
+    <div className="stack--tight">
+      <p className="card__label">Pré-flight local de conversão canónica</p>
+      <p className="field__hint">
+        Evidência local de metadados apenas; não converte DOC, não cria PDF/A, não executa OCR, não
+        valida assinaturas, não chama fornecedores e não declara aceitação legal.
+      </p>
+      <dl className="deflist deflist--tight">
+        <div>
+          <dt>Estado</dt>
+          <dd>{canonicalConversionPreflightStatusLabel(preflight?.status)}</dd>
+        </div>
+        <div>
+          <dt>Formato avaliado</dt>
+          <dd>{canonicalConversionPreflightSourceLabel(preflight?.source_format)}</dd>
+        </div>
+        <div>
+          <dt>Base de evidência</dt>
+          <dd>
+            {preflight?.bounded_evidence_status ? (
+              <code className="mono">{preflight.bounded_evidence_status}</code>
+            ) : (
+              <span className="muted">{t('documents.import.notIndicated')}</span>
+            )}
+          </dd>
+        </div>
+        <div>
+          <dt>Bytes originais preservados</dt>
+          <dd>{yesNo(Boolean(preflight?.original_bytes_preserved), t)}</dd>
+        </div>
+        <div>
+          <dt>Conversão canónica executada</dt>
+          <dd>{yesNo(Boolean(preflight?.canonical_conversion_performed), t)}</dd>
+        </div>
+        <div>
+          <dt>PDF/A criado</dt>
+          <dd>{yesNo(Boolean(preflight?.canonical_pdfa_generated), t)}</dd>
+        </div>
+        <div>
+          <dt>Validação de assinatura</dt>
+          <dd>{yesNo(Boolean(preflight?.signature_validation_performed), t)}</dd>
+        </div>
+        <div>
+          <dt>OCR executado</dt>
+          <dd>{yesNo(Boolean(preflight?.ocr_performed), t)}</dd>
+        </div>
+        <div>
+          <dt>Aceitação legal declarada</dt>
+          <dd>{yesNo(Boolean(preflight?.legal_acceptance_claimed), t)}</dd>
+        </div>
+        <div>
+          <dt>Fornecedor externo contactado</dt>
+          <dd>{yesNo(Boolean(preflight?.external_provider_contacted), t)}</dd>
+        </div>
+        <div>
+          <dt>Registo canónico substituído</dt>
+          <dd>{yesNo(Boolean(preflight?.canonical_record_replaced), t)}</dd>
+        </div>
+      </dl>
+      {preflight?.evidence_basis?.length ? (
+        <div className="stack--tight">
+          <p className="card__label">Evidência observada</p>
+          <ul className="plain-list">
+            {preflight.evidence_basis.map((evidence) => (
+              <li key={evidence}>
+                <code className="mono">{evidence}</code>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {preflight?.blockers?.length ? (
+        <div className="stack--tight">
+          <p className="card__label">Bloqueios</p>
+          <ul className="plain-list">
+            {preflight.blockers.map((blocker) => (
+              <li key={blocker}>
+                <code className="mono">{blocker}</code>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function validationFindingTone(
   finding: DocumentImportValidationFinding,
 ): 'neutral' | 'warn' | 'error' {
@@ -479,6 +618,11 @@ function DocumentImportValidationEvidence({
               </div>
             </dl>
           ) : null}
+
+          <CanonicalConversionPreflightEvidence
+            preflight={report.canonical_conversion_preflight}
+            t={t}
+          />
 
           {report.findings.length > 0 ? (
             <div className="stack--tight">
@@ -1395,6 +1539,10 @@ function ImportedDocumentDetails({
           </div>
         </dl>
       </div>
+      <CanonicalConversionPreflightEvidence
+        preflight={document.canonical_conversion_preflight}
+        t={t}
+      />
       <ImportedDocumentReviewDepthSummary document={document} t={t} />
       <ImportedDocumentReviewReceipt document={document} t={t} />
       <ImportedDocumentReviewHistory document={document} t={t} />

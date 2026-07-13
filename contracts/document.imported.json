@@ -75,6 +75,28 @@
   ],
   "canonical_conversion_status": "not_performed_non_canonical_original_only",
   "canonical_conversion_performed": false,
+  "canonical_conversion_preflight": {
+    "report_kind": "legacy_imported_document_canonical_conversion_preflight",
+    "scope": "local_metadata_only",
+    "status": "not_attempted",
+    "source_format": "not_legacy_doc_or_ole",
+    "review_state": "reviewed_non_canonical_original_only",
+    "bounded_evidence_status": "not_applicable_to_import_format",
+    "evidence_basis": [],
+    "blockers": [
+      "not_legacy_doc_or_ole_import"
+    ],
+    "next_step": "no_legacy_doc_canonical_conversion_preflight_action",
+    "local_metadata_only": true,
+    "original_bytes_preserved": true,
+    "canonical_conversion_performed": false,
+    "canonical_pdfa_generated": false,
+    "signature_validation_performed": false,
+    "ocr_performed": false,
+    "legal_acceptance_claimed": false,
+    "external_provider_contacted": false,
+    "canonical_record_replaced": false
+  },
   "legal_acceptance_claimed": false,
   "preservation_policy": {
     "review_state": "reviewed_non_canonical_original_only",

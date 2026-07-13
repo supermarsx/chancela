@@ -9031,6 +9031,31 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
+    "legacy DOC/OLE imports now also expose a bounded\n  local `canonical_conversion_preflight` evidence report",
+    "spec coverage imported-document legacy DOC preflight marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/documents.rs",
+    "legacy_imported_document_canonical_conversion_preflight",
+    "API imported-document legacy DOC preflight report marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/documents.rs",
+    "document_import_validation_reports_legacy_doc_canonical_conversion_preflight_evidence",
+    "API imported-document legacy DOC preflight coverage marker",
+  );
+  assertFileContains(
+    "contracts/document.imported.json",
+    "\"canonical_conversion_preflight\"",
+    "contract imported-document preflight fixture marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/documents/ActDocumentPanel.tsx",
+    "Pré-flight local de conversão canónica",
+    "web imported-document legacy DOC preflight panel marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
     "create\n  canonical records, create signed PDFs, create seals, validate signatures, add PDF/UA",
     "spec coverage imported-document review-depth no-runtime-behavior marker",
   );

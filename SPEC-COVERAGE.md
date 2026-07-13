@@ -718,7 +718,11 @@ Implementation checkpoints covered here:
   OCR, conversion, canonical PDF/A replacement, signed PDF artifact, signature
   validation, seal, PDF/UA, certification, and legal acceptance. The local store
   appends metadata-only history rows while preserving latest review metadata and
-  original bytes unchanged; tests block accidental bytes, archive,
+  original bytes unchanged; legacy DOC/OLE imports now also expose a bounded
+  local `canonical_conversion_preflight` evidence report with `blocked` or
+  `not_attempted` status and explicit false conversion, PDF/A, OCR, signature
+  validation, provider-contact, canonical-replacement, and legal-acceptance
+  flags. Tests block accidental bytes, archive,
   signed-document, external-validator, trust, conversion, or OCR calls. This is
   technical review history only for non-canonical evidence; no OCR, conversion,
   PDF/A replacement, signed artifact creation/validation, signature validation,

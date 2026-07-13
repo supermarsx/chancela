@@ -593,6 +593,7 @@ pub struct DocumentImportValidationReport {
     pub content_type: DocumentContentTypeReport,
     pub classification: DocumentEvidenceClassificationReport,
     pub preservation_policy: DocumentPreservationPolicyReport,
+    pub canonical_conversion_preflight: DocumentCanonicalConversionPreflightReport,
     pub pdf: PdfRecognitionReport,
     pub legacy_word: LegacyWordDocRecognitionReport,
     pub image: ImageRecognitionReport,
@@ -645,6 +646,28 @@ pub struct DocumentPreservationPolicyReport {
     pub canonical_conversion_performed: bool,
     pub canonical_pdfa_generated: bool,
     pub legal_acceptance_claimed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct DocumentCanonicalConversionPreflightReport {
+    pub report_kind: &'static str,
+    pub scope: &'static str,
+    pub status: &'static str,
+    pub source_format: &'static str,
+    pub review_state: &'static str,
+    pub bounded_evidence_status: &'static str,
+    pub evidence_basis: Vec<&'static str>,
+    pub blockers: Vec<&'static str>,
+    pub next_step: &'static str,
+    pub local_metadata_only: bool,
+    pub original_bytes_preserved: bool,
+    pub canonical_conversion_performed: bool,
+    pub canonical_pdfa_generated: bool,
+    pub signature_validation_performed: bool,
+    pub ocr_performed: bool,
+    pub legal_acceptance_claimed: bool,
+    pub external_provider_contacted: bool,
+    pub canonical_record_replaced: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -1150,6 +1173,12 @@ fn validate_document_candidate_with_fixity(
         can_accept_non_canonical_import,
         false,
     );
+    let canonical_conversion_preflight = document_canonical_conversion_preflight(
+        content_type.detected,
+        &legacy_word,
+        preservation_policy.review_state,
+        false,
+    );
 
     DocumentImportValidationReport {
         report_kind: "document_import_validation",
@@ -1162,6 +1191,7 @@ fn validate_document_candidate_with_fixity(
         content_type,
         classification,
         preservation_policy,
+        canonical_conversion_preflight,
         pdf,
         legacy_word,
         image,
@@ -1220,6 +1250,7 @@ pub struct ImportedDocumentView {
     pub review_guardrail_checklist: Vec<&'static str>,
     pub canonical_conversion_status: &'static str,
     pub canonical_conversion_performed: bool,
+    pub canonical_conversion_preflight: DocumentCanonicalConversionPreflightReport,
     pub legal_acceptance_claimed: bool,
     pub preservation_policy: DocumentPreservationPolicyReport,
     pub legal_notice: &'static str,
@@ -1540,6 +1571,8 @@ fn imported_document_view(
 ) -> ImportedDocumentView {
     let classification = document_evidence_classification(&meta.detected_content_type);
     let preservation_policy = imported_document_preservation_policy(meta);
+    let canonical_conversion_preflight =
+        imported_document_canonical_conversion_preflight(meta, preservation_policy.review_state);
     ImportedDocumentView {
         id: meta.id.clone(),
         act_id: meta.act_id.as_ref().map(ToString::to_string),
@@ -1568,6 +1601,7 @@ fn imported_document_view(
         review_guardrail_checklist: preservation_policy.review_guardrail_checklist.clone(),
         canonical_conversion_status: preservation_policy.canonical_conversion_status,
         canonical_conversion_performed: false,
+        canonical_conversion_preflight,
         legal_acceptance_claimed: false,
         preservation_policy,
         legal_notice: DOCUMENT_IMPORTED_NOTICE,
@@ -1685,6 +1719,20 @@ fn imported_document_preservation_policy(
     policy
 }
 
+fn imported_document_canonical_conversion_preflight(
+    meta: &StoredImportedDocumentMeta,
+    review_state: &'static str,
+) -> DocumentCanonicalConversionPreflightReport {
+    let base = content_type_base(&meta.detected_content_type);
+    document_canonical_conversion_preflight_from_flags(
+        base.as_str(),
+        base == "application/msword" || base == "application/vnd.ms-office",
+        base == "application/msword",
+        review_state,
+        true,
+    )
+}
+
 fn imported_document_download_filename(meta: &StoredImportedDocumentMeta) -> String {
     format!(
         "imported-document-{}.{}",
@@ -1755,6 +1803,10 @@ fn imported_document_event_payload(meta: &StoredImportedDocumentMeta) -> Value {
         "pdfa_conformance_validation_performed": false,
         "canonical_conversion_status": preservation_policy.canonical_conversion_status,
         "canonical_conversion_performed": false,
+        "canonical_conversion_preflight": imported_document_canonical_conversion_preflight(
+            meta,
+            preservation_policy.review_state,
+        ),
         "canonical_pdfa_generated": false,
         "signature_validation_performed": false,
         "preservation_policy": preservation_policy,
@@ -1791,6 +1843,10 @@ fn imported_document_review_event_payload(
         "review_guardrail_checklist": imported_document_review_guardrail_checklist(),
         "canonical_conversion_status": "not_performed_non_canonical_original_only",
         "canonical_conversion_performed": false,
+        "canonical_conversion_preflight": imported_document_canonical_conversion_preflight(
+            meta,
+            status.as_str(),
+        ),
         "canonical_pdfa_generated": false,
         "legal_acceptance_claimed": false,
         "legal_validity_claimed": false,
@@ -2652,6 +2708,99 @@ fn document_preservation_policy(
         canonical_conversion_performed: false,
         canonical_pdfa_generated: false,
         legal_acceptance_claimed: false,
+    }
+}
+
+fn document_canonical_conversion_preflight(
+    detected_content_type: &str,
+    legacy_word: &LegacyWordDocRecognitionReport,
+    review_state: &'static str,
+    original_bytes_preserved: bool,
+) -> DocumentCanonicalConversionPreflightReport {
+    document_canonical_conversion_preflight_from_flags(
+        content_type_base(detected_content_type).as_str(),
+        legacy_word.is_ole_cfb,
+        legacy_word.is_legacy_word_doc,
+        review_state,
+        original_bytes_preserved,
+    )
+}
+
+fn document_canonical_conversion_preflight_from_flags(
+    detected_content_type: &str,
+    is_ole_cfb: bool,
+    is_legacy_word_doc: bool,
+    review_state: &'static str,
+    original_bytes_preserved: bool,
+) -> DocumentCanonicalConversionPreflightReport {
+    let mut evidence_basis = Vec::new();
+    let (status, source_format, bounded_evidence_status, blockers, next_step) =
+        if is_legacy_word_doc {
+            evidence_basis.push("ole_cfb_magic_detected");
+            evidence_basis.push("legacy_word_doc_metadata_or_extension_detected");
+            evidence_basis.push(if original_bytes_preserved {
+                "original_bytes_preserved"
+            } else {
+                "validation_candidate_bytes_not_persisted"
+            });
+            (
+                "blocked",
+                "legacy_word_doc",
+                "metadata_only_legacy_doc_preflight",
+                vec![
+                    "non_canonical_import_only",
+                    "operator_conversion_review_required",
+                    "no_canonical_conversion_workflow_executed",
+                ],
+                "separate_operator_review_required_before_any_canonical_conversion_workflow",
+            )
+        } else if is_ole_cfb || detected_content_type == "application/vnd.ms-office" {
+            evidence_basis.push("ole_cfb_magic_detected");
+            evidence_basis.push(if original_bytes_preserved {
+                "original_bytes_preserved"
+            } else {
+                "validation_candidate_bytes_not_persisted"
+            });
+            (
+                "blocked",
+                "ole_compound_file",
+                "metadata_only_ole_preflight",
+                vec![
+                    "ambiguous_ole_compound_file",
+                    "non_canonical_import_only",
+                    "no_canonical_conversion_workflow_executed",
+                ],
+                "resolve_ole_identity_before_any_separate_canonical_conversion_workflow",
+            )
+        } else {
+            (
+                "not_attempted",
+                "not_legacy_doc_or_ole",
+                "not_applicable_to_import_format",
+                vec!["not_legacy_doc_or_ole_import"],
+                "no_legacy_doc_canonical_conversion_preflight_action",
+            )
+        };
+
+    DocumentCanonicalConversionPreflightReport {
+        report_kind: "legacy_imported_document_canonical_conversion_preflight",
+        scope: "local_metadata_only",
+        status,
+        source_format,
+        review_state,
+        bounded_evidence_status,
+        evidence_basis,
+        blockers,
+        next_step,
+        local_metadata_only: true,
+        original_bytes_preserved,
+        canonical_conversion_performed: false,
+        canonical_pdfa_generated: false,
+        signature_validation_performed: false,
+        ocr_performed: false,
+        legal_acceptance_claimed: false,
+        external_provider_contacted: false,
+        canonical_record_replaced: false,
     }
 }
 
@@ -5877,6 +6026,43 @@ mod tests {
         );
     }
 
+    fn assert_legacy_doc_canonical_conversion_preflight(
+        preflight: &DocumentCanonicalConversionPreflightReport,
+        original_bytes_preserved: bool,
+    ) {
+        assert_eq!(
+            preflight.report_kind,
+            "legacy_imported_document_canonical_conversion_preflight"
+        );
+        assert_eq!(preflight.scope, "local_metadata_only");
+        assert_eq!(preflight.status, "blocked");
+        assert_eq!(preflight.source_format, "legacy_word_doc");
+        assert_eq!(
+            preflight.bounded_evidence_status,
+            "metadata_only_legacy_doc_preflight"
+        );
+        assert!(preflight.local_metadata_only);
+        assert_eq!(preflight.original_bytes_preserved, original_bytes_preserved);
+        assert!(preflight.evidence_basis.contains(&"ole_cfb_magic_detected"));
+        assert!(
+            preflight
+                .evidence_basis
+                .contains(&"legacy_word_doc_metadata_or_extension_detected")
+        );
+        assert!(
+            preflight
+                .blockers
+                .contains(&"no_canonical_conversion_workflow_executed")
+        );
+        assert!(!preflight.canonical_conversion_performed);
+        assert!(!preflight.canonical_pdfa_generated);
+        assert!(!preflight.signature_validation_performed);
+        assert!(!preflight.ocr_performed);
+        assert!(!preflight.legal_acceptance_claimed);
+        assert!(!preflight.external_provider_contacted);
+        assert!(!preflight.canonical_record_replaced);
+    }
+
     fn assert_imported_review_guardrail_payload(payload: &Value) {
         assert_eq!(payload["canonical_record_status"], "not_canonical_record");
         assert_eq!(payload["signed_artifact_status"], "not_signed_artifact");
@@ -6242,10 +6428,54 @@ mod tests {
         assert_eq!(report.signature.validation_status, "unsigned");
         assert!(report.can_accept_non_canonical_import);
         assert_imported_review_guardrails(&report.preservation_policy);
+        assert_eq!(
+            report.canonical_conversion_preflight.review_state,
+            "canonical_conversion_review_required"
+        );
+        assert_legacy_doc_canonical_conversion_preflight(
+            &report.canonical_conversion_preflight,
+            false,
+        );
         assert!(has_finding(&report, "legacy_word_doc_detected"));
         assert!(has_finding(&report, "legacy_word_no_macro_execution"));
         assert!(has_finding(&report, "legacy_word_no_pdfa_conversion"));
         assert!(!has_finding(&report, "not_pdf"));
+    }
+
+    #[test]
+    fn document_import_validation_reports_legacy_doc_canonical_conversion_preflight_evidence() {
+        let doc = legacy_doc_bytes();
+
+        let report = validate_document_candidate(
+            &doc,
+            Some("application/msword"),
+            Some("board-minutes.doc".to_owned()),
+        );
+
+        assert_eq!(report.content_type.detected, "application/msword");
+        assert_eq!(report.canonical_conversion_preflight.status, "blocked");
+        assert_eq!(
+            report
+                .canonical_conversion_preflight
+                .bounded_evidence_status,
+            "metadata_only_legacy_doc_preflight"
+        );
+        assert!(
+            report
+                .canonical_conversion_preflight
+                .evidence_basis
+                .contains(&"validation_candidate_bytes_not_persisted")
+        );
+        assert!(
+            report
+                .canonical_conversion_preflight
+                .blockers
+                .contains(&"operator_conversion_review_required")
+        );
+        assert_legacy_doc_canonical_conversion_preflight(
+            &report.canonical_conversion_preflight,
+            false,
+        );
     }
 
     #[test]
@@ -6485,6 +6715,20 @@ mod tests {
             imported_document_review_guardrail_checklist()
         );
         assert_imported_review_guardrails(&imported.preservation_policy);
+        assert_eq!(
+            imported.canonical_conversion_preflight.review_state,
+            "canonical_conversion_review_required"
+        );
+        assert!(
+            imported
+                .canonical_conversion_preflight
+                .evidence_basis
+                .contains(&"original_bytes_preserved")
+        );
+        assert_legacy_doc_canonical_conversion_preflight(
+            &imported.canonical_conversion_preflight,
+            true,
+        );
         assert!(imported.legal_notice.contains("does not replace"));
         assert!(
             state.documents.read().await.is_empty(),
@@ -6510,6 +6754,39 @@ mod tests {
             .expect("document.imported event")
             .clone();
         assert_eq!(event.kind, "document.imported");
+        let payload = imported_document_event_payload(&stored.meta);
+        assert_eq!(
+            payload["canonical_conversion_preflight"]["status"],
+            "blocked"
+        );
+        assert_eq!(
+            payload["canonical_conversion_preflight"]["canonical_conversion_performed"],
+            false
+        );
+        assert_eq!(
+            payload["canonical_conversion_preflight"]["canonical_pdfa_generated"],
+            false
+        );
+        assert_eq!(
+            payload["canonical_conversion_preflight"]["signature_validation_performed"],
+            false
+        );
+        assert_eq!(
+            payload["canonical_conversion_preflight"]["ocr_performed"],
+            false
+        );
+        assert_eq!(
+            payload["canonical_conversion_preflight"]["legal_acceptance_claimed"],
+            false
+        );
+        assert_eq!(
+            payload["canonical_conversion_preflight"]["external_provider_contacted"],
+            false
+        );
+        assert_eq!(
+            payload["canonical_conversion_preflight"]["canonical_record_replaced"],
+            false
+        );
 
         let response = get_imported_document_bytes(
             State(state.clone()),

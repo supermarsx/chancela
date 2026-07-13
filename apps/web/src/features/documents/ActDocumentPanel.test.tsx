@@ -14,6 +14,7 @@ import { StaticPermissionsProvider, permissionsValue } from '../session/permissi
 import type {
   ActView,
   DocumentBundle,
+  DocumentCanonicalConversionPreflightReport,
   DocumentImportValidationReport,
   GeneratedDocumentDispatchEvidenceList,
   GeneratedDocumentView,
@@ -152,6 +153,46 @@ const importedDocumentPreservationPolicy = {
   legal_acceptance_claimed: false,
 };
 
+const nonLegacyCanonicalConversionPreflight = {
+  report_kind: 'legacy_imported_document_canonical_conversion_preflight',
+  scope: 'local_metadata_only',
+  status: 'not_attempted',
+  source_format: 'not_legacy_doc_or_ole',
+  review_state: 'operator_review_required',
+  bounded_evidence_status: 'not_applicable_to_import_format',
+  evidence_basis: [],
+  blockers: ['not_legacy_doc_or_ole_import'],
+  next_step: 'no_legacy_doc_canonical_conversion_preflight_action',
+  local_metadata_only: true,
+  original_bytes_preserved: true,
+  canonical_conversion_performed: false,
+  canonical_pdfa_generated: false,
+  signature_validation_performed: false,
+  ocr_performed: false,
+  legal_acceptance_claimed: false,
+  external_provider_contacted: false,
+  canonical_record_replaced: false,
+} satisfies DocumentCanonicalConversionPreflightReport;
+
+const legacyDocCanonicalConversionPreflight = {
+  ...nonLegacyCanonicalConversionPreflight,
+  status: 'blocked',
+  source_format: 'legacy_word_doc',
+  review_state: 'canonical_conversion_review_required',
+  bounded_evidence_status: 'metadata_only_legacy_doc_preflight',
+  evidence_basis: [
+    'ole_cfb_magic_detected',
+    'legacy_word_doc_metadata_or_extension_detected',
+    'original_bytes_preserved',
+  ],
+  blockers: [
+    'non_canonical_import_only',
+    'operator_conversion_review_required',
+    'no_canonical_conversion_workflow_executed',
+  ],
+  next_step: 'separate_operator_review_required_before_any_canonical_conversion_workflow',
+} satisfies DocumentCanonicalConversionPreflightReport;
+
 const importedDocument: ImportedDocumentView = {
   id: 'import-1',
   act_id: 'act-1',
@@ -194,6 +235,7 @@ const importedDocument: ImportedDocumentView = {
   review_guardrail_checklist: importedDocumentReviewGuardrailChecklist,
   canonical_conversion_status: 'not_performed_non_canonical_original_only',
   canonical_conversion_performed: false,
+  canonical_conversion_preflight: nonLegacyCanonicalConversionPreflight,
   legal_acceptance_claimed: false,
   preservation_policy: {
     ...importedDocumentPreservationPolicy,
@@ -323,6 +365,10 @@ const baseImportValidationReport: DocumentImportValidationReport = {
     canonical_pdfa_generated: false,
     legal_validity_claimed: false,
   },
+  canonical_conversion_preflight: {
+    ...nonLegacyCanonicalConversionPreflight,
+    original_bytes_preserved: false,
+  },
   pdf: {
     is_pdf: true,
     header_offset: 0,
@@ -408,6 +454,15 @@ const legacyWordImportValidationReport: DocumentImportValidationReport = {
     family: 'legacy_word_doc',
     classification: 'legacy_word_doc_non_canonical_evidence',
   },
+  canonical_conversion_preflight: {
+    ...legacyDocCanonicalConversionPreflight,
+    original_bytes_preserved: false,
+    evidence_basis: [
+      'ole_cfb_magic_detected',
+      'legacy_word_doc_metadata_or_extension_detected',
+      'validation_candidate_bytes_not_persisted',
+    ],
+  },
   pdf: {
     ...baseImportValidationReport.pdf,
     is_pdf: false,
@@ -467,6 +522,18 @@ const ambiguousOlePdfValidationReport: DocumentImportValidationReport = {
     ...baseImportValidationReport.classification,
     family: 'ole_compound_file',
     classification: 'ole_cfb_non_canonical_evidence',
+  },
+  canonical_conversion_preflight: {
+    ...legacyWordImportValidationReport.canonical_conversion_preflight,
+    source_format: 'ole_compound_file',
+    bounded_evidence_status: 'metadata_only_ole_preflight',
+    evidence_basis: ['ole_cfb_magic_detected', 'validation_candidate_bytes_not_persisted'],
+    blockers: [
+      'ambiguous_ole_compound_file',
+      'non_canonical_import_only',
+      'no_canonical_conversion_workflow_executed',
+    ],
+    next_step: 'resolve_ole_identity_before_any_separate_canonical_conversion_workflow',
   },
   pdf: {
     ...baseImportValidationReport.pdf,
@@ -1849,6 +1916,13 @@ describe('ActDocumentPanel — imported evidence documents', () => {
       detected_content_type: 'application/msword',
       evidence_family: 'legacy_word_doc',
       classification: 'legacy_word_doc_non_canonical_evidence',
+      operator_review_status: 'canonical_conversion_review_required',
+      canonical_conversion_preflight: legacyDocCanonicalConversionPreflight,
+      preservation_policy: {
+        ...importedDocumentPreservationPolicy,
+        review_state: 'canonical_conversion_review_required',
+        preservation_action: 'preserve_original_bytes_then_operator_review_conversion_if_needed',
+      },
     };
 
     vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
@@ -1897,7 +1971,18 @@ describe('ActDocumentPanel — imported evidence documents', () => {
     expect(within(validation).getByText('legacy_word_no_pdfa_conversion')).toBeTruthy();
     expect(within(validation).getByText('Conversão DOC-to-PDF/A')).toBeTruthy();
     expect(within(validation).getByText('PDF/A canónico gerado')).toBeTruthy();
+    expect(within(validation).getByText('Pré-flight local de conversão canónica')).toBeTruthy();
+    expect(within(validation).getByText('metadata_only_legacy_doc_preflight')).toBeTruthy();
+    expect(within(validation).getByText('operator_conversion_review_required')).toBeTruthy();
+    expect(
+      within(validation).getByText('no_canonical_conversion_workflow_executed'),
+    ).toBeTruthy();
+    expect(within(validation).getByText('validation_candidate_bytes_not_persisted')).toBeTruthy();
+    expect(within(validation).getByText('Validação de assinatura')).toBeTruthy();
+    expect(within(validation).getByText('Fornecedor externo contactado')).toBeTruthy();
+    expect(within(validation).getByText('Registo canónico substituído')).toBeTruthy();
     expect(await screen.findAllByText('board-minutes.doc')).toHaveLength(2);
+    expect(await screen.findByText('original_bytes_preserved')).toBeTruthy();
     expect(screen.queryByText('Assinatura válida')).toBeNull();
   });
 

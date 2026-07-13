@@ -1307,6 +1307,27 @@ export interface ZipBundleRecognitionReport {
   validation_error: string | null;
 }
 
+export interface DocumentCanonicalConversionPreflightReport {
+  report_kind: 'legacy_imported_document_canonical_conversion_preflight' | string;
+  scope: 'local_metadata_only' | string;
+  status: 'not_attempted' | 'blocked' | string;
+  source_format: 'legacy_word_doc' | 'ole_compound_file' | 'not_legacy_doc_or_ole' | string;
+  review_state: string;
+  bounded_evidence_status: string;
+  evidence_basis: string[];
+  blockers: string[];
+  next_step: string;
+  local_metadata_only: boolean;
+  original_bytes_preserved: boolean;
+  canonical_conversion_performed: false;
+  canonical_pdfa_generated: false;
+  signature_validation_performed: false;
+  ocr_performed: false;
+  legal_acceptance_claimed: false;
+  external_provider_contacted: false;
+  canonical_record_replaced: false;
+}
+
 /** `POST /v1/documents/import/validate` read-only validation report. */
 export interface DocumentImportValidationReport {
   report_kind: 'document_import_validation' | string;
@@ -1319,6 +1340,7 @@ export interface DocumentImportValidationReport {
   content_type: DocumentImportContentTypeReport;
   classification: DocumentEvidenceClassificationReport;
   preservation_policy?: DocumentPreservationPolicyReport;
+  canonical_conversion_preflight: DocumentCanonicalConversionPreflightReport;
   pdf: DocumentImportPdfRecognitionReport;
   legacy_word: LegacyWordDocRecognitionReport;
   image: ImageRecognitionReport;
@@ -1424,6 +1446,7 @@ export interface ImportedDocumentView {
   review_guardrail_checklist: ImportedDocumentReviewGuardrail[];
   canonical_conversion_status: string;
   canonical_conversion_performed: boolean;
+  canonical_conversion_preflight: DocumentCanonicalConversionPreflightReport;
   legal_acceptance_claimed: boolean;
   preservation_policy: DocumentPreservationPolicyReport;
   legal_notice: string;
