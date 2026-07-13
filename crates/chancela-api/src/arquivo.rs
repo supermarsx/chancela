@@ -1,8 +1,8 @@
-//! Arquivo PDF/A export (t67-E1).
+//! Arquivo bounded ledger export (t67-E1).
 //!
 //! `GET /v1/ledger/archive/document` is an on-demand, read-only rendering of the ledger archive. It
-//! does not persist a document and does not append a ledger event; it projects the filtered ledger
-//! state into the existing `DocumentModel` seam and reuses the frozen PDF/A-2u writer.
+//! does not persist a document and does not append a ledger event; PDF/A projects the filtered
+//! ledger state into the existing `DocumentModel` seam and reuses the frozen PDF/A-2u writer.
 
 use std::collections::HashMap;
 use std::str::FromStr;
@@ -26,7 +26,9 @@ use crate::documents::PDFA_PROFILE;
 use crate::error::ApiError;
 use crate::hex::hex;
 use crate::ledger_events_page::{LedgerEventsSelectorQuery, select_ledger_events_page};
-use crate::ledger_filter::{LedgerEventFilters, filter_summary, normalized_page_limit};
+use crate::ledger_filter::{
+    LedgerEventFilters, LedgerOrder, filter_summary, normalized_page_limit,
+};
 
 #[derive(Debug, Deserialize)]
 pub struct ArchiveDocumentQuery {
@@ -48,8 +50,12 @@ pub struct ArchiveDocumentQuery {
     pub from: Option<String>,
     /// Upper timestamp bound: RFC 3339 inclusive, or `YYYY-MM-DD` covering that whole day.
     pub to: Option<String>,
+    /// Not supported for archive documents: exports are bounded to the first filtered page.
+    pub before_seq: Option<u64>,
     /// Last-N limit after filters. Omitted uses the bounded archive page default.
     pub limit: Option<usize>,
+    /// Newest-first order contract for the bounded export page. Defaults to `desc`.
+    pub order: Option<String>,
     /// Export format. `pdfa` is the canonical preserved-evidence rendering; the others are
     /// audit/interchange exports of the same filtered event set.
     pub format: Option<ArchiveExportFormat>,
@@ -106,7 +112,10 @@ fn parse_chain(raw: Option<&str>) -> Result<ChainId, ApiError> {
     }
 }
 
-/// `GET /v1/ledger/archive/document` — render the filtered ledger archive as PDF/A-2u bytes.
+/// `GET /v1/ledger/archive/document` — render the first filtered newest-first archive page.
+///
+/// The export is intentionally bounded by the same normalized page limit as
+/// `/v1/ledger/events/page`; it is not an all-records dump when more matching events exist.
 pub async fn export_archive_document(
     State(state): State<AppState>,
     actor: CurrentActor,
@@ -116,6 +125,13 @@ pub async fn export_archive_document(
 
     let chain = parse_chain(q.chain.as_deref())?;
     let format = q.format.unwrap_or(ArchiveExportFormat::Pdfa);
+    let order = LedgerOrder::from_query(q.order.as_deref())?;
+    if q.before_seq.is_some() {
+        return Err(ApiError::Unprocessable(
+            "ledger archive document exports are bounded to the first filtered page; before_seq is not supported"
+                .to_owned(),
+        ));
+    }
     let filters = LedgerEventFilters::from_parts(
         q.q.clone(),
         q.scope.clone(),
@@ -145,6 +161,7 @@ pub async fn export_archive_document(
         LedgerEventsSelectorQuery {
             before_seq: None,
             limit,
+            order,
             chain: Some(chain.clone()),
             filters: &filters,
         },
@@ -155,17 +172,24 @@ pub async fn export_archive_document(
         .iter()
         .map(|event| RenderRecord::from_event(event, &chain))
         .collect::<Vec<_>>();
+    let page_meta = ArchivePageMeta {
+        order,
+        limit: selected.limit,
+        has_more: selected.has_more,
+        next_cursor: selected.next_cursor,
+    };
     let degraded = *state.degraded.read().await;
 
     let generated_at = OffsetDateTime::now_utc()
         .format(&Rfc3339)
         .unwrap_or_default();
-    let filter_summary = filter_summary(&chain.canonical(), &filters, Some(limit));
+    let filter_summary = filter_summary(&chain.canonical(), &filters, Some(limit), Some(order));
     if format == ArchiveExportFormat::Pdfa {
         let model = build_archive_document(ArchiveDocumentInput {
             chain: &chain,
             status: &status,
             records: &records,
+            page_meta,
             reanchors: &reanchors,
             degraded,
             sources: &sources,
@@ -190,6 +214,7 @@ pub async fn export_archive_document(
         chain: &chain,
         status: &status,
         records: &records,
+        page_meta,
         degraded,
         generated_at: &generated_at,
         filter_summary: &filter_summary,
@@ -217,9 +242,34 @@ struct InterchangeInput<'a> {
     chain: &'a ChainId,
     status: &'a ChainStatus,
     records: &'a [RenderRecord],
+    page_meta: ArchivePageMeta,
     degraded: bool,
     generated_at: &'a str,
     filter_summary: &'a str,
+}
+
+#[derive(Clone, Copy)]
+struct ArchivePageMeta {
+    order: LedgerOrder,
+    limit: usize,
+    has_more: bool,
+    next_cursor: Option<u64>,
+}
+
+impl ArchivePageMeta {
+    fn scope_code(self) -> &'static str {
+        "bounded_first_page"
+    }
+
+    fn scope_description(self) -> &'static str {
+        "Exports only the first filtered newest-first page after limit normalization, not every matching ledger event."
+    }
+
+    fn next_cursor_label(self) -> String {
+        self.next_cursor
+            .map(|cursor| cursor.to_string())
+            .unwrap_or_else(|| "-".to_owned())
+    }
 }
 
 fn render_interchange_export(
@@ -244,12 +294,18 @@ fn render_interchange_export(
             "chain": chain,
             "generated_at": input.generated_at,
             "filters": input.filter_summary,
+            "export_scope": input.page_meta.scope_code(),
+            "export_scope_description": input.page_meta.scope_description(),
+            "page_limit": input.page_meta.limit,
+            "has_more": input.page_meta.has_more,
+            "next_cursor": input.page_meta.next_cursor,
             "event_count": input.records.len(),
             "chain_length": input.status.length,
             "chain_head": head,
             "chain_verified": input.status.verified,
             "system_degraded": input.degraded,
-            "order": "seq_desc",
+            "order": input.page_meta.order.as_query_value(),
+            "event_order": input.page_meta.order.event_order_label(),
             "events": input.records,
         }))
         .map_err(|e| ApiError::Internal(format!("JSON archive export failed: {e}")))?,
@@ -276,6 +332,21 @@ fn render_txt(input: &InterchangeInput<'_>, head: &str, notice: &str) -> String 
     out.push_str(&format!("Cadeia: {}\n", input.chain.canonical()));
     out.push_str(&format!("Gerado em: {}\n", input.generated_at));
     out.push_str(&format!("Filtros: {}\n", input.filter_summary));
+    out.push_str(&format!(
+        "Ambito da exportacao: {} - {}\n",
+        input.page_meta.scope_code(),
+        input.page_meta.scope_description()
+    ));
+    out.push_str(&format!("Limite da pagina: {}\n", input.page_meta.limit));
+    out.push_str(&format!(
+        "Ordem: {}\n",
+        input.page_meta.order.display_label()
+    ));
+    out.push_str(&format!("Ha mais eventos: {}\n", input.page_meta.has_more));
+    out.push_str(&format!(
+        "Cursor seguinte: {}\n",
+        input.page_meta.next_cursor_label()
+    ));
     out.push_str(&format!("Eventos exportados: {}\n", input.records.len()));
     out.push_str(&format!("Extensao da cadeia: {}\n", input.status.length));
     out.push_str(&format!("Digest de topo: {head}\n"));
@@ -299,6 +370,20 @@ fn render_csv(input: &InterchangeInput<'_>, notice: &str) -> String {
     out.push_str("# ");
     out.push_str(notice);
     out.push('\n');
+    out.push_str(&format!(
+        "# export_scope={}\n",
+        input.page_meta.scope_code()
+    ));
+    out.push_str(&format!("# page_limit={}\n", input.page_meta.limit));
+    out.push_str(&format!(
+        "# order={}\n",
+        input.page_meta.order.as_query_value()
+    ));
+    out.push_str(&format!("# has_more={}\n", input.page_meta.has_more));
+    out.push_str(&format!(
+        "# next_cursor={}\n",
+        input.page_meta.next_cursor_label()
+    ));
     out.push_str("seq,chain_seq,kind,scope,actor,timestamp,chains,payload_digest,prev_hash,hash,justification\n");
     for record in input.records {
         let row = [
@@ -334,6 +419,18 @@ fn render_html(input: &InterchangeInput<'_>, head: &str, notice: &str) -> String
         ("Cadeia", input.chain.canonical()),
         ("Gerado em", input.generated_at.to_owned()),
         ("Filtros", input.filter_summary.to_owned()),
+        (
+            "Ambito da exportacao",
+            format!(
+                "{} - {}",
+                input.page_meta.scope_code(),
+                input.page_meta.scope_description()
+            ),
+        ),
+        ("Limite da pagina", input.page_meta.limit.to_string()),
+        ("Ordem", input.page_meta.order.display_label().to_owned()),
+        ("Ha mais eventos", input.page_meta.has_more.to_string()),
+        ("Cursor seguinte", input.page_meta.next_cursor_label()),
         ("Eventos exportados", input.records.len().to_string()),
         ("Extensao da cadeia", input.status.length.to_string()),
         ("Digest de topo", head.to_owned()),
@@ -433,6 +530,7 @@ struct ArchiveDocumentInput<'a> {
     chain: &'a ChainId,
     status: &'a ChainStatus,
     records: &'a [RenderRecord],
+    page_meta: ArchivePageMeta,
     reanchors: &'a [ReanchorRecord],
     degraded: bool,
     sources: &'a LabelSources,
@@ -480,6 +578,15 @@ fn build_archive_document(input: ArchiveDocumentInput<'_>) -> DocumentModel {
             kv("Identificacao", label),
             kv("Gerado em", input.generated_at),
             kv("Filtros", input.filter_summary),
+            kv("Ambito da exportacao", input.page_meta.scope_code()),
+            kv(
+                "Descricao da exportacao",
+                input.page_meta.scope_description(),
+            ),
+            kv("Limite da pagina", input.page_meta.limit.to_string()),
+            kv("Ordem", input.page_meta.order.display_label()),
+            kv("Ha mais eventos", input.page_meta.has_more.to_string()),
+            kv("Cursor seguinte", input.page_meta.next_cursor_label()),
             kv("Eventos exportados", input.records.len().to_string()),
             kv("Extensao da cadeia", input.status.length.to_string()),
             kv("Digest de topo", head),
@@ -732,6 +839,7 @@ mod tests {
             LedgerEventsSelectorQuery {
                 before_seq: None,
                 limit: 1,
+                order: LedgerOrder::Desc,
                 chain: Some(ChainId::Global),
                 filters: &filters,
             },

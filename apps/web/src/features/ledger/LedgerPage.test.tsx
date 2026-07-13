@@ -152,6 +152,8 @@ describe('LedgerPage', () => {
     expect(await screen.findByText('event.100')).toBeTruthy();
     const ledgerCall = calls.find((c) => c.url.includes('/v1/ledger/events/page'));
     expect(ledgerCall?.url).toBe('/v1/ledger/events/page?limit=100&order=desc');
+    expect(screen.getByText('Mais recentes primeiro')).toBeTruthy();
+    expect(screen.getByText('Filtros ativos: 0')).toBeTruthy();
 
     const rows = screen.getAllByRole('row');
     expect(within(rows[1]).getByText('100')).toBeTruthy();
@@ -174,26 +176,27 @@ describe('LedgerPage', () => {
     ).toBe(true);
   });
 
-  it('shows a bounded first page for a 1000-log archive and loads more by cursor', async () => {
-    const firstHundred = Array.from({ length: 100 }, (_, index) => makeEvent(1000 - index));
+  it('shows a bounded first page for a 1000+ log archive and loads more by cursor', async () => {
+    const firstHundred = Array.from({ length: 100 }, (_, index) => makeEvent(1050 - index));
     const calls = stubLedgerFetch(
-      page(firstHundred, { next_cursor: 900, has_more: true }),
-      page([makeEvent(900)]),
+      page(firstHundred, { next_cursor: 950, has_more: true }),
+      page([makeEvent(950)]),
     );
     renderWithProviders(<LedgerPage />);
 
-    expect(await screen.findByText('event.1000')).toBeTruthy();
+    expect(await screen.findByText('event.1050')).toBeTruthy();
     expect(screen.getByLabelText('100 eventos carregados; existem mais')).toBeTruthy();
     expect(screen.queryByText('event.1')).toBeNull();
     expect(screen.getAllByRole('row')).toHaveLength(101);
+    expect(calls.filter((c) => c.url.includes('/v1/ledger/events/page'))).toHaveLength(1);
 
     fireEvent.click(screen.getByRole('button', { name: 'Carregar eventos mais antigos' }));
-    expect(await screen.findByText('event.900')).toBeTruthy();
+    expect(await screen.findByText('event.950')).toBeTruthy();
     expect(
       calls.some(
         (c) =>
           c.url ===
-          '/v1/ledger/events/page?before_seq=900&limit=100&order=desc',
+          '/v1/ledger/events/page?before_seq=950&limit=100&order=desc',
       ),
     ).toBe(true);
   });
@@ -238,6 +241,7 @@ describe('LedgerPage', () => {
       ).toBe(true),
     );
     expect((clear as HTMLButtonElement).disabled).toBe(false);
+    await waitFor(() => expect(screen.getByText('Filtros ativos: 8')).toBeTruthy());
 
     fireEvent.click(clear);
     await waitFor(() =>
@@ -245,6 +249,7 @@ describe('LedgerPage', () => {
     );
     expect((screen.getByLabelText('Filtrar por âmbito') as HTMLInputElement).value).toBe('');
     expect((screen.getByLabelText('Eventos por página') as HTMLSelectElement).value).toBe('100');
+    await waitFor(() => expect(screen.getByText('Filtros ativos: 0')).toBeTruthy());
 
     const advanced = container.querySelector(
       'details.ledger-advanced-filters.filter-advanced',
@@ -276,7 +281,7 @@ describe('LedgerPage', () => {
     fireEvent.change(screen.getByLabelText('Filtrar por âmbito'), {
       target: { value: 'act:88' },
     });
-    fireEvent.change(screen.getByLabelText('Formato'), { target: { value: 'txt' } });
+    fireEvent.change(screen.getByLabelText('Formato de exportação'), { target: { value: 'txt' } });
     fireEvent.click(screen.getByRole('button', { name: 'Exportar arquivo' }));
 
     await waitFor(() => expect(saveFileMock.saveBlobAs).toHaveBeenCalledTimes(1));
@@ -293,10 +298,22 @@ describe('LedgerPage', () => {
     expect(calls.find((c) => c.url.includes('/v1/ledger/archive/document'))?.url).toBe(
       '/v1/ledger/archive/document?format=txt&q=approved+digest&chain=book%3Abook-123456789&scope=act%3A88&limit=100&order=desc',
     );
-    expect(screen.getByRole('option', { name: 'PDF/A canónico' })).toBeTruthy();
-    expect(screen.getByRole('option', { name: 'JSON de intercâmbio' })).toBeTruthy();
-    expect(screen.getByRole('option', { name: 'CSV de auditoria' })).toBeTruthy();
-    expect(screen.getByRole('option', { name: 'HTML de auditoria' })).toBeTruthy();
+    expect(screen.getByRole('option', { name: 'PDF/A canónico (.pdf)' })).toBeTruthy();
+    expect(screen.getByRole('option', { name: 'TXT de auditoria (.txt)' })).toBeTruthy();
+    expect(screen.getByRole('option', { name: 'JSON de intercâmbio (.json)' })).toBeTruthy();
+    expect(screen.getByRole('option', { name: 'CSV de auditoria (.csv)' })).toBeTruthy();
+    expect(screen.getByRole('option', { name: 'HTML de auditoria (.html)' })).toBeTruthy();
+    const helpIds =
+      screen.getByRole('button', { name: 'Ajuda' }).getAttribute('aria-describedby') ?? '';
+    expect(
+      helpIds
+        .split(/\s+/)
+        .some(
+          (id) =>
+            document.getElementById(id)?.textContent ===
+            'Usa os filtros ativos, ordem mais recentes primeiro e o limite de Eventos por página; aumente o limite para incluir mais eventos no ficheiro.',
+        ),
+    ).toBe(true);
   });
 
   it('shows a filtered empty state without losing the clear action', async () => {

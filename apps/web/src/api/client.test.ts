@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { ApiError, api, parseResponse } from './client';
+import type { LedgerArchiveDocumentParams } from './types';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -485,9 +486,10 @@ describe('api client', () => {
         actor: 'amelia.marques',
         from: '2026-07-01',
         to: '2026-07-31',
+        before_seq: 42,
         limit: 100,
         order: 'desc',
-      });
+      } as unknown as LedgerArchiveDocumentParams);
 
       expect(fetchMock.mock.calls[0][0]).toBe(
         `/v1/ledger/archive/document?format=${format}&q=approved+digest&chain=book%3Abook-1&scope=act%3A7&kind=act.sealed&actor=amelia.marques&from=2026-07-01&to=2026-07-31&limit=100&order=desc`,

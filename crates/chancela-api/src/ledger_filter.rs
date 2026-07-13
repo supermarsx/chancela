@@ -18,6 +18,45 @@ pub(crate) fn normalized_page_limit(limit: Option<usize>) -> usize {
         .clamp(1, MAX_LEDGER_PAGE_LIMIT)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LedgerOrder {
+    Desc,
+}
+
+impl LedgerOrder {
+    pub(crate) fn from_query(raw: Option<&str>) -> Result<Self, ApiError> {
+        match raw.map(str::trim).filter(|value| !value.is_empty()) {
+            None => Ok(Self::Desc),
+            Some(value) if value.eq_ignore_ascii_case("desc") => Ok(Self::Desc),
+            Some(value) if value.eq_ignore_ascii_case("asc") => Err(ApiError::Unprocessable(
+                "unsupported ledger order \"asc\"; only desc is supported for before_seq cursors"
+                    .to_owned(),
+            )),
+            Some(value) => Err(ApiError::Unprocessable(format!(
+                "invalid ledger order {value:?}; expected desc"
+            ))),
+        }
+    }
+
+    pub(crate) fn as_query_value(self) -> &'static str {
+        match self {
+            Self::Desc => "desc",
+        }
+    }
+
+    pub(crate) fn event_order_label(self) -> &'static str {
+        match self {
+            Self::Desc => "seq_desc",
+        }
+    }
+
+    pub(crate) fn display_label(self) -> &'static str {
+        match self {
+            Self::Desc => "desc (seq global decrescente)",
+        }
+    }
+}
+
 pub(crate) fn deserialize_kind_query<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
 where
     D: Deserializer<'de>,
@@ -157,6 +196,7 @@ pub(crate) fn filter_summary(
     chain: &str,
     filters: &LedgerEventFilters,
     limit: Option<usize>,
+    order: Option<LedgerOrder>,
 ) -> String {
     let mut parts = vec![format!("cadeia={chain}")];
     if let Some(query) = &filters.query {
@@ -189,6 +229,9 @@ pub(crate) fn filter_summary(
     }
     if let Some(limit) = limit {
         parts.push(format!("limit={limit}"));
+    }
+    if let Some(order) = order {
+        parts.push(format!("order={}", order.as_query_value()));
     }
     parts.join("; ")
 }
@@ -284,5 +327,22 @@ mod tests {
             LedgerEventFilters::from_parts(Some(payload_prefix), None, &[], None, None, None)
                 .expect("payload query");
         assert!(by_payload.matches(event));
+    }
+
+    #[test]
+    fn ledger_order_defaults_to_desc_and_rejects_unsupported_values() {
+        assert_eq!(LedgerOrder::from_query(None).unwrap(), LedgerOrder::Desc);
+        assert_eq!(
+            LedgerOrder::from_query(Some(" desc ")).unwrap(),
+            LedgerOrder::Desc
+        );
+
+        let asc = LedgerOrder::from_query(Some("asc")).unwrap_err();
+        assert!(matches!(asc, ApiError::Unprocessable(message) if message.contains("only desc")));
+
+        let random = LedgerOrder::from_query(Some("newest")).unwrap_err();
+        assert!(
+            matches!(random, ApiError::Unprocessable(message) if message.contains("expected desc"))
+        );
     }
 }

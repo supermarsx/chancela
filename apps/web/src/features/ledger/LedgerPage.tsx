@@ -125,16 +125,29 @@ function exportContentType(format: LedgerArchiveDocumentFormat): string {
   }
 }
 
-function hasActiveFilters(filters: LedgerFilters): boolean {
+function countActiveFilters(filters: LedgerFilters): number {
+  let count = 0;
+  if (filters.chain !== '') count += 1;
+  if (filters.search.trim() !== '') count += 1;
+  if (filters.scope.trim() !== '') count += 1;
+  if (filters.kind.trim() !== '') count += 1;
+  if (filters.actor.trim() !== '') count += 1;
+  if (filters.from !== '') count += 1;
+  if (filters.to !== '') count += 1;
+  if (filters.limit !== DEFAULT_PAGE_LIMIT) count += 1;
+  return count;
+}
+
+function isActiveFilterDefault(filters: LedgerFilters): boolean {
   return (
-    filters.chain !== '' ||
-    filters.search.trim() !== '' ||
-    filters.scope.trim() !== '' ||
-    filters.kind.trim() !== '' ||
-    filters.actor.trim() !== '' ||
-    filters.from !== '' ||
-    filters.to !== '' ||
-    filters.limit !== DEFAULT_PAGE_LIMIT
+    filters.chain === INITIAL_FILTERS.chain &&
+    filters.search === INITIAL_FILTERS.search &&
+    filters.scope === INITIAL_FILTERS.scope &&
+    filters.kind === INITIAL_FILTERS.kind &&
+    filters.actor === INITIAL_FILTERS.actor &&
+    filters.from === INITIAL_FILTERS.from &&
+    filters.to === INITIAL_FILTERS.to &&
+    filters.limit === INITIAL_FILTERS.limit
   );
 }
 
@@ -154,7 +167,8 @@ export function LedgerPage() {
   const eventsQuery = useLedgerPages(ledgerParams);
   const pages = eventsQuery.data?.pages ?? [];
   const events = pages.flatMap((page) => page.events);
-  const activeFilters = hasActiveFilters(filters);
+  const activeFilterCount = countActiveFilters(filters);
+  const activeFilters = activeFilterCount > 0;
   const chainOptions = useMemo(() => {
     const options = [{ value: '', label: t('ledger.chain.global') }];
     const seen = new Set(['global']);
@@ -246,7 +260,11 @@ export function LedgerPage() {
         title={t('ledger.events.title')}
         actions={
           <div className="ledger-export-controls">
-            <Field label={t('ledger.archive.format.label')} htmlFor="ledger-export-format">
+            <Field
+              label={t('ledger.archive.format.label')}
+              htmlFor="ledger-export-format"
+              help={t('ledger.archive.format.help')}
+            >
               <Select
                 id="ledger-export-format"
                 options={archiveFormatOptions}
@@ -280,6 +298,7 @@ export function LedgerPage() {
                   <Input
                     id="ledger-search"
                     type="search"
+                    placeholder={t('ledger.search.placeholder')}
                     value={filters.search}
                     onChange={(e) => updateFilter({ search: e.target.value })}
                   />
@@ -306,7 +325,9 @@ export function LedgerPage() {
                   icon={<Icon.Close />}
                   label={t('ledger.filters.clear.aria')}
                   disabled={!activeFilters}
-                  onClick={() => setFilters(INITIAL_FILTERS)}
+                  onClick={() => {
+                    if (!isActiveFilterDefault(filters)) setFilters(INITIAL_FILTERS);
+                  }}
                 />
               </div>
             </div>
@@ -360,6 +381,8 @@ export function LedgerPage() {
 
           {!eventsQuery.isLoading && !eventsQuery.error ? (
             <div className="ledger-resultbar">
+              <Badge tone="accent">{t('ledger.order.newestFirst')}</Badge>
+              <Badge>{t('ledger.filters.activeCount', { count: activeFilterCount })}</Badge>
               <span aria-label={resultStatus}>
                 <Badge>{resultStatus}</Badge>
               </span>

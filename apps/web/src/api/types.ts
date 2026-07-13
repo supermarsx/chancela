@@ -1792,7 +1792,7 @@ export interface LedgerEventView {
   attestation: LedgerEventAttestation | null;
 }
 
-export type LedgerOrder = 'desc' | 'asc';
+export type LedgerOrder = 'desc';
 
 export type LedgerArchiveDocumentFormat = 'pdfa' | 'json' | 'txt' | 'csv' | 'html';
 
@@ -1815,10 +1815,11 @@ export interface LedgerEventsPage {
   next_cursor: number | null;
   has_more: boolean;
   limit: number;
+  order?: LedgerOrder;
 }
 
 /** Query params for `GET /v1/ledger/archive/document`. */
-export interface LedgerArchiveDocumentParams extends LedgerQueryParams {
+export interface LedgerArchiveDocumentParams extends Omit<LedgerQueryParams, 'before_seq'> {
   format?: LedgerArchiveDocumentFormat;
 }
 

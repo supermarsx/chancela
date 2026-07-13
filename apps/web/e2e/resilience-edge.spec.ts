@@ -146,7 +146,7 @@ test('aborted archive PDF download shows an error and no fake success', async ({
     await route.abort('failed');
   });
 
-  await page.getByRole('button', { name: 'Exportar PDF/A' }).click();
+  await page.getByRole('button', { name: 'Exportar arquivo' }).click();
 
   await expect(page.getByRole('alert')).toBeVisible();
   await expect(page.getByText('PDF/A do arquivo descarregado.')).toHaveCount(0);

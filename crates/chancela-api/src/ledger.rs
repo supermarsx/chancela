@@ -16,7 +16,7 @@ use crate::authz::require_permission;
 use crate::dto::{AttestationSummary, LedgerEventView, LedgerQuery};
 use crate::error::ApiError;
 use crate::ledger_events_page::{LedgerEventsSelectorQuery, select_ledger_events_page};
-use crate::ledger_filter::{LedgerEventFilters, normalized_page_limit};
+use crate::ledger_filter::{LedgerEventFilters, LedgerOrder, normalized_page_limit};
 
 /// Default and maximum number of events returned by `GET /v1/ledger/events?limit=` (t41 L3).
 const DEFAULT_LEDGER_LIMIT: usize = 100;
@@ -87,6 +87,7 @@ pub struct LedgerPageQuery {
     pub to: Option<String>,
     pub before_seq: Option<u64>,
     pub limit: Option<usize>,
+    pub order: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -95,14 +96,16 @@ pub struct LedgerEventsPage {
     pub next_cursor: Option<u64>,
     pub has_more: bool,
     pub limit: usize,
+    pub order: &'static str,
 }
 
-/// `GET /v1/ledger/events/page?before_seq=&limit=` — newest-first ledger page.
+/// `GET /v1/ledger/events/page?before_seq=&limit=&order=desc` — newest-first ledger page.
 ///
 /// The cursor is a global `seq` boundary: when `next_cursor` is `Some(n)`, request
 /// `before_seq=n` to fetch the next older page. The displayed order is newest-first, but each
 /// event still carries the original global `seq`, `prev_hash`, and `hash` values; the hash chain
-/// itself remains append-order.
+/// itself remains append-order. `order` defaults to `desc`; ascending order is not exposed because
+/// the `before_seq` cursor only pages toward older records.
 pub async fn list_ledger_events_page(
     State(state): State<AppState>,
     actor: CurrentActor,
@@ -124,11 +127,13 @@ pub async fn list_ledger_events_page(
         q.to.as_deref(),
     )?;
     let limit = normalized_page_limit(q.limit);
+    let order = LedgerOrder::from_query(q.order.as_deref())?;
     let page = select_ledger_events_page(
         &state,
         LedgerEventsSelectorQuery {
             before_seq: q.before_seq,
             limit,
+            order,
             chain,
             filters: &filters,
         },
@@ -150,6 +155,7 @@ pub async fn list_ledger_events_page(
         next_cursor: page.next_cursor,
         has_more: page.has_more,
         limit: page.limit,
+        order: order.as_query_value(),
     }))
 }
 

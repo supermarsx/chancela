@@ -179,7 +179,7 @@ test('document preview/PDF, sealed deep link, signing fallback, archive filters/
     await expect(page.locator('td', { hasText: OPERATOR.username }).first()).toBeVisible();
 
     const archiveDownload = await downloadFrom(
-      page.getByRole('button', { name: 'Exportar PDF/A' }),
+      page.getByRole('button', { name: 'Exportar arquivo' }),
     );
     await expectPdfDownload(archiveDownload, /^arquivo-.*\.pdf$/);
   });

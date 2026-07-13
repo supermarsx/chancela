@@ -444,6 +444,7 @@ fn ledger_events_page_walks_persisted_events_newest_first_without_duplicates() {
     let mut previous_seq = None;
     let mut seen = HashSet::new();
     let mut collected = Vec::new();
+    let mut page_count = 0;
 
     loop {
         let page = store
@@ -459,9 +460,22 @@ fn ledger_events_page_walks_persisted_events_newest_first_without_duplicates() {
                 to: None,
             })
             .expect("ledger page");
+        page_count += 1;
 
         assert_eq!(page.limit, 137);
         assert!(page.events.len() <= 137);
+        if page_count == 1 {
+            assert_eq!(page.events.len(), 137);
+            assert!(page.has_more);
+            assert_eq!(
+                page.events.first().map(|event| event.seq),
+                Some(expected_len as u64 - 1)
+            );
+            assert_eq!(
+                page.events.last().map(|event| event.seq),
+                Some(expected_len as u64 - 137)
+            );
+        }
         for event in &page.events {
             if let Some(previous_seq) = previous_seq {
                 assert!(
@@ -485,6 +499,10 @@ fn ledger_events_page_walks_persisted_events_newest_first_without_duplicates() {
     }
 
     assert_eq!(collected.len(), expected_len);
+    assert!(
+        page_count > 1,
+        "walk should page lazily instead of returning all records at once"
+    );
     assert_eq!(collected.first().copied(), Some(expected_len as u64 - 1));
     assert_eq!(collected.last().copied(), Some(0));
 }

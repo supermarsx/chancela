@@ -351,16 +351,22 @@ describe('catalog completeness matrix', () => {
 
   it('keeps archive filter and export copy localized outside source Portuguese', () => {
     expect(enUS['ledger.filters.aria']).toBe('Search and filter archive');
-    expect(enUS['ledger.archive.format.pdfa']).toBe('Canonical PDF/A');
+    expect(enUS['ledger.archive.format.pdfa']).toBe('Canonical PDF/A (.pdf)');
+    expect(enUS['ledger.archive.format.help']).toContain('Events per page limit');
+    expect(enUS['ledger.order.newestFirst']).toBe('Newest first');
     expect(enGB['ledger.filters.clear.aria']).toBe('Clear archive filters');
     expect(deDE['ledger.archive.export']).toBe('Archiv exportieren');
 
     for (const catalog of [enUS, enGB, deDE]) {
       expect(catalog['ledger.filters.aria']).not.toBe(ptPT['ledger.filters.aria']);
       expect(catalog['ledger.filters.advanced']).not.toBe(ptPT['ledger.filters.advanced']);
+      expect(catalog['ledger.filters.activeCount']).not.toBe(ptPT['ledger.filters.activeCount']);
       expect(catalog['ledger.filters.clear.aria']).not.toBe(ptPT['ledger.filters.clear.aria']);
+      expect(catalog['ledger.search.placeholder']).not.toBe(ptPT['ledger.search.placeholder']);
+      expect(catalog['ledger.order.newestFirst']).not.toBe(ptPT['ledger.order.newestFirst']);
       expect(catalog['ledger.archive.export']).not.toBe(ptPT['ledger.archive.export']);
       expect(catalog['ledger.archive.format.label']).not.toBe(ptPT['ledger.archive.format.label']);
+      expect(catalog['ledger.archive.format.help']).not.toBe(ptPT['ledger.archive.format.help']);
       expect(catalog['ledger.archive.format.txt']).not.toBe(ptPT['ledger.archive.format.txt']);
     }
   });

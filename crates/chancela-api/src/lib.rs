@@ -36,7 +36,7 @@
 //! - `POST /v1/acts/{id}/signature/archive-timestamp/append` — caller-supplied local
 //!   `/DocTimeStamp` technical evidence append; no production/legal B-LTA claim.
 //! - `GET /v1/ledger/events`, `GET /v1/ledger/verify` — the audit feed and chain probe (§2.6).
-//! - `GET /v1/ledger/archive/document` — on-demand PDF/A archive export.
+//! - `GET /v1/ledger/archive/document` — bounded ledger archive export (PDF/A, TXT, JSON, CSV, HTML).
 //! - `GET /v1/books/{id}/archive/local-dglab-interchange-manifest` — read-only local DGLAB
 //!   interchange manifest scaffold derived from the internal preservation manifest; no official
 //!   DGLAB/legal-archive certification claim.
@@ -4041,6 +4041,7 @@ mod tests {
         .await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(first["limit"], 50);
+        assert_eq!(first["order"], "desc");
         assert_eq!(first["has_more"], true);
         let first_events = first["events"].as_array().expect("first events");
         assert_eq!(first_events.len(), 50);
@@ -4064,9 +4065,9 @@ mod tests {
         let cursor = first["next_cursor"].as_u64().expect("next cursor");
         assert_eq!(cursor, 955);
         let (status, second) = send(
-            state,
+            state.clone(),
             get(&format!(
-                "/v1/ledger/events/page?chain=application&limit=50&before_seq={cursor}"
+                "/v1/ledger/events/page?chain=application&limit=50&before_seq={cursor}&order=desc"
             )),
         )
         .await;
@@ -4084,6 +4085,20 @@ mod tests {
                 .iter()
                 .all(|event| !first_seq.contains(&event["seq"].as_u64().expect("seq"))),
             "second page has no duplicate seq from first page"
+        );
+
+        let (status, unsupported) = send(
+            state,
+            get("/v1/ledger/events/page?chain=application&order=asc"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(
+            unsupported["error"]
+                .as_str()
+                .expect("error")
+                .contains("only desc"),
+            "{unsupported}"
         );
     }
 
@@ -4225,6 +4240,12 @@ mod tests {
                 assert_eq!(ctype, "application/json");
                 let export: Value = serde_json::from_slice(&export_bytes).expect("archive json");
                 assert_eq!(export["event_count"], expected_limit);
+                assert_eq!(export["export_scope"], "bounded_first_page");
+                assert_eq!(export["page_limit"], expected_limit);
+                assert_eq!(export["order"], "desc");
+                assert_eq!(export["event_order"], "seq_desc");
+                assert_eq!(export["has_more"], true);
+                assert!(export["next_cursor"].as_u64().is_some());
                 assert!(
                     export["filters"]
                         .as_str()
@@ -4273,14 +4294,35 @@ mod tests {
         assert!(text.contains("<pdfaid:part>2</pdfaid:part>"));
         assert!(text.contains("<pdfaid:conformance>U</pdfaid:conformance>"));
 
-        let (status, body) =
-            send(state, get("/v1/ledger/archive/document?chain=not-a-chain")).await;
+        let (status, body) = send(
+            state.clone(),
+            get("/v1/ledger/archive/document?chain=not-a-chain"),
+        )
+        .await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
         assert!(
             body["error"]
                 .as_str()
                 .expect("error")
                 .contains("invalid chain")
+        );
+
+        let (status, body) =
+            send(state.clone(), get("/v1/ledger/archive/document?order=asc")).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(
+            body["error"].as_str().expect("error").contains("only desc"),
+            "{body}"
+        );
+
+        let (status, body) = send(state, get("/v1/ledger/archive/document?before_seq=10")).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(
+            body["error"]
+                .as_str()
+                .expect("error")
+                .contains("first filtered page"),
+            "{body}"
         );
     }
 
@@ -4308,12 +4350,24 @@ mod tests {
         assert_eq!(export["export_kind"], "audit_interchange");
         assert_eq!(export["canonical_preserved_evidence"], false);
         assert_eq!(export["event_count"], 1);
-        assert_eq!(export["order"], "seq_desc");
+        assert_eq!(export["export_scope"], "bounded_first_page");
+        assert_eq!(export["page_limit"], 1);
+        assert_eq!(export["has_more"], false);
+        assert_eq!(export["next_cursor"], Value::Null);
+        assert_eq!(export["order"], "desc");
+        assert_eq!(export["event_order"], "seq_desc");
         assert!(
             export["filters"]
                 .as_str()
                 .expect("filters")
                 .contains("pesquisa contem book.opened"),
+            "{export}"
+        );
+        assert!(
+            export["filters"]
+                .as_str()
+                .expect("filters")
+                .contains("order=desc"),
             "{export}"
         );
         assert_eq!(export["events"][0]["kind"], "book.opened");
@@ -4332,6 +4386,8 @@ mod tests {
         assert!(txt_disposition.contains("audit-interchange.txt"));
         let txt = String::from_utf8(txt_bytes).expect("txt utf8");
         assert!(txt.contains("Audit/interchange export only"));
+        assert!(txt.contains("Ambito da exportacao: bounded_first_page"));
+        assert!(txt.contains("Ordem: desc"));
         assert!(txt.contains("Eventos exportados: 1"));
         assert!(txt.contains("kind=book.opened"));
 
@@ -4341,6 +4397,8 @@ mod tests {
         assert_eq!(csv_type, "text/csv; charset=utf-8");
         assert!(csv_disposition.contains("audit-interchange.csv"));
         let csv = String::from_utf8(csv_bytes).expect("csv utf8");
+        assert!(csv.contains("# export_scope=bounded_first_page"));
+        assert!(csv.contains("# order=desc"));
         assert!(csv.contains("seq,chain_seq,kind,scope,actor,timestamp"));
         assert!(csv.contains("book.opened"));
 
@@ -4351,6 +4409,8 @@ mod tests {
         assert!(html_disposition.contains("audit-interchange.html"));
         let html = String::from_utf8(html_bytes).expect("html utf8");
         assert!(html.contains("Audit/interchange export only"));
+        assert!(html.contains("bounded_first_page"));
+        assert!(html.contains("desc (seq global decrescente)"));
         assert!(html.contains("book.opened"));
     }
 

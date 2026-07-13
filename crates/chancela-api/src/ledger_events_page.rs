@@ -3,11 +3,12 @@ use chancela_store::{LedgerEventPageQuery, LedgerEventUpperBound};
 
 use crate::AppState;
 use crate::error::ApiError;
-use crate::ledger_filter::{LedgerEventFilters, UpperBound};
+use crate::ledger_filter::{LedgerEventFilters, LedgerOrder, UpperBound};
 
 pub(crate) struct LedgerEventsSelectorQuery<'a> {
     pub(crate) before_seq: Option<u64>,
     pub(crate) limit: usize,
+    pub(crate) order: LedgerOrder,
     pub(crate) chain: Option<ChainId>,
     pub(crate) filters: &'a LedgerEventFilters,
 }
@@ -39,7 +40,7 @@ pub(crate) async fn select_ledger_events_page(
 
     let ledger = state.ledger.read().await;
     let mut selected = Vec::with_capacity(query.limit.saturating_add(1));
-    for event in ledger.events().iter().rev() {
+    for event in ledger_events_in_order(ledger.events(), query.order) {
         if query.before_seq.is_some_and(|before| event.seq >= before) {
             continue;
         }
@@ -65,6 +66,15 @@ pub(crate) async fn select_ledger_events_page(
         has_more,
         limit: query.limit,
     })
+}
+
+fn ledger_events_in_order<'a>(
+    events: &'a [Event],
+    order: LedgerOrder,
+) -> Box<dyn Iterator<Item = &'a Event> + 'a> {
+    match order {
+        LedgerOrder::Desc => Box::new(events.iter().rev()),
+    }
 }
 
 fn store_query(query: &LedgerEventsSelectorQuery<'_>) -> LedgerEventPageQuery {

@@ -7541,12 +7541,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/ledger/LedgerPage.test.tsx",
-    "shows a bounded first page for a 1000-log archive and loads more by cursor",
+    "shows a bounded first page for a 1000+ log archive and loads more by cursor",
     "ledger archive bounded first page coverage",
   );
   assertFileContains(
     "apps/web/src/features/ledger/LedgerPage.test.tsx",
-    "/v1/ledger/events/page?before_seq=900&limit=100&order=desc",
+    "/v1/ledger/events/page?before_seq=950&limit=100&order=desc",
     "ledger archive cursor load-more marker",
   );
   assertFileContains(

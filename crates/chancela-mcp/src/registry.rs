@@ -659,18 +659,29 @@ pub fn catalog() -> Vec<McpTool> {
         McpTool {
             name: "export_ledger_archive_document",
             title: "Export ledger archive document",
-            description: "Download the read-only PDF/A archive rendering of the ledger. Optional filters become query parameters.",
+            description: "Download the read-only bounded first page of the ledger archive as PDF/A, TXT, JSON, CSV, or HTML. Optional filters become query parameters; order defaults to newest-first desc.",
             access: ToolAccess::ReadOnly,
             permission: "ledger.read",
             input_schema: obj(
                 serde_json::json!({
+                    "format": {
+                        "type": "string",
+                        "enum": ["pdfa", "txt", "json", "csv", "html"],
+                        "description": "export format; pdfa is the canonical preserved-evidence rendering"
+                    },
+                    "q": { "type": "string", "description": "free-text search across event id, seq, kind, scope, actor, justification, chains and hashes" },
                     "chain": { "type": "string", "description": "chain id: global, application, company:<id>, or book:<id>" },
                     "scope": { "type": "string", "description": "substring scope filter" },
                     "kind": { "type": "string", "description": "event kind, or comma-separated event kinds" },
                     "actor": { "type": "string", "description": "exact actor filter" },
                     "from": { "type": "string", "description": "inclusive lower timestamp bound: RFC 3339 or YYYY-MM-DD" },
                     "to": { "type": "string", "description": "upper timestamp bound: RFC 3339 inclusive, or YYYY-MM-DD for the whole day" },
-                    "limit": { "type": "integer", "description": "last-N limit after filters" }
+                    "limit": { "type": "integer", "description": "bounded first-page limit after filters; normalized by the API" },
+                    "order": {
+                        "type": "string",
+                        "enum": ["desc"],
+                        "description": "newest-first order over global seq; defaults to desc"
+                    }
                 }),
                 &[],
             ),
@@ -1337,17 +1348,20 @@ mod tests {
     }
 
     #[test]
-    fn ledger_archive_document_filters_become_query_params() {
+    fn export_ledger_archive_document_filters_become_query_params() {
         let call = resolve_call(
             &tool("export_ledger_archive_document"),
             &serde_json::json!({
                 "chain": "book:book-7",
+                "format": "json",
+                "q": "approved digest",
                 "scope": "book:book-7",
                 "kind": "book.opened,document.generated",
                 "actor": "owner",
                 "from": "2026-07-01",
                 "to": "2026-07-09",
-                "limit": 1
+                "limit": 1,
+                "order": "desc"
             }),
         )
         .unwrap();
@@ -1358,12 +1372,15 @@ mod tests {
             vec![
                 ("actor".to_string(), "owner".to_string()),
                 ("chain".to_string(), "book:book-7".to_string()),
+                ("format".to_string(), "json".to_string()),
                 ("from".to_string(), "2026-07-01".to_string()),
                 (
                     "kind".to_string(),
                     "book.opened,document.generated".to_string()
                 ),
                 ("limit".to_string(), "1".to_string()),
+                ("order".to_string(), "desc".to_string()),
+                ("q".to_string(), "approved digest".to_string()),
                 ("scope".to_string(), "book:book-7".to_string()),
                 ("to".to_string(), "2026-07-09".to_string()),
             ]
