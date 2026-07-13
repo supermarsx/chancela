@@ -200,6 +200,7 @@ fn sidecar_failure_code(err: &ProviderCredentialError) -> &'static str {
         ProviderCredentialError::CorruptSidecar(_) => "corrupt_sidecar",
         ProviderCredentialError::Poisoned => "store_unavailable",
         ProviderCredentialError::Secret(_)
+        | ProviderCredentialError::RuntimeStrictModeUnprotected { .. }
         | ProviderCredentialError::UnknownField { .. }
         | ProviderCredentialError::Io { .. } => "status_unavailable",
     }

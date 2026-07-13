@@ -33,13 +33,14 @@ use der::{Encode, EncodePem};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use spki::{AlgorithmIdentifierOwned, SubjectPublicKeyInfoOwned};
+use tokio::sync::Mutex as AsyncMutex;
 use tower::ServiceExt;
 use x509_cert::certificate::{Certificate, TbsCertificate, Version};
 use x509_cert::name::Name;
 use x509_cert::serial_number::SerialNumber;
 use x509_cert::time::Validity;
 
-use chancela_api::{AppState, router};
+use chancela_api::{AppState, CredentialFieldSet, CredentialMode, CscCredentialFields, router};
 use chancela_cmd::soap::{ACTION_CCMOVEL_SIGN, ACTION_GET_CERTIFICATE, ACTION_VALIDATE_OTP};
 use chancela_cmd::{CmdError, ScmdTransport};
 use chancela_core::ActId;
@@ -55,6 +56,7 @@ use chancela_signing::{StaticTrustPolicy, TrustPolicy, TrustedListStatus};
 use common::TEST_PASSWORD;
 use common::tsa_http::MockTsaServer;
 use uuid::Uuid;
+use zeroize::Zeroizing;
 
 const OID_SHA256_WITH_RSA: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.113549.1.1.11");
 const SHA256_DIGEST_INFO_PREFIX: [u8; 19] = [
@@ -68,6 +70,17 @@ const PHONE: &str = "+351 912345678";
 const PIN: &str = "271828";
 const OTP: &str = "314159";
 const CSC_ACTIVATION: &str = "141421"; // the OTP/SAD activation submitted at confirm
+const PROVIDER_CREDENTIAL_ENV_KEYS: [&str; 3] = [
+    "CHANCELA_CREDENTIAL_KEY",
+    "CHANCELA_CREDENTIAL_KEY_FILE",
+    "CHANCELA_CREDENTIAL_STRICT",
+];
+const CSC_SECRET_ENV_KEYS: [&str; 3] = [
+    "CHANCELA_CSC_ENCOSTO_QTSP_CLIENT_ID",
+    "CHANCELA_CSC_ENCOSTO_QTSP_CLIENT_SECRET",
+    "CHANCELA_CSC_ENCOSTO_QTSP_ACCESS_TOKEN",
+];
+static ENV_LOCK: AsyncMutex<()> = AsyncMutex::const_new(());
 
 // --- ephemeral in-test RSA signer ------------------------------------------------------------
 
@@ -151,6 +164,8 @@ struct SmartCscTransport {
     info_json: String,
     reject: bool,
     fail_path: Option<&'static str>,
+    expected_basic_client_id: Option<String>,
+    expected_bearer: Option<String>,
 }
 
 impl SmartCscTransport {
@@ -164,6 +179,8 @@ impl SmartCscTransport {
             info_json,
             reject,
             fail_path: None,
+            expected_basic_client_id: None,
+            expected_bearer: None,
         }
     }
 
@@ -171,13 +188,54 @@ impl SmartCscTransport {
         self.fail_path = Some(path);
         self
     }
+
+    fn expect_basic_client_id(mut self, client_id: &str) -> Self {
+        self.expected_basic_client_id = Some(client_id.to_owned());
+        self
+    }
+
+    fn expect_bearer(mut self, token: &str) -> Self {
+        self.expected_bearer = Some(token.to_owned());
+        self
+    }
+
+    fn assert_expected_auth(&self, path: &str, auth: CscAuthHeader<'_>) -> Result<(), CscError> {
+        if let Some(expected) = &self.expected_basic_client_id {
+            if path == rest::PATH_OAUTH2_TOKEN {
+                match auth {
+                    CscAuthHeader::Basic { client_id, .. } if client_id == expected => {}
+                    _ => {
+                        return Err(CscError::Transport(
+                            "unexpected CSC client credential source".to_owned(),
+                        ));
+                    }
+                }
+            }
+        }
+        if let Some(expected) = &self.expected_bearer {
+            if path == rest::PATH_OAUTH2_TOKEN {
+                return Err(CscError::Transport(
+                    "unexpected CSC service credential source".to_owned(),
+                ));
+            }
+            match auth {
+                CscAuthHeader::Bearer(token) if token == expected => {}
+                _ => {
+                    return Err(CscError::Transport(
+                        "unexpected CSC bearer credential source".to_owned(),
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 impl CscTransport for SmartCscTransport {
     fn post_json(
         &self,
         path: &str,
-        _auth: CscAuthHeader<'_>,
+        auth: CscAuthHeader<'_>,
         body: &str,
     ) -> Result<String, CscError> {
         if matches!(self.fail_path, Some(fail) if fail == path) {
@@ -185,6 +243,7 @@ impl CscTransport for SmartCscTransport {
                 "simulated CSC outage at {path}"
             )));
         }
+        self.assert_expected_auth(path, auth)?;
         Ok(match path {
             rest::PATH_OAUTH2_TOKEN => OAUTH_TOKEN_OK.to_string(),
             rest::PATH_CREDENTIALS_LIST => CREDENTIALS_LIST_OK.to_string(),
@@ -306,19 +365,128 @@ impl Drop for TempDir {
     }
 }
 
+struct EnvRestore(Vec<(&'static str, Option<String>)>);
+
+impl EnvRestore {
+    fn capture(keys: &[&'static str]) -> Self {
+        Self(
+            keys.iter()
+                .copied()
+                .map(|key| (key, std::env::var(key).ok()))
+                .collect(),
+        )
+    }
+}
+
+impl Drop for EnvRestore {
+    fn drop(&mut self) {
+        for (key, value) in self.0.drain(..) {
+            unsafe {
+                match value {
+                    Some(value) => std::env::set_var(key, value),
+                    None => std::env::remove_var(key),
+                }
+            }
+        }
+    }
+}
+
+fn env_keys() -> Vec<&'static str> {
+    PROVIDER_CREDENTIAL_ENV_KEYS
+        .into_iter()
+        .chain(CSC_SECRET_ENV_KEYS)
+        .collect()
+}
+
+fn clear_csc_test_env() {
+    for key in env_keys() {
+        unsafe {
+            std::env::remove_var(key);
+        }
+    }
+}
+
+fn set_provider_credential_test_key() {
+    unsafe {
+        std::env::set_var(
+            "CHANCELA_CREDENTIAL_KEY",
+            "remote-signing-provider-credential-test-key",
+        );
+        std::env::remove_var("CHANCELA_CREDENTIAL_KEY_FILE");
+        std::env::remove_var("CHANCELA_CREDENTIAL_STRICT");
+    }
+}
+
+fn zeroizing(value: &str) -> Zeroizing<String> {
+    Zeroizing::new(value.to_owned())
+}
+
+fn seed_stored_csc_service_credentials(state: &AppState, client_id: &str, client_secret: &str) {
+    state
+        .provider_credentials
+        .put(
+            CredentialMode::CscQtsp,
+            CSC_PROVIDER_ID,
+            CscCredentialFields {
+                client_id: Some(zeroizing(client_id)),
+                client_secret: Some(zeroizing(client_secret)),
+                ..Default::default()
+            }
+            .into_set_pairs(),
+            &[],
+        )
+        .expect("seed stored CSC service credentials");
+}
+
+fn seed_stored_csc_access_token(state: &AppState, access_token: &str) {
+    state
+        .provider_credentials
+        .put(
+            CredentialMode::CscQtsp,
+            CSC_PROVIDER_ID,
+            CscCredentialFields {
+                access_token: Some(zeroizing(access_token)),
+                ..Default::default()
+            }
+            .into_set_pairs(),
+            &[],
+        )
+        .expect("seed stored CSC access-token credentials");
+}
+
+fn seed_partial_stored_csc_record(state: &AppState) {
+    state
+        .provider_credentials
+        .put(
+            CredentialMode::CscQtsp,
+            CSC_PROVIDER_ID,
+            CscCredentialFields {
+                client_id: Some(zeroizing("stored-csc-client-fixture")),
+                ..Default::default()
+            }
+            .into_set_pairs(),
+            &[],
+        )
+        .expect("seed partial stored CSC credentials");
+}
+
 /// The injected CSC transport factory type `AppState::csc_transport` holds.
 type CscTransportFactory = Arc<dyn Fn(&CscConfig) -> Box<dyn CscTransport + Send> + Send + Sync>;
 
-fn csc_config() -> CscConfig {
+fn csc_config_with_authorization(authorization: CscAuthorization) -> CscConfig {
     CscConfig {
         provider_id: CSC_PROVIDER_ID.to_string(),
         display_name: "Encosto QTSP".to_string(),
         base_url: "https://sandbox.encosto.example/csc/v2".to_string(),
-        authorization: CscAuthorization::Service,
+        authorization,
         sandbox: true,
         credential_id: None,
         scope: chancela_csc::DEFAULT_SCOPE.to_string(),
     }
+}
+
+fn csc_config() -> CscConfig {
+    csc_config_with_authorization(CscAuthorization::Service)
 }
 
 /// A durable state with a granted trust policy and the given injected transports/providers.
@@ -846,6 +1014,463 @@ async fn csc_generic_round_trip_timestamps_when_tsa_configured() {
             .unwrap_or(false),
         "timestamp token DER stored"
     );
+}
+
+#[tokio::test]
+async fn csc_stored_service_credentials_beat_env_and_mark_provider_configured() {
+    let _guard = ENV_LOCK.lock().await;
+    let keys = env_keys();
+    let _env = EnvRestore::capture(&keys);
+    clear_csc_test_env();
+    set_provider_credential_test_key();
+    unsafe {
+        std::env::set_var("CHANCELA_CSC_ENCOSTO_QTSP_CLIENT_ID", "env-csc-client");
+        std::env::set_var("CHANCELA_CSC_ENCOSTO_QTSP_CLIENT_SECRET", "env-csc-secret");
+    }
+
+    let dir = TempDir::new();
+    let leaf = RsaSigner::new("Amélia Marques (QTSP teste)", 1);
+    let issuer = RsaSigner::new("Encosto Estratégico Lda — EC Teste", 2);
+    let csc =
+        SmartCscTransport::new(&leaf, &issuer, false).expect_basic_client_id("stored-csc-client");
+    let state = state_at(&dir.0, Some(csc), None).await;
+    seed_stored_csc_service_credentials(&state, "stored-csc-client", "stored-csc-secret");
+    let token = bootstrap(&state).await;
+
+    let (status, list) = send(&state, get_req("/v1/signature/providers", &token)).await;
+    assert_eq!(status, StatusCode::OK, "providers: {list}");
+    let csc = list
+        .as_array()
+        .expect("provider list")
+        .iter()
+        .find(|provider| provider["id"] == CSC_PROVIDER_ID)
+        .expect("stored CSC provider present");
+    assert_eq!(csc["configured"], true, "stored credentials configure CSC");
+
+    let act_id = seal_an_act(&state, &token).await;
+    let (status, init) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/remote/{CSC_PROVIDER_ID}/initiate"),
+            &token,
+            json!({
+                "user_ref": "amelia.marques@encosto.example",
+                "credential": PIN
+            }),
+        ),
+    )
+    .await;
+
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "stored CSC credentials must initiate without env mixing: {init}"
+    );
+    assert_eq!(init["provider_id"], CSC_PROVIDER_ID);
+}
+
+#[tokio::test]
+async fn csc_stored_access_token_credentials_drive_user_runtime_auth() {
+    let _guard = ENV_LOCK.lock().await;
+    let keys = env_keys();
+    let _env = EnvRestore::capture(&keys);
+    clear_csc_test_env();
+    set_provider_credential_test_key();
+
+    let dir = TempDir::new();
+    let leaf = RsaSigner::new("Amélia Marques (QTSP teste)", 1);
+    let issuer = RsaSigner::new("Encosto Estratégico Lda — EC Teste", 2);
+    let csc =
+        SmartCscTransport::new(&leaf, &issuer, false).expect_bearer("stored-csc-access-token");
+    let mut state = state_at(&dir.0, Some(csc), None).await;
+    state.csc_providers = Arc::new(vec![csc_config_with_authorization(CscAuthorization::User)]);
+    seed_stored_csc_access_token(&state, "stored-csc-access-token");
+    let token = bootstrap(&state).await;
+
+    let (status, list) = send(&state, get_req("/v1/signature/providers", &token)).await;
+    assert_eq!(status, StatusCode::OK, "providers: {list}");
+    let csc = list
+        .as_array()
+        .expect("provider list")
+        .iter()
+        .find(|provider| provider["id"] == CSC_PROVIDER_ID)
+        .expect("stored CSC provider present");
+    assert_eq!(
+        csc["configured"], true,
+        "stored access token configures a user-authorized CSC provider"
+    );
+
+    let act_id = seal_an_act(&state, &token).await;
+
+    let (status, init) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/remote/{CSC_PROVIDER_ID}/initiate"),
+            &token,
+            json!({
+                "user_ref": "amelia.marques@encosto.example",
+                "credential": PIN
+            }),
+        ),
+    )
+    .await;
+
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "stored CSC access-token credentials must initiate for user authorization: {init}"
+    );
+    assert_eq!(init["provider_id"], CSC_PROVIDER_ID);
+}
+
+#[tokio::test]
+async fn csc_blank_stored_client_secret_marks_unconfigured_and_fails_before_transport() {
+    let _guard = ENV_LOCK.lock().await;
+    let keys = env_keys();
+    let _env = EnvRestore::capture(&keys);
+    clear_csc_test_env();
+    set_provider_credential_test_key();
+    unsafe {
+        std::env::set_var("CHANCELA_CSC_ENCOSTO_QTSP_CLIENT_ID", "env-csc-client");
+        std::env::set_var("CHANCELA_CSC_ENCOSTO_QTSP_CLIENT_SECRET", "env-csc-secret");
+    }
+
+    let dir = TempDir::new();
+    let leaf = RsaSigner::new("Amélia Marques (QTSP teste)", 1);
+    let issuer = RsaSigner::new("Encosto Estratégico Lda — EC Teste", 2);
+    let csc = SmartCscTransport::new(&leaf, &issuer, false)
+        .with_transport_error_on(rest::PATH_OAUTH2_TOKEN);
+    let state = state_at(&dir.0, Some(csc), None).await;
+    seed_stored_csc_service_credentials(&state, "stored-csc-client", "   ");
+    let token = bootstrap(&state).await;
+
+    let (status, list) = send(&state, get_req("/v1/signature/providers", &token)).await;
+    assert_eq!(status, StatusCode::OK, "providers: {list}");
+    let csc = list
+        .as_array()
+        .expect("provider list")
+        .iter()
+        .find(|provider| provider["id"] == CSC_PROVIDER_ID)
+        .expect("stored CSC provider present");
+    assert_eq!(
+        csc["configured"], false,
+        "blank stored client_secret must not configure service auth"
+    );
+
+    let act_id = seal_an_act(&state, &token).await;
+    let (status, err) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/remote/{CSC_PROVIDER_ID}/initiate"),
+            &token,
+            json!({
+                "user_ref": "amelia.marques@encosto.example",
+                "credential": PIN
+            }),
+        ),
+    )
+    .await;
+
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "blank stored client_secret must fail before env/transport: {err}"
+    );
+    let msg = err["error"].as_str().unwrap_or_default();
+    assert!(msg.contains("mode 'csc'"), "mode is named: {err}");
+    assert!(
+        msg.contains("client_secret"),
+        "blank field is named missing: {err}"
+    );
+    assert!(
+        !msg.contains("stored-csc-client")
+            && !msg.contains("env-csc-client")
+            && !msg.contains("env-csc-secret")
+            && !msg.contains("simulated CSC outage"),
+        "error must not contain stored/env values or transport output: {err}"
+    );
+    assert!(state.pending_signatures.read().await.is_empty());
+    assert_no_signed_artifact_or_event(&state, &token, &act_id).await;
+}
+
+#[tokio::test]
+async fn csc_blank_stored_access_token_marks_unconfigured_and_fails_before_transport() {
+    let _guard = ENV_LOCK.lock().await;
+    let keys = env_keys();
+    let _env = EnvRestore::capture(&keys);
+    clear_csc_test_env();
+    set_provider_credential_test_key();
+    unsafe {
+        std::env::set_var(
+            "CHANCELA_CSC_ENCOSTO_QTSP_ACCESS_TOKEN",
+            "env-csc-access-token",
+        );
+    }
+
+    let dir = TempDir::new();
+    let leaf = RsaSigner::new("Amélia Marques (QTSP teste)", 1);
+    let issuer = RsaSigner::new("Encosto Estratégico Lda — EC Teste", 2);
+    let csc = SmartCscTransport::new(&leaf, &issuer, false)
+        .with_transport_error_on(rest::PATH_CREDENTIALS_LIST);
+    let mut state = state_at(&dir.0, Some(csc), None).await;
+    state.csc_providers = Arc::new(vec![csc_config_with_authorization(CscAuthorization::User)]);
+    seed_stored_csc_access_token(&state, " \t ");
+    let token = bootstrap(&state).await;
+
+    let (status, list) = send(&state, get_req("/v1/signature/providers", &token)).await;
+    assert_eq!(status, StatusCode::OK, "providers: {list}");
+    let csc = list
+        .as_array()
+        .expect("provider list")
+        .iter()
+        .find(|provider| provider["id"] == CSC_PROVIDER_ID)
+        .expect("stored CSC provider present");
+    assert_eq!(
+        csc["configured"], false,
+        "blank stored access_token must not configure user auth"
+    );
+
+    let act_id = seal_an_act(&state, &token).await;
+    let (status, err) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/remote/{CSC_PROVIDER_ID}/initiate"),
+            &token,
+            json!({
+                "user_ref": "amelia.marques@encosto.example",
+                "credential": PIN
+            }),
+        ),
+    )
+    .await;
+
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "blank stored access_token must fail before env/transport: {err}"
+    );
+    let msg = err["error"].as_str().unwrap_or_default();
+    assert!(msg.contains("mode 'csc'"), "mode is named: {err}");
+    assert!(
+        msg.contains("access_token"),
+        "blank token is named missing: {err}"
+    );
+    assert!(
+        !msg.contains("env-csc-access-token") && !msg.contains("simulated CSC outage"),
+        "error must not contain env values or transport output: {err}"
+    );
+    assert!(state.pending_signatures.read().await.is_empty());
+    assert_no_signed_artifact_or_event(&state, &token, &act_id).await;
+}
+
+#[tokio::test]
+async fn csc_service_provider_rejects_stored_user_token_record_without_env_or_di_mixing() {
+    let _guard = ENV_LOCK.lock().await;
+    let keys = env_keys();
+    let _env = EnvRestore::capture(&keys);
+    clear_csc_test_env();
+    set_provider_credential_test_key();
+    unsafe {
+        std::env::set_var("CHANCELA_CSC_ENCOSTO_QTSP_CLIENT_ID", "env-csc-client");
+        std::env::set_var("CHANCELA_CSC_ENCOSTO_QTSP_CLIENT_SECRET", "env-csc-secret");
+    }
+
+    let dir = TempDir::new();
+    let leaf = RsaSigner::new("Amélia Marques (QTSP teste)", 1);
+    let issuer = RsaSigner::new("Encosto Estratégico Lda — EC Teste", 2);
+    let csc = SmartCscTransport::new(&leaf, &issuer, false)
+        .with_transport_error_on(rest::PATH_OAUTH2_TOKEN);
+    let state = state_at(&dir.0, Some(csc), None).await;
+    seed_stored_csc_access_token(&state, "stored-csc-access-token");
+    let token = bootstrap(&state).await;
+
+    let (status, list) = send(&state, get_req("/v1/signature/providers", &token)).await;
+    assert_eq!(status, StatusCode::OK, "providers: {list}");
+    let csc = list
+        .as_array()
+        .expect("provider list")
+        .iter()
+        .find(|provider| provider["id"] == CSC_PROVIDER_ID)
+        .expect("stored CSC provider present");
+    assert_eq!(
+        csc["configured"], false,
+        "user-token record must not configure a service-authorized CSC provider"
+    );
+
+    let act_id = seal_an_act(&state, &token).await;
+    let (status, err) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/remote/{CSC_PROVIDER_ID}/initiate"),
+            &token,
+            json!({
+                "user_ref": "amelia.marques@encosto.example",
+                "credential": PIN
+            }),
+        ),
+    )
+    .await;
+
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "mismatched stored CSC credentials fail before env/transport: {err}"
+    );
+    let msg = err["error"].as_str().unwrap_or_default();
+    assert!(msg.contains("mode 'csc'"), "mode is named: {err}");
+    assert!(
+        msg.contains("client_id"),
+        "missing client_id is named: {err}"
+    );
+    assert!(
+        msg.contains("client_secret"),
+        "missing client_secret is named: {err}"
+    );
+    assert!(
+        !msg.contains("stored-csc-access-token")
+            && !msg.contains("env-csc-client")
+            && !msg.contains("env-csc-secret")
+            && !msg.contains("simulated CSC outage"),
+        "error must not contain stored/env values or transport output: {err}"
+    );
+    assert!(state.pending_signatures.read().await.is_empty());
+    assert_no_signed_artifact_or_event(&state, &token, &act_id).await;
+}
+
+#[tokio::test]
+async fn csc_user_provider_rejects_stored_service_record_without_env_or_di_mixing() {
+    let _guard = ENV_LOCK.lock().await;
+    let keys = env_keys();
+    let _env = EnvRestore::capture(&keys);
+    clear_csc_test_env();
+    set_provider_credential_test_key();
+    unsafe {
+        std::env::set_var(
+            "CHANCELA_CSC_ENCOSTO_QTSP_ACCESS_TOKEN",
+            "env-csc-access-token",
+        );
+    }
+
+    let dir = TempDir::new();
+    let leaf = RsaSigner::new("Amélia Marques (QTSP teste)", 1);
+    let issuer = RsaSigner::new("Encosto Estratégico Lda — EC Teste", 2);
+    let csc = SmartCscTransport::new(&leaf, &issuer, false)
+        .with_transport_error_on(rest::PATH_CREDENTIALS_LIST);
+    let mut state = state_at(&dir.0, Some(csc), None).await;
+    state.csc_providers = Arc::new(vec![csc_config_with_authorization(CscAuthorization::User)]);
+    seed_stored_csc_service_credentials(&state, "stored-csc-client", "stored-csc-secret");
+    let token = bootstrap(&state).await;
+
+    let (status, list) = send(&state, get_req("/v1/signature/providers", &token)).await;
+    assert_eq!(status, StatusCode::OK, "providers: {list}");
+    let csc = list
+        .as_array()
+        .expect("provider list")
+        .iter()
+        .find(|provider| provider["id"] == CSC_PROVIDER_ID)
+        .expect("stored CSC provider present");
+    assert_eq!(
+        csc["configured"], false,
+        "service credential record must not configure a user-authorized CSC provider"
+    );
+
+    let act_id = seal_an_act(&state, &token).await;
+    let (status, err) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/remote/{CSC_PROVIDER_ID}/initiate"),
+            &token,
+            json!({
+                "user_ref": "amelia.marques@encosto.example",
+                "credential": PIN
+            }),
+        ),
+    )
+    .await;
+
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "mismatched stored CSC credentials fail before env/transport: {err}"
+    );
+    let msg = err["error"].as_str().unwrap_or_default();
+    assert!(msg.contains("mode 'csc'"), "mode is named: {err}");
+    assert!(
+        msg.contains("access_token"),
+        "missing token is named: {err}"
+    );
+    assert!(
+        !msg.contains("stored-csc-client")
+            && !msg.contains("stored-csc-secret")
+            && !msg.contains("env-csc-access-token")
+            && !msg.contains("simulated CSC outage"),
+        "error must not contain stored/env values or transport output: {err}"
+    );
+    assert!(state.pending_signatures.read().await.is_empty());
+    assert_no_signed_artifact_or_event(&state, &token, &act_id).await;
+}
+
+#[tokio::test]
+async fn csc_partial_stored_record_fails_without_env_or_di_mixing() {
+    let _guard = ENV_LOCK.lock().await;
+    let keys = env_keys();
+    let _env = EnvRestore::capture(&keys);
+    clear_csc_test_env();
+    set_provider_credential_test_key();
+    unsafe {
+        std::env::set_var("CHANCELA_CSC_ENCOSTO_QTSP_CLIENT_ID", "env-csc-client");
+        std::env::set_var("CHANCELA_CSC_ENCOSTO_QTSP_CLIENT_SECRET", "env-csc-secret");
+    }
+
+    let dir = TempDir::new();
+    let leaf = RsaSigner::new("Amélia Marques (QTSP teste)", 1);
+    let issuer = RsaSigner::new("Encosto Estratégico Lda — EC Teste", 2);
+    let csc = SmartCscTransport::new(&leaf, &issuer, false)
+        .with_transport_error_on(rest::PATH_OAUTH2_TOKEN);
+    let state = state_at(&dir.0, Some(csc), None).await;
+    seed_partial_stored_csc_record(&state);
+    let token = bootstrap(&state).await;
+    let act_id = seal_an_act(&state, &token).await;
+
+    let (status, err) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/remote/{CSC_PROVIDER_ID}/initiate"),
+            &token,
+            json!({
+                "user_ref": "amelia.marques@encosto.example",
+                "credential": PIN
+            }),
+        ),
+    )
+    .await;
+
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "partial CSC stored record must fail before transport/env: {err}"
+    );
+    let msg = err["error"].as_str().unwrap_or_default();
+    assert!(msg.contains("mode 'csc'"), "mode is named: {err}");
+    assert!(
+        msg.contains("client_secret"),
+        "missing field is named: {err}"
+    );
+    assert!(
+        !msg.contains("stored-csc-client-fixture")
+            && !msg.contains("env-csc-client")
+            && !msg.contains("env-csc-secret"),
+        "error must not contain stored or env values: {err}"
+    );
+    assert!(state.pending_signatures.read().await.is_empty());
+    assert_no_signed_artifact_or_event(&state, &token, &act_id).await;
 }
 
 #[tokio::test]

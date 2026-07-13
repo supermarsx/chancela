@@ -1,12 +1,12 @@
 //! [`CscConfig`] — the **non-secret** per-provider selectors (base URL, provider id,
 //! authorization model, sandbox flag, optional pre-selected credential) that a settings
-//! document surfaces, and [`CscSecrets`] — the OAuth client credentials / access token loaded
-//! **exclusively from the environment** (t59 ruling 5; never JSON, never persisted).
+//! document surfaces, and [`CscSecrets`] — the OAuth client credentials / access token loaded from
+//! the environment or assembled from an already-decrypted protected runtime store.
 //!
 //! The api provider registry (t59 Slice 3) builds a [`CscConfig`] from settings and a
-//! [`CscSecrets`] from `CHANCELA_CSC_<PROVIDER>_*` env vars, then constructs a
-//! [`CscRemoteSource`](crate::CscRemoteSource). The settings document only ever holds the
-//! [`CscProviderInfo`] projection — never a secret.
+//! [`CscSecrets`] from `CHANCELA_CSC_<PROVIDER>_*` env vars or protected runtime credentials, then
+//! constructs a [`CscRemoteSource`](crate::CscRemoteSource). The settings document only ever holds
+//! the [`CscProviderInfo`] projection — never a secret.
 
 use zeroize::Zeroizing;
 
@@ -53,8 +53,8 @@ impl CscAuthorization {
 
 /// Static, **non-secret** configuration for a CSC provider (t59 F2/F3).
 ///
-/// Every field here is safe to persist in the settings document. Secrets live in
-/// [`CscSecrets`], loaded from the environment.
+/// Every field here is safe to persist in the settings document. Secrets live in [`CscSecrets`],
+/// loaded from the environment or protected provider-credential storage.
 #[derive(Debug, Clone)]
 pub struct CscConfig {
     /// The stable provider id stamped onto the produced session/artifact (e.g. `"multicert"`,
@@ -148,9 +148,8 @@ fn env_prefix(provider_id: &str) -> String {
     format!("CHANCELA_CSC_{sanitized}")
 }
 
-/// The **secret** per-provider credentials, loaded exclusively from the environment
-/// (t59 ruling 5). Never serialized, never logged; held in [`Zeroizing`] buffers so they are
-/// wiped from memory on drop.
+/// The **secret** per-provider credentials. Never serialized, never logged; held in [`Zeroizing`]
+/// buffers so they are wiped from memory on drop.
 ///
 /// Env vars (per provider `<P>` = the upper-cased provider id):
 /// - `CHANCELA_CSC_<P>_CLIENT_ID` / `_CLIENT_SECRET` — the OAuth2 client credential
@@ -199,6 +198,37 @@ impl CscSecrets {
         }
     }
 
+    /// Construct secrets from already-materialized fields using the same completeness rules as the
+    /// environment loader: either `client_id + client_secret` for service authorization, or
+    /// `access_token` by itself for user authorization. Partial combinations are rejected without
+    /// including any field values in the error.
+    pub fn from_parts(
+        provider_id: &str,
+        client_id: Option<Zeroizing<String>>,
+        client_secret: Option<Zeroizing<String>>,
+        access_token: Option<Zeroizing<String>>,
+    ) -> Result<Self, CscError> {
+        let client_id = nonblank_secret(client_id);
+        let client_secret = nonblank_secret(client_secret);
+        let access_token = nonblank_secret(access_token);
+        match (client_id, client_secret, access_token) {
+            (Some(client_id), Some(client_secret), access_token) => Ok(CscSecrets {
+                client_id,
+                client_secret,
+                access_token,
+            }),
+            (None, None, Some(access_token)) => Ok(CscSecrets {
+                client_id: Zeroizing::new(String::new()),
+                client_secret: Zeroizing::new(String::new()),
+                access_token: Some(access_token),
+            }),
+            _ => Err(CscError::Config(format!(
+                "provider '{provider_id}' is not configured: set client_id + client_secret \
+                 (service) or access_token (user)"
+            ))),
+        }
+    }
+
     /// Load the secrets for `provider_id` from `CHANCELA_CSC_<PROVIDER>_*` env vars.
     ///
     /// Requires either a client id + secret (service) or an access token (user); errors if
@@ -208,37 +238,42 @@ impl CscSecrets {
         let get = |suffix: &str| -> Option<String> {
             std::env::var(format!("{prefix}_{suffix}"))
                 .ok()
-                .filter(|v| !v.is_empty())
+                .filter(|v| !v.trim().is_empty())
         };
         let client_id = get("CLIENT_ID");
         let client_secret = get("CLIENT_SECRET");
         let access_token = get("ACCESS_TOKEN");
-        match (client_id, client_secret, access_token) {
-            (Some(id), Some(secret), token) => Ok(CscSecrets {
-                client_id: Zeroizing::new(id),
-                client_secret: Zeroizing::new(secret),
-                access_token: token.map(Zeroizing::new),
-            }),
-            (None, None, Some(token)) => Ok(CscSecrets::with_access_token(token)),
-            _ => Err(CscError::Config(format!(
+        Self::from_parts(
+            provider_id,
+            client_id.map(Zeroizing::new),
+            client_secret.map(Zeroizing::new),
+            access_token.map(Zeroizing::new),
+        )
+        .map_err(|_| {
+            CscError::Config(format!(
                 "provider '{provider_id}' is not configured: set {prefix}_CLIENT_ID + \
                  {prefix}_CLIENT_SECRET (service) or {prefix}_ACCESS_TOKEN (user)"
-            ))),
-        }
+            ))
+        })
     }
 
-    /// Whether `provider_id`'s secrets are present in the environment (the read-only
-    /// `credentials_configured` flag surfaced to settings — never the secret itself).
+    /// Whether `provider_id`'s env-var secrets are present. Settings provider status also combines
+    /// this with protected provider-credential storage so `credentials_configured` reflects
+    /// protected storage or environment — never the secret itself.
     pub fn is_configured(provider_id: &str) -> bool {
         Self::from_env(provider_id).is_ok()
     }
+}
+
+fn nonblank_secret(secret: Option<Zeroizing<String>>) -> Option<Zeroizing<String>> {
+    secret.filter(|value| !value.trim().is_empty())
 }
 
 /// The non-secret provider projection for the settings document / UI picker (t59 F3/F4).
 ///
 /// Deliberately carries **no** secret and no base URL secret material — only what the picker
 /// and settings surface need. `credentials_configured` is a read-only boolean derived from the
-/// environment ([`CscSecrets::is_configured`]).
+/// runtime credential source.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CscProviderInfo {
     /// Stable provider id.
@@ -249,6 +284,89 @@ pub struct CscProviderInfo {
     pub authorization: CscAuthorization,
     /// Whether this is a sandbox endpoint.
     pub sandbox: bool,
-    /// Whether the provider's secrets are present in the environment (read-only).
+    /// Whether runtime credentials are configured through environment or protected storage.
     pub credentials_configured: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn secret(value: &str) -> Zeroizing<String> {
+        Zeroizing::new(value.to_owned())
+    }
+
+    #[test]
+    fn from_parts_accepts_service_client_credentials() {
+        let secrets = CscSecrets::from_parts(
+            "encosto-qtsp",
+            Some(secret("client-id-fixture")),
+            Some(secret("client-secret-fixture")),
+            None,
+        )
+        .expect("service credentials are complete");
+
+        assert_eq!(secrets.client_id.as_str(), "client-id-fixture");
+        assert_eq!(secrets.client_secret.as_str(), "client-secret-fixture");
+        assert!(secrets.access_token.is_none());
+    }
+
+    #[test]
+    fn from_parts_accepts_access_token_only() {
+        let secrets = CscSecrets::from_parts(
+            "encosto-qtsp",
+            None,
+            None,
+            Some(secret("access-token-fixture")),
+        )
+        .expect("access token credentials are complete");
+
+        assert_eq!(secrets.client_id.as_str(), "");
+        assert_eq!(secrets.client_secret.as_str(), "");
+        assert_eq!(
+            secrets.access_token.as_ref().map(|token| token.as_str()),
+            Some("access-token-fixture")
+        );
+    }
+
+    #[test]
+    fn from_parts_rejects_partial_service_credentials_without_values() {
+        let err = CscSecrets::from_parts(
+            "encosto-qtsp",
+            Some(secret("client-id-fixture")),
+            None,
+            None,
+        )
+        .expect_err("partial service credentials are rejected");
+        let msg = err.to_string();
+
+        assert!(msg.contains("client_id"));
+        assert!(msg.contains("client_secret"));
+        assert!(msg.contains("access_token"));
+        assert!(!msg.contains("client-id-fixture"));
+    }
+
+    #[test]
+    fn from_parts_rejects_blank_service_secret_as_missing() {
+        let err = CscSecrets::from_parts(
+            "encosto-qtsp",
+            Some(secret("client-id-fixture")),
+            Some(secret("   ")),
+            None,
+        )
+        .expect_err("blank service secret is rejected");
+        let msg = err.to_string();
+
+        assert!(msg.contains("client_secret"));
+        assert!(!msg.contains("client-id-fixture"));
+    }
+
+    #[test]
+    fn from_parts_rejects_blank_access_token_as_missing() {
+        let err = CscSecrets::from_parts("encosto-qtsp", None, None, Some(secret("\t")))
+            .expect_err("blank access token is rejected");
+        let msg = err.to_string();
+
+        assert!(msg.contains("access_token"));
+    }
 }

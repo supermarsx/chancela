@@ -46,7 +46,7 @@ use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
-use chancela_cmd::{CmdConfig, CmdEnv, HttpScmdTransport, ScmdClient, ScmdTransport};
+use chancela_cmd::{CmdBasicAuth, CmdConfig, CmdEnv, HttpScmdTransport, ScmdClient, ScmdTransport};
 use chancela_csc::rest::Authorization as CscAuthHeader;
 use chancela_csc::{
     CscAuthorization, CscClient, CscConfig, CscError, CscRemoteSource, CscSecrets, CscTransport,
@@ -92,7 +92,12 @@ use crate::external_signing::{
     EnvelopeView, ExternalSignerSlotStatusDto, ExternalSigningOrderPolicyDto,
     LinkedExternalInviteSlotSignOutcome, LinkedExternalInviteSlotSignedPdfEvidence,
 };
+use crate::secretstore_persist::{
+    DecryptedCredentialRecord, FIELD_ACCESS_TOKEN, FIELD_AMA_CERT_PEM, FIELD_APPLICATION_ID,
+    FIELD_CLIENT_ID, FIELD_CLIENT_SECRET, FIELD_HTTP_BASIC_PASSWORD, FIELD_HTTP_BASIC_USERNAME,
+};
 use crate::settings::{RuntimeTsaProvider, RuntimeTslSource};
+use crate::{CredentialMode, ProviderCredentialError};
 
 /// The signing family this module produces (v1 is CMD-only; t57 ruling 2).
 const FAMILY_CMD: &str = "ChaveMovelDigital";
@@ -2913,9 +2918,9 @@ pub(crate) async fn persist_cc_signed_pdf(
 //
 // **Secrets (t59 ruling 5):** the signer's transient credential (PIN) / activation (OTP/SAD) are
 // held in `Zeroizing`, consumed by the single call, and dropped — never persisted, logged, or
-// echoed. A CSC provider's OAuth client secret comes from `CHANCELA_CSC_<PROVIDER>_*` env only, and
-// only ever rides the transport's `Authorization` header; it never enters the session, the store,
-// or an error message.
+// echoed. A CSC provider's OAuth client secret comes from a complete protected stored record or
+// `CHANCELA_CSC_<PROVIDER>_*` env, and only ever rides the transport's `Authorization` header; it
+// never enters the session or an error message.
 
 /// The status string a successful generic `initiate` returns (an activation is pending: an OTP was
 /// dispatched, or the signer must authorize out-of-band at the provider).
@@ -3019,8 +3024,9 @@ pub struct SignatureProviderView {
     pub label: String,
     /// The evidentiary level a signature from this provider carries (`Qualified`).
     pub evidentiary_level: &'static str,
-    /// Whether the provider is configured (CMD: an ApplicationId resolves; CSC: its
-    /// `CHANCELA_CSC_<PROVIDER>_*` credentials are present). **Never the secret itself.**
+    /// Whether the provider is configured (CMD: an ApplicationId resolves; CSC: protected stored
+    /// credentials are complete or the provider's authorization environment is present). **Never
+    /// the secret itself.**
     pub configured: bool,
 }
 
@@ -3028,8 +3034,12 @@ pub struct SignatureProviderView {
 enum ResolvedProvider {
     /// Chave Móvel Digital (the built-in provider `"cmd"`), with its resolved [`CmdConfig`].
     Cmd(CmdConfig),
-    /// An external CSC-standard QTSP, with its non-secret [`CscConfig`].
-    Csc(CscConfig),
+    /// An external CSC-standard QTSP, with its non-secret [`CscConfig`] and resolved runtime
+    /// credentials (real stored/env material, or the DI placeholder when no real material exists).
+    Csc {
+        config: CscConfig,
+        secrets: CscSecrets,
+    },
 }
 
 // --- GET /v1/signature/providers --------------------------------------------------------------
@@ -3063,7 +3073,7 @@ pub async fn list_signature_providers(
             family: FAMILY_QUALIFIED.to_owned(),
             label: cfg.display_name.clone(),
             evidentiary_level: EVIDENTIARY_QUALIFIED,
-            configured: di || CscSecrets::is_configured(&cfg.provider_id),
+            configured: csc_provider_configured_for_picker(&state, cfg, di),
         });
     }
     Ok(Json(out))
@@ -3159,7 +3169,7 @@ pub async fn initiate_remote_signature(
     // The non-secret display hint (a masked phone for CMD; how to authorize for a CSC provider).
     let activation_hint = match &resolved {
         ResolvedProvider::Cmd(_) => mask_phone(&user_ref),
-        ResolvedProvider::Csc(cfg) => match cfg.authorization {
+        ResolvedProvider::Csc { config, .. } => match config.authorization {
             CscAuthorization::User => "autorize a assinatura na aplicação do prestador".to_owned(),
             _ => "confirme com o código de ativação enviado".to_owned(),
         },
@@ -3407,14 +3417,187 @@ async fn resolve_provider(
                 "prestador de assinatura desconhecido: '{provider_id}'"
             ))
         })?;
-    // Configured? The injected transport seam stands in for real creds in tests; else env secrets.
-    let configured = state.csc_transport.is_some() || CscSecrets::is_configured(&cfg.provider_id);
-    if !configured {
-        return Err(ApiError::Unprocessable(format!(
-            "o prestador '{provider_id}' não está configurado (faltam as credenciais no ambiente)"
-        )));
+    let secrets = resolve_csc_secrets(state, &cfg)?;
+    Ok(ResolvedProvider::Csc {
+        config: cfg,
+        secrets,
+    })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StoredCredentialState {
+    Missing,
+    Complete,
+    Incomplete,
+    Unavailable,
+}
+
+fn csc_provider_configured_for_picker(state: &AppState, cfg: &CscConfig, di: bool) -> bool {
+    match stored_csc_credential_state(state, cfg) {
+        StoredCredentialState::Complete => true,
+        StoredCredentialState::Incomplete | StoredCredentialState::Unavailable => false,
+        StoredCredentialState::Missing => csc_env_configured_for_authorization(cfg) || di,
     }
-    Ok(ResolvedProvider::Csc(cfg))
+}
+
+fn stored_csc_credential_state(state: &AppState, cfg: &CscConfig) -> StoredCredentialState {
+    match state
+        .provider_credentials
+        .read_runtime(CredentialMode::CscQtsp, &cfg.provider_id)
+    {
+        Ok(Some(record)) => {
+            if csc_stored_missing_fields(cfg, &record).is_empty() {
+                StoredCredentialState::Complete
+            } else {
+                StoredCredentialState::Incomplete
+            }
+        }
+        Ok(None) => StoredCredentialState::Missing,
+        Err(_) => StoredCredentialState::Unavailable,
+    }
+}
+
+fn csc_env_configured_for_authorization(cfg: &CscConfig) -> bool {
+    csc_secrets_from_env(cfg).is_ok()
+}
+
+fn resolve_csc_secrets(state: &AppState, config: &CscConfig) -> Result<CscSecrets, ApiError> {
+    match state
+        .provider_credentials
+        .read_runtime(CredentialMode::CscQtsp, &config.provider_id)
+    {
+        Ok(Some(record)) => csc_secrets_from_stored(config, record),
+        Ok(None) => match csc_secrets_from_env(config) {
+            Ok(secrets) => Ok(secrets),
+            Err(_env_err) if state.csc_transport.is_some() => Ok(di_secrets()),
+            Err(env_err) => Err(csc_config_err(env_err)),
+        },
+        Err(err) => Err(provider_credential_runtime_err(
+            CredentialMode::CscQtsp,
+            &config.provider_id,
+            err,
+        )),
+    }
+}
+
+fn csc_secrets_from_stored(
+    config: &CscConfig,
+    mut record: DecryptedCredentialRecord,
+) -> Result<CscSecrets, ApiError> {
+    let missing_fields = csc_stored_missing_fields(config, &record);
+    let client_id = nonblank_runtime_secret(record.fields.remove(FIELD_CLIENT_ID));
+    let client_secret = nonblank_runtime_secret(record.fields.remove(FIELD_CLIENT_SECRET));
+    let access_token = nonblank_runtime_secret(record.fields.remove(FIELD_ACCESS_TOKEN));
+    if !missing_fields.is_empty() {
+        return Err(stored_credentials_incomplete_err(
+            CredentialMode::CscQtsp,
+            &config.provider_id,
+            &missing_fields,
+        ));
+    }
+
+    match config.authorization {
+        CscAuthorization::Service => Ok(CscSecrets {
+            client_id: client_id.expect("checked above"),
+            client_secret: client_secret.expect("checked above"),
+            access_token,
+        }),
+        CscAuthorization::User => Ok(CscSecrets {
+            client_id: Zeroizing::new(String::new()),
+            client_secret: Zeroizing::new(String::new()),
+            access_token: Some(access_token.expect("checked above")),
+        }),
+        _ => Err(stored_credentials_incomplete_err(
+            CredentialMode::CscQtsp,
+            &config.provider_id,
+            &[FIELD_CLIENT_ID, FIELD_CLIENT_SECRET, FIELD_ACCESS_TOKEN],
+        )),
+    }
+}
+
+fn csc_stored_missing_fields(
+    config: &CscConfig,
+    record: &DecryptedCredentialRecord,
+) -> Vec<&'static str> {
+    let has = |field: &str| {
+        record
+            .fields
+            .get(field)
+            .is_some_and(|value| !value.trim().is_empty())
+    };
+    csc_missing_secret_fields(
+        config.authorization,
+        has(FIELD_CLIENT_ID),
+        has(FIELD_CLIENT_SECRET),
+        has(FIELD_ACCESS_TOKEN),
+    )
+}
+
+fn nonblank_runtime_secret(secret: Option<Zeroizing<String>>) -> Option<Zeroizing<String>> {
+    secret.filter(|value| !value.trim().is_empty())
+}
+
+fn csc_secrets_from_env(config: &CscConfig) -> Result<CscSecrets, CscError> {
+    let secrets = CscSecrets::from_env(&config.provider_id)?;
+    csc_secrets_for_authorization(config, secrets)
+}
+
+fn csc_secrets_for_authorization(
+    config: &CscConfig,
+    secrets: CscSecrets,
+) -> Result<CscSecrets, CscError> {
+    let missing_fields = csc_missing_secret_fields(
+        config.authorization,
+        !secrets.client_id.trim().is_empty(),
+        !secrets.client_secret.trim().is_empty(),
+        secrets
+            .access_token
+            .as_ref()
+            .is_some_and(|token| !token.trim().is_empty()),
+    );
+    match (config.authorization, missing_fields.is_empty()) {
+        (CscAuthorization::Service | CscAuthorization::User, true) => Ok(secrets),
+        (CscAuthorization::Service, false) => Err(CscError::Config(format!(
+            "provider '{}' is not configured for service authorization: set client_id + client_secret",
+            config.provider_id
+        ))),
+        (CscAuthorization::User, false) => Err(CscError::Config(format!(
+            "provider '{}' is not configured for user authorization: set access_token",
+            config.provider_id
+        ))),
+        (_, _) => Err(CscError::Config(format!(
+            "provider '{}' uses an unsupported authorization model",
+            config.provider_id
+        ))),
+    }
+}
+
+fn csc_missing_secret_fields(
+    authorization: CscAuthorization,
+    has_client_id: bool,
+    has_client_secret: bool,
+    has_access_token: bool,
+) -> Vec<&'static str> {
+    match authorization {
+        CscAuthorization::Service => {
+            let mut missing = Vec::new();
+            if !has_client_id {
+                missing.push(FIELD_CLIENT_ID);
+            }
+            if !has_client_secret {
+                missing.push(FIELD_CLIENT_SECRET);
+            }
+            missing
+        }
+        CscAuthorization::User => {
+            if has_access_token {
+                Vec::new()
+            } else {
+                vec![FIELD_ACCESS_TOKEN]
+            }
+        }
+        _ => vec![FIELD_CLIENT_ID, FIELD_CLIENT_SECRET, FIELD_ACCESS_TOKEN],
+    }
 }
 
 /// The signing-family label for a resolved provider id (CMD → `ChaveMovelDigital`; any CSC QTSP →
@@ -3484,12 +3667,12 @@ async fn run_remote_initiate(
                 .map_err(|e| ApiError::Internal(format!("remote initiate task failed: {e}")))?
             }
         }
-        ResolvedProvider::Csc(config) => {
+        ResolvedProvider::Csc { config, secrets } => {
             if let Some(factory) = &state.csc_transport {
                 let client = CscClient::new(
                     BoxedCscTransport(factory(config)),
                     config.clone(),
-                    di_secrets(),
+                    secrets.clone(),
                 );
                 let source = CscRemoteSource::new(client);
                 let mut policy = build_trust_policy(policy_factory.clone(), tsl_source.clone())?;
@@ -3503,8 +3686,8 @@ async fn run_remote_initiate(
                     .initiate(&init, &prepared, Some(policy.as_mut()))
                     .map_err(map_remote_error)
             } else {
-                // Production: env secrets (never persisted), real HTTP transport off the runtime.
-                let secrets = CscSecrets::from_env(&config.provider_id).map_err(csc_config_err)?;
+                // Production: resolved stored/env secrets, real HTTP transport off the runtime.
+                let secrets = secrets.clone();
                 let config = config.clone();
                 let policy_factory = policy_factory.clone();
                 let tsl_source = tsl_source.clone();
@@ -3567,19 +3750,19 @@ async fn run_remote_confirm(
                 .map_err(|e| ApiError::Internal(format!("remote confirm task failed: {e}")))?
             }
         }
-        ResolvedProvider::Csc(config) => {
+        ResolvedProvider::Csc { config, secrets } => {
             if let Some(factory) = &state.csc_transport {
                 let client = CscClient::new(
                     BoxedCscTransport(factory(config)),
                     config.clone(),
-                    di_secrets(),
+                    secrets.clone(),
                 );
                 let source = CscRemoteSource::new(client);
                 source
                     .confirm(session, &activation)
                     .map_err(map_remote_error)
             } else {
-                let secrets = CscSecrets::from_env(&config.provider_id).map_err(csc_config_err)?;
+                let secrets = secrets.clone();
                 let config = config.clone();
                 let session = session.clone();
                 tokio::task::spawn_blocking(move || {
@@ -3613,10 +3796,9 @@ impl CscTransport for BoxedCscTransport {
     }
 }
 
-/// Placeholder CSC secrets used ONLY when the DI transport seam is injected (tests): a
-/// [`MockCscTransport`](chancela_csc::MockCscTransport) ignores the client secret (it never reaches
-/// a real endpoint), so no real credential is needed to exercise the handler flow. Production loads
-/// the real secrets from `CHANCELA_CSC_<PROVIDER>_*` env vars via [`CscSecrets::from_env`].
+/// Placeholder CSC secrets used ONLY when the DI transport seam is injected and no stored/env CSC
+/// credentials exist. A [`MockCscTransport`](chancela_csc::MockCscTransport) ignores the client
+/// secret, so no real credential is needed to exercise the handler flow.
 fn di_secrets() -> CscSecrets {
     CscSecrets::new("chancela-di-client", "chancela-di-secret")
 }
@@ -3655,8 +3837,8 @@ fn map_remote_error(e: chancela_signing::SigningError) -> ApiError {
 /// Load the configured CSC remote-signing providers from the environment (t59-s3 / drift-safe env
 /// config shape). The provider LIST + non-secret selectors come from `CHANCELA_CSC_*` env vars —
 /// **never** the web-asserted `/v1/settings` document — so adding a provider never drifts a web
-/// contract fixture. Secrets stay in `CHANCELA_CSC_<PROVIDER>_{CLIENT_ID,CLIENT_SECRET,ACCESS_TOKEN}`
-/// (loaded separately by [`CscSecrets::from_env`]), never here.
+/// contract fixture. Runtime secrets are resolved later from protected storage or
+/// `CHANCELA_CSC_<PROVIDER>_{CLIENT_ID,CLIENT_SECRET,ACCESS_TOKEN}`, never here.
 ///
 /// Env shape (`<P>` = the upper-cased, non-alphanumeric-sanitized provider id):
 /// - `CHANCELA_CSC_PROVIDERS` — comma/space/`;`-separated provider ids to enable (unset → none).
@@ -5782,14 +5964,35 @@ fn build_trust_policy(
     Ok(Box::new(TslTrustPolicy::new(source)))
 }
 
-/// Resolve the effective [`CmdConfig`]: environment secrets win (ApplicationId + BasicAuth +
-/// AMA cert PEM); the non-secret settings selectors (`signing.cmd.env` / `.application_id`) fill
-/// in when env is unset. A missing ApplicationId, or a prod config without the AMA cert, is a
-/// client-actionable 422.
+/// Resolve the effective [`CmdConfig`]: a complete stored CMD record wins; otherwise environment
+/// secrets are used, and the existing non-secret settings selector fallback fills in the
+/// ApplicationId when env is unset. A present but incomplete stored record fails closed instead of
+/// mixing with env/settings.
 async fn resolve_cmd_config(state: &AppState) -> Result<CmdConfig, ApiError> {
     let cmd = { state.settings.read().await.signing.cmd.clone() };
-    // Env-supplied secrets (never from the settings JSON).
-    let env_cfg = CmdConfig::from_env().ok();
+    match state
+        .provider_credentials
+        .read_runtime(CredentialMode::Cmd, "")
+    {
+        Ok(Some(record)) => return cmd_config_from_stored(&cmd, record),
+        Ok(None) => {}
+        Err(err) => {
+            return Err(provider_credential_runtime_err(
+                CredentialMode::Cmd,
+                "",
+                err,
+            ));
+        }
+    }
+
+    // Env-supplied secrets (never from the settings JSON). A truly absent env config may still fall
+    // back to the non-secret settings ApplicationId, but malformed CHANCELA_CMD_* values fail
+    // closed instead of being swallowed.
+    let env_cfg = match CmdConfig::from_env() {
+        Ok(cfg) => Some(cfg),
+        Err(err) if cmd_env_config_is_missing(&err) => None,
+        Err(err) => return Err(cmd_env_config_err(err)),
+    };
     let application_id = env_cfg
         .as_ref()
         .map(|c| c.application_id.clone())
@@ -5817,6 +6020,143 @@ async fn resolve_cmd_config(state: &AppState) -> Result<CmdConfig, ApiError> {
     cfg.field_encryptor()
         .map_err(|e| ApiError::Unprocessable(format!("configuração CMD inválida: {e}")))?;
     Ok(cfg)
+}
+
+fn cmd_config_from_stored(
+    cmd: &crate::settings::SigningCmdSettings,
+    mut record: DecryptedCredentialRecord,
+) -> Result<CmdConfig, ApiError> {
+    let application_id = nonblank_runtime_secret(record.fields.remove(FIELD_APPLICATION_ID));
+    let username = nonblank_runtime_secret(record.fields.remove(FIELD_HTTP_BASIC_USERNAME));
+    let password = nonblank_runtime_secret(record.fields.remove(FIELD_HTTP_BASIC_PASSWORD));
+    let ama_cert_pem = nonblank_runtime_secret(record.fields.remove(FIELD_AMA_CERT_PEM));
+    let mut missing = Vec::new();
+    if application_id.is_none() {
+        missing.push(FIELD_APPLICATION_ID);
+    }
+    match (&username, &password) {
+        (Some(_), None) => missing.push(FIELD_HTTP_BASIC_PASSWORD),
+        (None, Some(_)) => missing.push(FIELD_HTTP_BASIC_USERNAME),
+        _ => {}
+    }
+    if matches!(cmd.env, crate::settings::CmdEnvSetting::Prod) && ama_cert_pem.is_none() {
+        missing.push(FIELD_AMA_CERT_PEM);
+    }
+    if !missing.is_empty() {
+        return Err(stored_credentials_incomplete_err(
+            CredentialMode::Cmd,
+            "",
+            &missing,
+        ));
+    }
+    let application_id = application_id.expect("checked above");
+    if application_id.trim().is_empty() {
+        return Err(stored_credentials_invalid_err(
+            CredentialMode::Cmd,
+            "",
+            FIELD_APPLICATION_ID,
+        ));
+    }
+    let basic_auth = match (username, password) {
+        (Some(username), Some(password)) => Some(CmdBasicAuth::new(
+            username.as_str().to_owned(),
+            password.as_str().to_owned(),
+        )),
+        _ => None,
+    };
+    let cfg = CmdConfig {
+        env: cmd_env_from_setting(cmd.env),
+        application_id: application_id.as_str().to_owned(),
+        basic_auth,
+        ama_cert_pem: ama_cert_pem.map(|pem| pem.as_str().to_owned()),
+    };
+    cfg.field_encryptor()
+        .map_err(|_| stored_credentials_invalid_err(CredentialMode::Cmd, "", FIELD_AMA_CERT_PEM))?;
+    Ok(cfg)
+}
+
+fn cmd_env_from_setting(env: crate::settings::CmdEnvSetting) -> CmdEnv {
+    match env {
+        crate::settings::CmdEnvSetting::Preprod => CmdEnv::Preprod,
+        crate::settings::CmdEnvSetting::Prod => CmdEnv::Prod,
+    }
+}
+
+fn cmd_env_config_is_missing(err: &chancela_cmd::CmdError) -> bool {
+    matches!(
+        err,
+        chancela_cmd::CmdError::Config(msg)
+            if msg == "CHANCELA_CMD_APPLICATION_ID is not set"
+    )
+}
+
+fn cmd_env_config_err(_err: chancela_cmd::CmdError) -> ApiError {
+    ApiError::Unprocessable(
+        "configuração CMD inválida: variáveis de ambiente CHANCELA_CMD_* malformadas; valores não devolvidos"
+            .to_owned(),
+    )
+}
+
+fn stored_credentials_incomplete_err(
+    mode: CredentialMode,
+    provider_id: &str,
+    fields: &[&'static str],
+) -> ApiError {
+    let fields = if fields.is_empty() {
+        "none".to_owned()
+    } else {
+        fields.join(", ")
+    };
+    ApiError::Unprocessable(format!(
+        "stored provider credentials for mode '{}' provider '{}' are incomplete: missing fields {fields}",
+        mode.as_str(),
+        provider_label(provider_id)
+    ))
+}
+
+fn stored_credentials_invalid_err(
+    mode: CredentialMode,
+    provider_id: &str,
+    field: &'static str,
+) -> ApiError {
+    ApiError::Unprocessable(format!(
+        "stored provider credentials for mode '{}' provider '{}' are invalid: field {field}",
+        mode.as_str(),
+        provider_label(provider_id)
+    ))
+}
+
+fn provider_credential_runtime_err(
+    mode: CredentialMode,
+    provider_id: &str,
+    err: ProviderCredentialError,
+) -> ApiError {
+    let reason = match err {
+        ProviderCredentialError::RuntimeStrictModeUnprotected { .. } => {
+            "strict credential storage requires confidential protection"
+        }
+        ProviderCredentialError::CorruptSidecar(_) => "credential sidecar failed closed",
+        ProviderCredentialError::Secret(_) => {
+            "credential key unavailable or field authentication failed"
+        }
+        ProviderCredentialError::Poisoned => "credential store unavailable",
+        ProviderCredentialError::UnknownField { .. } | ProviderCredentialError::Io { .. } => {
+            "credential store operation failed"
+        }
+    };
+    ApiError::Unprocessable(format!(
+        "stored provider credentials for mode '{}' provider '{}' cannot be used: {reason}",
+        mode.as_str(),
+        provider_label(provider_id)
+    ))
+}
+
+fn provider_label(provider_id: &str) -> &str {
+    if provider_id.is_empty() {
+        "<default>"
+    } else {
+        provider_id
+    }
 }
 
 // --- helpers ----------------------------------------------------------------------------------

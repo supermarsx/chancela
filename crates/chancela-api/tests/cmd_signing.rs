@@ -25,13 +25,16 @@ use der::{Encode, EncodePem};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use spki::{AlgorithmIdentifierOwned, SubjectPublicKeyInfoOwned};
+use tokio::sync::Mutex as AsyncMutex;
 use tower::ServiceExt;
 use x509_cert::certificate::{Certificate, TbsCertificate, Version};
 use x509_cert::name::Name;
 use x509_cert::serial_number::SerialNumber;
 use x509_cert::time::Validity;
 
-use chancela_api::{AppState, CmdEnvSetting, router};
+use chancela_api::{
+    AppState, CmdCredentialFields, CmdEnvSetting, CredentialFieldSet, CredentialMode, router,
+};
 use chancela_cmd::soap::{ACTION_CCMOVEL_SIGN, ACTION_GET_CERTIFICATE, ACTION_VALIDATE_OTP};
 use chancela_cmd::{CmdError, ScmdTransport};
 use chancela_core::ActId;
@@ -40,6 +43,7 @@ use chancela_signing::{StaticTrustPolicy, TrustPolicy, TrustedListStatus};
 use common::TEST_PASSWORD;
 use common::tsa_http::MockTsaServer;
 use uuid::Uuid;
+use zeroize::Zeroizing;
 
 const OID_SHA256_WITH_RSA: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.113549.1.1.11");
 const SHA256_DIGEST_INFO_PREFIX: [u8; 19] = [
@@ -58,6 +62,12 @@ const CMD_ENV_KEYS: [&str; 5] = [
     "CHANCELA_CMD_HTTP_BASIC_PASSWORD",
     "CHANCELA_CMD_AMA_CERT_PEM",
 ];
+const PROVIDER_CREDENTIAL_ENV_KEYS: [&str; 3] = [
+    "CHANCELA_CREDENTIAL_KEY",
+    "CHANCELA_CREDENTIAL_KEY_FILE",
+    "CHANCELA_CREDENTIAL_STRICT",
+];
+static ENV_LOCK: AsyncMutex<()> = AsyncMutex::const_new(());
 
 // --- ephemeral in-test RSA signer (mirrors chancela-pades/signing tests) ----------------------
 
@@ -140,6 +150,7 @@ struct SmartCmdTransport {
     captured_hash: Arc<Mutex<Option<Vec<u8>>>>,
     reject_otp: bool,
     fail_action: Option<&'static str>,
+    expected_application_id_b64: Option<String>,
 }
 
 impl SmartCmdTransport {
@@ -151,12 +162,29 @@ impl SmartCmdTransport {
             captured_hash: Arc::new(Mutex::new(None)),
             reject_otp,
             fail_action: None,
+            expected_application_id_b64: None,
         }
     }
 
     fn with_transport_error_on(mut self, action: &'static str) -> Self {
         self.fail_action = Some(action);
         self
+    }
+
+    fn expect_application_id(mut self, application_id: &str) -> Self {
+        self.expected_application_id_b64 = Some(STANDARD.encode(application_id.as_bytes()));
+        self
+    }
+
+    fn assert_expected_application_id(&self, soap_body: &str) -> Result<(), CmdError> {
+        if let Some(expected) = &self.expected_application_id_b64 {
+            if !soap_body.contains(expected) {
+                return Err(CmdError::Transport(
+                    "unexpected CMD application id source".to_owned(),
+                ));
+            }
+        }
+        Ok(())
     }
 }
 
@@ -167,6 +195,7 @@ impl ScmdTransport for SmartCmdTransport {
                 "simulated SCMD outage at {action}"
             )));
         }
+        self.assert_expected_application_id(soap_body)?;
         if action == ACTION_GET_CERTIFICATE {
             Ok(get_certificate_response(&self.leaf_pem, &self.issuer_pem))
         } else if action == ACTION_CCMOVEL_SIGN {
@@ -273,18 +302,96 @@ impl Drop for TempDir {
 
 struct EnvRestore(Vec<(&'static str, Option<String>)>);
 
+impl EnvRestore {
+    fn capture(keys: &[&'static str]) -> Self {
+        Self(
+            keys.iter()
+                .copied()
+                .map(|key| (key, std::env::var(key).ok()))
+                .collect(),
+        )
+    }
+
+    fn capture_and_remove(keys: &[&'static str]) -> Self {
+        let saved = keys
+            .iter()
+            .copied()
+            .map(|key| {
+                let value = std::env::var(key).ok();
+                unsafe {
+                    std::env::remove_var(key);
+                }
+                (key, value)
+            })
+            .collect();
+        Self(saved)
+    }
+}
+
 fn without_cmd_env() -> EnvRestore {
-    let saved = CMD_ENV_KEYS
-        .into_iter()
-        .map(|key| {
-            let value = std::env::var(key).ok();
-            unsafe {
-                std::env::remove_var(key);
+    EnvRestore::capture_and_remove(&CMD_ENV_KEYS)
+}
+
+fn zeroizing(value: &str) -> Zeroizing<String> {
+    Zeroizing::new(value.to_owned())
+}
+
+fn set_provider_credential_test_key() {
+    unsafe {
+        std::env::set_var(
+            "CHANCELA_CREDENTIAL_KEY",
+            "cmd-signing-provider-credential-test-key",
+        );
+        std::env::remove_var("CHANCELA_CREDENTIAL_KEY_FILE");
+        std::env::remove_var("CHANCELA_CREDENTIAL_STRICT");
+    }
+}
+
+fn clear_cmd_env() {
+    for key in CMD_ENV_KEYS {
+        unsafe {
+            std::env::remove_var(key);
+        }
+    }
+}
+
+fn seed_stored_cmd_application_id(state: &AppState, application_id: &str) {
+    state
+        .provider_credentials
+        .put(
+            CredentialMode::Cmd,
+            "",
+            CmdCredentialFields {
+                application_id: Some(zeroizing(application_id)),
+                ..Default::default()
             }
-            (key, value)
-        })
-        .collect();
-    EnvRestore(saved)
+            .into_set_pairs(),
+            &[],
+        )
+        .expect("seed stored CMD credentials");
+}
+
+fn seed_partial_stored_cmd_record(state: &AppState) {
+    state
+        .provider_credentials
+        .put(
+            CredentialMode::Cmd,
+            "",
+            CmdCredentialFields {
+                http_basic_username: Some(zeroizing("stored-user-fixture")),
+                ..Default::default()
+            }
+            .into_set_pairs(),
+            &[],
+        )
+        .expect("seed partial stored CMD credentials");
+}
+
+fn restore_keys() -> Vec<&'static str> {
+    CMD_ENV_KEYS
+        .into_iter()
+        .chain(PROVIDER_CREDENTIAL_ENV_KEYS)
+        .collect()
 }
 
 impl Drop for EnvRestore {
@@ -581,6 +688,228 @@ async fn expire_pending_session(state: &AppState, session_id: &str) {
 }
 
 // --- tests ------------------------------------------------------------------------------------
+
+#[tokio::test]
+async fn cmd_initiate_uses_stored_application_id_with_env_cleared() {
+    let _guard = ENV_LOCK.lock().await;
+    let keys = restore_keys();
+    let _env = EnvRestore::capture_and_remove(&keys);
+    set_provider_credential_test_key();
+
+    let dir = TempDir::new();
+    let leaf = RsaSigner::new("Amélia Marques (CMD teste)", 1);
+    let issuer = RsaSigner::new("Encosto Estratégico — EC Teste", 2);
+    let transport = SmartCmdTransport::new(&leaf, &issuer, false).expect_application_id(APP_ID);
+    let state = state_at(&dir.0, transport, true).await;
+    state.settings.write().await.signing.cmd.application_id = None;
+    seed_stored_cmd_application_id(&state, APP_ID);
+    let (token, _uid) = bootstrap(&state).await;
+    let act_id = seal_an_act(&state, &token).await;
+
+    let (status, init) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/cmd/initiate"),
+            &token,
+            json!({ "phone": PHONE, "pin": PIN }),
+        ),
+    )
+    .await;
+
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "stored CMD config initiates: {init}"
+    );
+    assert_eq!(init["status"], "otp_pending");
+}
+
+#[tokio::test]
+async fn cmd_stored_application_id_beats_env_application_id() {
+    let _guard = ENV_LOCK.lock().await;
+    let keys = restore_keys();
+    let _env = EnvRestore::capture(&keys);
+    clear_cmd_env();
+    set_provider_credential_test_key();
+    unsafe {
+        std::env::set_var("CHANCELA_CMD_APPLICATION_ID", "ENV-CMD-APP-FIXTURE");
+    }
+
+    let dir = TempDir::new();
+    let leaf = RsaSigner::new("Amélia Marques (CMD teste)", 1);
+    let issuer = RsaSigner::new("Encosto Estratégico — EC Teste", 2);
+    let transport = SmartCmdTransport::new(&leaf, &issuer, false).expect_application_id(APP_ID);
+    let state = state_at(&dir.0, transport, true).await;
+    state.settings.write().await.signing.cmd.application_id = None;
+    seed_stored_cmd_application_id(&state, APP_ID);
+    let (token, _uid) = bootstrap(&state).await;
+    let act_id = seal_an_act(&state, &token).await;
+
+    let (status, init) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/cmd/initiate"),
+            &token,
+            json!({ "phone": PHONE, "pin": PIN }),
+        ),
+    )
+    .await;
+
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "stored CMD config beats env: {init}"
+    );
+}
+
+#[tokio::test]
+async fn cmd_partial_stored_record_fails_without_env_mixing() {
+    let _guard = ENV_LOCK.lock().await;
+    let keys = restore_keys();
+    let _env = EnvRestore::capture(&keys);
+    clear_cmd_env();
+    set_provider_credential_test_key();
+    unsafe {
+        std::env::set_var("CHANCELA_CMD_APPLICATION_ID", "ENV-CMD-APP-FIXTURE");
+    }
+
+    let dir = TempDir::new();
+    let leaf = RsaSigner::new("Amélia Marques (CMD teste)", 1);
+    let issuer = RsaSigner::new("Encosto Estratégico — EC Teste", 2);
+    let transport = SmartCmdTransport::new(&leaf, &issuer, false)
+        .with_transport_error_on(ACTION_GET_CERTIFICATE);
+    let state = state_at(&dir.0, transport, true).await;
+    state.settings.write().await.signing.cmd.application_id = None;
+    seed_partial_stored_cmd_record(&state);
+    let (token, _uid) = bootstrap(&state).await;
+    let act_id = seal_an_act(&state, &token).await;
+
+    let (status, err) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/cmd/initiate"),
+            &token,
+            json!({ "phone": PHONE, "pin": PIN }),
+        ),
+    )
+    .await;
+
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "partial stored: {err}"
+    );
+    let msg = err["error"].as_str().unwrap_or_default();
+    assert!(msg.contains("mode 'cmd'"), "mode is named: {err}");
+    assert!(
+        msg.contains("application_id"),
+        "missing field is named: {err}"
+    );
+    assert!(
+        msg.contains("http_basic_password"),
+        "partial BasicAuth pair is named: {err}"
+    );
+    assert!(
+        !msg.contains("ENV-CMD-APP-FIXTURE") && !msg.contains("stored-user-fixture"),
+        "error must not contain stored or env values: {err}"
+    );
+    assert!(state.pending_signatures.read().await.is_empty());
+    assert_no_signed_artifact_or_event(&state, &token, &act_id).await;
+}
+
+#[tokio::test]
+async fn cmd_env_application_id_still_works_without_stored_record() {
+    let _guard = ENV_LOCK.lock().await;
+    let keys = restore_keys();
+    let _env = EnvRestore::capture(&keys);
+    clear_cmd_env();
+    unsafe {
+        std::env::remove_var("CHANCELA_CREDENTIAL_KEY");
+        std::env::remove_var("CHANCELA_CREDENTIAL_KEY_FILE");
+        std::env::remove_var("CHANCELA_CREDENTIAL_STRICT");
+        std::env::set_var("CHANCELA_CMD_APPLICATION_ID", APP_ID);
+    }
+
+    let dir = TempDir::new();
+    let leaf = RsaSigner::new("Amélia Marques (CMD teste)", 1);
+    let issuer = RsaSigner::new("Encosto Estratégico — EC Teste", 2);
+    let transport = SmartCmdTransport::new(&leaf, &issuer, false).expect_application_id(APP_ID);
+    let state = state_at(&dir.0, transport, true).await;
+    state.settings.write().await.signing.cmd.application_id = None;
+    let (token, _uid) = bootstrap(&state).await;
+    let act_id = seal_an_act(&state, &token).await;
+
+    let (status, init) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/cmd/initiate"),
+            &token,
+            json!({ "phone": PHONE, "pin": PIN }),
+        ),
+    )
+    .await;
+
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "env CMD config still initiates: {init}"
+    );
+}
+
+#[tokio::test]
+async fn cmd_malformed_env_fails_closed_without_settings_fallback() {
+    let _guard = ENV_LOCK.lock().await;
+    let keys = restore_keys();
+    let _env = EnvRestore::capture(&keys);
+    clear_cmd_env();
+    unsafe {
+        std::env::remove_var("CHANCELA_CREDENTIAL_KEY");
+        std::env::remove_var("CHANCELA_CREDENTIAL_KEY_FILE");
+        std::env::remove_var("CHANCELA_CREDENTIAL_STRICT");
+        std::env::set_var("CHANCELA_CMD_APPLICATION_ID", "ENV-CMD-APP-FIXTURE");
+        std::env::set_var("CHANCELA_CMD_HTTP_BASIC_USERNAME", "env-user-fixture");
+    }
+
+    let dir = TempDir::new();
+    let leaf = RsaSigner::new("Amélia Marques (CMD teste)", 1);
+    let issuer = RsaSigner::new("Encosto Estratégico — EC Teste", 2);
+    let transport = SmartCmdTransport::new(&leaf, &issuer, false)
+        .with_transport_error_on(ACTION_GET_CERTIFICATE);
+    let state = state_at(&dir.0, transport, true).await;
+    let (token, _uid) = bootstrap(&state).await;
+    let act_id = seal_an_act(&state, &token).await;
+
+    let (status, err) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/cmd/initiate"),
+            &token,
+            json!({ "phone": PHONE, "pin": PIN }),
+        ),
+    )
+    .await;
+
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "malformed CMD env must fail before settings fallback/transport: {err}"
+    );
+    let msg = err["error"].as_str().unwrap_or_default();
+    assert!(msg.contains("configuração CMD inválida"), "{err}");
+    assert!(
+        !msg.contains("ENV-CMD-APP-FIXTURE")
+            && !msg.contains("env-user-fixture")
+            && !msg.contains("simulated SCMD outage"),
+        "error must not contain env values or transport output: {err}"
+    );
+    assert!(state.pending_signatures.read().await.is_empty());
+    assert_no_signed_artifact_or_event(&state, &token, &act_id).await;
+}
 
 #[tokio::test]
 async fn cmd_signing_round_trip_produces_a_validating_signed_pdf() {
@@ -967,6 +1296,7 @@ async fn cmd_malformed_tsa_token_leaves_no_signed_artifact() {
 
 #[tokio::test]
 async fn cmd_initiate_requires_application_id_and_leaves_no_signature() {
+    let _guard = ENV_LOCK.lock().await;
     let _env = without_cmd_env();
     let dir = TempDir::new();
     let leaf = RsaSigner::new("Amélia Marques (CMD teste)", 1);
@@ -1008,6 +1338,7 @@ async fn cmd_initiate_requires_application_id_and_leaves_no_signature() {
 
 #[tokio::test]
 async fn cmd_prod_without_ama_certificate_fails_before_scmd_and_leaves_no_signature() {
+    let _guard = ENV_LOCK.lock().await;
     let _env = without_cmd_env();
     let dir = TempDir::new();
     let leaf = RsaSigner::new("Amélia Marques (CMD teste)", 1);
@@ -1048,6 +1379,8 @@ async fn cmd_prod_without_ama_certificate_fails_before_scmd_and_leaves_no_signat
 
 #[tokio::test]
 async fn cmd_initiate_rejects_withdrawn_and_unknown_trust_policy() {
+    let _guard = ENV_LOCK.lock().await;
+    let _env = without_cmd_env();
     for trust_status in [TrustedListStatus::Withdrawn, TrustedListStatus::Unknown] {
         let dir = TempDir::new();
         let leaf = RsaSigner::new("Amélia Marques (CMD teste)", 1);

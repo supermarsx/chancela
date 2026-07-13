@@ -28,17 +28,22 @@ use axum::Json;
 use axum::body::Bytes;
 use axum::extract::{Query, State};
 use chancela_cae::{CaeSourceFormat, PreferredOfficialSource};
+use chancela_cmd::{CmdBasicAuth, CmdConfig, CmdEnv};
 use chancela_core::NumberingScheme;
-use chancela_csc::CscSecrets;
+use chancela_csc::{CscAuthorization, CscConfig, CscSecrets};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use chancela_authz::{Permission, Scope};
 
-use crate::AppState;
 use crate::actor::{CurrentActor, CurrentAttestor};
 use crate::authz::require_permission;
 use crate::error::ApiError;
+use crate::secretstore_persist::{
+    FIELD_ACCESS_TOKEN, FIELD_AMA_CERT_PEM, FIELD_APPLICATION_ID, FIELD_CLIENT_ID,
+    FIELD_CLIENT_SECRET, FIELD_HTTP_BASIC_PASSWORD, FIELD_HTTP_BASIC_USERNAME,
+};
+use crate::{AppState, CredentialMode, DecryptedCredentialRecord};
 
 /// The current schema version of the settings document. Bumped only on a breaking shape
 /// change; a stored document with an older/newer value still loads (unknown fields ignored,
@@ -976,9 +981,9 @@ pub struct SigningSettings {
     /// sealing still succeeds and the unsigned PDF/A still exists; the async OTP signing flow is a
     /// distinct post-seal step. With it `false`, the non-qualified finalized path stays fully usable.
     pub require_qualified_for_seal: bool,
-    /// Chave Móvel Digital signing configuration (t57 Slice 1). Non-secret selectors only — the AMA
-    /// ApplicationId secret material and the field-encryption certificate PEM come from the
-    /// environment (`CHANCELA_CMD_*`), never this echoed settings document.
+    /// Chave Móvel Digital signing configuration (t57 Slice 1). Non-secret selectors only — runtime
+    /// credentials and the field-encryption certificate PEM come from protected storage or
+    /// `CHANCELA_CMD_*`, never this echoed settings document.
     pub cmd: SigningCmdSettings,
     /// Read-only provider-mode metadata for the settings UI. This is stamped server-side from
     /// non-secret config on GET/PUT; missing or stale client values are ignored.
@@ -1444,7 +1449,8 @@ fn default_signing_provider_metadata() -> Vec<SigningProviderMetadata> {
             configured: false,
             production_blocked: true,
             local_only: false,
-            note: "No CSC/QTSP provider is configured in the environment.".to_owned(),
+            note: "No CSC/QTSP provider is configured in protected storage or environment."
+                .to_owned(),
         },
         SigningProviderMetadata {
             id: "soft_pkcs12".to_owned(),
@@ -1461,11 +1467,10 @@ fn default_signing_provider_metadata() -> Vec<SigningProviderMetadata> {
 /// Chave Móvel Digital signing configuration surfaced in the settings document (t57 F1).
 ///
 /// **Secrets never live here.** The AMA field-encryption certificate PEM and HTTP BasicAuth
-/// credentials are read from the environment (`CHANCELA_CMD_AMA_CERT_PEM`,
-/// `CHANCELA_CMD_HTTP_BASIC_USERNAME`, `CHANCELA_CMD_HTTP_BASIC_PASSWORD`) by
-/// `chancela_cmd::CmdConfig::from_env`. This sub-object carries only the non-secret selectors an
-/// operator sees: which environment, the (non-secret) ApplicationId echo, and a read-only "is the
-/// AMA cert configured?" indicator.
+/// credentials are read from protected storage or the environment (`CHANCELA_CMD_AMA_CERT_PEM`,
+/// `CHANCELA_CMD_HTTP_BASIC_USERNAME`, `CHANCELA_CMD_HTTP_BASIC_PASSWORD`) by the runtime resolver.
+/// This sub-object carries only the non-secret selectors an operator sees: which environment, the
+/// optional ApplicationId echo, and a read-only "is the AMA cert configured?" indicator.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct SigningCmdSettings {
@@ -1923,13 +1928,20 @@ fn is_http_url(s: &str) -> bool {
 }
 
 fn stamp_signing_provider_metadata(state: &AppState, settings: &mut Settings) {
-    let cmd_configured = settings
+    let settings_cmd_configured = settings
         .signing
         .cmd
         .application_id
         .as_deref()
         .is_some_and(|id| !id.trim().is_empty());
+    let stored_cmd = stored_cmd_metadata_credential_state(state, &settings.signing.cmd);
+    let cmd_configured = match stored_cmd.state {
+        MetadataCredentialState::Complete => true,
+        MetadataCredentialState::Incomplete | MetadataCredentialState::Unavailable => false,
+        MetadataCredentialState::Missing => settings_cmd_configured,
+    };
     let cmd_prod = settings.signing.cmd.env == CmdEnvSetting::Prod;
+    settings.signing.cmd.ama_cert_configured |= stored_cmd.ama_cert_configured;
     let cmd_production_blocked =
         !cmd_configured || !cmd_prod || !settings.signing.cmd.ama_cert_configured;
 
@@ -1976,12 +1988,13 @@ fn stamp_signing_provider_metadata(state: &AppState, settings: &mut Settings) {
             configured: false,
             production_blocked: true,
             local_only: false,
-            note: "No CSC/QTSP provider is configured in the environment.".to_owned(),
+            note: "No CSC/QTSP provider is configured in protected storage or environment."
+                .to_owned(),
         });
     } else {
         let injected_transport = state.csc_transport.is_some();
         for cfg in state.csc_providers.iter() {
-            let configured = injected_transport || CscSecrets::is_configured(&cfg.provider_id);
+            let configured = csc_metadata_credentials_configured(state, cfg, injected_transport);
             providers.push(SigningProviderMetadata {
                 id: cfg.provider_id.clone(),
                 mode: SigningProviderMode::CscQtsp,
@@ -1991,13 +2004,13 @@ fn stamp_signing_provider_metadata(state: &AppState, settings: &mut Settings) {
                 local_only: false,
                 note: if configured {
                     if cfg.sandbox {
-                        "CSC/QTSP provider is configured in sandbox mode.".to_owned()
+                        "CSC/QTSP provider is configured in sandbox mode; runtime credentials stay in protected storage or environment.".to_owned()
                     } else {
-                        "CSC/QTSP provider is configured; secrets stay in the environment."
+                        "CSC/QTSP provider is configured; runtime credentials stay in protected storage or environment and are not returned."
                             .to_owned()
                     }
                 } else {
-                    "CSC/QTSP provider metadata exists, but runtime credentials are missing."
+                    "CSC/QTSP provider metadata exists, but authorization-matching runtime credentials are missing or unavailable."
                         .to_owned()
                 },
             });
@@ -2016,6 +2029,220 @@ fn stamp_signing_provider_metadata(state: &AppState, settings: &mut Settings) {
     });
 
     settings.signing.providers = providers;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MetadataCredentialState {
+    Missing,
+    Complete,
+    Incomplete,
+    Unavailable,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct CmdMetadataCredentialState {
+    state: MetadataCredentialState,
+    ama_cert_configured: bool,
+}
+
+fn stored_cmd_metadata_credential_state(
+    state: &AppState,
+    cmd: &SigningCmdSettings,
+) -> CmdMetadataCredentialState {
+    match state
+        .provider_credentials
+        .read_runtime(CredentialMode::Cmd, "")
+    {
+        Ok(Some(record)) => {
+            let ama_cert_configured = credential_field_nonblank(&record, FIELD_AMA_CERT_PEM);
+            let state = if cmd_stored_metadata_config(cmd, &record)
+                .is_some_and(|cfg| cfg.field_encryptor().is_ok())
+            {
+                MetadataCredentialState::Complete
+            } else {
+                MetadataCredentialState::Incomplete
+            };
+            CmdMetadataCredentialState {
+                state,
+                ama_cert_configured,
+            }
+        }
+        Ok(None) => CmdMetadataCredentialState {
+            state: MetadataCredentialState::Missing,
+            ama_cert_configured: false,
+        },
+        Err(_) => CmdMetadataCredentialState {
+            state: MetadataCredentialState::Unavailable,
+            ama_cert_configured: false,
+        },
+    }
+}
+
+fn cmd_stored_metadata_config(
+    cmd: &SigningCmdSettings,
+    record: &DecryptedCredentialRecord,
+) -> Option<CmdConfig> {
+    if !cmd_stored_missing_fields(cmd, record).is_empty() {
+        return None;
+    }
+    let application_id = record.fields.get(FIELD_APPLICATION_ID)?.as_str().to_owned();
+    let basic_auth = if credential_field_nonblank(record, FIELD_HTTP_BASIC_USERNAME)
+        && credential_field_nonblank(record, FIELD_HTTP_BASIC_PASSWORD)
+    {
+        Some(CmdBasicAuth::new(
+            record
+                .fields
+                .get(FIELD_HTTP_BASIC_USERNAME)?
+                .as_str()
+                .to_owned(),
+            record
+                .fields
+                .get(FIELD_HTTP_BASIC_PASSWORD)?
+                .as_str()
+                .to_owned(),
+        ))
+    } else {
+        None
+    };
+    Some(CmdConfig {
+        env: cmd_env_for_metadata(cmd.env),
+        application_id,
+        basic_auth,
+        ama_cert_pem: record
+            .fields
+            .get(FIELD_AMA_CERT_PEM)
+            .filter(|pem| !pem.trim().is_empty())
+            .map(|pem| pem.as_str().to_owned()),
+    })
+}
+
+fn cmd_stored_missing_fields(
+    cmd: &SigningCmdSettings,
+    record: &DecryptedCredentialRecord,
+) -> Vec<&'static str> {
+    let mut missing = Vec::new();
+    if !credential_field_nonblank(record, FIELD_APPLICATION_ID) {
+        missing.push(FIELD_APPLICATION_ID);
+    }
+
+    let has_username = credential_field_nonblank(record, FIELD_HTTP_BASIC_USERNAME);
+    let has_password = credential_field_nonblank(record, FIELD_HTTP_BASIC_PASSWORD);
+    match (has_username, has_password) {
+        (true, false) => missing.push(FIELD_HTTP_BASIC_PASSWORD),
+        (false, true) => missing.push(FIELD_HTTP_BASIC_USERNAME),
+        _ => {}
+    }
+
+    if matches!(cmd.env, CmdEnvSetting::Prod)
+        && !credential_field_nonblank(record, FIELD_AMA_CERT_PEM)
+    {
+        missing.push(FIELD_AMA_CERT_PEM);
+    }
+    missing
+}
+
+fn cmd_env_for_metadata(env: CmdEnvSetting) -> CmdEnv {
+    match env {
+        CmdEnvSetting::Preprod => CmdEnv::Preprod,
+        CmdEnvSetting::Prod => CmdEnv::Prod,
+    }
+}
+
+fn csc_metadata_credentials_configured(
+    state: &AppState,
+    cfg: &CscConfig,
+    injected_transport: bool,
+) -> bool {
+    match stored_csc_metadata_credential_state(state, cfg) {
+        MetadataCredentialState::Complete => true,
+        MetadataCredentialState::Incomplete | MetadataCredentialState::Unavailable => false,
+        MetadataCredentialState::Missing => {
+            csc_env_configured_for_authorization(cfg) || injected_transport
+        }
+    }
+}
+
+fn stored_csc_metadata_credential_state(
+    state: &AppState,
+    cfg: &CscConfig,
+) -> MetadataCredentialState {
+    match state
+        .provider_credentials
+        .read_runtime(CredentialMode::CscQtsp, &cfg.provider_id)
+    {
+        Ok(Some(record)) => {
+            if csc_stored_missing_fields(cfg.authorization, &record).is_empty() {
+                MetadataCredentialState::Complete
+            } else {
+                MetadataCredentialState::Incomplete
+            }
+        }
+        Ok(None) => MetadataCredentialState::Missing,
+        Err(_) => MetadataCredentialState::Unavailable,
+    }
+}
+
+fn csc_env_configured_for_authorization(cfg: &CscConfig) -> bool {
+    let Ok(secrets) = CscSecrets::from_env(&cfg.provider_id) else {
+        return false;
+    };
+    match cfg.authorization {
+        CscAuthorization::Service => {
+            !secrets.client_id.trim().is_empty() && !secrets.client_secret.trim().is_empty()
+        }
+        CscAuthorization::User => secrets
+            .access_token
+            .as_ref()
+            .is_some_and(|token| !token.trim().is_empty()),
+        _ => false,
+    }
+}
+
+fn csc_stored_missing_fields(
+    authorization: CscAuthorization,
+    record: &DecryptedCredentialRecord,
+) -> Vec<&'static str> {
+    csc_authorization_missing_fields(
+        authorization,
+        credential_field_nonblank(record, FIELD_CLIENT_ID),
+        credential_field_nonblank(record, FIELD_CLIENT_SECRET),
+        credential_field_nonblank(record, FIELD_ACCESS_TOKEN),
+    )
+}
+
+fn credential_field_nonblank(record: &DecryptedCredentialRecord, field: &str) -> bool {
+    record
+        .fields
+        .get(field)
+        .is_some_and(|value| !value.trim().is_empty())
+}
+
+fn csc_authorization_missing_fields(
+    authorization: CscAuthorization,
+    has_client_id: bool,
+    has_client_secret: bool,
+    has_access_token: bool,
+) -> Vec<&'static str> {
+    match authorization {
+        CscAuthorization::Service => {
+            let mut missing = Vec::new();
+            if !has_client_id {
+                missing.push(FIELD_CLIENT_ID);
+            }
+            if !has_client_secret {
+                missing.push(FIELD_CLIENT_SECRET);
+            }
+            missing
+        }
+        CscAuthorization::User => {
+            if has_access_token {
+                Vec::new()
+            } else {
+                vec![FIELD_ACCESS_TOKEN]
+            }
+        }
+        _ => vec![FIELD_CLIENT_ID, FIELD_CLIENT_SECRET, FIELD_ACCESS_TOKEN],
+    }
 }
 
 // --- Persistence --------------------------------------------------------------------------

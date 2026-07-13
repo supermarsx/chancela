@@ -110,7 +110,7 @@
         "configured": false,
         "production_blocked": true,
         "local_only": false,
-        "note": "No CSC/QTSP provider is configured in the environment."
+        "note": "No CSC/QTSP provider is configured in protected storage or environment."
       },
       {
         "id": "soft_pkcs12",
