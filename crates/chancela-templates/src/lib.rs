@@ -2669,28 +2669,41 @@ mod tests {
             (
                 "csc-procuracao-representacao/v1",
                 EntityFamily::CommercialCompany,
+                "sem prejuízo da verificação substantiva dos poderes",
             ),
             (
                 "condominio-procuracao-representacao/v1",
                 EntityFamily::Condominium,
+                "sem dispensar a verificação substantiva",
             ),
             (
                 "assoc-procuracao-representacao/v1",
                 EntityFamily::Association,
+                "mantendo-se a verificação",
             ),
             (
                 "fundacao-procuracao-representacao/v1",
                 EntityFamily::Foundation,
+                "não substitui a verificação",
             ),
             (
                 "cooperativa-procuracao-representacao/v1",
                 EntityFamily::Cooperative,
+                "sujeita à conferência pela cooperativa",
             ),
+        ];
+        let forbidden_authority_claims = [
+            "autoridade verificada",
+            "autoridade comprovada",
+            "comprova a autoridade",
+            "prova bastante da autoridade",
+            "poderes verificados",
+            "validade substantiva dos poderes fica comprovada",
         ];
 
         let mut ctx = coverage_ctx();
         ctx["title"] = json!("Assembleia geral ordinária");
-        for (id, family) in expected {
+        for (id, family, expected_caveat) in expected {
             let spec = reg
                 .get(id)
                 .unwrap_or_else(|| panic!("missing template {id}"));
@@ -2721,9 +2734,21 @@ mod tests {
                 "{id}: rendered representation parties missing from text: {text}"
             );
             assert!(
-                text.contains("Referência de prova"),
+                text.contains("Referência de prova")
+                    && text.contains("Procuração assinada e arquivada como Anexo R1."),
                 "{id}: representation evidence reference row missing: {text}"
             );
+            let lower = text.to_lowercase();
+            assert!(
+                lower.contains(expected_caveat),
+                "{id}: representation verification/no-authority caveat missing: {text}"
+            );
+            for forbidden in forbidden_authority_claims {
+                assert!(
+                    !lower.contains(forbidden),
+                    "{id}: representation template claims authority proof `{forbidden}`: {text}"
+                );
+            }
         }
     }
 
