@@ -13,6 +13,7 @@
  * page crash leaves the title bar (drag/min/max/close) fully functional. In safe mode
  * the appearance layers are bypassed entirely and a persistent banner is shown.
  */
+import { useEffect, useRef } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { LeatherBackground } from '../theme/LeatherBackground';
 import { AppearanceEffects } from '../theme/AppearanceEffects';
@@ -45,6 +46,21 @@ export function Layout() {
   const { pathname } = useLocation();
   const safe = isSafeMode();
 
+  // On navigation, move keyboard focus to the routed <main id="main-content"> (it already
+  // remounts keyed on pathname) so screen-reader/keyboard users land on the new page
+  // content instead of being stranded at the top of the tab bar. Guarded against the very
+  // first mount so it doesn't steal focus from the boot/autofocus flow; the `tabIndex={-1}`
+  // main is focusable without a visible outline (via `:focus:not(:focus-visible)`).
+  const mainRef = useRef<HTMLElement>(null);
+  const firstRender = useRef(true);
+  useEffect(() => {
+    if (firstRender.current) {
+      firstRender.current = false;
+      return;
+    }
+    mainRef.current?.focus();
+  }, [pathname]);
+
   return (
     <ShellErrorBoundary>
       {/* Safe mode bypasses the appearance layers so a crashing settings/appearance
@@ -58,6 +74,13 @@ export function Layout() {
           surface, and only a signed-in operator reaches the tab bar + routed content. The
           safe banner / leather layer above stay independent of it (guard × safe-mode). */}
       <AuthGate>
+        {/* First focusable element inside the shell: lets keyboard/screen-reader users
+            jump the tab bar and land on the routed page content. Off-screen until focused
+            (see `.skip-link` in theme.css), then it surfaces above the topbar. */}
+        <a className="skip-link" href="#main-content">
+          {t('nav.skipToContent')}
+        </a>
+
         {/* Fixed secondary tab bar: topmost in the browser, under the custom titlebar
             in the desktop shell. The brand mark stays left; the tab group is centered
             in the full bar width; the current-user picker sits at the right. The brand
@@ -94,7 +117,14 @@ export function Layout() {
                   `.route-transition` enter on every navigation. The key is set here on the
                   wrapper itself (not left implicit in the boundary's remount) so the
                   re-trigger is explicit; `data-route-key` exposes it for tests. */}
-              <main className="route-transition" key={pathname} data-route-key={pathname}>
+              <main
+                ref={mainRef}
+                id="main-content"
+                tabIndex={-1}
+                className="route-transition"
+                key={pathname}
+                data-route-key={pathname}
+              >
                 <Outlet />
               </main>
             </PageErrorBoundary>

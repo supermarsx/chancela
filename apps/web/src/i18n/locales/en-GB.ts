@@ -122,6 +122,7 @@ export const enGB: Catalog = {
   'nav.tools': 'Tools',
   'nav.settings': 'Settings',
   'nav.aria': 'Main navigation',
+  'nav.skipToContent': 'Skip to content',
   'common.brand': 'Chancela',
   'splash.aria': 'Starting Chancela',
   'common.footer':

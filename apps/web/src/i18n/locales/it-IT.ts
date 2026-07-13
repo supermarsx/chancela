@@ -124,6 +124,7 @@ export const itIT: Catalog = {
   'nav.tools': 'Strumenti',
   'nav.settings': 'Impostazioni',
   'nav.aria': 'Navigazione principale',
+  'nav.skipToContent': 'Vai al contenuto',
   'common.brand': 'Chancela',
   'splash.aria': 'Avvio di Chancela',
   'common.footer':

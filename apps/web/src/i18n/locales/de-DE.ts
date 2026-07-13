@@ -125,6 +125,7 @@ export const deDE: Catalog = {
   'nav.tools': 'Werkzeuge',
   'nav.settings': 'Einstellungen',
   'nav.aria': 'Hauptnavigation',
+  'nav.skipToContent': 'Zum Inhalt springen',
   'common.brand': 'Chancela',
   'splash.aria': 'Chancela wird gestartet',
   'common.footer':

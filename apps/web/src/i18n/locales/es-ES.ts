@@ -123,6 +123,7 @@ export const esES: Catalog = {
   'nav.tools': 'Herramientas',
   'nav.settings': 'Configuración',
   'nav.aria': 'Navegación principal',
+  'nav.skipToContent': 'Saltar al contenido',
   'common.brand': 'Chancela',
   'splash.aria': 'Iniciando Chancela',
   'common.footer':

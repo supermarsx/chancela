@@ -27,7 +27,7 @@ export function PageHeader({ title, crumbs, actions, lede, children }: PageHeade
     <header className="page-header">
       {crumbs ? <p className="crumbs page-header__crumbs">{crumbs}</p> : null}
       <div className="page-header__bar">
-        <h2 className="section-title page-header__title">{title}</h2>
+        <h1 className="section-title page-header__title">{title}</h1>
         {actions ? <div className="page-header__actions">{actions}</div> : null}
       </div>
       {lede ? <p className="settings-hero__lede page-header__lede">{lede}</p> : null}

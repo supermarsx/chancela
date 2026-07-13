@@ -5,9 +5,9 @@ import { PageHeader } from './PageHeader';
 afterEach(cleanup);
 
 describe('PageHeader', () => {
-  it('renders the title as a level-2 heading', () => {
+  it('renders the title as a level-1 heading', () => {
     render(<PageHeader title="Entidades" />);
-    const heading = screen.getByRole('heading', { level: 2, name: 'Entidades' });
+    const heading = screen.getByRole('heading', { level: 1, name: 'Entidades' });
     expect(heading).toBeTruthy();
     expect(heading.className).toContain('page-header__title');
   });

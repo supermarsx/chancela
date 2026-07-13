@@ -122,6 +122,7 @@ export const nlNL: Catalog = {
   'nav.tools': 'Hulpmiddelen',
   'nav.settings': 'Instellingen',
   'nav.aria': 'Hoofdnavigatie',
+  'nav.skipToContent': 'Naar inhoud gaan',
   'common.brand': 'Chancela',
   'splash.aria': 'Chancela wordt gestart',
   'common.footer': 'Chancela · Interface-prototype · Conform het Portugese recht (CSC, AVG, eIDAS)',

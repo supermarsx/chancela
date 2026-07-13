@@ -123,6 +123,7 @@ export const ptBR: Catalog = {
   'nav.tools': 'Ferramentas',
   'nav.settings': 'Configurações',
   'nav.aria': 'Navegação principal',
+  'nav.skipToContent': 'Pular para o conteúdo',
   'common.brand': 'Chancela',
   'splash.aria': 'Iniciando o Chancela',
   'common.footer':

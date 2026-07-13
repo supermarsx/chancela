@@ -2619,6 +2619,36 @@ body {
  * (titlebar-h 0, no titlebar element).
  * ------------------------------------------------------------------------- */
 
+/* Skip-to-content link — the first focusable element inside the shell. Kept off-screen
+   (translated above the viewport, so it stays focusable — no display:none) until it takes
+   keyboard focus, when it snaps to the top-left above the topbar with the app's accent
+   fill. No transition, so it is inherently reduced-motion / safe-mode safe. */
+.skip-link {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 1000;
+  transform: translateY(-140%);
+  margin: 0.4rem;
+  padding: 0.5rem 0.9rem;
+  background: var(--accent-strong);
+  color: var(--on-accent);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  font-family: var(--font-sans);
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-decoration: none;
+  box-shadow: 0 0.5rem 1.15rem -0.6rem color-mix(in srgb, var(--accent) 58%, transparent);
+}
+
+.skip-link:focus,
+.skip-link:focus-visible {
+  transform: translateY(0);
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 /* Fixed secondary tab bar — topmost in the browser, directly under the custom
    titlebar in the desktop shell. Slim, themed, gold-ruled. */
 .topbar {

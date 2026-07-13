@@ -124,6 +124,7 @@ export const frFR: Catalog = {
   'nav.tools': 'Outils',
   'nav.settings': 'Paramètres',
   'nav.aria': 'Navigation principale',
+  'nav.skipToContent': 'Aller au contenu',
   'common.brand': 'Chancela',
   'splash.aria': 'Démarrage de Chancela',
   'common.footer':

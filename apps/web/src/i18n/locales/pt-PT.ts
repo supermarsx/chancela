@@ -129,6 +129,7 @@ export const ptPT = {
   'nav.tools': 'Ferramentas',
   'nav.settings': 'Configurações',
   'nav.aria': 'Navegação principal',
+  'nav.skipToContent': 'Saltar para o conteúdo',
   'common.brand': 'Chancela',
   'splash.aria': 'A iniciar o Chancela',
   'common.footer':

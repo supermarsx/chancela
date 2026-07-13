@@ -122,6 +122,7 @@ export const daDK: Catalog = {
   'nav.tools': 'Værktøjer',
   'nav.settings': 'Indstillinger',
   'nav.aria': 'Hovednavigation',
+  'nav.skipToContent': 'Spring til indhold',
   'common.brand': 'Chancela',
   'splash.aria': 'Starter Chancela',
   'common.footer':

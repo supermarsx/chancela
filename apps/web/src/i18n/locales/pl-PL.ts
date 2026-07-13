@@ -123,6 +123,7 @@ export const plPL: Catalog = {
   'nav.tools': 'Narzędzia',
   'nav.settings': 'Ustawienia',
   'nav.aria': 'Nawigacja główna',
+  'nav.skipToContent': 'Przejdź do treści',
   'common.brand': 'Chancela',
   'splash.aria': 'Uruchamianie Chancela',
   'common.footer':

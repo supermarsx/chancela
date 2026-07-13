@@ -123,6 +123,7 @@ export const fiFI: Catalog = {
   'nav.tools': 'Työkalut',
   'nav.settings': 'Asetukset',
   'nav.aria': 'Päänavigointi',
+  'nav.skipToContent': 'Siirry sisältöön',
   'common.brand': 'Chancela',
   'splash.aria': 'Käynnistetään Chancela',
   'common.footer':
