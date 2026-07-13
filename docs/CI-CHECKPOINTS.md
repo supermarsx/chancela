@@ -82,6 +82,15 @@ remote documents, CMD multiple-sign, CSC/QTSP multi-hash/SAD batch,
 SCAP-verified representative authority, legal-capacity proof,
 trust-list/provider validation, legal validity/effect/sufficiency, or act
 finalization/legal signing acceptance,
+manual-signature original-reference metadata markers for core required-before-mutation
+and immutable seal metadata coverage, API guest/minimal redaction coverage,
+focused Ata editor manual seal validation tests, `act.sealed` contract coverage,
+and focused Playwright browser coverage in
+`apps/web/e2e/manual-signature-original-reference.spec.ts` plus the shared seal
+helper for requiring, capturing, and preserving `manual_signature_original_reference`.
+This is validation/redaction-backed custody metadata only: no qualified/eIDAS/legal
+signature validity, provider-backed signing, PAdES/PDF-A certification, or legal
+archive certification,
 `chancela-signing` core repeated per-document remote-session orchestration
 markers for `RemoteSigningSource` initiate/confirm one-digest flow,
 per-document activation, helper/types/tests, core-only no-API/no-web boundary,

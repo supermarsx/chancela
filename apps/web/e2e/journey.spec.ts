@@ -14,6 +14,7 @@
  */
 import { test, expect } from './fixtures';
 import { OPERATOR, signInAt } from './auth';
+import { fillOpenBookTermSignatories, sealActForSigning } from './book-helpers';
 
 test('onboard → session → entity → book → ata → seal → Arquivo chain with actor', async ({
   page,
@@ -48,7 +49,7 @@ test('onboard → session → entity → book → ata → seal → Arquivo chain
   await expect(page).toHaveURL(/\/livros\/novo$/);
   await page.getByLabel('Finalidade').fill('Atas da Assembleia Geral');
   await page.getByLabel('Data de abertura').fill('2026-01-15');
-  await page.getByLabel('Signatários do termo de abertura').fill('Presidente da Mesa\nSecretário');
+  await fillOpenBookTermSignatories(page);
   await page.getByRole('button', { name: 'Abrir livro' }).click();
   await expect(page).toHaveURL(/\/livros\/[0-9a-f-]{36}$/);
 
@@ -102,7 +103,11 @@ test('onboard → session → entity → book → ata → seal → Arquivo chain
   await expect(sealButton).toBeEnabled();
 
   // --- Seal ------------------------------------------------------------------
-  await sealButton.click();
+  await sealActForSigning(page, {
+    storageReference: 'Arquivo E2E / Jornada / Original assinado',
+    custodian: 'Secretariado',
+    note: 'Referência local do original manual; sem validação jurídica.',
+  });
   const ataNumber = page.getByTestId('ata-number');
   await expect(ataNumber).toBeVisible();
   await expect(ataNumber).toContainText(/\d/); // an ata number was assigned

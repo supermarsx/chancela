@@ -6,6 +6,7 @@
 import { expect, test, type Download, type Locator, type Page } from './fixtures';
 import { readFile, stat } from 'node:fs/promises';
 import { OPERATOR, signInAt } from './auth';
+import { fillOpenBookTermSignatories, sealActForSigning } from './book-helpers';
 
 test('document preview/PDF, sealed deep link, signing fallback, archive filters/export', async ({
   page,
@@ -60,11 +61,11 @@ test('document preview/PDF, sealed deep link, signing fallback, archive filters/
 
     const seal = page.getByRole('button', { name: 'Selar ata' });
     await expect(seal).toBeEnabled();
-    await seal.click();
-
-    await expect(page.getByText('Ata selada', { exact: true })).toBeVisible();
+    await sealActForSigning(page, {
+      storageReference: `Arquivo E2E / Documentos / Original ${suffix}`,
+      custodian: 'Secretariado documental',
+    });
     await expect(page.getByTestId('ata-number')).toContainText(/\d/);
-    await expect(page.getByRole('heading', { name: 'Assinatura qualificada' })).toBeVisible();
 
     await expect(
       page.getByText(
@@ -255,7 +256,7 @@ async function createAct(
   await expect(page).toHaveURL(/\/livros\/novo\?entidade=[0-9a-f-]{36}$/);
   await page.getByLabel('Finalidade').fill(`Atas documentais ${suffix}`);
   await page.getByLabel('Data de abertura').fill('2026-02-02');
-  await page.getByLabel('Signatários do termo de abertura').fill('Presidente da Mesa\nSecretário');
+  await fillOpenBookTermSignatories(page);
   await page.getByRole('button', { name: 'Abrir livro' }).click();
   await expect(page).toHaveURL(/\/livros\/[0-9a-f-]{36}$/);
   const bookId = idFromUrl(page);

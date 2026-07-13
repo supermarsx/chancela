@@ -2958,6 +2958,76 @@ function assertCheckpointMap() {
     "CI checkpoints local CC batch signing browser proof boundary marker",
   );
   assertFileContains(
+    "crates/chancela-core/src/seal.rs",
+    "manual_signature_original_reference_is_required_before_mutation",
+    "core manual-signature original-reference required-before-mutation coverage",
+  );
+  assertFileContains(
+    "crates/chancela-core/src/seal.rs",
+    "manual_signature_original_reference_is_frozen_in_seal_metadata",
+    "core manual-signature original-reference immutable metadata coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "guest_act_read_redacts_manual_signature_original_reference",
+    "API guest act manual-signature original-reference redaction coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "guest_book_act_feed_redacts_manual_signature_original_reference",
+    "API guest feed manual-signature original-reference redaction coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/AtaEditorStructured.test.tsx",
+    "requires a manual original reference before sealing when compliance is clean",
+    "web manual-signature original-reference clean seal coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/AtaEditorStructured.test.tsx",
+    "blocks manual original references containing control characters before submit",
+    "web manual-signature original-reference control-character refusal coverage",
+  );
+  assertFileContains(
+    "apps/web/src/contracts/contracts.test.ts",
+    "ActView.seal_metadata.manual_signature_original_reference",
+    "web contract manual-signature original-reference seal metadata marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/book-helpers.ts",
+    "manual_signature_original_reference",
+    "Playwright seal helper manual-signature original-reference request marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/manual-signature-original-reference.spec.ts",
+    "manual sealing requires, captures, and preserves the signed-original reference",
+    "focused Playwright manual-signature original-reference browser proof marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/manual-signature-original-reference.spec.ts",
+    "not a qualified/eIDAS/legal signature validity claim",
+    "focused Playwright manual-signature original-reference no-claim boundary marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "manual-signature original-reference metadata",
+    "spec coverage manual-signature original-reference metadata marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "not a qualified/eIDAS/legal signature validity claim",
+    "spec coverage manual-signature original-reference no-claim marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "manual-signature original-reference metadata markers",
+    "CI checkpoints manual-signature original-reference marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "no qualified/eIDAS/legal\nsignature validity",
+    "CI checkpoints manual-signature original-reference no-claim marker",
+  );
+  assertFileContains(
     "crates/chancela-signing/src/batch.rs",
     "pub enum RemoteBatchAuthMode",
     "signing core repeated remote-session auth-mode type marker",
@@ -8866,7 +8936,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `869e02f897f54730df86db739193f86c372e0e19`",
+    "implementation snapshot `314d6503d2b77b8195e4acdb229cb612ad1b5356`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(

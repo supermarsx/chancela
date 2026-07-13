@@ -1,6 +1,9 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-12 through committed implementation snapshot `869e02f897f54730df86db739193f86c372e0e19`,
+*Updated 2026-07-13 from committed implementation snapshot `314d6503d2b77b8195e4acdb229cb612ad1b5356`,
+with current working-tree evidence refreshes for the manual-signature
+original-reference sealing path, while preserving the prior
+`869e02f897f54730df86db739193f86c372e0e19` coverage context,
 refreshing the `cfcb3d9` baseline, the prior `4566715` coverage point,
 and the `c66ea3f`/`5fcaedd` checkpoint snapshot
 with commits through the prior snapshot:
@@ -163,6 +166,24 @@ blockers.
 
 Implementation checkpoints covered here:
 
+- Current working-tree manual-signature original-reference evidence keeps
+  Signatures/Trust, Workflows, UX, and CI **PARTIAL**: manual sealing now has
+  focused browser evidence in
+  `apps/web/e2e/manual-signature-original-reference.spec.ts` plus shared
+  `sealActForSigning` Playwright helper coverage that proves the UI requires a
+  signed-original storage reference before confirmation, sends
+  `manual_signature_original_reference` in the seal request, and displays the
+  same manual-signature original-reference metadata after sealing and after a
+  fresh sign-in. Existing deterministic unit/contract evidence covers
+  validation and redaction boundaries:
+  `cargo test -p chancela-core --locked manual_signature_original_reference`,
+  `cargo test -p chancela-api --locked manual_signature_original_reference`,
+  the focused `AtaEditorStructured.test.tsx -t "manual"` web tests, and the
+  focused `contracts.test.ts -t "act.sealed"` contract test. This is
+  custody/location metadata for a manually signed
+  original only: it is not a qualified/eIDAS/legal signature validity claim,
+  not provider-backed signing, not PAdES/PDF-A certification, and not legal
+  archive certification.
 - Current working-tree entity chronology analytics summary keeps Entity/UX/CI
   **PARTIAL**: `GET /v1/entities/{id}/chronology` now includes a deterministic
   `analytics` object derived only from the existing imported-registry chronology
@@ -1757,7 +1778,12 @@ human-review coverage. Guest dashboard recent-event redaction is read-response
 redaction only. Generated-document by-id downloads are Documents/Workflow
 plumbing for non-Ata generated rows only, and generated dispatch-evidence
 bundle/archive indexes are metadata-only preservation pointers, not canonical
-document promotion. Retained-export cleanup dry-run
+document promotion. Manual-signature original-reference metadata is now covered
+for the spec/04 Signatures & Trust, spec/06 Workflows, and spec/10 UX & Design
+PARTIAL rows as validation/redaction-backed custody metadata plus focused web
+unit/contract and Playwright evidence only; it does not change the absence of
+qualified/eIDAS/legal signature validity, provider-backed signing, PAdES/PDF-A
+certification, or legal archive certification. Retained-export cleanup dry-run
 planning/execution UX is retained local export file cleanup coverage only, with
 execution exposed after a server-bound preview token plus shared modal
 confirmation and limited to the server-selected preview manifest, and the post-act
@@ -3119,6 +3145,14 @@ behavior, legal disposal, or legal-effect claims.
   metadata. The static
   mode catches accidental removal of the mapped files and fixture markers without running the full
   commands.
+- **Manual-signature original-reference checkpoint:** the recent-landed static
+  map now pins the core/API/manual web-unit/contract evidence and the focused
+  Playwright browser spec for requiring, capturing, and preserving
+  `manual_signature_original_reference` during manual sealing. The checkpoint is
+  a deletion/rename guard for validation, redaction, and browser evidence only;
+  it does not run the full browser spec and does not claim qualified/eIDAS/legal
+  signature validity, provider-backed signing, PAdES/PDF-A certification, or
+  legal archive certification.
 - **Release trust metadata guard:** `scripts/check-release-trust.mjs` validates explicit package
   `releaseTrust` metadata and Docker signing-status metadata in the current `unsigned-dev` /
   `local-ci` paths and in production declarations, with a CI self-test and release/Docker workflow
