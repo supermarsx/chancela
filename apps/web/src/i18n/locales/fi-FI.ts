@@ -1808,6 +1808,36 @@ export const fiFI: Catalog = {
   'settings.privacy.retention.dryRun.empty.title': 'Ei osumia',
   'settings.privacy.retention.dryRun.empty.body': 'Mikään aktiivinen käytäntö ei vastannut ehdokasta.',
   'settings.privacy.retention.dryRun.column.result': 'Tulos',
+  'settings.privacy.register.field.processorName': 'Käsittelijän nimi',
+  'settings.privacy.register.field.dpiaTitle': 'DPIA-otsikko',
+  'settings.privacy.register.field.purpose': 'Tarkoitus',
+  'settings.privacy.register.field.legalBasis': 'Oikeusperuste',
+  'settings.privacy.register.field.categories': 'Tietoluokat',
+  'settings.privacy.register.field.subprocessors': 'Alikäsittelijät',
+  'settings.privacy.register.hint.categories': 'Yksi luokka riviä kohden tai pilkuin eroteltuna.',
+  'settings.privacy.register.hint.subprocessors':
+    'Valinnainen. Yksi taho riviä kohden tai pilkuin eroteltuna.',
+  'settings.privacy.register.searchPlaceholder': 'Nimi, tarkoitus, oikeusperuste tai luokka',
+  'settings.privacy.register.aria.risk': 'Riski kohteelle {name}',
+  'settings.privacy.register.aria.status': 'Tila kohteelle {name}',
+  'settings.privacy.evidence.field.type': 'Näytön tyyppi',
+  'settings.privacy.evidence.field.notes': 'Näyttöä koskevat huomautukset',
+  'settings.privacy.evidence.operator.title': 'Operaattorin näyttö',
+  'settings.privacy.evidence.operator.dpiaBody':
+    'Tämä näyttö kirjaa vain paikallisen DPIA-tarkistuksen tai -harjoituksen. Se ei toimita viranomaiselle, ei hyväksy oikeudellista tarkistusta, ei toimita ulkoisesti, ei viimeistele DPIA:ta eikä varmenna vaatimustenmukaisuutta.',
+  'settings.privacy.evidence.operator.breachBody':
+    'Tämä näyttö kirjaa vain tarkistuksen tai harjoituksen. Se ei ilmoita viranomaiselle eikä rekisteröidyille.',
+  'settings.privacy.evidence.operator.transferBody':
+    'Tämä näyttö kirjaa vain hallintakeinon tarkistuksen. Se ei hyväksy siirtoja, ei toteuta tietojen siirtoja eikä varmenna oikeudellista vaatimustenmukaisuutta.',
+  'settings.privacy.legalHold.title': 'Legal holdin ja hävittämisen paikallinen tila',
+  'settings.privacy.legalHold.evidence.title': 'Paikallinen toiminnallinen näyttö',
+  'settings.privacy.legalHold.evidence.body':
+    'Tämä yhteenveto näyttää vain paikallisen tilan/tarkistuksen operaattoreille. Se ei hyväksy hävittämistä, ei ratkaise ehdokkaita, ei poista legal hold -pidätyksiä eikä ilmoita oikeudellista vaatimustenmukaisuutta.',
+  'settings.privacy.dueCandidates.title': 'Erääntyneet säilytysehdokkaat',
+  'settings.privacy.execution.title': 'Suorituksen tarkistusjono',
+  'settings.privacy.execution.searchPlaceholder':
+    'Käytäntö, kohde, vastuuhenkilö, este tai seuraava vaihe',
+  'settings.privacy.execution.statusFilter': 'Suorituksen tila',
   'settings.about.cardTitle': 'Tietoja',
   'settings.about.serverVersion': 'Palvelimen versio',
   'settings.about.uiVersion': 'Käyttöliittymän versio',

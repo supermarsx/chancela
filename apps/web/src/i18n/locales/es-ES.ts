@@ -1815,6 +1815,36 @@ export const esES: Catalog = {
   'settings.privacy.retention.dryRun.empty.title': 'Sin coincidencias',
   'settings.privacy.retention.dryRun.empty.body': 'Ninguna política activa coincidió con el candidato.',
   'settings.privacy.retention.dryRun.column.result': 'Resultado',
+  'settings.privacy.register.field.processorName': 'Nombre del encargado',
+  'settings.privacy.register.field.dpiaTitle': 'Título de la DPIA',
+  'settings.privacy.register.field.purpose': 'Finalidad',
+  'settings.privacy.register.field.legalBasis': 'Base jurídica',
+  'settings.privacy.register.field.categories': 'Categorías de datos',
+  'settings.privacy.register.field.subprocessors': 'Subencargados',
+  'settings.privacy.register.hint.categories': 'Una categoría por línea o separadas por comas.',
+  'settings.privacy.register.hint.subprocessors':
+    'Opcional. Una entidad por línea o separadas por comas.',
+  'settings.privacy.register.searchPlaceholder': 'Nombre, finalidad, base jurídica o categoría',
+  'settings.privacy.register.aria.risk': 'Riesgo de {name}',
+  'settings.privacy.register.aria.status': 'Estado de {name}',
+  'settings.privacy.evidence.field.type': 'Tipo de evidencia',
+  'settings.privacy.evidence.field.notes': 'Notas de evidencia',
+  'settings.privacy.evidence.operator.title': 'Evidencia del operador',
+  'settings.privacy.evidence.operator.dpiaBody':
+    'Esta evidencia solo registra una revisión o simulacro local de la DPIA. No presenta a la autoridad, no acepta la revisión jurídica, no entrega externamente, no concluye la DPIA ni certifica el cumplimiento.',
+  'settings.privacy.evidence.operator.breachBody':
+    'Esta evidencia solo registra una revisión o simulacro. No notifica a la autoridad ni a los interesados.',
+  'settings.privacy.evidence.operator.transferBody':
+    'Esta evidencia solo registra una revisión del control. No aprueba transferencias, no ejecuta transferencias de datos ni certifica el cumplimiento legal.',
+  'settings.privacy.legalHold.title': 'Estado local de retención legal y eliminación',
+  'settings.privacy.legalHold.evidence.title': 'Evidencia operativa local',
+  'settings.privacy.legalHold.evidence.body':
+    'Este resumen solo muestra el estado/revisión local para los operadores. No aprueba la eliminación, no resuelve candidatos, no retira retenciones legales ni declara el cumplimiento legal.',
+  'settings.privacy.dueCandidates.title': 'Candidatos de conservación vencidos',
+  'settings.privacy.execution.title': 'Cola de revisión de ejecución',
+  'settings.privacy.execution.searchPlaceholder':
+    'Política, objetivo, responsable, bloqueo o siguiente paso',
+  'settings.privacy.execution.statusFilter': 'Estado de la ejecución',
   'settings.about.cardTitle': 'Acerca de',
   'settings.about.serverVersion': 'Versión del servidor',
   'settings.about.uiVersion': 'Versión de la interfaz',

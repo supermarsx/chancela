@@ -1822,6 +1822,37 @@ export const deDE: Catalog = {
   'settings.privacy.retention.dryRun.empty.title': 'Keine Übereinstimmungen',
   'settings.privacy.retention.dryRun.empty.body': 'Keine aktive Richtlinie stimmte mit dem Kandidaten überein.',
   'settings.privacy.retention.dryRun.column.result': 'Ergebnis',
+  'settings.privacy.register.field.processorName': 'Name des Auftragsverarbeiters',
+  'settings.privacy.register.field.dpiaTitle': 'DPIA-Titel',
+  'settings.privacy.register.field.purpose': 'Zweck',
+  'settings.privacy.register.field.legalBasis': 'Rechtsgrundlage',
+  'settings.privacy.register.field.categories': 'Datenkategorien',
+  'settings.privacy.register.field.subprocessors': 'Unterauftragsverarbeiter',
+  'settings.privacy.register.hint.categories':
+    'Eine Kategorie pro Zeile oder durch Kommas getrennt.',
+  'settings.privacy.register.hint.subprocessors':
+    'Optional. Eine Einheit pro Zeile oder durch Kommas getrennt.',
+  'settings.privacy.register.searchPlaceholder': 'Name, Zweck, Rechtsgrundlage oder Kategorie',
+  'settings.privacy.register.aria.risk': 'Risiko für {name}',
+  'settings.privacy.register.aria.status': 'Status für {name}',
+  'settings.privacy.evidence.field.type': 'Nachweisart',
+  'settings.privacy.evidence.field.notes': 'Nachweisnotizen',
+  'settings.privacy.evidence.operator.title': 'Nachweis des Bedieners',
+  'settings.privacy.evidence.operator.dpiaBody':
+    'Dieser Nachweis erfasst nur eine lokale DPIA-Prüfung oder -Übung. Er reicht nichts bei der Behörde ein, akzeptiert keine rechtliche Prüfung, liefert nicht extern, schließt die DPIA nicht ab und bescheinigt keine Konformität.',
+  'settings.privacy.evidence.operator.breachBody':
+    'Dieser Nachweis erfasst nur eine Prüfung oder Übung. Er benachrichtigt weder die Behörde noch die betroffenen Personen.',
+  'settings.privacy.evidence.operator.transferBody':
+    'Dieser Nachweis erfasst nur eine Prüfung der Kontrolle. Er genehmigt keine Übermittlungen, führt keine Datenübermittlungen aus und bescheinigt keine rechtliche Konformität.',
+  'settings.privacy.legalHold.title': 'Lokaler Status von Legal Hold und Entsorgung',
+  'settings.privacy.legalHold.evidence.title': 'Lokaler betrieblicher Nachweis',
+  'settings.privacy.legalHold.evidence.body':
+    'Diese Übersicht zeigt nur den lokalen Status/die lokale Prüfung für Bediener. Sie genehmigt keine Entsorgung, löst keine Kandidaten auf, hebt keine Legal Holds auf und erklärt keine rechtliche Konformität.',
+  'settings.privacy.dueCandidates.title': 'Fällige Aufbewahrungskandidaten',
+  'settings.privacy.execution.title': 'Warteschlange für Ausführungsprüfung',
+  'settings.privacy.execution.searchPlaceholder':
+    'Richtlinie, Ziel, Verantwortlicher, Blocker oder nächster Schritt',
+  'settings.privacy.execution.statusFilter': 'Ausführungsstatus',
   'settings.about.cardTitle': 'Über',
   'settings.about.serverVersion': 'Serverversion',
   'settings.about.uiVersion': 'Oberflächenversion',

@@ -1812,6 +1812,36 @@ export const svFI: Catalog = {
   'settings.privacy.retention.dryRun.empty.title': 'Inga matchningar',
   'settings.privacy.retention.dryRun.empty.body': 'Ingen aktiv policy matchade kandidaten.',
   'settings.privacy.retention.dryRun.column.result': 'Resultat',
+  'settings.privacy.register.field.processorName': 'Personuppgiftsbiträdets namn',
+  'settings.privacy.register.field.dpiaTitle': 'DPIA-titel',
+  'settings.privacy.register.field.purpose': 'Ändamål',
+  'settings.privacy.register.field.legalBasis': 'Rättslig grund',
+  'settings.privacy.register.field.categories': 'Datakategorier',
+  'settings.privacy.register.field.subprocessors': 'Underbiträden',
+  'settings.privacy.register.hint.categories':
+    'En kategori per rad eller åtskilda med kommatecken.',
+  'settings.privacy.register.hint.subprocessors':
+    'Valfritt. En entitet per rad eller åtskilda med kommatecken.',
+  'settings.privacy.register.searchPlaceholder': 'Namn, ändamål, rättslig grund eller kategori',
+  'settings.privacy.register.aria.risk': 'Risk för {name}',
+  'settings.privacy.register.aria.status': 'Status för {name}',
+  'settings.privacy.evidence.field.type': 'Bevistyp',
+  'settings.privacy.evidence.field.notes': 'Bevisanteckningar',
+  'settings.privacy.evidence.operator.title': 'Operatörsbevis',
+  'settings.privacy.evidence.operator.dpiaBody':
+    'Detta bevis registrerar endast en lokal DPIA-granskning eller -övning. Det lämnar inte in till myndigheten, godtar inte juridisk granskning, levererar inte externt, slutför inte DPIA:n och intygar inte efterlevnad.',
+  'settings.privacy.evidence.operator.breachBody':
+    'Detta bevis registrerar endast en granskning eller övning. Det underrättar varken myndigheten eller de registrerade.',
+  'settings.privacy.evidence.operator.transferBody':
+    'Detta bevis registrerar endast en granskning av kontrollen. Det godkänner inga överföringar, utför inga dataöverföringar och intygar inte rättslig efterlevnad.',
+  'settings.privacy.legalHold.title': 'Lokal status för legal hold och gallring',
+  'settings.privacy.legalHold.evidence.title': 'Lokalt driftbevis',
+  'settings.privacy.legalHold.evidence.body':
+    'Denna sammanfattning visar endast lokal status/granskning för operatörer. Den godkänner inte gallring, löser inte kandidater, tar inte bort legal hold och deklarerar inte rättslig efterlevnad.',
+  'settings.privacy.dueCandidates.title': 'Förfallna lagringskandidater',
+  'settings.privacy.execution.title': 'Kö för granskning av körning',
+  'settings.privacy.execution.searchPlaceholder': 'Policy, mål, ansvarig, blockering eller nästa steg',
+  'settings.privacy.execution.statusFilter': 'Körningsstatus',
   'settings.about.cardTitle': 'Om',
   'settings.about.serverVersion': 'Serverversion',
   'settings.about.uiVersion': 'Gränssnittsversion',

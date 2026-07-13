@@ -1813,6 +1813,37 @@ export const nlNL: Catalog = {
   'settings.privacy.retention.dryRun.empty.title': 'Geen overeenkomsten',
   'settings.privacy.retention.dryRun.empty.body': 'Geen actief beleid kwam overeen met de kandidaat.',
   'settings.privacy.retention.dryRun.column.result': 'Resultaat',
+  'settings.privacy.register.field.processorName': 'Naam van de verwerker',
+  'settings.privacy.register.field.dpiaTitle': 'DPIA-titel',
+  'settings.privacy.register.field.purpose': 'Doel',
+  'settings.privacy.register.field.legalBasis': 'Rechtsgrond',
+  'settings.privacy.register.field.categories': 'Gegevenscategorieën',
+  'settings.privacy.register.field.subprocessors': 'Subverwerkers',
+  'settings.privacy.register.hint.categories':
+    'Eén categorie per regel of gescheiden door komma’s.',
+  'settings.privacy.register.hint.subprocessors':
+    'Optioneel. Eén entiteit per regel of gescheiden door komma’s.',
+  'settings.privacy.register.searchPlaceholder': 'Naam, doel, rechtsgrond of categorie',
+  'settings.privacy.register.aria.risk': 'Risico van {name}',
+  'settings.privacy.register.aria.status': 'Status van {name}',
+  'settings.privacy.evidence.field.type': 'Type bewijs',
+  'settings.privacy.evidence.field.notes': 'Bewijsnotities',
+  'settings.privacy.evidence.operator.title': 'Bewijs van operator',
+  'settings.privacy.evidence.operator.dpiaBody':
+    'Dit bewijs legt alleen een lokale DPIA-beoordeling of -oefening vast. Het dient niets in bij de autoriteit, aanvaardt geen juridische beoordeling, levert niet extern, voltooit de DPIA niet en certificeert geen naleving.',
+  'settings.privacy.evidence.operator.breachBody':
+    'Dit bewijs legt alleen een beoordeling of oefening vast. Het stelt noch de autoriteit noch de betrokkenen op de hoogte.',
+  'settings.privacy.evidence.operator.transferBody':
+    'Dit bewijs legt alleen een beoordeling van de maatregel vast. Het keurt geen doorgiften goed, voert geen gegevensdoorgiften uit en certificeert geen wettelijke naleving.',
+  'settings.privacy.legalHold.title': 'Lokale status van legal hold en verwijdering',
+  'settings.privacy.legalHold.evidence.title': 'Lokaal operationeel bewijs',
+  'settings.privacy.legalHold.evidence.body':
+    'Deze samenvatting toont alleen de lokale status/beoordeling voor operators. Het keurt geen verwijdering goed, lost geen kandidaten op, heft geen legal holds op en verklaart geen wettelijke naleving.',
+  'settings.privacy.dueCandidates.title': 'Vervallen bewaarkandidaten',
+  'settings.privacy.execution.title': 'Wachtrij voor uitvoeringsbeoordeling',
+  'settings.privacy.execution.searchPlaceholder':
+    'Beleid, doel, verantwoordelijke, blokkering of volgende stap',
+  'settings.privacy.execution.statusFilter': 'Uitvoeringsstatus',
   'settings.about.cardTitle': 'Over',
   'settings.about.serverVersion': 'Serverversie',
   'settings.about.uiVersion': 'Interfaceversie',

@@ -1811,6 +1811,37 @@ export const plPL: Catalog = {
   'settings.privacy.retention.dryRun.empty.title': 'Brak dopasowań',
   'settings.privacy.retention.dryRun.empty.body': 'Żadna aktywna zasada nie pasuje do kandydata.',
   'settings.privacy.retention.dryRun.column.result': 'Wynik',
+  'settings.privacy.register.field.processorName': 'Nazwa podmiotu przetwarzającego',
+  'settings.privacy.register.field.dpiaTitle': 'Tytuł DPIA',
+  'settings.privacy.register.field.purpose': 'Cel',
+  'settings.privacy.register.field.legalBasis': 'Podstawa prawna',
+  'settings.privacy.register.field.categories': 'Kategorie danych',
+  'settings.privacy.register.field.subprocessors': 'Podwykonawcy przetwarzania',
+  'settings.privacy.register.hint.categories':
+    'Jedna kategoria w wierszu lub oddzielone przecinkami.',
+  'settings.privacy.register.hint.subprocessors':
+    'Opcjonalnie. Jeden podmiot w wierszu lub oddzielone przecinkami.',
+  'settings.privacy.register.searchPlaceholder': 'Nazwa, cel, podstawa prawna lub kategoria',
+  'settings.privacy.register.aria.risk': 'Ryzyko dla {name}',
+  'settings.privacy.register.aria.status': 'Stan {name}',
+  'settings.privacy.evidence.field.type': 'Typ dowodu',
+  'settings.privacy.evidence.field.notes': 'Notatki dowodowe',
+  'settings.privacy.evidence.operator.title': 'Dowód operatora',
+  'settings.privacy.evidence.operator.dpiaBody':
+    'Ten dowód rejestruje wyłącznie lokalny przegląd lub ćwiczenie DPIA. Nie składa do organu, nie akceptuje przeglądu prawnego, nie dostarcza na zewnątrz, nie kończy DPIA ani nie poświadcza zgodności.',
+  'settings.privacy.evidence.operator.breachBody':
+    'Ten dowód rejestruje wyłącznie przegląd lub ćwiczenie. Nie powiadamia organu ani osób, których dane dotyczą.',
+  'settings.privacy.evidence.operator.transferBody':
+    'Ten dowód rejestruje wyłącznie przegląd kontroli. Nie zatwierdza transferów, nie wykonuje transferów danych ani nie poświadcza zgodności prawnej.',
+  'settings.privacy.legalHold.title': 'Lokalny stan legal hold i usuwania',
+  'settings.privacy.legalHold.evidence.title': 'Lokalny dowód operacyjny',
+  'settings.privacy.legalHold.evidence.body':
+    'To podsumowanie pokazuje wyłącznie lokalny stan/przegląd dla operatorów. Nie zatwierdza usuwania, nie rozstrzyga kandydatów, nie usuwa blokad prawnych ani nie deklaruje zgodności prawnej.',
+  'settings.privacy.dueCandidates.title': 'Wymagalni kandydaci do przechowywania',
+  'settings.privacy.execution.title': 'Kolejka przeglądu wykonania',
+  'settings.privacy.execution.searchPlaceholder':
+    'Zasada, cel, odpowiedzialny, blokada lub następny krok',
+  'settings.privacy.execution.statusFilter': 'Stan wykonania',
   'settings.about.cardTitle': 'O programie',
   'settings.about.serverVersion': 'Wersja serwera',
   'settings.about.uiVersion': 'Wersja interfejsu',

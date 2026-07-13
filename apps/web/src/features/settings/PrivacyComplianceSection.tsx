@@ -859,13 +859,13 @@ function RetentionLegalHoldDisposalStatusPanel({
   report: RetentionDueCandidatesReport | null;
   records: RetentionExecutionRecord[];
 }) {
+  const t = useT();
   const summary = retentionLegalHoldDisposalStatusSummary(report, records);
   return (
-    <Card title="Estado local de legal hold e descarte">
+    <Card title={t('settings.privacy.legalHold.title')}>
       <div className="stack">
-        <InlineWarning tone="info" title="Evidência operacional local">
-          Este resumo mostra apenas estado/revisão local para operadores. Não aprova descarte, não
-          resolve candidatos, não remove retenções legais e não declara cumprimento legal.
+        <InlineWarning tone="info" title={t('settings.privacy.legalHold.evidence.title')}>
+          {t('settings.privacy.legalHold.evidence.body')}
         </InlineWarning>
         <dl className="deflist">
           <div>
@@ -914,8 +914,12 @@ function RegisterForm({
   onCancel: () => void;
   onSubmit: () => void;
 }) {
+  const t = useT();
   const idPrefix = `privacy-${kind}-${editing ? 'edit' : 'new'}`;
-  const primaryLabel = kind === 'processor' ? 'Nome do processador' : 'Título da DPIA';
+  const primaryLabel =
+    kind === 'processor'
+      ? t('settings.privacy.register.field.processorName')
+      : t('settings.privacy.register.field.dpiaTitle');
   const parsedCategories = splitList(form.dataCategories);
   const canSubmit =
     form.primary.trim().length > 0 &&
@@ -941,7 +945,7 @@ function RegisterForm({
         />
       </Field>
 
-      <Field label="Finalidade" htmlFor={`${idPrefix}-purpose`}>
+      <Field label={t('settings.privacy.register.field.purpose')} htmlFor={`${idPrefix}-purpose`}>
         <TextArea
           id={`${idPrefix}-purpose`}
           value={form.purpose}
@@ -950,7 +954,10 @@ function RegisterForm({
         />
       </Field>
 
-      <Field label="Base legal" htmlFor={`${idPrefix}-legal-basis`}>
+      <Field
+        label={t('settings.privacy.register.field.legalBasis')}
+        htmlFor={`${idPrefix}-legal-basis`}
+      >
         <Input
           id={`${idPrefix}-legal-basis`}
           value={form.legalBasis}
@@ -960,9 +967,9 @@ function RegisterForm({
       </Field>
 
       <Field
-        label="Categorias de dados"
+        label={t('settings.privacy.register.field.categories')}
         htmlFor={`${idPrefix}-data-categories`}
-        hint="Uma categoria por linha ou separada por vírgulas."
+        hint={t('settings.privacy.register.hint.categories')}
       >
         <TextArea
           id={`${idPrefix}-data-categories`}
@@ -973,9 +980,9 @@ function RegisterForm({
       </Field>
 
       <Field
-        label="Subprocessadores"
+        label={t('settings.privacy.register.field.subprocessors')}
         htmlFor={`${idPrefix}-subprocessors`}
-        hint="Opcional. Uma entidade por linha ou separada por vírgulas."
+        hint={t('settings.privacy.register.hint.subprocessors')}
       >
         <TextArea
           id={`${idPrefix}-subprocessors`}
@@ -986,7 +993,7 @@ function RegisterForm({
       </Field>
 
       <div className="api-key-rate-grid">
-        <Field label="Risco" htmlFor={`${idPrefix}-risk`}>
+        <Field label={t('settings.privacy.field.risk')} htmlFor={`${idPrefix}-risk`}>
           <Select
             id={`${idPrefix}-risk`}
             value={form.riskLevel}
@@ -994,7 +1001,7 @@ function RegisterForm({
             options={riskSelectOptions}
           />
         </Field>
-        <Field label="Estado" htmlFor={`${idPrefix}-status`}>
+        <Field label={t('settings.privacy.field.status')} htmlFor={`${idPrefix}-status`}>
           <Select
             id={`${idPrefix}-status`}
             value={form.status}
@@ -1006,13 +1013,14 @@ function RegisterForm({
 
       {kind === 'dpia' ? (
         <>
-          <InlineWarning tone="info" title="Evidência de operador">
-            Esta evidência regista apenas revisão ou exercício local da DPIA. Não submete à
-            autoridade, não aceita revisão legal, não entrega externamente, não conclui a DPIA e não
-            certifica conformidade.
+          <InlineWarning tone="info" title={t('settings.privacy.evidence.operator.title')}>
+            {t('settings.privacy.evidence.operator.dpiaBody')}
           </InlineWarning>
           <div className="api-key-rate-grid">
-            <Field label="Tipo de evidência" htmlFor={`${idPrefix}-evidence-type`}>
+            <Field
+              label={t('settings.privacy.evidence.field.type')}
+              htmlFor={`${idPrefix}-evidence-type`}
+            >
               <Select
                 id={`${idPrefix}-evidence-type`}
                 value={form.evidenceType}
@@ -1022,7 +1030,10 @@ function RegisterForm({
                 options={breachEvidenceOptions}
               />
             </Field>
-            <Field label="Notas de evidência" htmlFor={`${idPrefix}-evidence-notes`}>
+            <Field
+              label={t('settings.privacy.evidence.field.notes')}
+              htmlFor={`${idPrefix}-evidence-notes`}
+            >
               <TextArea
                 id={`${idPrefix}-evidence-notes`}
                 value={form.evidenceNotes}
@@ -1036,10 +1047,14 @@ function RegisterForm({
 
       <div className="form__actions">
         <Button type="button" variant="ghost" disabled={saving} onClick={onCancel}>
-          Cancelar
+          {t('settings.privacy.action.cancel')}
         </Button>
         <Button type="submit" variant="primary" icon={<Icon.Check />} disabled={!canSubmit}>
-          {saving ? 'A guardar' : editing ? 'Guardar alterações' : 'Criar registo'}
+          {saving
+            ? t('settings.privacy.action.saving')
+            : editing
+              ? t('settings.privacy.action.save')
+              : t('settings.privacy.action.create')}
         </Button>
       </div>
     </form>
@@ -1067,6 +1082,7 @@ function RegisterPanel({
   onCreate: (body: PrivacyCreateBody) => Promise<RegisterRecord>;
   onPatch: (id: string, body: PrivacyPatchBody) => Promise<RegisterRecord>;
 }) {
+  const t = useT();
   const toast = useToast();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -1098,10 +1114,10 @@ function RegisterPanel({
     try {
       if (editingId) {
         await onPatch(editingId, patchBody(kind, form));
-        toast.success('Registo de privacidade atualizado.');
+        toast.success(t('settings.privacy.toast.updated'));
       } else {
         await onCreate(createBody(kind, form));
-        toast.success('Registo de privacidade criado.');
+        toast.success(t('settings.privacy.toast.created'));
       }
       setForm(null);
       setEditingId(null);
@@ -1122,7 +1138,7 @@ function RegisterPanel({
   return (
     <div className="stack">
       {form ? (
-        <Card title={editingId ? 'Editar registo' : 'Novo registo'}>
+        <Card title={editingId ? t('settings.privacy.form.edit') : t('settings.privacy.form.new')}>
           <RegisterForm
             kind={kind}
             form={form}
@@ -1142,7 +1158,7 @@ function RegisterPanel({
         title={title}
         actions={
           <Button type="button" variant="primary" icon={<Icon.Plus />} onClick={startCreate}>
-            Novo registo
+            {t('settings.privacy.action.new')}
           </Button>
         }
       >
@@ -1150,15 +1166,15 @@ function RegisterPanel({
           <p className="field__hint">{lede}</p>
 
           <div className="filter">
-            <Field label="Pesquisar" htmlFor={`privacy-${kind}-search`}>
+            <Field label={t('settings.privacy.filter.search')} htmlFor={`privacy-${kind}-search`}>
               <Input
                 id={`privacy-${kind}-search`}
                 value={search}
-                placeholder="Nome, finalidade, base legal ou categoria"
+                placeholder={t('settings.privacy.register.searchPlaceholder')}
                 onChange={(e) => setSearch(e.target.value)}
               />
             </Field>
-            <Field label="Estado" htmlFor={`privacy-${kind}-status-filter`}>
+            <Field label={t('settings.privacy.field.status')} htmlFor={`privacy-${kind}-status-filter`}>
               <Select
                 id={`privacy-${kind}-status-filter`}
                 value={statusFilter}
@@ -1166,7 +1182,7 @@ function RegisterPanel({
                 options={statusOptions}
               />
             </Field>
-            <Field label="Risco" htmlFor={`privacy-${kind}-risk-filter`}>
+            <Field label={t('settings.privacy.field.risk')} htmlFor={`privacy-${kind}-risk-filter`}>
               <Select
                 id={`privacy-${kind}-risk-filter`}
                 value={riskFilter}
@@ -1181,12 +1197,12 @@ function RegisterPanel({
           ) : error ? (
             <ErrorNote error={error} />
           ) : records.length === 0 ? (
-            <EmptyState title="Sem registos">
-              <p>Ainda não existem registos nesta área de privacidade.</p>
+            <EmptyState title={t('settings.privacy.empty.title')}>
+              <p>{t('settings.privacy.empty.body')}</p>
             </EmptyState>
           ) : filtered.length === 0 ? (
-            <EmptyState title="Sem resultados">
-              <p>Altere a pesquisa ou os filtros para voltar a ver registos.</p>
+            <EmptyState title={t('settings.privacy.emptyResults.title')}>
+              <p>{t('settings.privacy.emptyResults.body')}</p>
             </EmptyState>
           ) : (
             <Table
@@ -1239,7 +1255,7 @@ function RegisterPanel({
                           {RISK_LABELS[record.risk_level]}
                         </Badge>
                         <Select
-                          aria-label={`Risco de ${label}`}
+                          aria-label={t('settings.privacy.register.aria.risk', { name: label })}
                           value={record.risk_level}
                           disabled={saving}
                           onChange={(e) =>
@@ -1260,7 +1276,7 @@ function RegisterPanel({
                           <AdvisoryReviewBadge review={dpiaRecord.advisory_review} />
                         ) : null}
                         <Select
-                          aria-label={`Estado de ${label}`}
+                          aria-label={t('settings.privacy.register.aria.status', { name: label })}
                           value={record.status}
                           disabled={saving}
                           onChange={(e) =>
@@ -1285,7 +1301,7 @@ function RegisterPanel({
                         disabled={saving}
                         onClick={() => startEdit(record)}
                       >
-                        Editar
+                        {t('settings.privacy.action.edit')}
                       </Button>
                     </td>
                   </tr>
@@ -1431,12 +1447,14 @@ function BreachPlaybookForm({
           rows={3}
         />
       </Field>
-      <InlineWarning tone="info" title="Evidência de operador">
-        Esta evidência regista apenas revisão ou exercício. Não notifica a autoridade nem os
-        titulares.
+      <InlineWarning tone="info" title={t('settings.privacy.evidence.operator.title')}>
+        {t('settings.privacy.evidence.operator.breachBody')}
       </InlineWarning>
       <div className="api-key-rate-grid">
-        <Field label="Tipo de evidência" htmlFor={`${idPrefix}-evidence-type`}>
+        <Field
+          label={t('settings.privacy.evidence.field.type')}
+          htmlFor={`${idPrefix}-evidence-type`}
+        >
           <Select
             id={`${idPrefix}-evidence-type`}
             value={form.evidenceType}
@@ -1446,7 +1464,10 @@ function BreachPlaybookForm({
             options={breachEvidenceOptions}
           />
         </Field>
-        <Field label="Notas de evidência" htmlFor={`${idPrefix}-evidence-notes`}>
+        <Field
+          label={t('settings.privacy.evidence.field.notes')}
+          htmlFor={`${idPrefix}-evidence-notes`}
+        >
           <TextArea
             id={`${idPrefix}-evidence-notes`}
             value={form.evidenceNotes}
@@ -1813,11 +1834,13 @@ function TransferControlForm({
           rows={3}
         />
       </Field>
-      <InlineWarning tone="info" title="Evidência de operador">
-        Esta evidência regista apenas revisão do controlo. Não aprova transferências, não executa
-        transferências de dados e não certifica conformidade legal.
+      <InlineWarning tone="info" title={t('settings.privacy.evidence.operator.title')}>
+        {t('settings.privacy.evidence.operator.transferBody')}
       </InlineWarning>
-      <Field label="Notas de evidência" htmlFor={`${idPrefix}-evidence-notes`}>
+      <Field
+        label={t('settings.privacy.evidence.field.notes')}
+        htmlFor={`${idPrefix}-evidence-notes`}
+      >
         <TextArea
           id={`${idPrefix}-evidence-notes`}
           value={form.evidenceNotes}
@@ -2353,11 +2376,12 @@ function RetentionDueCandidatesPanel({
     executionMode?: 'review_only' | 'execute_supported',
   ) => Promise<void>;
 }) {
+  const t = useT();
   const candidates: RetentionDueCandidate[] = report?.candidates ?? [];
   const suppressedByBoundedEvidenceCount = report?.suppressed_by_bounded_evidence_count ?? 0;
 
   return (
-    <Card title="Candidatos de retenção vencidos">
+    <Card title={t('settings.privacy.dueCandidates.title')}>
       <div className="stack">
         <p className="field__hint">
           Varredura GET somente leitura para revisão de evidência. Esta secção não apaga, não
@@ -2689,7 +2713,7 @@ function RetentionExecutionReviewQueue({
   }
 
   return (
-    <Card title="Fila de revisão de execução">
+    <Card title={t('settings.privacy.execution.title')}>
       <div className="stack">
         <p className="field__hint">
           Registos persistidos de execução de retenção para revisão operacional.
@@ -2702,11 +2726,14 @@ function RetentionExecutionReviewQueue({
             <Input
               id="privacy-retention-execution-search"
               value={search}
-              placeholder="Política, alvo, responsável, bloqueio ou próximo passo"
+              placeholder={t('settings.privacy.execution.searchPlaceholder')}
               onChange={(e) => setSearch(e.target.value)}
             />
           </Field>
-          <Field label="Estado da execução" htmlFor="privacy-retention-execution-status">
+          <Field
+            label={t('settings.privacy.execution.statusFilter')}
+            htmlFor="privacy-retention-execution-status"
+          >
             <Select
               id="privacy-retention-execution-status"
               value={statusFilter}

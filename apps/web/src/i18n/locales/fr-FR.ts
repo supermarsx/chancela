@@ -1821,6 +1821,37 @@ export const frFR: Catalog = {
   'settings.privacy.retention.dryRun.empty.title': 'Aucune correspondance',
   'settings.privacy.retention.dryRun.empty.body': 'Aucune politique active ne correspond au candidat.',
   'settings.privacy.retention.dryRun.column.result': 'Résultat',
+  'settings.privacy.register.field.processorName': 'Nom du sous-traitant',
+  'settings.privacy.register.field.dpiaTitle': 'Titre de la DPIA',
+  'settings.privacy.register.field.purpose': 'Objet',
+  'settings.privacy.register.field.legalBasis': 'Base légale',
+  'settings.privacy.register.field.categories': 'Catégories de données',
+  'settings.privacy.register.field.subprocessors': 'Sous-traitants ultérieurs',
+  'settings.privacy.register.hint.categories':
+    'Une catégorie par ligne ou séparées par des virgules.',
+  'settings.privacy.register.hint.subprocessors':
+    'Facultatif. Une entité par ligne ou séparées par des virgules.',
+  'settings.privacy.register.searchPlaceholder': 'Nom, objet, base légale ou catégorie',
+  'settings.privacy.register.aria.risk': 'Risque de {name}',
+  'settings.privacy.register.aria.status': 'État de {name}',
+  'settings.privacy.evidence.field.type': 'Type de preuve',
+  'settings.privacy.evidence.field.notes': 'Notes de preuve',
+  'settings.privacy.evidence.operator.title': 'Preuve de l’opérateur',
+  'settings.privacy.evidence.operator.dpiaBody':
+    'Cette preuve enregistre uniquement une revue ou un exercice local de la DPIA. Elle ne soumet pas à l’autorité, n’accepte pas de revue juridique, ne livre pas à l’externe, ne conclut pas la DPIA et ne certifie pas la conformité.',
+  'settings.privacy.evidence.operator.breachBody':
+    'Cette preuve enregistre uniquement une revue ou un exercice. Elle ne notifie ni l’autorité ni les personnes concernées.',
+  'settings.privacy.evidence.operator.transferBody':
+    'Cette preuve enregistre uniquement une revue du contrôle. Elle n’approuve pas les transferts, n’exécute pas de transferts de données et ne certifie pas la conformité juridique.',
+  'settings.privacy.legalHold.title': 'État local des conservations légales et de l’élimination',
+  'settings.privacy.legalHold.evidence.title': 'Preuve opérationnelle locale',
+  'settings.privacy.legalHold.evidence.body':
+    'Ce résumé n’affiche que l’état/la revue au niveau local pour les opérateurs. Il n’approuve pas l’élimination, ne résout pas les candidats, ne lève pas les conservations légales et ne déclare pas la conformité juridique.',
+  'settings.privacy.dueCandidates.title': 'Candidats à la conservation échus',
+  'settings.privacy.execution.title': 'File de revue d’exécution',
+  'settings.privacy.execution.searchPlaceholder':
+    'Politique, cible, responsable, blocage ou étape suivante',
+  'settings.privacy.execution.statusFilter': 'État de l’exécution',
   'settings.about.cardTitle': 'À propos',
   'settings.about.serverVersion': 'Version du serveur',
   'settings.about.uiVersion': 'Version de l’interface',

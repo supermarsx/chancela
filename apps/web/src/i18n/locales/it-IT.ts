@@ -1816,6 +1816,36 @@ export const itIT: Catalog = {
   'settings.privacy.retention.dryRun.empty.title': 'Nessuna corrispondenza',
   'settings.privacy.retention.dryRun.empty.body': 'Nessun criterio attivo ha corrisposto al candidato.',
   'settings.privacy.retention.dryRun.column.result': 'Risultato',
+  'settings.privacy.register.field.processorName': 'Nome del responsabile',
+  'settings.privacy.register.field.dpiaTitle': 'Titolo della DPIA',
+  'settings.privacy.register.field.purpose': 'Finalità',
+  'settings.privacy.register.field.legalBasis': 'Base giuridica',
+  'settings.privacy.register.field.categories': 'Categorie di dati',
+  'settings.privacy.register.field.subprocessors': 'Subresponsabili',
+  'settings.privacy.register.hint.categories': 'Una categoria per riga o separate da virgole.',
+  'settings.privacy.register.hint.subprocessors':
+    'Facoltativo. Un’entità per riga o separate da virgole.',
+  'settings.privacy.register.searchPlaceholder': 'Nome, finalità, base giuridica o categoria',
+  'settings.privacy.register.aria.risk': 'Rischio di {name}',
+  'settings.privacy.register.aria.status': 'Stato di {name}',
+  'settings.privacy.evidence.field.type': 'Tipo di evidenza',
+  'settings.privacy.evidence.field.notes': 'Note di evidenza',
+  'settings.privacy.evidence.operator.title': 'Evidenza dell’operatore',
+  'settings.privacy.evidence.operator.dpiaBody':
+    'Questa evidenza registra solo una revisione o esercitazione locale della DPIA. Non presenta all’autorità, non accetta la revisione legale, non consegna all’esterno, non conclude la DPIA e non certifica la conformità.',
+  'settings.privacy.evidence.operator.breachBody':
+    'Questa evidenza registra solo una revisione o esercitazione. Non notifica né l’autorità né gli interessati.',
+  'settings.privacy.evidence.operator.transferBody':
+    'Questa evidenza registra solo una revisione del controllo. Non approva trasferimenti, non esegue trasferimenti di dati e non certifica la conformità legale.',
+  'settings.privacy.legalHold.title': 'Stato locale di legal hold ed eliminazione',
+  'settings.privacy.legalHold.evidence.title': 'Evidenza operativa locale',
+  'settings.privacy.legalHold.evidence.body':
+    'Questo riepilogo mostra solo lo stato/la revisione locale per gli operatori. Non approva l’eliminazione, non risolve i candidati, non rimuove i legal hold e non dichiara la conformità legale.',
+  'settings.privacy.dueCandidates.title': 'Candidati di conservazione scaduti',
+  'settings.privacy.execution.title': 'Coda di revisione dell’esecuzione',
+  'settings.privacy.execution.searchPlaceholder':
+    'Criterio, destinazione, responsabile, blocco o passaggio successivo',
+  'settings.privacy.execution.statusFilter': 'Stato dell’esecuzione',
   'settings.about.cardTitle': 'Informazioni',
   'settings.about.serverVersion': 'Versione del server',
   'settings.about.uiVersion': 'Versione dell’interfaccia',

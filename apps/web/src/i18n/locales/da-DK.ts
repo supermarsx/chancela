@@ -1810,6 +1810,36 @@ export const daDK: Catalog = {
   'settings.privacy.retention.dryRun.empty.title': 'Ingen match',
   'settings.privacy.retention.dryRun.empty.body': 'Ingen aktiv politik matchede kandidaten.',
   'settings.privacy.retention.dryRun.column.result': 'Resultat',
+  'settings.privacy.register.field.processorName': 'Databehandlerens navn',
+  'settings.privacy.register.field.dpiaTitle': 'DPIA-titel',
+  'settings.privacy.register.field.purpose': 'Formål',
+  'settings.privacy.register.field.legalBasis': 'Retsgrundlag',
+  'settings.privacy.register.field.categories': 'Datakategorier',
+  'settings.privacy.register.field.subprocessors': 'Underdatabehandlere',
+  'settings.privacy.register.hint.categories': 'Én kategori pr. linje eller adskilt med kommaer.',
+  'settings.privacy.register.hint.subprocessors':
+    'Valgfrit. Én enhed pr. linje eller adskilt med kommaer.',
+  'settings.privacy.register.searchPlaceholder': 'Navn, formål, retsgrundlag eller kategori',
+  'settings.privacy.register.aria.risk': 'Risiko for {name}',
+  'settings.privacy.register.aria.status': 'Status for {name}',
+  'settings.privacy.evidence.field.type': 'Bevistype',
+  'settings.privacy.evidence.field.notes': 'Bevisnoter',
+  'settings.privacy.evidence.operator.title': 'Operatørbevis',
+  'settings.privacy.evidence.operator.dpiaBody':
+    'Dette bevis registrerer kun en lokal DPIA-gennemgang eller -øvelse. Det indsender ikke til myndigheden, accepterer ikke juridisk gennemgang, leverer ikke eksternt, afslutter ikke DPIA’en og certificerer ikke overholdelse.',
+  'settings.privacy.evidence.operator.breachBody':
+    'Dette bevis registrerer kun en gennemgang eller øvelse. Det underretter hverken myndigheden eller de registrerede.',
+  'settings.privacy.evidence.operator.transferBody':
+    'Dette bevis registrerer kun en gennemgang af kontrollen. Det godkender ikke overførsler, udfører ikke dataoverførsler og certificerer ikke juridisk overholdelse.',
+  'settings.privacy.legalHold.title': 'Lokal status for legal hold og bortskaffelse',
+  'settings.privacy.legalHold.evidence.title': 'Lokalt driftsbevis',
+  'settings.privacy.legalHold.evidence.body':
+    'Denne oversigt viser kun lokal status/gennemgang for operatører. Den godkender ikke bortskaffelse, løser ikke kandidater, fjerner ikke legal holds og erklærer ikke juridisk overholdelse.',
+  'settings.privacy.dueCandidates.title': 'Forfaldne opbevaringskandidater',
+  'settings.privacy.execution.title': 'Kø til gennemgang af udførelse',
+  'settings.privacy.execution.searchPlaceholder':
+    'Politik, mål, ansvarlig, blokering eller næste trin',
+  'settings.privacy.execution.statusFilter': 'Udførelsesstatus',
   'settings.about.cardTitle': 'Om',
   'settings.about.serverVersion': 'Serverversion',
   'settings.about.uiVersion': 'Grænsefladeversion',
