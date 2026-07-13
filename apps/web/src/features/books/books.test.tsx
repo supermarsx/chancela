@@ -931,7 +931,7 @@ describe('BookDetailPage — paper-book preserved imports', () => {
       name: /Preflight de conversão canónica OCR/i,
     });
     expect(within(preflight).getByText('Preflight canónico OCR read-only')).toBeTruthy();
-    expect(within(preflight).getByText(/Metadata-only, read-only, non-canonical/i)).toBeTruthy();
+    expect(within(preflight).getByText(/Apenas metadados, só de leitura e não canónico/i)).toBeTruthy();
     expect(within(preflight).getByText('bloqueado')).toBeTruthy();
     expect(within(preflight).getAllByText(/accepted_ocr_draft_required/i).length).toBeGreaterThan(
       0,
