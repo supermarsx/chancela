@@ -388,8 +388,12 @@ panel/client/i18n markers including compact validator-report actions,
 imported-document review-depth/receipt/history markers for technical review
 history, neutral missing-preservation copy, pending/reviewed states, no-claim
 OCR/conversion/PDF-A replacement/signed-PDF/signature-validation/seal/PDF-UA/
-certification/legal acceptance copy, and no accidental download/OCR/conversion
-behavior, trust identifier-match explanation/copy-safe hash and
+certification/legal acceptance copy, route-stubbed full imported-document
+browser route contract markers for all four `acknowledged_guardrail_ids`, two
+ordered `review_history` entries, pending receipt/history before
+acknowledgement, canonical `/v1/acts/{id}/document` PDF export, and no
+accidental imported-byte/OCR/conversion behavior,
+trust identifier-match explanation/copy-safe hash and
 SKI markers, trust/import/static URL/body/header fail-closed markers,
 retained-export `would_delete_*`/zero-`deleted_*` dry-run planning markers,
 preview-only Settings payload/no-files-removed markers, retained-export
@@ -435,8 +439,10 @@ metadata rendering, pending/initiated slot operator evidence actions,
 identity-requirement-tagged row builders, no-`complete:true` PATCH payloads,
 and desktop `Cargo.lock` are present, so accidental deletion or rename of the
 checkpoint targets fails with a direct message. It also statically pins the
-imported-document review notification/export browser E2E marker; Playwright
-execution remains in the browser jobs so this recent-landed lane stays focused.
+imported-document review notification/export browser E2E marker plus the
+guardrail acknowledgement payload, ordered review-history rendering, and
+canonical act-document download assertions; Playwright execution remains in the
+browser jobs so this recent-landed lane stays focused.
 
 Password-required auth markers pin the current security slice only: `POST
 /v1/users` requires a password, enforces policy after auth for non-bootstrap

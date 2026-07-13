@@ -31,6 +31,7 @@ const IMPORT_ID = '2b8d1d70-1000-4000-8000-00000000d305';
 const ENTITY_NAME = 'Imported Review E2E, S.A.';
 const ACT_TITLE = 'Ata import review E2E';
 const ACT_PDF_PATH = `/v1/acts/${ACT_ID}/document`;
+const IMPORT_BYTES_PATH = `/v1/documents/imported/${IMPORT_ID}/bytes`;
 const IMPORT_REVIEW_ALERT_CODE = 'document.import.review_required';
 const IMPORT_REVIEW_ALERT_ID = `alert:${IMPORT_REVIEW_ALERT_CODE}:${ENTITY_ID}:${BOOK_ID}:${ACT_ID}:0`;
 const PDF_FILENAME = 'imported-review-e2e-s-a-ata-3.pdf';
@@ -45,6 +46,15 @@ const LEGAL_NOTICE =
 const REVIEW_NOTE = 'Conferido como evidência preservada, sem conversão canónica.';
 const NOTIFICATION_REVIEW_NOTE =
   'Revisto a partir da notificação; original mantido fora do PDF/A canónico.';
+const INITIAL_HISTORY_NOTE = 'Triagem inicial mantida como evidência não canónica.';
+const REVIEWED_AT = '2026-07-10T09:30:00.000Z';
+const REVIEWED_BY = 'operator.review';
+const IMPORTED_REVIEW_GUARDRAIL_IDS = [
+  'preserved_original_bytes_remain_non_canonical_evidence',
+  'canonical_pdfa_record_is_not_replaced',
+  'signed_pdf_artifact_is_not_created_or_validated',
+  'ocr_or_conversion_output_is_not_promoted_to_canonical_records',
+];
 
 test('non-canonical imported document can be reviewed without losing conservative evidence messaging', async ({
   page,
@@ -74,6 +84,18 @@ test('non-canonical imported document can be reviewed without losing conservativ
   await expect(metadata).toContainText(LEGAL_NOTICE);
   await expect(metadata).toContainText('Não indicado');
 
+  const summary = page.getByRole('group', { name: 'Resumo de profundidade da revisão importada' });
+  const receipt = page.getByRole('group', { name: 'Recibo de revisão' });
+  const history = page.getByRole('group', { name: 'Histórico técnico de revisão' });
+  await expect(summary).toContainText('Histórico técnico: sem decisões');
+  await expect(summary).toContainText('OCR, conversão, substituição de PDF/A');
+  await expect(receipt).toContainText('Sem recibo de revisão');
+  await expect(receipt).toContainText('Não efetuado por esta revisão.');
+  await expect(receipt).toContainText('Não criado nem validado por esta revisão.');
+  await expect(history).toContainText(
+    'Sem histórico técnico registado para além dos metadados atuais da revisão.',
+  );
+
   const form = page.getByRole('form', { name: 'Revisão operacional do documento importado' });
   await expect(form).toBeVisible();
   await expect(form.getByText('Revisão conservadora')).toBeVisible();
@@ -83,18 +105,23 @@ test('non-canonical imported document can be reviewed without losing conservativ
   await expect(status).toBeVisible();
   await status.selectOption('rejected_non_canonical_evidence');
   await page.getByLabel('Nota da revisão').fill(REVIEW_NOTE);
+  const save = form.getByRole('button', { name: 'Guardar revisão' });
+  await expect(save).toBeDisabled();
+  await form.getByLabel(/Confirmo que revi estes limites/).check();
+  await expect(save).toBeEnabled();
 
   const reviewResponse = waitForApiResponse(
     page,
     `/v1/documents/imported/${IMPORT_ID}/review`,
     'PATCH',
   );
-  await page.getByRole('button', { name: 'Guardar revisão' }).click();
+  await save.click();
   expect((await reviewResponse).status()).toBe(200);
 
   expect(reviewBodies).toEqual([
     {
       review_status: 'rejected_non_canonical_evidence',
+      acknowledged_guardrail_ids: IMPORTED_REVIEW_GUARDRAIL_IDS,
       review_note: REVIEW_NOTE,
     },
   ]);
@@ -105,6 +132,20 @@ test('non-canonical imported document can be reviewed without losing conservativ
   await expect(metadata).toContainText(REVIEW_NOTE);
   await expect(metadata).toContainText(REVIEW_NOTICE);
   await expect(metadata).toContainText(LEGAL_NOTICE);
+  await expect(receipt).toContainText('Rejeitado como evidência não canónica');
+  await expect(receipt).toContainText(REVIEW_NOTE);
+  await expect(receipt).toContainText('Limites reconhecidos');
+
+  const decisions = history.locator('ol > li');
+  await expect(decisions).toHaveCount(2);
+  await expect(decisions.nth(0)).toContainText(INITIAL_HISTORY_NOTE);
+  await expect(decisions.nth(0)).toContainText('2026-07-09T11:00:00.000Z');
+  await expect(decisions.nth(1)).toContainText(REVIEW_NOTE);
+  await expect(decisions.nth(1)).toContainText(REVIEWED_AT);
+  await expect(decisions.nth(1)).toContainText(REVIEWED_BY);
+  await expect(history).toContainText('Histórico de revisão metadata-only');
+  await expect(history).toContainText('sem OCR, conversão, substituição de PDF/A');
+  await expect(history).toContainText('certificação ou aceitação legal');
   await expect(
     page.locator('.badge').filter({ hasText: 'Evidência não canónica' }).first(),
   ).toBeVisible();
@@ -152,18 +193,23 @@ test('dashboard import-review notification routes to review, can be dismissed, a
   const form = page.getByRole('form', { name: 'Revisão operacional do documento importado' });
   await form.getByLabel('Estado de revisão').selectOption('reviewed_non_canonical_original_only');
   await form.getByLabel('Nota da revisão').fill(NOTIFICATION_REVIEW_NOTE);
+  const save = form.getByRole('button', { name: 'Guardar revisão' });
+  await expect(save).toBeDisabled();
+  await form.getByLabel(/Confirmo que revi estes limites/).check();
+  await expect(save).toBeEnabled();
 
   const reviewResponse = waitForApiResponse(
     page,
     `/v1/documents/imported/${IMPORT_ID}/review`,
     'PATCH',
   );
-  await form.getByRole('button', { name: 'Guardar revisão' }).click();
+  await save.click();
   expect((await reviewResponse).status()).toBe(200);
 
   expect(reviewBodies).toEqual([
     {
       review_status: 'reviewed_non_canonical_original_only',
+      acknowledged_guardrail_ids: IMPORTED_REVIEW_GUARDRAIL_IDS,
       review_note: NOTIFICATION_REVIEW_NOTE,
     },
   ]);
@@ -198,6 +244,7 @@ test('dashboard import-review notification routes to review, can be dismissed, a
   expect(await pdfResponse.headerValue('content-type')).toContain('application/pdf');
   await expectDownloadPayload(download, PDF_FILENAME, PDF_BYTES);
   expect(downloadedPaths).toEqual([ACT_PDF_PATH]);
+  expect(downloadedPaths).not.toContain(IMPORT_BYTES_PATH);
 });
 
 type ImportedReviewRouteOptions = {
@@ -326,6 +373,11 @@ async function routeImportedReviewFixtures(
       await fulfillBytes(route, PDF_BYTES, 'application/pdf');
       return;
     }
+    if (method === 'GET' && pathname === IMPORT_BYTES_PATH) {
+      options.downloadedPaths?.push(pathname);
+      await fulfillBytes(route, Buffer.from('original imported bytes', 'utf8'), 'application/msword');
+      return;
+    }
     if (method === 'GET' && pathname === `/v1/acts/${ACT_ID}/signature`) {
       await fulfillJson(route, signatureStatusFixture());
       return;
@@ -345,13 +397,7 @@ async function routeImportedReviewFixtures(
     if (method === 'PATCH' && pathname === `/v1/documents/imported/${IMPORT_ID}/review`) {
       const body = request.postDataJSON() as ImportedDocumentReviewBody;
       reviewBodies.push(body);
-      currentDocument = {
-        ...currentDocument,
-        operator_review_status: body.review_status,
-        operator_reviewed_at: '2026-07-10T09:30:00.000Z',
-        operator_reviewed_by: 'operator.review',
-        operator_review_note: body.review_note ?? null,
-      };
+      currentDocument = reviewedImportedDocumentFixture(currentDocument, body);
       await fulfillJson(route, currentDocument);
       return;
     }
@@ -679,6 +725,118 @@ function signatureStatusFixture(): SignatureStatusView {
   };
 }
 
+function importedDocumentCanonicalConversionPreflight(
+  reviewState: string,
+): ImportedDocumentView['canonical_conversion_preflight'] {
+  return {
+    report_kind: 'legacy_imported_document_canonical_conversion_preflight',
+    scope: 'local_metadata_only',
+    status: 'blocked',
+    source_format: 'legacy_word_doc',
+    review_state: reviewState,
+    bounded_evidence_status: 'metadata_only_legacy_doc_preflight',
+    evidence_basis: [
+      'ole_cfb_magic_detected',
+      'legacy_word_doc_metadata_or_extension_detected',
+      'original_bytes_preserved',
+    ],
+    blockers: [
+      'non_canonical_import_only',
+      'operator_conversion_review_required',
+      'no_canonical_conversion_workflow_executed',
+    ],
+    next_step: 'separate_operator_review_required_before_any_canonical_conversion_workflow',
+    local_metadata_only: true,
+    original_bytes_preserved: true,
+    canonical_conversion_performed: false,
+    canonical_pdfa_generated: false,
+    signature_validation_performed: false,
+    ocr_performed: false,
+    legal_acceptance_claimed: false,
+    external_provider_contacted: false,
+    canonical_record_replaced: false,
+  };
+}
+
+function importedDocumentPreservationPolicy(
+  reviewState: string,
+  requiresOperatorReview: boolean,
+): ImportedDocumentView['preservation_policy'] {
+  return {
+    review_state: reviewState,
+    requires_operator_review: requiresOperatorReview,
+    requires_ocr_review: false,
+    canonical_record_status: 'not_canonical_record',
+    signed_artifact_status: 'not_signed_artifact',
+    review_guardrail_checklist: IMPORTED_REVIEW_GUARDRAIL_IDS,
+    canonical_conversion_status: 'not_performed_non_canonical_original_only',
+    original_bytes_preservation_status: 'preserved_original_bytes',
+    preservation_action: 'preserve_original_bytes_as_non_canonical_evidence_if_needed',
+    canonical_conversion_performed: false,
+    canonical_pdfa_generated: false,
+    legal_acceptance_claimed: false,
+  };
+}
+
+function importedDocumentReviewHistoryEntry(
+  decisionIndex: number,
+  reviewStatus: ImportedDocumentView['operator_review_status'],
+  reviewedAt: string,
+  reviewedBy: string,
+  reviewNote: string | null,
+  acknowledgedGuardrails: ImportedDocumentReviewBody['acknowledged_guardrail_ids'],
+): ImportedDocumentView['review_history'][number] {
+  return {
+    decision_index: decisionIndex,
+    review_status: reviewStatus,
+    reviewed_at: reviewedAt,
+    reviewed_by: reviewedBy,
+    review_note: reviewNote,
+    acknowledged_guardrail_ids: acknowledgedGuardrails,
+    bytes_in_payload: false,
+    ocr_performed: false,
+    canonical_conversion_performed: false,
+    canonical_pdfa_generated: false,
+    signed_artifact_created_or_validated: false,
+    legal_acceptance_claimed: false,
+    certification_claimed: false,
+  };
+}
+
+function reviewedImportedDocumentFixture(
+  currentDocument: ImportedDocumentView,
+  body: ImportedDocumentReviewBody,
+): ImportedDocumentView {
+  return {
+    ...currentDocument,
+    operator_review_status: body.review_status,
+    operator_reviewed_at: REVIEWED_AT,
+    operator_reviewed_by: REVIEWED_BY,
+    operator_review_note: body.review_note ?? null,
+    acknowledged_guardrail_ids: body.acknowledged_guardrail_ids,
+    review_history: [
+      importedDocumentReviewHistoryEntry(
+        1,
+        'reviewed_non_canonical_original_only',
+        '2026-07-09T11:00:00.000Z',
+        'ana.reviewer',
+        INITIAL_HISTORY_NOTE,
+        body.acknowledged_guardrail_ids,
+      ),
+      importedDocumentReviewHistoryEntry(
+        2,
+        body.review_status,
+        REVIEWED_AT,
+        REVIEWED_BY,
+        body.review_note ?? null,
+        body.acknowledged_guardrail_ids,
+      ),
+    ],
+    canonical_conversion_preflight: importedDocumentCanonicalConversionPreflight(body.review_status),
+    preservation_policy: importedDocumentPreservationPolicy(body.review_status, false),
+  };
+}
+
 function importedDocumentFixture(): ImportedDocumentView {
   return {
     id: IMPORT_ID,
@@ -696,13 +854,22 @@ function importedDocumentFixture(): ImportedDocumentView {
     operator_reviewed_at: null,
     operator_reviewed_by: null,
     operator_review_note: null,
+    acknowledged_guardrail_ids: [],
+    review_history: [],
     operator_review_notice: REVIEW_NOTICE,
     non_canonical: true,
     requires_ocr_review: false,
+    canonical_record_status: 'not_canonical_record',
+    signed_artifact_status: 'not_signed_artifact',
+    review_guardrail_checklist: IMPORTED_REVIEW_GUARDRAIL_IDS,
     canonical_conversion_status: 'not_performed_non_canonical_original_only',
     canonical_conversion_performed: false,
+    canonical_conversion_preflight: importedDocumentCanonicalConversionPreflight(
+      'operator_review_required',
+    ),
     legal_acceptance_claimed: false,
+    preservation_policy: importedDocumentPreservationPolicy('operator_review_required', true),
     legal_notice: LEGAL_NOTICE,
-    bytes_download: `/v1/documents/imported/${IMPORT_ID}/bytes`,
+    bytes_download: IMPORT_BYTES_PATH,
   };
 }

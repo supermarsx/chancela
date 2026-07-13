@@ -813,9 +813,13 @@ Implementation checkpoints covered here:
   local `canonical_conversion_preflight` evidence report with `blocked` or
   `not_attempted` status and explicit false conversion, PDF/A, OCR, signature
   validation, provider-contact, canonical-replacement, and legal-acceptance
-  flags. Tests block accidental bytes, archive,
-  signed-document, external-validator, trust, conversion, or OCR calls. This is
-  technical review history only for non-canonical evidence; no OCR, conversion,
+  flags. Route-stubbed Chromium evidence now uses a complete
+  `ImportedDocumentView` fixture, checks pending receipt/history before the
+  guardrail checkbox, sends all four `acknowledged_guardrail_ids`, renders two
+  ordered `review_history` entries with metadata-only/no-claim copy, and keeps
+  the PDF export on `/v1/acts/{id}/document` instead of imported bytes. Tests
+  block accidental bytes, archive, signed-document, external-validator, trust,
+  conversion, or OCR calls. This is technical review history only for non-canonical evidence; no OCR, conversion,
   PDF/A replacement, signed artifact creation/validation, signature validation,
   seal, PDF/UA, certification, legal validity, or legal acceptance claim is
   implemented.
@@ -3528,6 +3532,10 @@ behavior, legal disposal, or legal-effect claims.
   requirements, reviewer metadata, loaded preservation metadata, latest status/note, and ordered
   prior review decisions for non-canonical evidence. Pending rows do not invent receipt metadata, and
   missing preservation status renders neutral/not-indicated copy rather than a bytes-preserved claim.
+  The browser proof is route-stubbed evidence for the current guardrail acknowledgement contract:
+  it asserts pending receipt/history first, then the acknowledgement checkbox, all four required
+  guardrail IDs in the PATCH body, two ordered review-history rows, and canonical PDF download
+  routing to `/v1/acts/{id}/document`, not imported original bytes.
   These surfaces do not run OCR, convert documents to PDF/A, replace canonical PDF/A records, create
   canonical records, create signed PDFs, create seals, validate signatures, add PDF/UA, certify legal
   acceptance, or validate legal effect.

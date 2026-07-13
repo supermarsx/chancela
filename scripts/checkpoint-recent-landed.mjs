@@ -7995,6 +7995,21 @@ function assertCheckpointMap() {
     "imported document review canonical PDF export coverage",
   );
   assertFileContains(
+    "apps/web/e2e/imported-document-review.spec.ts",
+    "acknowledged_guardrail_ids: IMPORTED_REVIEW_GUARDRAIL_IDS",
+    "imported document review guardrail acknowledgement browser coverage",
+  );
+  assertFileContains(
+    "apps/web/e2e/imported-document-review.spec.ts",
+    "await expect(decisions).toHaveCount(2)",
+    "imported document review history order browser coverage",
+  );
+  assertFileContains(
+    "apps/web/e2e/imported-document-review.spec.ts",
+    "expect(downloadedPaths).not.toContain(IMPORT_BYTES_PATH)",
+    "imported document review no imported-bytes PDF export marker",
+  );
+  assertFileContains(
     "apps/web/e2e/data-key-rotation-execution.spec.ts",
     "data key rotation preflight reveals guarded execution and submits only the replacement key",
     "data key rotation execution browser coverage",
@@ -9591,6 +9606,16 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
+    "sends all four `acknowledged_guardrail_ids`",
+    "spec coverage imported-document guardrail acknowledgement browser marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "renders two\n  ordered `review_history` entries with metadata-only/no-claim copy",
+    "spec coverage imported-document ordered history browser marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
     "Pending documents show `Sem recibo\n  de revisão` and no fake reviewer/time/note/guardrail receipt",
     "spec coverage imported-document no fake receipt marker",
   );
@@ -9603,6 +9628,16 @@ function assertCheckpointMap() {
     "SPEC-COVERAGE.md",
     "technical review history only for non-canonical evidence; no OCR, conversion,\n  PDF/A replacement",
     "spec coverage imported-document review receipt no-claim marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "browser route contract markers for all four `acknowledged_guardrail_ids`",
+    "CI checkpoints imported-document guardrail browser marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "ordered review-history rendering",
+    "CI checkpoints imported-document ordered history marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
