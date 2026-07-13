@@ -151,6 +151,27 @@ impl PlatformLogRing {
         logs
     }
 
+    fn retention_metadata(&self, durable: bool) -> PlatformLogRetentionMetadata {
+        let oldest_seq = self.entries.front().map(|entry| entry.seq);
+        let newest_seq = self.entries.back().map(|entry| entry.seq);
+        PlatformLogRetentionMetadata {
+            retention_limit: self.capacity,
+            retained_count: self.entries.len(),
+            oldest_seq,
+            newest_seq,
+            dropped_before_seq: oldest_seq
+                .and_then(|seq| seq.checked_sub(1))
+                .filter(|seq| *seq > 0),
+            durable,
+            basis: if durable { "data_dir" } else { "memory" },
+            source: if durable {
+                PLATFORM_LOGS_FILE
+            } else {
+                "process_memory"
+            },
+        }
+    }
+
     pub fn clear(&mut self) {
         self.entries.clear();
         self.next_seq = 1;
@@ -438,7 +459,20 @@ pub struct PlatformLogsResponse {
     pub logs: Vec<PlatformLogEntry>,
     pub tail: usize,
     pub order: &'static str,
+    pub retention: PlatformLogRetentionMetadata,
     pub limitations: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PlatformLogRetentionMetadata {
+    pub retention_limit: usize,
+    pub retained_count: usize,
+    pub oldest_seq: Option<u64>,
+    pub newest_seq: Option<u64>,
+    pub dropped_before_seq: Option<u64>,
+    pub durable: bool,
+    pub basis: &'static str,
+    pub source: &'static str,
 }
 
 /// `GET /v1/platform/logs` — read the newest API-owned platform log tail in chronological order.
@@ -459,13 +493,17 @@ pub async fn list_logs(
     let level = query.level.as_deref().map(parse_log_level).transpose()?;
     let tail = validate_tail(query.tail.as_deref())?;
     let filter = PlatformLogFilter { service_id, level };
-    let logs = state.platform_logs.read().await.tail(filter, tail);
+    let durable = state.platform_logs_path.is_some();
+    let platform_logs = state.platform_logs.read().await;
+    let logs = platform_logs.tail(filter, tail);
+    let retention = platform_logs.retention_metadata(durable);
 
     Ok(Json(PlatformLogsResponse {
         logs,
         tail,
         order: "chronological",
-        limitations: limitations(state.platform_logs_path.is_some()),
+        retention,
+        limitations: limitations(durable),
     }))
 }
 

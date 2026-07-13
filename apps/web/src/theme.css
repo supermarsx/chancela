@@ -3314,6 +3314,34 @@ a,
   padding-left: 1.1rem;
 }
 
+.platform-log-retention {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8.5rem), 1fr));
+  gap: 0.7rem;
+  margin: 0;
+}
+
+.platform-log-retention div {
+  min-width: 0;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 82%, var(--bg));
+}
+
+.platform-log-retention dt {
+  margin: 0 0 0.25rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.platform-log-retention dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-weight: 650;
+}
+
 .platform-log-table-wrap {
   min-width: 0;
 }

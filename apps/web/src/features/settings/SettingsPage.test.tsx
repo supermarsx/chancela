@@ -887,11 +887,24 @@ function settingsFetch(
         .filter((entry) => !serviceId || entry.service_id === serviceId)
         .filter((entry) => !level || entry.level === level)
         .slice(-tail);
+      const oldestSeq = platformLogs.length > 0 ? Number(platformLogs[0].seq) : null;
+      const newestSeq =
+        platformLogs.length > 0 ? Number(platformLogs[platformLogs.length - 1].seq) : null;
       return Promise.resolve(
         jsonResponse({
           logs,
           tail,
           order: 'chronological',
+          retention: {
+            retention_limit: 512,
+            retained_count: platformLogs.length,
+            oldest_seq: oldestSeq,
+            newest_seq: newestSeq,
+            dropped_before_seq: oldestSeq !== null && oldestSeq > 1 ? oldestSeq - 1 : null,
+            durable: false,
+            basis: 'memory',
+            source: 'process_memory',
+          },
           limitations: platformLogLimitations,
         }),
       );
@@ -2337,6 +2350,10 @@ describe('SettingsPage', () => {
     expect(await screen.findByText('Cauda estruturada de logs da API')).toBeTruthy();
     expect(await screen.findByText('Platform service status read')).toBeTruthy();
     expect(screen.getByText(/in-memory API-owned structured log ring/)).toBeTruthy();
+    expect(screen.getByText('Limite de retenção')).toBeTruthy();
+    expect(screen.getByText('Retidas')).toBeTruthy();
+    expect(screen.getByText('Ring em memória')).toBeTruthy();
+    expect(screen.getByText('process_memory')).toBeTruthy();
     expect(screen.getByText('2 entradas · limite 100 · cronológico')).toBeTruthy();
     expect(screen.getAllByText('Servidor API').length).toBeGreaterThan(0);
     expect(screen.getByText('platform.services')).toBeTruthy();
@@ -2400,6 +2417,8 @@ describe('SettingsPage', () => {
 
     expect(await screen.findByText('Sem logs da plataforma')).toBeTruthy();
     expect(screen.getByText('Ring only; no historical process logs are retained.')).toBeTruthy();
+    expect(screen.getAllByText('0').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('n/a').length).toBeGreaterThan(0);
     expect(screen.getByText('0 entradas · limite 100 · cronológico')).toBeTruthy();
   });
 

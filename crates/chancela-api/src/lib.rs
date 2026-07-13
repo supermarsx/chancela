@@ -7986,6 +7986,19 @@ mod tests {
         assert_eq!(body["logs"], json!([]));
         assert_eq!(body["tail"], platform_logs::PLATFORM_LOG_DEFAULT_TAIL);
         assert_eq!(body["order"], "chronological");
+        assert_eq!(
+            body["retention"],
+            json!({
+                "retention_limit": platform_logs::PLATFORM_LOG_RETENTION_LIMIT,
+                "retained_count": 0,
+                "oldest_seq": null,
+                "newest_seq": null,
+                "dropped_before_seq": null,
+                "durable": false,
+                "basis": "memory",
+                "source": "process_memory"
+            })
+        );
         assert!(
             body["limitations"]
                 .as_array()
@@ -8109,6 +8122,20 @@ mod tests {
         assert_eq!(logs.len(), 1);
         assert_eq!(logs[0]["message"], "durable api event");
         assert_eq!(logs[0]["context"], json!({ "phase": "first" }));
+        assert_eq!(
+            body["retention"]["retention_limit"],
+            platform_logs::PLATFORM_LOG_RETENTION_LIMIT
+        );
+        assert_eq!(body["retention"]["retained_count"], 1);
+        assert_eq!(body["retention"]["oldest_seq"], 1);
+        assert_eq!(body["retention"]["newest_seq"], 1);
+        assert_eq!(body["retention"]["dropped_before_seq"], Value::Null);
+        assert_eq!(body["retention"]["durable"], true);
+        assert_eq!(body["retention"]["basis"], "data_dir");
+        assert_eq!(
+            body["retention"]["source"],
+            platform_logs::PLATFORM_LOGS_FILE
+        );
         assert!(
             body["limitations"]
                 .as_array()
@@ -8164,6 +8191,26 @@ mod tests {
                 "retained event {}",
                 platform_logs::PLATFORM_LOG_RETENTION_LIMIT + 2
             )
+        );
+        assert_eq!(
+            body["retention"]["retention_limit"],
+            platform_logs::PLATFORM_LOG_RETENTION_LIMIT
+        );
+        assert_eq!(
+            body["retention"]["retained_count"],
+            platform_logs::PLATFORM_LOG_RETENTION_LIMIT
+        );
+        assert_eq!(body["retention"]["oldest_seq"], 4);
+        assert_eq!(
+            body["retention"]["newest_seq"],
+            (platform_logs::PLATFORM_LOG_RETENTION_LIMIT + 3) as u64
+        );
+        assert_eq!(body["retention"]["dropped_before_seq"], 3);
+        assert_eq!(body["retention"]["durable"], true);
+        assert_eq!(body["retention"]["basis"], "data_dir");
+        assert_eq!(
+            body["retention"]["source"],
+            platform_logs::PLATFORM_LOGS_FILE
         );
     }
 

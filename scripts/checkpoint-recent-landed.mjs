@@ -6797,6 +6797,36 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-api/src/platform_logs.rs",
+    "pub struct PlatformLogRetentionMetadata",
+    "platform log retention metadata DTO marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/platform_logs.rs",
+    "dropped_before_seq",
+    "platform log dropped-before sequence marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    '"retention_limit": platform_logs::PLATFORM_LOG_RETENTION_LIMIT',
+    "API platform log retention metadata coverage marker",
+  );
+  assertFileContains(
+    "apps/web/src/api/types.ts",
+    "export interface PlatformLogRetentionMetadata",
+    "web platform log retention metadata type marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/SettingsPage.tsx",
+    "settings.platform.logs.retention.droppedBefore",
+    "Settings platform log retention metadata UI marker",
+  );
+  assertFileContains(
+    "contracts/platform.logs.json",
+    '"retention_limit": 512',
+    "platform logs contract retention metadata fixture marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/platform_logs.rs",
     "if let Some(entry) = retained",
     "platform forwarded log retained-entry audit gate marker",
   );
@@ -8541,6 +8571,16 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
+    "read-only\n  local retained-tail metadata",
+    "spec coverage platform log retention visibility marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "retention/deletion execution\n  semantics beyond the visible 512-entry local tail bound",
+    "spec coverage platform log no retention execution semantics marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
     "append exactly one sanitized\n  `platform.log.forwarded.accepted` ledger event",
     "spec coverage platform forwarded log accepted audit marker",
   );
@@ -8586,7 +8626,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "a generalized observability sink, log retention/deletion\n  semantics, or a legal/compliance claim",
+    "a generalized observability sink, retention/deletion execution\n  semantics beyond the visible 512-entry local tail bound, or a legal/compliance\n  claim",
     "spec coverage platform forwarded log observability/retention/legal caveat marker",
   );
   assertFileContains(

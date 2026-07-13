@@ -24,6 +24,16 @@
   ],
   "tail": 5,
   "order": "chronological",
+  "retention": {
+    "retention_limit": 512,
+    "retained_count": 2,
+    "oldest_seq": 1,
+    "newest_seq": 2,
+    "dropped_before_seq": null,
+    "durable": false,
+    "basis": "memory",
+    "source": "process_memory"
+  },
   "limitations": [
     "This is an in-memory API-owned structured log ring; entries reset when the API process restarts.",
     "It is not historical stdout/stderr tailing and does not include MCP process logs unless a future supervisor forwards structured events into the API."

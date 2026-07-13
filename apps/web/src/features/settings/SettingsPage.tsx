@@ -576,6 +576,10 @@ function platformLogContextText(context: PlatformLogEntry['context']): string {
   }
 }
 
+function platformLogSequenceText(seq: number | null): string {
+  return seq === null ? 'n/a' : String(seq);
+}
+
 function PlatformLogTailPanel() {
   const t = useT();
   const [serviceId, setServiceId] = useState<PlatformServiceId | ''>('');
@@ -677,6 +681,43 @@ function PlatformLogTailPanel() {
                 ))}
               </ul>
             </InlineWarning>
+            <dl
+              className="platform-log-retention"
+              aria-label={t('settings.platform.logs.retention.title')}
+            >
+              <div>
+                <dt>{t('settings.platform.logs.retention.limit')}</dt>
+                <dd>{logs.data.retention.retention_limit}</dd>
+              </div>
+              <div>
+                <dt>{t('settings.platform.logs.retention.retained')}</dt>
+                <dd>{logs.data.retention.retained_count}</dd>
+              </div>
+              <div>
+                <dt>{t('settings.platform.logs.retention.oldest')}</dt>
+                <dd>{platformLogSequenceText(logs.data.retention.oldest_seq)}</dd>
+              </div>
+              <div>
+                <dt>{t('settings.platform.logs.retention.newest')}</dt>
+                <dd>{platformLogSequenceText(logs.data.retention.newest_seq)}</dd>
+              </div>
+              <div>
+                <dt>{t('settings.platform.logs.retention.droppedBefore')}</dt>
+                <dd>{platformLogSequenceText(logs.data.retention.dropped_before_seq)}</dd>
+              </div>
+              <div>
+                <dt>{t('settings.platform.logs.retention.basis')}</dt>
+                <dd>
+                  {logs.data.retention.durable
+                    ? t('settings.platform.logs.retention.basis.durable')
+                    : t('settings.platform.logs.retention.basis.memory')}
+                </dd>
+              </div>
+              <div>
+                <dt>{t('settings.platform.logs.retention.source')}</dt>
+                <dd className="mono">{logs.data.retention.source}</dd>
+              </div>
+            </dl>
             <p className="field__hint">
               {t('settings.platform.logs.summary', {
                 count: logs.data.logs.length,

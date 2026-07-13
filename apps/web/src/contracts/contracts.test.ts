@@ -152,6 +152,7 @@ import {
   type PlatformControlResponse,
   type PlatformControlResult,
   type PlatformLogEntry,
+  type PlatformLogRetentionMetadata,
   type PlatformLogsResponse,
   type PlatformLoggingSettings,
   type PlatformServiceControlSettings,
@@ -1798,6 +1799,59 @@ function assertPlatformLogEntry(obj: unknown, label: string): PlatformLogEntry {
   expect(entry.target.length, `${label}.target should be non-empty`).toBeGreaterThan(0);
   expect(entry.message.length, `${label}.message should be non-empty`).toBeGreaterThan(0);
   return entry;
+}
+
+function assertPlatformLogRetentionMetadata(
+  obj: unknown,
+  label: string,
+): PlatformLogRetentionMetadata {
+  const retention = assertExactKeys<PlatformLogRetentionMetadata>(
+    obj,
+    {
+      retention_limit: true,
+      retained_count: true,
+      oldest_seq: true,
+      newest_seq: true,
+      dropped_before_seq: true,
+      durable: true,
+      basis: true,
+      source: true,
+    },
+    label,
+  );
+  expect(
+    Number.isInteger(retention.retention_limit),
+    `${label}.retention_limit should be an integer`,
+  ).toBe(true);
+  expect(retention.retention_limit, `${label}.retention_limit should be positive`).toBeGreaterThan(
+    0,
+  );
+  expect(
+    Number.isInteger(retention.retained_count),
+    `${label}.retained_count should be an integer`,
+  ).toBe(true);
+  expect(
+    retention.retained_count,
+    `${label}.retained_count should be non-negative`,
+  ).toBeGreaterThanOrEqual(0);
+  expect(
+    retention.retained_count,
+    `${label}.retained_count should not exceed limit`,
+  ).toBeLessThanOrEqual(retention.retention_limit);
+  for (const field of ['oldest_seq', 'newest_seq', 'dropped_before_seq'] as const) {
+    const value = retention[field];
+    expect(
+      value === null || Number.isInteger(value),
+      `${label}.${field} should be null or an integer`,
+    ).toBe(true);
+    if (value !== null) {
+      expect(value, `${label}.${field} should be positive when present`).toBeGreaterThan(0);
+    }
+  }
+  expect(typeof retention.durable, `${label}.durable should be boolean`).toBe('boolean');
+  inEnum(['data_dir', 'memory'], retention.basis, `${label}.basis`);
+  inEnum(['platform-logs.json', 'process_memory'], retention.source, `${label}.source`);
+  return retention;
 }
 
 function assertPaperBookImportReport(obj: unknown, label: string): PaperBookImportReport {
@@ -3714,7 +3768,7 @@ describe('contract fixtures parse through the real client', () => {
     });
     const parsed = assertExactKeys<PlatformLogsResponse>(
       response,
-      { logs: true, tail: true, order: true, limitations: true },
+      { logs: true, tail: true, order: true, retention: true, limitations: true },
       'PlatformLogsResponse',
     );
     expect(parsed.tail).toBe(5);
@@ -3725,6 +3779,20 @@ describe('contract fixtures parse through the real client', () => {
       'PlatformLogsResponse.limitations should be an array',
     ).toBe(true);
     expect(parsed.limitations.length).toBeGreaterThan(0);
+    const retention = assertPlatformLogRetentionMetadata(
+      parsed.retention,
+      'PlatformLogsResponse.retention',
+    );
+    expect(retention).toMatchObject({
+      retention_limit: 512,
+      retained_count: 2,
+      oldest_seq: 1,
+      newest_seq: 2,
+      dropped_before_seq: null,
+      durable: false,
+      basis: 'memory',
+      source: 'process_memory',
+    });
     const first = assertPlatformLogEntry(parsed.logs[0], 'PlatformLogsResponse.logs[0]');
     expect(first.context).toEqual({ service_count: 2 });
     const second = assertPlatformLogEntry(parsed.logs[1], 'PlatformLogsResponse.logs[1]');

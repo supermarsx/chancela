@@ -3974,10 +3974,22 @@ export interface PlatformLogsQueryParams {
   tail?: number;
 }
 
+export interface PlatformLogRetentionMetadata {
+  retention_limit: number;
+  retained_count: number;
+  oldest_seq: number | null;
+  newest_seq: number | null;
+  dropped_before_seq: number | null;
+  durable: boolean;
+  basis: 'data_dir' | 'memory';
+  source: 'platform-logs.json' | 'process_memory';
+}
+
 export interface PlatformLogsResponse {
   logs: PlatformLogEntry[];
   tail: number;
   order: 'chronological';
+  retention: PlatformLogRetentionMetadata;
   limitations: string[];
 }
 
