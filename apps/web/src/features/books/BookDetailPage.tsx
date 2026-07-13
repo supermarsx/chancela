@@ -334,6 +334,7 @@ function LegalHoldPanel({ bookId }: { bookId: string }) {
 
   const active = hold.data?.legal_hold === true;
   const busy = setHold.isPending || clearHold.isPending;
+  const workflow = hold.data?.operator_workflow;
 
   return (
     <Card title="Retenção legal">
@@ -349,6 +350,8 @@ function LegalHoldPanel({ bookId }: { bookId: string }) {
               title={active ? 'Ativa' : 'Sem retenção'}
             >
               A retenção legal bloqueia o descarte por regras de retenção enquanto estiver ativa.
+              Este painel mostra evidência local de estado/revisão e não aprova descarte nem
+              declara cumprimento legal.
             </InlineWarning>
             <dl className="deflist">
               <div>
@@ -371,7 +374,33 @@ function LegalHoldPanel({ bookId }: { bookId: string }) {
                   <dd>{hold.data.set_at}</dd>
                 </div>
               ) : null}
+              {workflow ? (
+                <>
+                  <div>
+                    <dt>Fluxo operador</dt>
+                    <dd>{workflow.status}</dd>
+                  </div>
+                  <div>
+                    <dt>Bloqueia revisão de descarte</dt>
+                    <dd>{String(workflow.disposal_review_blocked)}</dd>
+                  </div>
+                  <div>
+                    <dt>Próximo passo</dt>
+                    <dd>{workflow.next_step}</dd>
+                  </div>
+                  <div>
+                    <dt>Flags sem execução</dt>
+                    <dd>
+                      destructive_disposal_completed:{' '}
+                      {String(workflow.destructive_disposal_completed)} · disposal_approved:{' '}
+                      {String(workflow.disposal_approved)} · legal_compliance_claimed:{' '}
+                      {String(workflow.legal_compliance_claimed)}
+                    </dd>
+                  </div>
+                </>
+              ) : null}
             </dl>
+            {workflow ? <p className="field__hint">{workflow.review_note}</p> : null}
           </>
         )}
 

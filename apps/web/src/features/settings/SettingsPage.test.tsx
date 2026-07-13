@@ -2977,6 +2977,22 @@ describe('SettingsPage', () => {
 
     renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
 
+    const legalHoldStatusPanel = (
+      await screen.findByText('Estado local de legal hold e descarte')
+    ).closest('section');
+    expect(legalHoldStatusPanel).toBeTruthy();
+    expect(
+      within(legalHoldStatusPanel!).getByText(/Evidência operacional local/),
+    ).toBeTruthy();
+    expect(
+      within(legalHoldStatusPanel!).getByText(/não aprova descarte, não resolve candidatos/i),
+    ).toBeTruthy();
+    expect(
+      within(legalHoldStatusPanel!).getByText(
+        /destructive_disposal_completed:\s*false.*disposal_approved:\s*false.*legal_compliance_claimed:\s*false/,
+      ),
+    ).toBeTruthy();
+
     const candidatesPanel = (await screen.findByText('Candidatos de retenção vencidos')).closest(
       'section',
     );

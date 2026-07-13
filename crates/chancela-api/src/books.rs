@@ -48,6 +48,18 @@ pub struct LegalHoldView {
     reason: Option<String>,
     actor: Option<String>,
     set_at: Option<String>,
+    operator_workflow: LegalHoldOperatorWorkflowView,
+}
+
+#[derive(Debug, Serialize)]
+pub struct LegalHoldOperatorWorkflowView {
+    status: &'static str,
+    disposal_review_blocked: bool,
+    review_note: &'static str,
+    next_step: &'static str,
+    destructive_disposal_completed: bool,
+    disposal_approved: bool,
+    legal_compliance_claimed: bool,
 }
 
 /// `POST /v1/books` — create a book and open it with a termo de abertura (WFL-10/11).
@@ -475,13 +487,39 @@ impl From<Option<&LegalHold>> for LegalHoldView {
                 reason: Some(hold.reason.clone()),
                 actor: Some(hold.actor.clone()),
                 set_at: Some(rfc3339(hold.set_at)),
+                operator_workflow: legal_hold_operator_workflow(true),
             },
             None => LegalHoldView {
                 legal_hold: false,
                 reason: None,
                 actor: None,
                 set_at: None,
+                operator_workflow: legal_hold_operator_workflow(false),
             },
+        }
+    }
+}
+
+fn legal_hold_operator_workflow(active: bool) -> LegalHoldOperatorWorkflowView {
+    if active {
+        LegalHoldOperatorWorkflowView {
+            status: "blocked_by_legal_hold",
+            disposal_review_blocked: true,
+            review_note: "Local operator workflow/status evidence only; active book legal hold blocks retention/disposal review and is not disposal approval or legal compliance.",
+            next_step: "Keep disposal blocked and review the legal-hold evidence in a separate authorized workflow before any retention action.",
+            destructive_disposal_completed: false,
+            disposal_approved: false,
+            legal_compliance_claimed: false,
+        }
+    } else {
+        LegalHoldOperatorWorkflowView {
+            status: "advisory_only",
+            disposal_review_blocked: false,
+            review_note: "Local operator workflow/status evidence only; no active book legal hold is recorded here and this is not disposal approval or legal compliance.",
+            next_step: "Use retention dry-run/status review before any disposal action; this legal-hold view does not resolve candidates.",
+            destructive_disposal_completed: false,
+            disposal_approved: false,
+            legal_compliance_claimed: false,
         }
     }
 }

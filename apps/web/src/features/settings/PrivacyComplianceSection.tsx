@@ -791,6 +791,78 @@ function retentionQueuedReviewForCandidate(
     .sort((a, b) => a.requested_at.localeCompare(b.requested_at) || a.id.localeCompare(b.id))[0];
 }
 
+interface RetentionLegalHoldDisposalStatusSummary {
+  dueCandidateLegalHoldBlockers: number;
+  executionLegalHoldBlocks: number;
+  openBlockedReviews: number;
+}
+
+function retentionLegalHoldDisposalStatusSummary(
+  report: RetentionDueCandidatesReport | null,
+  records: RetentionExecutionRecord[],
+): RetentionLegalHoldDisposalStatusSummary {
+  const dueCandidateLegalHoldBlockers =
+    report?.candidates.filter((candidate) => candidate.legal_hold_blockers.length > 0).length ?? 0;
+  const legalHoldBlockedExecutions = records.filter(
+    (record) =>
+      record.outcome === 'blocked_legal_hold' ||
+      record.legal_hold_blockers.length > 0 ||
+      record.workflow.blockers.some((blocker) => blocker.code === 'legal_hold_release'),
+  );
+  return {
+    dueCandidateLegalHoldBlockers,
+    executionLegalHoldBlocks: legalHoldBlockedExecutions.length,
+    openBlockedReviews: legalHoldBlockedExecutions.filter(
+      (record) => record.decision_state !== 'review_closed',
+    ).length,
+  };
+}
+
+function RetentionLegalHoldDisposalStatusPanel({
+  report,
+  records,
+}: {
+  report: RetentionDueCandidatesReport | null;
+  records: RetentionExecutionRecord[];
+}) {
+  const summary = retentionLegalHoldDisposalStatusSummary(report, records);
+  return (
+    <Card title="Estado local de legal hold e descarte">
+      <div className="stack">
+        <InlineWarning tone="info" title="Evidência operacional local">
+          Este resumo mostra apenas estado/revisão local para operadores. Não aprova descarte, não
+          resolve candidatos, não remove retenções legais e não declara cumprimento legal.
+        </InlineWarning>
+        <dl className="deflist">
+          <div>
+            <dt>Candidatos bloqueados por legal hold</dt>
+            <dd>{summary.dueCandidateLegalHoldBlockers}</dd>
+          </div>
+          <div>
+            <dt>Registos de execução bloqueados por legal hold</dt>
+            <dd>{summary.executionLegalHoldBlocks}</dd>
+          </div>
+          <div>
+            <dt>Revisões bloqueadas ainda abertas</dt>
+            <dd>{summary.openBlockedReviews}</dd>
+          </div>
+          <div>
+            <dt>Flags de limite</dt>
+            <dd>
+              destructive_disposal_completed: false · disposal_approved: false ·
+              legal_compliance_claimed: false
+            </dd>
+          </div>
+        </dl>
+        <p className="field__hint">
+          A origem destes números é a varredura GET de candidatos vencidos e a fila de execução de
+          retenção já persistida; este painel não faz chamadas de mutação.
+        </p>
+      </div>
+    </Card>
+  );
+}
+
 function RegisterForm({
   kind,
   form,
@@ -2929,6 +3001,10 @@ function RetentionPolicyPanel({
           )}
         </div>
       </Card>
+      <RetentionLegalHoldDisposalStatusPanel
+        report={dueCandidatesReport}
+        records={executionRecords}
+      />
       <RetentionDueCandidatesPanel
         report={dueCandidatesReport}
         loading={dueCandidatesLoading}

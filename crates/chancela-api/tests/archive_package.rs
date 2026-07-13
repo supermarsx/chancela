@@ -981,6 +981,19 @@ async fn persisted_book_legal_hold_round_trips_and_archive_uses_it() {
     assert_eq!(hold["legal_hold"], true);
     assert_eq!(hold["reason"], reason);
     assert_eq!(hold["actor"], "archive.owner");
+    assert_eq!(hold["operator_workflow"]["status"], "blocked_by_legal_hold");
+    assert_eq!(hold["operator_workflow"]["disposal_review_blocked"], true);
+    assert_eq!(
+        hold["operator_workflow"]["destructive_disposal_completed"],
+        false
+    );
+    assert_eq!(hold["operator_workflow"]["disposal_approved"], false);
+    assert_eq!(hold["operator_workflow"]["legal_compliance_claimed"], false);
+    assert!(
+        hold["operator_workflow"]["review_note"]
+            .as_str()
+            .is_some_and(|note| note.contains("Local operator workflow/status evidence only"))
+    );
     assert!(
         hold["set_at"]
             .as_str()
@@ -1005,6 +1018,10 @@ async fn persisted_book_legal_hold_round_trips_and_archive_uses_it() {
     assert_eq!(status, StatusCode::OK, "read legal hold: {hold}");
     assert_eq!(hold["legal_hold"], true);
     assert_eq!(hold["reason"], reason);
+    assert_eq!(
+        hold["operator_workflow"]["next_step"],
+        "Keep disposal blocked and review the legal-hold evidence in a separate authorized workflow before any retention action."
+    );
 
     let bytes = archive_package_bytes(&state, &sealed.book_id, &token).await;
     let manifest = validate_package(&bytes).expect("archive package validates");
@@ -1037,6 +1054,8 @@ async fn persisted_book_legal_hold_round_trips_and_archive_uses_it() {
     assert_eq!(status, StatusCode::OK, "clear legal hold: {hold}");
     assert_eq!(hold["legal_hold"], false);
     assert!(hold["reason"].is_null());
+    assert_eq!(hold["operator_workflow"]["status"], "advisory_only");
+    assert_eq!(hold["operator_workflow"]["disposal_review_blocked"], false);
     let persisted = state.store.as_ref().expect("store").load().expect("load");
     assert!(
         persisted
@@ -1082,6 +1101,14 @@ async fn disposal_status_blocks_active_persisted_legal_hold() {
     assert_eq!(body["blocked"], true);
     assert_eq!(body["active_persisted_legal_hold"], true);
     assert_eq!(body["export_time_legal_hold_persisted"], false);
+    assert_eq!(body["operator_workflow"]["status"], "blocked");
+    assert_eq!(
+        body["operator_workflow"]["destructive_disposal_completed"],
+        false
+    );
+    assert_eq!(body["operator_workflow"]["disposal_approved"], false);
+    assert_eq!(body["operator_workflow"]["legal_compliance_claimed"], false);
+    assert_eq!(body["operator_workflow"]["dry_run_status_only"], true);
     assert!(
         body["reasons"].as_array().is_some_and(|reasons| reasons
             .iter()

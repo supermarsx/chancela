@@ -3738,6 +3738,36 @@ function assertCheckpointMap() {
     "browser retention review-closure stable due-candidate count marker",
   );
   assertFileContains(
+    "crates/chancela-api/src/books.rs",
+    "Local operator workflow/status evidence only; active book legal hold blocks retention/disposal review",
+    "API book legal-hold operator workflow no-claim marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/archive_package.rs",
+    "eligible_for_bounded_evidence_review",
+    "API archive disposal bounded workflow status marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/archive_package.rs",
+    'hold["operator_workflow"]["status"]',
+    "API legal-hold operator workflow coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/books/BookDetailPage.tsx",
+    "não aprova descarte nem",
+    "BookDetail legal-hold no-approval copy marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/PrivacyComplianceSection.tsx",
+    "Estado local de legal hold e descarte",
+    "Settings legal-hold disposal status summary marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/SettingsPage.test.tsx",
+    "não aprova descarte, não resolve candidatos",
+    "Settings legal-hold disposal status no-mutation coverage",
+  );
+  assertFileContains(
     "crates/chancela-api/tests/privacy.rs",
     "evidence_receipts",
     "privacy evidence receipt persistence coverage",
@@ -9053,6 +9083,16 @@ function assertCheckpointMap() {
     "SPEC-COVERAGE.md",
     "legal disposal\n  completion, or GDPR erasure",
     "spec coverage retention due-candidates no-resolution caveat marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Book\n  legal-hold views and archive disposal status now expose derived local\n  `operator_workflow` summaries",
+    "spec coverage legal-hold disposal workflow status marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "without posting lifecycle mutations",
+    "spec coverage legal-hold disposal status no-mutation marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",

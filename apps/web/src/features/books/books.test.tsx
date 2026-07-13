@@ -1828,7 +1828,35 @@ describe('BookDetailPage — legal hold', () => {
   }
 
   it('sets and clears a legal hold for the current book', async () => {
-    let hold: BookLegalHoldView = { legal_hold: false, reason: null, actor: null, set_at: null };
+    const inactiveWorkflow = {
+      status: 'advisory_only',
+      disposal_review_blocked: false,
+      review_note:
+        'Local operator workflow/status evidence only; no active book legal hold is recorded here and this is not disposal approval or legal compliance.',
+      next_step:
+        'Use retention dry-run/status review before any disposal action; this legal-hold view does not resolve candidates.',
+      destructive_disposal_completed: false,
+      disposal_approved: false,
+      legal_compliance_claimed: false,
+    } satisfies BookLegalHoldView['operator_workflow'];
+    const activeWorkflow = {
+      status: 'blocked_by_legal_hold',
+      disposal_review_blocked: true,
+      review_note:
+        'Local operator workflow/status evidence only; active book legal hold blocks retention/disposal review and is not disposal approval or legal compliance.',
+      next_step:
+        'Keep disposal blocked and review the legal-hold evidence in a separate authorized workflow before any retention action.',
+      destructive_disposal_completed: false,
+      disposal_approved: false,
+      legal_compliance_claimed: false,
+    } satisfies BookLegalHoldView['operator_workflow'];
+    let hold: BookLegalHoldView = {
+      legal_hold: false,
+      reason: null,
+      actor: null,
+      set_at: null,
+      operator_workflow: inactiveWorkflow,
+    };
     const { fn, calls } = bookDetailFetch((url, method) => {
       if (url === '/v1/books/book-1/legal-hold' && method === 'GET') {
         return jsonResponse(hold);
@@ -1839,11 +1867,18 @@ describe('BookDetailPage — legal hold', () => {
           reason: 'litígio pendente',
           actor: 'operator',
           set_at: '2026-07-09T10:00:00Z',
+          operator_workflow: activeWorkflow,
         };
         return jsonResponse(hold);
       }
       if (url === '/v1/books/book-1/legal-hold' && method === 'DELETE') {
-        hold = { legal_hold: false, reason: null, actor: null, set_at: null };
+        hold = {
+          legal_hold: false,
+          reason: null,
+          actor: null,
+          set_at: null,
+          operator_workflow: inactiveWorkflow,
+        };
         return jsonResponse(hold);
       }
       return null;
@@ -1854,6 +1889,9 @@ describe('BookDetailPage — legal hold', () => {
 
     expect(await screen.findByText('Sem retenção legal')).toBeTruthy();
     expect(screen.getByText(/bloqueia o descarte por regras de retenção/i)).toBeTruthy();
+    expect(screen.getByText(/não aprova descarte nem declara cumprimento legal/i)).toBeTruthy();
+    expect(screen.getByText('advisory_only')).toBeTruthy();
+    expect(screen.getByText(/destructive_disposal_completed:\s*false/)).toBeTruthy();
 
     fireEvent.change(screen.getByLabelText('Motivo da retenção legal'), {
       target: { value: 'litígio pendente' },
@@ -1868,6 +1906,8 @@ describe('BookDetailPage — legal hold', () => {
     const put = calls.find((c) => c.url === '/v1/books/book-1/legal-hold' && c.method === 'PUT');
     expect(put?.body).toMatchObject({ reason: 'litígio pendente' });
     expect(await screen.findByText('Retenção legal ativa')).toBeTruthy();
+    expect(await screen.findByText('blocked_by_legal_hold')).toBeTruthy();
+    expect(screen.getAllByText('true').length).toBeGreaterThan(0);
     expect(await screen.findByText('Retenção legal aplicada.')).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: 'Remover retenção' }));

@@ -360,6 +360,17 @@ export interface BookLegalHoldView {
   reason: string | null;
   actor: string | null;
   set_at: string | null;
+  operator_workflow?: BookLegalHoldOperatorWorkflow;
+}
+
+export interface BookLegalHoldOperatorWorkflow {
+  status: 'blocked_by_legal_hold' | 'advisory_only' | string;
+  disposal_review_blocked: boolean;
+  review_note: string;
+  next_step: string;
+  destructive_disposal_completed: false;
+  disposal_approved: false;
+  legal_compliance_claimed: false;
 }
 
 export type ArchivePackageFileRole =

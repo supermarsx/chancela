@@ -110,8 +110,21 @@ pub struct DisposalStatusView {
     blocked: bool,
     active_persisted_legal_hold: bool,
     export_time_legal_hold_persisted: bool,
+    operator_workflow: DisposalOperatorWorkflowStatusView,
     signed_evidence: SignedEvidenceSummary,
     reasons: Vec<DisposalReason>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DisposalOperatorWorkflowStatusView {
+    status: &'static str,
+    review_note: &'static str,
+    next_step: &'static str,
+    dry_run_status_only: bool,
+    non_destructive_evidence_only: bool,
+    destructive_disposal_completed: bool,
+    disposal_approved: bool,
+    legal_compliance_claimed: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -977,8 +990,35 @@ fn disposal_status(book_id: BookId, inventory: &BookArchiveInventory) -> Disposa
         blocked,
         active_persisted_legal_hold: inventory.persisted_legal_hold.is_some(),
         export_time_legal_hold_persisted: false,
+        operator_workflow: disposal_operator_workflow(blocked),
         signed_evidence: signed_evidence_summary(&inventory.package_docs),
         reasons,
+    }
+}
+
+fn disposal_operator_workflow(blocked: bool) -> DisposalOperatorWorkflowStatusView {
+    if blocked {
+        DisposalOperatorWorkflowStatusView {
+            status: "blocked",
+            review_note: "Local disposal workflow/status evidence only; blockers prevent bounded archive-disposal evidence recording and no deletion or legal approval is performed.",
+            next_step: "Review blocker reasons, legal-hold evidence, and retention dry-run status before any separate authorized action.",
+            dry_run_status_only: true,
+            non_destructive_evidence_only: true,
+            destructive_disposal_completed: false,
+            disposal_approved: false,
+            legal_compliance_claimed: false,
+        }
+    } else {
+        DisposalOperatorWorkflowStatusView {
+            status: "eligible_for_bounded_evidence_review",
+            review_note: "Local disposal workflow/status evidence only; eligibility supports dry-run or guarded non-destructive evidence recording, not physical disposal or legal compliance.",
+            next_step: "Run dry-run/status review and require separate governance before treating any retained evidence as a legal disposal decision.",
+            dry_run_status_only: true,
+            non_destructive_evidence_only: true,
+            destructive_disposal_completed: false,
+            disposal_approved: false,
+            legal_compliance_claimed: false,
+        }
     }
 }
 
