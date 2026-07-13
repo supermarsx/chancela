@@ -10,7 +10,7 @@ recovery-drill custody
 receipt and optional-key contract tolerance, paper-book OCR conversion-dossier UI
 and reviewed conversion execution artifact evidence,
 CSC quota/delegation/revocation and standalone agenda-item template parity,
-retained-export cleanup dry-run planning, post-act template sealed-provenance lint,
+retained-export cleanup dry-run planning, first-class template catalog metadata lint,
 external-signing workflow-only envelope UI, workflow reminder policy, and
 structured platform-log forwarded-ingest/failure-audit slices, plus data-status
 sidecar classification, read-only local DGLAB interchange manifest API
@@ -191,19 +191,21 @@ test operating checklist for driving Chancela toward release confidence.
   TPL-20 dispatch proof fields from `convening.recipients` across all supported
   families and pins all-family attendance-list rendering of structured attendee
   and proxy evidence, including CSC capital and condominium permilagem markers.
-  Treat the focused `chancela-templates` tests and recent-landed static markers
-  as catalog consistency checks only, not legal review of template wording,
-  thresholds, law references, channel suitability, quota legal sufficiency,
-  delegation/revocation legal sufficiency or authority verification, dispatch or
-  attendance sufficiency, agenda-item legal sufficiency, registry submission,
-  signing-process effect, external registry/provider behavior, or book-transport
-  legal effect. The quota template law references remain Pending/non-authoritative;
-  no DRE verification, legally verified threshold value, external registry/provider,
-  signing-process, or new law-source claim is added.
+  Treat the focused `chancela-templates` tests, the
+  `template_catalog_metadata_lint` command, and recent-landed static markers as
+  catalog consistency checks only, not legal review of template wording,
+  verified thresholds, law references, channel permissibility, quota legal
+  sufficiency, delegation/revocation legal sufficiency or authority verification,
+  dispatch or attendance sufficiency, agenda-item legal sufficiency, exhaustive
+  law mapping, DRE/source authority, registry submission, signing correctness,
+  external registry/provider behavior, or book-transport legal effect. The quota
+  template law references remain Pending/non-authoritative; no DRE verification,
+  legally verified threshold value, external registry/provider, signing-process,
+  or new law-source claim is added.
   Current post-act semantic lint also requires `Certidao`/`Extrato` authored
   `BlockSpec` template references to sealed-act `ata_number` and
-  `payload_digest`; this is a test/build-time consistency guard only and does
-  not change asset wording or add legal-effect claims.
+  `payload_digest`; this is runnable embedded-catalog metadata consistency lint
+  only and does not change asset wording or add legal-effect claims.
 - The current external-validator slice adds bounded digest-verified raw report
   byte attachments to technical metadata capture/list/download, document-bundle
   indexes, archive package evidence members, and the Ferramentas operator UI.
@@ -971,13 +973,15 @@ settingsDefaults.test.ts contracts.test.ts`.
   registry submission, external registry/provider integration, signing-process
   claim, legal sufficiency, or new law-source claim.
 - Current working-tree post-act template semantic-lint checks: focused
-  `cargo test -p chancela-templates --locked` coverage pins the authored
-  catalog guard that `Certidao` and `Extrato` `BlockSpec` template strings bind
-  sealed-act `ata_number` and `payload_digest`, plus a synthetic missing-binding
-  regression proving the guard applies only to post-act stages. This is
-  test/build-time catalog consistency only; no asset wording changes, DRE
-  verification, Verified law references, legal thresholds, or legal-effect
-  claims are implemented.
+  `cargo test -p chancela-templates --locked` coverage plus
+  `cargo run -p chancela-templates --bin template_catalog_metadata_lint --locked`
+  pins the authored catalog guard that `Certidao` and `Extrato` `BlockSpec`
+  template strings bind sealed-act `ata_number` and `payload_digest`, plus a
+  synthetic missing-binding regression proving the guard applies only to
+  post-act stages. This is runnable embedded-catalog metadata consistency lint
+  only; no asset wording changes, DRE verification, Verified law references,
+  verified thresholds, channel permissibility, registry/provider integration,
+  signing correctness, or legal-effect claims are implemented.
 - Recent compliance tooling checks through `3e72e08`: focused markers pin
   structured book termo signatories with email and legacy string compatibility,
   the Settings retention execution review queue and `/v1/privacy/retention-executions`

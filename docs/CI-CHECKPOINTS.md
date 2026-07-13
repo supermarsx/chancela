@@ -52,7 +52,8 @@ and suppression-summary copy for safe bounded evidence omissions, retention
 review-closure route/client/contract/Settings/browser markers with separate
 closure fields and false mutation flags,
 retained-export cleanup preview-token/manifest gating, forwarded platform-log sanitized
-accepted/denied/rejected/suppressed audit markers, post-act template
+accepted/denied/rejected/suppressed audit markers, the first-class
+`template_catalog_metadata_lint` command for post-act template
 sealed-provenance lint, all-family standalone agenda-item templates,
 recovery/document/dashboard/notification
 UI, dashboard guest recent-events redaction, Ferramentas external-validator
@@ -342,7 +343,14 @@ It intentionally reuses existing test surfaces:
   transfer/DPIA/compliance, disposal, deletion, anonymization, redaction, and
   full-erasure claims false.
 - Template catalog metadata/semantic lint:
-  `cargo test -p chancela-templates --locked`
+  `cargo test -p chancela-templates --locked` and
+  `cargo run -p chancela-templates --bin template_catalog_metadata_lint --locked`
+  pin runnable embedded-catalog metadata consistency only, including required
+  fields, duplicate IDs, family/stage/channel drift, local law-reference anchors,
+  and `Certidao`/`Extrato` references to `ata_number` / `payload_digest`. This
+  does not claim legal/template sufficiency, verified thresholds, channel
+  permissibility, exhaustive law mapping, DRE/source authority, provider or
+  registry integration, signing correctness, or legal effect.
 - Web client/contract/books/dashboard/document/entity/Ferramentas/notification/recovery/settings/signing/templates/i18n/subnav
   matrix:
   `npm run test --workspace apps/web -- src/api/client.test.ts src/contracts/contracts.test.ts src/features/books/books.test.tsx src/features/dashboard/DashboardPage.test.tsx src/features/documents/ActDocumentPanel.test.tsx src/features/entities/entities.test.tsx src/features/ferramentas/ferramentas.test.tsx src/features/ferramentas/trust.test.tsx src/features/notifications/NotificationBell.test.tsx src/features/notifications/NotificationsPage.test.tsx src/features/recovery/GestaoDadosSection.test.tsx src/features/settings/SettingsPage.test.tsx src/features/signing/SigningPanel.test.tsx src/features/templates/TemplatesCatalogPage.test.tsx src/i18n/i18n.test.ts src/ui/SubNav.test.tsx`

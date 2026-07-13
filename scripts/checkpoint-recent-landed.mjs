@@ -323,6 +323,20 @@ const checks = [
     command: ["cargo", ["test", "-p", "chancela-templates", "--locked"]],
   },
   {
+    name: "template catalog metadata lint command",
+    command: [
+      "cargo",
+      [
+        "run",
+        "-p",
+        "chancela-templates",
+        "--bin",
+        "template_catalog_metadata_lint",
+        "--locked",
+      ],
+    ],
+  },
+  {
     name: "CLI database encryption key-env tests",
     command: ["cargo", ["test", "-p", "chancela-cli", "--locked"]],
   },
@@ -1958,12 +1972,32 @@ function assertCheckpointMap() {
     "archive ZK/GDPR caveat false-claim marker",
   );
   assertFileContains(
-    "crates/chancela-templates/src/lib.rs",
+    "crates/chancela-templates/src/catalog_metadata_lint.rs",
+    "pub fn validate_embedded_catalog_metadata",
+    "template catalog metadata lint embedded entry marker",
+  );
+  assertFileContains(
+    "crates/chancela-templates/src/bin/template_catalog_metadata_lint.rs",
+    "std::process::exit(1)",
+    "template catalog metadata lint nonzero failure marker",
+  );
+  assertFileContains(
+    "scripts/checkpoint-recent-landed.mjs",
+    "template_catalog_metadata_lint",
+    "template catalog metadata lint command marker",
+  );
+  assertFileContains(
+    "crates/chancela-templates/src/catalog_metadata_lint.rs",
+    "This validates structural catalog metadata and authored template bindings only",
+    "template catalog metadata lint bounded-scope marker",
+  );
+  assertFileContains(
+    "crates/chancela-templates/src/catalog_metadata_lint.rs",
     "FamilyChannelMismatch",
     "template family/channel mismatch issue marker",
   );
   assertFileContains(
-    "crates/chancela-templates/src/lib.rs",
+    "crates/chancela-templates/src/catalog_metadata_lint.rs",
     "is_existing_authored_channel_compatibility",
     "template family/channel compatibility carve-out marker",
   );
@@ -4428,7 +4462,7 @@ function assertCheckpointMap() {
     "template stage/channel metadata drift coverage",
   );
   assertFileContains(
-    "crates/chancela-templates/src/lib.rs",
+    "crates/chancela-templates/src/catalog_metadata_lint.rs",
     'POST_ACT_SEALED_PROVENANCE_FIELDS: &[&str] = &["ata_number", "payload_digest"]',
     "template post-act sealed provenance required-fields marker",
   );
@@ -8511,7 +8545,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "test/build-time catalog consistency only",
+    "runnable embedded-catalog metadata consistency lint\n  only",
     "CI/E2E hardening plan post-act template lint no-claim marker",
   );
   assertFileContains(
@@ -10371,8 +10405,8 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "test/build-time coverage only",
-    "spec coverage post-act template build-time-only marker",
+    "`template_catalog_metadata_lint` as runnable embedded-catalog metadata\n  consistency lint only",
+    "spec coverage post-act template runnable-lint marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",

@@ -111,7 +111,8 @@ data-status filesystem classification for `platform-logs.json` and
 endpoint and BookDetail JSON download action, richer Ata editor AI
 statement-source provenance rendering, and local
 retained-export cleanup dry-run planning plus post-act template sealed-provenance
-semantic lint, local `POST /v1/signature/asic/inspect` ASiC inspection plus
+semantic lint through the first-class `template_catalog_metadata_lint` command,
+local `POST /v1/signature/asic/inspect` ASiC inspection plus
 decompression-bound ASiC ZIP guardrails, and release workflow static assurance
 for the unsigned/local-only trust posture plus production package
 manifest-required validation, plus MCP workflow provenance review prompt/resource
@@ -515,7 +516,9 @@ Implementation checkpoints covered here:
   also requires authored `BlockSpec` template strings for `Certidao` and
   `Extrato` assets to reference sealed-act provenance fields `ata_number` and
   `payload_digest`, with whole-catalog and synthetic missing-binding regression
-  coverage at test/build time only. All six notice
+  coverage through `cargo test -p chancela-templates --locked` and
+  `template_catalog_metadata_lint` as runnable embedded-catalog metadata
+  consistency lint only. All six notice
   templates (`csc` AG/gerencia, condominium, association, foundation, and
   cooperative) now render TPL-20 recipient dispatch proof from
   `convening.recipients` including recipient, dispatch channel, reference, and
@@ -1854,9 +1857,9 @@ qualified/eIDAS/legal signature validity, provider-backed signing, PAdES/PDF-A
 certification, or legal archive certification. Retained-export cleanup dry-run
 planning/execution UX is retained local export file cleanup coverage only, with
 execution exposed after a server-bound preview token plus shared modal
-confirmation and limited to the server-selected preview manifest, and the post-act
-`Certidao`/`Extrato` sealed-provenance lint is Template Catalog/CI
-test/build-time coverage only. These keep the affected top-level
+confirmation and limited to the server-selected preview manifest, and the
+post-act `Certidao`/`Extrato` sealed-provenance lint is Template Catalog/CI
+runnable embedded-catalog metadata consistency lint only. These keep the affected top-level
 areas **PARTIAL** and do not add GDPR erasure, legal disposal, archive deletion,
 certification, full data deletion, official DGLAB
 interchange/certification/approval, legal archive custody, model accuracy,
@@ -3209,7 +3212,8 @@ behavior, legal disposal, or legal-effect claims.
   UI/effective-log markers, notification footer icon-only markers, user/onboarding/act
   signatory email markers, compact data-cleanup row markers, retained-export dry-run
   `would_delete_*`/zero-`deleted_*` and preview-only payload markers, Settings trust-source
-  provider/i18n markers, compact template filter DOM/CSS/test markers, post-act template
+  provider/i18n markers, compact template filter DOM/CSS/test markers, the
+  first-class `template_catalog_metadata_lint` command and post-act template
   sealed-provenance semantic lint markers, structured book termo
   signatory contracts, retention execution review-queue/client/fixture/review-closure markers, database
   encryption key-source and fail-closed hardware-fallback status markers, backup recovery-drill
@@ -3530,11 +3534,13 @@ behavior, legal disposal, or legal-effect claims.
 - Template law references are bounded Pending provenance links derived from current rule-pack and
   threshold metadata; they are not exhaustive, legally verified, or a substitute for reviewing the
   generated template wording.
-- Template catalog metadata validation is regression coverage for required fields, duplicate IDs,
-  family-binding drift, family/channel compatibility, id/stage/channel
-  consistency, law-reference anchors, and post-act
-  `Certidao`/`Extrato` references to sealed-act `ata_number` / `payload_digest`; it is not legal
-  review of template wording, thresholds, channel permissibility, cited law, or legal effect.
+- Template catalog metadata validation is runnable embedded-catalog metadata consistency lint for
+  required fields, duplicate IDs, family-binding drift, family/channel compatibility,
+  id/stage/channel consistency, local law-reference anchors, and post-act `Certidao`/`Extrato`
+  references to sealed-act `ata_number` / `payload_digest`; it is not legal review of template
+  wording, verified thresholds, channel permissibility, cited law, exhaustive law mapping,
+  DRE/source authority, registry/provider integration, signing correctness, template sufficiency,
+  or legal effect.
 - The law citation resolver and corpus pin/copy UI preserve corpus verification status; copied
   Pending citations are not DRE-verified law text, legal bases, or legal advice.
 - Guest/minimal redaction hides selected read-response metadata for current entity, registry, book,
