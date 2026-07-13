@@ -310,6 +310,21 @@ pub fn catalog() -> Vec<McpTool> {
             &["act_id"],
         )
     };
+    let external_validator_report_metadata_args = || {
+        closed_obj(
+            serde_json::json!({
+                "case_id": {
+                    "type": "string",
+                    "description": "external-validator report case identity slug"
+                },
+                "validator_family": {
+                    "type": "string",
+                    "description": "external-validator family identity slug"
+                }
+            }),
+            &["case_id", "validator_family"],
+        )
+    };
     let mermaid_graph_args = || {
         obj(
             serde_json::json!({
@@ -712,6 +727,18 @@ pub fn catalog() -> Vec<McpTool> {
             },
         },
         McpTool {
+            name: "get_external_validator_report_metadata",
+            title: "Get external-validator report metadata",
+            description: "Fetch one settings.read-gated technical external-validator metadata JSON report by case_id and validator_family. This read-only tool uses only the safe metadata endpoint; it does not expose raw report bytes, upload report content, perform provider validation, or claim legal, trust, authenticity, certification, certificate-path, or revocation validation.",
+            access: ToolAccess::ReadOnly,
+            permission: "settings.read",
+            input_schema: external_validator_report_metadata_args(),
+            call: ToolCall {
+                method: Get,
+                path_template: "/external-validator-reports/{case_id}/{validator_family}",
+            },
+        },
+        McpTool {
             name: "get_trust_provider",
             title: "Get trust provider",
             description: "Fetch a trusted-list provider by stable id.",
@@ -1052,11 +1079,77 @@ mod tests {
     }
 
     #[test]
+    fn external_validator_report_metadata_tool_is_closed_read_only_identity_route() {
+        let tool = tool("get_external_validator_report_metadata");
+        assert_eq!(tool.access, ToolAccess::ReadOnly);
+        assert!(tool.access.read_only_hint());
+        assert_eq!(tool.permission, "settings.read");
+        assert_eq!(
+            tool.input_schema["required"],
+            serde_json::json!(["case_id", "validator_family"])
+        );
+        assert_eq!(
+            tool.input_schema["additionalProperties"],
+            Value::Bool(false)
+        );
+        assert!(tool.input_schema["properties"]["case_id"].is_object());
+        assert!(tool.input_schema["properties"]["validator_family"].is_object());
+        assert_eq!(
+            tool.input_schema["properties"]
+                .as_object()
+                .expect("schema properties")
+                .keys()
+                .cloned()
+                .collect::<Vec<_>>(),
+            vec!["case_id".to_string(), "validator_family".to_string()]
+        );
+
+        let call = resolve_call(
+            &tool,
+            &serde_json::json!({
+                "case_id": "case-7",
+                "validator_family": "eu-dss"
+            }),
+        )
+        .unwrap();
+        assert_eq!(call.method, HttpMethod::Get);
+        assert_eq!(call.path, "/external-validator-reports/case-7/eu-dss");
+        assert!(call.query.is_empty());
+        assert!(call.body.is_none());
+    }
+
+    #[test]
     fn external_validator_reports_tool_rejects_raw_or_upload_args() {
         let tool = tool("list_external_validator_reports");
         for name in ["content_base64", "raw_report", "upload"] {
             let err =
                 resolve_call(&tool, &serde_json::json!({ name: "not forwarded" })).unwrap_err();
+            assert_eq!(err, ToolError::UnknownArgument(name.to_string()));
+        }
+    }
+
+    #[test]
+    fn external_validator_report_metadata_tool_rejects_raw_upload_content_path_or_bytes_args() {
+        let tool = tool("get_external_validator_report_metadata");
+        for name in [
+            "raw_report",
+            "raw",
+            "upload",
+            "content",
+            "content_base64",
+            "base64",
+            "path",
+            "bytes",
+        ] {
+            let err = resolve_call(
+                &tool,
+                &serde_json::json!({
+                    "case_id": "case-7",
+                    "validator_family": "eu-dss",
+                    name: "not forwarded"
+                }),
+            )
+            .unwrap_err();
             assert_eq!(err, ToolError::UnknownArgument(name.to_string()));
         }
     }
@@ -1093,6 +1186,53 @@ mod tests {
         assert_eq!(
             req.url,
             "http://127.0.0.1:8080/api/v1/external-validator-reports"
+        );
+        assert_eq!(
+            req.header("Authorization"),
+            Some("Bearer chk_ab12cd_secretsecret")
+        );
+        assert!(req.body.is_none());
+    }
+
+    #[test]
+    fn external_validator_report_metadata_tool_forwards_bearer_to_safe_metadata_route() {
+        use crate::bridge::{ApiBridge, BridgeError, HttpRequest, HttpResponse, HttpTransport};
+        use crate::config::{McpConfig, Secret};
+
+        struct NoopTransport;
+
+        impl HttpTransport for NoopTransport {
+            fn send(&self, _req: &HttpRequest) -> Result<HttpResponse, BridgeError> {
+                unreachable!("registry test only builds the request")
+            }
+        }
+
+        let tool = tool("get_external_validator_report_metadata");
+        let call = resolve_call(
+            &tool,
+            &serde_json::json!({
+                "case_id": "case-7",
+                "validator_family": "eu-dss"
+            }),
+        )
+        .unwrap();
+        let bridge = ApiBridge::new(
+            &McpConfig {
+                enabled: true,
+                tenant_ai_enabled: true,
+                base_url: "http://127.0.0.1:8080".to_string(),
+                base_path: "/api/v1".to_string(),
+                api_key: Secret::new("chk_ab12cd_secretsecret"),
+                ..McpConfig::default()
+            },
+            NoopTransport,
+        );
+
+        let req = bridge.build(call.method, &call.path, &call.query, call.body.as_ref());
+        assert_eq!(req.method, HttpMethod::Get);
+        assert_eq!(
+            req.url,
+            "http://127.0.0.1:8080/api/v1/external-validator-reports/case-7/eu-dss"
         );
         assert_eq!(
             req.header("Authorization"),
@@ -1315,12 +1455,16 @@ mod tests {
             "trust_status",
             "search_trust_catalog",
             "list_external_validator_reports",
+            "get_external_validator_report_metadata",
             "get_trust_provider",
             "get_trust_service",
         ] {
             let read_tool = tool(name);
             assert_eq!(read_tool.access, ToolAccess::ReadOnly);
-            if name == "list_external_validator_reports" {
+            if matches!(
+                name,
+                "list_external_validator_reports" | "get_external_validator_report_metadata"
+            ) {
                 assert_eq!(read_tool.permission, "settings.read");
             } else {
                 assert_eq!(read_tool.permission, "cae.read");

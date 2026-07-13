@@ -1864,8 +1864,28 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-mcp/src/registry.rs",
+    "get_external_validator_report_metadata",
+    "MCP external-validator report metadata lookup tool marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/registry.rs",
+    "path_template: \"/external-validator-reports/{case_id}/{validator_family}\"",
+    "MCP external-validator safe metadata endpoint marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/registry.rs",
     "assert_eq!(tool.input_schema, closed_empty_schema())",
     "MCP external-validator closed no-arg schema marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/registry.rs",
+    "external_validator_report_metadata_tool_rejects_raw_upload_content_path_or_bytes_args",
+    "MCP external-validator metadata lookup closed schema rejection coverage",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    "tools_call_external_validator_report_metadata_routes_to_safe_metadata_endpoint_only",
+    "MCP external-validator metadata lookup tool-call route coverage",
   );
   assertFileContains(
     "crates/chancela-mcp/src/registry.rs",

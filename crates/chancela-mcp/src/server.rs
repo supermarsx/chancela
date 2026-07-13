@@ -2011,6 +2011,7 @@ mod tests {
         assert!(names.contains(&"export_act_working_copy"));
         assert!(names.contains(&"validate_signature_bundle"));
         assert!(names.contains(&"prepare_archive_export"));
+        assert!(names.contains(&"get_external_validator_report_metadata"));
         assert!(names.contains(&"seal_act"));
         let by_name = |name: &str| tools.iter().find(|t| t["name"] == name).unwrap();
         assert_eq!(
@@ -3030,6 +3031,145 @@ mod tests {
             recorded[0].header("Authorization"),
             Some("Bearer chk_ab12cd_secretsecret")
         );
+    }
+
+    #[test]
+    fn tools_call_external_validator_report_metadata_routes_to_safe_metadata_endpoint_only() {
+        let cfg = McpConfig {
+            enabled_tools: EnabledTools::List(vec![
+                "get_external_validator_report_metadata".into(),
+            ]),
+            ..enabled_cfg()
+        };
+        let api_response = r#"{
+            "evidence_kind": "external_validator_report_metadata",
+            "schema": "chancela-external-validator-report-evidence/v1",
+            "case_id": "case-7",
+            "validator_family": "eu-dss",
+            "legal_validity_claimed": false,
+            "trust_validation_claimed": false,
+            "provider_validation_claimed": false,
+            "authenticity_certification_claimed": false,
+            "scope": {
+                "kind": "external_validator_report",
+                "technical_only": true,
+                "legal_validity_assessment": "not_assessed",
+                "claim": "technical_validator_evidence_only"
+            },
+            "raw_report": {
+                "preservation_status": "raw_report_manifest_only",
+                "content_type": "application/json",
+                "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "size_bytes": 42
+            }
+        }"#;
+        let response =
+            HttpResponse::text(200, api_response).with_header("Content-Type", "application/json");
+        let server = McpServer::from_config(&cfg, MockTransport::with_response(response)).unwrap();
+        let resp = server
+            .handle(&req(
+                "tools/call",
+                45,
+                json!({
+                    "name": "get_external_validator_report_metadata",
+                    "arguments": {
+                        "case_id": "case-7",
+                        "validator_family": "eu-dss"
+                    }
+                }),
+            ))
+            .unwrap();
+
+        let result = resp.result.unwrap();
+        assert_eq!(result["isError"], json!(false));
+        let text = result["content"][0]["text"].as_str().unwrap();
+        assert!(
+            !text.contains("chk_ab12cd_secretsecret"),
+            "key must never leak in payload: {text}"
+        );
+        assert!(
+            !text.contains("content_base64"),
+            "MCP metadata response must not contain inline raw bytes: {text}"
+        );
+        let payload: Value = serde_json::from_str(text).unwrap();
+        assert_eq!(
+            payload["evidence_kind"],
+            json!("external_validator_report_metadata")
+        );
+        assert_eq!(payload["case_id"], json!("case-7"));
+        assert_eq!(payload["validator_family"], json!("eu-dss"));
+        assert_eq!(payload["legal_validity_claimed"], json!(false));
+        assert_eq!(payload["trust_validation_claimed"], json!(false));
+        assert_eq!(payload["provider_validation_claimed"], json!(false));
+        assert_eq!(payload["authenticity_certification_claimed"], json!(false));
+        assert_eq!(
+            payload["scope"]["claim"],
+            json!("technical_validator_evidence_only")
+        );
+        assert_eq!(
+            payload["raw_report"]["preservation_status"],
+            json!("raw_report_manifest_only")
+        );
+
+        let recorded = server.bridge_recorded();
+        assert_eq!(recorded.len(), 1);
+        assert_eq!(recorded[0].method, crate::bridge::HttpMethod::Get);
+        assert_eq!(
+            recorded[0].url,
+            "http://127.0.0.1:8080/api/v1/external-validator-reports/case-7/eu-dss"
+        );
+        assert!(!recorded[0].url.contains("raw-report"));
+        assert_eq!(
+            recorded[0].header("Authorization"),
+            Some("Bearer chk_ab12cd_secretsecret")
+        );
+        assert!(recorded[0].body.is_none());
+    }
+
+    #[test]
+    fn tools_call_external_validator_report_metadata_rejects_raw_or_upload_args_before_http() {
+        let cfg = McpConfig {
+            enabled_tools: EnabledTools::List(vec![
+                "get_external_validator_report_metadata".into(),
+            ]),
+            ..enabled_cfg()
+        };
+        let server = McpServer::from_config(&cfg, MockTransport::new(200, "{}")).unwrap();
+
+        for name in [
+            "raw_report",
+            "raw",
+            "upload",
+            "content",
+            "content_base64",
+            "base64",
+            "path",
+            "bytes",
+        ] {
+            let resp = server
+                .handle(&req(
+                    "tools/call",
+                    46,
+                    json!({
+                        "name": "get_external_validator_report_metadata",
+                        "arguments": {
+                            "case_id": "case-7",
+                            "validator_family": "eu-dss",
+                            name: "not forwarded"
+                        }
+                    }),
+                ))
+                .unwrap();
+            let result = resp.result.unwrap();
+            assert_eq!(result["isError"], json!(true), "argument {name}");
+            let text = result["content"][0]["text"].as_str().unwrap();
+            assert!(
+                text.contains(&format!("unknown argument: {name}")),
+                "argument {name}: {text}"
+            );
+        }
+
+        assert!(server.bridge_recorded().is_empty());
     }
 
     #[test]
