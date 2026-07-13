@@ -440,7 +440,11 @@ API after-reload/memory-clear store-pager coverage, shared list/export search
 (`q`), chain/scope filter, and limit normalization markers, numeric
 `next_cursor` typing, Livro-style filters, icon-only clear-control markers,
 JSON/TXT/CSV/HTML export-format markers, and canonical-only PDF/A evidence
-boundaries, backup recovery-drill `isolated_restore_verified` /
+boundaries, plus route-stubbed `/arquivo` browser proof in
+`apps/web/e2e/ledger-archive-boundedness.spec.ts` for bounded first-page rows,
+older-tail absence before load-more, cursor request serialization, filtered
+`limit=50&order=desc` list queries, and archive-document export with current
+filters and no `before_seq`, backup recovery-drill `isolated_restore_verified` /
 `isolated_restore_verification` receipt markers, isolated DB material/readback,
 sidecar materialized file/byte counts, temp-cleanup evidence, no live-restore/
 no `ledger.restored` markers, external-signing slot evidence
@@ -517,10 +521,13 @@ single OTP/PIN/SAD authorizing multiple documents, CMD multiple-sign,
 CSC/QTSP multi-hash/SAD batch, SCAP-verified representative authority,
 legal-capacity proof, API/web coverage for the core-only repeated
 remote-session helper, or legal effect for local CC batch UI evidence. The
-Arquivo markers prove bounded UI/API paging, persisted-store SQL paging after
-reload/memory clear, and filtered export behavior only; they do not turn
-non-PDF/A exports into preserved evidence or certify legal archive/DGLAB
-acceptance. The external invite
+Arquivo markers prove bounded UI/API/browser paging, persisted-store SQL paging
+after reload/memory clear, and filtered first-page export behavior only; export
+remains bounded to the current filtered newest-first page after limit
+normalization. They do not turn non-PDF/A exports into preserved evidence,
+make any archive certification or DGLAB/legal archive certification claim,
+prove filing or legal acceptance, claim all-record export, add signing/legal
+evidence, validate signatures, or mutate the ledger. The external invite
 signed-PDF markers prove act-scoped technical signed evidence and the linked
 no-identity external slot status path only. The operator-supplied
 external-signing slot evidence markers prove stored technical evidence display

@@ -662,11 +662,20 @@ Implementation checkpoints covered here:
   SQL-backed `Store::ledger_events_page` persisted newest-first paging and
   sparse filtered pages after reopen, API store-pager use after reload and
   memory clear, numeric cursor typing, serialized filters, shared list/export
-  limit normalization, and filtered export formats. This is bounded archive
-  browsing/export UX, API, and persisted-store paging coverage only: it does
-  not make non-PDF/A exports preserved evidence, complete legal archive
-  certification/compliance, certify DGLAB acceptance, or prove production
-  archive custody.
+  limit normalization, and filtered export formats. Focused route-stubbed
+  browser proof now adds `/arquivo` coverage in
+  `apps/web/e2e/ledger-archive-boundedness.spec.ts`: the page initially renders
+  only the bounded `/v1/ledger/events/page?limit=100&order=desc` rows, keeps an
+  older tail event absent until load-more, fetches the next page with
+  `before_seq=1000&limit=100&order=desc`, serializes the active filters with
+  `limit=50&order=desc`, and exports `format=json` through
+  `/v1/ledger/archive/document` with the same bounded filters and no
+  `before_seq`. This is bounded archive browsing/export UX, API,
+  route-stubbed browser, and persisted-store paging coverage only: it does not
+  make non-PDF/A exports preserved evidence, make any archive certification or
+  DGLAB/legal archive certification claim, prove filing/legal acceptance, claim
+  all-record export, add signing/legal evidence, validate signatures, mutate the
+  ledger, or prove production archive custody.
 - Working tree keeps Documents/Workflows/API/CI **PARTIAL**: on-demand generated
   post-act documents now return `/v1/documents/generated/{document_id}` and can
   be downloaded by their own generated document id in durable and in-memory

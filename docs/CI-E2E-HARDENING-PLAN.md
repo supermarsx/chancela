@@ -588,8 +588,18 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
   SQL-backed persisted store pages after reopen/reload and memory clear via
   `Store::ledger_events_page`. Ledger archive export preserves active filters,
   shares limit normalization with the paged list, and refuses unauthorized
-  downloads. This does not make non-PDF/A exports preserved evidence or certify
-  legal archive compliance, DGLAB acceptance, or production custody.
+  downloads. Focused route-stubbed Playwright proof in
+  `apps/web/e2e/ledger-archive-boundedness.spec.ts` now pins the mounted
+  `/arquivo` browser path: first load requests only
+  `/v1/ledger/events/page?limit=100&order=desc`, renders only those first-page
+  rows, keeps an older tail event absent until load-more, sends
+  `before_seq=<next_cursor>&limit=100&order=desc` for older events, serializes
+  current filters with `limit=50&order=desc`, and exports through
+  `/v1/ledger/archive/document` with format/current filters and no `before_seq`.
+  This does not make non-PDF/A exports preserved evidence, does not claim an
+  all-record export, and does not make any archive certification, DGLAB/legal
+  archive certification, filing/legal acceptance, signature validation,
+  signing/legal evidence, ledger mutation, or production custody claim.
 - Export actions that create user-owned files open the desktop/browser save
   prompt when available, return a visible cancellation state when the user backs
   out, and fall back to a safe browser download only when direct save APIs are
@@ -1590,7 +1600,11 @@ settingsDefaults.test.ts contracts.test.ts`.
   shared list/export search (`q`), chain/scope filter, and limit normalization
   markers, numeric `next_cursor` typing, Livro-style filter and
   icon-only clear-control markers, and JSON/TXT/CSV/HTML export-format markers
-  with canonical-only PDF/A evidence boundaries.
+  with canonical-only PDF/A evidence boundaries, plus the route-stubbed
+  `apps/web/e2e/ledger-archive-boundedness.spec.ts` browser proof for bounded
+  first-page rendering, cursor request serialization, filtered `limit=50`
+  query serialization, archive-document export without `before_seq`, and no
+  all-record/certification/signature/ledger-mutation claim.
 
 Full workspace format/clippy should be rerun before commit. The prior
 `paper_import.rs` compile blocker, retention dead-code warning set, TSL `record`

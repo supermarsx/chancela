@@ -7935,6 +7935,36 @@ function assertCheckpointMap() {
     "ledger archive filtered export request marker",
   );
   assertFileContains(
+    "apps/web/e2e/ledger-archive-boundedness.spec.ts",
+    "arquivo loads only the bounded first page and fetches older events by cursor",
+    "ledger archive route-stubbed bounded browser coverage",
+  );
+  assertFileContains(
+    "apps/web/e2e/ledger-archive-boundedness.spec.ts",
+    "older-tail.event.900",
+    "ledger archive older tail absence browser marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/ledger-archive-boundedness.spec.ts",
+    "/v1/ledger/events/page?before_seq=1000&limit=100&order=desc",
+    "ledger archive browser cursor request marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/ledger-archive-boundedness.spec.ts",
+    "/v1/ledger/events/page?q=approved+digest&chain=book%3Abook-123456789&scope=act%3A88&kind=act.sealed&actor=amelia.marques&from=2026-07-01&to=2026-07-31&limit=50&order=desc",
+    "ledger archive browser filtered list request marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/ledger-archive-boundedness.spec.ts",
+    "expect(archiveUrl.searchParams.get('format')).toBe('json');",
+    "ledger archive browser export format marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/ledger-archive-boundedness.spec.ts",
+    "expect(archiveUrl.searchParams.has('before_seq')).toBe(false);",
+    "ledger archive browser export omits cursor marker",
+  );
+  assertFileContains(
     "apps/web/src/api/client.test.ts",
     "serializes paged ledger filters for newest-first lazy loading",
     "ledger archive paged filter serialization coverage",
@@ -7993,6 +8023,36 @@ function assertCheckpointMap() {
     "crates/chancela-store/tests/store.rs",
     "ledger_events_page_fills_sparse_chain_and_text_filtered_pages",
     "store ledger persisted filtered sparse page coverage",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Focused route-stubbed\n  browser proof now adds `/arquivo` coverage",
+    "spec coverage ledger archive browser proof marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "claim\n  all-record export, add signing/legal evidence, validate signatures, mutate the\n  ledger",
+    "spec coverage ledger archive no-overclaim marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "apps/web/e2e/ledger-archive-boundedness.spec.ts",
+    "CI checkpoints ledger archive browser proof marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "export\nremains bounded to the current filtered newest-first page after limit\nnormalization",
+    "CI checkpoints ledger archive bounded export marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "apps/web/e2e/ledger-archive-boundedness.spec.ts",
+    "CI/E2E hardening ledger archive browser proof marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "no `before_seq`",
+    "CI/E2E hardening ledger archive export no-cursor marker",
   );
   assertFileContains(
     "apps/web/src/features/recovery/LivrosIntegridadeSection.test.tsx",
