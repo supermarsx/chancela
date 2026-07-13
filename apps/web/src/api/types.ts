@@ -2991,6 +2991,102 @@ export type ApiKeyCreated = ApiKeyView & {
 /** `POST /v1/api-keys/{id}/rotate` response: same one-time-secret shape as create. */
 export type ApiKeyRotated = ApiKeyCreated;
 
+// --- Provider-credential entries (wp13) -----------------------------------------
+//
+// Operator-facing management of the encrypted, multi-key/priority/failover provider
+// credential store (`/v1/signature/provider-credentials`). Secrets are WRITE-ONLY by
+// construction: no response type carries a secret value — only a per-field `configured`
+// flag plus non-secret entry metadata (label/priority/enabled/endpoint/selectors).
+
+/** The stable wire mode string for a credential record (matches the backend `as_str`). */
+export type CredentialMode = 'cmd' | 'csc' | 'scap' | 'pkcs12';
+
+/** How honestly the store protects secrets at rest (surfaced truthfully in the UI banner). */
+export type CredentialProtectionLevel = 'confidential' | 'obfuscation';
+
+/** One non-secret field in a response: its name and whether a value is configured. */
+export interface ProviderCredentialFieldView {
+  field_name: string;
+  configured: boolean;
+}
+
+/** Metadata-only view of one credential entry (no secret value ever appears). */
+export interface ProviderCredentialEntryView {
+  entry_id: string;
+  label: string;
+  priority: number;
+  enabled: boolean;
+  endpoint?: string;
+  selectors: Record<string, string>;
+  fields: ProviderCredentialFieldView[];
+  created_at: string;
+  updated_at: string;
+}
+
+/** One `(mode, provider_id)` group's entries in the management list. */
+export interface ProviderCredentialGroupView {
+  mode: CredentialMode;
+  provider_id: string;
+  entries: ProviderCredentialEntryView[];
+}
+
+/** `GET /v1/signature/provider-credentials` — the whole management list (metadata only). */
+export interface ProviderCredentialsListView {
+  strict: boolean;
+  protection_level?: CredentialProtectionLevel;
+  providers: ProviderCredentialGroupView[];
+}
+
+/** The result of a single-entry mutation (create/update/delete). Secrets never appear. */
+export interface ProviderCredentialEntryMutationResponse {
+  mode: CredentialMode;
+  provider_id: string;
+  entry?: ProviderCredentialEntryView;
+  deleted: boolean;
+}
+
+/** The entries of one record after a bulk operation (reorder). */
+export interface ProviderCredentialEntryListResponse {
+  mode: CredentialMode;
+  provider_id: string;
+  entries: ProviderCredentialEntryView[];
+}
+
+/** `POST …/entries` body — create an entry. `set` maps field name → write-only secret. */
+export interface CreateProviderCredentialEntryBody {
+  label?: string;
+  enabled?: boolean;
+  priority?: number;
+  endpoint?: string;
+  selectors?: Record<string, string>;
+  set: Record<string, string>;
+}
+
+/** `PATCH …/entries/{entry_id}` body — partial update; absent = unchanged. */
+export interface UpdateProviderCredentialEntryBody {
+  label?: string;
+  enabled?: boolean;
+  priority?: number;
+  endpoint?: string;
+  selectors?: Record<string, string>;
+  set?: Record<string, string>;
+  clear?: string[];
+}
+
+/** `POST …/entries/reorder` body — the new priority order (a permutation of entry ids). */
+export interface ReorderProviderCredentialEntriesBody {
+  order: string[];
+}
+
+/** `POST /v1/acts/{id}/signature/local/pkcs12/sign-stored` body — carries NO secret material. */
+export interface SignStoredPkcs12Body {
+  provider_id: string;
+  entry_id?: string;
+  capacity?: string;
+  actor?: string;
+  seal?: SealAppearanceBody;
+}
+
 /**
  * `GET /v1/session` — the active user, or `null` when signed out.
  *
@@ -5542,7 +5638,7 @@ export const DEFAULT_SETTINGS: Settings = {
         configured: false,
         production_blocked: true,
         local_only: false,
-        note: 'No CSC/QTSP provider is configured in the environment.',
+        note: 'No CSC/QTSP provider is configured in protected storage or environment.',
       },
       {
         id: 'soft_pkcs12',

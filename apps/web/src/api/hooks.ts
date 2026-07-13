@@ -115,6 +115,10 @@ import type {
   RoleAssignmentInput,
   GrantDelegationBody,
   CreateApiKeyBody,
+  CredentialMode,
+  CreateProviderCredentialEntryBody,
+  UpdateProviderCredentialEntryBody,
+  ReorderProviderCredentialEntriesBody,
   DsrRequestView,
   SetBookLegalHoldBody,
   TslCatalogSearchParams,
@@ -212,6 +216,7 @@ export const keys = {
   permissionCatalog: ['permissions'] as const,
   delegations: ['delegations'] as const,
   apiKeys: ['api-keys'] as const,
+  providerCredentials: ['signature', 'provider-credentials'] as const,
   privacyProcessors: ['privacy', 'processors'] as const,
   privacyDpias: ['privacy', 'dpias'] as const,
   privacyBreachPlaybooks: ['privacy', 'breach-playbooks'] as const,
@@ -2703,5 +2708,103 @@ export function useDegradedHealth() {
     refetchInterval: 20_000,
     refetchOnWindowFocus: true,
     retry: false,
+  });
+}
+
+// --- Provider-credential entries (wp13) -----------------------------------------
+//
+// Management of the encrypted multi-key store. The list is metadata only (secrets are
+// write-only), and every mutation invalidates the list plus the ledger (each write appends
+// a sanitized audit event). Secret values live only in the mutation variables for the
+// duration of the request — they are never written into the query cache.
+
+/** The provider-credential management list (`GET /v1/signature/provider-credentials`). */
+export function useProviderCredentials() {
+  return useQuery({
+    queryKey: keys.providerCredentials,
+    queryFn: () => api.listProviderCredentials(),
+    retry: false,
+  });
+}
+
+/** Create a credential entry. The `set` secrets are transient mutation variables only. */
+export function useCreateProviderCredentialEntry() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      mode,
+      providerId,
+      body,
+    }: {
+      mode: CredentialMode;
+      providerId: string;
+      body: CreateProviderCredentialEntryBody;
+    }) => api.createProviderCredentialEntry(mode, providerId, body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.providerCredentials });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+/** Update a credential entry (metadata and/or `set`/`clear` secrets). */
+export function useUpdateProviderCredentialEntry() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      mode,
+      providerId,
+      entryId,
+      body,
+    }: {
+      mode: CredentialMode;
+      providerId: string;
+      entryId: string;
+      body: UpdateProviderCredentialEntryBody;
+    }) => api.updateProviderCredentialEntry(mode, providerId, entryId, body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.providerCredentials });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+/** Delete a credential entry. */
+export function useDeleteProviderCredentialEntry() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      mode,
+      providerId,
+      entryId,
+    }: {
+      mode: CredentialMode;
+      providerId: string;
+      entryId: string;
+    }) => api.deleteProviderCredentialEntry(mode, providerId, entryId),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.providerCredentials });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+/** Reorder a record's entries (server writes contiguous priority in the given order). */
+export function useReorderProviderCredentialEntries() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      mode,
+      providerId,
+      body,
+    }: {
+      mode: CredentialMode;
+      providerId: string;
+      body: ReorderProviderCredentialEntriesBody;
+    }) => api.reorderProviderCredentialEntries(mode, providerId, body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.providerCredentials });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
   });
 }

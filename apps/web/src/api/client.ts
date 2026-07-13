@@ -201,6 +201,14 @@ import type {
   ApiKeyRotated,
   ApiKeyView,
   CreateApiKeyBody,
+  CredentialMode,
+  ProviderCredentialsListView,
+  ProviderCredentialEntryMutationResponse,
+  ProviderCredentialEntryListResponse,
+  CreateProviderCredentialEntryBody,
+  UpdateProviderCredentialEntryBody,
+  ReorderProviderCredentialEntriesBody,
+  SignStoredPkcs12Body,
   SessionPermissions,
   DelegationView,
   GrantDelegationBody,
@@ -529,6 +537,15 @@ export async function postBytes<T>(path: string, bytes: ArrayBuffer | Blob): Pro
   const res = await fetch(path, { method: 'POST', headers, body: bytes });
   if (res.status === 401) clearSessionToken();
   return parseResponse<T>(res, path);
+}
+
+/**
+ * The provider path segment for a credential record. Single-instance providers (CMD/SCAP)
+ * are keyed by the empty provider id and use the literal `_` sentinel; CSC/PKCS#12 carry a
+ * real, URL-encoded provider id.
+ */
+function providerSegment(providerId: string): string {
+  return providerId === '' ? '_' : encodeURIComponent(providerId);
 }
 
 /** Build a query string from defined params only (skips `undefined`). */
@@ -958,6 +975,50 @@ export const api = {
   createApiKey: (body: CreateApiKeyBody) => post<ApiKeyCreated>('/v1/api-keys', body),
   rotateApiKey: (id: string) => post<ApiKeyRotated>(`/v1/api-keys/${id}/rotate`),
   revokeApiKey: (id: string) => del<ApiKeyView>(`/v1/api-keys/${id}`),
+
+  // Provider-credential entries (wp13) — multi-key/priority/failover management over the
+  // encrypted store. Single-instance providers (CMD/SCAP) use the `_` path segment; CSC and
+  // PKCS#12 carry a real provider id. Secrets are write-only: no response echoes a secret.
+  listProviderCredentials: () =>
+    get<ProviderCredentialsListView>('/v1/signature/provider-credentials'),
+  createProviderCredentialEntry: (
+    mode: CredentialMode,
+    providerId: string,
+    body: CreateProviderCredentialEntryBody,
+  ) =>
+    post<ProviderCredentialEntryMutationResponse>(
+      `/v1/signature/provider-credentials/${mode}/${providerSegment(providerId)}/entries`,
+      body,
+    ),
+  updateProviderCredentialEntry: (
+    mode: CredentialMode,
+    providerId: string,
+    entryId: string,
+    body: UpdateProviderCredentialEntryBody,
+  ) =>
+    patch<ProviderCredentialEntryMutationResponse>(
+      `/v1/signature/provider-credentials/${mode}/${providerSegment(providerId)}/entries/${encodeURIComponent(entryId)}`,
+      body,
+    ),
+  deleteProviderCredentialEntry: (mode: CredentialMode, providerId: string, entryId: string) =>
+    del<ProviderCredentialEntryMutationResponse>(
+      `/v1/signature/provider-credentials/${mode}/${providerSegment(providerId)}/entries/${encodeURIComponent(entryId)}`,
+    ),
+  reorderProviderCredentialEntries: (
+    mode: CredentialMode,
+    providerId: string,
+    body: ReorderProviderCredentialEntriesBody,
+  ) =>
+    post<ProviderCredentialEntryListResponse>(
+      `/v1/signature/provider-credentials/${mode}/${providerSegment(providerId)}/entries/reorder`,
+      body,
+    ),
+  // Sign a sealed act with a STORED PKCS#12 identity (no secret in the request body).
+  signStoredPkcs12: (actId: string, body: SignStoredPkcs12Body) =>
+    post<LocalPkcs12SignResult>(
+      `/v1/acts/${encodeURIComponent(actId)}/signature/local/pkcs12/sign-stored`,
+      body,
+    ),
 
   // The UNAUTHENTICATED sign-in roster (t45-e1): decides onboarding-vs-sign-in and lists
   // the signable users while signed out, without the auth-gated `GET /v1/users`.

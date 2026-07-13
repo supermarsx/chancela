@@ -80,6 +80,7 @@ import { GestaoDadosSection } from '../recovery/GestaoDadosSection';
 import { FuncoesSection } from '../rbac/FuncoesSection';
 import { DelegacoesSection } from '../rbac/DelegacoesSection';
 import { ApiKeysSection } from './ApiKeysSection';
+import { ProviderCredentialsSection } from './ProviderCredentialsSection';
 import { PlatformOperationsSection } from './PlatformOperationsSection';
 import { PrivacyComplianceSection } from './PrivacyComplianceSection';
 import { RegistryAutoUpdateSection } from './RegistryAutoUpdateSection';
@@ -482,6 +483,7 @@ type SettingsSection =
   | 'privacidade'
   | 'utilizadores'
   | 'chaves-api'
+  | 'fornecedores-assinatura'
   | 'funcoes'
   | 'delegacoes'
   | 'integridade'
@@ -502,6 +504,11 @@ const SETTINGS_SECTIONS: SettingsSectionNav[] = [
   { id: 'privacidade', label: 'settings.privacy.tab', icon: <Icon.Seal /> },
   { id: 'utilizadores', label: 'settings.users.cardTitle', icon: <Icon.Users /> },
   { id: 'chaves-api', label: 'settings.apiKeys.cardTitle', icon: <Icon.Seal /> },
+  {
+    id: 'fornecedores-assinatura',
+    label: 'settings.providerCredentials.cardTitle',
+    icon: <Icon.PenNib />,
+  },
   { id: 'funcoes', label: 'rbac.funcoes.tab', icon: <Icon.Scale /> },
   { id: 'delegacoes', label: 'rbac.delegacoes.tab', icon: <Icon.ArrowRight /> },
   { id: 'integridade', label: 'integrity.cardTitle', icon: <Icon.Layers /> },
@@ -520,6 +527,7 @@ const STANDALONE_SECTIONS: readonly SettingsSection[] = [
   'integridade',
   'dados',
   'chaves-api',
+  'fornecedores-assinatura',
 ];
 
 /**
@@ -2039,6 +2047,9 @@ export function SettingsPage() {
 
           {/* Chaves API ------------------------------------------------------------- */}
           {section === 'chaves-api' ? <ApiKeysSection /> : null}
+
+          {/* Fornecedores de assinatura (wp13) -------------------------------------- */}
+          {section === 'fornecedores-assinatura' ? <ProviderCredentialsSection /> : null}
 
           {/* Privacidade e conformidade ------------------------------------------- */}
           {section === 'privacidade' ? <PrivacyComplianceSection /> : null}
