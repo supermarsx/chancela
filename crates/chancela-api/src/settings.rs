@@ -72,6 +72,8 @@ pub struct Settings {
     pub registry_auto_update: RegistryAutoUpdateSettings,
     /// Local workflow policy for advisory dashboard behavior.
     pub workflow: WorkflowSettings,
+    /// Local data-management policy defaults. Does not authorize legal retention/disposal work.
+    pub data_management: DataManagementSettings,
     /// Tenant-level AI/MCP controls. Defaults off so older settings documents do not enable AI.
     pub ai: AiSettings,
     /// Platform operations controls: service desired state, logging levels, and audit metadata.
@@ -94,6 +96,7 @@ impl Default for Settings {
             signing: SigningSettings::default(),
             registry_auto_update: RegistryAutoUpdateSettings::default(),
             workflow: WorkflowSettings::default(),
+            data_management: DataManagementSettings::default(),
             ai: AiSettings::default(),
             platform: PlatformSettings::default(),
             appearance: AppearanceSettings::default(),
@@ -194,9 +197,13 @@ impl RegistryAutoUpdateSettings {
 pub const DEFAULT_WORKFLOW_REMINDER_DASHBOARD_LIMIT: u16 = 5;
 pub const DEFAULT_WORKFLOW_REMINDER_DUE_SOON_DAYS: u16 = 45;
 pub const DEFAULT_WORKFLOW_REMINDER_ATTENDANCE_LOOKAHEAD_DAYS: u16 = 45;
+pub const DEFAULT_RETAINED_EXPORT_CLEANUP_MINIMUM_AGE_DAYS: u16 = 30;
+pub const DEFAULT_RETAINED_EXPORT_CLEANUP_KEEP_LATEST: u16 = 5;
 
 const MAX_WORKFLOW_REMINDER_DASHBOARD_LIMIT: u16 = 50;
 const MAX_WORKFLOW_REMINDER_DAYS: u16 = 365;
+const MAX_RETAINED_EXPORT_CLEANUP_MINIMUM_AGE_DAYS: u16 = 3650;
+const MAX_RETAINED_EXPORT_CLEANUP_KEEP_LATEST: u16 = 100;
 
 /// Local workflow controls. These are advisory settings for in-app surfaces only; they do not
 /// create legal-calendar authority, external delivery guarantees, or workflow-completion gates.
@@ -287,6 +294,59 @@ impl Default for WorkflowReminderSourceSettings {
             attendance_hygiene: true,
             privacy_control_reviews: true,
         }
+    }
+}
+
+/// Local data-management policy defaults. These values only seed the retained-export cleanup
+/// preview/execution request; they do not create legal-retention, archive-disposal, or erasure
+/// authority.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DataManagementSettings {
+    /// Default policy for retained local export-file cleanup previews.
+    pub retained_export_cleanup: RetainedExportCleanupSettings,
+}
+
+impl DataManagementSettings {
+    pub(crate) fn validate(&self) -> Result<(), ApiError> {
+        self.retained_export_cleanup.validate()
+    }
+}
+
+/// Defaults for `POST /v1/data/cleanup` when the target is `exports`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct RetainedExportCleanupSettings {
+    /// Minimum file age, in days, before an export can be previewed as cleanup-eligible.
+    pub minimum_age_days: u16,
+    /// Number of newest retained export files to keep even when they meet the age rule.
+    pub keep_latest: u16,
+}
+
+impl Default for RetainedExportCleanupSettings {
+    fn default() -> Self {
+        RetainedExportCleanupSettings {
+            minimum_age_days: DEFAULT_RETAINED_EXPORT_CLEANUP_MINIMUM_AGE_DAYS,
+            keep_latest: DEFAULT_RETAINED_EXPORT_CLEANUP_KEEP_LATEST,
+        }
+    }
+}
+
+impl RetainedExportCleanupSettings {
+    fn validate(&self) -> Result<(), ApiError> {
+        if self.minimum_age_days > MAX_RETAINED_EXPORT_CLEANUP_MINIMUM_AGE_DAYS {
+            return Err(ApiError::Unprocessable(format!(
+                "data_management.retained_export_cleanup.minimum_age_days must be between 0 and {}, got {}",
+                MAX_RETAINED_EXPORT_CLEANUP_MINIMUM_AGE_DAYS, self.minimum_age_days
+            )));
+        }
+        if self.keep_latest > MAX_RETAINED_EXPORT_CLEANUP_KEEP_LATEST {
+            return Err(ApiError::Unprocessable(format!(
+                "data_management.retained_export_cleanup.keep_latest must be between 0 and {}, got {}",
+                MAX_RETAINED_EXPORT_CLEANUP_KEEP_LATEST, self.keep_latest
+            )));
+        }
+        Ok(())
     }
 }
 
@@ -1534,6 +1594,7 @@ impl Settings {
         validate_tsa_providers(&self.signing.tsa_providers)?;
         self.registry_auto_update.validate()?;
         self.workflow.validate()?;
+        self.data_management.validate()?;
         self.platform.validate()?;
         Ok(())
     }
@@ -2035,4 +2096,81 @@ pub async fn put_settings(
 
     *state.settings.write().await = settings.clone();
     Ok(Json(settings))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn settings_default_includes_retained_export_cleanup_policy() {
+        let settings = Settings::default();
+
+        assert_eq!(
+            settings
+                .data_management
+                .retained_export_cleanup
+                .minimum_age_days,
+            DEFAULT_RETAINED_EXPORT_CLEANUP_MINIMUM_AGE_DAYS
+        );
+        assert_eq!(
+            settings.data_management.retained_export_cleanup.keep_latest,
+            DEFAULT_RETAINED_EXPORT_CLEANUP_KEEP_LATEST
+        );
+        settings
+            .validate()
+            .expect("default settings should validate");
+    }
+
+    #[test]
+    fn legacy_settings_json_defaults_retained_export_cleanup_policy() {
+        let settings: Settings =
+            serde_json::from_str(r#"{"schema_version":1}"#).expect("legacy settings");
+
+        assert_eq!(
+            settings
+                .data_management
+                .retained_export_cleanup
+                .minimum_age_days,
+            DEFAULT_RETAINED_EXPORT_CLEANUP_MINIMUM_AGE_DAYS
+        );
+        assert_eq!(
+            settings.data_management.retained_export_cleanup.keep_latest,
+            DEFAULT_RETAINED_EXPORT_CLEANUP_KEEP_LATEST
+        );
+    }
+
+    #[test]
+    fn retained_export_cleanup_policy_rejects_out_of_range_values() {
+        let mut settings = Settings::default();
+        settings
+            .data_management
+            .retained_export_cleanup
+            .minimum_age_days = MAX_RETAINED_EXPORT_CLEANUP_MINIMUM_AGE_DAYS + 1;
+
+        let err = settings
+            .validate()
+            .expect_err("minimum age above policy bound should fail");
+        match err {
+            ApiError::Unprocessable(message) => {
+                assert!(
+                    message.contains("data_management.retained_export_cleanup.minimum_age_days")
+                );
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+
+        let mut settings = Settings::default();
+        settings.data_management.retained_export_cleanup.keep_latest =
+            MAX_RETAINED_EXPORT_CLEANUP_KEEP_LATEST + 1;
+        let err = settings
+            .validate()
+            .expect_err("keep latest above policy bound should fail");
+        match err {
+            ApiError::Unprocessable(message) => {
+                assert!(message.contains("data_management.retained_export_cleanup.keep_latest"));
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
 }

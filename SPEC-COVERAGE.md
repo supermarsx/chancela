@@ -248,10 +248,14 @@ Implementation checkpoints covered here:
   a server-bound `preview_token`, and leaving retained-export files and
   directories in place. The export cleanup policy fields remain export-only:
   `dry_run`, `minimum_age_days`, and `keep_latest` are still rejected for the
-  crash cleanup target and other non-export targets. Settings Data Management
-  now uses a preview-only exports request of `{ target: "exports", dry_run:
-  true, minimum_age_days: 30, keep_latest: 5 }` and renders the resulting plan
-  with explicit copy that no files were removed. Destructive retained-export
+  crash cleanup target and other non-export targets. Settings now persists
+  retained-export cleanup preview defaults under
+  `data_management.retained_export_cleanup` (`minimum_age_days` and
+  `keep_latest`) with bounded numeric controls and explicit copy that this is
+  retained-export cleanup preview policy only, not legal retention/disposal
+  approval. Data Management reads those settings-derived defaults for the
+  preview-only exports request and renders the resulting plan with explicit
+  copy that no files were removed. Destructive retained-export
   execution is exposed only after that server-tokened preview and shared modal
   confirmation, posts the `preview_token`, rejects missing/stale/mismatched
   tokens, and executes only the server-selected preview manifest instead of
@@ -2334,10 +2338,11 @@ behavior, legal disposal, or legal-effect claims.
   export-only dry-run, minimum-age, and keep-latest policy controls; dry-run reports
   `would_delete_files`, `would_delete_directories`, and `would_delete_bytes`, returns a
   server-bound `preview_token`, keeps every `deleted_*` counter at zero, and rejects those
-  options for crash cleanup. Data Management
+  options for crash cleanup. Settings persists bounded retained-export cleanup
+  preview defaults under `data_management.retained_export_cleanup`, and Data Management
   renders the same status with refresh, copy-path, scan-error, browser-safe open-folder-disabled
-  states, and cleanup controls, and the retained-export action first posts the
-  `{ target: "exports", dry_run: true, minimum_age_days: 30, keep_latest: 5 }` preview payload
+  states, and cleanup controls. The retained-export action first posts a preview
+  payload using those configured `minimum_age_days` and `keep_latest` defaults
   with explicit no-files-removed copy. The execution button stays disabled until
   that dry-run result carries a server `preview_token`, the shared confirmation
   modal gates execution, and the execution payload includes that `preview_token`.

@@ -123,3 +123,12 @@ describe('DEFAULT_SETTINGS.workflow', () => {
     });
   });
 });
+
+describe('DEFAULT_SETTINGS.data_management', () => {
+  it('defaults retained-export cleanup preview policy to the bounded storage-maintenance values', () => {
+    expect(DEFAULT_SETTINGS.data_management.retained_export_cleanup).toEqual({
+      minimum_age_days: 30,
+      keep_latest: 5,
+    });
+  });
+});

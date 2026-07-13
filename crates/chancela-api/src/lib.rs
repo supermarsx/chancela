@@ -6623,8 +6623,15 @@ mod tests {
                     "sources": {
                         "profile_calendar": true,
                         "act_follow_ups": true,
-                        "attendance_hygiene": true
+                        "attendance_hygiene": true,
+                        "privacy_control_reviews": true
                     }
+                }
+            },
+            "data_management": {
+                "retained_export_cleanup": {
+                    "minimum_age_days": 30,
+                    "keep_latest": 5
                 }
             },
             "onboarding": { "completed": false, "completed_at": null }
@@ -6706,6 +6713,14 @@ mod tests {
             Value::Null
         );
         assert_eq!(body["platform"]["audit"], json!([]));
+        assert_eq!(
+            body["data_management"]["retained_export_cleanup"]["minimum_age_days"],
+            30
+        );
+        assert_eq!(
+            body["data_management"]["retained_export_cleanup"]["keep_latest"],
+            5
+        );
         assert_eq!(body["appearance"]["theme"], "system");
         assert_eq!(body["appearance"]["leather_texture"], true);
         assert_eq!(body["appearance"]["texture_intensity"], 60);

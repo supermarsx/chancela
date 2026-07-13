@@ -30,13 +30,16 @@ import {
   useDataKeyRotationPreflight,
   useDataStatus,
   useResetData,
+  useSettings,
   useStartOverInstance,
 } from '../../api/hooks';
 import {
+  DEFAULT_SETTINGS,
   RESET_PHRASE,
   type BackupRecoveryDrillBody,
   type BackupRecoveryDrillReceipt,
   type BackupManifest,
+  type DataCleanupBody,
   type DataCleanupResult,
   type DataCleanupTarget,
   type DataKeyRotationExecuteBody,
@@ -70,23 +73,31 @@ import { resetFrontend } from './frontendReset';
 
 type Dialog = 'none' | 'frontend' | 'startover' | 'domain' | 'factory' | 'full';
 
-const EXPORT_CLEANUP_MINIMUM_AGE_DAYS = 30;
-const EXPORT_CLEANUP_KEEP_LATEST = 5;
-const EXPORT_CLEANUP_PREVIEW_BODY = {
-  target: 'exports' as const,
-  dry_run: true,
-  minimum_age_days: EXPORT_CLEANUP_MINIMUM_AGE_DAYS,
-  keep_latest: EXPORT_CLEANUP_KEEP_LATEST,
-};
-const EXPORT_CLEANUP_EXECUTION_BODY = {
-  ...EXPORT_CLEANUP_PREVIEW_BODY,
-  dry_run: false,
-};
-const EXPORT_CLEANUP_PREVIEW_DESCRIPTION =
-  `Pré-visualiza ficheiros de exportação locais retidos com pelo menos ${EXPORT_CLEANUP_MINIMUM_AGE_DAYS} dias, ` +
-  `preservando os ${EXPORT_CLEANUP_KEEP_LATEST} mais recentes. Nenhum ficheiro é removido nesta ação.`;
+const DEFAULT_EXPORT_CLEANUP_POLICY =
+  DEFAULT_SETTINGS.data_management.retained_export_cleanup;
+
+function exportCleanupBody(
+  policy: typeof DEFAULT_EXPORT_CLEANUP_POLICY,
+  dryRun: boolean,
+): DataCleanupBody {
+  return {
+    target: 'exports' as const,
+    dry_run: dryRun,
+    minimum_age_days: policy.minimum_age_days,
+    keep_latest: policy.keep_latest,
+  };
+}
+
+function exportCleanupPreviewDescription(policy: typeof DEFAULT_EXPORT_CLEANUP_POLICY): string {
+  return (
+    `Pré-visualiza ficheiros de exportação locais retidos com pelo menos ${policy.minimum_age_days} dias, ` +
+    `preservando os ${policy.keep_latest} mais recentes. Nenhum ficheiro é removido nesta ação. ` +
+    'Esta política é apenas a pré-visualização de limpeza de exportações retidas.'
+  );
+}
+
 const EXPORT_CLEANUP_CONFIRM_DESCRIPTION =
-  'Limpa apenas ficheiros de exportação locais retidos que a pré-visualização marcou como elegíveis. Não é apagamento legal, conclusão RGPD, eliminação de arquivo ou certificação de descarte.';
+  'Limpa apenas ficheiros de exportação locais retidos que a pré-visualização marcou como elegíveis pela política configurada. Não é apagamento legal, conclusão RGPD, eliminação de arquivo ou certificação de descarte.';
 const EXPORT_CLEANUP_PREVIEW_BUTTON = 'Pré-visualizar limpeza';
 const EXPORT_CLEANUP_PREVIEW_PENDING = 'A pré-visualizar…';
 const EXPORT_CLEANUP_PREVIEW_DONE = 'Pré-visualização pronta.';
@@ -954,6 +965,7 @@ function DataStatusPanel() {
   const locale = useLocale();
   const toast = useToast();
   const status = useDataStatus();
+  const settings = useSettings();
   const backup = useCreateBackup();
   const recoveryDrill = useCreateBackupRecoveryDrill();
   const cleanup = useCleanDataStorage();
@@ -964,6 +976,9 @@ function DataStatusPanel() {
   const [cleanupTarget, setCleanupTarget] = useState<DataCleanupTarget | null>(null);
   const [lastCleanup, setLastCleanup] = useState<DataCleanupResult | null>(null);
   const [exportCleanupPreview, setExportCleanupPreview] = useState<DataCleanupResult | null>(null);
+  const [exportCleanupPreviewPolicy, setExportCleanupPreviewPolicy] = useState<
+    typeof DEFAULT_EXPORT_CLEANUP_POLICY | null
+  >(null);
   const [previewingExports, setPreviewingExports] = useState(false);
   const [currentKey, setCurrentKey] = useState('');
   const [replacementKey, setReplacementKey] = useState('');
@@ -976,6 +991,13 @@ function DataStatusPanel() {
   const [lastDrillReceipt, setLastDrillReceipt] = useState<BackupRecoveryDrillReceipt | null>(null);
   const [lastPreflight, setLastPreflight] = useState<DataKeyRotationPreflight | null>(null);
   const [lastExecution, setLastExecution] = useState<DataKeyRotationExecution | null>(null);
+  const exportCleanupPolicy =
+    settings.data?.data_management?.retained_export_cleanup ?? DEFAULT_EXPORT_CLEANUP_POLICY;
+  const exportCleanupExecutionBody = exportCleanupBody(
+    exportCleanupPreviewPolicy ?? exportCleanupPolicy,
+    false,
+  );
+  const exportCleanupDescription = exportCleanupPreviewDescription(exportCleanupPolicy);
   const activeCleanup = CLEANUP_TARGETS.find((target) => target.target === cleanupTarget) ?? null;
   const exportCleanupPreviewToken =
     exportCleanupPreview?.target === 'exports' && exportCleanupPreview.dry_run
@@ -993,10 +1015,14 @@ function DataStatusPanel() {
   async function previewExportsCleanup() {
     setPreviewingExports(true);
     setExportCleanupPreview(null);
+    setExportCleanupPreviewPolicy(null);
     try {
-      const result = await cleanup.mutateAsync(EXPORT_CLEANUP_PREVIEW_BODY);
+      const previewPolicy = exportCleanupPolicy;
+      const previewBody = exportCleanupBody(previewPolicy, true);
+      const result = await cleanup.mutateAsync(previewBody);
       setLastCleanup(result);
       setExportCleanupPreview(result.preview_token ? result : null);
+      setExportCleanupPreviewPolicy(result.preview_token ? previewPolicy : null);
       toast.success(EXPORT_CLEANUP_PREVIEW_DONE);
     } catch (err) {
       toast.error(err);
@@ -1401,7 +1427,7 @@ function DataStatusPanel() {
                     <div className="data-status-cleanup__main">
                       <h5>{t(target.title)}</h5>
                       <span className="data-status-cleanup__description">
-                        {isExportsPreview ? EXPORT_CLEANUP_PREVIEW_DESCRIPTION : t(target.body)}
+                        {isExportsPreview ? exportCleanupDescription : t(target.body)}
                       </span>
                       {isExportsPreview && hasExportCleanupPreview ? (
                         <span className="data-status-cleanup__description">
@@ -1611,6 +1637,7 @@ function DataStatusPanel() {
         onClose={() => {
           if (cleanupTarget === 'exports') {
             setExportCleanupPreview(null);
+            setExportCleanupPreviewPolicy(null);
           }
           setCleanupTarget(null);
         }}
@@ -1642,14 +1669,16 @@ function DataStatusPanel() {
           if (activeCleanup.target === 'exports') {
             try {
               const result = await cleanup.mutateAsync({
-                ...EXPORT_CLEANUP_EXECUTION_BODY,
+                ...exportCleanupExecutionBody,
                 preview_token: exportCleanupPreviewToken,
               });
               setLastCleanup(result);
               setExportCleanupPreview(null);
+              setExportCleanupPreviewPolicy(null);
               toast.success(EXPORT_CLEANUP_EXECUTION_DONE);
             } catch (err) {
               setExportCleanupPreview(null);
+              setExportCleanupPreviewPolicy(null);
               throw err;
             }
             return;

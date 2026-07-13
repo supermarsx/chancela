@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { GestaoDadosSection } from './GestaoDadosSection';
 import { renderWithProviders } from '../../test/utils';
-import type { DataStatusResponse } from '../../api/types';
+import { DEFAULT_SETTINGS, type DataStatusResponse } from '../../api/types';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -184,6 +184,7 @@ const permissionStatus: DataStatusResponse = {
 function installFetch(
   statuses: DataStatusResponse[] = [durableStatus],
   extra?: (url: string, init: RequestInit | undefined) => Response | Promise<Response> | null,
+  settings: unknown = DEFAULT_SETTINGS,
 ): Recorded[] {
   const calls: Recorded[] = [];
   let statusIndex = 0;
@@ -195,6 +196,9 @@ function installFetch(
       const body = statuses[Math.min(statusIndex, statuses.length - 1)];
       statusIndex += 1;
       return Promise.resolve(jsonResponse(body));
+    }
+    if (url.includes('/v1/settings')) {
+      return Promise.resolve(jsonResponse(settings));
     }
     const response = extra?.(url, init);
     if (response) return Promise.resolve(response);
@@ -538,6 +542,15 @@ describe('GestaoDadosSection', () => {
   });
 
   it('previews retained export cleanup before explicit confirmed execution', async () => {
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      data_management: {
+        retained_export_cleanup: {
+          minimum_age_days: 45,
+          keep_latest: 9,
+        },
+      },
+    };
     const cleanedStatus: DataStatusResponse = {
       ...durableStatus,
       usage: {
@@ -549,39 +562,43 @@ describe('GestaoDadosSection', () => {
         ),
       },
     };
-    const calls = installFetch([durableStatus, durableStatus, cleanedStatus], (url, init) => {
-      if (url.includes('/v1/data/cleanup')) {
-        const body = JSON.parse((init?.body as string) ?? '{}');
-        if (body.dry_run === false) {
+    const calls = installFetch(
+      [durableStatus, durableStatus, cleanedStatus],
+      (url, init) => {
+        if (url.includes('/v1/data/cleanup')) {
+          const body = JSON.parse((init?.body as string) ?? '{}');
+          if (body.dry_run === false) {
+            return jsonResponse({
+              target: 'exports',
+              data_dir: 'F:\\ChancelaData',
+              dry_run: false,
+              deleted_bytes: 512,
+              deleted_files: 2,
+              deleted_directories: 1,
+              would_delete_bytes: 0,
+              would_delete_files: 0,
+              would_delete_directories: 0,
+              skipped: [],
+            });
+          }
           return jsonResponse({
             target: 'exports',
             data_dir: 'F:\\ChancelaData',
-            dry_run: false,
-            deleted_bytes: 512,
-            deleted_files: 2,
-            deleted_directories: 1,
-            would_delete_bytes: 0,
-            would_delete_files: 0,
-            would_delete_directories: 0,
+            dry_run: true,
+            preview_token: 'export-preview-token-1',
+            deleted_bytes: 0,
+            deleted_files: 0,
+            deleted_directories: 0,
+            would_delete_bytes: 512,
+            would_delete_files: 2,
+            would_delete_directories: 1,
             skipped: [],
           });
         }
-        return jsonResponse({
-          target: 'exports',
-          data_dir: 'F:\\ChancelaData',
-          dry_run: true,
-          preview_token: 'export-preview-token-1',
-          deleted_bytes: 0,
-          deleted_files: 0,
-          deleted_directories: 0,
-          would_delete_bytes: 512,
-          would_delete_files: 2,
-          would_delete_directories: 1,
-          skipped: [],
-        });
-      }
-      return null;
-    });
+        return null;
+      },
+      settings,
+    );
     renderWithProviders(<GestaoDadosSection />);
     await screen.findByText('F:\\ChancelaData');
     const maintenanceSection = screen
@@ -589,7 +606,10 @@ describe('GestaoDadosSection', () => {
       .closest('section')!;
     const exportsRow = within(maintenanceSection).getByText('Exportações retidas').closest('li')!;
     expect(exportsRow.querySelector('.data-status-cleanup__main')?.textContent).toContain(
-      'Pré-visualiza ficheiros de exportação locais retidos com pelo menos 30 dias',
+      'Pré-visualiza ficheiros de exportação locais retidos com pelo menos 45 dias',
+    );
+    expect(exportsRow.querySelector('.data-status-cleanup__main')?.textContent).toContain(
+      'preservando os 9 mais recentes',
     );
     expect(exportsRow.querySelector('.data-status-cleanup__main')?.textContent).toContain(
       'Nenhum ficheiro é removido nesta ação',
@@ -611,8 +631,8 @@ describe('GestaoDadosSection', () => {
     expect(JSON.parse(previewCall.body as string)).toEqual({
       target: 'exports',
       dry_run: true,
-      minimum_age_days: 30,
-      keep_latest: 5,
+      minimum_age_days: 45,
+      keep_latest: 9,
     });
     expect(
       await screen.findByText('Pré-visualização da limpeza de exportações retidas'),
@@ -645,8 +665,8 @@ describe('GestaoDadosSection', () => {
     expect(JSON.parse(executeCall.body as string)).toEqual({
       target: 'exports',
       dry_run: false,
-      minimum_age_days: 30,
-      keep_latest: 5,
+      minimum_age_days: 45,
+      keep_latest: 9,
       preview_token: 'export-preview-token-1',
     });
     expect(await screen.findByText('Limpeza de exportações retidas concluída')).toBeTruthy();
@@ -804,7 +824,14 @@ describe('GestaoDadosSection', () => {
       expect(calls.filter((c) => c.url.includes('/v1/data/status'))).toHaveLength(2),
     );
 
-    expect(calls.every((c) => c.url.includes('/v1/data/status') && c.method === 'GET')).toBe(true);
+    expect(
+      calls.every(
+        (c) =>
+          c.method === 'GET' &&
+          (c.url.includes('/v1/data/status') || c.url.includes('/v1/settings')),
+      ),
+    ).toBe(true);
+    expect(calls.some((c) => c.url.includes('/v1/settings') && c.method === 'GET')).toBe(true);
     expect(calls.some((c) => c.url.includes('/v1/settings') && c.method === 'PUT')).toBe(false);
     expect(calls.some((c) => c.url.includes('/v1/platform/logs'))).toBe(false);
   });

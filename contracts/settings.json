@@ -137,6 +137,12 @@
       }
     }
   },
+  "data_management": {
+    "retained_export_cleanup": {
+      "minimum_age_days": 30,
+      "keep_latest": 5
+    }
+  },
   "appearance": {
     "theme": "system",
     "leather_texture": true,

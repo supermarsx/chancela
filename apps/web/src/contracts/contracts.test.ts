@@ -94,6 +94,7 @@ import {
   type DashboardOpenBook,
   type DashboardReminder,
   type DashboardTargetLinks,
+  type DataManagementSettings,
   type DataDirStatus,
   type DataPermissionCheck,
   type DataPermissionStatus,
@@ -166,6 +167,7 @@ import {
   type RegistryOfficerView,
   type RegistryProvenanceView,
   type RegistryAutoUpdateSettings,
+  type RetainedExportCleanupSettings,
   type RosterUser,
   type SessionRoster,
   type SessionView,
@@ -3207,6 +3209,7 @@ describe('contract fixtures parse through the real client', () => {
         catalog: true,
         signing: true,
         workflow: true,
+        data_management: true,
         platform: true,
         appearance: true,
         ui: true,
@@ -3435,6 +3438,31 @@ describe('contract fixtures parse through the real client', () => {
     expect(typeof sources.act_follow_ups).toBe('boolean');
     expect(typeof sources.attendance_hygiene).toBe('boolean');
     expect(typeof sources.privacy_control_reviews).toBe('boolean');
+    const dataManagement = assertExactKeys<DataManagementSettings>(
+      settings.data_management,
+      { retained_export_cleanup: true },
+      'Settings.data_management',
+    );
+    const retainedExportCleanup = assertExactKeys<RetainedExportCleanupSettings>(
+      dataManagement.retained_export_cleanup,
+      {
+        minimum_age_days: true,
+        keep_latest: true,
+      },
+      'Settings.data_management.retained_export_cleanup',
+    );
+    expect(
+      Number.isInteger(retainedExportCleanup.minimum_age_days),
+      'Settings.data_management.retained_export_cleanup.minimum_age_days should be an integer',
+    ).toBe(true);
+    expect(retainedExportCleanup.minimum_age_days).toBeGreaterThanOrEqual(0);
+    expect(retainedExportCleanup.minimum_age_days).toBeLessThanOrEqual(3650);
+    expect(
+      Number.isInteger(retainedExportCleanup.keep_latest),
+      'Settings.data_management.retained_export_cleanup.keep_latest should be an integer',
+    ).toBe(true);
+    expect(retainedExportCleanup.keep_latest).toBeGreaterThanOrEqual(0);
+    expect(retainedExportCleanup.keep_latest).toBeLessThanOrEqual(100);
     const appearance = assertExactKeys<AppearanceSettings>(
       settings.appearance,
       { theme: true, leather_texture: true, texture_intensity: true, button_texture: true },

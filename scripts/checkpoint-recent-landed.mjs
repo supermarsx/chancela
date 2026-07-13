@@ -6206,27 +6206,39 @@ function assertCheckpointMap() {
     "API non-export cleanup policy field rejection marker",
   );
   assertFileContains(
-    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
-    "const EXPORT_CLEANUP_PREVIEW_BODY =",
-    "data management retained-export preview payload marker",
+    "crates/chancela-api/src/settings.rs",
+    "pub data_management: DataManagementSettings",
+    "API settings data-management policy shape marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/settings.rs",
+    "DEFAULT_RETAINED_EXPORT_CLEANUP_MINIMUM_AGE_DAYS",
+    "API retained-export cleanup policy default marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/SettingsPage.test.tsx",
+    "renders and autosaves retained-export cleanup preview policy defaults",
+    "Settings retained-export cleanup policy autosave coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/SettingsPage.tsx",
+    "Política de limpeza de exportações retidas",
+    "Settings retained-export cleanup policy UI marker",
   );
   assertFileContains(
     "apps/web/src/features/recovery/GestaoDadosSection.tsx",
-    "const EXPORT_CLEANUP_EXECUTION_BODY =",
-    "data management retained-export execution payload marker",
+    "function exportCleanupBody",
+    "data management retained-export settings-derived payload builder marker",
   );
-  assertFileContainsNormalized(
+  assertFileContains(
     "apps/web/src/features/recovery/GestaoDadosSection.tsx",
-    `const EXPORT_CLEANUP_EXECUTION_BODY = {
-  ...EXPORT_CLEANUP_PREVIEW_BODY,
-  dry_run: false,
-};`,
-    "data management retained-export execution flips dry-run marker",
+    "settings.data?.data_management?.retained_export_cleanup ?? DEFAULT_EXPORT_CLEANUP_POLICY",
+    "data management retained-export settings fallback marker",
   );
   assertFileContains(
     "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
-    "minimum_age_days: 30",
-    "data management retained-export preview minimum-age marker",
+    "minimum_age_days: 45",
+    "data management retained-export settings minimum-age marker",
   );
   assertFileContains(
     "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
@@ -6235,8 +6247,8 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
-    "keep_latest: 5",
-    "data management retained-export keep-latest marker",
+    "keep_latest: 9",
+    "data management retained-export settings keep-latest marker",
   );
   assertFileContains(
     "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
@@ -6250,7 +6262,7 @@ function assertCheckpointMap() {
   );
   assertFileMatches(
     "apps/web/src/features/recovery/GestaoDadosSection.tsx",
-    /activeCleanup\.target === 'exports'[\s\S]{0,900}cleanup\.mutateAsync\(\{[\s\S]{0,200}\.\.\.EXPORT_CLEANUP_EXECUTION_BODY,[\s\S]{0,200}preview_token:\s*exportCleanupPreviewToken,[\s\S]{0,200}\}\)/u,
+    /activeCleanup\.target === 'exports'[\s\S]{0,900}cleanup\.mutateAsync\(\{[\s\S]{0,200}\.\.\.exportCleanupExecutionBody,[\s\S]{0,200}preview_token:\s*exportCleanupPreviewToken,[\s\S]{0,200}\}\)/u,
     "data management retained-export execution preview-token payload marker",
   );
   assertFileContains(
@@ -8544,8 +8556,13 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    'preview-only exports request of `{ target: "exports", dry_run:\n  true, minimum_age_days: 30',
-    "spec coverage retained-export preview payload marker",
+    "Settings now persists\n  retained-export cleanup preview defaults under\n  `data_management.retained_export_cleanup`",
+    "spec coverage retained-export settings policy marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "preview\n  payload using those configured `minimum_age_days` and `keep_latest` defaults",
+    "spec coverage retained-export settings-derived preview payload marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",

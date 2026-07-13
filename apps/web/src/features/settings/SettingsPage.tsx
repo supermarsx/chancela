@@ -44,6 +44,7 @@ import {
   type AiSettings,
   type AppearanceSettings,
   type CatalogSettings,
+  type DataManagementSettings,
   type DocumentSettings,
   type Locale,
   type NumberingScheme,
@@ -55,6 +56,7 @@ import {
   type PlatformServiceId,
   type RegisteredEntityColumn,
   type RegistryAutoUpdateSettings,
+  type RetainedExportCleanupSettings,
   type Settings,
   type SignatureFamily,
   type SigningProviderMetadata,
@@ -111,12 +113,19 @@ function numberValue(value: string, fallback: number): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function boundedNumberValue(value: string, fallback: number, min: number, max: number): number {
+  const parsed = numberValue(value, fallback);
+  return Math.min(max, Math.max(min, Math.trunc(parsed)));
+}
+
 function integerValue(value: number, fallback: number): number {
   return Number.isFinite(value) ? Math.trunc(value) : fallback;
 }
 
 const TRUST_SOURCE_ID_PREFIX = 'trust-source';
 const TSA_PROVIDER_ID_PREFIX = 'tsa-provider';
+const RETAINED_EXPORT_CLEANUP_MAXIMUM_AGE_DAYS = 3650;
+const RETAINED_EXPORT_CLEANUP_MAX_KEEP_LATEST = 100;
 
 function normalizeConfigId(value: string): string {
   const normalized = value
@@ -238,7 +247,7 @@ function ensureOneEnabledDefaultProvider(
 
 type SettingsWithMaybeAi = Omit<
   Settings,
-  'ai' | 'signing' | 'registry_auto_update' | 'ui' | 'platform' | 'workflow'
+  'ai' | 'signing' | 'registry_auto_update' | 'ui' | 'platform' | 'workflow' | 'data_management'
 > & {
   ai?: Partial<AiSettings> | null;
   ui?: Partial<UiSettings> | null;
@@ -253,6 +262,11 @@ type SettingsWithMaybeAi = Omit<
           | null;
       })
     | null;
+  data_management?:
+    | (Partial<Omit<DataManagementSettings, 'retained_export_cleanup'>> & {
+        retained_export_cleanup?: Partial<RetainedExportCleanupSettings> | null;
+      })
+    | null;
   signing: Omit<SigningSettings, 'providers' | 'tsl_sources' | 'tsa_providers'> &
     Partial<Pick<SigningSettings, 'providers' | 'tsl_sources' | 'tsa_providers'>>;
 };
@@ -263,6 +277,8 @@ function withSettingsDefaults(settings: SettingsWithMaybeAi): Settings {
   const workflow = settings.workflow ?? {};
   const workflowReminders = workflow.reminders ?? {};
   const workflowReminderSources = workflowReminders.sources ?? {};
+  const dataManagement = settings.data_management ?? {};
+  const retainedExportCleanup = dataManagement.retained_export_cleanup ?? {};
   return {
     ...settings,
     signing: {
@@ -322,6 +338,14 @@ function withSettingsDefaults(settings: SettingsWithMaybeAi): Settings {
           ...DEFAULT_SETTINGS.workflow.reminders.sources,
           ...workflowReminderSources,
         },
+      },
+    },
+    data_management: {
+      ...DEFAULT_SETTINGS.data_management,
+      ...dataManagement,
+      retained_export_cleanup: {
+        ...DEFAULT_SETTINGS.data_management.retained_export_cleanup,
+        ...retainedExportCleanup,
       },
     },
   };
@@ -394,6 +418,23 @@ function toWireBody(draft: Settings): Settings {
           privacy_control_reviews:
             draft.workflow.reminders.sources.privacy_control_reviews === true,
         },
+      },
+    },
+    data_management: {
+      ...draft.data_management,
+      retained_export_cleanup: {
+        minimum_age_days: boundedNumberValue(
+          String(draft.data_management.retained_export_cleanup.minimum_age_days),
+          DEFAULT_SETTINGS.data_management.retained_export_cleanup.minimum_age_days,
+          0,
+          RETAINED_EXPORT_CLEANUP_MAXIMUM_AGE_DAYS,
+        ),
+        keep_latest: boundedNumberValue(
+          String(draft.data_management.retained_export_cleanup.keep_latest),
+          DEFAULT_SETTINGS.data_management.retained_export_cleanup.keep_latest,
+          0,
+          RETAINED_EXPORT_CLEANUP_MAX_KEEP_LATEST,
+        ),
       },
     },
   };
@@ -867,6 +908,24 @@ export function SettingsPage() {
           }
         : d,
     );
+  const setRetainedExportCleanupPolicy = <K extends keyof RetainedExportCleanupSettings>(
+    key: K,
+    value: RetainedExportCleanupSettings[K],
+  ) =>
+    setDraft((d) =>
+      d
+        ? {
+            ...d,
+            data_management: {
+              ...d.data_management,
+              retained_export_cleanup: {
+                ...d.data_management.retained_export_cleanup,
+                [key]: value,
+              },
+            },
+          }
+        : d,
+    );
   const setPlatform = (platform: PlatformSettings) => setDraft((d) => (d ? { ...d, platform } : d));
   const setTslSources = (updater: (sources: TslSourceSettings[]) => TslSourceSettings[]) =>
     setDraft((d) =>
@@ -939,6 +998,7 @@ export function SettingsPage() {
 
   const a = draft.appearance;
   const reminderPolicy = draft.workflow.reminders;
+  const retainedExportCleanupPolicy = draft.data_management.retained_export_cleanup;
 
   return (
     <div className="stack">
@@ -1686,6 +1746,65 @@ export function SettingsPage() {
                         }
                       />
                     </div>
+                  </div>
+                </div>
+              </Card>
+              <Card title="Política de limpeza de exportações retidas">
+                <div className="form">
+                  <p className="field__hint">
+                    Valores padrão usados apenas na pré-visualização de limpeza de exportações
+                    locais retidas. Não aprovam retenção legal, eliminação de arquivo, descarte ou
+                    apagamento RGPD.
+                  </p>
+                  <div className="registry-auto-update-grid">
+                    <Field
+                      label="Idade mínima das exportações"
+                      htmlFor="retained-export-cleanup-minimum-age-days"
+                      hint="Dias mínimos antes de uma exportação local retida poder aparecer como elegível na pré-visualização."
+                    >
+                      <Input
+                        id="retained-export-cleanup-minimum-age-days"
+                        type="number"
+                        min={0}
+                        max={RETAINED_EXPORT_CLEANUP_MAXIMUM_AGE_DAYS}
+                        value={retainedExportCleanupPolicy.minimum_age_days}
+                        onChange={(e) =>
+                          setRetainedExportCleanupPolicy(
+                            'minimum_age_days',
+                            boundedNumberValue(
+                              e.target.value,
+                              retainedExportCleanupPolicy.minimum_age_days,
+                              0,
+                              RETAINED_EXPORT_CLEANUP_MAXIMUM_AGE_DAYS,
+                            ),
+                          )
+                        }
+                      />
+                    </Field>
+                    <Field
+                      label="Exportações recentes a preservar"
+                      htmlFor="retained-export-cleanup-keep-latest"
+                      hint="Número de ficheiros de exportação mais recentes que ficam fora da limpeza, mesmo quando já têm idade suficiente."
+                    >
+                      <Input
+                        id="retained-export-cleanup-keep-latest"
+                        type="number"
+                        min={0}
+                        max={RETAINED_EXPORT_CLEANUP_MAX_KEEP_LATEST}
+                        value={retainedExportCleanupPolicy.keep_latest}
+                        onChange={(e) =>
+                          setRetainedExportCleanupPolicy(
+                            'keep_latest',
+                            boundedNumberValue(
+                              e.target.value,
+                              retainedExportCleanupPolicy.keep_latest,
+                              0,
+                              RETAINED_EXPORT_CLEANUP_MAX_KEEP_LATEST,
+                            ),
+                          )
+                        }
+                      />
+                    </Field>
                   </div>
                 </div>
               </Card>

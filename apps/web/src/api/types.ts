@@ -3635,6 +3635,15 @@ export interface WorkflowSettings {
   reminders: WorkflowReminderSettings;
 }
 
+export interface RetainedExportCleanupSettings {
+  minimum_age_days: number;
+  keep_latest: number;
+}
+
+export interface DataManagementSettings {
+  retained_export_cleanup: RetainedExportCleanupSettings;
+}
+
 export type RegistryAutoUpdateStatus =
   'idle' | 'due' | 'queued' | 'running' | 'completed' | 'failed' | 'manual_required';
 
@@ -4949,6 +4958,7 @@ export interface Settings {
   platform: PlatformSettings;
   registry_auto_update: RegistryAutoUpdateSettings;
   workflow: WorkflowSettings;
+  data_management: DataManagementSettings;
   appearance: AppearanceSettings;
   ui: UiSettings;
   onboarding: OnboardingSettings;
@@ -5094,6 +5104,12 @@ export const DEFAULT_SETTINGS: Settings = {
         attendance_hygiene: true,
         privacy_control_reviews: true,
       },
+    },
+  },
+  data_management: {
+    retained_export_cleanup: {
+      minimum_age_days: 30,
+      keep_latest: 5,
     },
   },
   appearance: {

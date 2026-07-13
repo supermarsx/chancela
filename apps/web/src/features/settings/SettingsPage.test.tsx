@@ -642,6 +642,7 @@ function materializeSettings(value: unknown): TestSettings {
   const logging = platform.logging ?? DEFAULT_SETTINGS.platform.logging;
   const workflow = partial.workflow ?? DEFAULT_SETTINGS.workflow;
   const workflowReminders = workflow.reminders ?? DEFAULT_SETTINGS.workflow.reminders;
+  const dataManagement = partial.data_management ?? DEFAULT_SETTINGS.data_management;
   return {
     ...DEFAULT_SETTINGS,
     ...partial,
@@ -683,6 +684,14 @@ function materializeSettings(value: unknown): TestSettings {
           ...DEFAULT_SETTINGS.workflow.reminders.sources,
           ...(workflowReminders.sources ?? {}),
         },
+      },
+    },
+    data_management: {
+      ...DEFAULT_SETTINGS.data_management,
+      ...dataManagement,
+      retained_export_cleanup: {
+        ...DEFAULT_SETTINGS.data_management.retained_export_cleanup,
+        ...(dataManagement.retained_export_cleanup ?? {}),
       },
     },
     platform: {
@@ -2170,6 +2179,49 @@ describe('SettingsPage', () => {
             attendance_hygiene: false,
             privacy_control_reviews: false,
           },
+        });
+      },
+      { timeout: 3000 },
+    );
+  });
+
+  it('renders and autosaves retained-export cleanup preview policy defaults', async () => {
+    const olderSettings = cloneJson(DEFAULT_SETTINGS) as Partial<typeof DEFAULT_SETTINGS>;
+    delete olderSettings.data_management;
+    const { fn, calls } = settingsFetch(olderSettings);
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=gestao']);
+
+    expect(
+      await screen.findByRole('heading', {
+        name: 'Política de limpeza de exportações retidas',
+      }),
+    ).toBeTruthy();
+    expect((screen.getByLabelText('Idade mínima das exportações') as HTMLInputElement).value).toBe(
+      '30',
+    );
+    expect(
+      (screen.getByLabelText('Exportações recentes a preservar') as HTMLInputElement).value,
+    ).toBe('5');
+    expect(screen.getByText(/apenas na pré-visualização de limpeza/)).toBeTruthy();
+    expect(screen.getByText(/Não aprovam retenção legal/)).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText('Idade mínima das exportações'), {
+      target: { value: '45' },
+    });
+    fireEvent.change(screen.getByLabelText('Exportações recentes a preservar'), {
+      target: { value: '9' },
+    });
+
+    await waitFor(
+      () => {
+        const put = calls.filter((c) => c.method === 'PUT').at(-1);
+        expect(put).toBeTruthy();
+        const sent = JSON.parse(put!.body as string) as typeof DEFAULT_SETTINGS;
+        expect(sent.data_management.retained_export_cleanup).toEqual({
+          minimum_age_days: 45,
+          keep_latest: 9,
         });
       },
       { timeout: 3000 },
