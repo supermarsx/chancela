@@ -711,6 +711,35 @@ jobs:
           cargo test -p chancela-smartcard --features hardware-tests --locked --no-run
 
   # ---------------------------------------------------------------------------
+  # Desktop compile check (Tauri, Windows): a FAST per-PR/push gate that compiles
+  # the out-of-workspace desktop crate against the CURRENT chancela-api public
+  # surface. The root Cargo workspace excludes apps/desktop/src-tauri, so root CI
+  # never builds it — a breaking change to chancela-api's public API could
+  # otherwise land silently and only surface in the heavier Windows smoke below.
+  # This is compile-only: `cargo check` with the default `embedded-server`
+  # feature (which pulls in chancela-api) — no `sqlcipher`, so no vendored
+  # OpenSSL/Perl; no bundle; no smoke. It runs on every push and PR like the
+  # other quick checks; the heavier Desktop Smoke job stays on main/label.
+  # ---------------------------------------------------------------------------
+  desktop-check:
+    name: Desktop compile check (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache desktop cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            apps/desktop/src-tauri -> target
+
+      - name: Compile-check desktop crate against chancela-api
+        run: cargo check --locked --manifest-path apps/desktop/src-tauri/Cargo.toml
+
+  # ---------------------------------------------------------------------------
   # Desktop Smoke (Tauri, Windows): builds the loose no-bundle desktop app and
   # drives its embedded server through the PowerShell smoke script. It is heavier
   # and Windows-specific, so it stays on the release-heavy path: push to main,
