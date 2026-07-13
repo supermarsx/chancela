@@ -481,6 +481,19 @@ export const frFR: Catalog = {
   'entities.chronology.none': '—',
   'entities.chronology.boundary':
     'Lecture technique dérivée du certificat de registre importé. Ces graphes sont une preuve de provenance et de navigation; ils ne remplacent pas le certificat et n ajoutent aucune validité juridique.',
+  'entities.chronology.analytics.title': 'Synthèse analytique locale',
+  'entities.chronology.analytics.notice':
+    'Comptages techniques dérivés uniquement des événements et graphes structurés de ce certificat importé; ils ne certifient ni priorité, ni titularité, ni validité juridique, ni approbation d autorité.',
+  'entities.chronology.analytics.totalEvents': 'Événements',
+  'entities.chronology.analytics.datedEvents': 'Datés',
+  'entities.chronology.analytics.undatedEvents': 'Non datés',
+  'entities.chronology.analytics.sourceInscriptions': 'Inscriptions sources',
+  'entities.chronology.analytics.eventKinds': 'Types d événement',
+  'entities.chronology.analytics.sourceList': 'Inscriptions utilisées',
+  'entities.chronology.analytics.graphCounts': 'Comptages des graphes',
+  'entities.chronology.analytics.kindCount': '{kind}: {count}',
+  'entities.chronology.analytics.graphCount':
+    '{label}: {nodes} nœuds / {edges} liens / {warnings} avertissements',
   'entities.chronology.events.empty':
     'Le certificat n expose aucun événement chronologique normalisé.',
   'entities.chronology.table.date': 'Date',

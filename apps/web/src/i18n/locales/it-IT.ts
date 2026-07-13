@@ -480,6 +480,19 @@ export const itIT: Catalog = {
   'entities.chronology.none': '—',
   'entities.chronology.boundary':
     'Lettura tecnica derivata dal certificato del registro importato. Questi grafi sono evidenza di provenienza e navigazione; non sostituiscono il certificato né aggiungono validità giuridica.',
+  'entities.chronology.analytics.title': 'Riepilogo analitico locale',
+  'entities.chronology.analytics.notice':
+    'Conteggi tecnici derivati solo dagli eventi e dai grafi strutturati di questo certificato importato; non certificano priorità, titolarità, validità giuridica o approvazione dell autorità.',
+  'entities.chronology.analytics.totalEvents': 'Eventi',
+  'entities.chronology.analytics.datedEvents': 'Con data',
+  'entities.chronology.analytics.undatedEvents': 'Senza data',
+  'entities.chronology.analytics.sourceInscriptions': 'Iscrizioni fonte',
+  'entities.chronology.analytics.eventKinds': 'Tipi di evento',
+  'entities.chronology.analytics.sourceList': 'Iscrizioni usate',
+  'entities.chronology.analytics.graphCounts': 'Conteggi dei grafi',
+  'entities.chronology.analytics.kindCount': '{kind}: {count}',
+  'entities.chronology.analytics.graphCount':
+    '{label}: {nodes} nodi / {edges} archi / {warnings} avvisi',
   'entities.chronology.events.empty': 'Il certificato non espone eventi cronologici normalizzati.',
   'entities.chronology.table.date': 'Data',
   'entities.chronology.table.kind': 'Tipo',

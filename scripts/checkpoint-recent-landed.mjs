@@ -5746,6 +5746,26 @@ function assertCheckpointMap() {
     "API entity chronology structured graph response field",
   );
   assertFileContains(
+    "crates/chancela-api/src/chronology.rs",
+    "pub analytics: ChronologyAnalyticsView",
+    "API entity chronology local analytics response field",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/chronology.rs",
+    "source_inscription_count",
+    "API entity chronology source inscription analytics marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/entities/EntityChronologyPanel.tsx",
+    "function ChronologyAnalytics",
+    "web entity chronology analytics panel marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/entities/entities.test.tsx",
+    "Resumo analítico local",
+    "web entity chronology analytics render coverage",
+  );
+  assertFileContains(
     "crates/chancela-registry/tests/chronology.rs",
     "chronology_shareholders_graph_has_deterministic_nodes_edges_and_provenance",
     "registry chronology shareholders structured graph coverage",
@@ -5764,6 +5784,21 @@ function assertCheckpointMap() {
     "apps/web/src/features/entities/EntityChronologyPanel.tsx",
     "entities.chronology.boundary",
     "localized entity chronology boundary copy",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "Current working-tree entity chronology analytics summary keeps Entity/UX/CI **PARTIAL**",
+    "spec coverage entity chronology analytics checkpoint marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "event totals, dated/undated counts, event-kind counts, unique source-inscription counts/list, and structured graph node/edge/warning counts",
+    "spec coverage entity chronology analytics values marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "no chronology editing, legal ownership/priority conclusion, registry certification, DRE verification, external call, or authority-approved graph",
+    "spec coverage entity chronology analytics no-claim marker",
   );
   assertFileContains(
     "apps/web/src/features/entities/entities.test.tsx",

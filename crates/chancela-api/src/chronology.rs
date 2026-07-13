@@ -24,6 +24,7 @@ use crate::AppState;
 use crate::actor::CurrentActor;
 use crate::authz::{require_permission, scope_of_entity};
 use crate::error::ApiError;
+use std::collections::BTreeMap;
 
 /// Wire view of one normalized timeline event. `kind` is the bare [`ChronologyKind`] variant name
 /// (`"Constitution"`, `"CapitalChange"`, …).
@@ -60,19 +61,95 @@ pub struct MermaidBundleView {
     pub relationships: String,
 }
 
-/// The chronology response: the ordered event timeline plus Mermaid and structured graph views.
+#[derive(Serialize)]
+pub struct ChronologyEventKindCountView {
+    pub kind: String,
+    pub count: usize,
+}
+
+#[derive(Serialize)]
+pub struct ChronologyGraphCountView {
+    pub nodes: usize,
+    pub edges: usize,
+    pub warnings: usize,
+}
+
+#[derive(Serialize)]
+pub struct ChronologyGraphAnalyticsView {
+    pub shareholders: ChronologyGraphCountView,
+    pub organs: ChronologyGraphCountView,
+    pub relationships: ChronologyGraphCountView,
+}
+
+#[derive(Serialize)]
+pub struct ChronologyAnalyticsView {
+    pub total_events: usize,
+    pub dated_events: usize,
+    pub undated_events: usize,
+    pub event_kinds: Vec<ChronologyEventKindCountView>,
+    pub source_inscription_count: usize,
+    pub source_inscriptions: Vec<String>,
+    pub graph: ChronologyGraphAnalyticsView,
+}
+
+impl ChronologyAnalyticsView {
+    fn build(events: &[ChronologyEventView], graph: &ChronologyGraphBundle) -> Self {
+        let mut kind_counts = BTreeMap::<&str, usize>::new();
+        let mut source_inscriptions = Vec::<String>::new();
+        for event in events {
+            *kind_counts.entry(event.kind.as_str()).or_default() += 1;
+            if !source_inscriptions.contains(&event.source_inscription) {
+                source_inscriptions.push(event.source_inscription.clone());
+            }
+        }
+
+        ChronologyAnalyticsView {
+            total_events: events.len(),
+            dated_events: events.iter().filter(|event| event.date.is_some()).count(),
+            undated_events: events.iter().filter(|event| event.date.is_none()).count(),
+            event_kinds: kind_counts
+                .into_iter()
+                .map(|(kind, count)| ChronologyEventKindCountView {
+                    kind: kind.to_owned(),
+                    count,
+                })
+                .collect(),
+            source_inscription_count: source_inscriptions.len(),
+            source_inscriptions,
+            graph: ChronologyGraphAnalyticsView {
+                shareholders: graph_counts(&graph.shareholders),
+                organs: graph_counts(&graph.organs),
+                relationships: graph_counts(&graph.relationships),
+            },
+        }
+    }
+}
+
+fn graph_counts(
+    graph: &chancela_registry::chronology::ChronologyGraph,
+) -> ChronologyGraphCountView {
+    ChronologyGraphCountView {
+        nodes: graph.nodes.len(),
+        edges: graph.edges.len(),
+        warnings: graph.warnings.len(),
+    }
+}
+
+/// The chronology response: the ordered event timeline plus Mermaid, structured graph views, and
+/// deterministic local analytics over those already-derived technical views.
 #[derive(Serialize)]
 pub struct ChronologyView {
     pub events: Vec<ChronologyEventView>,
     pub mermaid: MermaidBundleView,
     pub graph: ChronologyGraphBundle,
+    pub analytics: ChronologyAnalyticsView,
 }
 
 impl ChronologyView {
     /// Build the full view from an extract (DOC-30 events + DOC-31 Mermaid).
     pub fn build(extract: &RegistryExtract) -> Self {
         let chrono = Chronology::build(extract);
-        let events = chrono
+        let events: Vec<ChronologyEventView> = chrono
             .events
             .iter()
             .map(ChronologyEventView::from)
@@ -83,10 +160,12 @@ impl ChronologyView {
             relationships: chrono.relationships_mermaid(extract),
         };
         let graph = chrono.graph(extract);
+        let analytics = ChronologyAnalyticsView::build(&events, &graph);
         ChronologyView {
             events,
             mermaid,
             graph,
+            analytics,
         }
     }
 }
@@ -327,6 +406,57 @@ mod tests {
                     .contains("No structured corporate relationship evidence")),
             "relationship empty-state warning is exposed: {graph:?}"
         );
+
+        // Additive analytics are deterministic counts over the same stored extract and graph only:
+        // no registry certification, DRE verification, legal priority, or authority-approved graph.
+        let analytics = &view["analytics"];
+        assert_eq!(analytics["total_events"], 2);
+        assert_eq!(analytics["dated_events"], 2);
+        assert_eq!(analytics["undated_events"], 0);
+        assert_eq!(analytics["source_inscription_count"], 2);
+        assert_eq!(
+            analytics["source_inscriptions"],
+            serde_json::json!(["1", "2"])
+        );
+        assert!(
+            analytics["event_kinds"]
+                .as_array()
+                .expect("event kind counts")
+                .iter()
+                .any(|row| row["kind"] == "Constitution" && row["count"] == 1),
+            "constitution kind count is exposed: {analytics:?}"
+        );
+        assert!(
+            analytics["event_kinds"]
+                .as_array()
+                .expect("event kind counts")
+                .iter()
+                .any(|row| row["kind"] == "Designation" && row["count"] == 1),
+            "designation kind count is exposed: {analytics:?}"
+        );
+        for key in ["shareholders", "organs", "relationships"] {
+            assert_eq!(
+                analytics["graph"][key]["nodes"].as_u64(),
+                graph[key]["nodes"]
+                    .as_array()
+                    .map(|nodes| nodes.len() as u64),
+                "{key} node count mirrors structured graph"
+            );
+            assert_eq!(
+                analytics["graph"][key]["edges"].as_u64(),
+                graph[key]["edges"]
+                    .as_array()
+                    .map(|edges| edges.len() as u64),
+                "{key} edge count mirrors structured graph"
+            );
+            assert_eq!(
+                analytics["graph"][key]["warnings"].as_u64(),
+                graph[key]["warnings"]
+                    .as_array()
+                    .map(|warnings| warnings.len() as u64),
+                "{key} warning count mirrors structured graph"
+            );
+        }
     }
 
     #[tokio::test]

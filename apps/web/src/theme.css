@@ -3693,6 +3693,88 @@ a,
   font-size: 0.78rem;
 }
 
+.chronology-analytics {
+  display: grid;
+  gap: 0.8rem;
+  min-width: 0;
+  padding: 0.85rem 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.chronology-analytics__head {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.chronology-analytics h4,
+.chronology-analytics h5 {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.chronology-analytics__head p,
+.chronology-analytics__sources {
+  margin: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.chronology-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8.5rem), 1fr));
+  gap: 0.6rem;
+  margin: 0;
+}
+
+.chronology-metrics div {
+  min-width: 0;
+}
+
+.chronology-metrics dt {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.chronology-metrics dd {
+  margin: 0.15rem 0 0;
+  font-family: var(--font-mono);
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.chronology-analytics__detail {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+  gap: 0.75rem 1rem;
+  min-width: 0;
+}
+
+.chronology-analytics__detail > div {
+  display: grid;
+  align-content: start;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.chronology-analytics__list {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding-left: 1rem;
+}
+
+.chronology-analytics__list li {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 /* ==========================================================================
  * Registry — certidão permanente import (t11-ui). A read-only, editorial
  * rendering of imported registry data: provenance, órgãos sociais and the

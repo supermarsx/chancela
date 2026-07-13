@@ -585,6 +585,84 @@ describe('EntityDetailPage', () => {
               organs: 'timeline\n  2020 : Gerência',
               relationships: 'graph LR\n  Entidade[Encosto Estratégico] --> Registo[Certidão]',
             },
+            graph: {
+              shareholders: {
+                nodes: [
+                  {
+                    id: 'entity',
+                    label: 'Encosto Estratégico',
+                    kind: 'entity',
+                    category: null,
+                    source_inscription: null,
+                    source_date: null,
+                  },
+                  {
+                    id: 'actor-maria',
+                    label: 'Maria Silva',
+                    kind: 'actor',
+                    category: 'shareholder',
+                    source_inscription: '1',
+                    source_date: '2020-01-01',
+                  },
+                ],
+                edges: [
+                  {
+                    id: 'quota-1',
+                    from: 'entity',
+                    to: 'actor-maria',
+                    label: 'Quota EUR 5000',
+                    kind: 'quota',
+                    source_inscription: '1',
+                    source_date: '2020-01-01',
+                  },
+                ],
+                warnings: [],
+              },
+              organs: {
+                nodes: [
+                  {
+                    id: 'entity',
+                    label: 'Encosto Estratégico',
+                    kind: 'entity',
+                    category: null,
+                    source_inscription: null,
+                    source_date: null,
+                  },
+                ],
+                edges: [],
+                warnings: [],
+              },
+              relationships: {
+                nodes: [
+                  {
+                    id: 'entity',
+                    label: 'Encosto Estratégico',
+                    kind: 'entity',
+                    category: null,
+                    source_inscription: null,
+                    source_date: null,
+                  },
+                ],
+                edges: [],
+                warnings: ['No structured relationship evidence in the imported extract.'],
+              },
+            },
+            analytics: {
+              total_events: 2,
+              dated_events: 1,
+              undated_events: 1,
+              event_kinds: [
+                { kind: 'Constitution', count: 1 },
+                { kind: 'RegistryNote', count: 1 },
+              ],
+              source_inscription_count: 2,
+              source_inscriptions: ['1', '2'],
+              graph: {
+                shareholders: { nodes: 2, edges: 1, warnings: 0 },
+                organs: { nodes: 1, edges: 0, warnings: 0 },
+                relationships: { nodes: 1, edges: 0, warnings: 1 },
+              },
+            },
           }),
         );
       }
@@ -615,6 +693,19 @@ describe('EntityDetailPage', () => {
     expect(pathRows).toContain('Encosto Estratégico->Maria Silva (Quota EUR 5000)');
     expect(pathRows).toContain('2020->Gerência');
     expect(pathRows).toContain('Encosto Estratégico->Certidão');
+    const analytics = screen.getByLabelText('Resumo analítico local');
+    expect(analytics.textContent).toContain('Eventos');
+    expect(analytics.textContent).toContain('Com data');
+    expect(analytics.textContent).toContain('Sem data');
+    expect(analytics.textContent).toContain('Inscrições fonte');
+    expect(analytics.textContent).toContain('Constitution: 1');
+    expect(analytics.textContent).toContain('RegistryNote: 1');
+    expect(analytics.textContent).toContain('Insc. 1, Insc. 2');
+    expect(analytics.textContent).toContain('Sócios e quotas: 2 nós / 1 ligações / 0 avisos');
+    expect(analytics.textContent).toContain('Relações: 1 nós / 0 ligações / 1 avisos');
+    expect(analytics.textContent).toContain('não certificam prioridade');
+    expect(analytics.textContent).toContain('validade jurídica');
+    expect(analytics.textContent).toContain('aprovação de autoridade');
     expect(
       (screen.getByLabelText('Código Mermaid: Sócios e quotas') as HTMLTextAreaElement).value,
     ).toContain('Entidade -->|"Quota EUR 5000"| Maria');

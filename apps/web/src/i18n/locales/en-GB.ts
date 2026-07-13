@@ -477,6 +477,19 @@ export const enGB: Catalog = {
   'entities.chronology.none': '—',
   'entities.chronology.boundary':
     'Technical reading derived from the imported registry certificate. These graphs are provenance and navigation evidence; they do not replace the certificate or add legal validity.',
+  'entities.chronology.analytics.title': 'Local analytics summary',
+  'entities.chronology.analytics.notice':
+    'Technical counts derived only from this imported certificate\'s events and structured graphs; they do not certify priority, ownership, legal validity, or authority approval.',
+  'entities.chronology.analytics.totalEvents': 'Events',
+  'entities.chronology.analytics.datedEvents': 'Dated',
+  'entities.chronology.analytics.undatedEvents': 'Undated',
+  'entities.chronology.analytics.sourceInscriptions': 'Source registrations',
+  'entities.chronology.analytics.eventKinds': 'Event types',
+  'entities.chronology.analytics.sourceList': 'Source registrations used',
+  'entities.chronology.analytics.graphCounts': 'Graph counts',
+  'entities.chronology.analytics.kindCount': '{kind}: {count}',
+  'entities.chronology.analytics.graphCount':
+    '{label}: {nodes} nodes / {edges} edges / {warnings} warnings',
   'entities.chronology.events.empty':
     'The certificate did not expose normalized chronology events.',
   'entities.chronology.table.date': 'Date',

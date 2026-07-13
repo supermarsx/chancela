@@ -481,6 +481,19 @@ export const deDE: Catalog = {
   'entities.chronology.none': '—',
   'entities.chronology.boundary':
     'Technische Lesart aus dem importierten Registerauszug. Diese Graphen sind Herkunfts- und Navigationsnachweise; sie ersetzen den Auszug nicht und fügen keine rechtliche Gültigkeit hinzu.',
+  'entities.chronology.analytics.title': 'Lokale Analysezusammenfassung',
+  'entities.chronology.analytics.notice':
+    'Technische Zählwerte nur aus den Ereignissen und strukturierten Graphen dieses importierten Auszugs; sie zertifizieren keine Priorität, Inhaberschaft, rechtliche Wirksamkeit oder behördliche Genehmigung.',
+  'entities.chronology.analytics.totalEvents': 'Ereignisse',
+  'entities.chronology.analytics.datedEvents': 'Mit Datum',
+  'entities.chronology.analytics.undatedEvents': 'Ohne Datum',
+  'entities.chronology.analytics.sourceInscriptions': 'Quell-Einträge',
+  'entities.chronology.analytics.eventKinds': 'Ereignistypen',
+  'entities.chronology.analytics.sourceList': 'Verwendete Einträge',
+  'entities.chronology.analytics.graphCounts': 'Graph-Zählwerte',
+  'entities.chronology.analytics.kindCount': '{kind}: {count}',
+  'entities.chronology.analytics.graphCount':
+    '{label}: {nodes} Knoten / {edges} Kanten / {warnings} Warnungen',
   'entities.chronology.events.empty':
     'Der Auszug enthält keine normalisierten Chronologieereignisse.',
   'entities.chronology.table.date': 'Datum',

@@ -476,6 +476,19 @@ export const nlNL: Catalog = {
   'entities.chronology.none': '—',
   'entities.chronology.boundary':
     'Technische lezing afgeleid uit het geïmporteerde registercertificaat. Deze grafieken zijn bewijs van herkomst en navigatie; ze vervangen het certificaat niet en voegen geen juridische geldigheid toe.',
+  'entities.chronology.analytics.title': 'Lokale analyse-samenvatting',
+  'entities.chronology.analytics.notice':
+    'Technische tellingen alleen afgeleid uit de gebeurtenissen en gestructureerde grafieken van dit geïmporteerde certificaat; ze certificeren geen prioriteit, eigendom, juridische geldigheid of goedkeuring door een autoriteit.',
+  'entities.chronology.analytics.totalEvents': 'Gebeurtenissen',
+  'entities.chronology.analytics.datedEvents': 'Met datum',
+  'entities.chronology.analytics.undatedEvents': 'Zonder datum',
+  'entities.chronology.analytics.sourceInscriptions': 'Broninschrijvingen',
+  'entities.chronology.analytics.eventKinds': 'Gebeurtenistypen',
+  'entities.chronology.analytics.sourceList': 'Gebruikte inschrijvingen',
+  'entities.chronology.analytics.graphCounts': 'Grafiektellingen',
+  'entities.chronology.analytics.kindCount': '{kind}: {count}',
+  'entities.chronology.analytics.graphCount':
+    '{label}: {nodes} knopen / {edges} verbindingen / {warnings} waarschuwingen',
   'entities.chronology.events.empty':
     'Het certificaat bevat geen genormaliseerde chronologiegebeurtenissen.',
   'entities.chronology.table.date': 'Datum',

@@ -212,6 +212,89 @@ function GraphPathSummary({
   );
 }
 
+function ChronologyAnalytics({ view, t }: { view: EntityChronologyView; t: TFunction }) {
+  const graphCounts = MERMAID_KEYS.map((key) => ({
+    key,
+    label: mermaidLabel(t, key),
+    counts: view.analytics.graph[key],
+  }));
+  const sourceList =
+    view.analytics.source_inscriptions.length > 0
+      ? view.analytics.source_inscriptions
+          .map((inscription) => t('entities.chronology.sourceInscription', { inscription }))
+          .join(', ')
+      : t('entities.chronology.none');
+
+  return (
+    <section className="chronology-analytics" aria-label={t('entities.chronology.analytics.title')}>
+      <div className="chronology-analytics__head">
+        <h4>{t('entities.chronology.analytics.title')}</h4>
+        <p className="muted">{t('entities.chronology.analytics.notice')}</p>
+      </div>
+
+      <dl className="chronology-metrics">
+        <div>
+          <dt>{t('entities.chronology.analytics.totalEvents')}</dt>
+          <dd>{view.analytics.total_events}</dd>
+        </div>
+        <div>
+          <dt>{t('entities.chronology.analytics.datedEvents')}</dt>
+          <dd>{view.analytics.dated_events}</dd>
+        </div>
+        <div>
+          <dt>{t('entities.chronology.analytics.undatedEvents')}</dt>
+          <dd>{view.analytics.undated_events}</dd>
+        </div>
+        <div>
+          <dt>{t('entities.chronology.analytics.sourceInscriptions')}</dt>
+          <dd>{view.analytics.source_inscription_count}</dd>
+        </div>
+      </dl>
+
+      <div className="chronology-analytics__detail">
+        <div>
+          <h5>{t('entities.chronology.analytics.eventKinds')}</h5>
+          {view.analytics.event_kinds.length > 0 ? (
+            <ul className="chronology-analytics__list">
+              {view.analytics.event_kinds.map((row) => (
+                <li key={row.kind}>
+                  {t('entities.chronology.analytics.kindCount', {
+                    kind: row.kind,
+                    count: row.count,
+                  })}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="muted">{t('entities.chronology.events.empty')}</p>
+          )}
+        </div>
+
+        <div>
+          <h5>{t('entities.chronology.analytics.sourceList')}</h5>
+          <p className="mono chronology-analytics__sources">{sourceList}</p>
+        </div>
+
+        <div>
+          <h5>{t('entities.chronology.analytics.graphCounts')}</h5>
+          <ul className="chronology-analytics__list">
+            {graphCounts.map((graph) => (
+              <li key={graph.key}>
+                {t('entities.chronology.analytics.graphCount', {
+                  label: graph.label,
+                  nodes: graph.counts.nodes,
+                  edges: graph.counts.edges,
+                  warnings: graph.counts.warnings,
+                })}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function MermaidSource({
   label,
   value,
@@ -310,6 +393,8 @@ export function EntityChronologyPanel({ entityId }: { entityId: string }) {
         <ChronologyVisualTimeline events={chronology.data.events} t={t} />
 
         <GraphPathSummary graphs={graphs} t={t} />
+
+        <ChronologyAnalytics view={chronology.data} t={t} />
 
         <ChronologyTimeline view={chronology.data} t={t} />
 

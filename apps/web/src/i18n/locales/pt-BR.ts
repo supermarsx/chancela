@@ -479,6 +479,19 @@ export const ptBR: Catalog = {
   'entities.chronology.none': '—',
   'entities.chronology.boundary':
     'Leitura técnica derivada da certidão importada. Estes gráficos são evidência de proveniência e navegação; não substituem a certidão nem acrescentam validade jurídica.',
+  'entities.chronology.analytics.title': 'Resumo analítico local',
+  'entities.chronology.analytics.notice':
+    'Contagens técnicas derivadas apenas dos eventos e gráficos estruturados desta certidão importada; não certificam prioridade, titularidade, validade jurídica ou aprovação de autoridade.',
+  'entities.chronology.analytics.totalEvents': 'Eventos',
+  'entities.chronology.analytics.datedEvents': 'Com data',
+  'entities.chronology.analytics.undatedEvents': 'Sem data',
+  'entities.chronology.analytics.sourceInscriptions': 'Inscrições fonte',
+  'entities.chronology.analytics.eventKinds': 'Tipos de evento',
+  'entities.chronology.analytics.sourceList': 'Inscrições usadas',
+  'entities.chronology.analytics.graphCounts': 'Contagens dos gráficos',
+  'entities.chronology.analytics.kindCount': '{kind}: {count}',
+  'entities.chronology.analytics.graphCount':
+    '{label}: {nodes} nós / {edges} ligações / {warnings} avisos',
   'entities.chronology.events.empty': 'A certidão não expôs eventos cronológicos normalizados.',
   'entities.chronology.table.date': 'Data',
   'entities.chronology.table.kind': 'Tipo',

@@ -479,6 +479,19 @@ export const plPL: Catalog = {
   'entities.chronology.none': '—',
   'entities.chronology.boundary':
     'Techniczny odczyt na podstawie zaimportowanego zaświadczenia rejestrowego. Te grafy są dowodem pochodzenia i nawigacji; nie zastępują zaświadczenia ani nie nadają ważności prawnej.',
+  'entities.chronology.analytics.title': 'Lokalne podsumowanie analityczne',
+  'entities.chronology.analytics.notice':
+    'Techniczne zliczenia wyprowadzone wyłącznie ze zdarzeń i grafów strukturalnych tego zaimportowanego zaświadczenia; nie certyfikują pierwszeństwa, własności, ważności prawnej ani zatwierdzenia przez organ.',
+  'entities.chronology.analytics.totalEvents': 'Zdarzenia',
+  'entities.chronology.analytics.datedEvents': 'Z datą',
+  'entities.chronology.analytics.undatedEvents': 'Bez daty',
+  'entities.chronology.analytics.sourceInscriptions': 'Wpisy źródłowe',
+  'entities.chronology.analytics.eventKinds': 'Typy zdarzeń',
+  'entities.chronology.analytics.sourceList': 'Użyte wpisy',
+  'entities.chronology.analytics.graphCounts': 'Zliczenia grafów',
+  'entities.chronology.analytics.kindCount': '{kind}: {count}',
+  'entities.chronology.analytics.graphCount':
+    '{label}: {nodes} węzłów / {edges} krawędzi / {warnings} ostrzeżeń',
   'entities.chronology.events.empty':
     'Zaświadczenie nie zawiera znormalizowanych zdarzeń chronologii.',
   'entities.chronology.table.date': 'Data',

@@ -481,6 +481,19 @@ export const svFI: Catalog = {
   'entities.chronology.none': '—',
   'entities.chronology.boundary':
     'Teknisk läsning härledd från det importerade registerintyget. Dessa grafer är proveniens- och navigationsbevis; de ersätter inte intyget och tillför ingen juridisk giltighet.',
+  'entities.chronology.analytics.title': 'Lokal analyssammanfattning',
+  'entities.chronology.analytics.notice':
+    'Tekniska räkningar härledda enbart från händelserna och de strukturerade graferna i detta importerade intyg; de certifierar inte prioritet, ägande, juridisk giltighet eller myndighetsgodkännande.',
+  'entities.chronology.analytics.totalEvents': 'Händelser',
+  'entities.chronology.analytics.datedEvents': 'Daterade',
+  'entities.chronology.analytics.undatedEvents': 'Odaterade',
+  'entities.chronology.analytics.sourceInscriptions': 'Källinskrivningar',
+  'entities.chronology.analytics.eventKinds': 'Händelsetyper',
+  'entities.chronology.analytics.sourceList': 'Använda inskrivningar',
+  'entities.chronology.analytics.graphCounts': 'Grafräkningar',
+  'entities.chronology.analytics.kindCount': '{kind}: {count}',
+  'entities.chronology.analytics.graphCount':
+    '{label}: {nodes} noder / {edges} kanter / {warnings} varningar',
   'entities.chronology.events.empty': 'Intyget exponerade inga normaliserade kronologihändelser.',
   'entities.chronology.table.date': 'Datum',
   'entities.chronology.table.kind': 'Typ',

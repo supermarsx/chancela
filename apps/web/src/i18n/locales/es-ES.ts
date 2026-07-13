@@ -479,6 +479,19 @@ export const esES: Catalog = {
   'entities.chronology.none': '—',
   'entities.chronology.boundary':
     'Lectura técnica derivada del certificado registral importado. Estos grafos son evidencia de procedencia y navegación; no sustituyen al certificado ni añaden validez jurídica.',
+  'entities.chronology.analytics.title': 'Resumen analítico local',
+  'entities.chronology.analytics.notice':
+    'Recuentos técnicos derivados solo de los eventos y grafos estructurados de este certificado importado; no certifican prioridad, titularidad, validez jurídica ni aprobación de autoridad.',
+  'entities.chronology.analytics.totalEvents': 'Eventos',
+  'entities.chronology.analytics.datedEvents': 'Con fecha',
+  'entities.chronology.analytics.undatedEvents': 'Sin fecha',
+  'entities.chronology.analytics.sourceInscriptions': 'Inscripciones fuente',
+  'entities.chronology.analytics.eventKinds': 'Tipos de evento',
+  'entities.chronology.analytics.sourceList': 'Inscripciones usadas',
+  'entities.chronology.analytics.graphCounts': 'Recuentos de grafos',
+  'entities.chronology.analytics.kindCount': '{kind}: {count}',
+  'entities.chronology.analytics.graphCount':
+    '{label}: {nodes} nodos / {edges} aristas / {warnings} avisos',
   'entities.chronology.events.empty': 'El certificado no expuso eventos cronológicos normalizados.',
   'entities.chronology.table.date': 'Fecha',
   'entities.chronology.table.kind': 'Tipo',

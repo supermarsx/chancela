@@ -478,6 +478,19 @@ export const daDK: Catalog = {
   'entities.chronology.none': '—',
   'entities.chronology.boundary':
     'Teknisk læsning afledt af det importerede registercertifikat. Disse grafer er provenance- og navigationsbevis; de erstatter ikke certifikatet og tilføjer ikke juridisk gyldighed.',
+  'entities.chronology.analytics.title': 'Lokal analyseoversigt',
+  'entities.chronology.analytics.notice':
+    'Tekniske optællinger afledt kun af dette importerede certifikats hændelser og strukturerede grafer; de certificerer ikke prioritet, ejerskab, juridisk gyldighed eller myndighedsgodkendelse.',
+  'entities.chronology.analytics.totalEvents': 'Hændelser',
+  'entities.chronology.analytics.datedEvents': 'Med dato',
+  'entities.chronology.analytics.undatedEvents': 'Uden dato',
+  'entities.chronology.analytics.sourceInscriptions': 'Kildeindførsler',
+  'entities.chronology.analytics.eventKinds': 'Hændelsestyper',
+  'entities.chronology.analytics.sourceList': 'Brugte indførsler',
+  'entities.chronology.analytics.graphCounts': 'Grafoptællinger',
+  'entities.chronology.analytics.kindCount': '{kind}: {count}',
+  'entities.chronology.analytics.graphCount':
+    '{label}: {nodes} noder / {edges} kanter / {warnings} advarsler',
   'entities.chronology.events.empty':
     'Certifikatet indeholdt ingen normaliserede kronologihændelser.',
   'entities.chronology.table.date': 'Dato',

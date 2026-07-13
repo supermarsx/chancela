@@ -265,9 +265,69 @@ export interface EntityChronologyMermaid {
   relationships: string;
 }
 
+export interface EntityChronologyGraphNode {
+  id: string;
+  label: string;
+  kind: string;
+  category: string | null;
+  source_inscription: string | null;
+  source_date: string | null;
+}
+
+export interface EntityChronologyGraphEdge {
+  id: string;
+  from: string;
+  to: string;
+  label: string;
+  kind: string;
+  source_inscription: string | null;
+  source_date: string | null;
+}
+
+export interface EntityChronologyGraph {
+  nodes: EntityChronologyGraphNode[];
+  edges: EntityChronologyGraphEdge[];
+  warnings: string[];
+}
+
+export interface EntityChronologyGraphBundle {
+  shareholders: EntityChronologyGraph;
+  organs: EntityChronologyGraph;
+  relationships: EntityChronologyGraph;
+}
+
+export interface EntityChronologyEventKindCount {
+  kind: string;
+  count: number;
+}
+
+export interface EntityChronologyGraphCount {
+  nodes: number;
+  edges: number;
+  warnings: number;
+}
+
+export interface EntityChronologyGraphAnalytics {
+  shareholders: EntityChronologyGraphCount;
+  organs: EntityChronologyGraphCount;
+  relationships: EntityChronologyGraphCount;
+}
+
+export interface EntityChronologyAnalytics {
+  total_events: number;
+  dated_events: number;
+  undated_events: number;
+  event_kinds: EntityChronologyEventKindCount[];
+  source_inscription_count: number;
+  source_inscriptions: string[];
+  graph: EntityChronologyGraphAnalytics;
+}
+
 export interface EntityChronologyView {
   events: EntityChronologyEvent[];
   mermaid: EntityChronologyMermaid;
+  graph: EntityChronologyGraphBundle;
+  analytics: EntityChronologyAnalytics;
 }
 
 export interface BookView {

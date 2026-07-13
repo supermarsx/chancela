@@ -479,6 +479,19 @@ export const fiFI: Catalog = {
   'entities.chronology.none': '—',
   'entities.chronology.boundary':
     'Tuodusta rekisteritodistuksesta johdettu tekninen näkymä. Nämä kaaviot ovat alkuperä- ja navigointinäyttöä; ne eivät korvaa todistusta eivätkä lisää oikeudellista pätevyyttä.',
+  'entities.chronology.analytics.title': 'Paikallinen analyysiyhteenveto',
+  'entities.chronology.analytics.notice':
+    'Tekniset lukumäärät johdetaan vain tämän tuodun todistuksen tapahtumista ja rakenteisista kaavioista; ne eivät sertifioi etusijaa, omistusta, oikeudellista pätevyyttä tai viranomaisen hyväksyntää.',
+  'entities.chronology.analytics.totalEvents': 'Tapahtumat',
+  'entities.chronology.analytics.datedEvents': 'Päivätyt',
+  'entities.chronology.analytics.undatedEvents': 'Päiväämättömät',
+  'entities.chronology.analytics.sourceInscriptions': 'Lähdemerkinnät',
+  'entities.chronology.analytics.eventKinds': 'Tapahtumatyypit',
+  'entities.chronology.analytics.sourceList': 'Käytetyt merkinnät',
+  'entities.chronology.analytics.graphCounts': 'Kaavioiden lukumäärät',
+  'entities.chronology.analytics.kindCount': '{kind}: {count}',
+  'entities.chronology.analytics.graphCount':
+    '{label}: {nodes} solmua / {edges} reunaa / {warnings} varoitusta',
   'entities.chronology.events.empty': 'Todistus ei sisältänyt normalisoituja aikajanatapahtumia.',
   'entities.chronology.table.date': 'Päivä',
   'entities.chronology.table.kind': 'Tyyppi',
