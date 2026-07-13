@@ -37,6 +37,9 @@ pub const MCP_WORKFLOW_PROVENANCE_REVIEW_RESOURCE_URI: &str =
 /// Read-only MCP resource URI for static draft-vs-signed comparison review guidance.
 pub const MCP_DRAFT_SIGNED_COMPARISON_REVIEW_RESOURCE_URI: &str =
     "chancela://mcp/draft-signed-comparison-review";
+/// Read-only MCP resource URI for local chronology review summaries.
+pub const MCP_CHRONOLOGY_REVIEW_SUMMARY_RESOURCE_URI: &str =
+    "chancela://mcp/chronology-review-summary";
 
 const DRAFT_MINUTES_REVIEW_PROMPT_NAME: &str = "draft_minutes_human_review_checklist";
 const DRAFT_MINUTES_REVIEW_PROMPT_TITLE: &str = "Draft Minutes Human Review Checklist";
@@ -347,6 +350,17 @@ impl<T: HttpTransport> McpServer<T> {
                         "audience": ["user", "assistant"],
                         "priority": 0.65,
                     },
+                },
+                {
+                    "uri": MCP_CHRONOLOGY_REVIEW_SUMMARY_RESOURCE_URI,
+                    "name": "chronology_review_summary",
+                    "title": "Chronology Review Summary",
+                    "description": "Read-only local chronology review summary resource. Without arguments it returns static guidance; with chronology JSON it returns deterministic aggregate counts, date-range metadata, evidence-marker counts, and caveats. Contains no secrets, performs no bridge, API, AI, registry, legal-service, or provider calls, and makes no legal-validity, ownership, registry-certification, AI-completion, source-certification, provider, or trust claims.",
+                    "mimeType": "application/json",
+                    "annotations": {
+                        "audience": ["user", "assistant"],
+                        "priority": 0.65,
+                    },
                 }
             ]
         })
@@ -381,10 +395,19 @@ impl<T: HttpTransport> McpServer<T> {
                     "draft-signed comparison resource accepts only uri or uri plus arguments",
                 );
             }
-            match params.get("arguments") {
-                Some(arguments) => Some(arguments),
-                None => None,
+            params.get("arguments")
+        } else {
+            None
+        };
+        let chronology_arguments = if uri == MCP_CHRONOLOGY_REVIEW_SUMMARY_RESOURCE_URI {
+            if params.keys().any(|key| key != "uri" && key != "arguments") {
+                return JsonRpcResponse::error(
+                    id,
+                    codes::INVALID_PARAMS,
+                    "chronology review summary resource accepts only uri or uri plus arguments",
+                );
             }
+            params.get("arguments")
         } else {
             None
         };
@@ -406,6 +429,19 @@ impl<T: HttpTransport> McpServer<T> {
                     }
                 },
                 None => self.draft_signed_comparison_review_resource_payload(),
+            },
+            MCP_CHRONOLOGY_REVIEW_SUMMARY_RESOURCE_URI => match chronology_arguments {
+                Some(arguments) => match chronology_review_summary_report_payload(arguments) {
+                    Ok(payload) => payload,
+                    Err(message) => {
+                        return JsonRpcResponse::error(
+                            id,
+                            codes::INVALID_PARAMS,
+                            format!("invalid chronology review summary arguments: {message}"),
+                        );
+                    }
+                },
+                None => self.chronology_review_summary_resource_payload(),
             },
             _ => {
                 return JsonRpcResponse::error_with_data(
@@ -516,6 +552,7 @@ impl<T: HttpTransport> McpServer<T> {
                             MCP_SPEC_09_COVERAGE_RESOURCE_URI,
                             MCP_WORKFLOW_PROVENANCE_REVIEW_RESOURCE_URI,
                             MCP_DRAFT_SIGNED_COMPARISON_REVIEW_RESOURCE_URI,
+                            MCP_CHRONOLOGY_REVIEW_SUMMARY_RESOURCE_URI,
                         ],
                         "prompts": prompt_names,
                     },
@@ -554,12 +591,13 @@ impl<T: HttpTransport> McpServer<T> {
                 "resources": [
                     MCP_WORKFLOW_PROVENANCE_REVIEW_RESOURCE_URI,
                     MCP_DRAFT_SIGNED_COMPARISON_REVIEW_RESOURCE_URI,
+                    MCP_CHRONOLOGY_REVIEW_SUMMARY_RESOURCE_URI,
                 ],
                 "prompts": [
                     WORKFLOW_PROVENANCE_REVIEW_PROMPT_NAME,
                     DRAFT_SIGNED_COMPARISON_REVIEW_PROMPT_NAME,
                 ],
-                "purpose": "offline_human_review_guidance_plus_deterministic_local_draft_signed_metadata_comparison",
+                "purpose": "offline_human_review_guidance_plus_deterministic_local_draft_signed_and_chronology_metadata_summaries",
                 "ai_01_claimed": false,
                 "ai_02_claimed": false,
                 "full_ai_mcp_completion_claimed": false,
@@ -675,6 +713,83 @@ impl<T: HttpTransport> McpServer<T> {
                 "Do not claim legal validity, source certification, provider assurance, trust status, external verification, archive certification, or signature qualification.",
                 "Do not include credentials, API keys, secrets, or personal data that is not needed for the review.",
                 "Normal platform permissions, lifecycle gates, and human review remain required.",
+            ],
+        })
+    }
+
+    fn chronology_review_summary_resource_payload(&self) -> Value {
+        json!({
+            "kind": "chancela_mcp_chronology_review_summary",
+            "schema_version": 1,
+            "source": "static_mcp_review_aid",
+            "offline": true,
+            "static": true,
+            "local_json_only": true,
+            "arguments": [],
+            "optional_arguments": [
+                {
+                    "name": "chronology",
+                    "description": "Caller-supplied chronology JSON object with an events array, or an events array directly. The resource only returns aggregate local counts/classifications.",
+                }
+            ],
+            "bridge_calls": false,
+            "api_calls": false,
+            "provider_calls": false,
+            "ai_provider_calls": false,
+            "registry_calls": false,
+            "legal_service_calls": false,
+            "secrets_in_resource": false,
+            "claims": {
+                "legal_validity": false,
+                "ownership_determination": false,
+                "registry_certification": false,
+                "ai_completion": false,
+                "source_certification": false,
+                "provider": false,
+                "trust": false,
+                "external_validation": false,
+                "archive_certification": false,
+                "signature_qualification": false,
+            },
+            "summary_categories": [
+                {
+                    "id": "event_counts",
+                    "title": "Event counts",
+                    "checkpoints": [
+                        "Count total caller-supplied events and classify event kinds and statuses using common chronology fields.",
+                        "Treat missing, empty, or unknown event kind/status values as local classification gaps only.",
+                    ],
+                },
+                {
+                    "id": "date_range",
+                    "title": "Date range",
+                    "checkpoints": [
+                        "Extract non-empty date/timestamp strings from common chronology fields and report the local lexical range.",
+                        "Treat missing or unparseable dates as review caveats; do not certify chronological correctness.",
+                    ],
+                },
+                {
+                    "id": "evidence_markers",
+                    "title": "Evidence markers",
+                    "checkpoints": [
+                        "Count events with recognized evidence/source/digest markers and events lacking those markers.",
+                        "Count explicit missing-evidence flags when supplied by the caller.",
+                    ],
+                },
+                {
+                    "id": "review_caveats",
+                    "title": "Review caveats",
+                    "checkpoints": [
+                        "Keep output advisory and local to the supplied JSON.",
+                        "Do not infer legal validity, ownership, registry certification, AI completion, source certification, trust, external validation, or provider assurance.",
+                    ],
+                },
+            ],
+            "operator_boundaries": [
+                "Use only chronology JSON supplied in resources/read arguments.",
+                "Do not include credentials, API keys, secrets, or unnecessary personal data in chronology JSON.",
+                "Use the summary as advisory local review assistance only.",
+                "Normal platform permissions, lifecycle gates, source review, and human verification remain required.",
             ],
         })
     }
@@ -1252,6 +1367,57 @@ const DRAFT_SIGNED_FIELD_SPECS: &[DraftSignedFieldSpec] = &[
     },
 ];
 
+const CHRONOLOGY_EVENT_KIND_PATHS: &[&str] =
+    &["kind", "type", "event_kind", "event_type", "category"];
+const CHRONOLOGY_EVENT_STATUS_PATHS: &[&str] = &[
+    "status",
+    "state",
+    "lifecycle_status",
+    "review_status",
+    "outcome",
+];
+const CHRONOLOGY_EVENT_DATE_PATHS: &[&str] = &[
+    "date",
+    "event_date",
+    "occurred_at",
+    "timestamp",
+    "created_at",
+    "updated_at",
+    "recorded_at",
+    "signed_at",
+    "at",
+    "time",
+];
+const CHRONOLOGY_EVIDENCE_PATHS: &[&str] = &[
+    "evidence",
+    "evidence_ref",
+    "evidence_refs",
+    "evidence_reference",
+    "evidence_references",
+    "source",
+    "source.id",
+    "source_record",
+    "source_record_id",
+    "source_record_ids",
+    "source_records",
+    "ledger_event_id",
+    "ledger_event_ids",
+    "digest",
+    "checksum",
+    "sha256",
+    "manifest_digest",
+    "artifact_uri",
+    "document_uri",
+];
+const CHRONOLOGY_MISSING_EVIDENCE_PATHS: &[&str] = &[
+    "missing_evidence",
+    "missing_evidence_marker",
+    "evidence_missing",
+    "needs_evidence",
+    "provenance_missing",
+    "source_missing",
+];
+
 fn draft_signed_comparison_report_payload(arguments: &Value) -> Result<Value, String> {
     let args = arguments
         .as_object()
@@ -1328,6 +1494,245 @@ fn draft_signed_comparison_report_payload(arguments: &Value) -> Result<Value, St
             "No legal validity, trust validation, signature validity, qualified signature status, provider completion, or notarization is claimed."
         ]
     }))
+}
+
+fn chronology_review_summary_report_payload(arguments: &Value) -> Result<Value, String> {
+    let args = arguments
+        .as_object()
+        .ok_or_else(|| "arguments must be an object".to_string())?;
+    let chronology = args
+        .get("chronology")
+        .ok_or_else(|| "chronology must be supplied".to_string())?;
+    let case_id = args.get("case_id").and_then(Value::as_str);
+    let events = chronology_events(chronology)?;
+
+    let mut event_kind_counts = BTreeMap::new();
+    let mut status_counts = BTreeMap::new();
+    let mut date_values = Vec::new();
+    let mut missing_date_count = 0usize;
+    let mut events_with_evidence_marker = 0usize;
+    let mut events_missing_evidence_marker = 0usize;
+    let mut events_with_explicit_missing_evidence_marker = 0usize;
+
+    for event in events {
+        if !event.is_object() {
+            return Err("chronology events must be objects".to_string());
+        }
+
+        let kind = chronology_classification(
+            first_located_value(event, CHRONOLOGY_EVENT_KIND_PATHS),
+            "missing",
+        );
+        increment_count(&mut event_kind_counts, kind);
+
+        let status = chronology_classification(
+            first_located_value(event, CHRONOLOGY_EVENT_STATUS_PATHS),
+            "missing",
+        );
+        increment_count(&mut status_counts, status);
+
+        match chronology_date_value(event) {
+            Some(value) => date_values.push(value),
+            None => missing_date_count += 1,
+        }
+
+        if has_chronology_evidence_marker(event) {
+            events_with_evidence_marker += 1;
+        } else {
+            events_missing_evidence_marker += 1;
+        }
+        if has_explicit_missing_evidence_marker(event) {
+            events_with_explicit_missing_evidence_marker += 1;
+        }
+    }
+
+    date_values.sort();
+    let first_date = date_values.first().cloned();
+    let last_date = date_values.last().cloned();
+
+    Ok(json!({
+        "kind": "chancela_mcp_chronology_review_summary_report",
+        "schema_version": 1,
+        "case_id": case_id,
+        "source": "local_mcp_deterministic_chronology_summarizer",
+        "offline": true,
+        "local_json_only": true,
+        "deterministic": true,
+        "bridge_calls": false,
+        "api_calls": false,
+        "provider_calls": false,
+        "ai_provider_calls": false,
+        "registry_calls": false,
+        "legal_service_calls": false,
+        "secrets_in_resource": false,
+        "claims": {
+            "legal_validity": false,
+            "legal_effect": false,
+            "ownership_determination": false,
+            "registry_certification": false,
+            "ai_completion": false,
+            "ai_completed_claim": false,
+            "source_certification": false,
+            "provider": false,
+            "trust": false,
+            "external_validation": false,
+            "signature_validity": false,
+            "qualified_signature": false,
+            "signature_qualification": false,
+            "archive_certification": false
+        },
+        "chronology_summary": {
+            "total_events": events.len(),
+            "event_kind_counts": event_kind_counts,
+            "status_counts": status_counts,
+            "date_range": {
+                "first": first_date,
+                "last": last_date,
+                "observed_date_count": date_values.len(),
+                "missing_date_count": missing_date_count,
+                "basis": "lexical_order_of_supplied_nonempty_date_strings"
+            },
+            "evidence_marker_counts": {
+                "events_with_evidence_marker": events_with_evidence_marker,
+                "events_missing_evidence_marker": events_missing_evidence_marker,
+                "events_with_explicit_missing_evidence_marker": events_with_explicit_missing_evidence_marker
+            }
+        },
+        "recognized_fields": {
+            "event_kind": CHRONOLOGY_EVENT_KIND_PATHS,
+            "status": CHRONOLOGY_EVENT_STATUS_PATHS,
+            "date": CHRONOLOGY_EVENT_DATE_PATHS,
+            "evidence": CHRONOLOGY_EVIDENCE_PATHS,
+            "explicit_missing_evidence": CHRONOLOGY_MISSING_EVIDENCE_PATHS
+        },
+        "chronology_review_caveats": [
+            "This is a deterministic local aggregate summary over caller-supplied JSON only.",
+            "Counts reflect recognized fields and supplied values; missing fields are review gaps, not completion findings.",
+            "The date range is lexical over supplied date strings and does not certify chronological correctness.",
+            "Evidence-marker counts do not validate authenticity, provenance, registry status, ownership, legal effect, trust, signature validity, provider assurance, or source certification."
+        ],
+        "operator_boundaries": [
+            "No bridge, API, AI-provider, registry, legal-service, trust, signature, archive, or provider calls were made.",
+            "No legal validity, ownership determination, registry certification, AI completion, source certification, trust, external validation, signature qualification, or provider assurance is claimed.",
+            "Human review and normal platform evidence checks remain required."
+        ]
+    }))
+}
+
+fn chronology_events(chronology: &Value) -> Result<&[Value], String> {
+    match chronology {
+        Value::Array(events) => Ok(events.as_slice()),
+        Value::Object(map) => map
+            .get("events")
+            .and_then(Value::as_array)
+            .map(Vec::as_slice)
+            .ok_or_else(|| {
+                "chronology must be an array of event objects or an object with an events array"
+                    .to_string()
+            }),
+        _ => Err(
+            "chronology must be an array of event objects or an object with an events array"
+                .to_string(),
+        ),
+    }
+}
+
+fn chronology_classification(value: Option<LocatedValue<'_>>, missing_label: &str) -> String {
+    let Some(located) = value else {
+        return missing_label.to_string();
+    };
+    if is_unknown_comparison_value(located.value) {
+        return "unknown".to_string();
+    }
+    match located.value {
+        Value::String(value) => normalize_chronology_label(value),
+        Value::Bool(value) => value.to_string(),
+        Value::Number(value) => value.to_string(),
+        Value::Array(_) => "present_array".to_string(),
+        Value::Object(_) => "present_object".to_string(),
+        Value::Null => "unknown".to_string(),
+    }
+}
+
+fn normalize_chronology_label(value: &str) -> String {
+    let trimmed = value.trim().to_ascii_lowercase();
+    let mut out = String::with_capacity(trimmed.len());
+    let mut last_was_separator = false;
+    for ch in trimmed.chars() {
+        if ch.is_ascii_alphanumeric() || matches!(ch, '.' | ':' | '/') {
+            out.push(ch);
+            last_was_separator = false;
+        } else if !last_was_separator {
+            out.push('_');
+            last_was_separator = true;
+        }
+    }
+    let normalized = out.trim_matches('_').to_string();
+    if normalized.is_empty() {
+        "unknown".to_string()
+    } else {
+        normalized
+    }
+}
+
+fn chronology_date_value(event: &Value) -> Option<String> {
+    first_located_value(event, CHRONOLOGY_EVENT_DATE_PATHS).and_then(|located| {
+        match located.value {
+            Value::String(value) if !is_unknown_comparison_value(located.value) => {
+                Some(value.trim().to_string())
+            }
+            Value::Number(value) => Some(value.to_string()),
+            _ => None,
+        }
+    })
+}
+
+fn has_chronology_evidence_marker(event: &Value) -> bool {
+    CHRONOLOGY_EVIDENCE_PATHS.iter().any(|path| {
+        value_at_dotted_path(event, path).is_some_and(is_present_chronology_marker_value)
+    })
+}
+
+fn has_explicit_missing_evidence_marker(event: &Value) -> bool {
+    CHRONOLOGY_MISSING_EVIDENCE_PATHS.iter().any(|path| {
+        value_at_dotted_path(event, path).is_some_and(is_explicit_missing_evidence_marker_value)
+    })
+}
+
+fn is_present_chronology_marker_value(value: &Value) -> bool {
+    match value {
+        Value::Null => false,
+        Value::String(_) => !is_unknown_comparison_value(value),
+        Value::Bool(value) => *value,
+        Value::Number(_) => true,
+        Value::Array(values) => values.iter().any(is_present_chronology_marker_value),
+        Value::Object(map) => map.values().any(is_present_chronology_marker_value),
+    }
+}
+
+fn is_explicit_missing_evidence_marker_value(value: &Value) -> bool {
+    match value {
+        Value::Bool(value) => *value,
+        Value::String(value) => matches!(
+            normalize_chronology_label(value).as_str(),
+            "true"
+                | "yes"
+                | "missing"
+                | "absent"
+                | "unavailable"
+                | "required"
+                | "needed"
+                | "needs_review"
+        ),
+        Value::Number(value) => value.as_i64().is_some_and(|n| n != 0),
+        Value::Array(values) => values.iter().any(is_explicit_missing_evidence_marker_value),
+        Value::Object(map) => map.values().any(is_explicit_missing_evidence_marker_value),
+        Value::Null => false,
+    }
+}
+
+fn increment_count(counts: &mut BTreeMap<String, usize>, key: String) {
+    *counts.entry(key).or_insert(0) += 1;
 }
 
 fn compare_draft_signed_field(spec: &DraftSignedFieldSpec, draft: &Value, signed: &Value) -> Value {
@@ -2364,7 +2769,7 @@ mod tests {
             .unwrap();
         let result = resp.result.unwrap();
         let resources = result["resources"].as_array().unwrap();
-        assert_eq!(resources.len(), 4);
+        assert_eq!(resources.len(), 5);
         let by_uri = |uri: &str| {
             resources
                 .iter()
@@ -2393,6 +2798,12 @@ mod tests {
         assert_eq!(draft_signed["mimeType"], json!("application/json"));
         assert_eq!(
             draft_signed["annotations"]["audience"],
+            json!(["user", "assistant"])
+        );
+        let chronology = by_uri(MCP_CHRONOLOGY_REVIEW_SUMMARY_RESOURCE_URI);
+        assert_eq!(chronology["mimeType"], json!("application/json"));
+        assert_eq!(
+            chronology["annotations"]["audience"],
             json!(["user", "assistant"])
         );
         assert!(server.bridge_recorded().is_empty());
@@ -2761,6 +3172,259 @@ mod tests {
     }
 
     #[test]
+    fn resources_read_chronology_review_summary_returns_static_guidance_without_http_or_secret() {
+        let server = McpServer::from_config(&enabled_cfg(), MockTransport::new(200, "{}")).unwrap();
+        let resp = server
+            .handle(&req(
+                "resources/read",
+                58,
+                json!({ "uri": MCP_CHRONOLOGY_REVIEW_SUMMARY_RESOURCE_URI }),
+            ))
+            .unwrap();
+        let result = resp.result.unwrap();
+        let contents = result["contents"].as_array().unwrap();
+        assert_eq!(contents.len(), 1);
+        assert_eq!(
+            contents[0]["uri"],
+            json!(MCP_CHRONOLOGY_REVIEW_SUMMARY_RESOURCE_URI)
+        );
+        assert_eq!(contents[0]["mimeType"], json!("application/json"));
+        let text = contents[0]["text"].as_str().unwrap();
+        assert!(!text.contains("chk_ab12cd_secretsecret"));
+        assert!(!text.contains("secretsecret"));
+
+        let review: Value = serde_json::from_str(text).unwrap();
+        assert_eq!(
+            review["kind"],
+            json!("chancela_mcp_chronology_review_summary")
+        );
+        assert_eq!(review["offline"], json!(true));
+        assert_eq!(review["static"], json!(true));
+        assert_eq!(review["local_json_only"], json!(true));
+        assert_eq!(review["arguments"], json!([]));
+        assert_eq!(review["optional_arguments"][0]["name"], json!("chronology"));
+        assert_eq!(review["bridge_calls"], json!(false));
+        assert_eq!(review["api_calls"], json!(false));
+        assert_eq!(review["provider_calls"], json!(false));
+        assert_eq!(review["ai_provider_calls"], json!(false));
+        assert_eq!(review["registry_calls"], json!(false));
+        assert_eq!(review["legal_service_calls"], json!(false));
+        assert_eq!(review["secrets_in_resource"], json!(false));
+        assert_eq!(review["claims"]["legal_validity"], json!(false));
+        assert_eq!(review["claims"]["ownership_determination"], json!(false));
+        assert_eq!(review["claims"]["registry_certification"], json!(false));
+        assert_eq!(review["claims"]["ai_completion"], json!(false));
+        assert_eq!(review["claims"]["source_certification"], json!(false));
+
+        let categories = review["summary_categories"].as_array().unwrap();
+        let category_ids = categories
+            .iter()
+            .map(|category| category["id"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        for expected in [
+            "event_counts",
+            "date_range",
+            "evidence_markers",
+            "review_caveats",
+        ] {
+            assert!(
+                category_ids.contains(&expected),
+                "resource should include category {expected:?}: {review}"
+            );
+        }
+        for category in categories {
+            assert!(!category["checkpoints"].as_array().unwrap().is_empty());
+        }
+        assert!(server.bridge_recorded().is_empty());
+    }
+
+    #[test]
+    fn resources_read_chronology_review_summary_accepts_arguments_and_counts_chronology_without_http_or_secret()
+     {
+        let server = McpServer::from_config(&enabled_cfg(), MockTransport::new(200, "{}")).unwrap();
+        let params_a = json!({
+            "uri": MCP_CHRONOLOGY_REVIEW_SUMMARY_RESOURCE_URI,
+            "arguments": {
+                "case_id": "chrono-7",
+                "chronology": {
+                    "events": [
+                        {
+                            "kind": "Act Created",
+                            "status": "Draft",
+                            "occurred_at": "2026-07-10",
+                            "source_record_id": "src-7"
+                        },
+                        {
+                            "event_type": "Seal",
+                            "state": "Sealed",
+                            "timestamp": "2026-07-12T10:00:00Z",
+                            "evidence": [],
+                            "evidence_missing": true
+                        },
+                        {
+                            "type": "ledger.event",
+                            "status": "unknown",
+                            "created_at": "",
+                            "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                        }
+                    ]
+                }
+            }
+        });
+        let params_b = json!({
+            "arguments": {
+                "chronology": {
+                    "events": [
+                        {
+                            "source_record_id": "src-7",
+                            "occurred_at": "2026-07-10",
+                            "status": "Draft",
+                            "kind": "Act Created"
+                        },
+                        {
+                            "evidence_missing": true,
+                            "evidence": [],
+                            "timestamp": "2026-07-12T10:00:00Z",
+                            "state": "Sealed",
+                            "event_type": "Seal"
+                        },
+                        {
+                            "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                            "created_at": "",
+                            "status": "unknown",
+                            "type": "ledger.event"
+                        }
+                    ]
+                },
+                "case_id": "chrono-7"
+            },
+            "uri": MCP_CHRONOLOGY_REVIEW_SUMMARY_RESOURCE_URI
+        });
+
+        let response_a = server
+            .handle(&req("resources/read", 59, params_a))
+            .unwrap()
+            .result
+            .unwrap();
+        let response_b = server
+            .handle(&req("resources/read", 60, params_b))
+            .unwrap()
+            .result
+            .unwrap();
+        let text_a = response_a["contents"][0]["text"].as_str().unwrap();
+        let text_b = response_b["contents"][0]["text"].as_str().unwrap();
+        assert_eq!(text_a, text_b, "summary output must be deterministic");
+        assert!(!text_a.contains("chk_ab12cd_secretsecret"));
+        assert!(!text_a.contains("secretsecret"));
+        assert!(!text_a.contains("\"legal_validity\": true"));
+        assert!(!text_a.contains("\"registry_certification\": true"));
+        assert!(!text_a.contains("\"ai_completed_claim\": true"));
+
+        let report: Value = serde_json::from_str(text_a).unwrap();
+        assert_eq!(
+            report["kind"],
+            json!("chancela_mcp_chronology_review_summary_report")
+        );
+        assert_eq!(report["case_id"], json!("chrono-7"));
+        assert_eq!(
+            report["source"],
+            json!("local_mcp_deterministic_chronology_summarizer")
+        );
+        assert_eq!(report["offline"], json!(true));
+        assert_eq!(report["local_json_only"], json!(true));
+        assert_eq!(report["deterministic"], json!(true));
+        assert_eq!(report["bridge_calls"], json!(false));
+        assert_eq!(report["api_calls"], json!(false));
+        assert_eq!(report["provider_calls"], json!(false));
+        assert_eq!(report["ai_provider_calls"], json!(false));
+        assert_eq!(report["registry_calls"], json!(false));
+        assert_eq!(report["legal_service_calls"], json!(false));
+        assert_eq!(report["secrets_in_resource"], json!(false));
+        assert_eq!(report["claims"]["legal_validity"], json!(false));
+        assert_eq!(report["claims"]["ownership_determination"], json!(false));
+        assert_eq!(report["claims"]["registry_certification"], json!(false));
+        assert_eq!(report["claims"]["ai_completion"], json!(false));
+        assert_eq!(report["claims"]["ai_completed_claim"], json!(false));
+        assert_eq!(report["claims"]["source_certification"], json!(false));
+        assert_eq!(report["claims"]["external_validation"], json!(false));
+
+        let summary = &report["chronology_summary"];
+        assert_eq!(summary["total_events"], json!(3));
+        assert_eq!(summary["event_kind_counts"]["act_created"], json!(1));
+        assert_eq!(summary["event_kind_counts"]["seal"], json!(1));
+        assert_eq!(summary["event_kind_counts"]["ledger.event"], json!(1));
+        assert_eq!(summary["status_counts"]["draft"], json!(1));
+        assert_eq!(summary["status_counts"]["sealed"], json!(1));
+        assert_eq!(summary["status_counts"]["unknown"], json!(1));
+        assert_eq!(summary["date_range"]["first"], json!("2026-07-10"));
+        assert_eq!(summary["date_range"]["last"], json!("2026-07-12T10:00:00Z"));
+        assert_eq!(summary["date_range"]["observed_date_count"], json!(2));
+        assert_eq!(summary["date_range"]["missing_date_count"], json!(1));
+        assert_eq!(
+            summary["evidence_marker_counts"]["events_with_evidence_marker"],
+            json!(2)
+        );
+        assert_eq!(
+            summary["evidence_marker_counts"]["events_missing_evidence_marker"],
+            json!(1)
+        );
+        assert_eq!(
+            summary["evidence_marker_counts"]["events_with_explicit_missing_evidence_marker"],
+            json!(1)
+        );
+        assert!(server.bridge_recorded().is_empty());
+    }
+
+    #[test]
+    fn resources_read_chronology_review_summary_rejects_bad_arguments_and_extra_params() {
+        let server = McpServer::from_config(&enabled_cfg(), MockTransport::new(200, "{}")).unwrap();
+
+        let bad_arguments = server
+            .handle(&req(
+                "resources/read",
+                61,
+                json!({
+                    "uri": MCP_CHRONOLOGY_REVIEW_SUMMARY_RESOURCE_URI,
+                    "arguments": { "chronology": { "events": [null] } }
+                }),
+            ))
+            .unwrap();
+        let error = bad_arguments.error.unwrap();
+        assert_eq!(error.code, codes::INVALID_PARAMS);
+        assert!(error.message.contains("events must be objects"));
+
+        let missing_chronology = server
+            .handle(&req(
+                "resources/read",
+                62,
+                json!({
+                    "uri": MCP_CHRONOLOGY_REVIEW_SUMMARY_RESOURCE_URI,
+                    "arguments": { "case_id": "chrono-7" }
+                }),
+            ))
+            .unwrap();
+        let error = missing_chronology.error.unwrap();
+        assert_eq!(error.code, codes::INVALID_PARAMS);
+        assert!(error.message.contains("chronology must be supplied"));
+
+        let extra_param = server
+            .handle(&req(
+                "resources/read",
+                63,
+                json!({
+                    "uri": MCP_CHRONOLOGY_REVIEW_SUMMARY_RESOURCE_URI,
+                    "cursor": "ignored"
+                }),
+            ))
+            .unwrap();
+        let error = extra_param.error.unwrap();
+        assert_eq!(error.code, codes::INVALID_PARAMS);
+        assert!(error.message.contains("uri plus arguments"));
+
+        assert!(server.bridge_recorded().is_empty());
+    }
+
+    #[test]
     fn resources_read_draft_signed_comparison_report_rejects_bad_arguments_and_extra_params() {
         let server = McpServer::from_config(&enabled_cfg(), MockTransport::new(200, "{}")).unwrap();
 
@@ -2851,7 +3515,8 @@ mod tests {
                 MCP_STATUS_RESOURCE_URI,
                 MCP_SPEC_09_COVERAGE_RESOURCE_URI,
                 MCP_WORKFLOW_PROVENANCE_REVIEW_RESOURCE_URI,
-                MCP_DRAFT_SIGNED_COMPARISON_REVIEW_RESOURCE_URI
+                MCP_DRAFT_SIGNED_COMPARISON_REVIEW_RESOURCE_URI,
+                MCP_CHRONOLOGY_REVIEW_SUMMARY_RESOURCE_URI
             ])
         );
         assert!(
@@ -2872,7 +3537,8 @@ mod tests {
             coverage["mcp_review_aids"]["resources"],
             json!([
                 MCP_WORKFLOW_PROVENANCE_REVIEW_RESOURCE_URI,
-                MCP_DRAFT_SIGNED_COMPARISON_REVIEW_RESOURCE_URI
+                MCP_DRAFT_SIGNED_COMPARISON_REVIEW_RESOURCE_URI,
+                MCP_CHRONOLOGY_REVIEW_SUMMARY_RESOURCE_URI
             ])
         );
         assert_eq!(

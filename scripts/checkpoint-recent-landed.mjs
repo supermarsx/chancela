@@ -4554,6 +4554,56 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-mcp/src/server.rs",
+    "chancela://mcp/chronology-review-summary",
+    "MCP chronology review summary resource URI marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    "chronology_review_summary_resource_payload",
+    "MCP chronology review summary resource payload marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    "resources_read_chronology_review_summary_returns_static_guidance_without_http_or_secret",
+    "MCP chronology review summary static guidance coverage",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    "resources_read_chronology_review_summary_accepts_arguments_and_counts_chronology_without_http_or_secret",
+    "MCP chronology review summary deterministic counts coverage",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    "resources_read_chronology_review_summary_rejects_bad_arguments_and_extra_params",
+    "MCP chronology review summary invalid args coverage",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    '"kind": "chancela_mcp_chronology_review_summary_report"',
+    "MCP chronology deterministic summary report payload marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    '"source": "local_mcp_deterministic_chronology_summarizer"',
+    "MCP chronology local deterministic summarizer marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    '"registry_calls": false',
+    "MCP chronology no registry call marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    '"legal_service_calls": false',
+    "MCP chronology no legal-service call marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    '"ai_completed_claim": false',
+    "MCP chronology no AI-completed claim marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
     '"full_ai_mcp_completion_claimed": false',
     "MCP spec coverage no full AI/MCP completion marker",
   );
