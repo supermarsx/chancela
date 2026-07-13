@@ -226,7 +226,7 @@ export const ptBR: Catalog = {
   'notifications.alert.act.advanceAvailable.action': 'Abrir ata',
   'notifications.alert.act.signingReady.title': 'Ata pronta para assinaturas',
   'notifications.alert.act.signingReady.body':
-    'A ata está em assinatura e não tem erros de conformidade em {rule_pack}. Recolha ou importe as assinaturas necessárias.',
+    'A ata está em assinatura e não tem erros de conformidade em {rule_pack}. Colete ou importe as assinaturas necessárias.',
   'notifications.alert.act.signingReady.action': 'Abrir ata',
   'notifications.alert.act.archivePending.title': 'Ata selada por arquivar',
   'notifications.alert.act.archivePending.body':
@@ -770,24 +770,29 @@ export const ptBR: Catalog = {
   'acts.sealing.ready': 'A ata está conforme e em assinatura — pode ser selada.',
   'acts.sealing.readyWithWarnings':
     'A ata tem avisos de conformidade não bloqueantes. Revise-os e reconheça-os explicitamente antes de selar.',
-  'acts.sealing.warningAck.title': 'Confirmar avisos de conformidade',
+  'acts.sealing.warningAck.title': 'Confirmar selagem manual',
   'acts.sealing.warningAck.body':
-    'Existem avisos de conformidade não bloqueantes. A selagem só prossegue depois de confirmar que você os revisou.',
+    'Registe a referência local onde o original assinado manualmente fica guardado. Estes metadados não validam a assinatura nem certificam o arquivo.',
   'acts.sealing.warningAck.checkbox':
-    'Reconheço explicitamente estes avisos de conformidade e quero selar a ata.',
-  'acts.sealing.warningAck.confirm': 'Selar ata com avisos',
+    'Confirmo que a referência do original assinado manualmente foi registada e quero selar a ata.',
+  'acts.sealing.warningAck.checkboxWithWarnings':
+    'Confirmo que revi os avisos de conformidade, que a referência do original assinado manualmente foi registada e quero selar a ata.',
+  'acts.sealing.warningAck.confirm': 'Confirmar e selar ata',
   'acts.manualSignature.originalReference.label': 'Signed original reference',
   'acts.manualSignature.originalReference.hint':
     'Location, archive, folder, document id, or another internal reference.',
   'acts.manualSignature.originalReference.tooLong':
     'The signed original reference must be at most 512 characters.',
+  'acts.manualSignature.originalReference.controlCharacters':
+    'The signed original reference must not contain control characters.',
   'acts.manualSignature.originalReference.displayLabel': 'Signed original',
   'acts.manualSignature.custodian.label': 'Custodian',
   'acts.manualSignature.custodian.hint': 'Responsible person, team, or service, if applicable.',
   'acts.manualSignature.custodian.displayLabel': 'Custodian',
   'acts.manualSignature.note.label': 'Note',
   'acts.manualSignature.note.hint': 'Optional local context; do not record legal validation.',
-  'acts.manualSignature.note.displayLabel': 'Note',  'acts.sealing.unavailableState': 'A selagem só fica disponível no estado «Em assinatura».',
+  'acts.manualSignature.note.displayLabel': 'Note',
+  'acts.sealing.unavailableState': 'A selagem só fica disponível no estado «Em assinatura».',
   'acts.sealing.fixErrors': 'Corrija os erros de conformidade para poder selar.',
   'acts.sealing.sealing': 'Selando…',
   'acts.sealing.seal': 'Selar ata',
@@ -1734,7 +1739,7 @@ export const ptBR: Catalog = {
   'settings.privacy.retention.dryRun.notice.body':
     'A simulação calcula correspondências de políticas. Esta interface não executa descarte destrutivo nem envia instruções de execução.',
   'settings.privacy.retention.dryRun.action': 'Simular retenção',
-  'settings.privacy.retention.dryRun.running': 'A simular',
+  'settings.privacy.retention.dryRun.running': 'Simulando…',
   'settings.privacy.retention.dryRun.mode': 'Modo',
   'settings.privacy.retention.dryRun.executionSupported': 'execução suportada',
   'settings.privacy.retention.dryRun.candidate': 'Candidato',
@@ -2444,7 +2449,7 @@ export const ptBR: Catalog = {
   'signing.status.localPkcs12': 'PKCS#12 local',
   'signing.status.officialHandoff': 'Official handoff',
   'signing.status.required': 'Obrigatória',
-  'signing.status.unsigned': 'A assinar',
+  'signing.status.unsigned': 'Por assinar',
   'signing.signed.validityNote':
     'Chancela shows the technical signature record and available evidence; any legal decision depends on context and the applicable verification.',
   'signing.signed.signer.help':
@@ -2468,7 +2473,7 @@ export const ptBR: Catalog = {
     'Perfil PAdES observado no arquivo. É uma leitura técnica do PDF, não uma decisão jurídica sobre validade.',
   'signing.evidence.dss.label': 'DSS / revogação',
   'signing.evidence.dss.help':
-    'DSS contém dados de validação como certificados, OCSP ou CRL. Quando está ausente ou não suportado, a app não afirma validação de longo prazo.',
+    'DSS contém dados de validação como certificados, OCSP ou CRL. Quando está ausente ou não suportado, o aplicativo não afirma validação de longo prazo.',
   'signing.evidence.dss.present': 'presente',
   'signing.evidence.dss.unsupported': 'não suportado',
   'signing.evidence.dss.notPresent': 'não presente',
@@ -2509,7 +2514,7 @@ export const ptBR: Catalog = {
     'Fluxo remoto em dois passos: PIN de assinatura e código SMS. Recomendado quando a CMD está ativa.',
   'signing.provider.cc.title': 'Cartão de Cidadão',
   'signing.provider.cc.description':
-    'Assinatura local com leitor ligado ao aplicativo de desktop. O PIN nunca é pedido no browser.',
+    'Assinatura local com leitor ligado ao aplicativo de desktop. O PIN nunca é pedido no navegador.',
   'signing.provider.pkcs12.title': 'Certificado local PKCS#12/PFX',
   'signing.provider.pkcs12.description':
     'Fluxo avançado com arquivo PFX e senha usados só neste pedido. Produz evidência técnica local, não assinatura qualificada nem CMD.',
@@ -2567,7 +2572,7 @@ export const ptBR: Catalog = {
   'signing.provider.unavailable.body':
     'Pode continuar com Chave Móvel Digital ou Cartão de Cidadão. A lista de prestadores remotos não foi carregada nesta sessão.',
   'signing.provider.csc.description':
-    'Prestador remoto qualificado. A app recolhe apenas a referência e encaminha a autorização para o prestador.',
+    'Prestador remoto qualificado. O aplicativo coleta apenas a referência e encaminha a autorização para o prestador.',
   'signing.provider.csc.unconfigured':
     'Prestador remoto listado pelo servidor, mas ainda sem credenciais ativas nesta instalação.',
   'signing.invites.title': 'Convites de assinatura externa',
@@ -2607,7 +2612,7 @@ export const ptBR: Catalog = {
   'signing.invites.secret.close': 'Fechar aviso',
   'signing.invites.revoke': 'Revogar',
   'signing.invites.revokeConfirm': 'Confirmar revogação',
-  'signing.invites.revoking': 'A revogar…',
+  'signing.invites.revoking': 'Revogando…',
   'signing.envelopes.title': 'Envelopes de assinatura externa',
   'signing.envelopes.createdToast': 'Envelope de assinatura externa criado.',
   'signing.envelopes.create': 'Criar envelope',
@@ -2709,7 +2714,7 @@ export const ptBR: Catalog = {
   'data.status.durable': 'Armazenamento',
   'data.status.durable.open': 'Durável aberto',
   'data.status.durable.closed': 'Em memória',
-  'data.status.encryption': 'Encriptação da base de dados',
+  'data.status.encryption': 'Criptografia do banco de dados',
   'data.status.schemaVersion': 'Versão do esquema',
   'data.status.ledgerLength': 'Eventos no registro',
   'data.status.ledgerVerified': 'Registro verificado',
@@ -2808,11 +2813,11 @@ export const ptBR: Catalog = {
   'data.status.keyRotation.blockers': 'Bloqueios',
   'data.status.keyRotation.blockers.none': 'Nenhum bloqueio reportado.',
   'data.status.keyRotation.evidence': 'Evidência',
-  'data.status.keyRotation.evidence.databaseFormat': 'Formato da base de dados',
+  'data.status.keyRotation.evidence.databaseFormat': 'Formato do banco de dados',
   'data.status.keyRotation.evidence.currentKey': 'Chave atual',
   'data.status.keyRotation.evidence.replacementKey': 'Chave de substituição',
   'data.status.keyRotation.evidence.sqlcipher': 'SQLCipher disponível',
-  'data.status.keyRotation.evidence.databaseFile': 'Arquivo da base de dados',
+  'data.status.keyRotation.evidence.databaseFile': 'Arquivo do banco de dados',
   'data.status.keyRotation.metadata': 'Metadados',
   'data.status.keyRotation.metadata.provider': 'Fornecedor',
   'data.status.keyRotation.metadata.readOnly': 'Somente leitura',
@@ -3097,7 +3102,7 @@ export const ptBR: Catalog = {
   // --- Added fallback keys from pt-PT source catalog -----------------------------
   'common.yes': 'Sim',
   'common.no': 'Não',
-  'entities.fiscalYearEnd.default': '12-31 (por omissão)',
+  'entities.fiscalYearEnd.default': '12-31 (padrão)',
   'documents.download.markdown': 'Baixar Markdown',
   'documents.download.txt': 'Baixar TXT',
   'documents.download.html': 'Baixar HTML',
@@ -3129,7 +3134,7 @@ export const ptBR: Catalog = {
   'documents.generated.empty.body':
     'Esta ata ainda não tem comunicação gerada para condóminos ausentes.',
   'documents.generated.listAria': 'Comunicações geradas',
-  'documents.generated.downloadPath': 'URL de descarga',
+  'documents.generated.downloadPath': 'URL de download',
   'documents.generated.viewEvidence': 'Ver evidência',
   'documents.generated.download': 'Baixar comunicação',
   'documents.generated.status.aria': 'Estado da evidência de comunicação gerada',
@@ -3200,7 +3205,7 @@ export const ptBR: Catalog = {
   'documents.import.nature': 'Natureza',
   'documents.import.size': 'Tamanho',
   'documents.import.declaredType': 'Tipo declarado',
-  'documents.import.detectedType': 'Tipo detetado',
+  'documents.import.detectedType': 'Tipo detectado',
   'documents.import.notDeclared': 'Não declarado',
   'documents.import.notIndicated': 'Não indicado',
   'documents.import.importedAt': 'Importado em',
@@ -3311,7 +3316,7 @@ export const ptBR: Catalog = {
   'externalInvite.decline': 'Declinar',
   'settings.signing.providers.title': 'Modos de prestador configurados',
   'settings.signing.providers.hint':
-    'Metadados não secretos. A interface não recolhe chaves privadas, PINs, passphrases PKCS#12 ou OTPs nesta página.',
+    'Metadados não secretos. A interface não coleta chaves privadas, PINs, passphrases PKCS#12 ou OTPs nesta página.',
   'settings.signing.providerMode.cmd': 'CMD/SCMD',
   'settings.signing.providerMode.cc': 'Cartão de Cidadão',
   'settings.signing.providerMode.cscQtsp': 'CSC/QTSP',
@@ -3382,7 +3387,7 @@ export const ptBR: Catalog = {
   'trust.type.other': 'Outros',
   'trust.statusFilter.all': 'Todos os estados',
   'trust.flag.tslTrusted': 'TSL confiável',
-  'trust.flag.advisory': 'Advisório',
+  'trust.flag.advisory': 'Consultivo',
   'trust.flag.supplyPoint': 'Ponto',
   'trust.flag.history': 'Histórico',
   'trust.detail.summary': 'Resumo',
@@ -3446,7 +3451,7 @@ export const ptBR: Catalog = {
   'signing.tool.signer.file.label': 'Arquivo PKCS#12/PFX',
   'signing.tool.signer.file.hint':
     'O certificado é usado apenas para este pedido e nunca é salvo.',
-  'signing.tool.signer.passphrase.label': 'Frase-passe',
+  'signing.tool.signer.passphrase.label': 'Frase secreta',
   'signing.tool.signer.passphrase.hint': 'Usada apenas para este pedido; nunca é salva.',
   'signing.tool.signer.friendlyName.label': 'Nome amigável (opcional)',
   'signing.tool.signer.friendlyName.hint': 'Escolhe a identidade quando o arquivo contém várias.',
@@ -3469,7 +3474,7 @@ export const ptBR: Catalog = {
   'signing.xades.level.t': 'XAdES-T (com carimbo temporal)',
   'signing.xades.level.note': 'Os níveis LT e LTA não estão disponíveis nesta ferramenta local.',
   'signing.xades.submit': 'Produzir XAdES',
-  'signing.xades.submitting': 'A produzir…',
+  'signing.xades.submitting': 'Produzindo…',
   'signing.xades.result.title': 'XAdES produzido',
   'signing.xades.result.level': 'Nível',
   'signing.xades.result.packaging': 'Empacotamento',
@@ -3488,7 +3493,7 @@ export const ptBR: Catalog = {
   'signing.asic.archiveTimestamp.label': 'Manifesto de arquivo com carimbo temporal',
   'signing.asic.archiveTimestamp.hint': 'Apenas ASiC-E; requer um prestador TSA configurado.',
   'signing.asic.submit': 'Produzir ASiC',
-  'signing.asic.submitting': 'A produzir…',
+  'signing.asic.submitting': 'Produzindo…',
   'signing.asic.result.title': 'Contentor ASiC produzido',
   'signing.asic.result.container': 'Contentor',
   'signing.asic.result.level': 'Nível XAdES',
@@ -3501,7 +3506,7 @@ export const ptBR: Catalog = {
   'signing.scap.citizen.hint': 'A referência do cidadão junto da SCAP.',
   'signing.scap.fullName.label': 'Nome completo (opcional)',
   'signing.scap.loadAttributes': 'Procurar atributos',
-  'signing.scap.loadingAttributes': 'A procurar…',
+  'signing.scap.loadingAttributes': 'Procurando…',
   'signing.scap.attributes.empty': 'A SCAP não reporta atributos profissionais para este cidadão.',
   'signing.scap.attributes.legend': 'Atributos reportados',
   'signing.scap.attribute.provider': 'Prestador: {provider}',
