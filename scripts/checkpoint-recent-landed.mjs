@@ -2364,6 +2364,11 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
+    "chancela://mcp/chronology-review-summary",
+    "CI checkpoints MCP chronology review summary URI marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
     "dashboard guest recent-events redaction",
     "CI checkpoints dashboard guest recent-events redaction lane marker",
   );
@@ -2386,6 +2391,16 @@ function assertCheckpointMap() {
     "docs/CI-CHECKPOINTS.md",
     "raw-report byte download API",
     "CI checkpoints external-validator raw-report byte lane marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-CHECKPOINTS.md",
+    "web shell accessibility/focus markers for the skip link to `#main-content`, route-change main landmark focus, route-crash `main#main-content` preservation, PageHeader h1 rendering, and modal focus-trap behavior",
+    "CI checkpoints web shell accessibility/focus lane marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "src/app/layout.test.tsx src/app/router.test.tsx src/ui/PageHeader.test.tsx src/ui/useFocusTrap.test.ts",
+    "CI checkpoints web shell accessibility/focus command marker",
   );
   assertFileContainsNormalized(
     "docs/CI-CHECKPOINTS.md",
@@ -2956,6 +2971,91 @@ function assertCheckpointMap() {
     "docs/CI-CHECKPOINTS.md",
     "route-stubbed local browser proof only",
     "CI checkpoints local CC batch signing browser proof boundary marker",
+  );
+  assertFileContains(
+    "apps/web/src/app/layout.tsx",
+    '<a className="skip-link" href="#main-content">',
+    "web layout skip-link main-content target marker",
+  );
+  assertFileContains(
+    "apps/web/src/app/layout.tsx",
+    "mainRef.current?.focus();",
+    "web layout route-change main focus marker",
+  );
+  assertFileContains(
+    "apps/web/src/app/router.tsx",
+    "same `main#main-content` skip-link target here for data-router failures",
+    "web route-crash fallback main-content rationale marker",
+  );
+  assertFileContains(
+    "apps/web/src/app/router.tsx",
+    '<main id="main-content" tabIndex={-1} className="route-transition">',
+    "web route-crash fallback main target marker",
+  );
+  assertFileContains(
+    "apps/web/src/app/layout.test.tsx",
+    "keeps the skip-link target mounted when routed content crashes",
+    "web layout skip-link target crash coverage",
+  );
+  assertFileContains(
+    "apps/web/src/app/layout.test.tsx",
+    "focuses the main landmark after pathname navigation",
+    "web layout route-change main focus coverage",
+  );
+  assertFileContains(
+    "apps/web/src/app/layout.test.tsx",
+    "does not steal focus on same-path query and hash navigation",
+    "web layout same-path focus retention coverage",
+  );
+  assertFileContains(
+    "apps/web/src/app/router.test.tsx",
+    "renders CrashScreen for a lazy route rejection instead of React Router default UI",
+    "web router crash fallback main landmark coverage",
+  );
+  assertFileContains(
+    "apps/web/src/app/router.test.tsx",
+    "expect(main.id).toBe('main-content');",
+    "web router fallback main-content assertion marker",
+  );
+  assertFileContains(
+    "apps/web/src/ui/PageHeader.test.tsx",
+    "renders the title as a level-1 heading",
+    "web PageHeader h1 coverage",
+  );
+  assertFileContains(
+    "apps/web/src/ui/PageHeader.test.tsx",
+    "getByRole('heading', { level: 1, name: 'Entidades' })",
+    "web PageHeader h1 role assertion marker",
+  );
+  assertFileContains(
+    "apps/web/src/ui/useFocusTrap.test.ts",
+    "moves focus into the container on activation",
+    "web focus trap activation coverage",
+  );
+  assertFileContains(
+    "apps/web/src/ui/useFocusTrap.test.ts",
+    "restores focus to the pre-open element when the trap unmounts",
+    "web focus trap restore coverage",
+  );
+  assertFileContains(
+    "apps/web/src/ui/useFocusTrap.test.ts",
+    "wraps Tab from the last focusable to the first",
+    "web focus trap Tab wrap coverage",
+  );
+  assertFileContains(
+    "apps/web/src/ui/useFocusTrap.test.ts",
+    "wraps Shift+Tab from the first focusable to the last",
+    "web focus trap Shift+Tab wrap coverage",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "web accessibility/focus guard evidence",
+    "spec coverage web accessibility/focus evidence marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "not complete UX coverage,\n  WCAG/legal accessibility certification",
+    "spec coverage web accessibility/focus no-certification marker",
   );
   assertFileContains(
     "crates/chancela-core/src/seal.rs",
@@ -8936,7 +9036,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `314d6503d2b77b8195e4acdb229cb612ad1b5356`",
+    "implementation snapshot `7fcf5ef5f1c2fbd5b9eb26d6aac5c1240144a365`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(

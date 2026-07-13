@@ -56,6 +56,9 @@ sealed-provenance lint, all-family standalone agenda-item templates,
 recovery/document/dashboard/notification
 UI, dashboard guest recent-events redaction, Ferramentas external-validator
 metadata UI, raw-report byte download API, imported-document review receipt UI,
+web shell accessibility/focus markers for the skip link to `#main-content`,
+route-change main landmark focus, route-crash `main#main-content`
+preservation, PageHeader h1 rendering, and modal focus-trap behavior,
 password-required account creation/session static markers,
 trust identifier-match explanations, trust/import/static request-boundary
 hardening, and read-only local DGLAB interchange
@@ -289,12 +292,22 @@ It intentionally reuses existing test surfaces:
   `arguments.signed`, closed extra resource params, no
   bridge/API/AI-provider/hidden-provider calls, no secrets, and false
   legal/source/provider/trust/external-validation/signature-qualification
-  claims.
+  claims, plus the read-only `chancela://mcp/chronology-review-summary`
+  human-review resource for static chronology guidance and caller-supplied
+  local aggregate counts only.
 - Template catalog metadata/semantic lint:
   `cargo test -p chancela-templates --locked`
 - Web client/contract/books/dashboard/document/entity/Ferramentas/notification/recovery/settings/signing/templates/i18n/subnav
   matrix:
   `npm run test --workspace apps/web -- src/api/client.test.ts src/contracts/contracts.test.ts src/features/books/books.test.tsx src/features/dashboard/DashboardPage.test.tsx src/features/documents/ActDocumentPanel.test.tsx src/features/entities/entities.test.tsx src/features/ferramentas/ferramentas.test.tsx src/features/ferramentas/trust.test.tsx src/features/notifications/NotificationBell.test.tsx src/features/notifications/NotificationsPage.test.tsx src/features/recovery/GestaoDadosSection.test.tsx src/features/settings/SettingsPage.test.tsx src/features/signing/SigningPanel.test.tsx src/features/templates/TemplatesCatalogPage.test.tsx src/i18n/i18n.test.ts src/ui/SubNav.test.tsx`
+- Web shell accessibility/focus unit tests:
+  `npm run test --workspace apps/web -- src/app/layout.test.tsx src/app/router.test.tsx src/ui/PageHeader.test.tsx src/ui/useFocusTrap.test.ts`
+  pin the skip-link `#main-content` target, pathname route-change focus to the
+  main landmark, route-crash preservation of `main#main-content`, PageHeader h1
+  coverage, and modal focus-trap activation/restore/wrap behavior. This is
+  focused shell/navigation/modal regression evidence only, not complete UX,
+  WCAG/legal accessibility certification, PDF/UA delivery, or exhaustive
+  assistive-technology validation.
 - Validator corpus manifest:
   `npm run test:validator-corpus`
 - Desktop lockfile resolution:
@@ -322,7 +335,10 @@ for one `RemoteSigningSource::initiate` and one
 no-claim copy, pending-session provider bridge markers for `PendingInfo`,
 `pending_provider_info`, `providerFromPending`, and reload confirm routing,
 dashboard subtab markers,
-dashboard/notification icon-only markers, template law-reference UI markers,
+dashboard/notification icon-only markers, web shell accessibility/focus
+markers for the skip-link target, route-change main focus, route-crash main
+target preservation, PageHeader h1 coverage, and modal focus-trap behavior,
+template law-reference UI markers,
 password-required account creation/session API and web markers,
 structured registry chronology graph markers plus richer frontend chronology
 visualization markers as source-linked technical evidence only, not a legal
