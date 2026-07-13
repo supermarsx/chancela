@@ -3237,6 +3237,19 @@ describe('contract fixtures parse through the real client', () => {
       ),
       'Dashboard.reminders should include a pending no-due-date generated absent-owner fixture',
     ).toBe(true);
+    expect(
+      dash.reminders.some(
+        (reminder) =>
+          reminder.source_rule === 'condominio-annual' &&
+          reminder.source_profile === 'condominio-dl268' &&
+          reminder.due_date === '' &&
+          reminder.status === 'Pending' &&
+          reminder.params?.local_due_date_rule_configured === 'false' &&
+          reminder.params?.legal_deadline_calculated === 'false' &&
+          reminder.reason.includes('does not calculate a legal deadline'),
+      ),
+      'Dashboard.reminders should include a pending no-due-date unsupported profile-calendar advisory',
+    ).toBe(true);
     expect(Array.isArray(dash.recent_events)).toBe(true);
     // recent_events reuse the ledger event shape.
     assertExactKeys<LedgerEventView>(

@@ -475,6 +475,58 @@ describe('DashboardPage', () => {
     expect(screen.getAllByRole('row')).toHaveLength(2);
   });
 
+  it('renders unsupported profile-calendar presets as pending no-due-date advisories', async () => {
+    const dashboard: Dashboard = {
+      ...baseDashboard,
+      reminders: [
+        {
+          due_date: '',
+          severity: 'Advisory',
+          status: 'Pending',
+          reason:
+            'The condominium calendar preset "Assembleia ordinária anual de condóminos (DL 268/94)" is encoded in the entity profile, but no local due-date rule or fiscal-year offset is configured/encoded for it. Chancela does not calculate a legal deadline for this preset; this advisory only makes the unsupported preset visible.',
+          entity_id: 'condo-1',
+          entity_name: 'Condomínio Horizonte',
+          source_rule: 'condominio-annual',
+          source_profile: 'condominio-dl268',
+          params: {
+            preset_id: 'condominio-annual',
+            preset_label: 'Assembleia ordinária anual de condóminos (DL 268/94)',
+            local_due_date_rule_configured: 'false',
+            legal_deadline_calculated: 'false',
+          },
+          law_refs: [],
+          action: {
+            kind: 'open_entity',
+            label_key: 'notifications.reminder.annual.action',
+            api_href: '/v1/entities/condo-1',
+            route: '/entidades/condo-1',
+          },
+          recommended_next_steps: [
+            'Review the encoded profile calendar preset manually.',
+            'Add a local due-date rule only after the calendar rule is verified and encoded.',
+          ],
+        },
+      ],
+    };
+
+    vi.stubGlobal('fetch', fetchTable([{ match: '/v1/dashboard', body: dashboard }]));
+    renderDashboard();
+    await openDashboardTab('Fila de trabalho');
+
+    const queue = await screen.findByRole('list', { name: 'Fila de trabalho do painel' });
+    const item = within(queue).getByRole('listitem');
+    const link = within(item).getByRole('link', { name: 'Condomínio Horizonte' });
+    expect(link.getAttribute('href')).toBe('/entidades/condo-1');
+    expect(within(item).getByText('Pendente')).toBeTruthy();
+    expect(within(item).getByText('Sem data')).toBeTruthy();
+    expect(
+      within(item).getByText(/no local due-date rule or fiscal-year offset is configured\/encoded/),
+    ).toBeTruthy();
+    expect(within(item).getByText(/does not calculate a legal deadline/)).toBeTruthy();
+    expect(within(item).getByText('Fonte condominio-annual / condominio-dl268')).toBeTruthy();
+  });
+
   it('renders open act follow-ups as localized act-routed reminders', async () => {
     const dashboard: Dashboard = {
       ...baseDashboard,

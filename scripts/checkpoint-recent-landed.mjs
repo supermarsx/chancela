@@ -4898,6 +4898,31 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-api/src/dashboard.rs",
+    "unsupported_profile_calendar_advisory",
+    "dashboard profile-calendar unsupported-preset advisory builder marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/dashboard.rs",
+    "does not calculate a legal deadline for this preset",
+    "dashboard profile-calendar unsupported-preset no-deadline copy marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/dashboard.rs",
+    "unsupported_profile_calendar_without_due_offset_surfaces_no_due_date_advisory",
+    "dashboard profile-calendar unsupported-preset no-date coverage marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/dashboard/DashboardPage.test.tsx",
+    "renders unsupported profile-calendar presets as pending no-due-date advisories",
+    "web dashboard profile-calendar unsupported-preset advisory coverage marker",
+  );
+  assertFileContains(
+    "contracts/dashboard.json",
+    '"source_rule": "condominio-annual"',
+    "dashboard contract profile-calendar unsupported-preset advisory fixture marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/dashboard.rs",
     "absent_owner_dispatch_evidence_reminders(",
     "dashboard absent-owner dispatch-evidence reminder source marker",
   );

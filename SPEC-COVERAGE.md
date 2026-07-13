@@ -2901,14 +2901,17 @@ behavior, legal disposal, or legal-effect claims.
   cannot enable confirmation for a different request.
 - **Dashboard reminders:** `GET /v1/dashboard` includes advisory annual-calendar reminders from
   encoded profile calendar presets. Commercial SA/Lda-like entities, associations, foundations, and
-  cooperatives are covered where a profile preset defines a fiscal-year offset; unsupported or stale
-  profile data emits no false reminder. Due dates use the entity's recorded fiscal-year end when
-  valid, fall back explicitly to the default calendar-year model when absent/invalid, clamp leap-day
-  edge cases deterministically, suppress reminders when a sealed/archive act already provides a
-  recent calendar signal, and now carry i18n keys so the web notification/dashboard copy is resolved
-  through the locale catalog. The reminder remains advisory and bounded by current calendar preset
-  data. Settings now expose the bounded `workflow.reminders` policy for existing local advisory
-  reminder families: default enabled behavior preserves the prior limit 5 / due-soon 45 /
+  cooperatives are covered where a profile preset defines a fiscal-year offset; encoded
+  profile-calendar presets with no local due-date rule or fiscal-year offset now surface as pending
+  no-date advisories so they are visible without inventing a due date. Stale profile data still emits
+  no reminder. Due dates use the entity's recorded fiscal-year end when valid, fall back explicitly to
+  the default calendar-year model when absent/invalid, clamp leap-day edge cases deterministically,
+  suppress reminders when a sealed/archive act already provides a recent calendar signal, and now
+  carry i18n keys so the web notification/dashboard copy is resolved through the locale catalog. The
+  reminder remains advisory and bounded by current calendar preset data; unsupported presets do not
+  calculate legal deadlines, legal-calendar authority, DRE/registry filing, meeting completion, or
+  external notification. Settings now expose the bounded `workflow.reminders` policy for existing
+  local advisory reminder families: default enabled behavior preserves the prior limit 5 / due-soon 45 /
   attendance-lookahead 45 output, `enabled=false` suppresses reminder feed/cards without breaking
   other dashboard data, source toggles suppress only profile-calendar, act-follow-up, or
   attendance-hygiene reminders respectively, and status classification uses absolute calendar-day

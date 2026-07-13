@@ -1860,7 +1860,11 @@ fn profile_calendar_reminder(
     preset: &CalendarPreset,
     context: &ProfileCalendarReminderContext<'_>,
 ) -> Option<DashboardReminder> {
-    let months_after_fiscal_year_end = preset.months_after_fiscal_year_end?;
+    let Some(months_after_fiscal_year_end) = preset.months_after_fiscal_year_end else {
+        return Some(unsupported_profile_calendar_advisory(
+            entity, profile, preset,
+        ));
+    };
 
     let parsed_fiscal_year_end = parse_fiscal_year_end(entity.fiscal_year_end.as_deref());
     let fiscal_year_end = parsed_fiscal_year_end.unwrap_or(DEFAULT_FISCAL_YEAR_END);
@@ -1926,6 +1930,53 @@ fn profile_calendar_reminder(
         recommended_next_steps: calendar_next_steps(profile.family),
         i18n: None,
     })
+}
+
+fn unsupported_profile_calendar_advisory(
+    entity: &Entity,
+    profile: &EntityProfile,
+    preset: &CalendarPreset,
+) -> DashboardReminder {
+    let mut params = BTreeMap::new();
+    params.insert("preset_id".to_owned(), preset.id.to_owned());
+    params.insert("preset_label".to_owned(), preset.label.to_owned());
+    params.insert(
+        "local_due_date_rule_configured".to_owned(),
+        "false".to_owned(),
+    );
+    params.insert("legal_deadline_calculated".to_owned(), "false".to_owned());
+
+    DashboardReminder {
+        due_date: String::new(),
+        severity: "Advisory".to_owned(),
+        status: "Pending".to_owned(),
+        reason: format!(
+            "The {} calendar preset \"{}\" is encoded in the entity profile, but no local \
+             due-date rule or fiscal-year offset is configured/encoded for it. Chancela does \
+             not calculate a legal deadline for this preset; this advisory only makes the \
+             unsupported preset visible.",
+            family_calendar_label(profile.family),
+            preset.label
+        ),
+        entity_id: entity.id.to_string(),
+        entity_name: entity.name.clone(),
+        source_rule: preset.id.to_owned(),
+        source_profile: profile.template_family.to_owned(),
+        params,
+        law_refs: Vec::new(),
+        action: Some(dashboard_action(
+            "open_entity",
+            "notifications.reminder.annual.action",
+            Some(format!("/v1/entities/{}", entity.id)),
+            Some(format!("/entidades/{}", entity.id)),
+        )),
+        recommended_next_steps: vec![
+            "Review the encoded profile calendar preset manually.".to_owned(),
+            "Add a local due-date rule only after the calendar rule is verified and encoded."
+                .to_owned(),
+        ],
+        i18n: None,
+    }
 }
 
 fn calendar_law_refs(family: EntityFamily, preset_id: &str) -> Vec<DashboardLawReference> {
@@ -3830,10 +3881,10 @@ mod tests {
     }
 
     #[test]
-    fn unsupported_profile_calendar_without_due_offset_emits_no_false_reminder() {
+    fn unsupported_profile_calendar_without_due_offset_surfaces_no_due_date_advisory() {
         let entity = entity_of(EntityKind::Condominio);
         let mut entities = HashMap::new();
-        entities.insert(entity.id, entity);
+        entities.insert(entity.id, entity.clone());
 
         let reminders = dashboard_reminders(
             &entities,
@@ -3843,9 +3894,44 @@ mod tests {
             date!(2026 - 01 - 15),
         );
 
+        assert_eq!(reminders.len(), 1);
+        let reminder = &reminders[0];
+        assert_eq!(reminder.source_rule, "condominio-annual");
+        assert_eq!(reminder.source_profile, "condominio-dl268");
+        assert_eq!(reminder.entity_id, entity.id.to_string());
+        assert_eq!(reminder.due_date, "");
+        assert_eq!(reminder.status, "Pending");
+        assert_eq!(reminder.severity, "Advisory");
+        assert!(reminder.law_refs.is_empty());
+        assert_eq!(
+            reminder
+                .params
+                .get("local_due_date_rule_configured")
+                .map(String::as_str),
+            Some("false")
+        );
+        assert_eq!(
+            reminder
+                .params
+                .get("legal_deadline_calculated")
+                .map(String::as_str),
+            Some("false")
+        );
         assert!(
-            reminders.is_empty(),
-            "condominium profile has no encoded fiscal-year offset yet"
+            reminder
+                .reason
+                .contains("no local due-date rule or fiscal-year offset is configured/encoded")
+        );
+        assert!(
+            reminder
+                .reason
+                .contains("does not calculate a legal deadline for this preset")
+        );
+        assert!(
+            reminders
+                .iter()
+                .all(|reminder| reminder.due_date.is_empty() && reminder.status == "Pending"),
+            "condominium profile has no encoded fiscal-year offset, so it must not emit a false due reminder"
         );
     }
 
