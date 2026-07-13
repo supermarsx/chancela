@@ -295,17 +295,21 @@ describe('CompliancePanel legal-source references', () => {
       />,
     );
 
-    expect(screen.getByLabelText('Written-resolution local evidence review')).toBeTruthy();
-    expect(screen.getByText('Receipt recorded')).toBeTruthy();
-    expect(screen.getByText('Bound evidence present')).toBeTruthy();
-    expect(screen.getAllByText('Reviewed').length).toBeGreaterThan(0);
-    expect(screen.getByText('Review receipts')).toBeTruthy();
-    expect(screen.getByText('Reviewed locators')).toBeTruthy();
-    expect(screen.getByText('Reviewed digests')).toBeTruthy();
-    expect(screen.getByText(/Local metadata only/i)).toBeTruthy();
-    expect(screen.getByText(/No consent, quorum, identity, legal sufficiency/i)).toBeTruthy();
-    expect(screen.queryByText(/legal acceptance/i)).toBeNull();
-    expect(screen.queryByText(/authority certified/i)).toBeNull();
+    expect(
+      screen.getByLabelText('Revisão local da evidência da deliberação por escrito'),
+    ).toBeTruthy();
+    expect(screen.getByText('Comprovativo registado')).toBeTruthy();
+    expect(screen.getByText('Evidência vinculada presente')).toBeTruthy();
+    expect(screen.getAllByText('Revista').length).toBeGreaterThan(0);
+    expect(screen.getByText('Comprovativos de revisão')).toBeTruthy();
+    expect(screen.getByText('Localizadores revistos')).toBeTruthy();
+    expect(screen.getByText('Digests revistos')).toBeTruthy();
+    expect(screen.getByText(/Apenas metadados locais/i)).toBeTruthy();
+    expect(
+      screen.getByText(/Não se afirma consentimento, quórum, identidade, suficiência jurídica/i),
+    ).toBeTruthy();
+    expect(screen.queryByText(/aceitação legal/i)).toBeNull();
+    expect(screen.queryByText(/certificação por autoridade afirmada/i)).toBeNull();
   });
 });
 

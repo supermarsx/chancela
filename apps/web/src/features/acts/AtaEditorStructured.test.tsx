@@ -659,9 +659,13 @@ describe('AtaEditorPage — written-resolution evidence review', () => {
 
     renderEditor();
 
-    expect(await screen.findByLabelText('Written-resolution local evidence review')).toBeTruthy();
-    expect(screen.getByText('Receipt recorded')).toBeTruthy();
-    expect(screen.getByText(/No consent, quorum, identity, legal sufficiency/i)).toBeTruthy();
+    expect(
+      await screen.findByLabelText('Revisão local da evidência da deliberação por escrito'),
+    ).toBeTruthy();
+    expect(screen.getByText('Comprovativo registado')).toBeTruthy();
+    expect(
+      screen.getByText(/Não se afirma consentimento, quórum, identidade, suficiência jurídica/i),
+    ).toBeTruthy();
     expect(screen.queryByText(/legal acceptance/i)).toBeNull();
     expect(screen.queryByText(/automatic approval is granted/i)).toBeNull();
   });
@@ -719,27 +723,29 @@ describe('AtaEditorPage — written-resolution evidence review', () => {
     vi.stubGlobal('fetch', shared.fetchImpl);
     renderEditor();
 
-    expect(await screen.findByLabelText('Written-resolution receipt history')).toBeTruthy();
+    expect(
+      await screen.findByLabelText('Histórico de comprovativos da deliberação por escrito'),
+    ).toBeTruthy();
     expect(screen.getByText('existing.operator@example.pt')).toBeTruthy();
     expect(screen.getByText(/Existing receipt remains in the history/i)).toBeTruthy();
 
-    fireEvent.change(screen.getByLabelText('Reviewer'), {
+    fireEvent.change(screen.getByLabelText('Revisor'), {
       target: { value: 'operator@example.pt' },
     });
-    fireEvent.change(screen.getByLabelText('Reviewed at'), {
+    fireEvent.change(screen.getByLabelText('Revisto em'), {
       target: { value: '2026-07-13T10:15:00Z' },
     });
-    fireEvent.change(screen.getByLabelText('Evidence label'), {
+    fireEvent.change(screen.getByLabelText('Etiqueta da evidência'), {
       target: { value: 'Approval pack review receipt' },
     });
-    fireEvent.change(screen.getByLabelText('Evidence reference'), {
+    fireEvent.change(screen.getByLabelText('Referência da evidência'), {
       target: { value: 'doc:approval-pack' },
     });
-    fireEvent.change(screen.getByLabelText('Receipt notes'), {
+    fireEvent.change(screen.getByLabelText('Notas do comprovativo'), {
       target: { value: 'Reviewed local metadata only.' },
     });
-    fireEvent.click(screen.getByLabelText(/Local metadata only/i));
-    fireEvent.click(screen.getByRole('button', { name: 'Record local receipt' }));
+    fireEvent.click(screen.getByLabelText(/Apenas metadados locais/i));
+    fireEvent.click(screen.getByRole('button', { name: 'Registar comprovativo local' }));
 
     await waitFor(() => expect(shared.patches).toHaveLength(1));
     const patch = shared.patches[0];

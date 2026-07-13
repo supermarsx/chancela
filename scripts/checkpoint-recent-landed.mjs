@@ -1134,8 +1134,18 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/acts/CompliancePanel.tsx",
-    "Written-resolution local evidence review",
-    "written-resolution review-depth compliance panel marker",
+    "compliance.writtenResolution.review.label",
+    "written-resolution review-depth compliance panel i18n key marker",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/locales/pt-PT.ts",
+    "'compliance.writtenResolution.review.label': 'Revisão local da evidência da deliberação por escrito'",
+    "written-resolution review-depth source-locale label marker",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/locales/pt-PT.ts",
+    "'compliance.writtenResolution.review.boundary': 'Apenas metadados locais. Não se afirma consentimento, quórum, identidade, suficiência jurídica, validação externa, aprovação automática nem certificação por autoridade.'",
+    "written-resolution review-depth source-locale no-claim marker",
   );
   assertFileContains(
     "apps/web/src/features/acts/AtaEditorStructured.test.tsx",
