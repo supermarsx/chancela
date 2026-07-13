@@ -245,7 +245,7 @@ export const daDK: Catalog = {
   'notifications.reminder.absentOwnerDispatch.title': 'Afsendelsesbevis afventer: {act_title}',
   'notifications.reminder.absentOwnerDispatch.body':
     '{act_title} har en genereret meddelelse til fraværende ejere, men operatørens afsendelsesbevis er {dispatch_evidence_status}. Manglende modtagere: {missing_recipients}. Påmindelsen er kun rådgivende.',
-  'notifications.reminder.absentOwnerDispatch.action': 'Åbn akt',
+  'notifications.reminder.absentOwnerDispatch.action': 'Åbn protokol',
   'notifications.reminder.followUp.title': '{follow_up_title}',
   'notifications.reminder.followUp.body': '{entity_name} - {act_title}: {follow_up_detail}',
   'notifications.reminder.followUp.bodyNoDetail': '{entity_name} - {act_title}',
@@ -317,8 +317,8 @@ export const daDK: Catalog = {
   'dashboard.metric.actsDraft.note': '{total} protokoller i alt',
   'dashboard.metric.awaitingSignature': 'Afventer underskrift',
   'dashboard.metric.awaitingSignature.note': 'Tilstanden »Under underskrift«',
-  'dashboard.metric.actsSealed': 'Beseglede protokoller',
-  'dashboard.metric.actsSealed.note': 'Beseglet eller arkiveret',
+  'dashboard.metric.actsSealed': 'Forseglede protokoller',
+  'dashboard.metric.actsSealed.note': 'Forseglet eller arkiveret',
   'dashboard.metric.ledger': 'Journal (hændelser)',
   'dashboard.metric.ledger.note.valid': 'Kæden er intakt',
   'dashboard.metric.ledger.note.invalid': 'Kæden er kompromitteret',
@@ -327,9 +327,9 @@ export const daDK: Catalog = {
   'dashboard.chain.compromised': 'Kæden er kompromitteret',
   'dashboard.compliance.title': 'Udestående overholdelse',
   'dashboard.compliance.body.one':
-    '{count} protokol under underskrift har uløste overholdelsesfejl. Gennemgå den, før du besegler.',
+    '{count} protokol under underskrift har uløste overholdelsesfejl. Gennemgå den, før du forsegler.',
   'dashboard.compliance.body.other':
-    '{count} protokoller under underskrift har uløste overholdelsesfejl. Gennemgå dem, før du besegler.',
+    '{count} protokoller under underskrift har uløste overholdelsesfejl. Gennemgå dem, før du forsegler.',
   'dashboard.viewFullArchive': 'Vis hele arkivet',
   'dashboard.workQueue.title': 'Arbejdskø',
   'dashboard.workQueue.aria': 'Panelets arbejdskø',
@@ -355,17 +355,17 @@ export const daDK: Catalog = {
   'dashboard.workQueue.compliance.title.one': '{count} afventende kontrol',
   'dashboard.workQueue.compliance.title.other': '{count} afventende kontroller',
   'dashboard.workQueue.compliance.detail':
-    'Der er afventende kontroller i panelet, men disse data viser ingen specifik akt til direkte link.',
+    'Der er afventende kontroller i panelet, men disse data viser ingen specifik protokol til direkte link.',
   'dashboard.workQueue.compliance.meta': 'Kontekst uden automatisk juridisk konklusion',
   'dashboard.activity.title': 'Seneste aktivitet',
   'dashboard.activity.empty':
-    'Ingen seneste aktivitet for referater, bøger eller enheder i dashboarddata.',
-  'dashboard.activity.aria': 'Seneste aktivitet for referater, bøger og enheder',
+    'Ingen seneste aktivitet for protokoller, bøger eller enheder i dashboarddata.',
+  'dashboard.activity.aria': 'Seneste aktivitet for protokoller, bøger og enheder',
   'dashboard.activity.eventTitle': 'Hændelse {kind}',
   'dashboard.activity.actor': 'Aktør {actor}',
   'dashboard.activity.scope': 'Omfang {scope}',
   'dashboard.activity.sequence': 'Sekv. {seq}',
-  'dashboard.activity.kind.act': 'Referat',
+  'dashboard.activity.kind.act': 'Protokol',
   'dashboard.activity.kind.book': 'Bog',
   'dashboard.activity.kind.entity': 'Enhed',
   'dashboard.openItems.title': 'Åbne emner',
@@ -373,15 +373,15 @@ export const daDK: Catalog = {
   'dashboard.openItems.aria': 'Åbne bøger i brug',
   'dashboard.openItems.unnamedEntity': 'Unavngiven enhed',
   'dashboard.openItems.noPurpose': 'Intet formål registreret',
-  'dashboard.openItems.nextAta': 'Næste referat nr. {number}',
-  'dashboard.openItems.openActs': '{count} åbne referater',
-  'dashboard.openItems.totalActs': '{count} referater i alt',
+  'dashboard.openItems.nextAta': 'Næste protokol nr. {number}',
+  'dashboard.openItems.openActs': '{count} åbne protokoller',
+  'dashboard.openItems.totalActs': '{count} protokoller i alt',
   'dashboard.openItems.openedAt': 'Åbnet {date}',
   'dashboard.openItems.openedUnknown': 'Åbningsdato ikke tilgængelig',
   'dashboard.openItems.more': '{count} flere åbne emner',
-  'dashboard.actStatus.title': 'Kladder og aktive referater',
-  'dashboard.actStatus.empty': 'Ingen aktive referater eksponeret af dashboarddata.',
-  'dashboard.actStatus.aria': 'Aktive referater efter status',
+  'dashboard.actStatus.title': 'Kladder og aktive protokoller',
+  'dashboard.actStatus.empty': 'Ingen aktive protokoller eksponeret af dashboarddata.',
+  'dashboard.actStatus.aria': 'Aktive protokoller efter status',
   'dashboard.dates.title': 'Datoer',
   'dashboard.dates.empty': 'Ingen daterede påmindelser eksponeret af dashboarddata.',
   'dashboard.dates.aria': 'Daterede påmindelser',
@@ -459,7 +459,7 @@ export const daDK: Catalog = {
   'entities.filters.activity.registry': 'Register importeret',
   'entities.filters.activity.entity': 'Ændring af enhed',
   'entities.filters.activity.book': 'Bøger',
-  'entities.filters.activity.act': 'Referater og indkaldelser',
+  'entities.filters.activity.act': 'Protokoller og indkaldelser',
   'entities.filters.activity.document': 'Dokumenter og underskrifter',
   'entities.filters.activity.none': 'Ingen aktivitet',
   'entities.filters.activityKind.label': 'Seneste ændring',
@@ -744,7 +744,7 @@ export const daDK: Catalog = {
   'acts.advanceTo': 'Gå videre til »{state}«',
   'acts.reuniao': 'Møde',
   'acts.untitled': 'Protokol uden titel',
-  'acts.sealed.title': 'Beseglet protokol',
+  'acts.sealed.title': 'Forseglet protokol',
   'acts.sealed.bodyPrefix': 'Indholdet er frosset og kædet sammen i journalen. Seglets aftryk:',
   'acts.saving': 'Gemmer…',
   'acts.title': 'Titel',
@@ -764,24 +764,40 @@ export const daDK: Catalog = {
   'acts.compliance': 'Overholdelse',
   'acts.manualSignature.title': 'Manuel underskrift (SIG-03)',
   'acts.manualSignature.body':
-    'Der er endnu ikke integration af kvalificeret elektronisk underskrift. Ved besegling kædes protokollen sammen i journalen på grundlag af en manuel underskrift fra de tilstedeværende — sørg for, at underskriverne har underskrevet det fysiske eksemplar eller PDF-filen, før du fortsætter.',
-  'acts.sealing.title': 'Besegling',
+    'Der er endnu ikke integration af kvalificeret elektronisk underskrift. Ved forsegling kædes protokollen sammen i journalen på grundlag af en manuel underskrift fra de tilstedeværende — sørg for, at underskriverne har underskrevet det fysiske eksemplar eller PDF-filen, før du fortsætter.',
+  'acts.sealing.title': 'Forsegling',
   'acts.sealing.ready':
-    'Protokollen er i overensstemmelse og under underskrift — den kan besegles.',
+    'Protokollen er i overensstemmelse og under underskrift — den kan forsegles.',
   'acts.sealing.readyWithWarnings':
-    'Protokollen har ikke-blokerende overholdelsesadvarsler. Gennemgå dem, og anerkend dem udtrykkeligt før besegling.',
-  'acts.sealing.warningAck.title': 'Bekræft overholdelsesadvarsler',
+    'Protokollen har ikke-blokerende overholdelsesadvarsler. Gennemgå dem, og anerkend dem udtrykkeligt før forsegling.',
+  'acts.sealing.warningAck.title': 'Confirm manual sealing',
   'acts.sealing.warningAck.body':
-    'Der er ikke-blokerende overholdelsesadvarsler. Besegling fortsætter først, når du bekræfter, at du har gennemgået dem.',
+    'Record the local reference for where the manually signed original is kept. This metadata does not validate the signature or certify the archive.',
   'acts.sealing.warningAck.checkbox':
-    'Jeg anerkender udtrykkeligt disse overholdelsesadvarsler og vil besegle protokollen.',
-  'acts.sealing.warningAck.confirm': 'Besegl protokol med advarsler',
-  'acts.sealing.unavailableState': 'Besegling er kun tilgængelig i tilstanden »Under underskrift«.',
-  'acts.sealing.fixErrors': 'Ret overholdelsesfejlene, før du kan besegle.',
-  'acts.sealing.sealing': 'Besegler…',
-  'acts.sealing.seal': 'Besegl protokol',
+    'I confirm the manual-signature original reference has been captured and want to seal the minute.',
+  'acts.sealing.warningAck.checkboxWithWarnings':
+    'I confirm I reviewed the compliance warnings, the manual-signature original reference has been captured, and I want to seal the minute.',
+  'acts.sealing.warningAck.confirm': 'Confirm and seal minute',
+  'acts.manualSignature.originalReference.label': 'Signed original reference',
+  'acts.manualSignature.originalReference.hint':
+    'Location, archive, folder, document id, or another internal reference.',
+  'acts.manualSignature.originalReference.tooLong':
+    'The signed original reference must be at most 512 characters.',
+  'acts.manualSignature.originalReference.controlCharacters':
+    'The signed original reference must not contain control characters.',
+  'acts.manualSignature.originalReference.displayLabel': 'Signed original',
+  'acts.manualSignature.custodian.label': 'Custodian',
+  'acts.manualSignature.custodian.hint': 'Responsible person, team, or service, if applicable.',
+  'acts.manualSignature.custodian.displayLabel': 'Custodian',
+  'acts.manualSignature.note.label': 'Note',
+  'acts.manualSignature.note.hint': 'Optional local context; do not record legal validation.',
+  'acts.manualSignature.note.displayLabel': 'Note',
+  'acts.sealing.unavailableState': 'Forsegling er kun tilgængelig i tilstanden »Under underskrift«.',
+  'acts.sealing.fixErrors': 'Ret overholdelsesfejlene, før du kan forsegle.',
+  'acts.sealing.sealing': 'Forsegler…',
+  'acts.sealing.seal': 'Forsegl protokol',
   'acts.sealed.archiveHint':
-    'Protokollen er beseglet. Du kan arkivere den for at fjerne den fra arbejdslisten.',
+    'Protokollen er forseglet. Du kan arkivere den for at fjerne den fra arbejdslisten.',
   'acts.archiving': 'Arkiverer…',
   'acts.archive': 'Arkivér protokol',
   'acts.archived': 'Protokollen er arkiveret.',
@@ -838,7 +854,7 @@ export const daDK: Catalog = {
   'compliance.conforme': 'I overensstemmelse',
   'compliance.noIssues': 'Ingen overholdelsesproblemer',
   'compliance.sealBlocked':
-    'Besegling er blokeret, så længe der er fejl. Ret protokollens indhold, og gem igen.',
+    'Forsegling er blokeret, så længe der er fejl. Ret protokollens indhold, og gem igen.',
 
   // --- Ledger / Arquivo ----------------------------------------------------------
   'ledger.page.title': 'Arkiv — kronologisk journal',
@@ -1399,9 +1415,9 @@ export const daDK: Catalog = {
   'settings.signing.tsaUrl.placeholder': 'https://…',
   'settings.signing.tslUrl.label': 'URL til tillidsliste (TSL)',
   'settings.signing.tslUrl.placeholder': 'https://…',
-  'settings.signing.requireQualified.label': 'Kræv en kvalificeret underskrift for at besegle',
+  'settings.signing.requireQualified.label': 'Kræv en kvalificeret underskrift for at forsegle',
   'settings.signing.note':
-    'Signeringspræferencerne gælder for den kvalificerede elektroniske signatur med Chave Móvel Digital, tilgængelig for forseglede referater.',
+    'Signeringspræferencerne gælder for den kvalificerede elektroniske signatur med Chave Móvel Digital, tilgængelig for forseglede protokoller.',
   'settings.signing.officialHint': 'Officiel portugisisk standard.',
   'settings.signing.reset': 'Nulstil til standard',
   'settings.management.cardTitle': 'Administration',
@@ -1807,7 +1823,7 @@ export const daDK: Catalog = {
   'enum.actState.Deliberated': 'Besluttet',
   'enum.actState.TextApproved': 'Tekst godkendt',
   'enum.actState.Signing': 'Under underskrift',
-  'enum.actState.Sealed': 'Beseglet',
+  'enum.actState.Sealed': 'Forseglet',
   'enum.actState.Archived': 'Arkiveret',
   // Attachment kinds
   'enum.attachmentKind.Convocatoria': 'Indkaldelse',
@@ -2179,7 +2195,7 @@ export const daDK: Catalog = {
   'documents.preview.nipc': 'NIPC {nipc}',
   'documents.preview.noTemplate.title': 'Ingen skabelon tilgængelig',
   'documents.preview.noTemplate.body':
-    'Der findes endnu ingen dokumentskabelon for denne enhedsfamilie. Referatet kan stadig forsegles; dokumentet bliver tilgængeligt, når en skabelon er offentliggjort.',
+    'Der findes endnu ingen dokumentskabelon for denne enhedsfamilie. Protokollen kan stadig forsegles; dokumentet bliver tilgængeligt, når en skabelon er offentliggjort.',
   'documents.print': 'Udskriv dokument',
   'documents.pageBreak': 'Sideskift',
   'documents.vote.label': 'Beslutning',
@@ -2190,7 +2206,7 @@ export const daDK: Catalog = {
   'documents.download.pending': 'Downloader…',
   'documents.download.noneTitle': 'Dokument ikke genereret',
   'documents.download.noneBody':
-    'Referatet blev forseglet, men denne enhedsfamilie har endnu ingen skabelon, så der blev ikke genereret nogen PDF.',
+    'Protokollen blev forseglet, men denne enhedsfamilie har endnu ingen skabelon, så der blev ikke genereret nogen PDF.',
   'documents.digest.label': 'PDF-fingeraftryk:',
   'documents.template.title': 'Gældende skabelon',
   'documents.template.none': 'Ingen skabelon tilgængelig for denne familie og fase.',
@@ -2234,7 +2250,7 @@ export const daDK: Catalog = {
   // --- Qualified CMD signing (t57) ------------------------------------------------
   'settings.signing.family.hint': 'Anbefalet: Chave Móvel Digital.',
   'settings.signing.requireQualified.hint':
-    'Styrer kun aktens status “afsluttet (kvalificeret)” — forsegling blokeres aldrig. Når dette er slået til, forbliver en forseglet akt “afventer kvalificeret signatur”, indtil der findes en gyldig kvalificeret signatur.',
+    'Styrer kun protokollens status “afsluttet (kvalificeret)” — forsegling blokeres aldrig. Når dette er slået til, forbliver en forseglet protokol “afventer kvalificeret signatur”, indtil der findes en gyldig kvalificeret signatur.',
   'settings.signing.cmd.title': 'Chave Móvel Digital (CMD)',
   'settings.signing.cmd.intro':
     'Signering i produktion kræver AMA-legitimationsoplysningerne (ApplicationId og certifikat), som leveres via miljøvariabler. Disse værdier vises kun til orientering.',
@@ -2247,11 +2263,11 @@ export const daDK: Catalog = {
   'settings.signing.cmd.configured': 'Konfigureret',
   'settings.signing.cmd.notConfigured': 'Ikke konfigureret',
   'signing.title': 'Kvalificeret signatur',
-  'signing.unsigned.title': 'Referat endnu ikke kvalificeret signeret',
+  'signing.unsigned.title': 'Protokol endnu ikke kvalificeret signeret',
   'signing.unsigned.body':
-    'Referatet er forseglet. Du kan nu signere det med en kvalificeret elektronisk signatur via Chave Móvel Digital.',
+    'Protokollen er forseglet. Du kan nu signere den med en kvalificeret elektronisk signatur via Chave Móvel Digital.',
   'signing.required.body':
-    'Denne indstilling kræver en kvalificeret signatur for at afslutte akten. Signer referatet med Chave Móvel Digital for at fuldføre det.',
+    'Denne indstilling kræver en kvalificeret signatur for at afslutte protokollen. Signer protokollen med Chave Móvel Digital for at fuldføre den.',
   'signing.start': 'Signer med Chave Móvel Digital',
   'signing.credentials.intro':
     'Indtast det mobilnummer, der er knyttet til Chave Móvel Digital, og signerings-PIN-koden. PIN-koden bruges kun til denne anmodning og gemmes aldrig.',
@@ -2270,7 +2286,7 @@ export const daDK: Catalog = {
   'signing.confirm.pending': 'Fuldfører signaturen…',
   'signing.restart': 'Start forfra',
   'signing.expired': 'Signeringssessionen er udløbet. Start forfra for at modtage en ny kode.',
-  'signing.signed.title': 'Referat signeret med en kvalificeret elektronisk signatur',
+  'signing.signed.title': 'Protokol signeret med en kvalificeret elektronisk signatur',
   'signing.signed.qualifiedLabel': 'Kvalificeret elektronisk signatur (Chave Móvel Digital).',
   'signing.signed.signer': 'Underskriver',
   'signing.signed.family': 'Familie',
@@ -2359,7 +2375,7 @@ export const daDK: Catalog = {
   'signing.ccBatch.result.error': 'Error',
   'signing.signed.qualifiedLabelCsc':
     'Kvalificeret elektronisk signatur (kvalificeret certifikat fra en tillidstjenesteudbyder).',
-  'signing.signed.localPkcs12Title': 'Referat signeret med lokalt softwarecertifikat',
+  'signing.signed.localPkcs12Title': 'Protokol signeret med lokalt softwarecertifikat',
   'signing.signed.localPkcs12Label':
     'Lokal signatur med PKCS#12/PFX-softwarecertifikat: kun avanceret teknisk evidens; ikke en kvalificeret signatur, CMD eller en erklæring om juridisk gyldighed.',
   'signing.signed.officialTitle': 'Minutes with a signed PDF imported from Autenticação.gov',
@@ -2600,7 +2616,7 @@ export const daDK: Catalog = {
   'signing.envelopes.creating': 'Opretter…',
   'signing.envelopes.guardrail.title': 'Kun arbejdsgangssporing',
   'signing.envelopes.guardrail.body':
-    'Konvolutter og tilknyttede invitationer sporer arbejdsgangen. Slotbevis er kun operatørangivne tekniske metadata. De kontakter ikke udbydere, signerer ikke PDF-filen og fremsætter ikke krav om kvalificeret signatur, tillidsvalidering, juridisk status, færdiggørelse af referatet eller afslutning af konvolutten.',
+    'Konvolutter og tilknyttede invitationer sporer arbejdsgangen. Slotbevis er kun operatørangivne tekniske metadata. De kontakter ikke udbydere, signerer ikke PDF-filen og fremsætter ikke krav om kvalificeret signatur, tillidsvalidering, juridisk status, færdiggørelse af protokollen eller afslutning af konvolutten.',
   'signing.envelopes.order.label': 'Rækkefølgepolitik',
   'signing.envelopes.order.parallel': 'Parallel',
   'signing.envelopes.order.sequential': 'Sekventiel',
@@ -2632,7 +2648,7 @@ export const daDK: Catalog = {
   'signing.envelopes.evidence.noAction': 'Ingen handling',
   'signing.envelopes.evidence.formTitle': 'Operatørens tekniske bevis',
   'signing.envelopes.evidence.formNotice':
-    'Registrerer operatørangivet teknisk bevis for dette slot og markerer slottet som signeret. Det kontakter ikke udbydere og afslutter ikke konvolutten eller referatet.',
+    'Registrerer operatørangivet teknisk bevis for dette slot og markerer slottet som signeret. Det kontakter ikke udbydere og afslutter ikke konvolutten eller protokollen.',
   'signing.envelopes.evidence.defaultLabel': 'Operatørens tekniske bevis',
   'signing.envelopes.evidence.label': 'Bevisetiket',
   'signing.envelopes.evidence.reference': 'Bevisreference',
@@ -2672,7 +2688,7 @@ export const daDK: Catalog = {
   'signing.invites.slot.sequentialConflict':
     'Dette slot kan endnu ikke påbegyndes, fordi den sekventielle kuvert har et tidligere obligatorisk slot, der stadig er åbent. Opret først invitationen til det forrige slot, eller lad denne invitation forblive kun til opfølgning.',
   'toast.signing.otpSent': 'SMS-kode sendt.',
-  'toast.signing.signed': 'Referat signeret.',
+  'toast.signing.signed': 'Protokol signeret.',
   'toast.signing.ccBatchSigned': 'CC signing batch completed.',
   'toast.signing.officialImported': 'Signed PDF imported as technical evidence.',
   'toast.signing.downloaded': 'Signeret PDF downloadet.',
@@ -2976,7 +2992,7 @@ export const daDK: Catalog = {
     'Disse handlinger rydder serverdata. Der tages et forudgående eksportarkiv, så intet slettes i stilhed, men handlingerne selv kan ikke fortrydes.',
   'data.wipe.title': 'Ryd data',
   'data.wipe.body':
-    'Sletter enheder, bøger, referater og dokumenter. Revisionsregistret bevares, og rydningen registreres. Uigenkaldelig — eksportér først.',
+    'Sletter enheder, bøger, protokoller og dokumenter. Revisionsregistret bevares, og rydningen registreres. Uigenkaldelig — eksportér først.',
   'data.wipe.button': 'Ryd data',
   'data.wipe.pending': 'Rydder…',
   'data.wipe.done': 'Data ryddet.',
@@ -3069,12 +3085,12 @@ export const daDK: Catalog = {
   'settings.apiKeys.revokeConfirm': 'Confirm revoke',
   'settings.apiKeys.revoking': 'Revoking…',
   'books.open.kindHelp':
-    'Vælg den type, der svarer til det organ, der mødes: generalforsamling (referater af deltagerforsamlingen), ledelse/bestyrelse, tilsynsorgan eller ejerforeningsmøde.',
+    'Vælg den type, der svarer til det organ, der mødes: generalforsamling (protokoller fra deltagerforsamlingen), ledelse/bestyrelse, tilsynsorgan eller ejerforeningsmøde.',
   'books.open.schemeHelp':
-    'Sekventiel nummererer referaterne fortløbende i samme bog; løsblade er til bøger bestående af enkeltvis nummererede ark. Brug Sekventiel, hvis du er i tvivl.',
+    'Sekventiel nummererer protokollerne fortløbende i samme bog; løsblade er til bøger bestående af enkeltvis nummererede ark. Brug Sekventiel, hvis du er i tvivl.',
   'books.open.guidanceTitle': 'Sådan vælger du',
   'books.open.guidanceBody':
-    'Vælg den bog, der svarer til det organ, der mødes, og det rette nummereringsskema — hjælpeikonerne ved hvert felt forklarer mulighederne. Signaturmetoden, der bruges ved forsegling af referater, konfigureres under Indstillinger → Signaturer.',
+    'Vælg den bog, der svarer til det organ, der mødes, og det rette nummereringsskema — hjælpeikonerne ved hvert felt forklarer mulighederne. Signaturmetoden, der bruges ved forsegling af protokoller, konfigureres under Indstillinger → Signaturer.',
   // --- Added fallback keys from pt-PT source catalog -----------------------------
   'common.yes': 'Ja',
   'common.no': 'Nej',
@@ -3104,7 +3120,7 @@ export const daDK: Catalog = {
   'documents.generated.sectionAria': 'Genererede meddelelser til fraværende ejere',
   'documents.generated.title': 'Genererede meddelelser',
   'documents.generated.notice':
-    'Meddelelser til fraværende ejere vises her som genererede artefakter. Dokumentation registreres af operatøren og ændrer ikke referatet eller den bevarede PDF/A.',
+    'Meddelelser til fraværende ejere vises her som genererede artefakter. Dokumentation registreres af operatøren og ændrer ikke protokollen eller den bevarede PDF/A.',
   'documents.generated.noClaim.badge': 'Ingen påstand om fuldførelse',
   'documents.generated.empty.title': 'Ingen genererede meddelelser',
   'documents.generated.empty.body':
@@ -3207,22 +3223,22 @@ export const daDK: Catalog = {
   'documents.import.validationTitle': 'Teknisk validering af import',
   'documents.import.validationRejectedTitle': 'Import afvist af validering',
   'documents.import.validationRejectedBody':
-    'Filen blev ikke gemt; gennemga de tekniske fejl nedenfor.',
-  'documents.import.legacyWord.title': 'Aeldre Microsoft Word .doc/OLE CFB',
+    'Filen blev ikke gemt; gennemgå de tekniske fejl nedenfor.',
+  'documents.import.legacyWord.title': 'Ældre Microsoft Word .doc/OLE CFB',
   'documents.import.legacyWord.body':
-    'Aeldre Microsoft Word .doc/OLE CFB bevares kun som ikke-kanonisk dokumentation. Makroer og indlejrede objekter udfores ikke. Der blev ikke udfort DOC-til-PDF/A-konvertering eller kanonisk erstatning.',
+    'Ældre Microsoft Word .doc/OLE CFB bevares kun som ikke-kanonisk dokumentation. Makroer og indlejrede objekter udføres ikke. Der blev ikke udført DOC-til-PDF/A-konvertering eller kanonisk erstatning.',
   'documents.import.legacyWord.detectedType': 'Registreret type',
   'documents.import.legacyWord.oleCfb': 'OLE CFB',
-  'documents.import.legacyWord.legacyDoc': 'Aeldre Word .doc',
-  'documents.import.legacyWord.macrosExecuted': 'Makroer/objekter udfort',
+  'documents.import.legacyWord.legacyDoc': 'Ældre Word .doc',
+  'documents.import.legacyWord.macrosExecuted': 'Makroer/objekter udført',
   'documents.import.legacyWord.conversion': 'DOC-til-PDF/A-konvertering',
   'documents.import.legacyWord.canonicalPdfa': 'Kanonisk PDF/A genereret',
   'documents.import.findings': 'Valideringsfund',
   'documents.import.toast.success': 'Dokument importeret som ikke-kanonisk dokumentation.',
   'documents.import.toast.validationRejected':
     'Dokument afvist af validering; det blev ikke importeret.',
-  'documents.import.readError.imported': 'Kunne ikke laese den importerede fil.',
-  'documents.import.readError.file': 'Kunne ikke laese filen.',
+  'documents.import.readError.imported': 'Kunne ikke læse den importerede fil.',
+  'documents.import.readError.file': 'Kunne ikke læse filen.',
   'externalInvite.crumbs': 'Ekstern signering',
   'externalInvite.title': 'Ekstern invitation',
   'externalInvite.status.pending': 'Afventer',
