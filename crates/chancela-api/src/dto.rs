@@ -20,8 +20,8 @@ use chancela_authz::{Permission, ScopedPermissionSet};
 use chancela_cae::CaeCatalog;
 use chancela_core::act::{
     AiHumanVerification, AiHumanVerificationStatus, AiProvenance, AiStatementSource,
-    WrittenResolutionReviewEvidenceLocator, WrittenResolutionReviewReceipt,
-    WrittenResolutionReviewStatus,
+    ManualSignatureOriginalReference, WrittenResolutionReviewEvidenceLocator,
+    WrittenResolutionReviewReceipt, WrittenResolutionReviewStatus,
 };
 #[cfg(test)]
 use chancela_core::book::{BookId, TermoDeAbertura};
@@ -710,6 +710,26 @@ impl SignatoryView {
     }
 }
 
+/// Wire view of WFL-23 manual-signature original-reference metadata.
+#[derive(Serialize, Clone)]
+pub struct ManualSignatureOriginalReferenceView {
+    pub storage_reference: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub custodian: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+impl From<&ManualSignatureOriginalReference> for ManualSignatureOriginalReferenceView {
+    fn from(reference: &ManualSignatureOriginalReference) -> Self {
+        ManualSignatureOriginalReferenceView {
+            storage_reference: reference.storage_reference.clone(),
+            custodian: reference.custodian.clone(),
+            note: reference.note.clone(),
+        }
+    }
+}
+
 /// Wire view of the LEG-06/WFL-22 rule-pack/profile evidence recorded at sealing.
 #[derive(Serialize, Clone)]
 pub struct SealMetadataView {
@@ -717,6 +737,8 @@ pub struct SealMetadataView {
     pub version: String,
     pub family: EntityFamily,
     pub profile: EntityKind,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub manual_signature_original_reference: Option<ManualSignatureOriginalReferenceView>,
 }
 
 impl From<&SealMetadata> for SealMetadataView {
@@ -726,7 +748,17 @@ impl From<&SealMetadata> for SealMetadataView {
             version: metadata.version.clone(),
             family: metadata.family,
             profile: metadata.profile,
+            manual_signature_original_reference: metadata
+                .manual_signature_original_reference
+                .as_ref()
+                .map(ManualSignatureOriginalReferenceView::from),
         }
+    }
+}
+
+impl SealMetadataView {
+    fn redact_sensitive(&mut self) {
+        self.manual_signature_original_reference = None;
     }
 }
 
@@ -1666,6 +1698,9 @@ impl ActView {
         for signatory in &mut self.signatories {
             signatory.redact_sensitive();
         }
+        if let Some(metadata) = &mut self.seal_metadata {
+            metadata.redact_sensitive();
+        }
         if let Some(convening) = &mut self.convening {
             convening.redact_sensitive();
         }
@@ -2247,13 +2282,102 @@ pub enum HumanVerificationDecision {
     Reject,
 }
 
-/// Body of `POST /v1/acts/{id}/seal` (all fields optional; empty body allowed).
+const MANUAL_SIGNATURE_ORIGINAL_REFERENCE_MAX_CHARS: usize = 512;
+const MANUAL_SIGNATURE_ORIGINAL_CUSTODIAN_MAX_CHARS: usize = 256;
+const MANUAL_SIGNATURE_ORIGINAL_NOTE_MAX_CHARS: usize = 2000;
+
+/// Operator-supplied WFL-23 reference to the signed manual original kept outside Chancela.
+#[derive(Deserialize)]
+pub struct ManualSignatureOriginalReferenceInput {
+    pub storage_reference: String,
+    #[serde(default)]
+    pub custodian: Option<String>,
+    #[serde(default)]
+    pub note: Option<String>,
+}
+
+impl ManualSignatureOriginalReferenceInput {
+    pub(crate) fn into_core(self) -> Result<ManualSignatureOriginalReference, ApiError> {
+        Ok(ManualSignatureOriginalReference {
+            storage_reference: required_manual_signature_reference_text(
+                self.storage_reference,
+                "storage_reference",
+                MANUAL_SIGNATURE_ORIGINAL_REFERENCE_MAX_CHARS,
+            )?,
+            custodian: optional_manual_signature_reference_text(
+                self.custodian,
+                "custodian",
+                MANUAL_SIGNATURE_ORIGINAL_CUSTODIAN_MAX_CHARS,
+            )?,
+            note: optional_manual_signature_reference_text(
+                self.note,
+                "note",
+                MANUAL_SIGNATURE_ORIGINAL_NOTE_MAX_CHARS,
+            )?,
+        })
+    }
+}
+
+fn required_manual_signature_reference_text(
+    value: String,
+    field: &str,
+    max_chars: usize,
+) -> Result<String, ApiError> {
+    let trimmed = value.trim().to_owned();
+    if trimmed.is_empty() {
+        return Err(ApiError::Unprocessable(format!(
+            "manual_signature_original_reference.{field} must not be empty"
+        )));
+    }
+    validate_manual_signature_reference_text(&trimmed, field, max_chars)?;
+    Ok(trimmed)
+}
+
+fn optional_manual_signature_reference_text(
+    value: Option<String>,
+    field: &str,
+    max_chars: usize,
+) -> Result<Option<String>, ApiError> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let trimmed = value.trim().to_owned();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    validate_manual_signature_reference_text(&trimmed, field, max_chars)?;
+    Ok(Some(trimmed))
+}
+
+fn validate_manual_signature_reference_text(
+    value: &str,
+    field: &str,
+    max_chars: usize,
+) -> Result<(), ApiError> {
+    if value.chars().count() > max_chars {
+        return Err(ApiError::Unprocessable(format!(
+            "manual_signature_original_reference.{field} must be at most {max_chars} characters"
+        )));
+    }
+    if value.chars().any(char::is_control) {
+        return Err(ApiError::Unprocessable(format!(
+            "manual_signature_original_reference.{field} must not contain control characters"
+        )));
+    }
+    Ok(())
+}
+
+/// Body of `POST /v1/acts/{id}/seal`.
 #[derive(Deserialize)]
 pub struct SealAct {
     #[serde(default = "default_actor")]
     pub actor: String,
     #[serde(default)]
     pub acknowledge_warnings: bool,
+    /// WFL-23 manual-signature custody/location metadata supplied by the operator at sealing.
+    /// This is immutable reference metadata only; it carries no validation/certification claim.
+    #[serde(default)]
+    pub manual_signature_original_reference: Option<ManualSignatureOriginalReferenceInput>,
     /// Optional ata-subtype override (t53): the specific `Ata`-stage template id to generate for
     /// this seal instead of the family's spine ata (e.g. `"csc-ata-aprovacao-contas/v1"`). Additive;
     /// absent ⇒ the deterministic spine default. An unknown or non-`Ata`/cross-family id is rejected
@@ -2267,6 +2391,7 @@ impl Default for SealAct {
         SealAct {
             actor: default_actor(),
             acknowledge_warnings: false,
+            manual_signature_original_reference: None,
             template_id: None,
         }
     }

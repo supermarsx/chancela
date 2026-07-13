@@ -423,7 +423,7 @@ async fn make_act(state: &AppState, token: &str, book_id: &str, seal: bool) -> S
     if seal {
         let (status, sealed) = send(
             state,
-            json_req("POST", &format!("/v1/acts/{act_id}/seal"), token, json!({})),
+            json_req("POST", &format!("/v1/acts/{act_id}/seal"), token, json!({ "manual_signature_original_reference": { "storage_reference": "Arquivo A / Pasta 2026 / Ata teste" } })),
         )
         .await;
         assert_eq!(status, StatusCode::OK, "seal: {sealed}");

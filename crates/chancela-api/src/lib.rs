@@ -2055,6 +2055,30 @@ mod tests {
         body_json("POST", uri, body)
     }
 
+    fn seal_body() -> Value {
+        seal_body_with_reference("Arquivo A / Pasta 2026 / Ata teste")
+    }
+
+    fn seal_body_with_reference(storage_reference: &str) -> Value {
+        json!({
+            "manual_signature_original_reference": {
+                "storage_reference": storage_reference
+            }
+        })
+    }
+
+    fn seal_body_acknowledging_warnings() -> Value {
+        let mut body = seal_body();
+        body["acknowledge_warnings"] = json!(true);
+        body
+    }
+
+    fn seal_body_with_template_id(template_id: &str) -> Value {
+        let mut body = seal_body();
+        body["template_id"] = json!(template_id);
+        body
+    }
+
     fn cleanup_preview_token(body: &Value) -> String {
         body["preview_token"]
             .as_str()
@@ -3461,7 +3485,7 @@ mod tests {
         // Sealing without acknowledging the warning is refused (409) with the warning surfaced.
         let (status, body) = send(
             state.clone(),
-            post_json(&format!("/v1/acts/{act_id}/seal"), json!({})),
+            post_json(&format!("/v1/acts/{act_id}/seal"), seal_body()),
         )
         .await;
         assert_eq!(status, StatusCode::CONFLICT);
@@ -3478,7 +3502,7 @@ mod tests {
             state,
             post_json(
                 &format!("/v1/acts/{act_id}/seal"),
-                json!({ "acknowledge_warnings": true }),
+                seal_body_acknowledging_warnings(),
             ),
         )
         .await;
@@ -3567,7 +3591,7 @@ mod tests {
         // Seal — no warnings to acknowledge.
         let (status, sealed) = send(
             state.clone(),
-            post_json(&format!("/v1/acts/{act_id}/seal"), json!({})),
+            post_json(&format!("/v1/acts/{act_id}/seal"), seal_body()),
         )
         .await;
         assert_eq!(status, StatusCode::OK);
@@ -4394,6 +4418,353 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn seal_persists_manual_signature_original_reference_as_metadata_only() {
+        let (state, _entity_id, book_id) = entity_and_open_book("SociedadeAnonima").await;
+        let act_id = draft_fill_and_advance(&state, &book_id).await;
+
+        let (status, sealed) = send(
+            state.clone(),
+            post_json(
+                &format!("/v1/acts/{act_id}/seal"),
+                json!({
+                    "manual_signature_original_reference": {
+                        "storage_reference": "  Arquivo A / Pasta 2026 / Ata 1  ",
+                        "custodian": "  Secretariado  ",
+                        "note": "Original assinado manualmente; referência local apenas."
+                    }
+                }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "seal: {sealed}");
+        let metadata = &sealed["act"]["seal_metadata"];
+        let reference = &metadata["manual_signature_original_reference"];
+        assert_eq!(
+            reference["storage_reference"],
+            "Arquivo A / Pasta 2026 / Ata 1"
+        );
+        assert_eq!(reference["custodian"], "Secretariado");
+        assert_eq!(
+            reference["note"],
+            "Original assinado manualmente; referência local apenas."
+        );
+        for claim in [
+            "legal_validity_claimed",
+            "signature_validation_claimed",
+            "qualified_signature_claimed",
+            "archive_certification_claimed",
+            "manual_signature_verified",
+        ] {
+            assert!(
+                metadata.get(claim).is_none() && reference.get(claim).is_none(),
+                "manual reference must not expose claim flag {claim}: {metadata}"
+            );
+        }
+
+        let (status, got) = send(state.clone(), get(&format!("/v1/acts/{act_id}"))).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            got["seal_metadata"]["manual_signature_original_reference"],
+            *reference
+        );
+
+        let (status, body) = send(
+            state.clone(),
+            patch_json(
+                &format!("/v1/acts/{act_id}"),
+                json!({
+                    "title": "Tentativa de mutação pós-selo",
+                    "seal_metadata": {
+                        "manual_signature_original_reference": {
+                            "storage_reference": "Outro arquivo"
+                        }
+                    }
+                }),
+            ),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::CONFLICT,
+            "sealed act patch must be rejected: {body}"
+        );
+
+        let (status, after_patch) = send(state, get(&format!("/v1/acts/{act_id}"))).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            after_patch["seal_metadata"]["manual_signature_original_reference"],
+            *reference
+        );
+    }
+
+    #[tokio::test]
+    async fn seal_rejects_missing_manual_signature_original_reference_without_mutation() {
+        let (state, _entity_id, book_id) = entity_and_open_book("SociedadeAnonima").await;
+        let act_id = draft_fill_and_advance(&state, &book_id).await;
+
+        let (status, body) = send(
+            state.clone(),
+            post_json(&format!("/v1/acts/{act_id}/seal"), json!({})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(
+            body["error"]
+                .as_str()
+                .expect("error")
+                .contains("manual_signature_original_reference"),
+            "validation error names the missing reference: {body}"
+        );
+
+        let (status, act) = send(state, get(&format!("/v1/acts/{act_id}"))).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(act["state"], "Signing");
+        assert!(act["seal_metadata"].is_null());
+        assert!(act["ata_number"].is_null());
+    }
+
+    #[tokio::test]
+    async fn seal_rejects_invalid_manual_signature_original_reference_without_mutation() {
+        let (state, _entity_id, book_id) = entity_and_open_book("SociedadeAnonima").await;
+        let act_id = draft_fill_and_advance(&state, &book_id).await;
+
+        for (value, expected) in [
+            ("   ".to_owned(), "must not be empty"),
+            ("Arquivo\u{0007}A".to_owned(), "control characters"),
+            ("R".repeat(513), "at most 512 characters"),
+        ] {
+            let (status, body) = send(
+                state.clone(),
+                post_json(
+                    &format!("/v1/acts/{act_id}/seal"),
+                    json!({
+                        "manual_signature_original_reference": {
+                            "storage_reference": value
+                        }
+                    }),
+                ),
+            )
+            .await;
+            assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+            let error = body["error"].as_str().expect("error");
+            assert!(
+                error.contains("storage_reference") && error.contains(expected),
+                "validation error names storage_reference and {expected}: {body}"
+            );
+        }
+
+        let (status, act) = send(state, get(&format!("/v1/acts/{act_id}"))).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(act["state"], "Signing");
+        assert!(act["seal_metadata"].is_null());
+        assert!(act["ata_number"].is_null());
+    }
+
+    #[tokio::test]
+    async fn seal_rejects_nested_manual_signature_original_reference_without_mutation() {
+        let (state, _entity_id, book_id) = entity_and_open_book("SociedadeAnonima").await;
+        let act_id = draft_fill_and_advance(&state, &book_id).await;
+
+        let (status, _content_type, body) = send_bytes(
+            state.clone(),
+            post_json(
+                &format!("/v1/acts/{act_id}/seal"),
+                json!({
+                    "manual_signature_original_reference": {
+                        "manual_signature_original_reference": {}
+                    }
+                }),
+            ),
+        )
+        .await;
+        assert_ne!(
+            status,
+            StatusCode::OK,
+            "nested reference must not seal: {}",
+            String::from_utf8_lossy(&body)
+        );
+        assert!(
+            status == StatusCode::BAD_REQUEST || status == StatusCode::UNPROCESSABLE_ENTITY,
+            "nested reference should be rejected by request validation before mutation: {status} {}",
+            String::from_utf8_lossy(&body)
+        );
+
+        let (status, act) = send(state, get(&format!("/v1/acts/{act_id}"))).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(act["state"], "Signing");
+        assert!(act["seal_metadata"].is_null());
+        assert!(act["ata_number"].is_null());
+    }
+
+    #[tokio::test]
+    async fn seal_accepts_max_length_reference_and_omits_empty_optional_custody_fields() {
+        let (state, _entity_id, book_id) = entity_and_open_book("SociedadeAnonima").await;
+        let act_id = draft_fill_and_advance(&state, &book_id).await;
+        let storage_reference = "R".repeat(512);
+
+        let (status, sealed) = send(
+            state,
+            post_json(
+                &format!("/v1/acts/{act_id}/seal"),
+                json!({
+                    "manual_signature_original_reference": {
+                        "storage_reference": storage_reference,
+                        "custodian": "   ",
+                        "note": ""
+                    }
+                }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "seal: {sealed}");
+        let reference = &sealed["act"]["seal_metadata"]["manual_signature_original_reference"];
+        assert_eq!(reference["storage_reference"].as_str().unwrap().len(), 512);
+        assert!(
+            reference.get("custodian").is_none(),
+            "empty custodian is omitted: {reference}"
+        );
+        assert!(
+            reference.get("note").is_none(),
+            "empty note is omitted: {reference}"
+        );
+    }
+
+    #[tokio::test]
+    async fn guest_act_read_redacts_manual_signature_original_reference() {
+        use chancela_authz::{GUEST_ROLE_ID, RoleAssignment, RoleCatalog, Scope};
+
+        let (state, _entity_id, book_id) = entity_and_open_book("SociedadeAnonima").await;
+        let act_id = draft_fill_and_advance(&state, &book_id).await;
+        let (status, sealed) = send(
+            state.clone(),
+            post_json(
+                &format!("/v1/acts/{act_id}/seal"),
+                json!({
+                    "manual_signature_original_reference": {
+                        "storage_reference": "Cofre documental 2 / Ata AG 2026",
+                        "custodian": "Secretariado",
+                        "note": "Original em papel; referência local apenas."
+                    }
+                }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "seal: {sealed}");
+        assert!(
+            sealed["act"]["seal_metadata"]["manual_signature_original_reference"].is_object(),
+            "owner response keeps manual reference: {sealed}"
+        );
+
+        *state.roles.write().await = RoleCatalog::seeded_defaults();
+        let guest_id = seed_user(
+            &state,
+            "guest.manual-reference",
+            vec![RoleAssignment::new(GUEST_ROLE_ID, Scope::Global)],
+        )
+        .await;
+        let guest_token = seed_session(&state, &guest_id.to_string()).await;
+
+        let (status, guest_view) = send_raw(
+            state,
+            with_session(get(&format!("/v1/acts/{act_id}")), &guest_token),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{guest_view}");
+        assert_eq!(
+            guest_view["seal_metadata"]["rule_pack_id"], "csc-art63/v2",
+            "guest still sees non-sensitive seal metadata"
+        );
+        assert!(
+            guest_view["seal_metadata"]
+                .get("manual_signature_original_reference")
+                .is_none(),
+            "guest response suppresses manual reference: {guest_view}"
+        );
+        let redacted = guest_view.to_string();
+        for sensitive in [
+            "manual_signature_original_reference",
+            "storage_reference",
+            "Cofre documental 2",
+            "Secretariado",
+            "Original em papel",
+        ] {
+            assert!(
+                !redacted.contains(sensitive),
+                "guest view leaked {sensitive}: {redacted}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn guest_book_act_feed_redacts_manual_signature_original_reference() {
+        use chancela_authz::{GUEST_ROLE_ID, RoleAssignment, RoleCatalog, Scope};
+
+        let (state, _entity_id, book_id) = entity_and_open_book("SociedadeAnonima").await;
+        let act_id = draft_fill_and_advance(&state, &book_id).await;
+        let (status, sealed) = send(
+            state.clone(),
+            post_json(
+                &format!("/v1/acts/{act_id}/seal"),
+                json!({
+                    "manual_signature_original_reference": {
+                        "storage_reference": "Cofre documental 2 / Ata AG 2026",
+                        "custodian": "Secretariado",
+                        "note": "Original em papel; referência local apenas."
+                    }
+                }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "seal: {sealed}");
+
+        *state.roles.write().await = RoleCatalog::seeded_defaults();
+        let guest_id = seed_user(
+            &state,
+            "guest.book-act-feed.manual-reference",
+            vec![RoleAssignment::new(GUEST_ROLE_ID, Scope::Global)],
+        )
+        .await;
+        let guest_token = seed_session(&state, &guest_id.to_string()).await;
+
+        let (status, feed) = send_raw(
+            state,
+            with_session(get(&format!("/v1/books/{book_id}/acts")), &guest_token),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{feed}");
+        let act = feed
+            .as_array()
+            .expect("book acts feed")
+            .iter()
+            .find(|row| row["id"].as_str() == Some(act_id.as_str()))
+            .expect("sealed act present in feed");
+        assert_eq!(
+            act["seal_metadata"]["rule_pack_id"], "csc-art63/v2",
+            "guest still sees non-sensitive seal metadata in book feed"
+        );
+        assert!(
+            act["seal_metadata"]
+                .get("manual_signature_original_reference")
+                .is_none(),
+            "guest book feed suppresses manual reference: {feed}"
+        );
+
+        let redacted = feed.to_string();
+        for sensitive in [
+            "manual_signature_original_reference",
+            "storage_reference",
+            "Cofre documental 2",
+            "Secretariado",
+            "Original em papel",
+        ] {
+            assert!(
+                !redacted.contains(sensitive),
+                "guest book feed leaked {sensitive}: {redacted}"
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn seal_produces_a_document_and_a_document_generated_event() {
         let (state, _entity_id, book_id) = entity_and_open_book("SociedadeAnonima").await;
         let act_id = draft_fill_and_advance(&state, &book_id).await;
@@ -4406,7 +4777,7 @@ mod tests {
         // Seal → the additive `document` block names the PDF/A digest + pinned template version.
         let (status, sealed) = send(
             state.clone(),
-            post_json(&format!("/v1/acts/{act_id}/seal"), json!({})),
+            post_json(&format!("/v1/acts/{act_id}/seal"), seal_body()),
         )
         .await;
         assert_eq!(status, StatusCode::OK, "seal: {sealed}");
@@ -4500,7 +4871,7 @@ mod tests {
         let (status, sealed) = send(
             state.clone(),
             with_session(
-                post_json(&format!("/v1/acts/{act_id}/seal"), json!({})),
+                post_json(&format!("/v1/acts/{act_id}/seal"), seal_body()),
                 &token,
             ),
         )
@@ -4666,7 +5037,7 @@ mod tests {
         let (status, sealed) = send(
             state.clone(),
             with_session(
-                post_json(&format!("/v1/acts/{act_id}/seal"), json!({})),
+                post_json(&format!("/v1/acts/{act_id}/seal"), seal_body()),
                 &token,
             ),
         )
@@ -4790,7 +5161,7 @@ mod tests {
         let (status, sealed) = send(
             state.clone(),
             with_session(
-                post_json(&format!("/v1/acts/{act_id}/seal"), json!({})),
+                post_json(&format!("/v1/acts/{act_id}/seal"), seal_body()),
                 &token,
             ),
         )
@@ -5161,7 +5532,7 @@ mod tests {
 
         send(
             state.clone(),
-            post_json(&format!("/v1/acts/{act_id}/seal"), json!({})),
+            post_json(&format!("/v1/acts/{act_id}/seal"), seal_body()),
         )
         .await;
 
@@ -5286,7 +5657,7 @@ mod tests {
         let act_id = draft_fill_and_advance(&state, &book_id).await;
         send(
             state.clone(),
-            post_json(&format!("/v1/acts/{act_id}/seal"), json!({})),
+            post_json(&format!("/v1/acts/{act_id}/seal"), seal_body()),
         )
         .await;
 
@@ -5348,7 +5719,7 @@ mod tests {
 
         let (status, sealed) = send(
             state.clone(),
-            post_json(&format!("/v1/acts/{act_id}/seal"), json!({})),
+            post_json(&format!("/v1/acts/{act_id}/seal"), seal_body()),
         )
         .await;
         assert_eq!(status, StatusCode::OK, "condo seal: {sealed}");
@@ -5531,7 +5902,7 @@ mod tests {
         let act_id = draft_fill_and_advance(&state, &book_id).await;
         let (status, _) = send(
             state.clone(),
-            post_json(&format!("/v1/acts/{act_id}/seal"), json!({})),
+            post_json(&format!("/v1/acts/{act_id}/seal"), seal_body()),
         )
         .await;
         assert_eq!(status, StatusCode::OK);
@@ -5603,7 +5974,7 @@ mod tests {
         let act_id = draft_fill_and_advance(&state, &book_id).await;
         let (status, _) = send(
             state.clone(),
-            post_json(&format!("/v1/acts/{act_id}/seal"), json!({})),
+            post_json(&format!("/v1/acts/{act_id}/seal"), seal_body()),
         )
         .await;
         assert_eq!(status, StatusCode::OK);
@@ -5693,7 +6064,7 @@ mod tests {
         // Seal, then generate the certidão on demand — it persists + emits a document.generated event.
         let (status, _) = send(
             state.clone(),
-            post_json(&format!("/v1/acts/{act_id}/seal"), json!({})),
+            post_json(&format!("/v1/acts/{act_id}/seal"), seal_body()),
         )
         .await;
         assert_eq!(status, StatusCode::OK);
@@ -5796,7 +6167,7 @@ mod tests {
 
         let (status, _) = send(
             state.clone(),
-            post_json(&format!("/v1/acts/{act_id}/seal"), json!({})),
+            post_json(&format!("/v1/acts/{act_id}/seal"), seal_body()),
         )
         .await;
         assert_eq!(status, StatusCode::OK);
@@ -5942,7 +6313,7 @@ mod tests {
 
         let (status, sealed) = send(
             state.clone(),
-            post_json(&format!("/v1/acts/{act_id}/seal"), json!({})),
+            post_json(&format!("/v1/acts/{act_id}/seal"), seal_body()),
         )
         .await;
         assert_eq!(status, StatusCode::OK, "condo seal: {sealed}");
@@ -6040,7 +6411,7 @@ mod tests {
 
         let (status, sealed) = send(
             state.clone(),
-            post_json(&format!("/v1/acts/{act_id}/seal"), json!({})),
+            post_json(&format!("/v1/acts/{act_id}/seal"), seal_body()),
         )
         .await;
         assert_eq!(status, StatusCode::OK, "condo seal: {sealed}");
@@ -6117,7 +6488,7 @@ mod tests {
 
         let (status, sealed) = send(
             state.clone(),
-            post_json(&format!("/v1/acts/{act_id}/seal"), json!({})),
+            post_json(&format!("/v1/acts/{act_id}/seal"), seal_body()),
         )
         .await;
         assert_eq!(status, StatusCode::OK, "condo seal: {sealed}");
@@ -6200,7 +6571,7 @@ mod tests {
             state.clone(),
             post_json(
                 &format!("/v1/acts/{act_bad}/seal"),
-                json!({ "template_id": "nao-existe/v9" }),
+                seal_body_with_template_id("nao-existe/v9"),
             ),
         )
         .await;
@@ -6218,7 +6589,7 @@ mod tests {
             state.clone(),
             post_json(
                 &format!("/v1/acts/{act_id}/seal"),
-                json!({ "template_id": "csc-ata-aprovacao-contas/v1" }),
+                seal_body_with_template_id("csc-ata-aprovacao-contas/v1"),
             ),
         )
         .await;
@@ -6292,7 +6663,7 @@ mod tests {
 
         let (status, body) = send(
             state,
-            post_json(&format!("/v1/acts/{act_id}/seal"), json!({})),
+            post_json(&format!("/v1/acts/{act_id}/seal"), seal_body()),
         )
         .await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
@@ -6317,7 +6688,7 @@ mod tests {
         // Sealing a Draft act (never advanced to Signing) is refused with a conflict.
         let (status, body) = send(
             state,
-            post_json(&format!("/v1/acts/{act_id}/seal"), json!({})),
+            post_json(&format!("/v1/acts/{act_id}/seal"), seal_body()),
         )
         .await;
         assert_eq!(status, StatusCode::CONFLICT);
@@ -10956,7 +11327,7 @@ mod tests {
         let (status, _) = send_raw(
             state.clone(),
             with_session(
-                post_json(&format!("/v1/acts/{act_id}/seal"), json!({})),
+                post_json(&format!("/v1/acts/{act_id}/seal"), seal_body()),
                 &token,
             ),
         )
@@ -11042,7 +11413,7 @@ mod tests {
         // Seals with no mesa and no acknowledgement — the condo pack has nothing to flag here.
         let (status, sealed) = send(
             state,
-            post_json(&format!("/v1/acts/{act_id}/seal"), json!({})),
+            post_json(&format!("/v1/acts/{act_id}/seal"), seal_body()),
         )
         .await;
         assert_eq!(status, StatusCode::OK, "condo seal: {sealed}");
@@ -11098,7 +11469,7 @@ mod tests {
 
         let (status, body) = send(
             state.clone(),
-            post_json(&format!("/v1/acts/{act_id}/seal"), json!({})),
+            post_json(&format!("/v1/acts/{act_id}/seal"), seal_body()),
         )
         .await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
@@ -11123,7 +11494,7 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         let (status, sealed) = send(
             state,
-            post_json(&format!("/v1/acts/{act_id}/seal"), json!({})),
+            post_json(&format!("/v1/acts/{act_id}/seal"), seal_body()),
         )
         .await;
         assert_eq!(status, StatusCode::OK, "seal after mesa: {sealed}");
@@ -11314,7 +11685,7 @@ mod tests {
         advance_to_signing(&state, &act_uuid.to_string()).await;
         let (status, sealed) = send(
             state,
-            post_json(&format!("/v1/acts/{act_uuid}/seal"), json!({})),
+            post_json(&format!("/v1/acts/{act_uuid}/seal"), seal_body()),
         )
         .await;
         assert_eq!(status, StatusCode::OK, "old-shape seal: {sealed}");
@@ -11393,7 +11764,7 @@ mod tests {
         let (status, sealed) = send(
             state.clone(),
             // A fully-filled CSC v2 ata (mesa set) has no findings — no acknowledgement needed.
-            post_json(&format!("/v1/acts/{act_id}/seal"), json!({})),
+            post_json(&format!("/v1/acts/{act_id}/seal"), seal_body()),
         )
         .await;
         assert_eq!(status, StatusCode::OK);
@@ -15756,7 +16127,7 @@ mod tests {
         let (status, _) = send(
             state.clone(),
             with_session(
-                post_json(&format!("/v1/acts/{act_id}/seal"), json!({})),
+                post_json(&format!("/v1/acts/{act_id}/seal"), seal_body()),
                 token,
             ),
         )

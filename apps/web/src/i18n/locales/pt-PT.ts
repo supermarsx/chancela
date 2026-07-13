@@ -778,12 +778,28 @@ export const ptPT = {
   'acts.sealing.ready': 'A ata está conforme e em assinatura — pode ser selada.',
   'acts.sealing.readyWithWarnings':
     'A ata tem avisos de conformidade não bloqueantes. Reveja-os e reconheça-os explicitamente antes de selar.',
-  'acts.sealing.warningAck.title': 'Confirmar avisos de conformidade',
+  'acts.sealing.warningAck.title': 'Confirmar selagem manual',
   'acts.sealing.warningAck.body':
-    'Existem avisos de conformidade não bloqueantes. A selagem só prossegue depois de confirmar que os reviu.',
+    'Registe a referência local onde o original assinado manualmente fica guardado. Estes metadados não validam a assinatura nem certificam o arquivo.',
   'acts.sealing.warningAck.checkbox':
-    'Reconheço explicitamente estes avisos de conformidade e quero selar a ata.',
-  'acts.sealing.warningAck.confirm': 'Selar ata com avisos',
+    'Confirmo que a referência do original assinado manualmente foi registada e quero selar a ata.',
+  'acts.sealing.warningAck.checkboxWithWarnings':
+    'Confirmo que revi os avisos de conformidade, que a referência do original assinado manualmente foi registada e quero selar a ata.',
+  'acts.sealing.warningAck.confirm': 'Confirmar e selar ata',
+  'acts.manualSignature.originalReference.label': 'Referência do original assinado',
+  'acts.manualSignature.originalReference.hint':
+    'Localização, arquivo, pasta, identificador documental ou outra referência interna.',
+  'acts.manualSignature.originalReference.tooLong':
+    'A referência do original assinado deve ter no máximo 512 caracteres.',
+  'acts.manualSignature.originalReference.controlCharacters':
+    'A referência do original assinado não pode conter caracteres de controlo.',
+  'acts.manualSignature.originalReference.displayLabel': 'Original assinado',
+  'acts.manualSignature.custodian.label': 'Custodiante',
+  'acts.manualSignature.custodian.hint': 'Pessoa, equipa ou serviço responsável, se aplicável.',
+  'acts.manualSignature.custodian.displayLabel': 'Custodiante',
+  'acts.manualSignature.note.label': 'Nota',
+  'acts.manualSignature.note.hint': 'Contexto local opcional; não registe validação jurídica.',
+  'acts.manualSignature.note.displayLabel': 'Nota',
   'acts.sealing.unavailableState': 'A selagem só fica disponível no estado «Em assinatura».',
   'acts.sealing.fixErrors': 'Corrija os erros de conformidade para poder selar.',
   'acts.sealing.sealing': 'A selar…',

@@ -784,6 +784,8 @@ export const svFI: Catalog = {
     'Location, archive, folder, document id, or another internal reference.',
   'acts.manualSignature.originalReference.tooLong':
     'The signed original reference must be at most 512 characters.',
+  'acts.manualSignature.originalReference.controlCharacters':
+    'The signed original reference must not contain control characters.',
   'acts.manualSignature.originalReference.displayLabel': 'Signed original',
   'acts.manualSignature.custodian.label': 'Custodian',
   'acts.manualSignature.custodian.hint': 'Responsible person, team, or service, if applicable.',

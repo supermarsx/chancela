@@ -769,12 +769,28 @@ export const enUS: Catalog = {
   'acts.sealing.ready': 'The minute is compliant and in signing — it can be sealed.',
   'acts.sealing.readyWithWarnings':
     'The minute has non-blocking compliance warnings. Review and explicitly acknowledge them before sealing.',
-  'acts.sealing.warningAck.title': 'Confirm compliance warnings',
+  'acts.sealing.warningAck.title': 'Confirm manual sealing',
   'acts.sealing.warningAck.body':
-    'There are non-blocking compliance warnings. Sealing continues only after you confirm you reviewed them.',
+    'Record the local reference for where the manually signed original is kept. This metadata does not validate the signature or certify the archive.',
   'acts.sealing.warningAck.checkbox':
-    'I explicitly acknowledge these compliance warnings and want to seal the minute.',
-  'acts.sealing.warningAck.confirm': 'Seal minute with warnings',
+    'I confirm the manual-signature original reference has been captured and want to seal the minute.',
+  'acts.sealing.warningAck.checkboxWithWarnings':
+    'I confirm I reviewed the compliance warnings, the manual-signature original reference has been captured, and I want to seal the minute.',
+  'acts.sealing.warningAck.confirm': 'Confirm and seal minute',
+  'acts.manualSignature.originalReference.label': 'Signed original reference',
+  'acts.manualSignature.originalReference.hint':
+    'Location, archive, folder, document id, or another internal reference.',
+  'acts.manualSignature.originalReference.tooLong':
+    'The signed original reference must be at most 512 characters.',
+  'acts.manualSignature.originalReference.controlCharacters':
+    'The signed original reference must not contain control characters.',
+  'acts.manualSignature.originalReference.displayLabel': 'Signed original',
+  'acts.manualSignature.custodian.label': 'Custodian',
+  'acts.manualSignature.custodian.hint': 'Responsible person, team, or service, if applicable.',
+  'acts.manualSignature.custodian.displayLabel': 'Custodian',
+  'acts.manualSignature.note.label': 'Note',
+  'acts.manualSignature.note.hint': 'Optional local context; do not record legal validation.',
+  'acts.manualSignature.note.displayLabel': 'Note',
   'acts.sealing.unavailableState': 'Sealing is only available in the “Signing” state.',
   'acts.sealing.fixErrors': 'Fix the compliance errors before you can seal.',
   'acts.sealing.sealing': 'Sealing…',

@@ -106,12 +106,24 @@ function stateful(
     if (url.includes(`/v1/acts/${act.id}/seal`) && method === 'POST') {
       const body = init?.body ? (JSON.parse(init.body as string) as Record<string, unknown>) : {};
       seals.push(body);
+      const manualReference = body.manual_signature_original_reference as
+        | NonNullable<ActView['seal_metadata']>['manual_signature_original_reference']
+        | undefined;
       act = {
         ...act,
         state: 'Sealed',
         ata_number: 1,
         payload_digest: 'sha256:sealed',
         seal_event_seq: 7,
+        seal_metadata: {
+          rule_pack_id: 'csc-art63/v2',
+          version: 'v2',
+          family: 'CommercialCompany',
+          profile: 'SociedadeAnonima',
+          ...(manualReference
+            ? { manual_signature_original_reference: manualReference }
+            : {}),
+        },
       };
       return json({
         act,
@@ -776,8 +788,8 @@ describe('AtaEditorPage — written-resolution evidence review', () => {
   });
 });
 
-describe('AtaEditorPage — seal warning acknowledgement', () => {
-  it('seals without sending an implicit warning acknowledgement when compliance is clean', async () => {
+describe('AtaEditorPage — manual seal acknowledgement', () => {
+  it('requires a manual original reference before sealing when compliance is clean', async () => {
     const withChair = { ...baseAct, mesa: { presidente: 'Ana', secretarios: [] } };
     const shared = stateful(withChair);
     vi.stubGlobal('fetch', shared.fetchImpl);
@@ -785,13 +797,51 @@ describe('AtaEditorPage — seal warning acknowledgement', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Selar ata' }));
 
+    const dialog = await screen.findByRole('dialog', {
+      name: 'Confirmar selagem manual',
+    });
+    expect(shared.seals).toHaveLength(0);
+    const confirm = within(dialog).getByRole<HTMLButtonElement>('button', {
+      name: 'Confirmar e selar ata',
+    });
+    expect(confirm.disabled).toBe(true);
+    expect(
+      within(dialog).getByText(/não validam a assinatura nem certificam o arquivo/i),
+    ).toBeTruthy();
+    expect(dialog.textContent ?? '').not.toMatch(/revi os avisos de conformidade/i);
+
+    fireEvent.change(within(dialog).getByLabelText(/^Referência do original assinado$/i), {
+      target: { value: 'Arquivo A / Pasta 2026 / Ata 1' },
+    });
+    fireEvent.change(within(dialog).getByLabelText(/Custodiante/i), {
+      target: { value: 'Secretariado' },
+    });
+    fireEvent.change(within(dialog).getByLabelText(/Nota/i), {
+      target: { value: 'Original em papel; referência local apenas.' },
+    });
+    fireEvent.click(
+      within(dialog).getByLabelText(/referência do original assinado manualmente foi registada/i),
+    );
+    expect(confirm.disabled).toBe(false);
+    fireEvent.click(confirm);
+
     await waitFor(() => expect(shared.seals).toHaveLength(1));
-    expect(shared.seals[0]).toEqual({});
+    expect(shared.seals[0]).toEqual({
+      manual_signature_original_reference: {
+        storage_reference: 'Arquivo A / Pasta 2026 / Ata 1',
+        custodian: 'Secretariado',
+        note: 'Original em papel; referência local apenas.',
+      },
+    });
     expect(shared.seals[0]).not.toHaveProperty('acknowledge_warnings');
-    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(JSON.stringify(shared.seals[0])).not.toMatch(
+      /legal_validity_claimed|qualified_signature_claimed|archive_certification_claimed|manual_signature_verified/,
+    );
+    await screen.findByText('Arquivo A / Pasta 2026 / Ata 1');
+    expect(screen.getByText('Secretariado')).toBeTruthy();
   });
 
-  it('requires an explicit acknowledgement checkbox before sealing with compliance warnings', async () => {
+  it('requires manual original reference and explicit checkbox before sealing with warnings', async () => {
     const warning = {
       rule_id: 'SIG-03/manual-signature',
       severity: 'Warning' as const,
@@ -805,26 +855,76 @@ describe('AtaEditorPage — seal warning acknowledgement', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Selar ata' }));
 
     const dialog = await screen.findByRole('dialog', {
-      name: 'Confirmar avisos de conformidade',
+      name: 'Confirmar selagem manual',
     });
     expect(shared.seals).toHaveLength(0);
     expect(within(dialog).getByText('SIG-03/manual-signature')).toBeTruthy();
     expect(within(dialog).getByText(/assinatura manual/i)).toBeTruthy();
+    expect(
+      within(dialog).getByText(/não validam a assinatura nem certificam o arquivo/i),
+    ).toBeTruthy();
 
     const confirm = within(dialog).getByRole<HTMLButtonElement>('button', {
-      name: 'Selar ata com avisos',
+      name: 'Confirmar e selar ata',
     });
     expect(confirm.disabled).toBe(true);
     fireEvent.click(confirm);
     expect(shared.seals).toHaveLength(0);
 
+    fireEvent.change(within(dialog).getByLabelText(/^Referência do original assinado$/i), {
+      target: { value: 'Cofre documental 2 / Ata AG 2026' },
+    });
+    expect(confirm.disabled).toBe(true);
+
     fireEvent.click(
-      within(dialog).getByLabelText(/Reconheço explicitamente estes avisos de conformidade/i),
+      within(dialog).getByLabelText(
+        /revi os avisos de conformidade.*referência do original assinado manualmente foi registada/i,
+      ),
     );
     expect(confirm.disabled).toBe(false);
     fireEvent.click(confirm);
 
     await waitFor(() => expect(shared.seals).toHaveLength(1));
-    expect(shared.seals[0]).toEqual({ acknowledge_warnings: true });
+    expect(shared.seals[0]).toEqual({
+      acknowledge_warnings: true,
+      manual_signature_original_reference: {
+        storage_reference: 'Cofre documental 2 / Ata AG 2026',
+      },
+    });
+  });
+
+  it('blocks manual original references containing control characters before submit', async () => {
+    const withChair = { ...baseAct, mesa: { presidente: 'Ana', secretarios: [] } };
+    const shared = stateful(withChair);
+    vi.stubGlobal('fetch', shared.fetchImpl);
+    renderEditor();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Selar ata' }));
+
+    const dialog = await screen.findByRole('dialog', {
+      name: 'Confirmar selagem manual',
+    });
+    const confirm = within(dialog).getByRole<HTMLButtonElement>('button', {
+      name: 'Confirmar e selar ata',
+    });
+    const reference = within(dialog).getByLabelText(/^Referência do original assinado$/i);
+
+    fireEvent.change(reference, {
+      target: { value: 'Arquivo A\u0007Pasta 2026' },
+    });
+    fireEvent.click(
+      within(dialog).getByLabelText(/referência do original assinado manualmente foi registada/i),
+    );
+
+    expect(within(dialog).getByRole('alert').textContent).toMatch(/caracteres de controlo/i);
+    expect(confirm.disabled).toBe(true);
+    fireEvent.click(confirm);
+    expect(shared.seals).toHaveLength(0);
+
+    fireEvent.change(reference, {
+      target: { value: 'Arquivo A / Pasta 2026' },
+    });
+    expect(within(dialog).queryByRole('alert')).toBeNull();
+    expect(confirm.disabled).toBe(false);
   });
 });

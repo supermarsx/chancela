@@ -537,11 +537,18 @@ export interface ActConvening {
   second_call: ActSecondCall | null;
 }
 
+export interface ActManualSignatureOriginalReference {
+  storage_reference: string;
+  custodian?: string | null;
+  note?: string | null;
+}
+
 export interface ActSealMetadata {
   rule_pack_id: string;
   version: string;
   family: EntityFamily;
   profile: EntityKind;
+  manual_signature_original_reference?: ActManualSignatureOriginalReference | null;
 }
 
 export type WrittenResolutionReviewStatus = 'reviewed' | 'needs_follow_up';
@@ -3982,6 +3989,7 @@ export interface VerifyAiHumanReviewBody {
 export interface SealActBody {
   actor?: string;
   acknowledge_warnings?: boolean;
+  manual_signature_original_reference: ActManualSignatureOriginalReference;
 }
 
 export type FollowUpStatus = 'Open' | 'Completed';

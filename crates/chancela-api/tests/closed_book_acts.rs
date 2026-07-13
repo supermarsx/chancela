@@ -224,7 +224,7 @@ async fn advance_to_signing(state: &AppState, token: &str, act_id: &str) {
 async fn seal_act(state: &AppState, token: &str, act_id: &str) -> Value {
     let (status, body) = send(
         state,
-        json_req("POST", &format!("/v1/acts/{act_id}/seal"), token, json!({})),
+        json_req("POST", &format!("/v1/acts/{act_id}/seal"), token, json!({ "manual_signature_original_reference": { "storage_reference": "Arquivo A / Pasta 2026 / Ata teste" } })),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "seal act: {body}");
@@ -405,7 +405,11 @@ async fn closed_book_rejects_pre_existing_act_mutations() {
             "POST",
             &format!("/v1/acts/{seal_id}/seal"),
             &token,
-            json!({}),
+            json!({
+                "manual_signature_original_reference": {
+                    "storage_reference": "Arquivo A / Pasta 2026 / Ata teste"
+                }
+            }),
         ),
     )
     .await;

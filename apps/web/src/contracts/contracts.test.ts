@@ -62,6 +62,7 @@ import {
   type ApiKeyGrantView,
   type ApiKeyRateLimit,
   type ApiKeyView,
+  type ActManualSignatureOriginalReference,
   type ActMesa,
   type ActSealMetadata,
   type ActView,
@@ -2869,6 +2870,7 @@ describe('contract fixtures parse through the real client', () => {
           profile: true,
         },
         'ActView.seal_metadata',
+        ['manual_signature_original_reference'],
       );
       expect(sealMetadata.rule_pack_id.length).toBeGreaterThan(0);
       expect(sealMetadata.version.length).toBeGreaterThan(0);
@@ -2878,6 +2880,15 @@ describe('contract fixtures parse through the real client', () => {
         'ActView.seal_metadata.family',
       );
       inEnum(ENTITY_KINDS, sealMetadata.profile, 'ActView.seal_metadata.profile');
+      if (sealMetadata.manual_signature_original_reference) {
+        const reference = assertExactKeys<ActManualSignatureOriginalReference>(
+          sealMetadata.manual_signature_original_reference,
+          { storage_reference: true },
+          'ActView.seal_metadata.manual_signature_original_reference',
+          ['custodian', 'note'],
+        );
+        expect(reference.storage_reference.trim().length).toBeGreaterThan(0);
+      }
     }
     expect(Array.isArray(act.attachments)).toBe(true);
     expect(Array.isArray(act.signatories)).toBe(true);

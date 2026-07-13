@@ -16,8 +16,8 @@ use chancela_ledger::Ledger;
 
 use crate::act::{
     Act, ActState, AgendaItem, Attachment, Attendee, Convening, DeliberationItem,
-    DocumentReference, MeetingChannel, Mesa, SealMetadata, SignatorySlot,
-    WrittenResolutionEvidence,
+    DocumentReference, ManualSignatureOriginalReference, MeetingChannel, Mesa, SealMetadata,
+    SignatorySlot, WrittenResolutionEvidence,
 };
 use crate::book::{Book, TermoDeAbertura};
 use crate::entity::Entity;
@@ -161,8 +161,12 @@ pub fn seal_act(
     rule_pack: &dyn RulePack,
     actor: &str,
     acknowledge_warnings: bool,
+    manual_signature_original_reference: Option<ManualSignatureOriginalReference>,
     ledger: &mut Ledger,
 ) -> Result<SealOutcome, SealError> {
+    let manual_signature_original_reference = manual_signature_original_reference
+        .ok_or(SealError::MissingManualSignatureOriginalReference)?;
+
     // The act must belong to this book.
     if act.book_id != book.id {
         return Err(SealError::Book(BookError::WrongBook {
@@ -206,7 +210,8 @@ pub fn seal_act(
     let event = ledger.append(actor, &scope, "act.sealed", Some(&justification), &payload);
     let event_seq = event.seq;
     let payload_digest = event.payload_digest;
-    let seal_metadata = SealMetadata::new(rule_pack.id(), entity.family, entity.kind);
+    let seal_metadata = SealMetadata::new(rule_pack.id(), entity.family, entity.kind)
+        .with_manual_signature_original_reference(Some(manual_signature_original_reference));
 
     // Freeze the act (Signing → Sealed).
     act.mark_sealed(ata_number, payload_digest, event_seq, seal_metadata.clone())?;
@@ -283,6 +288,14 @@ mod tests {
         act
     }
 
+    fn manual_reference() -> ManualSignatureOriginalReference {
+        ManualSignatureOriginalReference {
+            storage_reference: "Arquivo A / Pasta 2026 / Ata teste".to_owned(),
+            custodian: None,
+            note: None,
+        }
+    }
+
     #[test]
     fn opening_a_book_emits_genesis_event() {
         let e = entity();
@@ -320,6 +333,7 @@ mod tests {
             &CscArt63RulePack,
             "sec@encosto",
             false,
+            Some(manual_reference()),
             &mut ledger,
         )
         .unwrap();
@@ -346,6 +360,7 @@ mod tests {
             &CscArt63RulePack,
             "sec@encosto",
             false,
+            Some(manual_reference()),
             &mut ledger,
         )
         .unwrap();
@@ -354,6 +369,73 @@ mod tests {
         // entity.created (company genesis) + book.opened (book genesis) + two seals; chain verifies.
         assert_eq!(ledger.events().len(), 4);
         assert_eq!(ledger.verify().unwrap(), 4);
+    }
+
+    #[test]
+    fn manual_signature_original_reference_is_frozen_in_seal_metadata() {
+        let e = entity();
+        let mut ledger = Ledger::default();
+        let mut book = Book::new(e.id, BookKind::AssembleiaGeral);
+        open_and_seal_book(&mut book, &e, abertura(&e), "sec@encosto", &mut ledger).unwrap();
+
+        let reference = ManualSignatureOriginalReference {
+            storage_reference: "Arquivo A / Pasta 2026 / Ata 1".to_owned(),
+            custodian: Some("Secretariado".to_owned()),
+            note: Some("Original assinado em papel; metadados locais apenas.".to_owned()),
+        };
+        let mut act = ready_act(&book);
+        let outcome = seal_act(
+            &mut book,
+            &mut act,
+            &e,
+            &CscArt63RulePack,
+            "sec@encosto",
+            false,
+            Some(reference.clone()),
+            &mut ledger,
+        )
+        .unwrap();
+
+        assert_eq!(
+            outcome.seal_metadata.manual_signature_original_reference,
+            Some(reference.clone())
+        );
+        assert_eq!(
+            act.seal_metadata
+                .as_ref()
+                .and_then(|metadata| metadata.manual_signature_original_reference.as_ref()),
+            Some(&reference)
+        );
+    }
+
+    #[test]
+    fn manual_signature_original_reference_is_required_before_mutation() {
+        let e = entity();
+        let mut ledger = Ledger::default();
+        let mut book = Book::new(e.id, BookKind::AssembleiaGeral);
+        open_and_seal_book(&mut book, &e, abertura(&e), "sec@encosto", &mut ledger).unwrap();
+
+        let mut act = ready_act(&book);
+        let err = seal_act(
+            &mut book,
+            &mut act,
+            &e,
+            &CscArt63RulePack,
+            "sec@encosto",
+            false,
+            None,
+            &mut ledger,
+        )
+        .unwrap_err();
+
+        assert!(matches!(
+            err,
+            SealError::MissingManualSignatureOriginalReference
+        ));
+        assert_eq!(book.last_ata_number, 0);
+        assert_eq!(ledger.events().len(), 1);
+        assert_eq!(act.state, ActState::Signing);
+        assert!(act.seal_metadata.is_none());
     }
 
     #[test]
@@ -372,6 +454,7 @@ mod tests {
             &CscArt63RulePack,
             "sec@encosto",
             false,
+            Some(manual_reference()),
             &mut ledger,
         )
         .unwrap_err();
@@ -397,6 +480,7 @@ mod tests {
             &CscArt63RulePack,
             "sec@encosto",
             false,
+            Some(manual_reference()),
             &mut ledger,
         )
         .unwrap_err();
@@ -422,6 +506,7 @@ mod tests {
             &CscArt63RulePack,
             "sec@encosto",
             false,
+            Some(manual_reference()),
             &mut ledger,
         )
         .unwrap_err();
@@ -451,6 +536,7 @@ mod tests {
             &CscArt63RulePack,
             "sec@encosto",
             false,
+            Some(manual_reference()),
             &mut ledger,
         )
         .unwrap_err();
@@ -466,6 +552,7 @@ mod tests {
             &CscArt63RulePack,
             "sec@encosto",
             true,
+            Some(manual_reference()),
             &mut ledger,
         )
         .unwrap();
@@ -523,6 +610,7 @@ mod tests {
             &WarningPack { also_errors: false },
             "sec@encosto",
             false, // do NOT acknowledge
+            Some(manual_reference()),
             &mut ledger,
         )
         .unwrap_err();
@@ -548,6 +636,7 @@ mod tests {
             &WarningPack { also_errors: false },
             "sec@encosto",
             true, // acknowledge the advisory
+            Some(manual_reference()),
             &mut ledger,
         )
         .unwrap();
@@ -575,6 +664,7 @@ mod tests {
             &WarningPack { also_errors: true },
             "sec@encosto",
             true,
+            Some(manual_reference()),
             &mut ledger,
         )
         .unwrap_err();

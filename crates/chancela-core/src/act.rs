@@ -711,6 +711,22 @@ pub struct Attendee {
     pub weight: Option<AttendanceWeight>,
 }
 
+/// Operator-supplied reference to the manual-signature original captured at sealing (WFL-23).
+///
+/// This is immutable custody/location metadata only. It is not signature validation, archive
+/// certification, or a legal-validity assertion.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ManualSignatureOriginalReference {
+    /// Where the signed paper/PDF original is kept, or the local storage reference for it.
+    pub storage_reference: String,
+    /// Custodian responsible for the original, when recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custodian: Option<String>,
+    /// Operator note about the reference/custody location, when recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
 /// Structured evidence of the rule pack/profile applied when an act was sealed (LEG-06/WFL-22).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SealMetadata {
@@ -722,6 +738,9 @@ pub struct SealMetadata {
     pub family: EntityFamily,
     /// Entity profile/kind used to derive the family profile.
     pub profile: EntityKind,
+    /// Operator-supplied manual-signature original reference, present only for manual sealing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub manual_signature_original_reference: Option<ManualSignatureOriginalReference>,
 }
 
 impl SealMetadata {
@@ -734,7 +753,17 @@ impl SealMetadata {
             version,
             family,
             profile,
+            manual_signature_original_reference: None,
         }
+    }
+
+    /// Attach an immutable manual-signature original reference captured by the seal request.
+    pub fn with_manual_signature_original_reference(
+        mut self,
+        reference: Option<ManualSignatureOriginalReference>,
+    ) -> Self {
+        self.manual_signature_original_reference = reference;
+        self
     }
 }
 

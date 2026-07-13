@@ -76,6 +76,9 @@ pub enum SealError {
     /// invoked with acknowledgement (LEG-05 warning model).
     #[error("sealing blocked by unacknowledged compliance warnings: {0}")]
     WarningsNotAcknowledged(String),
+    /// Manual-signature sealing must preserve where the signed original is held (WFL-23).
+    #[error("manual_signature_original_reference is required for manual-signature sealing")]
+    MissingManualSignatureOriginalReference,
     /// The payload could not be serialized for digesting.
     #[error("failed to serialize act payload for digest: {0}")]
     Serialize(String),

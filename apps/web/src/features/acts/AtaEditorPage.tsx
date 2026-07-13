@@ -50,6 +50,7 @@ import {
   type ActConveningRecipient,
   type ActDeliberationItem,
   type ActDocumentReference,
+  type ActManualSignatureOriginalReference,
   type ActMemberStatement,
   type ActMesa,
   type AiHumanVerificationStatus,
@@ -1751,13 +1752,69 @@ function complianceWarningCount(report: ComplianceReport | undefined): number {
   return report.warnings + (report.convening_advisories?.length ?? 0);
 }
 
+interface ManualSignatureOriginalReferenceDraft {
+  storage_reference: string;
+  custodian: string;
+  note: string;
+}
+
+const MANUAL_SIGNATURE_ORIGINAL_REFERENCE_LIMIT = 512;
+const MANUAL_SIGNATURE_ORIGINAL_CUSTODIAN_LIMIT = 256;
+const MANUAL_SIGNATURE_ORIGINAL_NOTE_LIMIT = 2000;
+const MANUAL_SIGNATURE_ORIGINAL_REFERENCE_CONTROL_CHARS = /\p{Cc}/u;
+
+function emptyManualSignatureOriginalReferenceDraft(): ManualSignatureOriginalReferenceDraft {
+  return { storage_reference: '', custodian: '', note: '' };
+}
+
+function manualSignatureOriginalReferenceReady(
+  draft: ManualSignatureOriginalReferenceDraft,
+): boolean {
+  const storageReference = draft.storage_reference.trim();
+  return (
+    storageReference.length > 0 &&
+    storageReference.length <= MANUAL_SIGNATURE_ORIGINAL_REFERENCE_LIMIT &&
+    !MANUAL_SIGNATURE_ORIGINAL_REFERENCE_CONTROL_CHARS.test(draft.storage_reference) &&
+    draft.custodian.trim().length <= MANUAL_SIGNATURE_ORIGINAL_CUSTODIAN_LIMIT &&
+    draft.note.trim().length <= MANUAL_SIGNATURE_ORIGINAL_NOTE_LIMIT
+  );
+}
+
+function manualSignatureOriginalReferenceStorageError(
+  value: string,
+  t: ReturnType<typeof useT>,
+): string | undefined {
+  const storageReference = value.trim();
+  if (storageReference.length > MANUAL_SIGNATURE_ORIGINAL_REFERENCE_LIMIT) {
+    return t('acts.manualSignature.originalReference.tooLong');
+  }
+  if (MANUAL_SIGNATURE_ORIGINAL_REFERENCE_CONTROL_CHARS.test(value)) {
+    return t('acts.manualSignature.originalReference.controlCharacters');
+  }
+  return undefined;
+}
+
+function manualSignatureOriginalReferenceFromDraft(
+  draft: ManualSignatureOriginalReferenceDraft,
+): ActManualSignatureOriginalReference {
+  const custodian = draft.custodian.trim();
+  const note = draft.note.trim();
+  return {
+    storage_reference: draft.storage_reference.trim(),
+    ...(custodian ? { custodian } : {}),
+    ...(note ? { note } : {}),
+  };
+}
+
 function SealWarningAcknowledgementModal({
   open,
   warnings,
   warningCount,
   checked,
+  reference,
   pending,
   onCheckedChange,
+  onReferenceChange,
   onClose,
   onConfirm,
 }: {
@@ -1765,13 +1822,18 @@ function SealWarningAcknowledgementModal({
   warnings: SealWarningItem[];
   warningCount: number;
   checked: boolean;
+  reference: ManualSignatureOriginalReferenceDraft;
   pending: boolean;
   onCheckedChange: (checked: boolean) => void;
+  onReferenceChange: (reference: ManualSignatureOriginalReferenceDraft) => void;
   onClose: () => void;
   onConfirm: () => void;
 }) {
   const t = useT();
   const titleId = useId();
+  const storageReferenceId = useId();
+  const custodianId = useId();
+  const noteId = useId();
   // Trap Tab focus inside the dialog and restore focus to the opener on close. Called before the
   // `if (!open) return null` early return (rules of hooks). This modal has no autofocus of its
   // own, so the hook's initial-focus branch also supplies it (onto the first focusable control).
@@ -1788,7 +1850,12 @@ function SealWarningAcknowledgementModal({
 
   if (!open) return null;
 
-  const ready = checked && !pending;
+  const referenceReady = manualSignatureOriginalReferenceReady(reference);
+  const storageReferenceError = manualSignatureOriginalReferenceStorageError(
+    reference.storage_reference,
+    t,
+  );
+  const ready = checked && referenceReady && !pending;
   const warningLabel =
     warningCount === 1
       ? t('compliance.warnings.one', { count: warningCount })
@@ -1822,7 +1889,7 @@ function SealWarningAcknowledgementModal({
         <form className="modal__body" onSubmit={submit}>
           <div className="modal__intro">
             <p>{t('acts.sealing.warningAck.body')}</p>
-            <p className="muted">{warningLabel}</p>
+            {warningCount > 0 ? <p className="muted">{warningLabel}</p> : null}
           </div>
 
           {warnings.length > 0 ? (
@@ -1839,6 +1906,52 @@ function SealWarningAcknowledgementModal({
             </ul>
           ) : null}
 
+          <Field
+            label={t('acts.manualSignature.originalReference.label')}
+            htmlFor={storageReferenceId}
+            hint={t('acts.manualSignature.originalReference.hint')}
+            error={storageReferenceError}
+          >
+            <Input
+              id={storageReferenceId}
+              value={reference.storage_reference}
+              maxLength={MANUAL_SIGNATURE_ORIGINAL_REFERENCE_LIMIT}
+              disabled={pending}
+              onChange={(e) =>
+                onReferenceChange({ ...reference, storage_reference: e.target.value })
+              }
+            />
+          </Field>
+
+          <Field
+            label={t('acts.manualSignature.custodian.label')}
+            htmlFor={custodianId}
+            hint={t('acts.manualSignature.custodian.hint')}
+          >
+            <Input
+              id={custodianId}
+              value={reference.custodian}
+              maxLength={MANUAL_SIGNATURE_ORIGINAL_CUSTODIAN_LIMIT}
+              disabled={pending}
+              onChange={(e) => onReferenceChange({ ...reference, custodian: e.target.value })}
+            />
+          </Field>
+
+          <Field
+            label={t('acts.manualSignature.note.label')}
+            htmlFor={noteId}
+            hint={t('acts.manualSignature.note.hint')}
+          >
+            <TextArea
+              id={noteId}
+              value={reference.note}
+              maxLength={MANUAL_SIGNATURE_ORIGINAL_NOTE_LIMIT}
+              disabled={pending}
+              rows={3}
+              onChange={(e) => onReferenceChange({ ...reference, note: e.target.value })}
+            />
+          </Field>
+
           <label className="checkline">
             <input
               type="checkbox"
@@ -1846,7 +1959,11 @@ function SealWarningAcknowledgementModal({
               disabled={pending}
               onChange={(e) => onCheckedChange(e.target.checked)}
             />
-            {t('acts.sealing.warningAck.checkbox')}
+            {t(
+              warningCount > 0
+                ? 'acts.sealing.warningAck.checkboxWithWarnings'
+                : 'acts.sealing.warningAck.checkbox',
+            )}
           </label>
 
           <div className="modal__foot">
@@ -1889,6 +2006,10 @@ export function AtaEditorPage() {
     useState<WrittenResolutionReceiptDraft>(() => newWrittenResolutionReceiptDraft());
   const [sealWarningsOpen, setSealWarningsOpen] = useState(false);
   const [sealWarningsAcknowledged, setSealWarningsAcknowledged] = useState(false);
+  const [manualSignatureOriginalReference, setManualSignatureOriginalReference] =
+    useState<ManualSignatureOriginalReferenceDraft>(() =>
+      emptyManualSignatureOriginalReferenceDraft(),
+    );
 
   // Seed the working copy once per act identity; refetches of the same act (after an
   // advance/seal) update the read-only header via the cache without clobbering edits.
@@ -1896,6 +2017,7 @@ export function AtaEditorPage() {
     if (act.data) {
       setDraft(toDraft(act.data));
       setWrittenResolutionReceipt(newWrittenResolutionReceiptDraft());
+      setManualSignatureOriginalReference(emptyManualSignatureOriginalReferenceDraft());
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [act.data?.id]);
@@ -1976,26 +2098,33 @@ export function AtaEditorPage() {
   }
 
   function submitSeal(acknowledgeWarnings: boolean) {
-    seal.mutate(acknowledgeWarnings ? { acknowledge_warnings: true } : {}, {
-      onSuccess: () => {
-        setSealWarningsOpen(false);
-        setSealWarningsAcknowledged(false);
-        toast.success(t('toast.ata.sealed'));
+    if (!manualSignatureOriginalReferenceReady(manualSignatureOriginalReference)) return;
+    seal.mutate(
+      {
+        ...(acknowledgeWarnings ? { acknowledge_warnings: true } : {}),
+        manual_signature_original_reference: manualSignatureOriginalReferenceFromDraft(
+          manualSignatureOriginalReference,
+        ),
       },
-      onError: (e) => {
-        setSealWarningsOpen(false);
-        toast.error(e);
+      {
+        onSuccess: () => {
+          setSealWarningsOpen(false);
+          setSealWarningsAcknowledged(false);
+          setManualSignatureOriginalReference(emptyManualSignatureOriginalReferenceDraft());
+          toast.success(t('toast.ata.sealed'));
+        },
+        onError: (e) => {
+          setSealWarningsOpen(false);
+          toast.error(e);
+        },
       },
-    });
+    );
   }
 
   function onSeal() {
-    if (hasComplianceWarnings) {
-      setSealWarningsAcknowledged(false);
-      setSealWarningsOpen(true);
-      return;
-    }
-    submitSeal(false);
+    setSealWarningsAcknowledged(false);
+    setManualSignatureOriginalReference(emptyManualSignatureOriginalReferenceDraft());
+    setSealWarningsOpen(true);
   }
 
   function onArchive() {
@@ -2013,6 +2142,7 @@ export function AtaEditorPage() {
   const warningItems = sealWarningItems(compliance.data);
   const showWrittenResolutionReceipts =
     a.channel === 'WrittenResolution' || a.written_resolution_evidence != null;
+  const manualOriginalReference = a.seal_metadata?.manual_signature_original_reference ?? null;
 
   return (
     <div className="stack">
@@ -2048,6 +2178,26 @@ export function AtaEditorPage() {
           {t('acts.sealed.bodyPrefix')}{' '}
           {a.payload_digest ? <Digest value={a.payload_digest} /> : <span className="mono">—</span>}
           .
+          {manualOriginalReference ? (
+            <dl className="deflist deflist--tight">
+              <div>
+                <dt>{t('acts.manualSignature.originalReference.displayLabel')}</dt>
+                <dd>{manualOriginalReference.storage_reference}</dd>
+              </div>
+              {manualOriginalReference.custodian ? (
+                <div>
+                  <dt>{t('acts.manualSignature.custodian.displayLabel')}</dt>
+                  <dd>{manualOriginalReference.custodian}</dd>
+                </div>
+              ) : null}
+              {manualOriginalReference.note ? (
+                <div>
+                  <dt>{t('acts.manualSignature.note.displayLabel')}</dt>
+                  <dd>{manualOriginalReference.note}</dd>
+                </div>
+              ) : null}
+            </dl>
+          ) : null}
         </InlineWarning>
       ) : null}
 
@@ -2396,12 +2546,14 @@ export function AtaEditorPage() {
         warnings={warningItems}
         warningCount={warningCount}
         checked={sealWarningsAcknowledged}
+        reference={manualSignatureOriginalReference}
         pending={seal.isPending}
         onCheckedChange={setSealWarningsAcknowledged}
+        onReferenceChange={setManualSignatureOriginalReference}
         onClose={() => {
           if (!seal.isPending) setSealWarningsOpen(false);
         }}
-        onConfirm={() => submitSeal(true)}
+        onConfirm={() => submitSeal(hasComplianceWarnings)}
       />
     </div>
   );

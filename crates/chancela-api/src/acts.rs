@@ -543,8 +543,17 @@ pub async fn seal_act_handler(
     // RBAC (t64-E3): sealing an act requires `signing.perform` scoped to its book.
     let scope = scope_of_act(&state, ActId(id)).await;
     require_permission(&state, &actor, Permission::SigningPerform, scope).await?;
-    let req = body.map(|Json(b)| b).unwrap_or_default();
-    let actor = actor.resolve(&req.actor);
+    let SealAct {
+        actor: requested_actor,
+        acknowledge_warnings,
+        manual_signature_original_reference,
+        template_id,
+    } = body.map(|Json(b)| b).unwrap_or_default();
+    let actor = actor.resolve(&requested_actor);
+    let manual_signature_original_reference = manual_signature_original_reference
+        .ok_or(chancela_core::SealError::MissingManualSignatureOriginalReference)
+        .map_err(ApiError::from)?
+        .into_core()?;
 
     // entities → books → acts → ledger (the full order; seal touches all four).
     let entities = state.entities.read().await;
@@ -571,7 +580,8 @@ pub async fn seal_act_handler(
         entity,
         &*pack,
         &actor,
-        req.acknowledge_warnings,
+        acknowledge_warnings,
+        Some(manual_signature_original_reference),
         &mut ledger,
     ) {
         Ok(outcome) => {
@@ -585,17 +595,15 @@ pub async fn seal_act_handler(
             // in-memory ledger so a failed seal leaves no trace (the seal transaction is atomic).
             // A family without a template yet yields `None`: the seal proceeds without a document
             // (documented fallback), never blocking the seal.
-            let generated = match crate::documents::generate_for_act(
-                &act_next,
-                entity,
-                req.template_id.as_deref(),
-            ) {
-                Ok(g) => g,
-                Err(e) => {
-                    AppState::rollback_ledger_events(&mut ledger, 1);
-                    return Err(e);
-                }
-            };
+            let generated =
+                match crate::documents::generate_for_act(&act_next, entity, template_id.as_deref())
+                {
+                    Ok(g) => g,
+                    Err(e) => {
+                        AppState::rollback_ledger_events(&mut ledger, 1);
+                        return Err(e);
+                    }
+                };
             let mut generated_docs = Vec::new();
             if let Some(made) = generated {
                 generated_docs.push(made);

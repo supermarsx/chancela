@@ -8,7 +8,8 @@
 
 use chancela_core::{
     Act, ActState, Book, BookKind, Entity, EntityId, EntityKind, MeetingChannel, Nipc,
-    TermoDeAbertura, open_and_seal_book, rule_pack_for, seal_act,
+    TermoDeAbertura, act::ManualSignatureOriginalReference, open_and_seal_book, rule_pack_for,
+    seal_act,
 };
 use chancela_ledger::Ledger;
 use time::macros::{date, time};
@@ -241,6 +242,11 @@ fn free_text_only_act_still_seals_under_csc_v2() {
         &*pack,
         "sec@encosto",
         false, // no warnings to acknowledge
+        Some(ManualSignatureOriginalReference {
+            storage_reference: "Arquivo A / Pasta 2026 / Ata antiga".to_owned(),
+            custodian: None,
+            note: None,
+        }),
         &mut ledger,
     )
     .expect("free-text-only act should seal clean under CSC v2");

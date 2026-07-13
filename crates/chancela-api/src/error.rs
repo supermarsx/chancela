@@ -275,6 +275,10 @@ impl From<SealError> for ApiError {
             SealError::Act(a) => ApiError::Conflict(a.to_string()),
             SealError::ComplianceBlocked(msg) => ApiError::Unprocessable(msg),
             SealError::WarningsNotAcknowledged(msg) => ApiError::Conflict(msg),
+            SealError::MissingManualSignatureOriginalReference => ApiError::Unprocessable(
+                "manual_signature_original_reference is required for manual-signature sealing"
+                    .to_owned(),
+            ),
             SealError::Serialize(msg) => ApiError::Internal(msg),
         }
     }
