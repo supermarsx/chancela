@@ -40,7 +40,9 @@ use x509_cert::name::Name;
 use x509_cert::serial_number::SerialNumber;
 use x509_cert::time::Validity;
 
-use chancela_api::{AppState, CredentialFieldSet, CredentialMode, CscCredentialFields, router};
+use chancela_api::{
+    AppState, CmdCredentialFields, CredentialFieldSet, CredentialMode, CscCredentialFields, router,
+};
 use chancela_cmd::soap::{ACTION_CCMOVEL_SIGN, ACTION_GET_CERTIFICATE, ACTION_VALIDATE_OTP};
 use chancela_cmd::{CmdError, ScmdTransport};
 use chancela_core::ActId;
@@ -79,6 +81,13 @@ const CSC_SECRET_ENV_KEYS: [&str; 3] = [
     "CHANCELA_CSC_ENCOSTO_QTSP_CLIENT_ID",
     "CHANCELA_CSC_ENCOSTO_QTSP_CLIENT_SECRET",
     "CHANCELA_CSC_ENCOSTO_QTSP_ACCESS_TOKEN",
+];
+const CMD_ENV_KEYS: [&str; 5] = [
+    "CHANCELA_CMD_ENV",
+    "CHANCELA_CMD_APPLICATION_ID",
+    "CHANCELA_CMD_HTTP_BASIC_USERNAME",
+    "CHANCELA_CMD_HTTP_BASIC_PASSWORD",
+    "CHANCELA_CMD_AMA_CERT_PEM",
 ];
 static ENV_LOCK: AsyncMutex<()> = AsyncMutex::const_new(());
 
@@ -166,6 +175,7 @@ struct SmartCscTransport {
     fail_path: Option<&'static str>,
     expected_basic_client_id: Option<String>,
     expected_bearer: Option<String>,
+    calls: Arc<Mutex<Vec<String>>>,
 }
 
 impl SmartCscTransport {
@@ -181,6 +191,7 @@ impl SmartCscTransport {
             fail_path: None,
             expected_basic_client_id: None,
             expected_bearer: None,
+            calls: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -197,6 +208,10 @@ impl SmartCscTransport {
     fn expect_bearer(mut self, token: &str) -> Self {
         self.expected_bearer = Some(token.to_owned());
         self
+    }
+
+    fn call_count(&self) -> usize {
+        self.calls.lock().expect("csc calls poisoned").len()
     }
 
     fn assert_expected_auth(&self, path: &str, auth: CscAuthHeader<'_>) -> Result<(), CscError> {
@@ -238,6 +253,10 @@ impl CscTransport for SmartCscTransport {
         auth: CscAuthHeader<'_>,
         body: &str,
     ) -> Result<String, CscError> {
+        self.calls
+            .lock()
+            .expect("csc calls poisoned")
+            .push(path.to_owned());
         if matches!(self.fail_path, Some(fail) if fail == path) {
             return Err(CscError::Transport(format!(
                 "simulated CSC outage at {path}"
@@ -286,6 +305,7 @@ struct SmartCmdTransport {
     leaf_pem: String,
     issuer_pem: String,
     captured_hash: Arc<Mutex<Option<Vec<u8>>>>,
+    expected_application_id_b64: Option<String>,
 }
 
 impl SmartCmdTransport {
@@ -295,12 +315,30 @@ impl SmartCmdTransport {
             leaf_pem: leaf.cert_pem(),
             issuer_pem: issuer.cert_pem(),
             captured_hash: Arc::new(Mutex::new(None)),
+            expected_application_id_b64: None,
         }
+    }
+
+    fn expect_application_id(mut self, application_id: &str) -> Self {
+        self.expected_application_id_b64 = Some(STANDARD.encode(application_id.as_bytes()));
+        self
+    }
+
+    fn assert_expected_application_id(&self, soap_body: &str) -> Result<(), CmdError> {
+        if let Some(expected) = &self.expected_application_id_b64
+            && !soap_body.contains(expected)
+        {
+            return Err(CmdError::Transport(
+                "unexpected CMD application id source".to_owned(),
+            ));
+        }
+        Ok(())
     }
 }
 
 impl ScmdTransport for SmartCmdTransport {
     fn call(&self, action: &str, soap_body: &str) -> Result<String, CmdError> {
+        self.assert_expected_application_id(soap_body)?;
         if action == ACTION_GET_CERTIFICATE {
             Ok(format!(
                 r#"<?xml version="1.0" encoding="utf-8"?>
@@ -395,6 +433,7 @@ fn env_keys() -> Vec<&'static str> {
     PROVIDER_CREDENTIAL_ENV_KEYS
         .into_iter()
         .chain(CSC_SECRET_ENV_KEYS)
+        .chain(CMD_ENV_KEYS)
         .collect()
 }
 
@@ -452,6 +491,22 @@ fn seed_stored_csc_access_token(state: &AppState, access_token: &str) {
             &[],
         )
         .expect("seed stored CSC access-token credentials");
+}
+
+fn seed_stored_cmd_application_id(state: &AppState, application_id: &str) {
+    state
+        .provider_credentials
+        .put(
+            CredentialMode::Cmd,
+            "",
+            CmdCredentialFields {
+                application_id: Some(zeroizing(application_id)),
+                ..Default::default()
+            }
+            .into_set_pairs(),
+            &[],
+        )
+        .expect("seed stored CMD credentials");
 }
 
 fn seed_partial_stored_csc_record(state: &AppState) {
@@ -733,6 +788,24 @@ async fn assert_no_signed_artifact_or_event(state: &AppState, token: &str, act_i
     )
     .await;
     assert_ne!(view["status"], "signed");
+}
+
+async fn assert_no_pending_sessions(state: &AppState) {
+    assert!(
+        state.pending_signatures.read().await.is_empty(),
+        "no in-memory pending signing sessions"
+    );
+    assert_eq!(
+        state
+            .store
+            .as_ref()
+            .unwrap()
+            .all_pending_cmd_sessions()
+            .unwrap()
+            .len(),
+        0,
+        "no durable pending signing sessions"
+    );
 }
 
 async fn expire_pending_session(state: &AppState, session_id: &str) {
@@ -1068,6 +1141,359 @@ async fn csc_stored_service_credentials_beat_env_and_mark_provider_configured() 
         "stored CSC credentials must initiate without env mixing: {init}"
     );
     assert_eq!(init["provider_id"], CSC_PROVIDER_ID);
+}
+
+#[tokio::test]
+async fn csc_batch_initiate_with_stored_service_credentials_creates_independent_pending_sessions() {
+    let _guard = ENV_LOCK.lock().await;
+    let keys = env_keys();
+    let _env = EnvRestore::capture(&keys);
+    clear_csc_test_env();
+    set_provider_credential_test_key();
+    unsafe {
+        std::env::set_var("CHANCELA_CSC_ENCOSTO_QTSP_CLIENT_ID", "env-csc-client");
+        std::env::set_var("CHANCELA_CSC_ENCOSTO_QTSP_CLIENT_SECRET", "env-csc-secret");
+    }
+
+    let dir = TempDir::new();
+    let leaf = RsaSigner::new("Amélia Marques (QTSP teste)", 1);
+    let issuer = RsaSigner::new("Encosto Estratégico Lda — EC Teste", 2);
+    let csc =
+        SmartCscTransport::new(&leaf, &issuer, false).expect_basic_client_id("stored-csc-client");
+    let state = state_at(&dir.0, Some(csc), None).await;
+    seed_stored_csc_service_credentials(&state, "stored-csc-client", "stored-csc-secret");
+    let token = bootstrap(&state).await;
+    let act_a = seal_an_act(&state, &token).await;
+    let act_b = seal_an_act(&state, &token).await;
+
+    let (status, body) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/signature/remote/{CSC_PROVIDER_ID}/batch-initiate"),
+            &token,
+            json!({
+                "act_ids": [act_a, act_b],
+                "user_ref": "amelia.marques@encosto.example",
+                "credential": PIN,
+                "capacity": "Administrador"
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "CSC batch initiate: {body}");
+    assert_eq!(body["provider_id"], CSC_PROVIDER_ID);
+    assert_eq!(body["family"], "QualifiedCertificate");
+    assert_eq!(body["evidentiary_level"], "Qualified");
+    assert_eq!(body["auth_mode"], "per_document_activation");
+    assert_eq!(body["requested"], 2);
+    assert_eq!(body["pending"], 2);
+    assert_eq!(body["failed"], 0);
+    assert_eq!(body["initiate_events"], 2);
+    assert!(
+        !body.to_string().contains(PIN) && !body.to_string().contains(CSC_ACTIVATION),
+        "batch response must not echo secrets: {body}"
+    );
+
+    let results = body["results"].as_array().expect("results");
+    assert_eq!(results.len(), 2);
+    let session_a = results[0]["session_id"].as_str().unwrap().to_owned();
+    let session_b = results[1]["session_id"].as_str().unwrap().to_owned();
+    let act_ids: Vec<String> = results
+        .iter()
+        .map(|result| result["act_id"].as_str().unwrap().to_owned())
+        .collect();
+    assert_ne!(
+        session_a, session_b,
+        "each act gets its own pending session"
+    );
+    for result in results {
+        assert_eq!(result["status"], "pending");
+        assert_eq!(result["provider_id"], CSC_PROVIDER_ID);
+        assert_eq!(result["family"], "QualifiedCertificate");
+        assert_eq!(result["pending_status"], "activation_pending");
+        assert_eq!(
+            result["activation_hint"],
+            "confirme com o código de ativação enviado"
+        );
+        assert!(result["expires_at"].as_str().is_some());
+        assert!(result.get("error").is_none());
+    }
+
+    let pending_rows = state
+        .store
+        .as_ref()
+        .unwrap()
+        .all_pending_cmd_sessions()
+        .unwrap();
+    assert_eq!(pending_rows.len(), 2);
+    let pending_blob = pending_rows
+        .values()
+        .map(|pending| format!("{}{}", pending.session_json, pending.prepared_json))
+        .collect::<String>();
+    assert!(!pending_blob.contains(PIN), "PIN must never be persisted");
+    assert!(
+        !pending_blob.contains(CSC_ACTIVATION),
+        "activation must never be persisted"
+    );
+    assert!(
+        !pending_blob.contains("stored-csc-secret") && !pending_blob.contains("env-csc-secret"),
+        "CSC client secrets must never be persisted"
+    );
+    assert_no_signed_artifact_or_event(&state, &token, &act_ids[0]).await;
+    assert_no_signed_artifact_or_event(&state, &token, &act_ids[1]).await;
+
+    let (status, done) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!(
+                "/v1/acts/{}/signature/remote/{CSC_PROVIDER_ID}/confirm",
+                act_ids[0]
+            ),
+            &token,
+            json!({ "session_id": session_a, "activation": CSC_ACTIVATION }),
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "single confirm accepts batch session: {done}"
+    );
+    assert_eq!(done["provider_id"], CSC_PROVIDER_ID);
+    let (status, signed_pdf) = send_bytes(
+        &state,
+        get_req(&format!("/v1/acts/{}/document/signed", act_ids[0]), &token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    validate_pdf_signature(&signed_pdf).expect("confirmed batch session signs a valid PDF");
+    assert_no_signed_artifact_or_event(&state, &token, &act_ids[1]).await;
+}
+
+#[tokio::test]
+async fn cmd_batch_initiate_uses_stored_application_id_without_env_or_settings() {
+    let _guard = ENV_LOCK.lock().await;
+    let keys = env_keys();
+    let _env = EnvRestore::capture(&keys);
+    clear_csc_test_env();
+    set_provider_credential_test_key();
+
+    let dir = TempDir::new();
+    let leaf = RsaSigner::new("Amélia Marques (CMD teste)", 1);
+    let issuer = RsaSigner::new("Encosto Estratégico Lda — EC Teste", 2);
+    let cmd = SmartCmdTransport::new(&leaf, &issuer).expect_application_id(APP_ID);
+    let state = state_at(&dir.0, None, Some(cmd)).await;
+    state.settings.write().await.signing.cmd.application_id = None;
+    seed_stored_cmd_application_id(&state, APP_ID);
+    let token = bootstrap(&state).await;
+    let act_a = seal_an_act(&state, &token).await;
+    let act_b = seal_an_act(&state, &token).await;
+
+    let (status, body) = send(
+        &state,
+        json_req(
+            "POST",
+            "/v1/signature/remote/cmd/batch-initiate",
+            &token,
+            json!({
+                "act_ids": [act_a, act_b],
+                "user_ref": PHONE,
+                "credential": PIN
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "stored CMD application id initiates batch: {body}"
+    );
+    assert_eq!(body["provider_id"], "cmd");
+    assert_eq!(body["family"], "ChaveMovelDigital");
+    assert_eq!(body["auth_mode"], "per_document_activation");
+    assert_eq!(body["requested"], 2);
+    assert_eq!(body["pending"], 2);
+    assert_eq!(body["failed"], 0);
+    assert_eq!(body["initiate_events"], 2);
+    let results = body["results"].as_array().expect("results");
+    assert_ne!(results[0]["session_id"], results[1]["session_id"]);
+    let act_ids: Vec<String> = results
+        .iter()
+        .map(|result| result["act_id"].as_str().unwrap().to_owned())
+        .collect();
+    for result in results {
+        assert_eq!(result["status"], "pending");
+        assert_eq!(result["provider_id"], "cmd");
+        assert_eq!(result["family"], "ChaveMovelDigital");
+        assert_eq!(result["pending_status"], "activation_pending");
+        let hint = result["activation_hint"].as_str().unwrap();
+        assert!(
+            hint.ends_with("678"),
+            "masked phone keeps only the tail: {hint}"
+        );
+        assert!(
+            !hint.contains(PHONE),
+            "masked phone must not echo full phone"
+        );
+        assert!(result.get("error").is_none());
+    }
+    for act_id in act_ids {
+        assert_no_signed_artifact_or_event(&state, &token, &act_id).await;
+    }
+    assert_eq!(
+        state
+            .store
+            .as_ref()
+            .unwrap()
+            .all_pending_cmd_sessions()
+            .unwrap()
+            .len(),
+        2
+    );
+}
+
+#[tokio::test]
+async fn remote_batch_initiate_isolates_invalid_act_precondition_failure() {
+    let dir = TempDir::new();
+    let leaf = RsaSigner::new("Amélia Marques (QTSP teste)", 1);
+    let issuer = RsaSigner::new("Encosto Estratégico Lda — EC Teste", 2);
+    let csc = SmartCscTransport::new(&leaf, &issuer, false);
+    let state = state_at(&dir.0, Some(csc), None).await;
+    let token = bootstrap(&state).await;
+    let valid = seal_an_act(&state, &token).await;
+    let invalid = Uuid::new_v4().to_string();
+
+    let (status, body) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/signature/remote/{CSC_PROVIDER_ID}/batch-initiate"),
+            &token,
+            json!({
+                "act_ids": [valid, invalid],
+                "user_ref": "amelia.marques@encosto.example",
+                "credential": PIN
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "partial batch initiate: {body}");
+    assert_eq!(body["auth_mode"], "per_document_activation");
+    assert_eq!(body["requested"], 2);
+    assert_eq!(body["pending"], 1);
+    assert_eq!(body["failed"], 1);
+    assert_eq!(body["initiate_events"], 1);
+
+    let results = body["results"].as_array().expect("results");
+    assert_eq!(results[0]["status"], "pending");
+    assert_eq!(results[1]["status"], "error");
+    let pending_act_id = results[0]["act_id"].as_str().unwrap().to_owned();
+    assert!(
+        results[1]["error"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("ato não encontrado"),
+        "invalid act gets its own redacted error: {body}"
+    );
+    assert_eq!(
+        state
+            .store
+            .as_ref()
+            .unwrap()
+            .all_pending_cmd_sessions()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_no_signed_artifact_or_event(&state, &token, &pending_act_id).await;
+}
+
+#[tokio::test]
+async fn remote_batch_initiate_duplicate_act_ids_422_without_pending_rows() {
+    let dir = TempDir::new();
+    let leaf = RsaSigner::new("Amélia Marques (QTSP teste)", 1);
+    let issuer = RsaSigner::new("Encosto Estratégico Lda — EC Teste", 2);
+    let csc = SmartCscTransport::new(&leaf, &issuer, false);
+    let state = state_at(&dir.0, Some(csc), None).await;
+    let token = bootstrap(&state).await;
+    let act_id = seal_an_act(&state, &token).await;
+
+    let (status, err) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/signature/remote/{CSC_PROVIDER_ID}/batch-initiate"),
+            &token,
+            json!({
+                "act_ids": [act_id.clone(), act_id],
+                "user_ref": "amelia.marques@encosto.example",
+                "credential": PIN
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "duplicate batch: {err}"
+    );
+    assert!(
+        err["error"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("duplicados"),
+        "duplicate error is explicit: {err}"
+    );
+    assert_no_pending_sessions(&state).await;
+}
+
+#[tokio::test]
+async fn remote_batch_initiate_over_cap_422_without_provider_or_pending_rows() {
+    let dir = TempDir::new();
+    let leaf = RsaSigner::new("Amélia Marques (QTSP teste)", 1);
+    let issuer = RsaSigner::new("Encosto Estratégico Lda — EC Teste", 2);
+    let csc = SmartCscTransport::new(&leaf, &issuer, false);
+    let csc_probe = csc.clone();
+    let state = state_at(&dir.0, Some(csc), None).await;
+    let token = bootstrap(&state).await;
+    let valid = seal_an_act(&state, &token).await;
+    let mut act_ids = vec![valid];
+    act_ids.extend((0..200).map(|_| Uuid::new_v4().to_string()));
+
+    let (status, err) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/signature/remote/{CSC_PROVIDER_ID}/batch-initiate"),
+            &token,
+            json!({
+                "act_ids": act_ids,
+                "user_ref": "amelia.marques@encosto.example",
+                "credential": PIN
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "oversized batch: {err}"
+    );
+    assert!(
+        err["error"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("no máximo 200 atos"),
+        "oversized error is explicit: {err}"
+    );
+    assert_eq!(
+        csc_probe.call_count(),
+        0,
+        "oversized batch touched no provider"
+    );
+    assert_no_pending_sessions(&state).await;
 }
 
 #[tokio::test]
@@ -1811,14 +2237,15 @@ async fn remote_initiate_422_for_unknown_or_unconfigured_provider() {
     assert_no_signed_artifact_or_event(&state, &token, &act_id).await;
 }
 
-/// A role lacking `signing.perform` is refused on the generic initiate (403) and on the providers
-/// list (403).
+/// A role lacking `signing.perform` is refused on the generic initiate/batch initiate (403) and on
+/// the providers list (403).
 #[tokio::test]
 async fn remote_endpoints_403_for_role_without_signing_perm() {
     let dir = TempDir::new();
     let leaf = RsaSigner::new("Amélia Marques (QTSP teste)", 1);
     let issuer = RsaSigner::new("Encosto Estratégico Lda — EC Teste", 2);
     let csc = SmartCscTransport::new(&leaf, &issuer, false);
+    let csc_probe = csc.clone();
     let state = state_at(&dir.0, Some(csc), None).await;
 
     let owner = bootstrap(&state).await;
@@ -1881,6 +2308,30 @@ async fn remote_endpoints_403_for_role_without_signing_perm() {
         StatusCode::FORBIDDEN,
         "no signing.perform → 403: {err}"
     );
+    assert_eq!(csc_probe.call_count(), 0, "single 403 touched no provider");
+
+    // Generic batch initiate → 403 before any pending row or provider activation.
+    let (status, err) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/signature/remote/{CSC_PROVIDER_ID}/batch-initiate"),
+            &limited_tok,
+            json!({
+                "act_ids": [act_id.clone()],
+                "user_ref": "amelia.marques@encosto.example",
+                "credential": PIN
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "no signing.perform batch → 403: {err}"
+    );
+    assert_eq!(csc_probe.call_count(), 0, "batch 403 touched no provider");
+    assert_no_pending_sessions(&state).await;
 
     // Providers list → 403.
     let (status, _) = send(&state, get_req("/v1/signature/providers", &limited_tok)).await;

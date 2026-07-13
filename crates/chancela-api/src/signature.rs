@@ -59,11 +59,12 @@ use chancela_pades::{
 };
 use chancela_signing::pipeline::attach_pdf_dss_with_validation_time;
 use chancela_signing::{
-    CMD_PROVIDER_ID, CcSignedPdf, CmdInitiate, CmdRemoteSource, CmdSignSession, RemoteInitiate,
+    CMD_PROVIDER_ID, CcSignedPdf, CmdInitiate, CmdRemoteSource, CmdSignSession,
+    RemoteBatchAuthMode, RemoteBatchInitiateReport, RemoteBatchPreparedDocument, RemoteInitiate,
     RemoteSignSession, RemoteSigningSource, SignerProvider, SmartcardProvider,
     TimestampTrustDecision, TimestampTrustPolicy, TimestampTrustReport, TrustPolicy,
     TrustedListStatus, TslTrustPolicy, attach_pdf_dss, attach_pdf_revocation_evidence, cmd_confirm,
-    cmd_initiate, validate_timestamp_trust,
+    cmd_initiate, initiate_remote_prepared_batch_repeated_sessions, validate_timestamp_trust,
 };
 use chancela_signing::{Pkcs12IdentitySelector, Pkcs12SigningSource, SoftCertificateError};
 use chancela_smartcard::Pkcs11Token;
@@ -73,6 +74,7 @@ use rand_core::RngCore;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
 use time::OffsetDateTime;
@@ -106,6 +108,8 @@ const FAMILY_CMD: &str = "ChaveMovelDigital";
 const FAMILY_QUALIFIED: &str = "QualifiedCertificate";
 /// The evidentiary level a successful CMD signature carries (SIG-01).
 const EVIDENTIARY_QUALIFIED: &str = "Qualified";
+/// Upper bound for repeated remote batch initiation; mirrors the local CC batch cap.
+const MAX_REMOTE_BATCH_ACTS: usize = 200;
 /// The family label for user-mediated official app/provider handoff imports. This is a technical
 /// import marker, not a provider/trust assertion.
 const FAMILY_OFFICIAL_HANDOFF: &str = "AutenticacaoGovOfficialHandoff";
@@ -2969,6 +2973,118 @@ pub struct RemoteInitiateResponse {
     pub expires_at: String,
 }
 
+/// Body of `POST /v1/signature/remote/{provider}/batch-initiate`.
+#[derive(Deserialize)]
+pub struct RemoteBatchInitiateRequest {
+    /// Acts to initiate, in result order. Must be non-empty and free of duplicates.
+    pub act_ids: Vec<Uuid>,
+    /// The signer's public account reference at the provider. Non-secret.
+    pub user_ref: String,
+    /// The signer's transient credential / PIN. **Consumed, never persisted/logged.**
+    #[serde(default)]
+    pub credential: String,
+    /// The capacity in which the signer acts, applied to every pending document.
+    #[serde(default)]
+    pub capacity: Option<String>,
+    /// Actor override for attribution when no session names one.
+    #[serde(default)]
+    pub actor: Option<String>,
+    /// Optional visible-seal appearance, baked independently into each prepared PAdES revision.
+    #[serde(default)]
+    pub seal: Option<SealAppearanceRequest>,
+}
+
+/// Response of a repeated remote-session batch initiate. This is deliberately not a provider-native
+/// multi-digest authorization: every pending result has its own session and activation.
+#[derive(Serialize)]
+pub struct RemoteBatchInitiateResponse {
+    /// The resolved provider id that opened the pending sessions (`"cmd"`, `"multicert"`, ...).
+    pub provider_id: String,
+    /// The signing family being produced (`ChaveMovelDigital` for CMD; `QualifiedCertificate` for CSC).
+    pub family: String,
+    /// The evidentiary level the produced signatures will carry (`Qualified`).
+    pub evidentiary_level: &'static str,
+    /// Always `"per_document_activation"`: one remote session and activation per pending document.
+    pub auth_mode: &'static str,
+    /// The number of acts requested.
+    pub requested: usize,
+    /// The number of acts that now have a pending remote session.
+    pub pending: usize,
+    /// The number of acts that failed local preconditions or provider initiate.
+    pub failed: usize,
+    /// The number of documents for which the remote provider's initiate operation was reached.
+    pub initiate_events: usize,
+    /// The per-act outcomes, in request order.
+    pub results: Vec<RemoteBatchInitiateResult>,
+}
+
+/// One act's repeated remote initiate outcome.
+#[derive(Serialize)]
+pub struct RemoteBatchInitiateResult {
+    /// The requested act id this result corresponds to.
+    pub act_id: String,
+    /// `"pending"` or `"error"`.
+    pub status: &'static str,
+    /// The opaque pending-session id to submit to the existing single confirm endpoint.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+    /// The resolved provider id for this pending session.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider_id: Option<String>,
+    /// The signing family for this pending session.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub family: Option<String>,
+    /// Always `"activation_pending"` for a pending result.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pending_status: Option<&'static str>,
+    /// A non-secret hint for the UI.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub activation_hint: Option<String>,
+    /// When the pending session expires (RFC 3339).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<String>,
+    /// Redacted, per-document failure message.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+impl RemoteBatchInitiateResult {
+    fn pending(
+        act_id: &Uuid,
+        session_id: String,
+        provider_id: &str,
+        family: &str,
+        activation_hint: String,
+        expires_at: String,
+    ) -> Self {
+        Self {
+            act_id: act_id.to_string(),
+            status: "pending",
+            session_id: Some(session_id),
+            provider_id: Some(provider_id.to_owned()),
+            family: Some(family.to_owned()),
+            pending_status: Some(STATUS_ACTIVATION_PENDING),
+            activation_hint: Some(activation_hint),
+            expires_at: Some(expires_at),
+            error: None,
+        }
+    }
+
+    fn error(act_id: &Uuid, message: String) -> Self {
+        Self {
+            act_id: act_id.to_string(),
+            status: "error",
+            session_id: None,
+            provider_id: None,
+            family: None,
+            pending_status: None,
+            activation_hint: None,
+            expires_at: None,
+            error: Some(message),
+        }
+    }
+}
+
 /// Body of `POST /v1/acts/{id}/signature/remote/{provider}/confirm`.
 #[derive(Deserialize)]
 pub struct RemoteConfirmRequest {
@@ -3226,6 +3342,201 @@ pub async fn initiate_remote_signature(
         status: STATUS_ACTIVATION_PENDING,
         activation_hint,
         expires_at: rfc3339(expires_at),
+    }))
+}
+
+/// `POST /v1/signature/remote/{provider}/batch-initiate` — open one independent two-phase remote
+/// signing session per valid act. This endpoint intentionally uses the repeated-session helper from
+/// `chancela-signing`; it does not claim provider-native batch, single SAD, single OTP, or single PIN
+/// authorization.
+pub async fn initiate_remote_batch_signature(
+    State(state): State<AppState>,
+    Path(provider): Path<String>,
+    actor: CurrentActor,
+    Json(req): Json<RemoteBatchInitiateRequest>,
+) -> Result<Json<RemoteBatchInitiateResponse>, ApiError> {
+    if req.act_ids.is_empty() {
+        return Err(ApiError::Unprocessable(
+            "nenhum ato indicado para iniciar assinatura remota em lote".to_owned(),
+        ));
+    }
+    if req.act_ids.len() > MAX_REMOTE_BATCH_ACTS {
+        return Err(ApiError::Unprocessable(format!(
+            "a assinatura remota em lote aceita no máximo {MAX_REMOTE_BATCH_ACTS} atos de cada vez"
+        )));
+    }
+    {
+        let mut seen = HashSet::with_capacity(req.act_ids.len());
+        if !req.act_ids.iter().all(|id| seen.insert(*id)) {
+            return Err(ApiError::Unprocessable(
+                "a lista de atos para assinatura remota em lote tem duplicados".to_owned(),
+            ));
+        }
+    }
+
+    // RBAC first, for every requested act, before provider resolution, provider calls, or pending rows.
+    for id in &req.act_ids {
+        let scope = scope_of_act(&state, ActId(*id)).await;
+        require_permission(&state, &actor, Permission::SigningPerform, scope).await?;
+    }
+    let resolved_actor = actor.resolve(req.actor.as_deref().unwrap_or("api"));
+
+    let user_ref = req.user_ref.trim().to_owned();
+    let credential = Zeroizing::new(req.credential);
+    let resolved = resolve_provider(&state, &provider).await?;
+    if matches!(resolved, ResolvedProvider::Cmd(_)) && !looks_like_scmd_phone(&user_ref) {
+        return Err(ApiError::Unprocessable(
+            "número de telemóvel inválido para a Chave Móvel Digital (formato +351 XXXXXXXXX)"
+                .to_owned(),
+        ));
+    }
+
+    let signing_time = OffsetDateTime::now_utc()
+        .replace_nanosecond(0)
+        .unwrap_or_else(|_| OffsetDateTime::now_utc());
+    let capacity = optional_trimmed(req.capacity);
+    let signer_capacity_evidence = signer_capacity_evidence_from_capacity(capacity.clone());
+    let signer_capacity_evidence_json = signer_capacity_evidence_json(&signer_capacity_evidence)?;
+    let appearance = seal_appearance_from_request(req.seal)?;
+    let provider_id = provider_id(&resolved).to_owned();
+    let family = family_label(&provider_id).to_owned();
+    let activation_hint = remote_activation_hint(&resolved, &user_ref);
+
+    let mut results: Vec<Option<RemoteBatchInitiateResult>> =
+        (0..req.act_ids.len()).map(|_| None).collect();
+    let mut prepared_docs = Vec::new();
+    let mut prepared_slots = Vec::new();
+    let mut persist_meta = Vec::new();
+
+    for (index, id) in req.act_ids.iter().enumerate() {
+        match resolve_remote_batch_doc(
+            &state,
+            ActId(*id),
+            signing_time,
+            capacity.as_deref(),
+            signer_capacity_evidence_json.clone(),
+            appearance.as_ref(),
+        )
+        .await
+        {
+            Ok(input) => {
+                let doc_name = input.doc_name.clone();
+                persist_meta.push((ActId(*id), input.signer_capacity_evidence_json, doc_name));
+                prepared_docs.push(RemoteBatchPreparedDocument {
+                    id: id.to_string(),
+                    doc_name: input.doc_name,
+                    prepared: input.prepared,
+                });
+                prepared_slots.push(index);
+            }
+            Err(message) => {
+                results[index] = Some(RemoteBatchInitiateResult::error(id, message));
+            }
+        }
+    }
+
+    let report = if prepared_docs.is_empty() {
+        None
+    } else {
+        let tsl_source = configured_tsl_source(&state).await?;
+        Some(
+            run_remote_batch_initiate(
+                &state,
+                &resolved,
+                prepared_docs,
+                user_ref,
+                credential,
+                signing_time,
+                tsl_source,
+            )
+            .await?,
+        )
+    };
+
+    let expires_at = signing_time + time::Duration::seconds(SESSION_TTL_SECS);
+    let mut pending_rows = Vec::new();
+    if let Some(report) = &report {
+        for ((slot, (act_id, capacity_json, doc_name)), outcome) in prepared_slots
+            .iter()
+            .zip(persist_meta)
+            .zip(report.results.iter())
+        {
+            let requested_id = &req.act_ids[*slot];
+            match &outcome.result {
+                Ok(pending_doc) => {
+                    let session_id = Uuid::new_v4().to_string();
+                    let pending = PendingCmdSession {
+                        session_id: session_id.clone(),
+                        act_id,
+                        actor: resolved_actor.clone(),
+                        status: STATUS_ACTIVATION_PENDING.to_owned(),
+                        masked_phone: activation_hint.clone(),
+                        doc_name,
+                        signer_capacity_evidence_json: capacity_json,
+                        session_json: serde_json::to_string(&pending_doc.session)?,
+                        prepared_json: serde_json::to_string(&pending_doc.prepared)?,
+                        created_at: signing_time,
+                        expires_at,
+                    };
+                    pending_rows.push(pending);
+                    results[*slot] = Some(RemoteBatchInitiateResult::pending(
+                        requested_id,
+                        session_id,
+                        &provider_id,
+                        &family,
+                        activation_hint.clone(),
+                        rfc3339(expires_at),
+                    ));
+                }
+                Err(err) => {
+                    results[*slot] = Some(RemoteBatchInitiateResult::error(
+                        requested_id,
+                        remote_batch_doc_error_message(err),
+                    ));
+                }
+            }
+        }
+    }
+
+    if let Some(store) = &state.store
+        && !pending_rows.is_empty()
+    {
+        store
+            .persist(|tx| {
+                for pending in &pending_rows {
+                    tx.upsert_pending_cmd_session(pending)?;
+                }
+                Ok(())
+            })
+            .map_err(|e| ApiError::Internal(format!("failed to persist pending sessions: {e}")))?;
+    }
+    if !pending_rows.is_empty() {
+        let mut pending_signatures = state.pending_signatures.write().await;
+        for pending in pending_rows {
+            pending_signatures.insert(pending.session_id.clone(), pending);
+        }
+    }
+
+    let results: Vec<RemoteBatchInitiateResult> = results.into_iter().flatten().collect();
+    let pending = results.iter().filter(|r| r.status == "pending").count();
+    let failed = results.len() - pending;
+
+    Ok(Json(RemoteBatchInitiateResponse {
+        provider_id,
+        family,
+        evidentiary_level: EVIDENTIARY_QUALIFIED,
+        auth_mode: report
+            .as_ref()
+            .map(|report| remote_batch_auth_mode_label(report.auth_mode))
+            .unwrap_or("per_document_activation"),
+        requested: req.act_ids.len(),
+        pending,
+        failed,
+        initiate_events: report
+            .as_ref()
+            .map(|report| report.initiate_events)
+            .unwrap_or(0),
+        results,
     }))
 }
 
@@ -3610,6 +3921,81 @@ fn family_label(provider_id: &str) -> &'static str {
     }
 }
 
+fn provider_id(resolved: &ResolvedProvider) -> &str {
+    match resolved {
+        ResolvedProvider::Cmd(_) => CMD_PROVIDER_ID,
+        ResolvedProvider::Csc { config, .. } => &config.provider_id,
+    }
+}
+
+fn remote_activation_hint(resolved: &ResolvedProvider, user_ref: &str) -> String {
+    match resolved {
+        ResolvedProvider::Cmd(_) => mask_phone(user_ref),
+        ResolvedProvider::Csc { config, .. } => match config.authorization {
+            CscAuthorization::User => "autorize a assinatura na aplicação do prestador".to_owned(),
+            _ => "confirme com o código de ativação enviado".to_owned(),
+        },
+    }
+}
+
+fn remote_batch_auth_mode_label(mode: RemoteBatchAuthMode) -> &'static str {
+    match mode {
+        RemoteBatchAuthMode::PerDocumentActivation => "per_document_activation",
+        _ => "per_document_activation",
+    }
+}
+
+struct RemoteBatchDocInput {
+    doc_name: String,
+    prepared: PreparedSignature,
+    signer_capacity_evidence_json: Option<String>,
+}
+
+async fn resolve_remote_batch_doc(
+    state: &AppState,
+    act_id: ActId,
+    signing_time: OffsetDateTime,
+    capacity: Option<&str>,
+    signer_capacity_evidence_json: Option<String>,
+    appearance: Option<&SealAppearance>,
+) -> Result<RemoteBatchDocInput, String> {
+    let input = resolve_cc_batch_doc(
+        state,
+        act_id,
+        signing_time,
+        capacity,
+        signer_capacity_evidence_json,
+    )
+    .await?;
+    let prepared = prepare_signature_with_appearance(&input.pdf, &input.options, appearance)
+        .map_err(|e| format!("não foi possível preparar o PDF para assinatura: {e}"))?;
+    Ok(RemoteBatchDocInput {
+        doc_name: format!("ata-{}.pdf", act_id),
+        prepared,
+        signer_capacity_evidence_json: input.signer_capacity_evidence_json,
+    })
+}
+
+fn remote_batch_doc_error_message(e: &chancela_signing::SigningError) -> String {
+    use chancela_signing::SigningError as S;
+    match e {
+        S::UntrustedService { status } => format!(
+            "o serviço de confiança do signatário não está ativo na Lista de Confiança ({})",
+            status_label(*status)
+        ),
+        S::MissingIssuerCertificate => {
+            "não foi possível resolver o emissor do certificado do signatário".to_owned()
+        }
+        S::Provider(_) => {
+            "o prestador de assinatura recusou o pedido para este documento".to_owned()
+        }
+        S::Cades(_) | S::Pades(_) => {
+            "falha ao preparar ou iniciar a assinatura deste documento".to_owned()
+        }
+        _ => "falha no serviço de assinatura para este documento".to_owned(),
+    }
+}
+
 /// Phase-1 driver: build the resolved provider's [`RemoteSigningSource`] and run `initiate` — inline
 /// over an injected mock transport (tests, no network), or on `spawn_blocking` over a real HTTP
 /// transport (production; the SCMD/CSC/TSL calls block and must not stall the async runtime).
@@ -3709,6 +4095,106 @@ async fn run_remote_initiate(
                 })
                 .await
                 .map_err(|e| ApiError::Internal(format!("remote initiate task failed: {e}")))?
+            }
+        }
+    }
+}
+
+/// Phase-1 batch driver: build one resolved provider source and let `chancela-signing` initiate one
+/// independent remote session per prepared document. This preserves the signing crate's explicit
+/// `PerDocumentActivation` contract.
+#[allow(clippy::too_many_arguments)]
+async fn run_remote_batch_initiate(
+    state: &AppState,
+    resolved: &ResolvedProvider,
+    documents: Vec<RemoteBatchPreparedDocument>,
+    user_ref: String,
+    credential: Zeroizing<String>,
+    signing_time: OffsetDateTime,
+    tsl_source: Option<RuntimeTslSource>,
+) -> Result<RemoteBatchInitiateReport, ApiError> {
+    let policy_factory = state.cmd_trust_policy.clone();
+    match resolved {
+        ResolvedProvider::Cmd(cmd_cfg) => {
+            if let Some(transport) = &state.cmd_transport {
+                let client =
+                    ScmdClient::from_config(SharedScmdTransport(transport.clone()), cmd_cfg)
+                        .map_err(cmd_config_err)?;
+                let source = CmdRemoteSource::new(client);
+                let mut policy = build_trust_policy(policy_factory.clone(), tsl_source.clone())?;
+                Ok(initiate_remote_prepared_batch_repeated_sessions(
+                    &source,
+                    &documents,
+                    &user_ref,
+                    &credential,
+                    signing_time,
+                    Some(policy.as_mut()),
+                ))
+            } else {
+                let cmd_cfg = cmd_cfg.clone();
+                let policy_factory = policy_factory.clone();
+                tokio::task::spawn_blocking(move || {
+                    let transport =
+                        HttpScmdTransport::from_config(&cmd_cfg).map_err(cmd_config_err)?;
+                    let client =
+                        ScmdClient::from_config(transport, &cmd_cfg).map_err(cmd_config_err)?;
+                    let source = CmdRemoteSource::new(client);
+                    let mut policy = build_trust_policy(policy_factory, tsl_source)?;
+                    Ok::<_, ApiError>(initiate_remote_prepared_batch_repeated_sessions(
+                        &source,
+                        &documents,
+                        &user_ref,
+                        &credential,
+                        signing_time,
+                        Some(policy.as_mut()),
+                    ))
+                })
+                .await
+                .map_err(|e| {
+                    ApiError::Internal(format!("remote batch initiate task failed: {e}"))
+                })?
+            }
+        }
+        ResolvedProvider::Csc { config, secrets } => {
+            if let Some(factory) = &state.csc_transport {
+                let client = CscClient::new(
+                    BoxedCscTransport(factory(config)),
+                    config.clone(),
+                    secrets.clone(),
+                );
+                let source = CscRemoteSource::new(client);
+                let mut policy = build_trust_policy(policy_factory.clone(), tsl_source.clone())?;
+                Ok(initiate_remote_prepared_batch_repeated_sessions(
+                    &source,
+                    &documents,
+                    &user_ref,
+                    &credential,
+                    signing_time,
+                    Some(policy.as_mut()),
+                ))
+            } else {
+                let secrets = secrets.clone();
+                let config = config.clone();
+                let policy_factory = policy_factory.clone();
+                tokio::task::spawn_blocking(move || {
+                    let transport =
+                        HttpCscTransport::new(&config.base_url).map_err(csc_config_err)?;
+                    let client = CscClient::new(transport, config, secrets);
+                    let source = CscRemoteSource::new(client);
+                    let mut policy = build_trust_policy(policy_factory, tsl_source)?;
+                    Ok::<_, ApiError>(initiate_remote_prepared_batch_repeated_sessions(
+                        &source,
+                        &documents,
+                        &user_ref,
+                        &credential,
+                        signing_time,
+                        Some(policy.as_mut()),
+                    ))
+                })
+                .await
+                .map_err(|e| {
+                    ApiError::Internal(format!("remote batch initiate task failed: {e}"))
+                })?
             }
         }
     }

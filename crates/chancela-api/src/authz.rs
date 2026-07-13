@@ -409,6 +409,10 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
         RouteClass::Gated,
     ), // POST signing.perform@Book
     (
+        "/v1/signature/remote/{provider}/batch-initiate",
+        RouteClass::Gated,
+    ), // POST signing.perform@Book(each requested act)
+    (
         "/v1/acts/{id}/signature/remote/{provider}/confirm",
         RouteClass::Gated,
     ), // POST signing.perform@Book

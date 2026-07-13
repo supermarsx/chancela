@@ -1423,6 +1423,10 @@ pub fn router(state: AppState) -> Router {
             post(signature::initiate_remote_signature),
         )
         .route(
+            "/v1/signature/remote/{provider}/batch-initiate",
+            post(signature::initiate_remote_batch_signature),
+        )
+        .route(
             "/v1/acts/{id}/signature/remote/{provider}/confirm",
             post(signature::confirm_remote_signature),
         )
