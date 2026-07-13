@@ -3799,4 +3799,96 @@ export const nlNL: Catalog = {
   'acts.writtenResolution.status.reviewed': 'Beoordeeld',
   'acts.writtenResolution.status.needsFollowUp': 'Opvolging vereist',
   'acts.writtenResolution.status.notRecorded': 'Niet vastgelegd',
+  // --- Field-help tooltips (wp12-e2) ----------------------------------------------
+  'fieldHelp.acts.title': 'Korte naam die de notulen identificeert in lijsten, voorbeelden en gegenereerde documenten.',
+  'fieldHelp.acts.channel':
+    'Manier waarop de vergadering plaatsvond; activeert velden en controles die specifiek zijn voor digitale of hybride vergaderingen.',
+  'fieldHelp.acts.meetingDate':
+    'Datum waarop de vergadering plaatsvond; voedt ook de nummering en de documentgeneratie.',
+  'fieldHelp.acts.meetingTime': 'Begintijd die in de notulen is vastgelegd, indien van toepassing.',
+  'fieldHelp.acts.place': 'Fysieke locatie of sessieverwijzing die in de tekst van de notulen wordt gebruikt.',
+  'fieldHelp.acts.attendanceReference':
+    'Geef aan waar de presentielijst staat of hoe de deelnemers zijn geverifieerd.',
+  'fieldHelp.acts.membersPresent':
+    'Aantal aanwezige leden voor een snel overzicht en quorumcontroles.',
+  'fieldHelp.acts.membersRepresented':
+    'Aantal leden dat door volmacht of een ander toegestaan middel is vertegenwoordigd.',
+  'fieldHelp.acts.telematicEvidence':
+    'Registratie van het platform, opname of ander bewijs dat de vergadering op afstand of hybride ondersteunt.',
+  'fieldHelp.acts.conveningDispatchDate':
+    'Datum waarop de oproeping is verzonden of aan de ontvangers beschikbaar is gesteld.',
+  'fieldHelp.acts.conveningChannel':
+    'Belangrijkste middel dat voor de oproeping is gebruikt. Gebruik de registratie per ontvanger bij relevante verschillen.',
+  'fieldHelp.acts.conveningAntecedenceDays':
+    'Werkelijke termijn tussen de oproeping en de vergadering. Deze wordt alleen vergeleken met vastgelegde statutaire minima of reeds bepaalde drempels.',
+  'fieldHelp.acts.conveningEvidenceReference':
+    'Korte verwijzing naar het bewaarde bewijs, zoals een documentidentificatie, postregistratie, bericht, publicatie of archieflocatie.',
+  'fieldHelp.acts.mesaPresidente':
+    'Geeft aan wie de vergadering voorzat; voor handelsvennootschappen is dit vereist voor de verzegelingsconformiteit.',
+  'fieldHelp.acts.mesaSecretarios':
+    'Namen van de secretarissen of stemopnemers die het bureau bijstonden, indien aanwezig.',
+  'fieldHelp.acts.agendaItem':
+    'Punt dat op de agenda is behandeld; gestructureerde besluiten kunnen aan dit nummer worden gekoppeld.',
+  'fieldHelp.acts.deliberationsText':
+    'Vrije tekst van de notulen. Gebruik deze voor de volledige formulering of als aanvulling op de gestructureerde besluiten.',
+  'fieldHelp.acts.structuredAgenda':
+    'Koppelt het besluit aan het bijbehorende agendapunt.',
+  'fieldHelp.acts.structuredText':
+    'Legt het besluit in gestructureerde vorm vast voor hergebruik in het document en in opvolgingen.',
+  'fieldHelp.acts.voteMode':
+    'Geeft aan of er geen telling is vastgelegd, of het besluit unaniem was, of dat er een stemmentelling is.',
+  'fieldHelp.acts.voteCount':
+    'Stemmentelling die wordt gebruikt in de formulering van het besluit en in de toepasselijke controles.',
+  'fieldHelp.acts.statements':
+    'Stemverklaringen, protesten of voorbehouden die een besluit moeten vergezellen.',
+  'fieldHelp.acts.referencedDocumentLabel':
+    'Benaming van het document dat aan de vergadering is voorgelegd, geraadpleegd of toegevoegd.',
+  'fieldHelp.acts.referencedDocumentRef':
+    'Interne verwijzing, link, nummer of locatie van dat document.',
+  'fieldHelp.acts.signatoryName': 'Persoon die als ondertekenaar van de notulen moet worden vermeld.',
+  'fieldHelp.acts.signatoryCapacity':
+    'Hoedanigheid waarin de persoon ondertekent, bijvoorbeeld voorzitter, lid of mede-eigenaar.',
+  'fieldHelp.acts.signatoryPermilage':
+    'Promillage van de mede-eigenaar wanneer de gekozen hoedanigheid dit gegeven vereist.',
+  'fieldHelp.acts.signatorySigned':
+    'Markeert dat de persoon de toepasselijke fysieke of elektronische versie heeft ondertekend.',
+  'fieldHelp.acts.attachmentLabel': 'Korte beschrijving van de bij de notulen behorende bijlage.',
+  'fieldHelp.acts.attachmentKind': 'Classificatie van de bijlage voor het document en het gearchiveerde bewijs.',
+  'fieldHelp.acts.beginningOfProof': 'Vink aan wanneer de bijlage als begin van bewijs moet worden behandeld.',
+  'fieldHelp.entities.nipc':
+    'Identificatienummer van de entiteit. Gebruik 9 Portugese cijfers; schakel de optie zonder validatie alleen in wanneer van toepassing.',
+  'fieldHelp.entities.seat': 'Adres of plaats van de zetel die in de boeken en documenten van deze entiteit wordt gebruikt.',
+  'fieldHelp.entities.legalForm':
+    'Type entiteit dat de toepasselijke familie van regels, boeken en sjablonen bepaalt.',
+  'fieldHelp.entities.fiscalYearEnd': 'Dag van afsluiting van het boekjaar in de notatie MM-DD; leeg gebruikt 12-31.',
+  'fieldHelp.entities.statuteQuorum': 'Operationele waarde die wordt gebruikt voor conformiteitswaarschuwingen over aanwezigheden.',
+  'fieldHelp.entities.statuteMajority': 'Breuk die wordt gebruikt voor conformiteitswaarschuwingen over besluiten.',
+  'fieldHelp.entities.statuteNotice': 'Minimum aantal dagen dat wordt gebruikt voor waarschuwingen over de oproepingstermijn.',
+  'fieldHelp.registry.accessCode':
+    'Code van 12 cijfers waarmee het uittreksel kan worden geraadpleegd; deze wordt alleen voor deze opvraging verzonden en niet bewaard.',
+  'fieldHelp.registry.email': 'Wordt alleen verzonden wanneer de registerdienst hierom vraagt om het uittreksel te openen.',
+  'fieldHelp.registry.firma': 'Naam van de entiteit zoals die uit het geïmporteerde uittreksel kwam.',
+  'fieldHelp.registry.nipc': 'NIPC-identificatie die uit het uittreksel is gehaald, indien aanwezig.',
+  'fieldHelp.registry.legalForm': 'Juridische aard of vorm, genormaliseerd op basis van het uittreksel.',
+  'fieldHelp.registry.matricula': 'Inschrijvingsreferentie vermeld in het handelsregister.',
+  'fieldHelp.registry.sede': 'Zetel die uit het uittreksel is gehaald; kan vrije tekst of een gestructureerd adres zijn.',
+  'fieldHelp.registry.dataConstituicao': 'Oprichtingsdatum die uit het uittreksel is gehaald, indien beschikbaar.',
+  'fieldHelp.registry.capital': 'Kapitaal zoals afgedrukt op het uittreksel, zonder verdere berekening.',
+  'fieldHelp.registry.objeto': 'Doel of oogmerk vastgelegd volgens de uit het uittreksel geïmporteerde tekst.',
+  'fieldHelp.registry.cae':
+    'Economische activiteiten uit het uittreksel, waar mogelijk verrijkt met de CAE-catalogus.',
+  'fieldHelp.registry.accessCodeMasked': 'Code gemaskeerd voor auditdoeleinden; de volledige waarde wordt nooit getoond.',
+  'fieldHelp.registry.retrievedAt': 'Tijdstip waarop deze opvraging is uitgevoerd.',
+  'fieldHelp.registry.conservatoria': 'Registerkantoor vermeld in het geïmporteerde document.',
+  'fieldHelp.registry.oficial': 'Ambtenaar vermeld in het geïmporteerde document.',
+  'fieldHelp.registry.subscribedOn': 'Datum van inschrijving vermeld op het uittreksel.',
+  'fieldHelp.registry.validUntil': 'Geldigheidsdatum vermeld op het uittreksel; deze vernieuwt de opvraging niet.',
+  'fieldHelp.registry.source': 'URL die is gebruikt om het uittreksel bij deze import te verkrijgen.',
+  'fieldHelp.registry.digest': 'SHA-256 van de geïmporteerde HTML, om met het originele document te vergelijken.',
+  'fieldHelp.registry.naturezaJuridica':
+    'Juridische aard zoals gelezen in de inschrijving van het uittreksel.',
+  'fieldHelp.registry.fiscalYearEnd': 'Afsluiting van het boekjaar vermeld in de inschrijving, indien aanwezig.',
+  'fieldHelp.registry.capitalRealization': 'Notitie over de volstorting van het kapitaal, overgenomen uit het uittreksel.',
+  'fieldHelp.registry.deliberationDate': 'Datum van het besluit vermeld in de inschrijving, indien aanwezig.',
+  'fieldHelp.registry.formaObrigar': 'Geïmporteerde tekst over wie de entiteit bindt.',
 };

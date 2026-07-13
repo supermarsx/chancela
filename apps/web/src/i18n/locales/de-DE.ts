@@ -3813,4 +3813,96 @@ export const deDE: Catalog = {
   'acts.writtenResolution.status.reviewed': 'Geprüft',
   'acts.writtenResolution.status.needsFollowUp': 'Nachverfolgung erforderlich',
   'acts.writtenResolution.status.notRecorded': 'Nicht erfasst',
+  // --- Field-help tooltips (wp12-e2) ----------------------------------------------
+  'fieldHelp.acts.title': 'Kurzname, der das Protokoll in Listen, Vorschauen und generierten Dokumenten identifiziert.',
+  'fieldHelp.acts.channel':
+    'Art und Weise, wie die Sitzung stattfand; aktiviert spezifische Felder und Prüfungen für telematische oder hybride Sitzungen.',
+  'fieldHelp.acts.meetingDate':
+    'Datum, an dem die Sitzung stattfand; fließt auch in die Nummerierung und die Dokumentenerstellung ein.',
+  'fieldHelp.acts.meetingTime': 'Im Protokoll erfasste Anfangszeit, sofern zutreffend.',
+  'fieldHelp.acts.place': 'Physischer Ort oder Sitzungsreferenz, die im Text des Protokolls verwendet wird.',
+  'fieldHelp.acts.attendanceReference':
+    'Geben Sie an, wo sich die Anwesenheitsliste befindet oder wie die Teilnehmenden überprüft wurden.',
+  'fieldHelp.acts.membersPresent':
+    'Anzahl der anwesenden Mitglieder für einen schnellen Überblick und Beschlussfähigkeitsprüfungen.',
+  'fieldHelp.acts.membersRepresented':
+    'Anzahl der durch Vollmacht oder ein anderes zulässiges Mittel vertretenen Mitglieder.',
+  'fieldHelp.acts.telematicEvidence':
+    'Aufzeichnung der Plattform, Mitschnitt oder anderer Nachweis, der die Fern- oder Hybridsitzung stützt.',
+  'fieldHelp.acts.conveningDispatchDate':
+    'Datum, an dem die Einladung versandt oder den Empfängern bereitgestellt wurde.',
+  'fieldHelp.acts.conveningChannel':
+    'Hauptsächlich für die Einladung genutztes Mittel. Verwenden Sie die Erfassung pro Empfänger, wenn es relevante Abweichungen gibt.',
+  'fieldHelp.acts.conveningAntecedenceDays':
+    'Tatsächliche Frist zwischen Einladung und Sitzung. Sie wird nur mit erfassten satzungsmäßigen Mindestwerten oder bereits aufgelösten Schwellenwerten verglichen.',
+  'fieldHelp.acts.conveningEvidenceReference':
+    'Kurze Referenz auf den aufbewahrten Nachweis, etwa Dokumentkennung, Postbeleg, Nachricht, Veröffentlichung oder Archivort.',
+  'fieldHelp.acts.mesaPresidente':
+    'Gibt an, wer den Vorsitz führte; bei Handelsgesellschaften ist dies für die Siegelkonformität erforderlich.',
+  'fieldHelp.acts.mesaSecretarios':
+    'Namen der Schriftführer oder Stimmzähler, die den Vorstand unterstützten, sofern vorhanden.',
+  'fieldHelp.acts.agendaItem':
+    'Auf der Tagesordnung behandelter Punkt; strukturierte Beschlüsse können mit dieser Nummer verknüpft werden.',
+  'fieldHelp.acts.deliberationsText':
+    'Freitext des Protokolls. Verwenden Sie ihn für die vollständige Fassung oder als Ergänzung zu den strukturierten Beschlüssen.',
+  'fieldHelp.acts.structuredAgenda':
+    'Verknüpft den Beschluss mit dem entsprechenden Tagesordnungspunkt.',
+  'fieldHelp.acts.structuredText':
+    'Erfasst den Beschluss in strukturierter Form zur Wiederverwendung im Dokument und in Folgemaßnahmen.',
+  'fieldHelp.acts.voteMode':
+    'Gibt an, ob keine Auszählung erfasst wurde, die Entscheidung einstimmig war oder eine Stimmenzählung vorliegt.',
+  'fieldHelp.acts.voteCount':
+    'Stimmenzählung, die in der Formulierung des Beschlusses und in den anwendbaren Prüfungen verwendet wird.',
+  'fieldHelp.acts.statements':
+    'Stimmerklärungen, Einwände oder Vorbehalte, die einen Beschluss begleiten müssen.',
+  'fieldHelp.acts.referencedDocumentLabel':
+    'Bezeichnung des in der Sitzung vorgelegten, herangezogenen oder beigefügten Dokuments.',
+  'fieldHelp.acts.referencedDocumentRef':
+    'Interne Referenz, Link, Nummer oder Ort dieses Dokuments.',
+  'fieldHelp.acts.signatoryName': 'Person, die als Unterzeichnende des Protokolls aufgeführt werden muss.',
+  'fieldHelp.acts.signatoryCapacity':
+    'Eigenschaft, in der die Person unterzeichnet, zum Beispiel Vorsitzende(r), Mitglied oder Miteigentümer(in).',
+  'fieldHelp.acts.signatoryPermilage':
+    'Promilleanteil des Miteigentümers, wenn die gewählte Eigenschaft diese Angabe erfordert.',
+  'fieldHelp.acts.signatorySigned':
+    'Markiert, dass die Person die zutreffende physische oder elektronische Fassung unterzeichnet hat.',
+  'fieldHelp.acts.attachmentLabel': 'Kurze Beschreibung der dem Protokoll zugeordneten Anlage.',
+  'fieldHelp.acts.attachmentKind': 'Klassifizierung der Anlage für das Dokument und den archivierten Nachweis.',
+  'fieldHelp.acts.beginningOfProof': 'Markieren Sie, wenn die Anlage als Anfangsbeweis behandelt werden soll.',
+  'fieldHelp.entities.nipc':
+    'Identifikationsnummer der Einheit. Verwenden Sie 9 portugiesische Ziffern; aktivieren Sie die Option ohne Validierung nur, wenn zutreffend.',
+  'fieldHelp.entities.seat': 'Anschrift oder Ort des Sitzes, der in den Büchern und Dokumenten dieser Einheit verwendet wird.',
+  'fieldHelp.entities.legalForm':
+    'Art der Einheit, die die anwendbare Familie von Regeln, Büchern und Vorlagen bestimmt.',
+  'fieldHelp.entities.fiscalYearEnd': 'Tag des Geschäftsjahresabschlusses im Format MM-DD; leer verwendet 12-31.',
+  'fieldHelp.entities.statuteQuorum': 'Operativer Wert für Konformitätshinweise zu Anwesenheiten.',
+  'fieldHelp.entities.statuteMajority': 'Bruch für Konformitätshinweise zu Beschlüssen.',
+  'fieldHelp.entities.statuteNotice': 'Mindesttage für Hinweise zur Einladungsfrist.',
+  'fieldHelp.registry.accessCode':
+    '12-stelliger Code, der den Abruf der Bescheinigung ermöglicht; er wird nur für diese Abfrage gesendet und nicht gespeichert.',
+  'fieldHelp.registry.email': 'Wird nur gesendet, wenn der Registerdienst ihn zum Öffnen der Bescheinigung anfordert.',
+  'fieldHelp.registry.firma': 'Name der Einheit, wie er aus der importierten Bescheinigung stammt.',
+  'fieldHelp.registry.nipc': 'Aus der Bescheinigung extrahierte NIPC-Kennung, sofern vorhanden.',
+  'fieldHelp.registry.legalForm': 'Aus der Bescheinigung normalisierte Rechtsnatur oder Rechtsform.',
+  'fieldHelp.registry.matricula': 'Im Handelsregister angegebene Eintragungsreferenz.',
+  'fieldHelp.registry.sede': 'Aus der Bescheinigung extrahierter Sitz; kann Freitext oder eine strukturierte Anschrift sein.',
+  'fieldHelp.registry.dataConstituicao': 'Aus der Bescheinigung extrahiertes Gründungsdatum, sofern verfügbar.',
+  'fieldHelp.registry.capital': 'Auf der Bescheinigung ausgewiesenes Kapital, ohne weitere Berechnung.',
+  'fieldHelp.registry.objeto': 'Gegenstand oder Zweck gemäß dem aus der Bescheinigung importierten Text.',
+  'fieldHelp.registry.cae':
+    'Wirtschaftstätigkeiten aus der Bescheinigung, wo möglich durch den CAE-Katalog angereichert.',
+  'fieldHelp.registry.accessCodeMasked': 'Für die Prüfung maskierter Code; der vollständige Wert wird nie angezeigt.',
+  'fieldHelp.registry.retrievedAt': 'Zeitpunkt, zu dem diese Abfrage ausgeführt wurde.',
+  'fieldHelp.registry.conservatoria': 'Im importierten Dokument angegebenes Registeramt.',
+  'fieldHelp.registry.oficial': 'Im importierten Dokument angegebener Beamter.',
+  'fieldHelp.registry.subscribedOn': 'Auf der Bescheinigung angegebenes Zeichnungsdatum.',
+  'fieldHelp.registry.validUntil': 'Auf der Bescheinigung angegebenes Gültigkeitsdatum; es erneuert die Abfrage nicht.',
+  'fieldHelp.registry.source': 'URL, die zum Abrufen der Bescheinigung bei diesem Import verwendet wurde.',
+  'fieldHelp.registry.digest': 'SHA-256 des importierten HTML, zum Vergleich mit dem Originaldokument.',
+  'fieldHelp.registry.naturezaJuridica':
+    'Rechtsnatur, wie sie im Eintrag der Bescheinigung gelesen wurde.',
+  'fieldHelp.registry.fiscalYearEnd': 'Im Eintrag angegebener Geschäftsjahresabschluss, sofern vorhanden.',
+  'fieldHelp.registry.capitalRealization': 'Aus der Bescheinigung übernommener Vermerk zur Kapitaleinzahlung.',
+  'fieldHelp.registry.deliberationDate': 'Im Eintrag angegebenes Beschlussdatum, sofern vorhanden.',
+  'fieldHelp.registry.formaObrigar': 'Importierter Text dazu, wer die Einheit verpflichtet.',
 };

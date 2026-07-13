@@ -3789,4 +3789,96 @@ export const fiFI: Catalog = {
   'acts.writtenResolution.status.reviewed': 'Tarkastettu',
   'acts.writtenResolution.status.needsFollowUp': 'Vaatii jatkotoimia',
   'acts.writtenResolution.status.notRecorded': 'Ei kirjattu',
+  // --- Field-help tooltips (wp12-e2) ----------------------------------------------
+  'fieldHelp.acts.title': 'Lyhyt nimi, joka tunnistaa pöytäkirjan luetteloissa, esikatseluissa ja luoduissa asiakirjoissa.',
+  'fieldHelp.acts.channel':
+    'Kokouksen pitämistapa; ottaa käyttöön etä- tai hybridikokouksille ominaiset kentät ja tarkistukset.',
+  'fieldHelp.acts.meetingDate':
+    'Päivä, jona kokous pidettiin; vaikuttaa myös numerointiin ja asiakirjojen luontiin.',
+  'fieldHelp.acts.meetingTime': 'Pöytäkirjaan merkitty alkamisaika, kun sovellettavissa.',
+  'fieldHelp.acts.place': 'Fyysinen paikka tai istunnon viite, jota käytetään pöytäkirjan tekstissä.',
+  'fieldHelp.acts.attendanceReference':
+    'Ilmoita, missä läsnäololuettelo on tai miten osallistujat todennettiin.',
+  'fieldHelp.acts.membersPresent':
+    'Läsnä olevien jäsenten lukumäärä nopeaa lukemista ja päätösvaltaisuustarkistuksia varten.',
+  'fieldHelp.acts.membersRepresented':
+    'Valtakirjalla tai muulla sallitulla tavalla edustettujen jäsenten lukumäärä.',
+  'fieldHelp.acts.telematicEvidence':
+    'Alustan tallenne, nauhoitus tai muu todiste, joka tukee etä- tai hybridikokousta.',
+  'fieldHelp.acts.conveningDispatchDate':
+    'Päivä, jona kokouskutsu lähetettiin tai asetettiin vastaanottajien saataville.',
+  'fieldHelp.acts.conveningChannel':
+    'Kokouskutsuun käytetty pääasiallinen keino. Käytä vastaanottajakohtaista kirjausta, kun on olennaisia eroja.',
+  'fieldHelp.acts.conveningAntecedenceDays':
+    'Todellinen aika kokouskutsun ja kokouksen välillä. Sitä verrataan vain kirjattuihin sääntömääräisiin vähimmäisaikoihin tai jo ratkaistuihin kynnysarvoihin.',
+  'fieldHelp.acts.conveningEvidenceReference':
+    'Lyhyt viite säilytettyyn todisteeseen, kuten asiakirjatunniste, postikuitti, viesti, julkaisu tai arkistosijainti.',
+  'fieldHelp.acts.mesaPresidente':
+    'Ilmaisee, kuka toimi kokouksen puheenjohtajana; kauppayhtiöillä tämä vaaditaan sinetöinnin vaatimustenmukaisuuteen.',
+  'fieldHelp.acts.mesaSecretarios':
+    'Puheenjohtajistoa avustaneiden sihteerien tai ääntenlaskijoiden nimet, jos niitä on.',
+  'fieldHelp.acts.agendaItem':
+    'Esityslistalla käsitelty kohta; jäsennellyt päätökset voidaan liittää tähän numeroon.',
+  'fieldHelp.acts.deliberationsText':
+    'Pöytäkirjan vapaa teksti. Käytä sitä koko sanamuotoon tai jäsenneltyjen päätösten täydennykseksi.',
+  'fieldHelp.acts.structuredAgenda':
+    'Liittää päätöksen vastaavaan esityslistan kohtaan.',
+  'fieldHelp.acts.structuredText':
+    'Kirjaa päätöksen jäsennellyssä muodossa uudelleenkäyttöä varten asiakirjassa ja jatkotoimissa.',
+  'fieldHelp.acts.voteMode':
+    'Ilmaisee, ettei laskentaa ole kirjattu, että päätös oli yksimielinen tai että äänet on laskettu.',
+  'fieldHelp.acts.voteCount':
+    'Ääntenlaskenta, jota käytetään päätöksen sanamuodossa ja sovellettavissa tarkistuksissa.',
+  'fieldHelp.acts.statements':
+    'Äänestysselitykset, vastalauseet tai varaumat, joiden on liityttävä päätökseen.',
+  'fieldHelp.acts.referencedDocumentLabel':
+    'Kokouksessa esitetyn, käytetyn tai liitetyn asiakirjan nimitys.',
+  'fieldHelp.acts.referencedDocumentRef':
+    'Kyseisen asiakirjan sisäinen viite, linkki, numero tai sijainti.',
+  'fieldHelp.acts.signatoryName': 'Henkilö, jonka on esiinnyttävä pöytäkirjan allekirjoittajana.',
+  'fieldHelp.acts.signatoryCapacity':
+    'Ominaisuus, jossa henkilö allekirjoittaa, esimerkiksi puheenjohtaja, jäsen tai osaomistaja.',
+  'fieldHelp.acts.signatoryPermilage':
+    'Osaomistajan promilleosuus, kun valittu ominaisuus edellyttää tätä tietoa.',
+  'fieldHelp.acts.signatorySigned':
+    'Merkitsee, että henkilö allekirjoitti sovellettavan paperisen tai sähköisen version.',
+  'fieldHelp.acts.attachmentLabel': 'Lyhyt kuvaus pöytäkirjaan liittyvästä liitteestä.',
+  'fieldHelp.acts.attachmentKind': 'Liitteen luokitus asiakirjaa ja arkistoitua todistetta varten.',
+  'fieldHelp.acts.beginningOfProof': 'Merkitse, kun liitettä on käsiteltävä näytön alkuna.',
+  'fieldHelp.entities.nipc':
+    'Yhteisön tunnistenumero. Käytä 9 portugalilaista numeroa; ota ilman vahvistusta -vaihtoehto käyttöön vain, kun sovellettavissa.',
+  'fieldHelp.entities.seat': 'Kotipaikan osoite tai paikkakunta, jota käytetään tämän yhteisön kirjoissa ja asiakirjoissa.',
+  'fieldHelp.entities.legalForm':
+    'Yhteisötyyppi, joka valitsee sovellettavan sääntöjen, kirjojen ja mallien perheen.',
+  'fieldHelp.entities.fiscalYearEnd': 'Tilikauden päättymispäivä muodossa MM-DD; tyhjänä käyttää arvoa 12-31.',
+  'fieldHelp.entities.statuteQuorum': 'Toiminnallinen arvo, jota käytetään läsnäoloa koskeviin vaatimustenmukaisuusvaroituksiin.',
+  'fieldHelp.entities.statuteMajority': 'Murtoluku, jota käytetään päätöksiä koskeviin vaatimustenmukaisuusvaroituksiin.',
+  'fieldHelp.entities.statuteNotice': 'Vähimmäispäivät, joita käytetään kokouskutsun määräaikaa koskeviin varoituksiin.',
+  'fieldHelp.registry.accessCode':
+    '12-numeroinen koodi, jolla todistuksen voi hakea; se lähetetään vain tätä hakua varten eikä sitä tallenneta.',
+  'fieldHelp.registry.email': 'Lähetetään vain, kun rekisteripalvelu pyytää sitä todistuksen avaamiseksi.',
+  'fieldHelp.registry.firma': 'Yhteisön nimi sellaisena kuin se tuli tuodusta todistuksesta.',
+  'fieldHelp.registry.nipc': 'Todistuksesta poimittu NIPC-tunniste, kun se on läsnä.',
+  'fieldHelp.registry.legalForm': 'Todistuksesta normalisoitu oikeudellinen luonne tai muoto.',
+  'fieldHelp.registry.matricula': 'Kaupparekisterissä ilmoitettu rekisteröintiviite.',
+  'fieldHelp.registry.sede': 'Todistuksesta poimittu kotipaikka; voi olla vapaata tekstiä tai jäsennelty osoite.',
+  'fieldHelp.registry.dataConstituicao': 'Todistuksesta poimittu perustamispäivä, kun se on saatavilla.',
+  'fieldHelp.registry.capital': 'Todistuksessa painettu pääoma, ilman lisälaskelmia.',
+  'fieldHelp.registry.objeto': 'Todistuksesta tuodun tekstin mukaisesti kirjattu toimiala tai tarkoitus.',
+  'fieldHelp.registry.cae':
+    'Todistuksen taloudelliset toiminnat, rikastettuina CAE-luettelolla, kun se on mahdollista.',
+  'fieldHelp.registry.accessCodeMasked': 'Auditointia varten peitetty koodi; täyttä arvoa ei koskaan näytetä.',
+  'fieldHelp.registry.retrievedAt': 'Hetki, jolloin tämä haku suoritettiin.',
+  'fieldHelp.registry.conservatoria': 'Tuodussa asiakirjassa ilmoitettu rekisteritoimisto.',
+  'fieldHelp.registry.oficial': 'Tuodussa asiakirjassa ilmoitettu virkailija.',
+  'fieldHelp.registry.subscribedOn': 'Todistuksessa ilmoitettu merkintäpäivä.',
+  'fieldHelp.registry.validUntil': 'Todistuksessa ilmoitettu voimassaolopäivä; se ei uusi hakua.',
+  'fieldHelp.registry.source': 'URL-osoite, jota käytettiin todistuksen hakemiseen tässä tuonnissa.',
+  'fieldHelp.registry.digest': 'Tuodun HTML:n SHA-256, alkuperäiseen asiakirjaan vertaamista varten.',
+  'fieldHelp.registry.naturezaJuridica':
+    'Oikeudellinen luonne sellaisena kuin se luettiin todistuksen merkinnässä.',
+  'fieldHelp.registry.fiscalYearEnd': 'Merkinnässä ilmoitettu tilikauden päättyminen, kun se on läsnä.',
+  'fieldHelp.registry.capitalRealization': 'Todistuksesta jäljennetty merkintä pääoman maksamisesta.',
+  'fieldHelp.registry.deliberationDate': 'Merkinnässä ilmoitettu päätöspäivä, kun se on läsnä.',
+  'fieldHelp.registry.formaObrigar': 'Tuotu teksti siitä, kuka sitoo yhteisön.',
 };

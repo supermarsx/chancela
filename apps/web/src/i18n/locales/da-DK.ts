@@ -3788,4 +3788,96 @@ export const daDK: Catalog = {
   'acts.writtenResolution.status.reviewed': 'Gennemgået',
   'acts.writtenResolution.status.needsFollowUp': 'Kræver opfølgning',
   'acts.writtenResolution.status.notRecorded': 'Ikke registreret',
+  // --- Field-help tooltips (wp12-e2) ----------------------------------------------
+  'fieldHelp.acts.title': 'Kort navn, der identificerer referatet i lister, forhåndsvisninger og genererede dokumenter.',
+  'fieldHelp.acts.channel':
+    'Måden, mødet blev afholdt på; aktiverer felter og kontroller, der er specifikke for fjern- eller hybridmøder.',
+  'fieldHelp.acts.meetingDate':
+    'Dato, hvor mødet fandt sted; indgår også i nummereringen og dokumentgenereringen.',
+  'fieldHelp.acts.meetingTime': 'Starttidspunkt, der er registreret i referatet, når det er relevant.',
+  'fieldHelp.acts.place': 'Fysisk sted eller mødereference, der bruges i referatets tekst.',
+  'fieldHelp.acts.attendanceReference':
+    'Angiv, hvor deltagerlisten findes, eller hvordan deltagerne blev verificeret.',
+  'fieldHelp.acts.membersPresent':
+    'Antal fremmødte medlemmer til hurtig aflæsning og beslutningsdygtighedskontrol.',
+  'fieldHelp.acts.membersRepresented':
+    'Antal medlemmer, der er repræsenteret ved fuldmagt eller andet tilladt middel.',
+  'fieldHelp.acts.telematicEvidence':
+    'Registrering af platformen, optagelse eller anden dokumentation, der understøtter fjern- eller hybridmødet.',
+  'fieldHelp.acts.conveningDispatchDate':
+    'Dato, hvor indkaldelsen blev udsendt eller stillet til rådighed for modtagerne.',
+  'fieldHelp.acts.conveningChannel':
+    'Det primære middel, der blev brugt til indkaldelsen. Brug registreringen pr. modtager, når der er relevant variation.',
+  'fieldHelp.acts.conveningAntecedenceDays':
+    'Faktisk frist mellem indkaldelsen og mødet. Den sammenlignes kun med registrerede vedtægtsmæssige minimumsværdier eller allerede fastlagte grænser.',
+  'fieldHelp.acts.conveningEvidenceReference':
+    'Kort reference til den opbevarede dokumentation, f.eks. dokument-id, postkvittering, besked, offentliggørelse eller arkivplacering.',
+  'fieldHelp.acts.mesaPresidente':
+    'Angiver, hvem der ledede mødet; for handelsselskaber er det nødvendigt for forseglingens overholdelse.',
+  'fieldHelp.acts.mesaSecretarios':
+    'Navne på de sekretærer eller stemmetællere, der bistod dirigenten, hvis der er nogen.',
+  'fieldHelp.acts.agendaItem':
+    'Punkt behandlet på dagsordenen; strukturerede beslutninger kan knyttes til dette nummer.',
+  'fieldHelp.acts.deliberationsText':
+    'Fri tekst i referatet. Brug den til den fulde formulering eller som supplement til de strukturerede beslutninger.',
+  'fieldHelp.acts.structuredAgenda':
+    'Knytter beslutningen til det tilsvarende dagsordenspunkt.',
+  'fieldHelp.acts.structuredText':
+    'Registrerer beslutningen i struktureret format til genbrug i dokumentet og i opfølgninger.',
+  'fieldHelp.acts.voteMode':
+    'Angiver, om der ikke er registreret nogen optælling, om beslutningen var enstemmig, eller om der er en stemmeoptælling.',
+  'fieldHelp.acts.voteCount':
+    'Stemmeoptælling, der bruges i formuleringen af beslutningen og i de gældende kontroller.',
+  'fieldHelp.acts.statements':
+    'Stemmeforklaringer, protester eller forbehold, der skal ledsage en beslutning.',
+  'fieldHelp.acts.referencedDocumentLabel':
+    'Betegnelse for det dokument, der er fremlagt, konsulteret eller vedhæftet mødet.',
+  'fieldHelp.acts.referencedDocumentRef':
+    'Intern reference, link, nummer eller placering af det pågældende dokument.',
+  'fieldHelp.acts.signatoryName': 'Person, der skal fremgå som underskriver af referatet.',
+  'fieldHelp.acts.signatoryCapacity':
+    'Egenskab, hvori personen underskriver, f.eks. dirigent, medlem eller medejer.',
+  'fieldHelp.acts.signatoryPermilage':
+    'Medejerens promille, når den valgte egenskab kræver denne oplysning.',
+  'fieldHelp.acts.signatorySigned':
+    'Markerer, at personen har underskrevet den relevante fysiske eller elektroniske version.',
+  'fieldHelp.acts.attachmentLabel': 'Kort beskrivelse af det bilag, der er knyttet til referatet.',
+  'fieldHelp.acts.attachmentKind': 'Klassificering af bilaget til dokumentet og til den arkiverede dokumentation.',
+  'fieldHelp.acts.beginningOfProof': 'Markér, når bilaget skal behandles som begyndende bevis.',
+  'fieldHelp.entities.nipc':
+    'Enhedens identifikationsnummer. Brug 9 portugisiske cifre; aktivér kun indstillingen uden validering, når det er relevant.',
+  'fieldHelp.entities.seat': 'Adresse eller sted for hjemstedet, der bruges i denne enheds bøger og dokumenter.',
+  'fieldHelp.entities.legalForm':
+    'Enhedstype, der vælger den relevante familie af regler, bøger og skabeloner.',
+  'fieldHelp.entities.fiscalYearEnd': 'Dag for regnskabsårets afslutning i formatet MM-DD; tom bruger 12-31.',
+  'fieldHelp.entities.statuteQuorum': 'Driftsværdi, der bruges til overholdelsesadvarsler om fremmøde.',
+  'fieldHelp.entities.statuteMajority': 'Brøk, der bruges til overholdelsesadvarsler om beslutninger.',
+  'fieldHelp.entities.statuteNotice': 'Minimum antal dage, der bruges til advarsler om indkaldelsesfrist.',
+  'fieldHelp.registry.accessCode':
+    '12-cifret kode, der giver adgang til attesten; den sendes kun til denne forespørgsel og gemmes ikke.',
+  'fieldHelp.registry.email': 'Sendes kun, når registreringstjenesten anmoder om den for at åbne attesten.',
+  'fieldHelp.registry.firma': 'Enhedens navn, som det kom fra den importerede attest.',
+  'fieldHelp.registry.nipc': 'NIPC-identifikator udtrukket fra attesten, når den er til stede.',
+  'fieldHelp.registry.legalForm': 'Retlig karakter eller form normaliseret ud fra attesten.',
+  'fieldHelp.registry.matricula': 'Registreringsreference angivet i handelsregistret.',
+  'fieldHelp.registry.sede': 'Hjemsted udtrukket fra attesten; kan være fri tekst eller en struktureret adresse.',
+  'fieldHelp.registry.dataConstituicao': 'Stiftelsesdato udtrukket fra attesten, når den er tilgængelig.',
+  'fieldHelp.registry.capital': 'Kapital trykt på attesten, uden yderligere beregning.',
+  'fieldHelp.registry.objeto': 'Formål eller genstand registreret i henhold til teksten importeret fra attesten.',
+  'fieldHelp.registry.cae':
+    'Økonomiske aktiviteter fra attesten, beriget med CAE-kataloget, hvor det er muligt.',
+  'fieldHelp.registry.accessCodeMasked': 'Kode maskeret til revision; den fulde værdi vises aldrig.',
+  'fieldHelp.registry.retrievedAt': 'Tidspunkt, hvor denne forespørgsel blev udført.',
+  'fieldHelp.registry.conservatoria': 'Registreringskontor angivet i det importerede dokument.',
+  'fieldHelp.registry.oficial': 'Embedsmand angivet i det importerede dokument.',
+  'fieldHelp.registry.subscribedOn': 'Tegningsdato angivet på attesten.',
+  'fieldHelp.registry.validUntil': 'Gyldighedsdato angivet på attesten; den fornyer ikke forespørgslen.',
+  'fieldHelp.registry.source': 'URL brugt til at hente attesten ved denne import.',
+  'fieldHelp.registry.digest': 'SHA-256 af den importerede HTML til sammenligning med det oprindelige dokument.',
+  'fieldHelp.registry.naturezaJuridica':
+    'Retlig karakter, som den blev læst i attestens indførsel.',
+  'fieldHelp.registry.fiscalYearEnd': 'Regnskabsårets afslutning angivet i indførslen, når den er til stede.',
+  'fieldHelp.registry.capitalRealization': 'Note om kapitalindbetaling transskriberet fra attesten.',
+  'fieldHelp.registry.deliberationDate': 'Beslutningsdato angivet i indførslen, når den er til stede.',
+  'fieldHelp.registry.formaObrigar': 'Importeret tekst om, hvem der forpligter enheden.',
 };

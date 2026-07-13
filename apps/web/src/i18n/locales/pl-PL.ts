@@ -3791,4 +3791,96 @@ export const plPL: Catalog = {
   'acts.writtenResolution.status.reviewed': 'Przejrzano',
   'acts.writtenResolution.status.needsFollowUp': 'Wymaga działań następczych',
   'acts.writtenResolution.status.notRecorded': 'Niezarejestrowano',
+  // --- Field-help tooltips (wp12-e2) ----------------------------------------------
+  'fieldHelp.acts.title': 'Krótka nazwa identyfikująca protokół na listach, w podglądach i w generowanych dokumentach.',
+  'fieldHelp.acts.channel':
+    'Sposób przeprowadzenia posiedzenia; włącza pola i kontrole właściwe dla posiedzeń zdalnych lub hybrydowych.',
+  'fieldHelp.acts.meetingDate':
+    'Data odbycia posiedzenia; zasila także numerację i generowanie dokumentów.',
+  'fieldHelp.acts.meetingTime': 'Godzina rozpoczęcia zapisana w protokole, jeśli dotyczy.',
+  'fieldHelp.acts.place': 'Miejsce fizyczne lub odniesienie do sesji użyte w treści protokołu.',
+  'fieldHelp.acts.attendanceReference':
+    'Wskaż, gdzie znajduje się lista obecności lub w jaki sposób zweryfikowano uczestników.',
+  'fieldHelp.acts.membersPresent':
+    'Liczba obecnych członków na potrzeby szybkiego odczytu i kontroli kworum.',
+  'fieldHelp.acts.membersRepresented':
+    'Liczba członków reprezentowanych przez pełnomocnika lub w inny dopuszczalny sposób.',
+  'fieldHelp.acts.telematicEvidence':
+    'Zapis platformy, nagranie lub inny dowód potwierdzający posiedzenie zdalne lub hybrydowe.',
+  'fieldHelp.acts.conveningDispatchDate':
+    'Data wysłania lub udostępnienia zawiadomienia adresatom.',
+  'fieldHelp.acts.conveningChannel':
+    'Główny środek użyty do zawiadomienia. Użyj zapisu według adresata, gdy występują istotne różnice.',
+  'fieldHelp.acts.conveningAntecedenceDays':
+    'Rzeczywisty termin między zawiadomieniem a posiedzeniem. Porównywany jest wyłącznie z zapisanymi minimami statutowymi lub już ustalonymi progami.',
+  'fieldHelp.acts.conveningEvidenceReference':
+    'Krótkie odniesienie do zachowanego dowodu, np. identyfikator dokumentu, potwierdzenie pocztowe, wiadomość, publikacja lub lokalizacja archiwum.',
+  'fieldHelp.acts.mesaPresidente':
+    'Wskazuje, kto przewodniczył obradom; w spółkach handlowych jest to wymagane dla zgodności pieczętowania.',
+  'fieldHelp.acts.mesaSecretarios':
+    'Nazwiska sekretarzy lub osób liczących głosy, którzy wspierali prezydium, jeśli występują.',
+  'fieldHelp.acts.agendaItem':
+    'Punkt rozpatrywany w porządku obrad; uchwały ustrukturyzowane mogą być powiązane z tym numerem.',
+  'fieldHelp.acts.deliberationsText':
+    'Tekst swobodny protokołu. Użyj go do pełnej redakcji lub jako uzupełnienie uchwał ustrukturyzowanych.',
+  'fieldHelp.acts.structuredAgenda':
+    'Wiąże uchwałę z odpowiednim punktem porządku obrad.',
+  'fieldHelp.acts.structuredText':
+    'Zapisuje uchwałę w formacie ustrukturyzowanym do ponownego użycia w dokumencie i działaniach następczych.',
+  'fieldHelp.acts.voteMode':
+    'Wskazuje, czy nie zapisano liczenia, czy decyzja była jednomyślna, czy istnieje liczba głosów.',
+  'fieldHelp.acts.voteCount':
+    'Liczba głosów użyta w redakcji uchwały i w mających zastosowanie kontrolach.',
+  'fieldHelp.acts.statements':
+    'Oświadczenia dotyczące głosowania, protesty lub zastrzeżenia, które powinny towarzyszyć uchwale.',
+  'fieldHelp.acts.referencedDocumentLabel':
+    'Nazwa dokumentu przedstawionego, przywołanego lub załączonego do posiedzenia.',
+  'fieldHelp.acts.referencedDocumentRef':
+    'Odniesienie wewnętrzne, link, numer lub lokalizacja tego dokumentu.',
+  'fieldHelp.acts.signatoryName': 'Osoba, która ma figurować jako sygnatariusz protokołu.',
+  'fieldHelp.acts.signatoryCapacity':
+    'Charakter, w jakim osoba podpisuje, na przykład przewodniczący, członek lub współwłaściciel.',
+  'fieldHelp.acts.signatoryPermilage':
+    'Udział w promilach współwłaściciela, gdy wybrany charakter wymaga tej danej.',
+  'fieldHelp.acts.signatorySigned':
+    'Oznacza, że osoba podpisała odpowiednią wersję papierową lub elektroniczną.',
+  'fieldHelp.acts.attachmentLabel': 'Krótki opis załącznika powiązanego z protokołem.',
+  'fieldHelp.acts.attachmentKind': 'Klasyfikacja załącznika dla dokumentu i dla zarchiwizowanego dowodu.',
+  'fieldHelp.acts.beginningOfProof': 'Zaznacz, gdy załącznik ma być traktowany jako początek dowodu.',
+  'fieldHelp.entities.nipc':
+    'Numer identyfikacyjny podmiotu. Użyj 9 portugalskich cyfr; włącz opcję bez walidacji tylko wtedy, gdy dotyczy.',
+  'fieldHelp.entities.seat': 'Adres lub miejscowość siedziby używane w księgach i dokumentach tego podmiotu.',
+  'fieldHelp.entities.legalForm':
+    'Typ podmiotu wybierający właściwą rodzinę reguł, ksiąg i szablonów.',
+  'fieldHelp.entities.fiscalYearEnd': 'Dzień zakończenia roku obrotowego w formacie MM-DD; puste używa 12-31.',
+  'fieldHelp.entities.statuteQuorum': 'Wartość operacyjna używana do ostrzeżeń o zgodności dotyczących obecności.',
+  'fieldHelp.entities.statuteMajority': 'Ułamek używany do ostrzeżeń o zgodności dotyczących uchwał.',
+  'fieldHelp.entities.statuteNotice': 'Minimalna liczba dni używana do ostrzeżeń o terminie zawiadomienia.',
+  'fieldHelp.registry.accessCode':
+    'Kod 12-cyfrowy umożliwiający dostęp do odpisu; jest wysyłany tylko na potrzeby tego zapytania i nie jest przechowywany.',
+  'fieldHelp.registry.email': 'Wysyłany tylko wtedy, gdy usługa rejestru zażąda go w celu otwarcia odpisu.',
+  'fieldHelp.registry.firma': 'Nazwa podmiotu w postaci pochodzącej z zaimportowanego odpisu.',
+  'fieldHelp.registry.nipc': 'Identyfikator NIPC wyodrębniony z odpisu, jeśli występuje.',
+  'fieldHelp.registry.legalForm': 'Charakter lub forma prawna znormalizowana na podstawie odpisu.',
+  'fieldHelp.registry.matricula': 'Odniesienie rejestrowe wskazane w rejestrze handlowym.',
+  'fieldHelp.registry.sede': 'Siedziba wyodrębniona z odpisu; może być tekstem swobodnym lub adresem ustrukturyzowanym.',
+  'fieldHelp.registry.dataConstituicao': 'Data zawiązania wyodrębniona z odpisu, jeśli jest dostępna.',
+  'fieldHelp.registry.capital': 'Kapitał wydrukowany na odpisie, bez dodatkowych obliczeń.',
+  'fieldHelp.registry.objeto': 'Przedmiot lub cel zapisany zgodnie z tekstem zaimportowanym z odpisu.',
+  'fieldHelp.registry.cae':
+    'Działalności gospodarcze z odpisu, wzbogacone o katalog CAE, gdy to możliwe.',
+  'fieldHelp.registry.accessCodeMasked': 'Kod zamaskowany do celów audytu; pełna wartość nigdy nie jest pokazywana.',
+  'fieldHelp.registry.retrievedAt': 'Moment, w którym wykonano to zapytanie.',
+  'fieldHelp.registry.conservatoria': 'Urząd rejestrowy wskazany w zaimportowanym dokumencie.',
+  'fieldHelp.registry.oficial': 'Urzędnik wskazany w zaimportowanym dokumencie.',
+  'fieldHelp.registry.subscribedOn': 'Data subskrypcji wskazana w odpisie.',
+  'fieldHelp.registry.validUntil': 'Data ważności wskazana w odpisie; nie odnawia zapytania.',
+  'fieldHelp.registry.source': 'Adres URL użyty do uzyskania odpisu w tym imporcie.',
+  'fieldHelp.registry.digest': 'SHA-256 zaimportowanego kodu HTML, do porównania z oryginalnym dokumentem.',
+  'fieldHelp.registry.naturezaJuridica':
+    'Charakter prawny odczytany we wpisie odpisu.',
+  'fieldHelp.registry.fiscalYearEnd': 'Zakończenie roku obrotowego wskazane we wpisie, jeśli występuje.',
+  'fieldHelp.registry.capitalRealization': 'Adnotacja o pokryciu kapitału przepisana z odpisu.',
+  'fieldHelp.registry.deliberationDate': 'Data uchwały wskazana we wpisie, jeśli występuje.',
+  'fieldHelp.registry.formaObrigar': 'Zaimportowany tekst dotyczący tego, kto reprezentuje podmiot.',
 };

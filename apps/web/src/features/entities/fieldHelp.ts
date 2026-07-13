@@ -1,9 +1,34 @@
+/**
+ * Field-help copy for the entity forms.
+ *
+ * Each entry resolves its sentence through i18n at access time (via the module-level,
+ * non-React `t` escape hatch — the same one `api/labels.ts` uses), so the tooltips follow
+ * the active locale live instead of being frozen Portuguese. Consumers keep reading
+ * `entityFieldHelp.<name>` and receive an already-translated string. The source strings
+ * live in `fieldHelp.entities.*` (see pt-PT).
+ */
+import { t } from '../../i18n';
+
 export const entityFieldHelp = {
-  nipc: 'Número de identificação da entidade. Use 9 dígitos portugueses; ative a opção sem validação só quando aplicável.',
-  seat: 'Morada ou localidade da sede usada nos livros e documentos desta entidade.',
-  legalForm: 'Tipo de entidade que escolhe a família de regras, livros e modelos aplicáveis.',
-  fiscalYearEnd: 'Dia de fecho do exercício no formato MM-DD; em branco usa 12-31.',
-  statuteQuorum: 'Valor operacional usado para avisos de conformidade sobre presenças.',
-  statuteMajority: 'Fração usada para avisos de conformidade sobre deliberações.',
-  statuteNotice: 'Dias mínimos usados para avisos de antecedência da convocatória.',
-} as const;
+  get nipc() {
+    return t('fieldHelp.entities.nipc');
+  },
+  get seat() {
+    return t('fieldHelp.entities.seat');
+  },
+  get legalForm() {
+    return t('fieldHelp.entities.legalForm');
+  },
+  get fiscalYearEnd() {
+    return t('fieldHelp.entities.fiscalYearEnd');
+  },
+  get statuteQuorum() {
+    return t('fieldHelp.entities.statuteQuorum');
+  },
+  get statuteMajority() {
+    return t('fieldHelp.entities.statuteMajority');
+  },
+  get statuteNotice() {
+    return t('fieldHelp.entities.statuteNotice');
+  },
+};

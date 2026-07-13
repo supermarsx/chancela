@@ -3782,4 +3782,96 @@ export const enUS: Catalog = {
   'acts.writtenResolution.status.reviewed': 'Reviewed',
   'acts.writtenResolution.status.needsFollowUp': 'Needs follow-up',
   'acts.writtenResolution.status.notRecorded': 'Not recorded',
+  // --- Field-help tooltips (wp12-e2) ----------------------------------------------
+  'fieldHelp.acts.title': 'Short name that identifies the minutes in lists, previews, and generated documents.',
+  'fieldHelp.acts.channel':
+    'How the meeting was held; enables fields and checks specific to remote or hybrid meetings.',
+  'fieldHelp.acts.meetingDate':
+    'Date the meeting took place; it also feeds the numbering and document generation.',
+  'fieldHelp.acts.meetingTime': 'Start time recorded in the minutes, when applicable.',
+  'fieldHelp.acts.place': 'Physical location or session reference used in the body of the minutes.',
+  'fieldHelp.acts.attendanceReference':
+    'State where the attendance list is or how the participants were verified.',
+  'fieldHelp.acts.membersPresent':
+    'Number of members present, for a quick read and quorum checks.',
+  'fieldHelp.acts.membersRepresented':
+    'Number of members represented by proxy or another permitted means.',
+  'fieldHelp.acts.telematicEvidence':
+    'Record of the platform, recording, or other evidence supporting the remote or hybrid meeting.',
+  'fieldHelp.acts.conveningDispatchDate':
+    'Date the notice of meeting was sent or made available to the recipients.',
+  'fieldHelp.acts.conveningChannel':
+    'Main means used for the notice of meeting. Use the per-recipient record when there is relevant variation.',
+  'fieldHelp.acts.conveningAntecedenceDays':
+    'Actual lead time between the notice and the meeting. It is compared only against recorded statutory minimums or thresholds already resolved.',
+  'fieldHelp.acts.conveningEvidenceReference':
+    'Short reference to the retained proof, such as a document identifier, postal record, message, publication, or archive location.',
+  'fieldHelp.acts.mesaPresidente':
+    'Identifies who chaired the meeting; for commercial companies it is required for sealing compliance.',
+  'fieldHelp.acts.mesaSecretarios':
+    'Names of the secretaries or tellers who assisted the chair, where any.',
+  'fieldHelp.acts.agendaItem':
+    'Item addressed on the agenda; structured resolutions can be linked to this number.',
+  'fieldHelp.acts.deliberationsText':
+    'Free text of the minutes. Use it for the full wording or to complement the structured resolutions.',
+  'fieldHelp.acts.structuredAgenda':
+    'Links the resolution to the corresponding agenda item.',
+  'fieldHelp.acts.structuredText':
+    'Records the resolution in a structured format for reuse in the document and in follow-ups.',
+  'fieldHelp.acts.voteMode':
+    'Indicates whether no tally was recorded, the decision was unanimous, or there is a vote count.',
+  'fieldHelp.acts.voteCount':
+    'Vote count used in the wording of the resolution and in the applicable checks.',
+  'fieldHelp.acts.statements':
+    'Statements of vote, protests, or reservations that must accompany a resolution.',
+  'fieldHelp.acts.referencedDocumentLabel':
+    'Name of the document presented, consulted, or attached to the meeting.',
+  'fieldHelp.acts.referencedDocumentRef':
+    'Internal reference, link, number, or location of that document.',
+  'fieldHelp.acts.signatoryName': 'Person who must appear as a signatory of the minutes.',
+  'fieldHelp.acts.signatoryCapacity':
+    'Capacity in which the person signs, for example chair, member, or co-owner.',
+  'fieldHelp.acts.signatoryPermilage':
+    'Co-owner permillage when the chosen capacity requires this figure.',
+  'fieldHelp.acts.signatorySigned':
+    'Marks that the person signed the applicable physical or electronic version.',
+  'fieldHelp.acts.attachmentLabel': 'Short description of the attachment associated with the minutes.',
+  'fieldHelp.acts.attachmentKind': 'Classification of the attachment for the document and the archived evidence.',
+  'fieldHelp.acts.beginningOfProof': 'Flag when the attachment should be treated as prima facie evidence.',
+  'fieldHelp.entities.nipc':
+    'Entity identification number. Use 9 Portuguese digits; enable the no-validation option only when applicable.',
+  'fieldHelp.entities.seat': 'Address or locality of the registered office used in this entity’s books and documents.',
+  'fieldHelp.entities.legalForm':
+    'Type of entity that selects the applicable family of rules, books, and templates.',
+  'fieldHelp.entities.fiscalYearEnd': 'Fiscal year-end day in MM-DD format; blank uses 12-31.',
+  'fieldHelp.entities.statuteQuorum': 'Operational value used for compliance warnings about attendance.',
+  'fieldHelp.entities.statuteMajority': 'Fraction used for compliance warnings about resolutions.',
+  'fieldHelp.entities.statuteNotice': 'Minimum days used for notice lead-time warnings.',
+  'fieldHelp.registry.accessCode':
+    '12-digit code that allows the certificate to be retrieved; it is sent only for this lookup and is not stored.',
+  'fieldHelp.registry.email': 'Sent only when the registry service requests it to open the certificate.',
+  'fieldHelp.registry.firma': 'Entity name as it came from the imported certificate.',
+  'fieldHelp.registry.nipc': 'NIPC identifier extracted from the certificate, when present.',
+  'fieldHelp.registry.legalForm': 'Legal nature or form normalized from the certificate.',
+  'fieldHelp.registry.matricula': 'Registration reference stated in the commercial register.',
+  'fieldHelp.registry.sede': 'Registered office extracted from the certificate; may be free text or a structured address.',
+  'fieldHelp.registry.dataConstituicao': 'Incorporation date extracted from the certificate, when available.',
+  'fieldHelp.registry.capital': 'Capital printed on the certificate, with no further calculation.',
+  'fieldHelp.registry.objeto': 'Object or purpose recorded per the text imported from the certificate.',
+  'fieldHelp.registry.cae':
+    'Economic activities from the certificate, enriched by the CAE catalog where possible.',
+  'fieldHelp.registry.accessCodeMasked': 'Code masked for auditing; the full value is never shown.',
+  'fieldHelp.registry.retrievedAt': 'Moment at which this lookup was run.',
+  'fieldHelp.registry.conservatoria': 'Registry office stated in the imported document.',
+  'fieldHelp.registry.oficial': 'Officer stated in the imported document.',
+  'fieldHelp.registry.subscribedOn': 'Subscription date stated on the certificate.',
+  'fieldHelp.registry.validUntil': 'Validity date stated on the certificate; it does not renew the lookup.',
+  'fieldHelp.registry.source': 'URL used to obtain the certificate in this import.',
+  'fieldHelp.registry.digest': 'SHA-256 of the imported HTML, to compare against the original document.',
+  'fieldHelp.registry.naturezaJuridica':
+    'Legal nature as read from the certificate entry.',
+  'fieldHelp.registry.fiscalYearEnd': 'Fiscal year-end stated in the entry, when present.',
+  'fieldHelp.registry.capitalRealization': 'Capital realization note transcribed from the certificate.',
+  'fieldHelp.registry.deliberationDate': 'Resolution date stated in the entry, when present.',
+  'fieldHelp.registry.formaObrigar': 'Imported text on who binds the entity.',
 };

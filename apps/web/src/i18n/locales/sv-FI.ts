@@ -3791,4 +3791,96 @@ export const svFI: Catalog = {
   'acts.writtenResolution.status.reviewed': 'Granskad',
   'acts.writtenResolution.status.needsFollowUp': 'Kräver uppföljning',
   'acts.writtenResolution.status.notRecorded': 'Ej registrerat',
+  // --- Field-help tooltips (wp12-e2) ----------------------------------------------
+  'fieldHelp.acts.title': 'Kort namn som identifierar protokollet i listor, förhandsvisningar och genererade dokument.',
+  'fieldHelp.acts.channel':
+    'Sätt som mötet hölls på; aktiverar fält och kontroller som är specifika för distans- eller hybridmöten.',
+  'fieldHelp.acts.meetingDate':
+    'Datum då mötet ägde rum; matar även numreringen och dokumentgenereringen.',
+  'fieldHelp.acts.meetingTime': 'Starttid som registrerats i protokollet, när det är tillämpligt.',
+  'fieldHelp.acts.place': 'Fysisk plats eller sessionsreferens som används i protokollets text.',
+  'fieldHelp.acts.attendanceReference':
+    'Ange var närvarolistan finns eller hur deltagarna har verifierats.',
+  'fieldHelp.acts.membersPresent':
+    'Antal närvarande medlemmar för snabb avläsning och beslutsförhetskontroller.',
+  'fieldHelp.acts.membersRepresented':
+    'Antal medlemmar som företräds genom fullmakt eller annat tillåtet sätt.',
+  'fieldHelp.acts.telematicEvidence':
+    'Registrering av plattformen, inspelning eller annat bevis som stöder distans- eller hybridmötet.',
+  'fieldHelp.acts.conveningDispatchDate':
+    'Datum då kallelsen skickades eller gjordes tillgänglig för mottagarna.',
+  'fieldHelp.acts.conveningChannel':
+    'Huvudsakligt medel som använts för kallelsen. Använd registreringen per mottagare när det finns relevant variation.',
+  'fieldHelp.acts.conveningAntecedenceDays':
+    'Faktisk frist mellan kallelsen och mötet. Den jämförs endast med registrerade stadgeenliga minimivärden eller redan fastställda trösklar.',
+  'fieldHelp.acts.conveningEvidenceReference':
+    'Kort referens till det bevarade underlaget, såsom dokument-id, postkvitto, meddelande, publicering eller arkivplats.',
+  'fieldHelp.acts.mesaPresidente':
+    'Anger vem som ledde mötet; för handelsbolag krävs detta för förseglingens efterlevnad.',
+  'fieldHelp.acts.mesaSecretarios':
+    'Namn på de sekreterare eller rösträknare som biträdde ordföranden, om några.',
+  'fieldHelp.acts.agendaItem':
+    'Punkt som behandlats på dagordningen; strukturerade beslut kan kopplas till detta nummer.',
+  'fieldHelp.acts.deliberationsText':
+    'Fri text i protokollet. Använd den för den fullständiga formuleringen eller som komplement till de strukturerade besluten.',
+  'fieldHelp.acts.structuredAgenda':
+    'Kopplar beslutet till motsvarande punkt på dagordningen.',
+  'fieldHelp.acts.structuredText':
+    'Registrerar beslutet i strukturerat format för återanvändning i dokumentet och i uppföljningar.',
+  'fieldHelp.acts.voteMode':
+    'Anger om ingen räkning registrerats, om beslutet var enhälligt eller om det finns en rösträkning.',
+  'fieldHelp.acts.voteCount':
+    'Rösträkning som används i formuleringen av beslutet och i de tillämpliga kontrollerna.',
+  'fieldHelp.acts.statements':
+    'Röstförklaringar, protester eller reservationer som ska åtfölja ett beslut.',
+  'fieldHelp.acts.referencedDocumentLabel':
+    'Benämning på det dokument som lagts fram, konsulterats eller bifogats mötet.',
+  'fieldHelp.acts.referencedDocumentRef':
+    'Intern referens, länk, nummer eller plats för det dokumentet.',
+  'fieldHelp.acts.signatoryName': 'Person som ska anges som undertecknare av protokollet.',
+  'fieldHelp.acts.signatoryCapacity':
+    'Egenskap i vilken personen undertecknar, till exempel ordförande, medlem eller delägare.',
+  'fieldHelp.acts.signatoryPermilage':
+    'Delägarens promille när den valda egenskapen kräver denna uppgift.',
+  'fieldHelp.acts.signatorySigned':
+    'Markerar att personen har undertecknat den tillämpliga fysiska eller elektroniska versionen.',
+  'fieldHelp.acts.attachmentLabel': 'Kort beskrivning av bilagan som är kopplad till protokollet.',
+  'fieldHelp.acts.attachmentKind': 'Klassificering av bilagan för dokumentet och för det arkiverade beviset.',
+  'fieldHelp.acts.beginningOfProof': 'Markera när bilagan ska behandlas som början till bevis.',
+  'fieldHelp.entities.nipc':
+    'Enhetens identifikationsnummer. Använd 9 portugisiska siffror; aktivera alternativet utan validering endast när det är tillämpligt.',
+  'fieldHelp.entities.seat': 'Adress eller ort för sätet som används i denna enhets böcker och dokument.',
+  'fieldHelp.entities.legalForm':
+    'Enhetstyp som väljer den tillämpliga familjen av regler, böcker och mallar.',
+  'fieldHelp.entities.fiscalYearEnd': 'Dag för räkenskapsårets slut i formatet MM-DD; tomt använder 12-31.',
+  'fieldHelp.entities.statuteQuorum': 'Operativt värde som används för efterlevnadsvarningar om närvaro.',
+  'fieldHelp.entities.statuteMajority': 'Bråk som används för efterlevnadsvarningar om beslut.',
+  'fieldHelp.entities.statuteNotice': 'Minsta antal dagar som används för varningar om kallelsefrist.',
+  'fieldHelp.registry.accessCode':
+    '12-siffrig kod som ger åtkomst till registerutdraget; den skickas endast för denna sökning och sparas inte.',
+  'fieldHelp.registry.email': 'Skickas endast när registertjänsten begär det för att öppna registerutdraget.',
+  'fieldHelp.registry.firma': 'Enhetens namn såsom det kom från det importerade registerutdraget.',
+  'fieldHelp.registry.nipc': 'NIPC-identifierare som hämtats från registerutdraget, när den finns.',
+  'fieldHelp.registry.legalForm': 'Rättslig karaktär eller form normaliserad utifrån registerutdraget.',
+  'fieldHelp.registry.matricula': 'Registreringsreferens angiven i handelsregistret.',
+  'fieldHelp.registry.sede': 'Säte som hämtats från registerutdraget; kan vara fri text eller en strukturerad adress.',
+  'fieldHelp.registry.dataConstituicao': 'Bildningsdatum som hämtats från registerutdraget, när det är tillgängligt.',
+  'fieldHelp.registry.capital': 'Kapital tryckt på registerutdraget, utan ytterligare beräkning.',
+  'fieldHelp.registry.objeto': 'Verksamhetsföremål eller ändamål registrerat enligt texten som importerats från registerutdraget.',
+  'fieldHelp.registry.cae':
+    'Ekonomiska verksamheter från registerutdraget, berikade med CAE-katalogen när det är möjligt.',
+  'fieldHelp.registry.accessCodeMasked': 'Kod maskerad för revision; det fullständiga värdet visas aldrig.',
+  'fieldHelp.registry.retrievedAt': 'Tidpunkt då denna sökning utfördes.',
+  'fieldHelp.registry.conservatoria': 'Registreringskontor angivet i det importerade dokumentet.',
+  'fieldHelp.registry.oficial': 'Tjänsteman angiven i det importerade dokumentet.',
+  'fieldHelp.registry.subscribedOn': 'Teckningsdatum angivet på registerutdraget.',
+  'fieldHelp.registry.validUntil': 'Giltighetsdatum angivet på registerutdraget; det förnyar inte sökningen.',
+  'fieldHelp.registry.source': 'URL som använts för att hämta registerutdraget vid denna import.',
+  'fieldHelp.registry.digest': 'SHA-256 av den importerade HTML-koden, för att jämföra med originaldokumentet.',
+  'fieldHelp.registry.naturezaJuridica':
+    'Rättslig karaktär såsom den lästes i registerutdragets inskrivning.',
+  'fieldHelp.registry.fiscalYearEnd': 'Räkenskapsårets slut angivet i inskrivningen, när det finns.',
+  'fieldHelp.registry.capitalRealization': 'Anteckning om kapitalinbetalning transkriberad från registerutdraget.',
+  'fieldHelp.registry.deliberationDate': 'Beslutsdatum angivet i inskrivningen, när det finns.',
+  'fieldHelp.registry.formaObrigar': 'Importerad text om vem som förpliktar enheten.',
 };

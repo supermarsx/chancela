@@ -3807,4 +3807,96 @@ export const frFR: Catalog = {
   'acts.writtenResolution.status.reviewed': 'Vérifié',
   'acts.writtenResolution.status.needsFollowUp': 'Suivi nécessaire',
   'acts.writtenResolution.status.notRecorded': 'Non enregistré',
+  // --- Field-help tooltips (wp12-e2) ----------------------------------------------
+  'fieldHelp.acts.title': 'Nom court qui identifie le procès-verbal dans les listes, les aperçus et les documents générés.',
+  'fieldHelp.acts.channel':
+    'Manière dont la réunion s’est tenue ; active les champs et contrôles propres aux réunions télématiques ou hybrides.',
+  'fieldHelp.acts.meetingDate':
+    'Date à laquelle la réunion a eu lieu ; alimente aussi la numérotation et la génération documentaire.',
+  'fieldHelp.acts.meetingTime': 'Heure de début consignée au procès-verbal, le cas échéant.',
+  'fieldHelp.acts.place': 'Lieu physique ou référence de la séance utilisé dans le texte du procès-verbal.',
+  'fieldHelp.acts.attendanceReference':
+    'Indiquez où se trouve la liste de présence ou comment les participants ont été vérifiés.',
+  'fieldHelp.acts.membersPresent':
+    'Nombre de membres présents pour une lecture rapide et les contrôles de quorum.',
+  'fieldHelp.acts.membersRepresented':
+    'Nombre de membres représentés par procuration ou par un autre moyen admis.',
+  'fieldHelp.acts.telematicEvidence':
+    'Enregistrement de la plateforme, captation ou autre preuve à l’appui de la réunion à distance ou hybride.',
+  'fieldHelp.acts.conveningDispatchDate':
+    'Date à laquelle la convocation a été expédiée ou mise à disposition des destinataires.',
+  'fieldHelp.acts.conveningChannel':
+    'Moyen principal utilisé pour la convocation. Utilisez le suivi par destinataire en cas de variation pertinente.',
+  'fieldHelp.acts.conveningAntecedenceDays':
+    'Délai effectif entre la convocation et la réunion. Il n’est comparé qu’aux minimums statutaires enregistrés ou aux seuils déjà résolus.',
+  'fieldHelp.acts.conveningEvidenceReference':
+    'Référence courte au justificatif conservé, comme un identifiant de document, un accusé postal, un message, une publication ou un emplacement d’archive.',
+  'fieldHelp.acts.mesaPresidente':
+    'Identifie qui a présidé la séance ; pour les sociétés commerciales, c’est nécessaire à la conformité du scellement.',
+  'fieldHelp.acts.mesaSecretarios':
+    'Noms des secrétaires ou scrutateurs ayant assisté le bureau, le cas échéant.',
+  'fieldHelp.acts.agendaItem':
+    'Point traité à l’ordre du jour ; les résolutions structurées peuvent être liées à ce numéro.',
+  'fieldHelp.acts.deliberationsText':
+    'Texte libre du procès-verbal. Utilisez-le pour la rédaction intégrale ou en complément des résolutions structurées.',
+  'fieldHelp.acts.structuredAgenda':
+    'Relie la résolution au point correspondant de l’ordre du jour.',
+  'fieldHelp.acts.structuredText':
+    'Enregistre la résolution au format structuré pour la réutiliser dans le document et les suivis.',
+  'fieldHelp.acts.voteMode':
+    'Indique s’il n’y a pas eu de décompte enregistré, si la décision a été unanime ou s’il existe un décompte des voix.',
+  'fieldHelp.acts.voteCount':
+    'Décompte des voix utilisé dans la rédaction de la résolution et dans les contrôles applicables.',
+  'fieldHelp.acts.statements':
+    'Déclarations de vote, protestations ou réserves qui doivent accompagner une résolution.',
+  'fieldHelp.acts.referencedDocumentLabel':
+    'Désignation du document présenté, consulté ou joint à la réunion.',
+  'fieldHelp.acts.referencedDocumentRef':
+    'Référence interne, lien, numéro ou emplacement de ce document.',
+  'fieldHelp.acts.signatoryName': 'Personne qui doit figurer comme signataire du procès-verbal.',
+  'fieldHelp.acts.signatoryCapacity':
+    'Qualité en laquelle la personne signe, par exemple président, membre ou copropriétaire.',
+  'fieldHelp.acts.signatoryPermilage':
+    'Millième du copropriétaire lorsque la qualité choisie exige cette donnée.',
+  'fieldHelp.acts.signatorySigned':
+    'Indique que la personne a signé la version physique ou électronique applicable.',
+  'fieldHelp.acts.attachmentLabel': 'Brève description de la pièce jointe associée au procès-verbal.',
+  'fieldHelp.acts.attachmentKind': 'Classification de la pièce jointe pour le document et pour la preuve archivée.',
+  'fieldHelp.acts.beginningOfProof': 'Cochez lorsque la pièce jointe doit être traitée comme un commencement de preuve.',
+  'fieldHelp.entities.nipc':
+    'Numéro d’identification de l’entité. Utilisez 9 chiffres portugais ; activez l’option sans validation uniquement le cas échéant.',
+  'fieldHelp.entities.seat': 'Adresse ou localité du siège utilisée dans les livres et documents de cette entité.',
+  'fieldHelp.entities.legalForm':
+    'Type d’entité qui détermine la famille de règles, de livres et de modèles applicables.',
+  'fieldHelp.entities.fiscalYearEnd': 'Jour de clôture de l’exercice au format MM-DD ; vide, utilise 12-31.',
+  'fieldHelp.entities.statuteQuorum': 'Valeur opérationnelle utilisée pour les avertissements de conformité sur les présences.',
+  'fieldHelp.entities.statuteMajority': 'Fraction utilisée pour les avertissements de conformité sur les résolutions.',
+  'fieldHelp.entities.statuteNotice': 'Nombre de jours minimum utilisé pour les avertissements de délai de convocation.',
+  'fieldHelp.registry.accessCode':
+    'Code à 12 chiffres permettant de consulter le certificat ; il n’est envoyé que pour cette consultation et n’est pas conservé.',
+  'fieldHelp.registry.email': 'Envoyé uniquement lorsque le service du registre le demande pour ouvrir le certificat.',
+  'fieldHelp.registry.firma': 'Nom de l’entité tel qu’il provenait du certificat importé.',
+  'fieldHelp.registry.nipc': 'Identifiant NIPC extrait du certificat, lorsqu’il est présent.',
+  'fieldHelp.registry.legalForm': 'Nature ou forme juridique normalisée à partir du certificat.',
+  'fieldHelp.registry.matricula': 'Référence d’immatriculation indiquée au registre du commerce.',
+  'fieldHelp.registry.sede': 'Siège extrait du certificat ; peut être un texte libre ou une adresse structurée.',
+  'fieldHelp.registry.dataConstituicao': 'Date de constitution extraite du certificat, lorsqu’elle est disponible.',
+  'fieldHelp.registry.capital': 'Capital imprimé sur le certificat, sans calcul supplémentaire.',
+  'fieldHelp.registry.objeto': 'Objet ou finalité enregistré selon le texte importé du certificat.',
+  'fieldHelp.registry.cae':
+    'Activités économiques du certificat, enrichies par le catalogue CAE lorsque c’est possible.',
+  'fieldHelp.registry.accessCodeMasked': 'Code masqué pour l’audit ; la valeur complète n’est jamais affichée.',
+  'fieldHelp.registry.retrievedAt': 'Moment où cette consultation a été effectuée.',
+  'fieldHelp.registry.conservatoria': 'Bureau du registre indiqué dans le document importé.',
+  'fieldHelp.registry.oficial': 'Officier indiqué dans le document importé.',
+  'fieldHelp.registry.subscribedOn': 'Date de souscription indiquée sur le certificat.',
+  'fieldHelp.registry.validUntil': 'Date de validité indiquée sur le certificat ; elle ne renouvelle pas la consultation.',
+  'fieldHelp.registry.source': 'URL utilisée pour obtenir le certificat lors de cet import.',
+  'fieldHelp.registry.digest': 'SHA-256 du HTML importé, pour comparer avec le document original.',
+  'fieldHelp.registry.naturezaJuridica':
+    'Nature juridique telle qu’elle a été lue dans l’inscription du certificat.',
+  'fieldHelp.registry.fiscalYearEnd': 'Clôture de l’exercice indiquée dans l’inscription, lorsqu’elle est présente.',
+  'fieldHelp.registry.capitalRealization': 'Note de libération du capital transcrite du certificat.',
+  'fieldHelp.registry.deliberationDate': 'Date de la résolution indiquée dans l’inscription, lorsqu’elle est présente.',
+  'fieldHelp.registry.formaObrigar': 'Texte importé sur qui engage l’entité.',
 };

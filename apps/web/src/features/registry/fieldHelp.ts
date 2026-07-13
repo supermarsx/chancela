@@ -1,27 +1,85 @@
+/**
+ * Field-help copy for the registry (certidão) import & provenance surfaces.
+ *
+ * Each entry resolves its sentence through i18n at access time (via the module-level,
+ * non-React `t` escape hatch — the same one `api/labels.ts` uses), so the tooltips follow
+ * the active locale live instead of being frozen Portuguese. Consumers keep reading
+ * `registryFieldHelp.<name>` and receive an already-translated string. The source strings
+ * live in `fieldHelp.registry.*` (see pt-PT).
+ */
+import { t } from '../../i18n';
+
 export const registryFieldHelp = {
-  accessCode:
-    'Código de 12 dígitos que permite consultar a certidão; é enviado só para esta consulta e não é guardado.',
-  email: 'Enviado apenas quando o serviço do registo o pedir para abrir a certidão.',
-  firma: 'Nome da entidade tal como veio da certidão importada.',
-  nipc: 'Identificador NIPC extraído da certidão, quando presente.',
-  legalForm: 'Natureza ou forma jurídica normalizada a partir da certidão.',
-  matricula: 'Referência de matrícula indicada no registo comercial.',
-  sede: 'Sede extraída da certidão; pode ser texto livre ou morada estruturada.',
-  dataConstituicao: 'Data de constituição extraída da certidão, quando disponível.',
-  capital: 'Capital impresso na certidão, sem cálculo adicional.',
-  objeto: 'Objeto ou fim registado conforme texto importado da certidão.',
-  cae: 'Atividades económicas da certidão, enriquecidas pelo catálogo CAE quando possível.',
-  accessCodeMasked: 'Código ocultado para auditoria; o valor completo nunca é mostrado.',
-  retrievedAt: 'Momento em que esta consulta foi executada.',
-  conservatoria: 'Conservatória indicada no documento importado.',
-  oficial: 'Oficial indicado no documento importado.',
-  subscribedOn: 'Data de subscrição indicada na certidão.',
-  validUntil: 'Data de validade indicada na certidão; não renova a consulta.',
-  source: 'URL usado para obter a certidão nesta importação.',
-  digest: 'SHA-256 do HTML importado, para comparar o documento original.',
-  naturezaJuridica: 'Natureza jurídica tal como foi lida na inscrição da certidão.',
-  fiscalYearEnd: 'Fecho do exercício indicado na inscrição, quando presente.',
-  capitalRealization: 'Nota de realização do capital transcrita da certidão.',
-  deliberationDate: 'Data da deliberação indicada na inscrição, quando presente.',
-  formaObrigar: 'Texto importado sobre quem vincula a entidade.',
-} as const;
+  get accessCode() {
+    return t('fieldHelp.registry.accessCode');
+  },
+  get email() {
+    return t('fieldHelp.registry.email');
+  },
+  get firma() {
+    return t('fieldHelp.registry.firma');
+  },
+  get nipc() {
+    return t('fieldHelp.registry.nipc');
+  },
+  get legalForm() {
+    return t('fieldHelp.registry.legalForm');
+  },
+  get matricula() {
+    return t('fieldHelp.registry.matricula');
+  },
+  get sede() {
+    return t('fieldHelp.registry.sede');
+  },
+  get dataConstituicao() {
+    return t('fieldHelp.registry.dataConstituicao');
+  },
+  get capital() {
+    return t('fieldHelp.registry.capital');
+  },
+  get objeto() {
+    return t('fieldHelp.registry.objeto');
+  },
+  get cae() {
+    return t('fieldHelp.registry.cae');
+  },
+  get accessCodeMasked() {
+    return t('fieldHelp.registry.accessCodeMasked');
+  },
+  get retrievedAt() {
+    return t('fieldHelp.registry.retrievedAt');
+  },
+  get conservatoria() {
+    return t('fieldHelp.registry.conservatoria');
+  },
+  get oficial() {
+    return t('fieldHelp.registry.oficial');
+  },
+  get subscribedOn() {
+    return t('fieldHelp.registry.subscribedOn');
+  },
+  get validUntil() {
+    return t('fieldHelp.registry.validUntil');
+  },
+  get source() {
+    return t('fieldHelp.registry.source');
+  },
+  get digest() {
+    return t('fieldHelp.registry.digest');
+  },
+  get naturezaJuridica() {
+    return t('fieldHelp.registry.naturezaJuridica');
+  },
+  get fiscalYearEnd() {
+    return t('fieldHelp.registry.fiscalYearEnd');
+  },
+  get capitalRealization() {
+    return t('fieldHelp.registry.capitalRealization');
+  },
+  get deliberationDate() {
+    return t('fieldHelp.registry.deliberationDate');
+  },
+  get formaObrigar() {
+    return t('fieldHelp.registry.formaObrigar');
+  },
+};

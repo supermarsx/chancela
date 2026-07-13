@@ -3823,4 +3823,96 @@ export const ptPT = {
   'acts.writtenResolution.status.reviewed': 'Revista',
   'acts.writtenResolution.status.needsFollowUp': 'Requer acompanhamento',
   'acts.writtenResolution.status.notRecorded': 'Não registado',
+  // --- Field-help tooltips (wp12-e2) ----------------------------------------------
+  'fieldHelp.acts.title': 'Nome curto que identifica a ata nas listas, pré-visualizações e documentos gerados.',
+  'fieldHelp.acts.channel':
+    'Forma como a reunião decorreu; ativa campos e verificações específicos para reuniões telemáticas ou híbridas.',
+  'fieldHelp.acts.meetingDate':
+    'Data em que a reunião ocorreu; também alimenta a numeração e a geração documental.',
+  'fieldHelp.acts.meetingTime': 'Hora de início registada na ata, quando aplicável.',
+  'fieldHelp.acts.place': 'Local físico ou referência da sessão usado no texto da ata.',
+  'fieldHelp.acts.attendanceReference':
+    'Indique onde está a lista de presenças ou a forma como os participantes foram verificados.',
+  'fieldHelp.acts.membersPresent':
+    'Número de membros presentes para leitura rápida e verificações de quórum.',
+  'fieldHelp.acts.membersRepresented':
+    'Número de membros representados por procuração ou outro meio admitido.',
+  'fieldHelp.acts.telematicEvidence':
+    'Registo da plataforma, gravação ou outra prova que suporte a reunião remota ou híbrida.',
+  'fieldHelp.acts.conveningDispatchDate':
+    'Data em que a convocatória foi expedida ou disponibilizada aos destinatários.',
+  'fieldHelp.acts.conveningChannel':
+    'Meio principal usado para a convocatória. Use o registo por destinatário quando houver variação relevante.',
+  'fieldHelp.acts.conveningAntecedenceDays':
+    'Antecedência efetiva entre a convocatória e a reunião. É comparada apenas com mínimos estatutários registados ou limiares já resolvidos.',
+  'fieldHelp.acts.conveningEvidenceReference':
+    'Referência curta ao comprovativo conservado, como identificador documental, registo postal, mensagem, publicação ou localização de arquivo.',
+  'fieldHelp.acts.mesaPresidente':
+    'Identifica quem presidiu à mesa; para sociedades comerciais é necessário para a conformidade da selagem.',
+  'fieldHelp.acts.mesaSecretarios':
+    'Nomes dos secretários ou escrutinadores que assistiram a mesa, quando existam.',
+  'fieldHelp.acts.agendaItem':
+    'Ponto tratado na ordem de trabalhos; as deliberações estruturadas podem ficar ligadas a este número.',
+  'fieldHelp.acts.deliberationsText':
+    'Texto livre da ata. Use-o para a redação integral ou como complemento às deliberações estruturadas.',
+  'fieldHelp.acts.structuredAgenda':
+    'Liga a deliberação ao ponto correspondente da ordem de trabalhos.',
+  'fieldHelp.acts.structuredText':
+    'Regista a deliberação em formato estruturado para reutilização no documento e em seguimentos.',
+  'fieldHelp.acts.voteMode':
+    'Indica se não houve apuramento registado, se a decisão foi unânime ou se há contagem de votos.',
+  'fieldHelp.acts.voteCount':
+    'Contagem de votos usada na redação da deliberação e nas verificações aplicáveis.',
+  'fieldHelp.acts.statements':
+    'Declarações de voto, protestos ou reservas que devem acompanhar uma deliberação.',
+  'fieldHelp.acts.referencedDocumentLabel':
+    'Designação do documento apresentado, consultado ou anexado à reunião.',
+  'fieldHelp.acts.referencedDocumentRef':
+    'Referência interna, ligação, número ou localização desse documento.',
+  'fieldHelp.acts.signatoryName': 'Pessoa que deve constar como signatária da ata.',
+  'fieldHelp.acts.signatoryCapacity':
+    'Qualidade em que a pessoa assina, por exemplo presidente, membro ou condómino.',
+  'fieldHelp.acts.signatoryPermilage':
+    'Permilagem do condómino quando a capacidade escolhida exige esse dado.',
+  'fieldHelp.acts.signatorySigned':
+    'Marca que a pessoa assinou a versão física ou eletrónica aplicável.',
+  'fieldHelp.acts.attachmentLabel': 'Descrição curta do anexo associado à ata.',
+  'fieldHelp.acts.attachmentKind': 'Classificação do anexo para o documento e para a prova arquivada.',
+  'fieldHelp.acts.beginningOfProof': 'Assinale quando o anexo deve ser tratado como início de prova.',
+  'fieldHelp.entities.nipc':
+    'Número de identificação da entidade. Use 9 dígitos portugueses; ative a opção sem validação só quando aplicável.',
+  'fieldHelp.entities.seat': 'Morada ou localidade da sede usada nos livros e documentos desta entidade.',
+  'fieldHelp.entities.legalForm':
+    'Tipo de entidade que escolhe a família de regras, livros e modelos aplicáveis.',
+  'fieldHelp.entities.fiscalYearEnd': 'Dia de fecho do exercício no formato MM-DD; em branco usa 12-31.',
+  'fieldHelp.entities.statuteQuorum': 'Valor operacional usado para avisos de conformidade sobre presenças.',
+  'fieldHelp.entities.statuteMajority': 'Fração usada para avisos de conformidade sobre deliberações.',
+  'fieldHelp.entities.statuteNotice': 'Dias mínimos usados para avisos de antecedência da convocatória.',
+  'fieldHelp.registry.accessCode':
+    'Código de 12 dígitos que permite consultar a certidão; é enviado só para esta consulta e não é guardado.',
+  'fieldHelp.registry.email': 'Enviado apenas quando o serviço do registo o pedir para abrir a certidão.',
+  'fieldHelp.registry.firma': 'Nome da entidade tal como veio da certidão importada.',
+  'fieldHelp.registry.nipc': 'Identificador NIPC extraído da certidão, quando presente.',
+  'fieldHelp.registry.legalForm': 'Natureza ou forma jurídica normalizada a partir da certidão.',
+  'fieldHelp.registry.matricula': 'Referência de matrícula indicada no registo comercial.',
+  'fieldHelp.registry.sede': 'Sede extraída da certidão; pode ser texto livre ou morada estruturada.',
+  'fieldHelp.registry.dataConstituicao': 'Data de constituição extraída da certidão, quando disponível.',
+  'fieldHelp.registry.capital': 'Capital impresso na certidão, sem cálculo adicional.',
+  'fieldHelp.registry.objeto': 'Objeto ou fim registado conforme texto importado da certidão.',
+  'fieldHelp.registry.cae':
+    'Atividades económicas da certidão, enriquecidas pelo catálogo CAE quando possível.',
+  'fieldHelp.registry.accessCodeMasked': 'Código ocultado para auditoria; o valor completo nunca é mostrado.',
+  'fieldHelp.registry.retrievedAt': 'Momento em que esta consulta foi executada.',
+  'fieldHelp.registry.conservatoria': 'Conservatória indicada no documento importado.',
+  'fieldHelp.registry.oficial': 'Oficial indicado no documento importado.',
+  'fieldHelp.registry.subscribedOn': 'Data de subscrição indicada na certidão.',
+  'fieldHelp.registry.validUntil': 'Data de validade indicada na certidão; não renova a consulta.',
+  'fieldHelp.registry.source': 'URL usado para obter a certidão nesta importação.',
+  'fieldHelp.registry.digest': 'SHA-256 do HTML importado, para comparar o documento original.',
+  'fieldHelp.registry.naturezaJuridica':
+    'Natureza jurídica tal como foi lida na inscrição da certidão.',
+  'fieldHelp.registry.fiscalYearEnd': 'Fecho do exercício indicado na inscrição, quando presente.',
+  'fieldHelp.registry.capitalRealization': 'Nota de realização do capital transcrita da certidão.',
+  'fieldHelp.registry.deliberationDate': 'Data da deliberação indicada na inscrição, quando presente.',
+  'fieldHelp.registry.formaObrigar': 'Texto importado sobre quem vincula a entidade.',
 };

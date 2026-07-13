@@ -3798,4 +3798,96 @@ export const esES: Catalog = {
   'acts.writtenResolution.status.reviewed': 'Revisado',
   'acts.writtenResolution.status.needsFollowUp': 'Requiere seguimiento',
   'acts.writtenResolution.status.notRecorded': 'No registrado',
+  // --- Field-help tooltips (wp12-e2) ----------------------------------------------
+  'fieldHelp.acts.title': 'Nombre corto que identifica el acta en las listas, vistas previas y documentos generados.',
+  'fieldHelp.acts.channel':
+    'Forma en que se celebró la reunión; activa campos y comprobaciones específicos para reuniones telemáticas o híbridas.',
+  'fieldHelp.acts.meetingDate':
+    'Fecha en que se celebró la reunión; también alimenta la numeración y la generación documental.',
+  'fieldHelp.acts.meetingTime': 'Hora de inicio registrada en el acta, cuando proceda.',
+  'fieldHelp.acts.place': 'Lugar físico o referencia de la sesión usado en el texto del acta.',
+  'fieldHelp.acts.attendanceReference':
+    'Indique dónde está la lista de asistentes o cómo se verificó a los participantes.',
+  'fieldHelp.acts.membersPresent':
+    'Número de miembros presentes para lectura rápida y comprobaciones de quórum.',
+  'fieldHelp.acts.membersRepresented':
+    'Número de miembros representados mediante poder u otro medio admitido.',
+  'fieldHelp.acts.telematicEvidence':
+    'Registro de la plataforma, grabación u otra prueba que respalde la reunión remota o híbrida.',
+  'fieldHelp.acts.conveningDispatchDate':
+    'Fecha en que se expidió o se puso a disposición de los destinatarios la convocatoria.',
+  'fieldHelp.acts.conveningChannel':
+    'Medio principal usado para la convocatoria. Use el registro por destinatario cuando haya variación relevante.',
+  'fieldHelp.acts.conveningAntecedenceDays':
+    'Antelación efectiva entre la convocatoria y la reunión. Solo se compara con los mínimos estatutarios registrados o los umbrales ya resueltos.',
+  'fieldHelp.acts.conveningEvidenceReference':
+    'Referencia breve al comprobante conservado, como identificador de documento, registro postal, mensaje, publicación o ubicación de archivo.',
+  'fieldHelp.acts.mesaPresidente':
+    'Identifica quién presidió la mesa; en las sociedades mercantiles es necesario para la conformidad del sellado.',
+  'fieldHelp.acts.mesaSecretarios':
+    'Nombres de los secretarios o escrutadores que asistieron a la mesa, cuando los haya.',
+  'fieldHelp.acts.agendaItem':
+    'Punto tratado en el orden del día; los acuerdos estructurados pueden vincularse a este número.',
+  'fieldHelp.acts.deliberationsText':
+    'Texto libre del acta. Úselo para la redacción íntegra o como complemento de los acuerdos estructurados.',
+  'fieldHelp.acts.structuredAgenda':
+    'Vincula el acuerdo con el punto correspondiente del orden del día.',
+  'fieldHelp.acts.structuredText':
+    'Registra el acuerdo en formato estructurado para reutilizarlo en el documento y en los seguimientos.',
+  'fieldHelp.acts.voteMode':
+    'Indica si no hubo recuento registrado, si la decisión fue unánime o si hay recuento de votos.',
+  'fieldHelp.acts.voteCount':
+    'Recuento de votos usado en la redacción del acuerdo y en las comprobaciones aplicables.',
+  'fieldHelp.acts.statements':
+    'Declaraciones de voto, protestas o reservas que deben acompañar a un acuerdo.',
+  'fieldHelp.acts.referencedDocumentLabel':
+    'Denominación del documento presentado, consultado o adjuntado a la reunión.',
+  'fieldHelp.acts.referencedDocumentRef':
+    'Referencia interna, enlace, número o ubicación de ese documento.',
+  'fieldHelp.acts.signatoryName': 'Persona que debe figurar como firmante del acta.',
+  'fieldHelp.acts.signatoryCapacity':
+    'Calidad en la que firma la persona, por ejemplo presidente, miembro o copropietario.',
+  'fieldHelp.acts.signatoryPermilage':
+    'Permilaje del copropietario cuando la calidad elegida requiere este dato.',
+  'fieldHelp.acts.signatorySigned':
+    'Marca que la persona firmó la versión física o electrónica aplicable.',
+  'fieldHelp.acts.attachmentLabel': 'Descripción breve del anexo asociado al acta.',
+  'fieldHelp.acts.attachmentKind': 'Clasificación del anexo para el documento y para la prueba archivada.',
+  'fieldHelp.acts.beginningOfProof': 'Marque cuando el anexo deba tratarse como principio de prueba.',
+  'fieldHelp.entities.nipc':
+    'Número de identificación de la entidad. Use 9 dígitos portugueses; active la opción sin validación solo cuando proceda.',
+  'fieldHelp.entities.seat': 'Dirección o localidad del domicilio social usado en los libros y documentos de esta entidad.',
+  'fieldHelp.entities.legalForm':
+    'Tipo de entidad que elige la familia de reglas, libros y plantillas aplicables.',
+  'fieldHelp.entities.fiscalYearEnd': 'Día de cierre del ejercicio en formato MM-DD; en blanco usa 12-31.',
+  'fieldHelp.entities.statuteQuorum': 'Valor operativo usado para avisos de conformidad sobre asistencias.',
+  'fieldHelp.entities.statuteMajority': 'Fracción usada para avisos de conformidad sobre acuerdos.',
+  'fieldHelp.entities.statuteNotice': 'Días mínimos usados para avisos de antelación de la convocatoria.',
+  'fieldHelp.registry.accessCode':
+    'Código de 12 dígitos que permite consultar la certificación; se envía solo para esta consulta y no se guarda.',
+  'fieldHelp.registry.email': 'Se envía solo cuando el servicio del registro lo solicite para abrir la certificación.',
+  'fieldHelp.registry.firma': 'Nombre de la entidad tal como vino de la certificación importada.',
+  'fieldHelp.registry.nipc': 'Identificador NIPC extraído de la certificación, cuando esté presente.',
+  'fieldHelp.registry.legalForm': 'Naturaleza o forma jurídica normalizada a partir de la certificación.',
+  'fieldHelp.registry.matricula': 'Referencia de matrícula indicada en el registro mercantil.',
+  'fieldHelp.registry.sede': 'Domicilio social extraído de la certificación; puede ser texto libre o dirección estructurada.',
+  'fieldHelp.registry.dataConstituicao': 'Fecha de constitución extraída de la certificación, cuando esté disponible.',
+  'fieldHelp.registry.capital': 'Capital impreso en la certificación, sin cálculo adicional.',
+  'fieldHelp.registry.objeto': 'Objeto o fin registrado conforme al texto importado de la certificación.',
+  'fieldHelp.registry.cae':
+    'Actividades económicas de la certificación, enriquecidas por el catálogo CAE cuando es posible.',
+  'fieldHelp.registry.accessCodeMasked': 'Código ocultado para auditoría; el valor completo nunca se muestra.',
+  'fieldHelp.registry.retrievedAt': 'Momento en que se ejecutó esta consulta.',
+  'fieldHelp.registry.conservatoria': 'Registro indicado en el documento importado.',
+  'fieldHelp.registry.oficial': 'Oficial indicado en el documento importado.',
+  'fieldHelp.registry.subscribedOn': 'Fecha de suscripción indicada en la certificación.',
+  'fieldHelp.registry.validUntil': 'Fecha de validez indicada en la certificación; no renueva la consulta.',
+  'fieldHelp.registry.source': 'URL usada para obtener la certificación en esta importación.',
+  'fieldHelp.registry.digest': 'SHA-256 del HTML importado, para comparar con el documento original.',
+  'fieldHelp.registry.naturezaJuridica':
+    'Naturaleza jurídica tal como se leyó en la inscripción de la certificación.',
+  'fieldHelp.registry.fiscalYearEnd': 'Cierre del ejercicio indicado en la inscripción, cuando esté presente.',
+  'fieldHelp.registry.capitalRealization': 'Nota de desembolso del capital transcrita de la certificación.',
+  'fieldHelp.registry.deliberationDate': 'Fecha del acuerdo indicada en la inscripción, cuando esté presente.',
+  'fieldHelp.registry.formaObrigar': 'Texto importado sobre quién obliga a la entidad.',
 };
