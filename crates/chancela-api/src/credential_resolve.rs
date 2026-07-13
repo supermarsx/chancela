@@ -214,8 +214,11 @@ pub fn resolve_candidates<C, E>(
     mut assemble_stored: impl FnMut(&DecryptedCredentialEntry) -> Result<C, E>,
     env_fallback: impl FnOnce() -> Result<Option<C>, E>,
 ) -> Result<Vec<ResolvedCredential<C>>, ResolveError<E>> {
+    // Runtime signing read: apply the strict-mode protection guard so stored-credential signing
+    // refuses when strict storage is on but protection has degraded below confidential at runtime
+    // (mirrors the flat `read_runtime` path; see `secretstore_persist::read_entries_runtime`).
     let entries = store
-        .read_entries(mode, provider_id)
+        .read_entries_runtime(mode, provider_id)
         .map_err(ResolveError::Store)?;
 
     if entries.is_empty() {

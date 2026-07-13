@@ -405,23 +405,14 @@ pub async fn reorder_entries(
         ));
     }
 
-    let by_id: BTreeMap<String, &CredentialEntryMetadataView> =
-        current.iter().map(|e| (e.entry_id.clone(), e)).collect();
-    for (index, id) in req.order.iter().enumerate() {
-        let entry = by_id.get(id).expect("permutation checked above");
-        let metadata = EntryMetadata {
-            label: entry.label.clone(),
-            priority: index as i32,
-            enabled: entry.enabled,
-            endpoint: entry.endpoint.clone(),
-            selectors: entry.selectors.clone(),
-        };
-        // Empty `set`/`clear` → metadata-only write; the entry keeps its (non-empty) fields.
-        state
-            .provider_credentials
-            .put_entry(mode, &provider_id, id, Some(metadata), Vec::new(), &[])
-            .map_err(map_store_err)?;
-    }
+    // Apply the whole reorder under a single records-lock acquisition (L2): atomic all-or-nothing,
+    // rather than a sequence of per-entry `put_entry` writes that could persist a partially-applied
+    // ordering if a later write failed mid-loop. The permutation was validated against `current` above;
+    // each entry keeps its label/enabled/endpoint/selectors/fields and only its priority is updated.
+    state
+        .provider_credentials
+        .reorder_entries(mode, &provider_id, &req.order)
+        .map_err(map_store_err)?;
 
     audit(
         &state,

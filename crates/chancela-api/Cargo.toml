@@ -60,3 +60,7 @@ der = { workspace = true }
 spki = { workspace = true }
 rsa = { workspace = true }
 p12 = "0.6.3"
+# Test-only: assemble a genuine multi-identity PFX (merge two single-identity PFXes' bags) to exercise
+# the H1 wrong-identity fail-safe. `yasna` is p12's own ASN.1 backend (already in the lock via p12), so
+# this pins no new transitive version.
+yasna = "0.5"

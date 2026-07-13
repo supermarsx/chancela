@@ -1148,6 +1148,8 @@ mod windows_dpapi {
     use core::ffi::c_void;
     use core::ptr;
 
+    use zeroize::Zeroize;
+
     use super::{SecretStoreError, WINDOWS_DPAPI_PROVIDER};
 
     #[repr(C)]
@@ -1265,7 +1267,13 @@ mod windows_dpapi {
 
         let plaintext =
             unsafe { std::slice::from_raw_parts(output.pb_data, output.cb_data as usize) }.to_vec();
+        // L1 hardening: the decrypted plaintext lives in an OS `LocalAlloc` buffer. Copy it out (above),
+        // then wipe the OS buffer before returning it to `LocalFree`, so a secret does not linger in
+        // freed heap memory that a later allocation could read back.
         unsafe {
+            if !output.pb_data.is_null() && output.cb_data > 0 {
+                std::slice::from_raw_parts_mut(output.pb_data, output.cb_data as usize).zeroize();
+            }
             LocalFree(output.pb_data.cast());
         }
         Ok(plaintext)

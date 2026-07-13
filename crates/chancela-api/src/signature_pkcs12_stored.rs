@@ -34,7 +34,7 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
 use chancela_authz::Permission;
 use chancela_core::ActId;
-use chancela_signing::{Pkcs12SigningSource, SoftCertificateError};
+use chancela_signing::{Pkcs12IdentitySelector, Pkcs12SigningSource, SoftCertificateError};
 use serde::Deserialize;
 use uuid::Uuid;
 
@@ -89,6 +89,12 @@ struct ChosenPkcs12Entry {
     pkcs12_base64: String,
     /// The PKCS#12 passphrase — transient, handed to the existing signer, never logged/persisted.
     passphrase: String,
+    /// `true` when the identity the operator's FULL selector (friendly_name + local_key_id) validated
+    /// is the **same** identity the delegated upload signer would select from its reduced
+    /// `friendly_name`-only selector. When `false`, delegating would sign with a different identity
+    /// than the operator chose (H1) and the sign path must refuse rather than silently sign the wrong
+    /// key. See [`select_stored_pkcs12_candidate`].
+    identity_honored: bool,
 }
 
 impl std::fmt::Debug for ChosenPkcs12Entry {
@@ -203,15 +209,38 @@ fn select_stored_pkcs12_candidate(
         )));
     }
 
-    try_in_order(&candidates, |cred| {
+    let chosen = try_in_order(&candidates, |cred| {
         let input = &cred.config;
-        // Offline load: decrypts the PFX + selects the identity. This is the failover decision point —
-        // a WrongPassword/malformed PFX surfaces as a terminal `SoftCertificateError` (no fail-over).
-        Pkcs12SigningSource::from_der_with_selector(
+        // Offline load: decrypts the PFX + selects the identity with the operator's FULL selector
+        // (friendly_name + local_key_id). This is the failover decision point — a WrongPassword /
+        // malformed PFX surfaces as a terminal `SoftCertificateError` (no fail-over). It is also the
+        // identity the operator actually selected.
+        let selected = Pkcs12SigningSource::from_der_with_selector(
             input.pfx_der.as_slice(),
             &input.passphrase,
             &input.selector,
         )?;
+        // H1 fail-safe: the delegated upload signer (`signature::sign_local_pkcs12_signature`) rebuilds
+        // the selector as `friendly_name.map(by_friendly_name).unwrap_or_else(any)` — it drops any
+        // `local_key_id`. Replicate that reduced selector EXACTLY and load the same PFX under it, then
+        // compare identities. If a multi-identity PFX was disambiguated only by `local_key_id`, the
+        // delegate's `any()` (or a non-unique friendly_name) can resolve to a DIFFERENT key, so we must
+        // detect and refuse that case rather than validate identity A and sign with identity B.
+        let delegate_selector = input
+            .selector
+            .friendly_name
+            .clone()
+            .map(Pkcs12IdentitySelector::by_friendly_name)
+            .unwrap_or_else(Pkcs12IdentitySelector::any);
+        let delegated = Pkcs12SigningSource::from_der_with_selector(
+            input.pfx_der.as_slice(),
+            &input.passphrase,
+            &delegate_selector,
+        )?;
+        let identity_honored = selected.identity().local_key_id
+            == delegated.identity().local_key_id
+            && selected.identity().signing_certificate_der
+                == delegated.identity().signing_certificate_der;
         let entry_id = match &cred.source {
             ResolvedSource::Stored { entry_id, .. } => Some(entry_id.clone()),
             ResolvedSource::Env => None,
@@ -221,9 +250,23 @@ fn select_stored_pkcs12_candidate(
             friendly_name: input.selector.friendly_name.clone(),
             pkcs12_base64: B64.encode(input.pfx_der.as_slice()),
             passphrase: input.passphrase.as_str().to_owned(),
+            identity_honored,
         })
     })
-    .map_err(map_failover_error)
+    .map_err(map_failover_error)?;
+
+    // H1: refuse the ambiguous case fail-safe. The chosen entry loaded and validated one identity, but
+    // the delegated sign path would honor a different one — signing here would produce evidence under
+    // the wrong key. Reject with a clear, actionable 409 instead.
+    if !chosen.identity_honored {
+        return Err(ApiError::Conflict(format!(
+            "esta entrada PKCS#12 seleciona uma identidade por local_key_id que o percurso de \
+             assinatura atual não consegue honrar; atribua à entrada um friendly_name único ou use um \
+             PFX de identidade única (fornecedor '{provider_id}')"
+        )));
+    }
+
+    Ok(chosen)
 }
 
 /// Map a candidate-resolution failure onto an [`ApiError`]. A malformed stored entry is a 422; a
@@ -397,6 +440,137 @@ mod tests {
                 &[],
             )
             .expect("put pkcs12 entry");
+    }
+
+    /// Store a PKCS#12 entry from raw PFX bytes and an explicit selector map (unlike
+    /// [`put_pkcs12_entry`], which always synthesises a single-identity PFX + friendly_name selector).
+    fn put_pkcs12_entry_raw(
+        store: &ProviderCredentialStore,
+        provider_id: &str,
+        entry_id: &str,
+        priority: i32,
+        enabled: bool,
+        pfx: &[u8],
+        stored_password: &str,
+        selectors: EntrySelectors,
+    ) {
+        let pfx_b64 = B64.encode(pfx);
+        store
+            .put_entry(
+                CredentialMode::LocalPkcs12,
+                provider_id,
+                entry_id,
+                Some(EntryMetadata {
+                    label: format!("entry-{entry_id}"),
+                    priority,
+                    enabled,
+                    endpoint: None,
+                    selectors,
+                }),
+                Pkcs12CredentialFields {
+                    pfx_der_b64: Some(Zeroizing::new(pfx_b64)),
+                    passphrase: Some(Zeroizing::new(stored_password.to_owned())),
+                }
+                .into_set_pairs(),
+                &[],
+            )
+            .expect("put pkcs12 entry");
+    }
+
+    /// The PKCS#12 BMPString encoding of `password` (matches p12's internal `bmp_string`), needed to
+    /// (re)encrypt the merged cert bags and recompute the MAC of a hand-assembled PFX.
+    fn bmp_password(password: &str) -> Vec<u8> {
+        let utf16: Vec<u16> = password.encode_utf16().collect();
+        let mut bytes = Vec::with_capacity(utf16.len() * 2 + 2);
+        for code_unit in utf16 {
+            bytes.push((code_unit / 256) as u8);
+            bytes.push((code_unit % 256) as u8);
+        }
+        bytes.push(0);
+        bytes.push(0);
+        bytes
+    }
+
+    fn hex_encode(bytes: &[u8]) -> String {
+        let mut out = String::with_capacity(bytes.len() * 2);
+        for b in bytes {
+            out.push_str(&format!("{b:02x}"));
+        }
+        out
+    }
+
+    /// Read the private-key bag's `localKeyId` out of a (single-identity) PFX.
+    fn key_local_key_id(pfx: &[u8], password: &str) -> Vec<u8> {
+        p12::PFX::parse(pfx)
+            .expect("parse pfx")
+            .bags(password)
+            .expect("read bags")
+            .into_iter()
+            .find_map(|bag| match &bag.bag {
+                p12::SafeBagKind::Pkcs8ShroudedKeyBag(_) => bag.local_key_id(),
+                _ => None,
+            })
+            .expect("key bag local_key_id")
+    }
+
+    /// Build a genuine two-identity PFX by merging the key + cert bags of two independent
+    /// single-identity PFXes. Each identity keeps its own distinct `localKeyId` (sha1 of its cert),
+    /// friendly name, private key, and certificate. The first identity's key bag is placed first, so a
+    /// delegate that reduces the selector to `any()` (first key bag) resolves to the FIRST identity.
+    /// Returns `(pfx_der, first_local_key_id, second_local_key_id)`.
+    fn two_identity_pfx(name_a: &str, name_b: &str, password: &str) -> (Vec<u8>, Vec<u8>, Vec<u8>) {
+        let mut key_bags: Vec<p12::SafeBag> = Vec::new();
+        let mut cert_bags: Vec<p12::SafeBag> = Vec::new();
+        let mut local_key_ids: Vec<Vec<u8>> = Vec::new();
+        for name in [name_a, name_b] {
+            let single = rsa_pfx(name, password);
+            let pfx = p12::PFX::parse(&single).expect("parse single-identity pfx");
+            for bag in pfx.bags(password).expect("read single-identity bags") {
+                match &bag.bag {
+                    p12::SafeBagKind::Pkcs8ShroudedKeyBag(_) => {
+                        if let Some(id) = bag.local_key_id() {
+                            local_key_ids.push(id);
+                        }
+                        key_bags.push(bag);
+                    }
+                    p12::SafeBagKind::CertBag(_) => cert_bags.push(bag),
+                    _ => {}
+                }
+            }
+        }
+        assert_eq!(local_key_ids.len(), 2, "expected two distinct key bags");
+        assert_ne!(
+            local_key_ids[0], local_key_ids[1],
+            "the two identities must have distinct local key ids"
+        );
+
+        let bmp = bmp_password(password);
+        let encrypted_certs =
+            p12::EncryptedData::from_safe_bags(&cert_bags, &bmp).expect("encrypt merged cert bags");
+        let contents = yasna::construct_der(|w| {
+            w.write_sequence_of(|w| {
+                p12::ContentInfo::EncryptedData(encrypted_certs).write(w.next());
+                p12::ContentInfo::Data(yasna::construct_der(|w| {
+                    w.write_sequence_of(|w| {
+                        for bag in &key_bags {
+                            bag.write(w.next());
+                        }
+                    })
+                }))
+                .write(w.next());
+            });
+        });
+        let mac_data = p12::MacData::new(&contents, &bmp);
+        let pfx = p12::PFX {
+            version: 3,
+            auth_safe: p12::ContentInfo::Data(contents),
+            mac_data: Some(mac_data),
+        };
+        (
+            pfx.to_der(),
+            local_key_ids[0].clone(),
+            local_key_ids[1].clone(),
+        )
     }
 
     // --- tests -----------------------------------------------------------------------------
@@ -597,5 +771,103 @@ mod tests {
             }
             other => panic!("expected Conflict, got {other:?}"),
         }
+    }
+
+    // --- H1: wrong-identity fail-safe ------------------------------------------------------
+
+    #[test]
+    fn stored_sign_rejects_local_key_id_selection_the_delegate_cannot_honor() {
+        // A two-identity PFX (no distinguishing friendly_name) disambiguated ONLY by local_key_id: the
+        // full selector validates the SECOND identity, but the delegated sign path drops local_key_id
+        // and its `any()` resolves to the FIRST identity. This must be refused fail-safe, not signed.
+        let dir = TempDir::new("h1-reject");
+        let store = store(dir.path());
+        let (pfx, _first, second) =
+            two_identity_pfx("Amélia Marques", "Amélia Marques", PFX_PASSWORD);
+        let mut selectors = EntrySelectors::new();
+        selectors.insert(
+            crate::credential_resolve::SELECTOR_PKCS12_LOCAL_KEY_ID_HEX.to_owned(),
+            hex_encode(&second),
+        );
+        put_pkcs12_entry_raw(
+            &store,
+            "amelia",
+            "multi",
+            0,
+            true,
+            &pfx,
+            PFX_PASSWORD,
+            selectors,
+        );
+
+        let err = select_stored_pkcs12_candidate(&store, "amelia", None).expect_err(
+            "an ambiguous local_key_id selection must be refused, not silently mis-signed",
+        );
+        match err {
+            ApiError::Conflict(msg) => assert!(
+                msg.contains("local_key_id"),
+                "expected the H1 wrong-identity refusal, got: {msg}"
+            ),
+            other => panic!("expected Conflict, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn stored_sign_allows_unique_friendly_name_in_multi_identity_pfx() {
+        // Two identities with DISTINCT friendly names, selected by the unique friendly_name: the full
+        // selector and the delegate's `by_friendly_name` resolve to the same identity, so it signs.
+        let dir = TempDir::new("h1-friendly-ok");
+        let store = store(dir.path());
+        let (pfx, _first, _second) = two_identity_pfx("Amélia A", "Amélia B", PFX_PASSWORD);
+        let mut selectors = EntrySelectors::new();
+        selectors.insert(
+            crate::credential_resolve::SELECTOR_PKCS12_FRIENDLY_NAME.to_owned(),
+            "Amélia B".to_owned(),
+        );
+        put_pkcs12_entry_raw(
+            &store,
+            "amelia",
+            "multi",
+            0,
+            true,
+            &pfx,
+            PFX_PASSWORD,
+            selectors,
+        );
+
+        let chosen = select_stored_pkcs12_candidate(&store, "amelia", None)
+            .expect("a unique friendly_name in a multi-identity PFX must still sign");
+        assert_eq!(chosen.friendly_name.as_deref(), Some("Amélia B"));
+        assert!(chosen.identity_honored);
+    }
+
+    #[test]
+    fn stored_sign_allows_local_key_id_selection_on_single_identity_pfx() {
+        // A single-identity PFX selected by local_key_id: the delegate's `any()` resolves to the same
+        // (only) identity, so signing is honored.
+        let dir = TempDir::new("h1-single-ok");
+        let store = store(dir.path());
+        let pfx = rsa_pfx("Amélia Marques", PFX_PASSWORD);
+        let lkid = key_local_key_id(&pfx, PFX_PASSWORD);
+        let mut selectors = EntrySelectors::new();
+        selectors.insert(
+            crate::credential_resolve::SELECTOR_PKCS12_LOCAL_KEY_ID_HEX.to_owned(),
+            hex_encode(&lkid),
+        );
+        put_pkcs12_entry_raw(
+            &store,
+            "amelia",
+            "single",
+            0,
+            true,
+            &pfx,
+            PFX_PASSWORD,
+            selectors,
+        );
+
+        let chosen = select_stored_pkcs12_candidate(&store, "amelia", None)
+            .expect("a single-identity PFX selected by local_key_id must still sign");
+        assert_eq!(chosen.entry_id.as_deref(), Some("single"));
+        assert!(chosen.identity_honored);
     }
 }

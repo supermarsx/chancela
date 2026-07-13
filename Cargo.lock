@@ -448,6 +448,7 @@ dependencies = [
  "tower-http",
  "uuid",
  "x509-cert",
+ "yasna",
  "zeroize",
  "zip",
 ]

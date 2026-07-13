@@ -320,14 +320,15 @@ fn push_pair(
 
 // --- At-rest record ------------------------------------------------------------------------
 
-/// One encrypted credential field on disk: the AEAD [`SecretEnvelope`] plus a non-secret `last4`
-/// hint (≤4 chars) surfaced by the status API. Never carries the plaintext.
+/// One encrypted credential field on disk: the AEAD [`SecretEnvelope`]. Never carries the plaintext.
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct StoredCredentialField {
     /// The AEAD envelope wrapping this field's secret value.
     #[serde(flatten)]
     pub envelope: SecretEnvelope,
-    /// Up to the last 4 characters of the plaintext, kept as a non-secret display hint.
+    /// Legacy plaintext display hint (≤4 chars). No longer written (M2: a short secret's last 4 chars
+    /// can be the whole secret in cleartext); retained only to deserialize pre-existing sidecars.
+    /// Always `None` on new writes and never surfaced as a fresh hint.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last4: Option<String>,
 }
@@ -904,11 +905,15 @@ impl ProviderCredentialStore {
                     field,
                     value.as_bytes(),
                 )?;
+                // M2: never persist a plaintext `last4` hint. For genuinely-secret fields (passphrase,
+                // password, client_secret, access_token, secret, PFX blob) a ≤4-char hint can be the
+                // whole secret (e.g. a 4-digit PIN) sitting in cleartext beside the ciphertext. The
+                // status/metadata surfaces report a field as configured without any plaintext hint.
                 wrapped.push((
                     field,
                     StoredCredentialField {
                         envelope,
-                        last4: Some(last4(value)),
+                        last4: None,
                     },
                 ));
             }
@@ -1016,6 +1021,38 @@ impl ProviderCredentialStore {
         })
     }
 
+    /// Atomically re-prioritise the entries of `(mode, provider_id)`: each id in `order` receives its
+    /// position as its new priority, applied under a **single** records-lock acquisition and persisted
+    /// once, so a reorder is all-or-nothing (L2). This replaces a per-entry write loop that could leave
+    /// a partially-applied ordering if a later write failed. Ids in `order` absent from the record are
+    /// ignored and entries not named keep their priority; callers validate the permutation up-front.
+    /// Metadata-only: needs no key material, but still fails closed on a poisoned lock or persist error.
+    pub fn reorder_entries(
+        &self,
+        mode: CredentialMode,
+        provider_id: &str,
+        order: &[String],
+    ) -> Result<(), ProviderCredentialError> {
+        let key = (mode.as_str().to_owned(), provider_id.to_owned());
+        self.with_records(|records| {
+            let mut next = records.clone();
+            let Some(record) = next.get_mut(&key) else {
+                return Ok(());
+            };
+            let now = now_rfc3339();
+            for (index, id) in order.iter().enumerate() {
+                if let Some(entry) = record.entries.iter_mut().find(|e| &e.id == id) {
+                    entry.priority = index as i32;
+                    entry.updated_at = now.clone();
+                }
+            }
+            record.sort_entries();
+            self.persist(&next)?;
+            *records = next;
+            Ok(())
+        })
+    }
+
     /// Decrypt the flat [`DEFAULT_ENTRY_ID`] entry of `(mode, provider_id)`, or `Ok(None)` when no
     /// such entry exists. Administrative/test read path: it authenticates ciphertext but does not
     /// apply the runtime strict/protection guard. Runtime callers must use [`Self::read_runtime`].
@@ -1082,11 +1119,34 @@ impl ProviderCredentialStore {
 
     /// Decrypt every entry of the `(mode, provider_id)` record in priority order, or an empty vec when
     /// no record exists. Administrative read path (no runtime guard); it authenticates every field, so
-    /// a relocated/tampered ciphertext fails closed with [`SecretStoreError::Crypto`].
+    /// a relocated/tampered ciphertext fails closed with [`SecretStoreError::Crypto`]. Runtime signing
+    /// callers must use [`Self::read_entries_runtime`] so the strict-mode protection guard applies.
     pub fn read_entries(
         &self,
         mode: CredentialMode,
         provider_id: &str,
+    ) -> Result<Vec<DecryptedCredentialEntry>, ProviderCredentialError> {
+        self.read_entries_inner(mode, provider_id, false)
+    }
+
+    /// Runtime multi-entry read for the credential-resolution/failover driver. Mirrors
+    /// [`Self::read_runtime`]: it refuses plaintext use — before decrypting **any** field — when strict
+    /// credential storage is enabled and the resolved protection level has degraded below confidential
+    /// (e.g. to obfuscation). A corrupt sidecar or key failure also fails closed; callers must not fall
+    /// back to env/DI after an error from this method.
+    pub fn read_entries_runtime(
+        &self,
+        mode: CredentialMode,
+        provider_id: &str,
+    ) -> Result<Vec<DecryptedCredentialEntry>, ProviderCredentialError> {
+        self.read_entries_inner(mode, provider_id, true)
+    }
+
+    fn read_entries_inner(
+        &self,
+        mode: CredentialMode,
+        provider_id: &str,
+        enforce_runtime_guard: bool,
     ) -> Result<Vec<DecryptedCredentialEntry>, ProviderCredentialError> {
         let key = (mode.as_str().to_owned(), provider_id.to_owned());
         let record = self.with_records(|records| Ok(records.get(&key).cloned()))?;
@@ -1094,6 +1154,14 @@ impl ProviderCredentialStore {
             return Ok(Vec::new());
         };
         let store = self.secretstore()?;
+        if enforce_runtime_guard
+            && self.strict
+            && store.protection_level() != ProtectionLevel::Confidential
+        {
+            return Err(ProviderCredentialError::RuntimeStrictModeUnprotected {
+                level: store.protection_level(),
+            });
+        }
         let mut out = Vec::with_capacity(record.entries.len());
         for entry in &record.entries {
             let mut fields = BTreeMap::new();
@@ -1139,8 +1207,8 @@ impl ProviderCredentialStore {
         })
     }
 
-    /// Non-secret status of every stored record (the flat entry's configured field names + `last4`
-    /// hints), for the status API (S4). Never decrypts and never returns ciphertext.
+    /// Non-secret status of every stored record (the flat entry's configured field names), for the
+    /// status API (S4). Never decrypts and never returns ciphertext or any plaintext hint.
     pub fn statuses(&self) -> Result<Vec<CredentialRecordStatus>, ProviderCredentialError> {
         self.with_records(|records| {
             Ok(records
@@ -1239,13 +1307,6 @@ fn reject_unknown_field(mode: CredentialMode, field: &str) -> Result<(), Provide
             field: field.to_owned(),
         })
     }
-}
-
-/// The last up to 4 characters of `value`, as a non-secret display hint.
-fn last4(value: &str) -> String {
-    let chars: Vec<char> = value.chars().collect();
-    let start = chars.len().saturating_sub(4);
-    chars[start..].iter().collect()
 }
 
 /// The current UTC time as an RFC 3339 string, or empty on the (unreachable) formatting failure.
@@ -1412,8 +1473,12 @@ mod tests {
             "the sidecar must not contain the plaintext secret"
         );
         assert!(!text.contains("app-42"), "identifiers are encrypted too");
-        // The last4 hint is present and is at most 4 chars (a display hint, not the secret).
-        assert!(text.contains("z789"));
+        // M2: no plaintext `last4` hint is persisted — not even the secret's last 4 chars.
+        assert!(
+            !text.contains("z789"),
+            "the sidecar must not persist any plaintext hint of the secret"
+        );
+        assert!(!text.contains("last4"), "no last4 field is written at all");
     }
 
     #[test]
@@ -1704,6 +1769,57 @@ mod tests {
     }
 
     #[test]
+    fn read_entries_runtime_refuses_strict_non_confidential_protection() {
+        // M1: the multi-entry failover read used by the credential-resolution driver must apply the
+        // same strict-mode protection guard as the flat runtime read — refusing to decrypt any stored
+        // entry when strict storage is on but protection has degraded to obfuscation.
+        let writer = in_memory_store_with_source(CredentialKeySource::OperatorEnv, false, false);
+        writer
+            .put_entry(
+                CredentialMode::CscQtsp,
+                "prov",
+                "primary",
+                None,
+                CscCredentialFields {
+                    client_secret: Some(zeroizing("csc-failover-fixture")),
+                    ..Default::default()
+                }
+                .into_set_pairs(),
+                &[],
+            )
+            .expect("seed encrypted entry");
+        let records = writer.records.lock().expect("records").clone();
+        let reader = ProviderCredentialStore {
+            backing: Backing::InMemory,
+            strict: true,
+            records: Mutex::new(records),
+            secretstore: Mutex::new(Some(CredentialSecretStore::for_test_source(
+                CredentialKeySource::OperatorEnv,
+                false,
+                true,
+            ))),
+        };
+
+        let err = match reader.read_entries_runtime(CredentialMode::CscQtsp, "prov") {
+            Err(err) => err,
+            Ok(_) => panic!("strict runtime entries read must refuse obfuscation protection"),
+        };
+        assert!(matches!(
+            err,
+            ProviderCredentialError::RuntimeStrictModeUnprotected {
+                level: ProtectionLevel::Obfuscation
+            }
+        ));
+
+        // The administrative (unguarded) read still authenticates and returns the entry, proving the
+        // refusal is the runtime guard and not a decrypt failure.
+        let entries = reader
+            .read_entries(CredentialMode::CscQtsp, "prov")
+            .expect("admin read is unguarded");
+        assert_eq!(entries.len(), 1);
+    }
+
+    #[test]
     fn none_field_leaves_existing_unchanged_and_clear_removes_it() {
         let dir = TempDir::new("partial-update");
         let store = store(dir.path());
@@ -1982,7 +2098,7 @@ mod tests {
     }
 
     #[test]
-    fn statuses_expose_last4_not_ciphertext() {
+    fn statuses_report_configured_fields_without_plaintext_hint() {
         let dir = TempDir::new("statuses");
         let store = store(dir.path());
         store
@@ -2002,17 +2118,36 @@ mod tests {
         let status = &statuses[0];
         assert_eq!(status.mode, CredentialMode::Scap);
         let (name, last4) = &status.fields[0];
+        // M2: the field is reported as configured, but with NO plaintext last4 hint.
         assert_eq!(name, FIELD_SECRET);
-        assert_eq!(last4.as_deref(), Some("3456"));
+        assert_eq!(last4.as_deref(), None);
     }
 
     #[test]
-    fn last4_handles_short_and_unicode_values() {
-        assert_eq!(last4("ab"), "ab");
-        assert_eq!(last4("abcdef"), "cdef");
-        assert_eq!(last4(""), "");
-        // Multi-byte chars are counted by char, never split mid-codepoint.
-        assert_eq!(last4("aéîø"), "aéîø");
-        assert_eq!(last4("xaéîø"), "aéîø");
+    fn short_passphrase_plaintext_absent_from_sidecar() {
+        // A 4-char PIN-style passphrase: its entire plaintext must not appear anywhere in the sidecar,
+        // including as a last4 hint (which would once have leaked the whole secret).
+        let dir = TempDir::new("short-passphrase");
+        let store = store(dir.path());
+        let pin = "1234";
+        store
+            .put(
+                CredentialMode::LocalPkcs12,
+                "amelia",
+                Pkcs12CredentialFields {
+                    pfx_der_b64: Some(zeroizing(&B64.encode([0xDE, 0xAD, 0xBE, 0xEF]))),
+                    passphrase: Some(zeroizing(pin)),
+                }
+                .into_set_pairs(),
+                &[],
+            )
+            .expect("put");
+        let bytes = std::fs::read(dir.path().join(CREDENTIAL_SIDECAR_FILE)).expect("sidecar bytes");
+        let text = String::from_utf8(bytes).expect("utf8 sidecar");
+        assert!(
+            !text.contains(pin),
+            "a short passphrase's plaintext must never appear in the sidecar"
+        );
+        assert!(!text.contains("last4"), "no last4 hint is persisted");
     }
 }
