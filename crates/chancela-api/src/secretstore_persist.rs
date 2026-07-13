@@ -3,15 +3,27 @@
 //! This module sits on top of the [`crate::secretstore`] crypto core (S1). It owns:
 //!
 //! - the per-mode credential **model** ([`CmdCredentialFields`] / [`CscCredentialFields`] /
-//!   [`ScapCredentialFields`]) whose secret fields are `Option<Zeroizing<String>>` — `None` on a
-//!   write means *leave unchanged*, an explicit clear-list removes a field;
-//! - the at-rest **record** ([`EncryptedCredentialRecord`]) that stores ONLY
-//!   [`SecretEnvelope`](crate::secretstore::SecretEnvelope)s (nonce + ciphertext + key version) plus
-//!   non-secret selectors (mode / provider id) and a ≤4-char `last4` hint — **never** a plaintext
+//!   [`ScapCredentialFields`] / [`Pkcs12CredentialFields`]) whose secret fields are
+//!   `Option<Zeroizing<String>>` — `None` on a write means *leave unchanged*, an explicit clear-list
+//!   removes a field;
+//! - the at-rest **record** ([`EncryptedCredentialRecord`]) that holds an ordered list of
+//!   [`CredentialEntry`]s (id / label / priority / enabled / endpoint / non-secret selectors + a map
+//!   of encrypted [`SecretEnvelope`](crate::secretstore::SecretEnvelope)s) — **never** a plaintext
 //!   secret;
 //! - the encrypted **sidecar** file `provider-credentials.enc.json` in the data dir, written with the
 //!   same schema-versioned, atomic temp+rename discipline as `attestation::write_seed_file`, plus the
 //!   [`ProviderCredentialStore`] read/put/clear operations that wrap/unwrap through the S1 secretstore.
+//!
+//! ## Entries + entry-bound AEAD (plan §1/§6)
+//!
+//! A record's credentials are an ordered `Vec<CredentialEntry>` (priority/failover ordering), each
+//! entry carrying its own encrypted fields. Every field's AEAD AAD binds the owning `entry_id`
+//! (`mode ‖ provider_id ‖ entry_id ‖ field_name ‖ key_version`), so a ciphertext cannot be relocated
+//! between a provider's entries. The flat [`ProviderCredentialStore::put`]/[`read`](
+//! ProviderCredentialStore::read)/[`statuses`](ProviderCredentialStore::statuses) helpers are thin
+//! shims over a single well-known [`DEFAULT_ENTRY_ID`] entry; multi-entry callers use
+//! [`ProviderCredentialStore::put_entry`] / [`delete_entry`](ProviderCredentialStore::delete_entry) /
+//! [`read_entries`](ProviderCredentialStore::read_entries).
 //!
 //! ## Fail-closed & honesty (mirrors S1 / plan §7)
 //!
@@ -32,6 +44,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
+use time::OffsetDateTime;
+use time::format_description::well_known::Rfc3339;
 use zeroize::Zeroizing;
 
 use crate::secretstore::{
@@ -43,7 +57,13 @@ use crate::secretstore::{
 pub const CREDENTIAL_SIDECAR_FILE: &str = "provider-credentials.enc.json";
 
 /// Schema version of the sidecar envelope. A mismatch fails closed rather than guessing.
-const SIDECAR_SCHEMA_VERSION: u32 = 1;
+///
+/// v2 replaced the flat per-`(mode, provider_id)` field map with an ordered [`CredentialEntry`]
+/// list (entry-bound AEAD AAD, priority/enabled/endpoint/selectors). The store is dormant — only
+/// `statuses()` has a production caller and `put`/`read`/`clear` are exercised solely by tests — so
+/// no on-disk v1 sidecar with real data can exist and there is **no** v1→v2 migration: the loader
+/// fails closed on any other version.
+const SIDECAR_SCHEMA_VERSION: u32 = 2;
 /// `type` tag stamped in the sidecar envelope (guards against loading a foreign JSON file).
 const SIDECAR_KIND: &str = "provider-credentials";
 /// `purpose` tag stamped in the sidecar envelope.
@@ -67,6 +87,17 @@ pub const FIELD_CLIENT_SECRET: &str = "client_secret";
 pub const FIELD_ACCESS_TOKEN: &str = "access_token";
 /// SCAP API-key/secret field.
 pub const FIELD_SECRET: &str = "secret";
+/// LocalPkcs12 base64-encoded PFX/PKCS#12 blob field. Base64 (not raw bytes) because the crypto
+/// core validates decrypted plaintext as UTF-8, and a raw PFX is arbitrary binary.
+pub const FIELD_PKCS12_PFX: &str = "pfx_der";
+/// LocalPkcs12 PKCS#12 passphrase field.
+pub const FIELD_PKCS12_PASSPHRASE: &str = "passphrase";
+
+/// The entry id used by the legacy flat [`ProviderCredentialStore::put`]/[`read`](
+/// ProviderCredentialStore::read)/[`statuses`](ProviderCredentialStore::statuses) shims, which map
+/// the single implicit entry onto the ordered entry list. Multi-entry callers use
+/// [`ProviderCredentialStore::put_entry`] with explicit ids.
+const DEFAULT_ENTRY_ID: &str = "default";
 
 // --- Credential mode -----------------------------------------------------------------------
 
@@ -80,6 +111,8 @@ pub enum CredentialMode {
     CscQtsp,
     /// AMA SCAP.
     Scap,
+    /// Local PKCS#12 (PFX) software certificate held at rest (base64 blob + passphrase).
+    LocalPkcs12,
 }
 
 impl CredentialMode {
@@ -89,6 +122,7 @@ impl CredentialMode {
             Self::Cmd => "cmd",
             Self::CscQtsp => "csc",
             Self::Scap => "scap",
+            Self::LocalPkcs12 => "pkcs12",
         }
     }
 
@@ -98,6 +132,7 @@ impl CredentialMode {
             "cmd" => Some(Self::Cmd),
             "csc" => Some(Self::CscQtsp),
             "scap" => Some(Self::Scap),
+            "pkcs12" => Some(Self::LocalPkcs12),
             _ => None,
         }
     }
@@ -125,6 +160,7 @@ impl CredentialMode {
                 FIELD_HTTP_BASIC_USERNAME,
                 FIELD_HTTP_BASIC_PASSWORD,
             ],
+            Self::LocalPkcs12 => &[FIELD_PKCS12_PFX, FIELD_PKCS12_PASSPHRASE],
         }
     }
 
@@ -137,7 +173,7 @@ impl CredentialMode {
 
 /// A per-mode set of secret fields to write. Each field is `Some(value)` to set/replace it or `None`
 /// to leave the stored value unchanged (removal is a separate clear-list on
-/// [`ProviderCredentialStore::put`]). Implemented by the three mode structs below.
+/// [`ProviderCredentialStore::put`]). Implemented by the mode structs below.
 pub trait CredentialFieldSet {
     /// The mode these fields belong to.
     const MODE: CredentialMode;
@@ -252,6 +288,26 @@ impl CredentialFieldSet for ScapCredentialFields {
     }
 }
 
+/// LocalPkcs12 secret fields: a base64-encoded PFX blob plus its passphrase (plan §1/§6).
+#[derive(Default)]
+pub struct Pkcs12CredentialFields {
+    /// Base64 of the raw PKCS#12/PFX bytes (base64 so the UTF-8-validating crypto core accepts it).
+    pub pfx_der_b64: Option<Zeroizing<String>>,
+    /// The PKCS#12 passphrase.
+    pub passphrase: Option<Zeroizing<String>>,
+}
+
+impl CredentialFieldSet for Pkcs12CredentialFields {
+    const MODE: CredentialMode = CredentialMode::LocalPkcs12;
+
+    fn into_set_pairs(self) -> Vec<(&'static str, Zeroizing<String>)> {
+        let mut pairs = Vec::new();
+        push_pair(&mut pairs, FIELD_PKCS12_PFX, self.pfx_der_b64);
+        push_pair(&mut pairs, FIELD_PKCS12_PASSPHRASE, self.passphrase);
+        pairs
+    }
+}
+
 fn push_pair(
     pairs: &mut Vec<(&'static str, Zeroizing<String>)>,
     name: &'static str,
@@ -285,8 +341,62 @@ impl fmt::Debug for StoredCredentialField {
     }
 }
 
-/// The at-rest form of one provider's credentials (plan §1): a per-field map of encrypted envelopes,
-/// keyed by field name, tagged with the mode/provider selector and the key version last written.
+/// Non-secret per-mode selectors for one entry (e.g. an environment/sandbox tag or a routing hint).
+/// Kept in the clear (never bound into the AEAD) so the status/assembly paths can read them without
+/// decryption.
+pub type EntrySelectors = BTreeMap<String, String>;
+
+/// One credential **entry** within a provider record (plan §1/§6): a stable id, presentation/ordering
+/// metadata, non-secret selectors, and this entry's encrypted fields. The `id` is bound into every
+/// field's AEAD AAD so ciphertext cannot be relocated between a provider's entries.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CredentialEntry {
+    /// Stable entry identifier (bound into the AEAD AAD; unique within a record).
+    pub id: String,
+    /// Human-facing label for the entry (non-secret; may be empty).
+    #[serde(default)]
+    pub label: String,
+    /// Failover/priority order; entries are sorted ascending by `(priority, id)`.
+    #[serde(default)]
+    pub priority: i32,
+    /// Whether this entry is eligible for use (disabled entries stay stored but are skipped).
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Optional non-secret endpoint/base-URL override for this entry.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub endpoint: Option<String>,
+    /// Non-secret per-mode selectors.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub selectors: EntrySelectors,
+    /// Encrypted fields keyed by field name (sorted for a stable on-disk form).
+    #[serde(default)]
+    pub fields: BTreeMap<String, StoredCredentialField>,
+    /// RFC 3339 creation timestamp (non-secret).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub created_at: String,
+    /// RFC 3339 last-update timestamp (non-secret).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub updated_at: String,
+}
+
+/// A non-secret patch of an entry's presentation/ordering metadata, applied as a full overwrite on
+/// [`ProviderCredentialStore::put_entry`] when `Some`.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct EntryMetadata {
+    /// Human-facing label (non-secret).
+    pub label: String,
+    /// Failover/priority order.
+    pub priority: i32,
+    /// Whether the entry is eligible for use.
+    pub enabled: bool,
+    /// Optional non-secret endpoint/base-URL override.
+    pub endpoint: Option<String>,
+    /// Non-secret per-mode selectors.
+    pub selectors: EntrySelectors,
+}
+
+/// The at-rest form of one provider's credentials (plan §1): an ordered list of [`CredentialEntry`]s,
+/// tagged with the mode/provider selector and the key version last written.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct EncryptedCredentialRecord {
     /// The [`CredentialMode::as_str`] this record belongs to.
@@ -296,8 +406,9 @@ pub struct EncryptedCredentialRecord {
     /// The key version the most recent write used. Each envelope also carries its own version, which
     /// is the authoritative one for decryption; this is an informational/rotation marker.
     pub key_version: u32,
-    /// Encrypted fields keyed by field name (sorted for a stable on-disk form).
-    pub fields: BTreeMap<String, StoredCredentialField>,
+    /// Ordered credential entries (sorted by `(priority, id)` for a stable on-disk form).
+    #[serde(default)]
+    pub entries: Vec<CredentialEntry>,
 }
 
 impl EncryptedCredentialRecord {
@@ -306,13 +417,25 @@ impl EncryptedCredentialRecord {
             mode: mode.as_str().to_owned(),
             provider_id: provider_id.to_owned(),
             key_version: 0,
-            fields: BTreeMap::new(),
+            entries: Vec::new(),
         }
+    }
+
+    /// Sort the entries by `(priority, id)` for deterministic on-disk ordering and failover order.
+    fn sort_entries(&mut self) {
+        self.entries
+            .sort_by(|a, b| a.priority.cmp(&b.priority).then_with(|| a.id.cmp(&b.id)));
+    }
+
+    /// The legacy flat entry, if present.
+    fn default_entry(&self) -> Option<&CredentialEntry> {
+        self.entries.iter().find(|e| e.id == DEFAULT_ENTRY_ID)
     }
 }
 
 /// A non-secret status view of one stored record for the credential status API (plan §4). Carries
-/// configured field names + `last4` hints only, never ciphertext or plaintext.
+/// configured field names + `last4` hints for the legacy flat entry only, never ciphertext or
+/// plaintext.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CredentialRecordStatus {
     /// The mode this record belongs to.
@@ -321,17 +444,36 @@ pub struct CredentialRecordStatus {
     pub provider_id: String,
     /// The key version the record was last written under.
     pub key_version: u32,
-    /// Per configured field: `(field_name, last4)`.
+    /// Per configured field of the flat entry: `(field_name, last4)`.
     pub fields: Vec<(String, Option<String>)>,
 }
 
-/// The decrypted fields of one record, returned by [`ProviderCredentialStore::read`] for the
-/// provider-assembly path (S3). Every value is held in a [`Zeroizing`] buffer.
+/// The decrypted fields of the legacy flat entry, returned by [`ProviderCredentialStore::read`] for
+/// the provider-assembly path (S3). Every value is held in a [`Zeroizing`] buffer.
 pub struct DecryptedCredentialRecord {
     /// The mode this record belongs to.
     pub mode: CredentialMode,
     /// The provider id (empty for CMD/SCAP).
     pub provider_id: String,
+    /// Decrypted field values keyed by field name.
+    pub fields: BTreeMap<String, Zeroizing<String>>,
+}
+
+/// One decrypted credential entry, returned by [`ProviderCredentialStore::read_entries`]. Every
+/// secret value is held in a [`Zeroizing`] buffer; the metadata is non-secret.
+pub struct DecryptedCredentialEntry {
+    /// The entry id.
+    pub entry_id: String,
+    /// Non-secret label.
+    pub label: String,
+    /// Failover/priority order.
+    pub priority: i32,
+    /// Whether the entry is eligible for use.
+    pub enabled: bool,
+    /// Optional non-secret endpoint override.
+    pub endpoint: Option<String>,
+    /// Non-secret per-mode selectors.
+    pub selectors: EntrySelectors,
     /// Decrypted field values keyed by field name.
     pub fields: BTreeMap<String, Zeroizing<String>>,
 }
@@ -449,6 +591,11 @@ fn sidecar_tmp_path(path: &Path) -> PathBuf {
 pub enum ProviderCredentialError {
     /// A crypto-core failure (no key source, strict-mode refusal, AEAD auth failure, …).
     Secret(SecretStoreError),
+    /// Runtime plaintext use was refused because strict mode requires confidential protection.
+    RuntimeStrictModeUnprotected {
+        /// The current non-confidential protection level.
+        level: ProtectionLevel,
+    },
     /// The sidecar on disk is corrupt/unknown-schema; the store fails closed until it is repaired.
     CorruptSidecar(String),
     /// A write named a field that is not valid for the target mode.
@@ -475,6 +622,11 @@ impl fmt::Display for ProviderCredentialError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Secret(e) => write!(f, "{e}"),
+            Self::RuntimeStrictModeUnprotected { level } => write!(
+                f,
+                "refusing to read provider credentials at runtime: strict credential storage is \
+                 enabled but the current protection level is {level} (not confidential)"
+            ),
             Self::CorruptSidecar(reason) => write!(
                 f,
                 "the provider-credentials sidecar is unreadable and the credential store is failing \
@@ -691,14 +843,17 @@ impl ProviderCredentialStore {
         }
     }
 
-    /// Write a set of secret fields for `(mode, provider_id)`, removing every field named in `clear`.
-    /// Fields not present in `set` and not in `clear` are left unchanged. When the resulting record
-    /// has no fields it is dropped entirely. Fails closed (nothing persisted) on an unresolved key
-    /// source, a strict-mode refusal, or a corrupt sidecar.
-    pub fn put(
+    /// Write a set of secret fields into the `entry_id` entry of `(mode, provider_id)`, removing every
+    /// field named in `clear`. Fields not in `set` and not in `clear` are left unchanged. When
+    /// `metadata` is `Some`, the entry's non-secret metadata is overwritten wholesale. An entry left
+    /// with no fields is dropped; a record left with no entries is dropped. Fails closed (nothing
+    /// persisted) on an unresolved key source, a strict-mode refusal, or a corrupt sidecar.
+    pub fn put_entry(
         &self,
         mode: CredentialMode,
         provider_id: &str,
+        entry_id: &str,
+        metadata: Option<EntryMetadata>,
         set: Vec<(&'static str, Zeroizing<String>)>,
         clear: &[&str],
     ) -> Result<(), ProviderCredentialError> {
@@ -709,15 +864,20 @@ impl ProviderCredentialStore {
             reject_unknown_field(mode, field)?;
         }
 
-        // Only resolve the crypto core (and create the root file) when there is something to encrypt;
-        // a clear-only write needs no key material. Wrap all fields BEFORE taking the records lock so
-        // a strict-mode refusal or key failure never leaves a half-applied record.
+        // Wrap all fields BEFORE taking the records lock so a strict-mode refusal or key failure never
+        // leaves a half-applied record. The AAD binds the entry_id (see secretstore::build_aad).
         let mut wrapped: Vec<(&'static str, StoredCredentialField)> = Vec::with_capacity(set.len());
         let mut write_version = None;
         if !set.is_empty() {
             let store = self.secretstore()?;
             for (field, value) in &set {
-                let envelope = store.wrap(mode.as_str(), provider_id, field, value.as_bytes())?;
+                let envelope = store.wrap(
+                    mode.as_str(),
+                    provider_id,
+                    entry_id,
+                    field,
+                    value.as_bytes(),
+                )?;
                 wrapped.push((
                     field,
                     StoredCredentialField {
@@ -736,16 +896,49 @@ impl ProviderCredentialStore {
                 .get(&key)
                 .cloned()
                 .unwrap_or_else(|| EncryptedCredentialRecord::empty(mode, provider_id));
-            for field in clear {
-                record.fields.remove(*field);
+            let now = now_rfc3339();
+
+            let idx = match record.entries.iter().position(|e| e.id == entry_id) {
+                Some(i) => i,
+                None => {
+                    record.entries.push(CredentialEntry {
+                        id: entry_id.to_owned(),
+                        label: String::new(),
+                        priority: 0,
+                        enabled: true,
+                        endpoint: None,
+                        selectors: EntrySelectors::new(),
+                        fields: BTreeMap::new(),
+                        created_at: now.clone(),
+                        updated_at: now.clone(),
+                    });
+                    record.entries.len() - 1
+                }
+            };
+            {
+                let entry = &mut record.entries[idx];
+                if let Some(meta) = metadata {
+                    entry.label = meta.label;
+                    entry.priority = meta.priority;
+                    entry.enabled = meta.enabled;
+                    entry.endpoint = meta.endpoint;
+                    entry.selectors = meta.selectors;
+                }
+                for field in clear {
+                    entry.fields.remove(*field);
+                }
+                for (field, stored) in wrapped {
+                    entry.fields.insert(field.to_owned(), stored);
+                }
+                entry.updated_at = now;
             }
-            for (field, stored) in wrapped {
-                record.fields.insert(field.to_owned(), stored);
-            }
+
+            record.entries.retain(|e| !e.fields.is_empty());
             if let Some(version) = write_version {
                 record.key_version = version;
             }
-            if record.fields.is_empty() {
+            record.sort_entries();
+            if record.entries.is_empty() {
                 next.remove(&key);
             } else {
                 next.insert(key.clone(), record);
@@ -756,22 +949,102 @@ impl ProviderCredentialStore {
         })
     }
 
-    /// Decrypt every field of the `(mode, provider_id)` record, or `Ok(None)` when no record exists.
-    /// Used by the provider-assembly path (S3). Fails closed on a corrupt sidecar or key failure.
+    /// Flat convenience write: set/clear fields on the single [`DEFAULT_ENTRY_ID`] entry of
+    /// `(mode, provider_id)`. Metadata is left untouched. Kept for callers that do not need the
+    /// multi-entry surface.
+    pub fn put(
+        &self,
+        mode: CredentialMode,
+        provider_id: &str,
+        set: Vec<(&'static str, Zeroizing<String>)>,
+        clear: &[&str],
+    ) -> Result<(), ProviderCredentialError> {
+        self.put_entry(mode, provider_id, DEFAULT_ENTRY_ID, None, set, clear)
+    }
+
+    /// Remove one entry from `(mode, provider_id)`. Returns whether an entry was present. A record left
+    /// with no entries is dropped. Needs no key material; still fails closed on a corrupt sidecar.
+    pub fn delete_entry(
+        &self,
+        mode: CredentialMode,
+        provider_id: &str,
+        entry_id: &str,
+    ) -> Result<bool, ProviderCredentialError> {
+        let key = (mode.as_str().to_owned(), provider_id.to_owned());
+        self.with_records(|records| {
+            let mut next = records.clone();
+            let Some(record) = next.get_mut(&key) else {
+                return Ok(false);
+            };
+            let before = record.entries.len();
+            record.entries.retain(|e| e.id != entry_id);
+            if record.entries.len() == before {
+                return Ok(false);
+            }
+            if record.entries.is_empty() {
+                next.remove(&key);
+            }
+            self.persist(&next)?;
+            *records = next;
+            Ok(true)
+        })
+    }
+
+    /// Decrypt the flat [`DEFAULT_ENTRY_ID`] entry of `(mode, provider_id)`, or `Ok(None)` when no
+    /// such entry exists. Administrative/test read path: it authenticates ciphertext but does not
+    /// apply the runtime strict/protection guard. Runtime callers must use [`Self::read_runtime`].
     pub fn read(
         &self,
         mode: CredentialMode,
         provider_id: &str,
+    ) -> Result<Option<DecryptedCredentialRecord>, ProviderCredentialError> {
+        self.read_inner(mode, provider_id, false)
+    }
+
+    /// Runtime provider-assembly read of the flat entry. It refuses plaintext use before decrypting
+    /// any field when strict credential storage is enabled and the resolved protection level is not
+    /// confidential. A corrupt sidecar or key failure also fails closed; callers must not fall back to
+    /// env/DI after an error from this method.
+    pub fn read_runtime(
+        &self,
+        mode: CredentialMode,
+        provider_id: &str,
+    ) -> Result<Option<DecryptedCredentialRecord>, ProviderCredentialError> {
+        self.read_inner(mode, provider_id, true)
+    }
+
+    fn read_inner(
+        &self,
+        mode: CredentialMode,
+        provider_id: &str,
+        enforce_runtime_guard: bool,
     ) -> Result<Option<DecryptedCredentialRecord>, ProviderCredentialError> {
         let key = (mode.as_str().to_owned(), provider_id.to_owned());
         let record = self.with_records(|records| Ok(records.get(&key).cloned()))?;
         let Some(record) = record else {
             return Ok(None);
         };
+        let Some(entry) = record.default_entry().cloned() else {
+            return Ok(None);
+        };
         let store = self.secretstore()?;
+        if enforce_runtime_guard
+            && self.strict
+            && store.protection_level() != ProtectionLevel::Confidential
+        {
+            return Err(ProviderCredentialError::RuntimeStrictModeUnprotected {
+                level: store.protection_level(),
+            });
+        }
         let mut fields = BTreeMap::new();
-        for (name, stored) in &record.fields {
-            let plaintext = store.unwrap(mode.as_str(), provider_id, name, &stored.envelope)?;
+        for (name, stored) in &entry.fields {
+            let plaintext = store.unwrap(
+                mode.as_str(),
+                provider_id,
+                &entry.id,
+                name,
+                &stored.envelope,
+            )?;
             fields.insert(name.clone(), plaintext);
         }
         Ok(Some(DecryptedCredentialRecord {
@@ -779,6 +1052,46 @@ impl ProviderCredentialStore {
             provider_id: provider_id.to_owned(),
             fields,
         }))
+    }
+
+    /// Decrypt every entry of the `(mode, provider_id)` record in priority order, or an empty vec when
+    /// no record exists. Administrative read path (no runtime guard); it authenticates every field, so
+    /// a relocated/tampered ciphertext fails closed with [`SecretStoreError::Crypto`].
+    pub fn read_entries(
+        &self,
+        mode: CredentialMode,
+        provider_id: &str,
+    ) -> Result<Vec<DecryptedCredentialEntry>, ProviderCredentialError> {
+        let key = (mode.as_str().to_owned(), provider_id.to_owned());
+        let record = self.with_records(|records| Ok(records.get(&key).cloned()))?;
+        let Some(record) = record else {
+            return Ok(Vec::new());
+        };
+        let store = self.secretstore()?;
+        let mut out = Vec::with_capacity(record.entries.len());
+        for entry in &record.entries {
+            let mut fields = BTreeMap::new();
+            for (name, stored) in &entry.fields {
+                let plaintext = store.unwrap(
+                    mode.as_str(),
+                    provider_id,
+                    &entry.id,
+                    name,
+                    &stored.envelope,
+                )?;
+                fields.insert(name.clone(), plaintext);
+            }
+            out.push(DecryptedCredentialEntry {
+                entry_id: entry.id.clone(),
+                label: entry.label.clone(),
+                priority: entry.priority,
+                enabled: entry.enabled,
+                endpoint: entry.endpoint.clone(),
+                selectors: entry.selectors.clone(),
+                fields,
+            });
+        }
+        Ok(out)
     }
 
     /// Remove the entire `(mode, provider_id)` record. Returns whether a record was present. Needs no
@@ -800,23 +1113,29 @@ impl ProviderCredentialStore {
         })
     }
 
-    /// Non-secret status of every stored record (configured field names + `last4` hints), for the
-    /// status API (S4). Never decrypts and never returns ciphertext.
+    /// Non-secret status of every stored record (the flat entry's configured field names + `last4`
+    /// hints), for the status API (S4). Never decrypts and never returns ciphertext.
     pub fn statuses(&self) -> Result<Vec<CredentialRecordStatus>, ProviderCredentialError> {
         self.with_records(|records| {
             Ok(records
                 .values()
                 .filter_map(|record| {
                     let mode = CredentialMode::from_wire(&record.mode)?;
+                    let fields = record
+                        .default_entry()
+                        .map(|entry| {
+                            entry
+                                .fields
+                                .iter()
+                                .map(|(name, stored)| (name.clone(), stored.last4.clone()))
+                                .collect()
+                        })
+                        .unwrap_or_default();
                     Some(CredentialRecordStatus {
                         mode,
                         provider_id: record.provider_id.clone(),
                         key_version: record.key_version,
-                        fields: record
-                            .fields
-                            .iter()
-                            .map(|(name, stored)| (name.clone(), stored.last4.clone()))
-                            .collect(),
+                        fields,
                     })
                 })
                 .collect())
@@ -867,11 +1186,26 @@ fn last4(value: &str) -> String {
     chars[start..].iter().collect()
 }
 
+/// The current UTC time as an RFC 3339 string, or empty on the (unreachable) formatting failure.
+fn now_rfc3339() -> String {
+    OffsetDateTime::now_utc()
+        .format(&Rfc3339)
+        .unwrap_or_default()
+}
+
+/// serde default for [`CredentialEntry::enabled`].
+fn default_true() -> bool {
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    use base64::Engine;
+    use base64::engine::general_purpose::STANDARD as B64;
 
     use super::*;
 
@@ -916,8 +1250,40 @@ mod tests {
         ProviderCredentialStore::load_with_db_key(dir, TEST_DB_KEY, false)
     }
 
+    fn in_memory_store_with_source(
+        source: CredentialKeySource,
+        db_encrypted: bool,
+        strict: bool,
+    ) -> ProviderCredentialStore {
+        ProviderCredentialStore {
+            backing: Backing::InMemory,
+            strict,
+            records: Mutex::new(Ok(RecordMap::new())),
+            secretstore: Mutex::new(Some(CredentialSecretStore::for_test_source(
+                source,
+                db_encrypted,
+                strict,
+            ))),
+        }
+    }
+
     fn zeroizing(value: &str) -> Zeroizing<String> {
         Zeroizing::new(value.to_owned())
+    }
+
+    fn metadata(
+        label: &str,
+        priority: i32,
+        enabled: bool,
+        endpoint: Option<&str>,
+    ) -> EntryMetadata {
+        EntryMetadata {
+            label: label.to_owned(),
+            priority,
+            enabled,
+            endpoint: endpoint.map(str::to_owned),
+            selectors: EntrySelectors::new(),
+        }
     }
 
     #[test]
@@ -986,6 +1352,293 @@ mod tests {
         assert!(!text.contains("app-42"), "identifiers are encrypted too");
         // The last4 hint is present and is at most 4 chars (a display hint, not the secret).
         assert!(text.contains("z789"));
+    }
+
+    #[test]
+    fn multiple_entries_are_ordered_by_priority_with_distinct_secrets() {
+        let dir = TempDir::new("ordering");
+        let store = store(dir.path());
+        // Insert out of priority order; entries sort ascending by (priority, id).
+        store
+            .put_entry(
+                CredentialMode::CscQtsp,
+                "p",
+                "z-entry",
+                Some(metadata("", 5, true, None)),
+                CscCredentialFields {
+                    client_secret: Some(zeroizing("secret-five")),
+                    ..Default::default()
+                }
+                .into_set_pairs(),
+                &[],
+            )
+            .expect("put z");
+        store
+            .put_entry(
+                CredentialMode::CscQtsp,
+                "p",
+                "a-entry",
+                Some(metadata("primary", 1, false, Some("https://csc.example/a"))),
+                CscCredentialFields {
+                    client_secret: Some(zeroizing("secret-one")),
+                    ..Default::default()
+                }
+                .into_set_pairs(),
+                &[],
+            )
+            .expect("put a");
+
+        let entries = store
+            .read_entries(CredentialMode::CscQtsp, "p")
+            .expect("read entries");
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].entry_id, "a-entry", "priority 1 sorts first");
+        assert_eq!(entries[1].entry_id, "z-entry");
+        assert_eq!(entries[0].priority, 1);
+        assert!(!entries[0].enabled);
+        assert_eq!(entries[0].label, "primary");
+        assert_eq!(
+            entries[0].endpoint.as_deref(),
+            Some("https://csc.example/a")
+        );
+        assert_eq!(
+            entries[0]
+                .fields
+                .get(FIELD_CLIENT_SECRET)
+                .map(|z| z.as_str()),
+            Some("secret-one")
+        );
+        assert_eq!(
+            entries[1]
+                .fields
+                .get(FIELD_CLIENT_SECRET)
+                .map(|z| z.as_str()),
+            Some("secret-five")
+        );
+    }
+
+    #[test]
+    fn relocating_a_ciphertext_between_entries_fails_authentication() {
+        let dir = TempDir::new("relocate");
+        {
+            let store = store(dir.path());
+            store
+                .put_entry(
+                    CredentialMode::CscQtsp,
+                    "p",
+                    "entry-a",
+                    Some(metadata("A", 0, true, None)),
+                    CscCredentialFields {
+                        client_secret: Some(zeroizing("secret-a-1111")),
+                        ..Default::default()
+                    }
+                    .into_set_pairs(),
+                    &[],
+                )
+                .expect("put a");
+            store
+                .put_entry(
+                    CredentialMode::CscQtsp,
+                    "p",
+                    "entry-b",
+                    Some(metadata("B", 1, true, None)),
+                    CscCredentialFields {
+                        client_secret: Some(zeroizing("secret-b-2222")),
+                        ..Default::default()
+                    }
+                    .into_set_pairs(),
+                    &[],
+                )
+                .expect("put b");
+        }
+
+        // Tamper the on-disk sidecar: copy entry-a's client_secret envelope into entry-b's slot.
+        let path = dir.path().join(CREDENTIAL_SIDECAR_FILE);
+        let mut file: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).expect("read sidecar")).expect("parse");
+        let records = file["records"].as_array_mut().expect("records array");
+        let record = records
+            .iter_mut()
+            .find(|r| r["provider_id"] == "p")
+            .expect("record p");
+        let entries = record["entries"].as_array_mut().expect("entries array");
+        let a_secret = entries
+            .iter()
+            .find(|e| e["id"] == "entry-a")
+            .expect("entry-a")["fields"]["client_secret"]
+            .clone();
+        for entry in entries.iter_mut() {
+            if entry["id"] == "entry-b" {
+                entry["fields"]["client_secret"] = a_secret.clone();
+            }
+        }
+        std::fs::write(&path, serde_json::to_vec_pretty(&file).expect("serialize")).expect("write");
+
+        // Reloading + decrypting must fail authentication for the relocated ciphertext.
+        // (`read_entries` yields non-`Debug` plaintext, so match rather than `expect_err`.)
+        let reloaded = store(dir.path());
+        let err = match reloaded.read_entries(CredentialMode::CscQtsp, "p") {
+            Err(err) => err,
+            Ok(_) => panic!("a relocated ciphertext must fail authentication"),
+        };
+        assert!(
+            matches!(
+                err,
+                ProviderCredentialError::Secret(SecretStoreError::Crypto(_))
+            ),
+            "expected a crypto auth failure, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn pkcs12_entry_round_trips_binary_pfx_via_base64() {
+        let dir = TempDir::new("pkcs12");
+        // Arbitrary non-UTF-8 binary "PFX" bytes (0..=255 twice).
+        let pfx: Vec<u8> = (0u16..512).map(|i| (i % 256) as u8).collect();
+        let pfx_b64 = B64.encode(&pfx);
+        let passphrase = "pfx-pass-amelia-9931";
+        {
+            let store = store(dir.path());
+            store
+                .put_entry(
+                    CredentialMode::LocalPkcs12,
+                    "local",
+                    "signer-1",
+                    Some(metadata("Signer", 0, true, None)),
+                    Pkcs12CredentialFields {
+                        pfx_der_b64: Some(zeroizing(&pfx_b64)),
+                        passphrase: Some(zeroizing(passphrase)),
+                    }
+                    .into_set_pairs(),
+                    &[],
+                )
+                .expect("put pkcs12");
+        }
+
+        // Neither the base64 PFX nor the passphrase appears in plaintext on disk.
+        let bytes = std::fs::read(dir.path().join(CREDENTIAL_SIDECAR_FILE)).expect("sidecar bytes");
+        let text = String::from_utf8(bytes).expect("utf8 sidecar");
+        assert!(!text.contains(&pfx_b64), "encrypted PFX must not leak");
+        assert!(!text.contains(passphrase), "passphrase must not leak");
+
+        let reloaded = store(dir.path());
+        let entries = reloaded
+            .read_entries(CredentialMode::LocalPkcs12, "local")
+            .expect("read entries");
+        assert_eq!(entries.len(), 1);
+        let entry = &entries[0];
+        assert_eq!(entry.entry_id, "signer-1");
+        let recovered_b64 = entry
+            .fields
+            .get(FIELD_PKCS12_PFX)
+            .expect("pfx field")
+            .as_str();
+        let recovered = B64.decode(recovered_b64).expect("valid base64");
+        assert_eq!(recovered, pfx, "binary PFX round-trips exactly");
+        assert_eq!(
+            entry
+                .fields
+                .get(FIELD_PKCS12_PASSPHRASE)
+                .map(|z| z.as_str()),
+            Some(passphrase)
+        );
+    }
+
+    #[test]
+    fn delete_entry_removes_only_the_named_entry() {
+        let dir = TempDir::new("delete-entry");
+        let store = store(dir.path());
+        for id in ["keep", "drop"] {
+            store
+                .put_entry(
+                    CredentialMode::CscQtsp,
+                    "p",
+                    id,
+                    Some(metadata(id, 0, true, None)),
+                    CscCredentialFields {
+                        client_secret: Some(zeroizing("s")),
+                        ..Default::default()
+                    }
+                    .into_set_pairs(),
+                    &[],
+                )
+                .expect("put");
+        }
+        assert!(
+            store
+                .delete_entry(CredentialMode::CscQtsp, "p", "drop")
+                .expect("delete")
+        );
+        assert!(
+            !store
+                .delete_entry(CredentialMode::CscQtsp, "p", "missing")
+                .expect("delete missing")
+        );
+        let entries = store
+            .read_entries(CredentialMode::CscQtsp, "p")
+            .expect("read");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].entry_id, "keep");
+    }
+
+    #[test]
+    fn key_version_is_recorded_on_write() {
+        let dir = TempDir::new("key-version");
+        let store = store(dir.path());
+        store
+            .put(
+                CredentialMode::Scap,
+                "",
+                ScapCredentialFields {
+                    secret: Some(zeroizing("x")),
+                    ..Default::default()
+                }
+                .into_set_pairs(),
+                &[],
+            )
+            .expect("put");
+        let statuses = store.statuses().expect("statuses");
+        assert_eq!(statuses.len(), 1);
+        assert_eq!(statuses[0].key_version, 1);
+    }
+
+    #[test]
+    fn provider_credential_runtime_read_refuses_strict_non_confidential_protection() {
+        let writer = in_memory_store_with_source(CredentialKeySource::OperatorEnv, false, false);
+        writer
+            .put(
+                CredentialMode::Cmd,
+                "",
+                CmdCredentialFields {
+                    application_id: Some(zeroizing("cmd-runtime-fixture")),
+                    ..Default::default()
+                }
+                .into_set_pairs(),
+                &[],
+            )
+            .expect("seed encrypted record");
+        let records = writer.records.lock().expect("records").clone();
+        let reader = ProviderCredentialStore {
+            backing: Backing::InMemory,
+            strict: true,
+            records: Mutex::new(records),
+            secretstore: Mutex::new(Some(CredentialSecretStore::for_test_source(
+                CredentialKeySource::OperatorEnv,
+                false,
+                true,
+            ))),
+        };
+
+        let err = match reader.read_runtime(CredentialMode::Cmd, "") {
+            Err(err) => err,
+            Ok(_) => panic!("strict runtime read must refuse obfuscation protection"),
+        };
+        assert!(matches!(
+            err,
+            ProviderCredentialError::RuntimeStrictModeUnprotected {
+                level: ProtectionLevel::Obfuscation
+            }
+        ));
     }
 
     #[test]

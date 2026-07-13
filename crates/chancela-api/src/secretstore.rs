@@ -25,8 +25,8 @@
 //!
 //! - **XChaCha20-Poly1305** AEAD per secret field, with a fresh random 24-byte `XNonce` per wrap
 //!   (the 24-byte nonce space makes random nonces safe without a counter). The **AAD binds
-//!   `mode ‖ provider_id ‖ field_name ‖ key_version`** so a ciphertext cannot be relocated
-//!   between fields, providers, or key versions.
+//!   `mode ‖ provider_id ‖ entry_id ‖ field_name ‖ key_version`** so a ciphertext cannot be
+//!   relocated between fields, entries, providers, or key versions.
 //! - **HKDF-SHA256** (RFC 5869), implemented over the in-tree `sha2` crate (no new dependency),
 //!   derives the 32-byte CMK from the root and derives a 32-byte root from operator/DB key
 //!   material. Correctness is pinned to an RFC 5869 test vector.
@@ -465,14 +465,27 @@ impl fmt::Debug for SecretEnvelope {
     }
 }
 
-/// Build the AEAD associated data binding `mode ‖ provider_id ‖ field_name ‖ key_version`. Each
-/// string part is length-prefixed so distinct tuples can never produce the same AAD bytes.
-fn build_aad(mode: &str, provider_id: &str, field_name: &str, key_version: u32) -> Vec<u8> {
+/// Build the AEAD associated data binding `mode ‖ provider_id ‖ entry_id ‖ field_name ‖
+/// key_version`. Each string part is length-prefixed so distinct tuples can never produce the same
+/// AAD bytes (so a ciphertext cannot be relocated between a provider's entries).
+fn build_aad(
+    mode: &str,
+    provider_id: &str,
+    entry_id: &str,
+    field_name: &str,
+    key_version: u32,
+) -> Vec<u8> {
     let mut aad = Vec::with_capacity(
-        AAD_DOMAIN.len() + 3 * 8 + mode.len() + provider_id.len() + field_name.len() + 4,
+        AAD_DOMAIN.len()
+            + 4 * 8
+            + mode.len()
+            + provider_id.len()
+            + entry_id.len()
+            + field_name.len()
+            + 4,
     );
     aad.extend_from_slice(AAD_DOMAIN);
-    for part in [mode, provider_id, field_name] {
+    for part in [mode, provider_id, entry_id, field_name] {
         aad.extend_from_slice(&(part.len() as u64).to_be_bytes());
         aad.extend_from_slice(part.as_bytes());
     }
@@ -588,6 +601,20 @@ impl CredentialSecretStore {
         self.inner.current_version
     }
 
+    #[cfg(test)]
+    pub(crate) fn for_test_source(
+        source: CredentialKeySource,
+        db_encrypted: bool,
+        strict: bool,
+    ) -> Self {
+        Self::from_root(
+            Zeroizing::new([0x57; KEY_BYTES]),
+            source,
+            db_encrypted,
+            strict,
+        )
+    }
+
     /// Metadata-only status of an already-resolved store.
     pub(crate) fn read_only_status(&self) -> CredentialKeyReadOnlyStatus {
         CredentialKeyReadOnlyStatus::available(
@@ -606,6 +633,7 @@ impl CredentialSecretStore {
         &self,
         mode: &str,
         provider_id: &str,
+        entry_id: &str,
         field_name: &str,
         plaintext: &[u8],
     ) -> Result<SecretEnvelope, SecretStoreError> {
@@ -628,7 +656,7 @@ impl CredentialSecretStore {
         OsRng
             .try_fill_bytes(&mut nonce)
             .map_err(|e| SecretStoreError::Random(rng_error(e)))?;
-        let aad = build_aad(mode, provider_id, field_name, version);
+        let aad = build_aad(mode, provider_id, entry_id, field_name, version);
         let ciphertext = cipher
             .encrypt(
                 XNonce::from_slice(&nonce),
@@ -648,13 +676,14 @@ impl CredentialSecretStore {
 
     /// Decrypt one [`SecretEnvelope`] back to its plaintext, returned in a [`Zeroizing`] buffer.
     ///
-    /// The `mode`/`provider_id`/`field_name` must match those used at wrap time (they are bound
-    /// into the AAD): a mismatch, a tampered ciphertext/nonce, or a wrong key fails authentication
-    /// and returns [`SecretStoreError::Crypto`].
+    /// The `mode`/`provider_id`/`entry_id`/`field_name` must match those used at wrap time (they are
+    /// bound into the AAD): a mismatch, a tampered ciphertext/nonce, or a wrong key fails
+    /// authentication and returns [`SecretStoreError::Crypto`].
     pub fn unwrap(
         &self,
         mode: &str,
         provider_id: &str,
+        entry_id: &str,
         field_name: &str,
         envelope: &SecretEnvelope,
     ) -> Result<Zeroizing<String>, SecretStoreError> {
@@ -676,7 +705,13 @@ impl CredentialSecretStore {
             .decode(&envelope.ciphertext_b64)
             .map_err(|_| SecretStoreError::Crypto("credential ciphertext is not valid base64"))?;
 
-        let aad = build_aad(mode, provider_id, field_name, envelope.key_version);
+        let aad = build_aad(
+            mode,
+            provider_id,
+            entry_id,
+            field_name,
+            envelope.key_version,
+        );
         let mut plaintext = cipher
             .decrypt(
                 XNonce::from_slice(&nonce),
@@ -1329,6 +1364,7 @@ mod tests {
             .wrap(
                 "csc",
                 "encosto-estrategico",
+                "entry-1",
                 "client_secret",
                 secret.as_bytes(),
             )
@@ -1337,7 +1373,13 @@ mod tests {
         assert!(!env.ciphertext_b64.contains(secret));
 
         let recovered = store
-            .unwrap("csc", "encosto-estrategico", "client_secret", &env)
+            .unwrap(
+                "csc",
+                "encosto-estrategico",
+                "entry-1",
+                "client_secret",
+                &env,
+            )
             .expect("unwrap");
         assert_eq!(&*recovered, secret);
     }
@@ -1346,30 +1388,62 @@ mod tests {
     fn wrong_aad_binding_fails_to_decrypt() {
         let store = store_with(CredentialKeySource::DerivedFromDbKey, true, false);
         let env = store
-            .wrap("csc", "provider-a", "client_secret", b"top-secret")
+            .wrap(
+                "csc",
+                "provider-a",
+                "entry-1",
+                "client_secret",
+                b"top-secret",
+            )
             .expect("wrap");
 
         // Swapped field, provider, and mode each break authentication.
         assert!(
             store
-                .unwrap("csc", "provider-a", "client_id", &env)
+                .unwrap("csc", "provider-a", "entry-1", "client_id", &env)
                 .is_err()
         );
         assert!(
             store
-                .unwrap("csc", "provider-b", "client_secret", &env)
+                .unwrap("csc", "provider-b", "entry-1", "client_secret", &env)
                 .is_err()
         );
         assert!(
             store
-                .unwrap("cmd", "provider-a", "client_secret", &env)
+                .unwrap("cmd", "provider-a", "entry-1", "client_secret", &env)
                 .is_err()
         );
         // And the correct binding still works.
         assert!(
             store
-                .unwrap("csc", "provider-a", "client_secret", &env)
+                .unwrap("csc", "provider-a", "entry-1", "client_secret", &env)
                 .is_ok()
+        );
+    }
+
+    #[test]
+    fn wrong_entry_id_binding_fails_to_decrypt() {
+        let store = store_with(CredentialKeySource::DerivedFromDbKey, true, false);
+        let env = store
+            .wrap(
+                "csc",
+                "provider-a",
+                "entry-primary",
+                "client_secret",
+                b"top-secret",
+            )
+            .expect("wrap");
+        assert!(
+            store
+                .unwrap("csc", "provider-a", "entry-fallback", "client_secret", &env)
+                .is_err(),
+            "a ciphertext must not decrypt under a different entry_id"
+        );
+        assert_eq!(
+            &*store
+                .unwrap("csc", "provider-a", "entry-primary", "client_secret", &env)
+                .unwrap(),
+            "top-secret"
         );
     }
 
@@ -1377,14 +1451,18 @@ mod tests {
     fn tampered_ciphertext_or_nonce_fails_to_decrypt() {
         let store = store_with(CredentialKeySource::DerivedFromDbKey, true, false);
         let env = store
-            .wrap("scap", "ama", "secret", b"ama-api-key")
+            .wrap("scap", "ama", "entry-1", "secret", b"ama-api-key")
             .expect("wrap");
 
         let mut ct_tampered = env.clone();
         let mut ct = B64.decode(&ct_tampered.ciphertext_b64).unwrap();
         ct[0] ^= 0x01;
         ct_tampered.ciphertext_b64 = B64.encode(&ct);
-        assert!(store.unwrap("scap", "ama", "secret", &ct_tampered).is_err());
+        assert!(
+            store
+                .unwrap("scap", "ama", "entry-1", "secret", &ct_tampered)
+                .is_err()
+        );
 
         let mut nonce_tampered = env.clone();
         let mut nonce = B64.decode(&nonce_tampered.nonce_b64).unwrap();
@@ -1392,7 +1470,7 @@ mod tests {
         nonce_tampered.nonce_b64 = B64.encode(&nonce);
         assert!(
             store
-                .unwrap("scap", "ama", "secret", &nonce_tampered)
+                .unwrap("scap", "ama", "entry-1", "secret", &nonce_tampered)
                 .is_err()
         );
     }
@@ -1401,11 +1479,11 @@ mod tests {
     fn wrong_key_version_is_rejected() {
         let store = store_with(CredentialKeySource::DerivedFromDbKey, true, false);
         let mut env = store
-            .wrap("cmd", "", "http_basic_password", b"pw")
+            .wrap("cmd", "", "entry-1", "http_basic_password", b"pw")
             .expect("wrap");
         env.key_version = 99;
         assert!(matches!(
-            store.unwrap("cmd", "", "http_basic_password", &env),
+            store.unwrap("cmd", "", "entry-1", "http_basic_password", &env),
             Err(SecretStoreError::UnknownKeyVersion(99))
         ));
     }
@@ -1517,7 +1595,7 @@ mod tests {
         assert_eq!(store.protection_level(), ProtectionLevel::Obfuscation);
 
         let err = store
-            .wrap("csc", "p", "client_secret", b"secret")
+            .wrap("csc", "p", "entry-1", "client_secret", b"secret")
             .expect_err("strict + obfuscation must refuse");
         match err {
             SecretStoreError::StrictModeUnprotected { level } => {
@@ -1543,10 +1621,12 @@ mod tests {
             let store = store_with(source, db_encrypted, true);
             assert_eq!(store.protection_level(), ProtectionLevel::Confidential);
             let env = store
-                .wrap("csc", "p", "client_secret", b"secret")
+                .wrap("csc", "p", "entry-1", "client_secret", b"secret")
                 .expect("strict + confidential accepts");
             assert_eq!(
-                &*store.unwrap("csc", "p", "client_secret", &env).unwrap(),
+                &*store
+                    .unwrap("csc", "p", "entry-1", "client_secret", &env)
+                    .unwrap(),
                 "secret"
             );
         }
@@ -1559,10 +1639,12 @@ mod tests {
         assert!(!store.strict());
         assert_eq!(store.key_source(), &CredentialKeySource::OperatorEnv);
         let env = store
-            .wrap("scap", "ama", "secret", b"ama-key")
+            .wrap("scap", "ama", "entry-1", "secret", b"ama-key")
             .expect("permissive accepts");
         assert_eq!(
-            &*store.unwrap("scap", "ama", "secret", &env).unwrap(),
+            &*store
+                .unwrap("scap", "ama", "entry-1", "secret", &env)
+                .unwrap(),
             "ama-key"
         );
     }
@@ -1614,7 +1696,7 @@ mod tests {
 
         // And the envelope's Debug hides the ciphertext.
         let env = store
-            .wrap("csc", "p", "client_secret", b"s3cr3t-value")
+            .wrap("csc", "p", "entry-1", "client_secret", b"s3cr3t-value")
             .expect("wrap");
         let env_debug = format!("{env:?}");
         assert!(!env_debug.contains(&env.ciphertext_b64));

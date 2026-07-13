@@ -183,9 +183,11 @@ pub use roles::{
 // the crate root (the crate-private `CredentialSecretStore` itself stays internal).
 pub use secretstore::{CredentialKeySource, ProtectionLevel, SecretEnvelope, SecretStoreError};
 pub use secretstore_persist::{
-    CmdCredentialFields, CredentialFieldSet, CredentialMode, CredentialRecordStatus,
-    CscCredentialFields, DecryptedCredentialRecord, EncryptedCredentialRecord,
-    ProviderCredentialError, ProviderCredentialStore, ScapCredentialFields, StoredCredentialField,
+    CmdCredentialFields, CredentialEntry, CredentialFieldSet, CredentialMode,
+    CredentialRecordStatus, CscCredentialFields, DecryptedCredentialEntry,
+    DecryptedCredentialRecord, EncryptedCredentialRecord, EntryMetadata, EntrySelectors,
+    Pkcs12CredentialFields, ProviderCredentialError, ProviderCredentialStore, ScapCredentialFields,
+    StoredCredentialField,
 };
 pub use settings::{
     AiSettings, AppearanceSettings, CaeSourceEntry, CatalogSettings, CmdEnvSetting,
@@ -7343,6 +7345,76 @@ mod tests {
         assert_eq!(body["appearance"]["leather_texture"], true);
         assert_eq!(body["appearance"]["texture_intensity"], 60);
         assert_eq!(body["appearance"]["button_texture"], true);
+    }
+
+    #[tokio::test]
+    async fn settings_provider_metadata_counts_stored_csc_credentials_without_secret_status_leaks()
+    {
+        let tmp = TempDir::new();
+        let mut state = AppState {
+            provider_credentials: Arc::new(ProviderCredentialStore::load_with_db_key(
+                &tmp.dir,
+                b"settings-provider-credential-db-key",
+                false,
+            )),
+            ..AppState::default()
+        };
+        state.csc_providers = Arc::new(vec![CscConfig {
+            provider_id: "encosto-qtsp".to_owned(),
+            display_name: "Encosto QTSP".to_owned(),
+            base_url: "https://sandbox.encosto.example/csc/v2".to_owned(),
+            authorization: chancela_csc::CscAuthorization::Service,
+            sandbox: false,
+            credential_id: None,
+            scope: chancela_csc::DEFAULT_SCOPE.to_owned(),
+        }]);
+        state
+            .provider_credentials
+            .put(
+                CredentialMode::CscQtsp,
+                "encosto-qtsp",
+                CscCredentialFields {
+                    client_id: Some(Zeroizing::new("client-id-hidden-abcd".to_owned())),
+                    client_secret: Some(Zeroizing::new("client-secret-hidden-wxyz".to_owned())),
+                    ..Default::default()
+                }
+                .into_set_pairs(),
+                &[],
+            )
+            .expect("seed encrypted CSC credentials");
+
+        let (status, body) = send(state, get("/v1/settings")).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let provider = body["signing"]["providers"]
+            .as_array()
+            .expect("providers")
+            .iter()
+            .find(|provider| provider["id"] == "encosto-qtsp")
+            .expect("CSC provider metadata");
+        assert_eq!(provider["configured"], true, "{body}");
+        assert_eq!(provider["production_blocked"], false, "{body}");
+        assert!(
+            provider["note"]
+                .as_str()
+                .expect("note")
+                .contains("protected storage"),
+            "{body}"
+        );
+
+        let rendered = body.to_string();
+        for forbidden in [
+            "client-id-hidden-abcd",
+            "client-secret-hidden-wxyz",
+            "abcd",
+            "wxyz",
+            "last4",
+            "ciphertext",
+        ] {
+            assert!(
+                !rendered.contains(forbidden),
+                "settings metadata leaked {forbidden}: {rendered}"
+            );
+        }
     }
 
     #[tokio::test]
