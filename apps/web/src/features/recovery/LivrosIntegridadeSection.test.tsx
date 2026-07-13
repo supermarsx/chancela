@@ -113,6 +113,19 @@ async function openRestoreModal() {
   await screen.findByRole('dialog', { name: 'Restaurar de cópia de segurança' });
 }
 
+/**
+ * Open the last-resort re-anchor modal. The card button only enables once the integrity
+ * query resolves broken (`disabled={!broken}`), so wait for that before clicking.
+ */
+async function openReanchorModal() {
+  const trigger = (await screen.findByRole('button', {
+    name: 'Re-ancorar cadeia',
+  })) as HTMLButtonElement;
+  await waitFor(() => expect(trigger.disabled).toBe(false));
+  fireEvent.click(trigger);
+  await screen.findByRole('dialog', { name: 'Re-ancorar cadeia' });
+}
+
 function restoreEndpointCalls(calls: Recorded[]) {
   return calls.filter((c) => c.url === '/v1/ledger/recovery/restore' && c.method === 'POST');
 }
@@ -725,5 +738,167 @@ describe('LivrosIntegridadeSection', () => {
     expect(
       calls.filter((c) => c.url === '/v1/ledger/recovery/restore/preflight' && c.method === 'POST'),
     ).toHaveLength(0);
+  });
+
+  it('surfaces re-anchored segments with the honest permanent-disclosure note', async () => {
+    const report = {
+      ...HEALTHY_REPORT,
+      reanchored_segments: [
+        {
+          pre_reanchor_digest: 'aa'.repeat(32),
+          actor: 'amelia.marques',
+          reason: 'corrupção de disco',
+        },
+      ],
+    };
+    const { fn } = sectionFetch(report);
+    vi.stubGlobal('fetch', fn);
+    renderWithProviders(<LivrosIntegridadeSection />);
+
+    expect(await screen.findByText('Segmentos re-ancorados')).toBeTruthy();
+    // The permanent-disclosure copy is shown verbatim, per-segment.
+    expect(
+      screen.getByText(/A evidência original de inviolabilidade do segmento foi perdida/),
+    ).toBeTruthy();
+    expect(screen.getByText('Por amelia.marques · corrupção de disco')).toBeTruthy();
+  });
+
+  it('re-anchors a broken chain only after a required reason + step-up re-auth', async () => {
+    const { fn, calls } = sectionFetch(BROKEN_REPORT, (url, method) => {
+      if (url === '/v1/ledger/recovery/reanchor' && method === 'POST') {
+        return jsonResponse({ reanchored: true, pre_reanchor_digest: 'aa'.repeat(32) });
+      }
+      return null;
+    });
+    vi.stubGlobal('fetch', fn);
+    renderWithProviders(<LivrosIntegridadeSection />);
+
+    // Open the last-resort re-anchor modal (enabled because the chain is broken).
+    await openReanchorModal();
+
+    // The confirm is gated on BOTH a non-empty reason and the step-up proof.
+    const confirm = screen.getByRole('button', { name: 'Re-ancorar' }) as HTMLButtonElement;
+    expect(confirm.disabled).toBe(true);
+
+    fireEvent.change(screen.getByLabelText('Motivo (obrigatório)'), {
+      target: { value: 'quebra confirmada na origem' },
+    });
+    // Reason alone is not enough — the re-auth password is still required.
+    expect(confirm.disabled).toBe(true);
+
+    fireEvent.change(screen.getByLabelText('Palavra-passe'), { target: { value: 'operator-pw' } });
+    expect(confirm.disabled).toBe(false);
+
+    fireEvent.click(confirm);
+
+    // On success the modal toasts the honest completion notice and the POST carried the
+    // trimmed reason + the gathered re-auth proof.
+    expect(await screen.findByText('Cadeia re-ancorada.')).toBeTruthy();
+    const reanchorCalls = calls.filter(
+      (c) => c.url === '/v1/ledger/recovery/reanchor' && c.method === 'POST',
+    );
+    expect(reanchorCalls).toHaveLength(1);
+    expect(JSON.parse(reanchorCalls[0].body as string)).toEqual({
+      reason: 'quebra confirmada na origem',
+      reauth: { password: 'operator-pw' },
+    });
+  });
+
+  it('holds the re-anchor confirm in a disabled pending state while the mutation is in flight', async () => {
+    const pending = deferred<Response>();
+    const { fn } = sectionFetch(BROKEN_REPORT, (url, method) => {
+      if (url === '/v1/ledger/recovery/reanchor' && method === 'POST') return pending.promise;
+      return null;
+    });
+    vi.stubGlobal('fetch', fn);
+    renderWithProviders(<LivrosIntegridadeSection />);
+
+    await openReanchorModal();
+    fireEvent.change(screen.getByLabelText('Motivo (obrigatório)'), {
+      target: { value: 'quebra confirmada' },
+    });
+    fireEvent.change(screen.getByLabelText('Palavra-passe'), { target: { value: 'operator-pw' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Re-ancorar' }));
+
+    // While the mutation never settles the confirm swaps to its pending label and is disabled.
+    const pendingBtn = (await screen.findByRole('button', {
+      name: 'A re-ancorar…',
+    })) as HTMLButtonElement;
+    expect(pendingBtn.disabled).toBe(true);
+
+    await act(async () => {
+      pending.resolve(jsonResponse({ reanchored: true, pre_reanchor_digest: 'aa'.repeat(32) }));
+      await pending.promise;
+    });
+    expect(await screen.findByText('Cadeia re-ancorada.')).toBeTruthy();
+  });
+
+  it('re-anchor failure surfaces an inline error and a toast without leaving the modal', async () => {
+    const { fn, calls } = sectionFetch(BROKEN_REPORT, (url, method) => {
+      if (url === '/v1/ledger/recovery/reanchor' && method === 'POST') {
+        return jsonResponse({ error: 'a cadeia já verifica; re-ancoragem recusada' }, 409);
+      }
+      return null;
+    });
+    vi.stubGlobal('fetch', fn);
+    renderWithProviders(<LivrosIntegridadeSection />);
+
+    await openReanchorModal();
+    fireEvent.change(screen.getByLabelText('Motivo (obrigatório)'), {
+      target: { value: 'tentativa inválida' },
+    });
+    fireEvent.change(screen.getByLabelText('Palavra-passe'), { target: { value: 'operator-pw' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Re-ancorar' }));
+
+    // The server message renders BOTH inline (in the still-open modal) and as a toast.
+    expect(
+      await screen.findAllByText('a cadeia já verifica; re-ancoragem recusada'),
+    ).toHaveLength(2);
+    expect(screen.getByRole('dialog', { name: 'Re-ancorar cadeia' })).toBeTruthy();
+    expect(
+      calls.filter((c) => c.url === '/v1/ledger/recovery/reanchor' && c.method === 'POST'),
+    ).toHaveLength(1);
+  });
+
+  it('toasts a book export failure and never invokes the save prompt', async () => {
+    const { fn } = sectionFetch(HEALTHY_REPORT, (url, method) => {
+      if (url.includes('/v1/books/book-1/export') && method === 'POST') {
+        return jsonResponse({ error: 'exportação indisponível sem persistência' }, 422);
+      }
+      return null;
+    });
+    vi.stubGlobal('fetch', fn);
+    renderWithProviders(<LivrosIntegridadeSection />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /Exportar/ }));
+
+    expect(await screen.findByText('exportação indisponível sem persistência')).toBeTruthy();
+    expect(saveFileMock.saveBlobAs).not.toHaveBeenCalled();
+  });
+
+  it('toasts a confirmed import failure after a ready preflight', async () => {
+    const preflight = makeImportPreflight();
+    const { fn, calls } = sectionFetch(HEALTHY_REPORT, (url, method) => {
+      if (url.includes('/v1/books/import/preflight') && method === 'POST') {
+        return jsonResponse(preflight);
+      }
+      if (url.includes('/v1/books/import') && method === 'POST') {
+        return jsonResponse({ error: 'importação rejeitada pelo servidor' }, 422);
+      }
+      return null;
+    });
+    vi.stubGlobal('fetch', fn);
+    renderWithProviders(<LivrosIntegridadeSection />);
+
+    fireEvent.change(document.querySelector('input[type=file]') as HTMLInputElement, {
+      target: { files: [makeZipFile()] },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Pré-validar pacote' }));
+    await screen.findByText('Pacote pronto para importação');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar importação' }));
+
+    expect(await screen.findByText('importação rejeitada pelo servidor')).toBeTruthy();
+    expect(importEndpointCalls(calls)).toHaveLength(1);
   });
 });
