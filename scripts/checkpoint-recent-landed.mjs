@@ -4093,7 +4093,7 @@ function assertCheckpointMap() {
     "BookDetail legal-hold no-approval copy marker",
   );
   assertFileContains(
-    "apps/web/src/features/settings/PrivacyComplianceSection.tsx",
+    "apps/web/src/i18n/locales/pt-PT.ts",
     "Estado local de legal hold e descarte",
     "Settings legal-hold disposal status summary marker",
   );
@@ -5278,8 +5278,13 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/settings/SettingsPage.tsx",
-    "Gerar lembretes locais",
-    "Settings workflow reminder master toggle marker",
+    "label={t('settings.reminders.enabled.label')}",
+    "Settings workflow reminder master toggle i18n key marker",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/locales/pt-PT.ts",
+    "'settings.reminders.enabled.label': 'Gerar lembretes locais'",
+    "Settings workflow reminder master toggle source-locale marker",
   );
   assertFileContains(
     "apps/web/src/features/settings/SettingsPage.tsx",
@@ -5754,38 +5759,73 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/documents/ActDocumentPanel.tsx",
-    'aria-label="Recibo de revisão"',
-    "imported-document review receipt group marker",
+    "aria-label={t('documents.import.receipt.title')}",
+    "imported-document review receipt group i18n key marker",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/locales/pt-PT.ts",
+    "'documents.import.receipt.title': 'Recibo de revisão'",
+    "imported-document review receipt source-locale marker",
   );
   assertFileContains(
     "apps/web/src/features/documents/ActDocumentPanel.tsx",
-    'aria-label="Histórico técnico de revisão"',
-    "imported-document technical review history group marker",
+    "aria-label={t('documents.import.history.title')}",
+    "imported-document technical review history group i18n key marker",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/locales/pt-PT.ts",
+    "'documents.import.history.title': 'Histórico técnico de revisão'",
+    "imported-document technical review history source-locale marker",
   );
   assertFileContains(
     "apps/web/src/features/documents/ActDocumentPanel.tsx",
-    'aria-label="Resumo de profundidade da revisão importada"',
-    "imported-document review-depth summary group marker",
+    "aria-label={t('documents.import.depth.aria')}",
+    "imported-document review-depth summary group i18n key marker",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/locales/pt-PT.ts",
+    "'documents.import.depth.aria': 'Resumo de profundidade da revisão importada'",
+    "imported-document review-depth summary source-locale marker",
   );
   assertFileContains(
     "apps/web/src/features/documents/ActDocumentPanel.tsx",
-    "Preservação dos bytes originais não indicada nos metadados carregados",
-    "imported-document missing preservation status neutral summary marker",
+    "t('documents.import.depth.bytesNotIndicated')",
+    "imported-document missing preservation status neutral summary i18n key marker",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/locales/pt-PT.ts",
+    "'documents.import.depth.bytesNotIndicated': 'Preservação dos bytes originais não indicada nos metadados carregados'",
+    "imported-document missing preservation status neutral summary source-locale marker",
   );
   assertFileContains(
     "apps/web/src/features/documents/ActDocumentPanel.tsx",
-    "OCR, conversão, substituição de PDF/A, PDF assinado, validação de assinatura, selo",
-    "imported-document review-depth explicit exclusions marker",
+    "t('documents.import.depth.excludesValue')",
+    "imported-document review-depth explicit exclusions i18n key marker",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/locales/pt-PT.ts",
+    "'documents.import.depth.excludesValue': 'OCR, conversão, substituição de PDF/A, PDF assinado, validação de assinatura, selo, PDF/UA e aceitação legal.'",
+    "imported-document review-depth explicit exclusions source-locale marker",
   );
   assertFileContains(
     "apps/web/src/features/documents/ActDocumentPanel.tsx",
-    "· selo: não · PDF/UA: não · aceitação legal: não.",
-    "imported-document review-depth no-claim flags marker",
+    "t('documents.import.depth.noClaimFlagsValue')",
+    "imported-document review-depth no-claim flags i18n key marker",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/locales/pt-PT.ts",
+    "'documents.import.depth.noClaimFlagsValue': 'OCR: não · conversão: não · PDF/A substituído: não · PDF assinado: não · assinatura: não · selo: não · PDF/UA: não · aceitação legal: não.'",
+    "imported-document review-depth no-claim flags source-locale marker",
   );
   assertFileContains(
     "apps/web/src/features/documents/ActDocumentPanel.tsx",
-    "Histórico de revisão metadata-only para evidência não canónica",
-    "imported-document technical review history no-claim copy marker",
+    "t('documents.import.history.scopeBody')",
+    "imported-document technical review history no-claim copy i18n key marker",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/locales/pt-PT.ts",
+    "'documents.import.history.scopeBody': 'Histórico de revisão metadata-only para evidência não canónica; sem OCR, conversão, substituição de PDF/A, validação de assinatura, selo, PDF/UA, certificação ou aceitação legal.'",
+    "imported-document technical review history no-claim source-locale marker",
   );
   assertFileContains(
     "apps/web/src/api/types.ts",
@@ -5799,18 +5839,33 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/documents/ActDocumentPanel.tsx",
-    "Sem recibo de revisão",
-    "imported-document pending no fake receipt marker",
+    "t('documents.import.receipt.none')",
+    "imported-document pending no fake receipt i18n key marker",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/locales/pt-PT.ts",
+    "'documents.import.receipt.none': 'Sem recibo de revisão'",
+    "imported-document pending no fake receipt source-locale marker",
   );
   assertFileContains(
     "apps/web/src/features/documents/ActDocumentPanel.tsx",
-    "Não criado nem validado por esta revisão.",
-    "imported-document review receipt no signed-artifact claim marker",
+    "t('documents.import.receipt.notCreated')",
+    "imported-document review receipt no signed-artifact claim i18n key marker",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/locales/pt-PT.ts",
+    "'documents.import.receipt.notCreated': 'Não criado nem validado por esta revisão.'",
+    "imported-document review receipt no signed-artifact claim source-locale marker",
   );
   assertFileContains(
     "apps/web/src/features/documents/ActDocumentPanel.tsx",
-    "Não declarada por esta revisão.",
-    "imported-document review receipt no legal-acceptance claim marker",
+    "t('documents.import.receipt.notClaimed')",
+    "imported-document review receipt no legal-acceptance claim i18n key marker",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/locales/pt-PT.ts",
+    "'documents.import.receipt.notClaimed': 'Não declarada por esta revisão.'",
+    "imported-document review receipt no legal-acceptance claim source-locale marker",
   );
   assertFileContains(
     "apps/web/src/features/documents/ActDocumentPanel.test.tsx",
@@ -6892,8 +6947,13 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/settings/SettingsPage.tsx",
-    "Política de limpeza de exportações retidas",
-    "Settings retained-export cleanup policy UI marker",
+    "title={t('settings.retainedExportCleanup.cardTitle')}",
+    "Settings retained-export cleanup policy UI i18n key marker",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/locales/pt-PT.ts",
+    "'settings.retainedExportCleanup.cardTitle': 'Política de limpeza de exportações retidas'",
+    "Settings retained-export cleanup policy source-locale marker",
   );
   assertFileContains(
     "apps/web/src/features/recovery/GestaoDadosSection.tsx",
@@ -7317,8 +7377,13 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/settings/SettingsPage.tsx",
-    "Política local de recuperação de backups",
-    "web settings backup recovery policy UI marker",
+    "title={t('settings.backupRecovery.cardTitle')}",
+    "web settings backup recovery policy UI i18n key marker",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/locales/pt-PT.ts",
+    "'settings.backupRecovery.cardTitle': 'Política local de recuperação de backups'",
+    "web settings backup recovery policy source-locale marker",
   );
   assertFileContains(
     "apps/web/src/features/recovery/GestaoDadosSection.tsx",
@@ -9831,8 +9896,23 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/documents/ActDocumentPanel.tsx",
-    "Pré-flight local de conversão canónica",
-    "web imported-document legacy DOC preflight panel marker",
+    "t('documents.import.preflight.title')",
+    "web imported-document legacy DOC preflight panel i18n key marker",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/locales/pt-PT.ts",
+    "'documents.import.preflight.title': 'Pré-flight local de conversão canónica'",
+    "web imported-document legacy DOC preflight panel source-locale marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/documents/ActDocumentPanel.tsx",
+    "t('documents.import.preflight.hint')",
+    "web imported-document legacy DOC preflight no-claim hint i18n key marker",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/locales/pt-PT.ts",
+    "'documents.import.preflight.hint': 'Evidência local de metadados apenas; não converte DOC, não cria PDF/A, não executa OCR, não valida assinaturas, não chama fornecedores e não declara aceitação legal.'",
+    "web imported-document legacy DOC preflight no-claim hint source-locale marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
