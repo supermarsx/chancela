@@ -174,15 +174,16 @@ Implementation checkpoints covered here:
   no chronology editing, legal ownership/priority conclusion, registry
   certification, DRE verification, external call, or authority-approved graph
   claim.
-- Current working-tree privacy breach/transfer advisory review status and
+- Current working-tree privacy DPIA/breach/transfer advisory review status and
   reminder depth keeps Legal/Compliance/Data/Workflows/UX/CI **PARTIAL**:
-  breach playbook and transfer-control read views now include an
+  DPIA, breach playbook, and transfer-control read views now include an
   `advisory_review` summary derived only from local `evidence_receipts` and
   record `status`. The summary exposes `no_receipt`, `current`, `due_soon`,
   `overdue`, and `under_review` status depth, last local review/drill receipt
   timestamps, derived next-review date, receipt counters, and explicit false
   flags for authority notification, subject notification, transfer approval,
-  transfer execution, external delivery, and legal completion. The dashboard
+  transfer execution, authority filing, legal acceptance/certification,
+  external delivery, completion, compliance certification, and legal completion. The dashboard
   reminder feed can surface local privacy review reminders for no-receipt,
   due-soon, overdue, and under-review breach/transfer records, while
   `workflow.reminders.sources.privacy_control_reviews` lets Settings suppress
@@ -190,8 +191,10 @@ Implementation checkpoints covered here:
   local review badge and derived dates beside the existing lifecycle status.
   This is deterministic local advisory state only: it does not notify
   authorities or data subjects, approve transfers, execute transfers, certify
-  adequacy/compliance, make external calls, deliver calendar/email/webhooks, or
-  perform destructive retention, erasure, disposal, or legal-completion action.
+  adequacy/compliance, file DPIAs with an authority, accept or certify legal
+  review, complete DPIAs, make external calls, deliver calendar/email/webhooks,
+  or perform destructive retention, erasure, disposal, or legal-completion
+  action.
 - Password-required account creation/session slice keeps Data/Roles/UX/CI
   **PARTIAL**: `POST /v1/users` now requires a password, validates it through
   the server password policy, hashes it with the existing verifier-seed path, and
@@ -2160,6 +2163,16 @@ behavior, legal disposal, or legal-effect claims.
   claims and sensitive receipt notes are rejected without mutation. This is evidence
   that an operator reviewed a playbook/control, not incident notification, transfer
   approval, data-transfer execution, or legal compliance certification.
+- **Privacy DPIA review evidence receipts:** DPIA records now append local review/drill
+  receipts in their existing privacy sidecar, with audit events, contract fixture
+  coverage, and Settings UI capture. Receipt outputs keep
+  `authority_filing_completed`, `legal_review_accepted`,
+  `legal_certification_completed`, `external_delivery_completed`, `dpia_completed`,
+  and `compliance_certification_completed` false; true authority/legal/external
+  delivery/completion/certification claims and sensitive receipt notes are rejected
+  without mutation. This is evidence that an operator reviewed or drilled a DPIA
+  locally, not authority filing, legal acceptance/certification, external delivery,
+  DPIA completion, or compliance certification.
 - **Multi-signature local PAdES renewal-plan reporting:** arbitrary-PDF signature
   validation and act signature status now expose a `multi_signature_local_renewal_plan`
   object with signature count, per-signature DSS/VRI coverage, VRI key hash, local
@@ -2678,8 +2691,10 @@ behavior, legal disposal, or legal-effect claims.
   module, with data-dir JSON sidecar durability for restart/restore. They are gated by
   `user.manage@Global` or `settings.manage@Global`, enforce strict `risk_level` and `status`
   values, sanitize list output, and append audit ledger events.
-  The settings privacy tab adds search/filtering plus create/edit/status/risk controls and only
-  loads the registers for operators with the matching permissions.
+  DPIA records also keep append-only local review/drill receipt metadata plus a derived
+  advisory review status while preserving false authority/legal/external/completion/certification
+  flags. The settings privacy tab adds search/filtering plus create/edit/status/risk controls and
+  only loads the registers for operators with the matching permissions.
 - **Breach playbook and transfer-control registers:** `GET|POST|PATCH
   /v1/privacy/breach-playbooks` and `GET|POST|PATCH /v1/privacy/transfer-controls` maintain
   bounded privacy-control registers with JSON sidecar durability, strict risk/status validation,
@@ -3499,9 +3514,10 @@ behavior, legal disposal, or legal-effect claims.
   metadata, and reports local blocker-reduction facts rather than conformance,
   validator evidence, signed-PDF accessibility certification, legal sufficiency,
   external-validator certification, or legal/reader acceptance.
-- Privacy breach-playbook and transfer-control registers plus review receipts are operator
+- Privacy DPIA, breach-playbook, and transfer-control registers plus review receipts are operator
   tracking/control evidence; they do not execute incident response, perform authority/data-subject
-  notification, approve or execute transfers, or certify GDPR compliance.
+  notification or DPIA authority filing, approve or execute transfers, accept/certify legal review,
+  complete DPIAs, deliver externally, or certify GDPR compliance.
 - Data cleanup is bounded storage maintenance for crash reports and retained exports. Retained-export
   dry-run, minimum-age, and keep-latest options are policy controls for that cleanup target only; the
   dry-run surface reports `would_delete_*` planning counters, a server-bound `preview_token`, and zero

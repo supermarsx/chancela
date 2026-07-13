@@ -110,6 +110,27 @@ const DPIA_ONE = {
   subprocessors: ['Analytics Processor SA'],
   risk_level: 'high',
   status: 'under_review',
+  evidence_receipts: [
+    {
+      id: 'dpia-receipt-1',
+      evidence_type: 'review',
+      recorded_at: '2026-07-09T11:20:00Z',
+      recorded_by: 'amelia.marques',
+      notes: 'Local DPIA review only.',
+      authority_filing_completed: false,
+      legal_review_accepted: false,
+      legal_certification_completed: false,
+      external_delivery_completed: false,
+      dpia_completed: false,
+      compliance_certification_completed: false,
+    },
+  ],
+  advisory_review: dpiaAdvisoryReviewSummary({
+    status: 'under_review',
+    last_reviewed_at: '2026-07-09T11:20:00Z',
+    next_review_due_at: undefined,
+    days_until_due: undefined,
+  }),
   created_at: '2026-07-09T11:00:00Z',
   created_by: 'amelia.marques',
   updated_at: '2026-07-09T11:00:00Z',
@@ -138,12 +159,24 @@ function advisoryReviewSummary(
   };
   for (const [key, value] of Object.entries(overrides)) {
     if (value === undefined) {
-      delete (summary as Record<string, unknown>)[key];
+      delete (summary as unknown as Record<string, unknown>)[key];
     } else {
-      (summary as Record<string, unknown>)[key] = value;
+      (summary as unknown as Record<string, unknown>)[key] = value;
     }
   }
   return summary;
+}
+
+function dpiaAdvisoryReviewSummary(overrides: Record<string, unknown> = {}) {
+  return {
+    ...advisoryReviewSummary(overrides),
+    authority_filing_claimed: false,
+    legal_acceptance_claimed: false,
+    legal_certification_claimed: false,
+    external_delivery_claimed: false,
+    completion_claimed: false,
+    compliance_certification_claimed: false,
+  };
 }
 
 const BREACH_PLAYBOOK_ONE = {
@@ -1215,6 +1248,8 @@ function privacyFetch(
     ...record,
     data_categories: [...record.data_categories],
     subprocessors: [...record.subprocessors],
+    evidence_receipts: [...record.evidence_receipts],
+    advisory_review: { ...record.advisory_review },
   }));
   let breachPlaybooks = initialBreachPlaybooks.map((record) => ({
     ...record,
@@ -1256,13 +1291,53 @@ function privacyFetch(
     }
     if (url.includes('/v1/privacy/dpias/') && method === 'PATCH') {
       const id = privacyRecordIdFromUrl(url, 'dpias');
-      const patch = JSON.parse(init?.body as string) as Partial<DpiaRecordMetadata>;
+      const patch = JSON.parse(init?.body as string) as Partial<DpiaRecordMetadata> & {
+        evidence_receipt?: { evidence_type?: 'review' | 'drill'; notes?: string };
+      };
       const current = dpias.find((record) => record.id === id);
       if (!current) return Promise.resolve(jsonResponse({ error: 'not found' }, 404));
+      const { evidence_receipt: receiptInput, ...recordPatch } = patch;
       const updated = {
         ...current,
-        ...patch,
-        updated_at: '2026-07-09T12:00:00Z',
+        ...recordPatch,
+        evidence_receipts: receiptInput
+          ? [
+              ...current.evidence_receipts,
+              {
+                id: 'dpia-receipt-patch',
+                evidence_type: receiptInput.evidence_type ?? 'review',
+                recorded_at: '2026-07-09T13:10:00Z',
+                recorded_by: 'amelia.marques',
+                notes: receiptInput.notes ?? '',
+                authority_filing_completed: false,
+                legal_review_accepted: false,
+                legal_certification_completed: false,
+                external_delivery_completed: false,
+                dpia_completed: false,
+                compliance_certification_completed: false,
+              },
+            ]
+          : current.evidence_receipts,
+        advisory_review: receiptInput
+          ? dpiaAdvisoryReviewSummary({
+              last_reviewed_at:
+                (receiptInput.evidence_type ?? 'review') === 'review'
+                  ? '2026-07-09T13:10:00Z'
+                  : current.advisory_review.last_reviewed_at,
+              last_drill_at:
+                (receiptInput.evidence_type ?? 'review') === 'drill'
+                  ? '2026-07-09T13:10:00Z'
+                  : current.advisory_review.last_drill_at,
+              receipt_count: current.evidence_receipts.length + 1,
+              review_receipt_count:
+                current.advisory_review.review_receipt_count +
+                ((receiptInput.evidence_type ?? 'review') === 'review' ? 1 : 0),
+              drill_receipt_count:
+                current.advisory_review.drill_receipt_count +
+                ((receiptInput.evidence_type ?? 'review') === 'drill' ? 1 : 0),
+            })
+          : current.advisory_review,
+        updated_at: '2026-07-09T13:10:00Z',
         updated_by: 'amelia.marques',
       };
       dpias = dpias.map((record) => (record.id === id ? updated : record));
@@ -1687,10 +1762,53 @@ function privacyFetch(
     }
     if (url.includes('/v1/privacy/dpias')) {
       if (method === 'POST') {
-        const body = JSON.parse(init?.body as string) as Omit<DpiaRecordMetadata, 'id'>;
+        const body = JSON.parse(init?.body as string) as Omit<DpiaRecordMetadata, 'id'> & {
+          evidence_receipt?: { evidence_type?: 'review' | 'drill'; notes?: string };
+        };
+        const { evidence_receipt: receiptInput, ...recordBody } = body;
         const created = {
-          ...body,
+          ...recordBody,
           id: 'dpia-2',
+          evidence_receipts: receiptInput
+            ? [
+                {
+                  id: 'dpia-receipt-2',
+                  evidence_type: receiptInput.evidence_type ?? 'review',
+                  recorded_at: '2026-07-09T13:10:00Z',
+                  recorded_by: 'amelia.marques',
+                  notes: receiptInput.notes ?? '',
+                  authority_filing_completed: false,
+                  legal_review_accepted: false,
+                  legal_certification_completed: false,
+                  external_delivery_completed: false,
+                  dpia_completed: false,
+                  compliance_certification_completed: false,
+                },
+              ]
+            : [],
+          advisory_review: receiptInput
+            ? dpiaAdvisoryReviewSummary({
+                last_reviewed_at:
+                  (receiptInput.evidence_type ?? 'review') === 'review'
+                    ? '2026-07-09T13:10:00Z'
+                    : undefined,
+                last_drill_at:
+                  (receiptInput.evidence_type ?? 'review') === 'drill'
+                    ? '2026-07-09T13:10:00Z'
+                    : undefined,
+                receipt_count: 1,
+                review_receipt_count: (receiptInput.evidence_type ?? 'review') === 'review' ? 1 : 0,
+                drill_receipt_count: (receiptInput.evidence_type ?? 'review') === 'drill' ? 1 : 0,
+              })
+            : dpiaAdvisoryReviewSummary({
+                status: 'no_receipt',
+                last_reviewed_at: undefined,
+                next_review_due_at: undefined,
+                days_until_due: undefined,
+                receipt_count: 0,
+                review_receipt_count: 0,
+                drill_receipt_count: 0,
+              }),
           created_at: '2026-07-09T12:00:00Z',
           created_by: 'amelia.marques',
           updated_at: '2026-07-09T12:00:00Z',
@@ -2836,11 +2954,110 @@ describe('SettingsPage', () => {
       target: { value: 'marketing' },
     });
     expect(within(dpiaPanel!).getByText('Marketing profiling')).toBeTruthy();
+    expect(await within(dpiaPanel!).findByText(/Sem submissão à autoridade/)).toBeTruthy();
+    expect(await within(dpiaPanel!).findByText('Em revisão local')).toBeTruthy();
 
     fireEvent.change(within(dpiaPanel!).getByLabelText('Risco'), {
       target: { value: 'critical' },
     });
     expect(await within(dpiaPanel!).findByText('Sem resultados')).toBeTruthy();
+  });
+
+  it('creates and patches DPIA local review receipts from the privacy settings tab', async () => {
+    const { fn, calls } = privacyFetch();
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+
+    const dpiaPanel = (await screen.findByText('DPIAs')).closest('section');
+    expect(dpiaPanel).toBeTruthy();
+    expect(await within(dpiaPanel!).findByText('Marketing profiling')).toBeTruthy();
+    expect(await within(dpiaPanel!).findByText(/Sem certificação de conformidade/)).toBeTruthy();
+    fireEvent.click(within(dpiaPanel!).getByRole('button', { name: 'Novo registo' }));
+
+    let formCard = await screen.findByRole('heading', { name: 'Novo registo' });
+    let form = formCard.closest('section');
+    expect(form).toBeTruthy();
+    fireEvent.change(within(form!).getByLabelText('Título da DPIA'), {
+      target: { value: 'Biometric entry DPIA' },
+    });
+    fireEvent.change(within(form!).getByLabelText('Finalidade'), {
+      target: { value: 'Entrada segura no edifício' },
+    });
+    fireEvent.change(within(form!).getByLabelText('Base legal'), {
+      target: { value: 'Interesse legítimo' },
+    });
+    fireEvent.change(within(form!).getByLabelText('Categorias de dados'), {
+      target: { value: 'Identificação\nDados biométricos' },
+    });
+    fireEvent.change(within(form!).getByLabelText('Subprocessadores'), {
+      target: { value: 'Access Processor SA' },
+    });
+    fireEvent.change(within(form!).getByLabelText('Tipo de evidência'), {
+      target: { value: 'drill' },
+    });
+    fireEvent.change(within(form!).getByLabelText('Notas de evidência'), {
+      target: { value: 'Operator DPIA drill receipt only.' },
+    });
+    fireEvent.click(within(form!).getByRole('button', { name: 'Criar registo' }));
+
+    const post = await waitFor(() => {
+      const call = calls.find((c) => c.method === 'POST' && c.url.endsWith('/v1/privacy/dpias'));
+      expect(call).toBeTruthy();
+      return call!;
+    });
+    expect(JSON.parse(post.body as string)).toMatchObject({
+      title: 'Biometric entry DPIA',
+      purpose: 'Entrada segura no edifício',
+      legal_basis: 'Interesse legítimo',
+      data_categories: ['Identificação', 'Dados biométricos'],
+      subprocessors: ['Access Processor SA'],
+      risk_level: 'medium',
+      status: 'draft',
+      evidence_receipt: {
+        evidence_type: 'drill',
+        notes: 'Operator DPIA drill receipt only.',
+        authority_filing_completed: false,
+        legal_review_accepted: false,
+        legal_certification_completed: false,
+        external_delivery_completed: false,
+        dpia_completed: false,
+        compliance_certification_completed: false,
+      },
+    });
+    expect(await screen.findByText('Biometric entry DPIA')).toBeTruthy();
+
+    fireEvent.click(within(dpiaPanel!).getAllByRole('button', { name: 'Editar' })[0]);
+    formCard = await screen.findByRole('heading', { name: 'Editar registo' });
+    form = formCard.closest('section');
+    expect(form).toBeTruthy();
+    fireEvent.change(within(form!).getByLabelText('Notas de evidência'), {
+      target: { value: 'Follow-up local DPIA review only.' },
+    });
+    fireEvent.click(within(form!).getByRole('button', { name: 'Guardar alterações' }));
+
+    const patch = await waitFor(() => {
+      const call = calls.find(
+        (c) =>
+          c.method === 'PATCH' &&
+          c.url.endsWith('/v1/privacy/dpias/dpia-1') &&
+          c.body?.includes('Follow-up local DPIA review only.'),
+      );
+      expect(call).toBeTruthy();
+      return call!;
+    });
+    expect(JSON.parse(patch.body as string)).toMatchObject({
+      evidence_receipt: {
+        evidence_type: 'review',
+        notes: 'Follow-up local DPIA review only.',
+        authority_filing_completed: false,
+        legal_review_accepted: false,
+        legal_certification_completed: false,
+        external_delivery_completed: false,
+        dpia_completed: false,
+        compliance_certification_completed: false,
+      },
+    });
   });
 
   it('creates and patches GDPR processor records from the privacy settings tab', async () => {

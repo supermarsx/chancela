@@ -3231,14 +3231,24 @@ export interface ProcessorRecordView extends PrivacyRegisterRecordBase {
   name: string;
 }
 
-/** One DPIA register record (`GET /v1/privacy/dpias`). */
-export interface DpiaRecordView extends PrivacyRegisterRecordBase {
-  id: string;
-  title: string;
-}
-
 /** One breach-response playbook register record (`GET /v1/privacy/breach-playbooks`). */
 export type BreachEvidenceKind = 'review' | 'drill';
+export type DpiaEvidenceKind = 'review' | 'drill';
+
+export interface DpiaEvidenceReceipt {
+  id: string;
+  evidence_type: DpiaEvidenceKind;
+  recorded_at: string;
+  recorded_by: string;
+  occurred_at?: string;
+  notes?: string;
+  authority_filing_completed: false;
+  legal_review_accepted: false;
+  legal_certification_completed: false;
+  external_delivery_completed: false;
+  dpia_completed: false;
+  compliance_certification_completed: false;
+}
 
 export interface BreachPlaybookEvidenceReceipt {
   id: string;
@@ -3278,6 +3288,23 @@ export interface PrivacyAdvisoryReviewSummary {
   transfer_execution_claimed: false;
   external_delivery_configured: false;
   legal_completion_claimed: false;
+}
+
+export interface DpiaAdvisoryReviewSummary extends PrivacyAdvisoryReviewSummary {
+  authority_filing_claimed: false;
+  legal_acceptance_claimed: false;
+  legal_certification_claimed: false;
+  external_delivery_claimed: false;
+  completion_claimed: false;
+  compliance_certification_claimed: false;
+}
+
+/** One DPIA register record (`GET /v1/privacy/dpias`). */
+export interface DpiaRecordView extends PrivacyRegisterRecordBase {
+  id: string;
+  title: string;
+  evidence_receipts: DpiaEvidenceReceipt[];
+  advisory_review: DpiaAdvisoryReviewSummary;
 }
 
 export interface BreachPlaybookView {
@@ -3700,6 +3727,7 @@ export interface CreateDpiaRecordBody {
   subprocessors: string[];
   risk_level: PrivacyRiskLevel;
   status: PrivacyRecordStatus;
+  evidence_receipt?: DpiaEvidenceReceiptBody;
 }
 
 /** Body of `PATCH /v1/privacy/dpias/{id}`. */
@@ -3711,6 +3739,19 @@ export interface PatchDpiaRecordBody {
   subprocessors?: string[];
   risk_level?: PrivacyRiskLevel;
   status?: PrivacyRecordStatus;
+  evidence_receipt?: DpiaEvidenceReceiptBody;
+}
+
+export interface DpiaEvidenceReceiptBody {
+  evidence_type?: DpiaEvidenceKind;
+  occurred_at?: string;
+  notes?: string;
+  authority_filing_completed?: false;
+  legal_review_accepted?: false;
+  legal_certification_completed?: false;
+  external_delivery_completed?: false;
+  dpia_completed?: false;
+  compliance_certification_completed?: false;
 }
 
 /** Body of `POST /v1/privacy/breach-playbooks`. */

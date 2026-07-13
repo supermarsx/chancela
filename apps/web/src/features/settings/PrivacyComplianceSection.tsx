@@ -34,6 +34,7 @@ import {
   type CreateProcessorRecordBody,
   type CreateRetentionPolicyBody,
   type CreateTransferControlBody,
+  type DpiaEvidenceKind,
   type DpiaRecordView,
   type PatchBreachPlaybookBody,
   type PatchDpiaRecordBody,
@@ -92,6 +93,8 @@ interface RegisterFormState {
   subprocessors: string;
   riskLevel: PrivacyRiskLevel;
   status: PrivacyRecordStatus;
+  evidenceType: DpiaEvidenceKind;
+  evidenceNotes: string;
 }
 
 interface BreachPlaybookFormState {
@@ -151,6 +154,8 @@ const EMPTY_FORM: RegisterFormState = {
   subprocessors: '',
   riskLevel: 'medium',
   status: 'draft',
+  evidenceType: 'review',
+  evidenceNotes: '',
 };
 
 const EMPTY_BREACH_FORM: BreachPlaybookFormState = {
@@ -376,6 +381,8 @@ function formFromRecord(kind: RegisterKind, record: RegisterRecord): RegisterFor
     subprocessors: joinList(record.subprocessors),
     riskLevel: record.risk_level,
     status: record.status,
+    evidenceType: 'review',
+    evidenceNotes: '',
   };
 }
 
@@ -437,9 +444,25 @@ function createBody(kind: RegisterKind, form: RegisterFormState): PrivacyCreateB
     risk_level: form.riskLevel,
     status: form.status,
   };
-  return kind === 'processor'
-    ? { ...base, name: form.primary.trim() }
-    : { ...base, title: form.primary.trim() };
+  if (kind === 'processor') {
+    return { ...base, name: form.primary.trim() };
+  }
+  return {
+    ...base,
+    title: form.primary.trim(),
+    evidence_receipt: optionalText(form.evidenceNotes)
+      ? {
+          evidence_type: form.evidenceType,
+          notes: form.evidenceNotes.trim(),
+          authority_filing_completed: false,
+          legal_review_accepted: false,
+          legal_certification_completed: false,
+          external_delivery_completed: false,
+          dpia_completed: false,
+          compliance_certification_completed: false,
+        }
+      : undefined,
+  };
 }
 
 function patchBody(kind: RegisterKind, form: RegisterFormState): PrivacyPatchBody {
@@ -668,6 +691,14 @@ function retentionCandidateCanRecordArchiveEvidence(
 }
 
 function recordSearchText(kind: RegisterKind, record: RegisterRecord): string {
+  const dpiaReceiptText =
+    kind === 'dpia'
+      ? (record as DpiaRecordView).evidence_receipts
+          .map((receipt) =>
+            [receipt.evidence_type, receipt.recorded_by, receipt.notes ?? ''].join(' '),
+          )
+          .join(' ')
+      : '';
   return normalizeSearch(
     [
       primaryValue(kind, record),
@@ -677,6 +708,7 @@ function recordSearchText(kind: RegisterKind, record: RegisterRecord): string {
       ...record.subprocessors,
       record.risk_level,
       record.status,
+      dpiaReceiptText,
     ].join(' '),
   );
 }
@@ -711,7 +743,9 @@ function advisoryReviewDetail(review: PrivacyAdvisoryReviewSummary): string {
     : '';
   const last = review.last_reviewed_at ?? review.last_drill_at;
   const lastText = last ? `Última evidência: ${formatDateTime(last)}.` : '';
-  return [due, lastText, 'Sem notificação, aprovação ou execução.'].filter(Boolean).join(' ');
+  return [due, lastText, 'Sem notificação, aprovação, execução ou certificação.']
+    .filter(Boolean)
+    .join(' ');
 }
 
 function AdvisoryReviewBadge({ review }: { review: PrivacyAdvisoryReviewSummary }) {
@@ -970,6 +1004,36 @@ function RegisterForm({
         </Field>
       </div>
 
+      {kind === 'dpia' ? (
+        <>
+          <InlineWarning tone="info" title="Evidência de operador">
+            Esta evidência regista apenas revisão ou exercício local da DPIA. Não submete à
+            autoridade, não aceita revisão legal, não entrega externamente, não conclui a DPIA e não
+            certifica conformidade.
+          </InlineWarning>
+          <div className="api-key-rate-grid">
+            <Field label="Tipo de evidência" htmlFor={`${idPrefix}-evidence-type`}>
+              <Select
+                id={`${idPrefix}-evidence-type`}
+                value={form.evidenceType}
+                onChange={(e) =>
+                  setForm({ ...form, evidenceType: e.target.value as DpiaEvidenceKind })
+                }
+                options={breachEvidenceOptions}
+              />
+            </Field>
+            <Field label="Notas de evidência" htmlFor={`${idPrefix}-evidence-notes`}>
+              <TextArea
+                id={`${idPrefix}-evidence-notes`}
+                value={form.evidenceNotes}
+                onChange={(e) => setForm({ ...form, evidenceNotes: e.target.value })}
+                rows={2}
+              />
+            </Field>
+          </div>
+        </>
+      ) : null}
+
       <div className="form__actions">
         <Button type="button" variant="ghost" disabled={saving} onClick={onCancel}>
           Cancelar
@@ -1132,6 +1196,7 @@ function RegisterPanel({
                   <th>Finalidade</th>
                   <th>Categorias</th>
                   <th>Subprocessadores</th>
+                  {kind === 'dpia' ? <th>Evidência</th> : null}
                   <th>Risco</th>
                   <th>Estado</th>
                   <th>Atualizado</th>
@@ -1141,6 +1206,8 @@ function RegisterPanel({
             >
               {filtered.map((record) => {
                 const label = primaryValue(kind, record);
+                const dpiaRecord = kind === 'dpia' ? (record as DpiaRecordView) : null;
+                const dpiaReceipt = dpiaRecord ? latestReceipt(dpiaRecord.evidence_receipts) : null;
                 return (
                   <tr key={record.id}>
                     <td>{label}</td>
@@ -1149,6 +1216,23 @@ function RegisterPanel({
                     <td>
                       {record.subprocessors.length > 0 ? record.subprocessors.join(', ') : '—'}
                     </td>
+                    {dpiaRecord ? (
+                      <td>
+                        {dpiaReceipt ? (
+                          <>
+                            {dpiaReceipt.evidence_type === 'drill' ? 'Exercício' : 'Revisão'} por{' '}
+                            {dpiaReceipt.recorded_by}
+                            <br />
+                            <span className="muted">
+                              {formatDateTime(dpiaReceipt.recorded_at)} · Sem submissão à autoridade
+                              · Sem certificação de conformidade
+                            </span>
+                          </>
+                        ) : (
+                          <span className="muted">Sem recibo</span>
+                        )}
+                      </td>
+                    ) : null}
                     <td>
                       <span className="row-wrap">
                         <Badge tone={riskTone(record.risk_level)}>
@@ -1168,10 +1252,13 @@ function RegisterPanel({
                       </span>
                     </td>
                     <td>
-                      <span className="row-wrap">
+                      <span className={dpiaRecord ? 'stack--tight' : 'row-wrap'}>
                         <Badge tone={statusTone(record.status)}>
                           {STATUS_LABELS[record.status]}
                         </Badge>
+                        {dpiaRecord ? (
+                          <AdvisoryReviewBadge review={dpiaRecord.advisory_review} />
+                        ) : null}
                         <Select
                           aria-label={`Estado de ${label}`}
                           value={record.status}

@@ -3943,6 +3943,26 @@ function assertCheckpointMap() {
     "transfer control receipt contract fixture",
   );
   assertFileContains(
+    "contracts/privacy.dpias.json",
+    '"authority_filing_completed": false',
+    "DPIA receipt false authority filing contract fixture",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/privacy.rs",
+    "pub struct DpiaAdvisoryReviewSummary",
+    "DPIA advisory review summary DTO marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/privacy.rs",
+    "compliance_certification_completed: false",
+    "DPIA receipt false compliance certification marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/PrivacyComplianceSection.tsx",
+    "Sem submissão à",
+    "settings DPIA receipt no-authority-filing UI marker",
+  );
+  assertFileContains(
     "crates/chancela-api/src/privacy.rs",
     "pub struct PrivacyAdvisoryReviewSummary",
     "privacy advisory review summary DTO marker",
@@ -9986,7 +10006,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Current working-tree privacy breach/transfer advisory review status and\n  reminder depth keeps Legal/Compliance/Data/Workflows/UX/CI **PARTIAL**",
+    "Current working-tree privacy DPIA/breach/transfer advisory review status and\n  reminder depth keeps Legal/Compliance/Data/Workflows/UX/CI **PARTIAL**",
     "spec coverage privacy advisory review checkpoint marker",
   );
   assertFileContains(
@@ -10001,7 +10021,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "does not notify\n  authorities or data subjects, approve transfers, execute transfers, certify\n  adequacy/compliance",
+    "does not notify\n  authorities or data subjects, approve transfers, execute transfers, certify\n  adequacy/compliance, file DPIAs with an authority",
     "spec coverage privacy advisory no-claim caveat marker",
   );
   assertFileContains(

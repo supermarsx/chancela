@@ -595,6 +595,49 @@ impl BreachEvidenceKind {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DpiaEvidenceKind {
+    Review,
+    Drill,
+}
+
+impl DpiaEvidenceKind {
+    fn parse(raw: &str) -> Result<Self, ApiError> {
+        match normalize_enum(raw).as_str() {
+            "review" => Ok(Self::Review),
+            "drill" => Ok(Self::Drill),
+            "approved" | "accepted" | "filed" | "delivered" | "completed" | "certified" => Err(
+                ApiError::Unprocessable(
+                    "DPIA evidence records review/drill evidence only; authority filing, legal acceptance, external delivery, completion, or certification claims are not accepted"
+                        .to_owned(),
+                ),
+            ),
+            _ => Err(ApiError::Unprocessable(
+                "invalid evidence_receipt.evidence_type; expected review or drill".to_owned(),
+            )),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DpiaEvidenceReceipt {
+    pub id: String,
+    pub evidence_type: DpiaEvidenceKind,
+    pub recorded_at: String,
+    pub recorded_by: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub occurred_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+    pub authority_filing_completed: bool,
+    pub legal_review_accepted: bool,
+    pub legal_certification_completed: bool,
+    pub external_delivery_completed: bool,
+    pub dpia_completed: bool,
+    pub compliance_certification_completed: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BreachPlaybookEvidenceReceipt {
     pub id: String,
@@ -656,6 +699,18 @@ pub struct PrivacyAdvisoryReviewSummary {
     pub legal_completion_claimed: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DpiaAdvisoryReviewSummary {
+    #[serde(flatten)]
+    pub review: PrivacyAdvisoryReviewSummary,
+    pub authority_filing_claimed: bool,
+    pub legal_acceptance_claimed: bool,
+    pub legal_certification_claimed: bool,
+    pub external_delivery_claimed: bool,
+    pub completion_claimed: bool,
+    pub compliance_certification_claimed: bool,
+}
+
 impl PrivacyRecordStatus {
     fn parse(raw: &str) -> Result<Self, ApiError> {
         match normalize_enum(raw).as_str() {
@@ -668,6 +723,61 @@ impl PrivacyRecordStatus {
                     .to_owned(),
             )),
         }
+    }
+}
+
+pub(crate) fn dpia_advisory_review(
+    record: &DpiaRecord,
+    today: Date,
+    due_soon_days: u16,
+) -> DpiaAdvisoryReviewSummary {
+    let last_reviewed_at = record
+        .evidence_receipts
+        .iter()
+        .filter(|receipt| receipt.evidence_type == DpiaEvidenceKind::Review)
+        .filter_map(|receipt| {
+            privacy_receipt_sort_key(receipt.occurred_at.as_deref(), &receipt.recorded_at)
+        })
+        .max_by_key(|(date, _)| *date);
+    let last_drill_at = record
+        .evidence_receipts
+        .iter()
+        .filter(|receipt| receipt.evidence_type == DpiaEvidenceKind::Drill)
+        .filter_map(|receipt| {
+            privacy_receipt_sort_key(receipt.occurred_at.as_deref(), &receipt.recorded_at)
+        })
+        .max_by_key(|(date, _)| *date);
+    let latest_local_evidence = [last_reviewed_at.clone(), last_drill_at.clone()]
+        .into_iter()
+        .flatten()
+        .max_by_key(|(date, _)| *date);
+
+    DpiaAdvisoryReviewSummary {
+        review: advisory_review_summary(
+            record.status,
+            latest_local_evidence,
+            last_reviewed_at.map(|(_, value)| value),
+            last_drill_at.map(|(_, value)| value),
+            today,
+            due_soon_days,
+            record.evidence_receipts.len(),
+            record
+                .evidence_receipts
+                .iter()
+                .filter(|receipt| receipt.evidence_type == DpiaEvidenceKind::Review)
+                .count(),
+            record
+                .evidence_receipts
+                .iter()
+                .filter(|receipt| receipt.evidence_type == DpiaEvidenceKind::Drill)
+                .count(),
+        ),
+        authority_filing_claimed: false,
+        legal_acceptance_claimed: false,
+        legal_certification_claimed: false,
+        external_delivery_claimed: false,
+        completion_claimed: false,
+        compliance_certification_claimed: false,
     }
 }
 
@@ -837,6 +947,8 @@ pub struct DpiaRecord {
     pub subprocessors: Vec<String>,
     pub risk_level: PrivacyRiskLevel,
     pub status: PrivacyRecordStatus,
+    #[serde(default)]
+    pub evidence_receipts: Vec<DpiaEvidenceReceipt>,
     pub created_at: String,
     pub created_by: String,
     pub updated_at: String,
@@ -940,6 +1052,8 @@ pub struct DpiaRecordView {
     pub subprocessors: Vec<String>,
     pub risk_level: PrivacyRiskLevel,
     pub status: PrivacyRecordStatus,
+    pub evidence_receipts: Vec<DpiaEvidenceReceipt>,
+    pub advisory_review: DpiaAdvisoryReviewSummary,
     pub created_at: String,
     pub created_by: String,
     pub updated_at: String,
@@ -957,6 +1071,8 @@ impl From<&DpiaRecord> for DpiaRecordView {
             subprocessors: record.subprocessors.clone(),
             risk_level: record.risk_level,
             status: record.status,
+            evidence_receipts: record.evidence_receipts.clone(),
+            advisory_review: dpia_advisory_review(record, OffsetDateTime::now_utc().date(), 45),
             created_at: record.created_at.clone(),
             created_by: record.created_by.clone(),
             updated_at: record.updated_at.clone(),
@@ -1121,6 +1237,8 @@ pub struct CreateDpiaRecord {
     pub risk_level: Option<String>,
     #[serde(default)]
     pub status: Option<String>,
+    #[serde(default)]
+    pub evidence_receipt: Option<DpiaEvidenceReceiptInput>,
 }
 
 #[derive(Deserialize)]
@@ -1139,6 +1257,8 @@ pub struct PatchDpiaRecord {
     pub risk_level: Option<String>,
     #[serde(default)]
     pub status: Option<String>,
+    #[serde(default)]
+    pub evidence_receipt: Option<DpiaEvidenceReceiptInput>,
 }
 
 #[derive(Deserialize)]
@@ -1279,6 +1399,28 @@ pub struct TransferEvidenceReceiptInput {
     pub data_transfer_executed: Option<bool>,
     #[serde(default)]
     pub legal_certification_completed: Option<bool>,
+}
+
+#[derive(Deserialize)]
+pub struct DpiaEvidenceReceiptInput {
+    #[serde(default)]
+    pub evidence_type: Option<String>,
+    #[serde(default)]
+    pub occurred_at: Option<String>,
+    #[serde(default)]
+    pub notes: Option<String>,
+    #[serde(default)]
+    pub authority_filing_completed: Option<bool>,
+    #[serde(default)]
+    pub legal_review_accepted: Option<bool>,
+    #[serde(default)]
+    pub legal_certification_completed: Option<bool>,
+    #[serde(default)]
+    pub external_delivery_completed: Option<bool>,
+    #[serde(default)]
+    pub dpia_completed: Option<bool>,
+    #[serde(default)]
+    pub compliance_certification_completed: Option<bool>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -2681,6 +2823,12 @@ pub async fn create_dpia_record(
             .as_deref()
             .ok_or_else(|| ApiError::Unprocessable("status is required".to_owned()))
             .and_then(PrivacyRecordStatus::parse)?,
+        evidence_receipts: req
+            .evidence_receipt
+            .map(|receipt| validate_dpia_evidence_receipt(receipt, &actor_name))
+            .transpose()?
+            .into_iter()
+            .collect(),
         created_at: now.clone(),
         created_by: actor_name.clone(),
         updated_at: now,
@@ -4030,6 +4178,20 @@ fn apply_dpia_patch(
     }
     if let Some(status) = req.status {
         record.status = PrivacyRecordStatus::parse(&status)?;
+        changed = true;
+    }
+    if let Some(evidence_receipt) = req.evidence_receipt {
+        if record.evidence_receipts.len() >= MAX_PRIVACY_EVIDENCE_RECEIPTS {
+            return Err(ApiError::Unprocessable(format!(
+                "evidence_receipts must include at most {MAX_PRIVACY_EVIDENCE_RECEIPTS} entries"
+            )));
+        }
+        record
+            .evidence_receipts
+            .push(validate_dpia_evidence_receipt(
+                evidence_receipt,
+                actor_name,
+            )?);
         changed = true;
     }
     if changed {
@@ -5548,6 +5710,70 @@ fn optional_sensitive_checked_text(
     max_chars: usize,
 ) -> Result<Option<String>, ApiError> {
     clean_optional_bounded(raw, field, max_chars)
+}
+
+fn validate_dpia_evidence_receipt(
+    raw: DpiaEvidenceReceiptInput,
+    actor_name: &str,
+) -> Result<DpiaEvidenceReceipt, ApiError> {
+    reject_true_flag(
+        raw.authority_filing_completed,
+        "evidence_receipt.authority_filing_completed",
+        "authority filing",
+    )?;
+    reject_true_flag(
+        raw.legal_review_accepted,
+        "evidence_receipt.legal_review_accepted",
+        "legal acceptance",
+    )?;
+    reject_true_flag(
+        raw.legal_certification_completed,
+        "evidence_receipt.legal_certification_completed",
+        "legal certification",
+    )?;
+    reject_true_flag(
+        raw.external_delivery_completed,
+        "evidence_receipt.external_delivery_completed",
+        "external delivery",
+    )?;
+    reject_true_flag(
+        raw.dpia_completed,
+        "evidence_receipt.dpia_completed",
+        "DPIA completion",
+    )?;
+    reject_true_flag(
+        raw.compliance_certification_completed,
+        "evidence_receipt.compliance_certification_completed",
+        "compliance certification",
+    )?;
+    let evidence_type = raw
+        .evidence_type
+        .as_deref()
+        .map(DpiaEvidenceKind::parse)
+        .transpose()?
+        .unwrap_or(DpiaEvidenceKind::Review);
+    Ok(DpiaEvidenceReceipt {
+        id: Uuid::new_v4().to_string(),
+        evidence_type,
+        recorded_at: now_rfc3339(),
+        recorded_by: actor_name.to_owned(),
+        occurred_at: optional_rfc3339_string(
+            raw.occurred_at,
+            "evidence_receipt.occurred_at",
+            MAX_PRIVACY_CONTROL_FIELD_CHARS,
+        )?,
+        notes: optional_sensitive_checked_text(
+            raw.notes,
+            "evidence_receipt.notes",
+            MAX_PRIVACY_CONTROL_TEXT_CHARS,
+        )?,
+        authority_filing_completed: false,
+        legal_review_accepted: false,
+        legal_certification_completed: false,
+        external_delivery_completed: false,
+        dpia_completed: false,
+        compliance_certification_completed: false,
+    })
 }
 
 fn validate_breach_evidence_receipt(

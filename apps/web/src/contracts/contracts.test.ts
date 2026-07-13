@@ -108,6 +108,8 @@ import {
   type DataUsageConcern,
   type DataUsageStatus,
   type DocumentSettings,
+  type DpiaAdvisoryReviewSummary,
+  type DpiaEvidenceReceipt,
   type DpiaRecordView,
   type DsrRequestView,
   type Entity,
@@ -658,6 +660,8 @@ function assertDpiaRecord(obj: unknown, label: string): DpiaRecordView {
       subprocessors: true,
       risk_level: true,
       status: true,
+      evidence_receipts: true,
+      advisory_review: true,
       created_at: true,
       created_by: true,
       updated_at: true,
@@ -668,7 +672,46 @@ function assertDpiaRecord(obj: unknown, label: string): DpiaRecordView {
   expect(record.id.length, `${label}.id should be non-empty`).toBeGreaterThan(0);
   expect(record.title.length, `${label}.title should be non-empty`).toBeGreaterThan(0);
   assertPrivacyRecordBase(record, label);
+  expect(Array.isArray(record.evidence_receipts), `${label}.evidence_receipts`).toBe(true);
+  expect(record.evidence_receipts.length, `${label}.evidence_receipts`).toBeGreaterThan(0);
+  assertDpiaEvidenceReceipt(record.evidence_receipts[0], `${label}.evidence_receipts[]`);
+  assertDpiaAdvisoryReview(record.advisory_review, `${label}.advisory_review`);
   return record;
+}
+
+function assertDpiaEvidenceReceipt(obj: unknown, label: string): DpiaEvidenceReceipt {
+  const receipt = assertExactKeys<DpiaEvidenceReceipt>(
+    obj,
+    {
+      id: true,
+      evidence_type: true,
+      recorded_at: true,
+      recorded_by: true,
+      authority_filing_completed: true,
+      legal_review_accepted: true,
+      legal_certification_completed: true,
+      external_delivery_completed: true,
+      dpia_completed: true,
+      compliance_certification_completed: true,
+    },
+    label,
+    ['occurred_at', 'notes'],
+  );
+  expect(['review', 'drill'], `${label}.evidence_type`).toContain(receipt.evidence_type);
+  assertTimestamp(receipt.recorded_at, `${label}.recorded_at`);
+  if (receipt.occurred_at) assertTimestamp(receipt.occurred_at, `${label}.occurred_at`);
+  expect(receipt.authority_filing_completed, `${label}.authority_filing_completed`).toBe(false);
+  expect(receipt.legal_review_accepted, `${label}.legal_review_accepted`).toBe(false);
+  expect(receipt.legal_certification_completed, `${label}.legal_certification_completed`).toBe(
+    false,
+  );
+  expect(receipt.external_delivery_completed, `${label}.external_delivery_completed`).toBe(false);
+  expect(receipt.dpia_completed, `${label}.dpia_completed`).toBe(false);
+  expect(
+    receipt.compliance_certification_completed,
+    `${label}.compliance_certification_completed`,
+  ).toBe(false);
+  return receipt;
 }
 
 function assertBreachEvidenceReceipt(obj: unknown, label: string): BreachPlaybookEvidenceReceipt {
@@ -693,7 +736,11 @@ function assertBreachEvidenceReceipt(obj: unknown, label: string): BreachPlayboo
   return receipt;
 }
 
-function assertPrivacyAdvisoryReview(obj: unknown, label: string): PrivacyAdvisoryReviewSummary {
+function assertPrivacyAdvisoryReview(
+  obj: unknown,
+  label: string,
+  extraKeys: readonly string[] = [],
+): PrivacyAdvisoryReviewSummary {
   const summary = assertExactKeys<PrivacyAdvisoryReviewSummary>(
     obj,
     {
@@ -711,7 +758,13 @@ function assertPrivacyAdvisoryReview(obj: unknown, label: string): PrivacyAdviso
       legal_completion_claimed: true,
     },
     label,
-    ['last_reviewed_at', 'last_drill_at', 'next_review_due_at', 'days_until_due'],
+    [
+      'last_reviewed_at',
+      'last_drill_at',
+      'next_review_due_at',
+      'days_until_due',
+      ...extraKeys,
+    ] as readonly OptionalKeys<PrivacyAdvisoryReviewSummary>[],
   );
   inEnum(PRIVACY_ADVISORY_REVIEW_STATUSES, summary.status, `${label}.status`);
   expect(summary.review_interval_days, `${label}.review_interval_days`).toBeGreaterThan(0);
@@ -735,6 +788,54 @@ function assertPrivacyAdvisoryReview(obj: unknown, label: string): PrivacyAdviso
   expect(summary.transfer_execution_claimed, `${label}.transfer_execution_claimed`).toBe(false);
   expect(summary.external_delivery_configured, `${label}.external_delivery_configured`).toBe(false);
   expect(summary.legal_completion_claimed, `${label}.legal_completion_claimed`).toBe(false);
+  return summary;
+}
+
+function assertDpiaAdvisoryReview(obj: unknown, label: string): DpiaAdvisoryReviewSummary {
+  const summary = assertPrivacyAdvisoryReview(obj, label, [
+    'authority_filing_claimed',
+    'legal_acceptance_claimed',
+    'legal_certification_claimed',
+    'external_delivery_claimed',
+    'completion_claimed',
+    'compliance_certification_claimed',
+  ]) as DpiaAdvisoryReviewSummary;
+  const dpiaSummary = assertExactKeys<DpiaAdvisoryReviewSummary>(
+    obj,
+    {
+      status: true,
+      review_interval_days: true,
+      receipt_count: true,
+      review_receipt_count: true,
+      drill_receipt_count: true,
+      local_advisory_only: true,
+      authority_notification_claimed: true,
+      subject_notification_claimed: true,
+      transfer_approval_claimed: true,
+      transfer_execution_claimed: true,
+      external_delivery_configured: true,
+      legal_completion_claimed: true,
+      authority_filing_claimed: true,
+      legal_acceptance_claimed: true,
+      legal_certification_claimed: true,
+      external_delivery_claimed: true,
+      completion_claimed: true,
+      compliance_certification_claimed: true,
+    },
+    label,
+    ['last_reviewed_at', 'last_drill_at', 'next_review_due_at', 'days_until_due'],
+  );
+  expect(dpiaSummary.authority_filing_claimed, `${label}.authority_filing_claimed`).toBe(false);
+  expect(dpiaSummary.legal_acceptance_claimed, `${label}.legal_acceptance_claimed`).toBe(false);
+  expect(dpiaSummary.legal_certification_claimed, `${label}.legal_certification_claimed`).toBe(
+    false,
+  );
+  expect(dpiaSummary.external_delivery_claimed, `${label}.external_delivery_claimed`).toBe(false);
+  expect(dpiaSummary.completion_claimed, `${label}.completion_claimed`).toBe(false);
+  expect(
+    dpiaSummary.compliance_certification_claimed,
+    `${label}.compliance_certification_claimed`,
+  ).toBe(false);
   return summary;
 }
 

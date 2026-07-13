@@ -227,6 +227,17 @@ fn dpia_payload(risk_level: &str, status: &str) -> Value {
         "subprocessors": ["Analytics Processor SA"],
         "risk_level": risk_level,
         "status": status,
+        "evidence_receipt": {
+            "evidence_type": "drill",
+            "occurred_at": "2026-07-09T09:30:00Z",
+            "notes": "Local DPIA tabletop review only.",
+            "authority_filing_completed": false,
+            "legal_review_accepted": false,
+            "legal_certification_completed": false,
+            "external_delivery_completed": false,
+            "dpia_completed": false,
+            "compliance_certification_completed": false
+        }
     })
 }
 
@@ -1757,7 +1768,9 @@ async fn processor_records_allow_settings_manage_sanitize_and_audit_updates() {
 
 #[tokio::test]
 async fn dpia_records_allow_user_manage_list_update_and_audit() {
-    let (state, _target, owner_token, _reader, _reader_token) = fixture_state().await;
+    let tmp = TempDir::new();
+    let state = AppState::with_data_dir(tmp.dir.clone());
+    let (owner, owner_token) = bootstrap_owner(&state).await;
 
     let (status, created) = send(
         state.clone(),
@@ -1774,6 +1787,63 @@ async fn dpia_records_allow_user_manage_list_update_and_audit() {
     assert_eq!(created["risk_level"], json!("high"));
     assert_eq!(created["status"], json!("draft"));
     assert_eq!(created["created_by"], json!("owner"));
+    assert_eq!(
+        created["evidence_receipts"][0]["evidence_type"],
+        json!("drill")
+    );
+    assert_eq!(
+        created["evidence_receipts"][0]["notes"],
+        json!("Local DPIA tabletop review only.")
+    );
+    assert_eq!(
+        created["evidence_receipts"][0]["authority_filing_completed"],
+        json!(false)
+    );
+    assert_eq!(
+        created["evidence_receipts"][0]["legal_review_accepted"],
+        json!(false)
+    );
+    assert_eq!(
+        created["evidence_receipts"][0]["external_delivery_completed"],
+        json!(false)
+    );
+    assert_eq!(
+        created["evidence_receipts"][0]["dpia_completed"],
+        json!(false)
+    );
+    assert_eq!(created["advisory_review"]["status"], json!("current"));
+    assert_eq!(
+        created["advisory_review"]["last_drill_at"],
+        json!("2026-07-09T09:30:00Z")
+    );
+    assert_eq!(
+        created["advisory_review"]["next_review_due_at"],
+        json!("2027-07-09")
+    );
+    assert_eq!(
+        created["advisory_review"]["authority_filing_claimed"],
+        json!(false)
+    );
+    assert_eq!(
+        created["advisory_review"]["legal_acceptance_claimed"],
+        json!(false)
+    );
+    assert_eq!(
+        created["advisory_review"]["legal_certification_claimed"],
+        json!(false)
+    );
+    assert_eq!(
+        created["advisory_review"]["external_delivery_claimed"],
+        json!(false)
+    );
+    assert_eq!(
+        created["advisory_review"]["completion_claimed"],
+        json!(false)
+    );
+    assert_eq!(
+        created["advisory_review"]["compliance_certification_claimed"],
+        json!(false)
+    );
 
     let (status, list) = send(
         state.clone(),
@@ -1785,6 +1855,74 @@ async fn dpia_records_allow_user_manage_list_update_and_audit() {
     assert_eq!(list.len(), 1);
     assert_eq!(list[0]["id"], json!(dpia_id));
 
+    let before_invalid =
+        std::fs::read(tmp.dir.join(DPIAS_FILE)).expect("dpia sidecar before invalid");
+    let (status, body) = send(
+        state.clone(),
+        with_session(
+            patch_json(
+                &format!("/v1/privacy/dpias/{dpia_id}"),
+                json!({
+                    "evidence_receipt": {
+                        "evidence_type": "review",
+                        "notes": "Authority filing and legal certification completed.",
+                        "authority_filing_completed": true,
+                        "legal_review_accepted": true,
+                        "legal_certification_completed": true,
+                        "external_delivery_completed": true,
+                        "dpia_completed": true,
+                        "compliance_certification_completed": true
+                    }
+                }),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(
+        body["error"]
+            .as_str()
+            .expect("error")
+            .contains("review evidence only")
+    );
+    let after_invalid =
+        std::fs::read(tmp.dir.join(DPIAS_FILE)).expect("dpia sidecar after invalid");
+    assert_eq!(after_invalid, before_invalid);
+
+    let (status, body) = send(
+        state.clone(),
+        with_session(
+            patch_json(
+                &format!("/v1/privacy/dpias/{dpia_id}"),
+                json!({
+                    "evidence_receipt": {
+                        "evidence_type": "review",
+                        "notes": "password_hash=secret",
+                        "authority_filing_completed": false,
+                        "legal_review_accepted": false,
+                        "legal_certification_completed": false,
+                        "external_delivery_completed": false,
+                        "dpia_completed": false,
+                        "compliance_certification_completed": false
+                    }
+                }),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(
+        body["error"]
+            .as_str()
+            .expect("error")
+            .contains("sensitive credential")
+    );
+    let after_sensitive_receipt =
+        std::fs::read(tmp.dir.join(DPIAS_FILE)).expect("dpia sidecar after sensitive receipt");
+    assert_eq!(after_sensitive_receipt, before_invalid);
+
     let (status, updated) = send(
         state.clone(),
         with_session(
@@ -1794,6 +1932,17 @@ async fn dpia_records_allow_user_manage_list_update_and_audit() {
                     "status": "active",
                     "risk_level": "medium",
                     "data_categories": ["employee identifiers", "aggregated payroll metrics"],
+                    "evidence_receipt": {
+                        "evidence_type": "review",
+                        "occurred_at": "2026-07-09T13:00:00Z",
+                        "notes": "Operator reviewed DPIA evidence locally.",
+                        "authority_filing_completed": false,
+                        "legal_review_accepted": false,
+                        "legal_certification_completed": false,
+                        "external_delivery_completed": false,
+                        "dpia_completed": false,
+                        "compliance_certification_completed": false
+                    }
                 }),
             ),
             &owner_token,
@@ -1808,12 +1957,59 @@ async fn dpia_records_allow_user_manage_list_update_and_audit() {
         json!(["employee identifiers", "aggregated payroll metrics"])
     );
     assert_eq!(updated["updated_by"], json!("owner"));
+    assert_eq!(
+        updated["evidence_receipts"]
+            .as_array()
+            .expect("evidence receipts")
+            .len(),
+        2
+    );
+    assert_eq!(
+        updated["evidence_receipts"][1]["compliance_certification_completed"],
+        json!(false)
+    );
+    assert_eq!(updated["advisory_review"]["status"], json!("current"));
+    assert_eq!(updated["advisory_review"]["receipt_count"], json!(2));
+    assert_eq!(updated["advisory_review"]["review_receipt_count"], json!(1));
+    assert_eq!(updated["advisory_review"]["drill_receipt_count"], json!(1));
+
+    let persisted: Value =
+        serde_json::from_slice(&std::fs::read(tmp.dir.join(DPIAS_FILE)).expect("dpia sidecar"))
+            .expect("valid dpia sidecar");
+    assert_eq!(persisted.as_array().expect("persisted dpias").len(), 1);
+    assert_eq!(persisted[0]["id"], json!(dpia_id));
+
+    let restarted = AppState::with_data_dir(tmp.dir.clone());
+    let restarted_token = open_session(&restarted, owner).await;
+    let (status, restarted_list) = send(
+        restarted.clone(),
+        with_session(get("/v1/privacy/dpias"), &restarted_token),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "list after restart: {restarted_list}"
+    );
+    assert_eq!(restarted_list.as_array().expect("dpia list").len(), 1);
+    assert_eq!(restarted_list[0]["id"], json!(dpia_id));
+    assert_eq!(
+        restarted_list[0]["evidence_receipts"]
+            .as_array()
+            .expect("persisted receipts")
+            .len(),
+        2
+    );
+    assert_eq!(
+        restarted_list[0]["advisory_review"]["compliance_certification_claimed"],
+        json!(false)
+    );
 
     let (status, events) = send(
-        state.clone(),
+        restarted,
         with_session(
             get("/v1/ledger/events?scope=privacy:dpia:&limit=1000"),
-            &owner_token,
+            &restarted_token,
         ),
     )
     .await;
