@@ -906,7 +906,7 @@ mod tests {
             &store,
             CredentialMode::LocalPkcs12,
             "amelia-id",
-            |entry| assemble_pkcs12_input(entry),
+            assemble_pkcs12_input,
             || Ok::<_, Pkcs12AssembleError>(None),
         )
         .expect("resolve");
