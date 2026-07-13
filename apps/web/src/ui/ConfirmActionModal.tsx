@@ -31,6 +31,7 @@ import { ApiError } from '../api/client';
 import { useT } from '../i18n';
 import { Button } from './index';
 import { useToast } from './toast';
+import { useFocusTrap } from './useFocusTrap';
 
 /** How the export-first safety rail is presented (§2.11 / §8-E). */
 export type ExportFirstMode = 'none' | 'enforced' | 'skippable';
@@ -99,6 +100,12 @@ export function ConfirmActionModal({
   const [submitting, setSubmitting] = useState(false);
   const bodyRef = useRef<HTMLFormElement>(null);
   const titleId = useRef(`confirm-${Math.random().toString(36).slice(2)}`).current;
+  // Trap Tab focus inside the dialog and restore focus to the opener on close. Called before the
+  // `if (!open) return null` early return (rules of hooks). The existing bodyRef field-autofocus
+  // effect below moves focus onto a specific field afterwards; since that field is inside this
+  // container, the trap's initial-focus branch (which fires only when focus is outside) never
+  // fights it.
+  const trapRef = useFocusTrap<HTMLDivElement>(open);
 
   // Reset the gathered state whenever the dialog (re)opens, and focus the first field.
   useEffect(() => {
@@ -185,6 +192,7 @@ export function ConfirmActionModal({
       }}
     >
       <div
+        ref={trapRef}
         className={`modal${danger ? ' modal--danger' : ''}`}
         role="dialog"
         aria-modal="true"

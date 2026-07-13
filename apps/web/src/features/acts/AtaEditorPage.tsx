@@ -90,6 +90,7 @@ import {
   TextArea,
   useToast,
 } from '../../ui';
+import { useFocusTrap } from '../../ui/useFocusTrap';
 import { CompliancePanel } from './CompliancePanel';
 import { FollowUpsPanel } from './FollowUpsPanel';
 import { ataFieldHelp } from './fieldHelp';
@@ -1771,6 +1772,10 @@ function SealWarningAcknowledgementModal({
 }) {
   const t = useT();
   const titleId = useId();
+  // Trap Tab focus inside the dialog and restore focus to the opener on close. Called before the
+  // `if (!open) return null` early return (rules of hooks). This modal has no autofocus of its
+  // own, so the hook's initial-focus branch also supplies it (onto the first focusable control).
+  const trapRef = useFocusTrap<HTMLDivElement>(open);
 
   useEffect(() => {
     if (!open) return;
@@ -1802,6 +1807,7 @@ function SealWarningAcknowledgementModal({
       }}
     >
       <div
+        ref={trapRef}
         className="modal"
         role="dialog"
         aria-modal="true"
