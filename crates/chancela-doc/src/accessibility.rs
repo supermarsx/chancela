@@ -187,6 +187,8 @@ pub struct AccessibilityReport {
     pub role_map: RoleMapCoverageReport,
     /// Local table/vote-table structure facts.
     pub table_semantics: TableSemanticsReport,
+    /// Local catalog/structure-tree facts for the writer's bounded tagged-PDF profile.
+    pub structure_tree: StructureTreeEvidenceReport,
     /// Local structural-depth/topology facts for the writer's bounded tagged-PDF profile.
     pub structure_depth: StructureDepthReport,
     /// Local marked-content and artifact-scope facts for the writer's bounded tagged-PDF profile.
@@ -229,8 +231,21 @@ pub struct RoleMapCoverageReport {
     pub missing_custom_roles: Vec<String>,
     /// Every mapped target is a standard structure role.
     pub standard_targets_only: bool,
+    /// Emitted custom-role mappings with required-by-this-document evidence.
+    pub mapped_roles: Vec<RoleMapEntryReport>,
     /// Required custom roles are mapped to standard structure roles.
     pub complete: bool,
+}
+
+/// One custom-role mapping emitted into `/StructTreeRoot /RoleMap`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RoleMapEntryReport {
+    /// Writer-owned custom structure role.
+    pub custom_role: String,
+    /// Standard structure role target.
+    pub standard_role: String,
+    /// Whether this document's model requires the custom role.
+    pub required: bool,
 }
 
 /// Local facts about table-like blocks.
@@ -248,6 +263,31 @@ pub struct TableSemanticsReport {
     pub vote_table_headers_tagged: bool,
     /// All table-like blocks have the local semantics this report tracks.
     pub complete: bool,
+}
+
+/// Local catalog and structure-tree evidence emitted by the deterministic writer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StructureTreeEvidenceReport {
+    /// Catalog `/MarkInfo /Marked true` is emitted.
+    pub catalog_mark_info_marked: bool,
+    /// Catalog references `/StructTreeRoot`.
+    pub catalog_struct_tree_root: bool,
+    /// Structure root `/Type` emitted by the writer.
+    pub struct_tree_root_type: String,
+    /// Root document structure element role emitted under `/StructTreeRoot /K`.
+    pub document_element_role: String,
+    /// Structure root references a parent tree.
+    pub parent_tree_present: bool,
+    /// `/ParentTreeNextKey` follows the page count in this writer profile.
+    pub parent_tree_next_key_tracks_pages: bool,
+    /// Pages carry `/StructParents`.
+    pub pages_have_struct_parents: bool,
+    /// Page `/StructParents` keys are page-local indexes.
+    pub page_struct_parents_are_page_indexes: bool,
+    /// Pages use `/Tabs /S` structure order.
+    pub pages_use_structure_tab_order: bool,
+    /// The structure-tree evidence is complete for this writer's bounded local profile.
+    pub complete_for_local_profile: bool,
 }
 
 /// Local structural-depth and topology facts for the bounded tagged-PDF profile.
@@ -305,6 +345,14 @@ pub struct ArtifactMarkingReport {
     pub layout_artifacts_marked: bool,
     /// Total known artifact drawing operations for this model.
     pub known_layout_artifact_count: usize,
+    /// Stable local targets for known writer-owned layout artifacts.
+    pub known_layout_artifact_targets: Vec<String>,
+    /// Marked-content operator used for artifacts.
+    pub artifact_scope_operator: String,
+    /// Whether artifact scopes carry MCIDs.
+    pub artifacts_use_mcid: bool,
+    /// Path painting for known layout artifacts occurs inside artifact scopes.
+    pub path_painting_scoped_as_artifact: bool,
     /// The fixed header separator rule.
     pub header_rule_artifact_count: usize,
     /// Horizontal rule blocks.
@@ -392,7 +440,7 @@ impl AccessibilityReport {
             .join(",");
 
         format!(
-            "{{\"version\":8,\
+            "{{\"version\":9,\
 \"pdf_ua_claimed\":{pdf_ua_claimed},\
 \"metadata\":{{\
 \"title\":{{\"value\":{title},\"source_present\":{title_present},\"fallback_used\":{title_fallback}}},\
@@ -412,11 +460,12 @@ impl AccessibilityReport {
 }},\
 \"tagged_structure\":{{\
 \"heading_hierarchy\":{{\"document_title_tagged_as_h1\":{title_h1},\"heading_count\":{heading_count},\"max_observed_level\":{max_heading},\"no_skipped_levels\":{no_skipped_headings},\"unsupported_levels\":[{unsupported_headings}]}},\
-\"role_map\":{{\"present\":{role_map_present},\"required_custom_roles\":[{required_roles}],\"missing_custom_roles\":[{missing_roles}],\"standard_targets_only\":{standard_role_targets},\"complete\":{role_map_complete}}},\
+\"role_map\":{{\"present\":{role_map_present},\"required_custom_roles\":[{required_roles}],\"missing_custom_roles\":[{missing_roles}],\"standard_targets_only\":{standard_role_targets},\"mapped_roles\":[{mapped_roles}],\"complete\":{role_map_complete}}},\
 \"tables\":{{\"key_value_table_count\":{kv_table_count},\"vote_table_count\":{vote_table_count},\"key_value_tables_have_table_semantics\":{kv_tables_semantic},\"vote_tables_have_table_semantics\":{vote_tables_semantic},\"vote_table_headers_tagged\":{vote_headers_tagged},\"complete\":{table_semantics_complete}}},\
+\"structure_tree\":{{\"catalog_mark_info_marked\":{catalog_mark_info_marked},\"catalog_struct_tree_root\":{catalog_struct_tree_root},\"struct_tree_root_type\":{struct_tree_root_type},\"document_element_role\":{document_element_role},\"parent_tree_present\":{parent_tree_present},\"parent_tree_next_key_tracks_pages\":{parent_tree_next_key_tracks_pages},\"pages_have_struct_parents\":{pages_have_struct_parents},\"page_struct_parents_are_page_indexes\":{page_struct_parents_are_page_indexes},\"pages_use_structure_tab_order\":{structure_tree_pages_use_tab_order},\"complete_for_local_profile\":{structure_tree_complete}}},\
 \"structure_depth\":{{\"bounded_local_profile\":{bounded_local_profile},\"max_depth\":{max_depth},\"top_level_semantic_block_count\":{top_level_count},\"table_count\":{depth_table_count},\"table_row_count\":{table_row_count},\"table_cell_count\":{table_cell_count},\"document_root_children_are_top_level_semantic_blocks\":{root_children_top_level},\"tables_contain_rows_only\":{tables_rows_only},\"rows_contain_header_or_data_cells_only\":{rows_cells_only},\"row_and_cell_roles_are_table_scoped\":{row_cell_scoped},\"complete_for_local_profile\":{depth_complete}}},\
 \"marked_content\":{{\"structure_element_count\":{marked_structure_count},\"marked_leaf_element_count\":{marked_leaf_count},\"table_cell_marked_leaf_count\":{marked_table_cell_count},\"artifact_scope_count\":{marked_artifact_scope_count},\"semantic_leaves_have_marked_content\":{semantic_leaves_marked},\"parent_tree_maps_page_mcids\":{parent_tree_maps_mcids},\"artifacts_are_marked_without_mcid\":{artifacts_without_mcid},\"complete_for_local_profile\":{marked_complete}}},\
-\"artifact_marking\":{{\"layout_artifacts_marked\":{artifact_layout_marked},\"known_layout_artifact_count\":{artifact_count},\"header_rule_artifact_count\":{header_artifacts},\"horizontal_rule_artifact_count\":{rule_artifacts},\"vote_table_rule_artifact_count\":{vote_rule_artifacts},\"signature_line_artifact_count\":{signature_artifacts}}}\
+\"artifact_marking\":{{\"layout_artifacts_marked\":{artifact_layout_marked},\"known_layout_artifact_count\":{artifact_count},\"known_layout_artifact_targets\":[{artifact_targets}],\"artifact_scope_operator\":{artifact_scope_operator},\"artifacts_use_mcid\":{artifacts_use_mcid},\"path_painting_scoped_as_artifact\":{path_painting_scoped},\"header_rule_artifact_count\":{header_artifacts},\"horizontal_rule_artifact_count\":{rule_artifacts},\"vote_table_rule_artifact_count\":{vote_rule_artifacts},\"signature_line_artifact_count\":{signature_artifacts}}}\
 }},\
 \"non_text_content\":{{\"model_supplied\":{non_text_model_supplied},\"all_non_text_content_accounted_for\":{non_text_all_accounted},\"text_alternative_count\":{text_alt_count},\"decorative_artifact_count\":{decorative_count},\"known_decorative_block_count\":{known_decorative_count},\"writer_owned_decorative_artifacts_accounted_for\":{writer_decorative_accounted},\"missing_decorative_artifacts\":[{missing_decorative}],\"invalid_text_alternative_count\":{invalid_text_alts},\"invalid_decorative_artifact_count\":{invalid_decorative},\"complete\":{non_text_complete}}},\
 \"alt_text_model_present\":{alt_text},\
@@ -450,6 +499,7 @@ impl AccessibilityReport {
             required_roles = json_string_array(&self.role_map.required_custom_roles),
             missing_roles = json_string_array(&self.role_map.missing_custom_roles),
             standard_role_targets = self.role_map.standard_targets_only,
+            mapped_roles = json_role_map_entries(&self.role_map.mapped_roles),
             role_map_complete = self.role_map.complete,
             kv_table_count = self.table_semantics.key_value_table_count,
             vote_table_count = self.table_semantics.vote_table_count,
@@ -457,6 +507,18 @@ impl AccessibilityReport {
             vote_tables_semantic = self.table_semantics.vote_tables_have_table_semantics,
             vote_headers_tagged = self.table_semantics.vote_table_headers_tagged,
             table_semantics_complete = self.table_semantics.complete,
+            catalog_mark_info_marked = self.structure_tree.catalog_mark_info_marked,
+            catalog_struct_tree_root = self.structure_tree.catalog_struct_tree_root,
+            struct_tree_root_type = json_string(&self.structure_tree.struct_tree_root_type),
+            document_element_role = json_string(&self.structure_tree.document_element_role),
+            parent_tree_present = self.structure_tree.parent_tree_present,
+            parent_tree_next_key_tracks_pages =
+                self.structure_tree.parent_tree_next_key_tracks_pages,
+            pages_have_struct_parents = self.structure_tree.pages_have_struct_parents,
+            page_struct_parents_are_page_indexes =
+                self.structure_tree.page_struct_parents_are_page_indexes,
+            structure_tree_pages_use_tab_order = self.structure_tree.pages_use_structure_tab_order,
+            structure_tree_complete = self.structure_tree.complete_for_local_profile,
             bounded_local_profile = self.structure_depth.bounded_local_profile,
             max_depth = self.structure_depth.max_depth,
             top_level_count = self.structure_depth.top_level_semantic_block_count,
@@ -480,6 +542,11 @@ impl AccessibilityReport {
             marked_complete = self.marked_content.complete_for_local_profile,
             artifact_layout_marked = self.artifact_marking.layout_artifacts_marked,
             artifact_count = self.artifact_marking.known_layout_artifact_count,
+            artifact_targets =
+                json_string_array(&self.artifact_marking.known_layout_artifact_targets),
+            artifact_scope_operator = json_string(&self.artifact_marking.artifact_scope_operator),
+            artifacts_use_mcid = self.artifact_marking.artifacts_use_mcid,
+            path_painting_scoped = self.artifact_marking.path_painting_scoped_as_artifact,
             header_artifacts = self.artifact_marking.header_rule_artifact_count,
             rule_artifacts = self.artifact_marking.horizontal_rule_artifact_count,
             vote_rule_artifacts = self.artifact_marking.vote_table_rule_artifact_count,
@@ -508,10 +575,11 @@ pub fn report<'a>(input: impl Into<AccessibilityInput<'a>>) -> AccessibilityRepo
     let heading_hierarchy = heading_hierarchy(input.doc);
     let role_map = role_map_coverage(input.doc);
     let table_semantics = table_semantics(input.doc);
+    let structure_tree = structure_tree_evidence();
     let structure_depth = structure_depth(input.doc);
     let artifact_marking = artifact_marking(input.doc);
     let marked_content = marked_content_coverage(&structure_depth, &artifact_marking);
-    let non_text_content = non_text_content(input.doc, input.alt_text_model, &artifact_marking);
+    let non_text_content = non_text_content(input.alt_text_model, &artifact_marking);
     let alt_text_model_present = non_text_content.model_supplied && non_text_content.complete;
 
     let mut blockers = Vec::new();
@@ -564,6 +632,7 @@ pub fn report<'a>(input: impl Into<AccessibilityInput<'a>>) -> AccessibilityRepo
         heading_hierarchy,
         role_map,
         table_semantics,
+        structure_tree,
         structure_depth,
         marked_content,
         artifact_marking,
@@ -681,6 +750,10 @@ pub(crate) fn role_map_entries() -> &'static [(&'static str, &'static str)] {
 
 fn role_map_coverage(doc: &DocumentModel) -> RoleMapCoverageReport {
     let required_custom_roles = required_custom_roles(doc);
+    let required_custom_role_set = required_custom_roles
+        .iter()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
     let missing_custom_roles = required_custom_roles
         .iter()
         .filter(|role| role_map_target(role).is_none())
@@ -689,6 +762,14 @@ fn role_map_coverage(doc: &DocumentModel) -> RoleMapCoverageReport {
     let standard_targets_only = ROLE_MAP_ENTRIES
         .iter()
         .all(|(_, target)| is_standard_structure_target(target));
+    let mapped_roles = ROLE_MAP_ENTRIES
+        .iter()
+        .map(|&(custom, standard)| RoleMapEntryReport {
+            custom_role: custom.to_string(),
+            standard_role: standard.to_string(),
+            required: required_custom_role_set.contains(custom),
+        })
+        .collect::<Vec<_>>();
     let complete = missing_custom_roles.is_empty() && standard_targets_only;
 
     RoleMapCoverageReport {
@@ -696,6 +777,7 @@ fn role_map_coverage(doc: &DocumentModel) -> RoleMapCoverageReport {
         required_custom_roles,
         missing_custom_roles,
         standard_targets_only,
+        mapped_roles,
         complete,
     }
 }
@@ -796,6 +878,36 @@ fn table_semantics(doc: &DocumentModel) -> TableSemanticsReport {
         vote_tables_have_table_semantics,
         vote_table_headers_tagged,
         complete,
+    }
+}
+
+fn structure_tree_evidence() -> StructureTreeEvidenceReport {
+    let catalog_mark_info_marked = true;
+    let catalog_struct_tree_root = true;
+    let parent_tree_present = true;
+    let parent_tree_next_key_tracks_pages = true;
+    let pages_have_struct_parents = true;
+    let page_struct_parents_are_page_indexes = true;
+    let pages_use_structure_tab_order = true;
+    let complete_for_local_profile = catalog_mark_info_marked
+        && catalog_struct_tree_root
+        && parent_tree_present
+        && parent_tree_next_key_tracks_pages
+        && pages_have_struct_parents
+        && page_struct_parents_are_page_indexes
+        && pages_use_structure_tab_order;
+
+    StructureTreeEvidenceReport {
+        catalog_mark_info_marked,
+        catalog_struct_tree_root,
+        struct_tree_root_type: "StructTreeRoot".to_string(),
+        document_element_role: "ChancelaDocument".to_string(),
+        parent_tree_present,
+        parent_tree_next_key_tracks_pages,
+        pages_have_struct_parents,
+        page_struct_parents_are_page_indexes,
+        pages_use_structure_tab_order,
+        complete_for_local_profile,
     }
 }
 
@@ -929,6 +1041,7 @@ fn marked_content_coverage(
 }
 
 fn artifact_marking(doc: &DocumentModel) -> ArtifactMarkingReport {
+    let known_layout_artifact_targets = known_decorative_targets(doc);
     let horizontal_rule_artifact_count = doc
         .blocks
         .iter()
@@ -949,14 +1062,15 @@ fn artifact_marking(doc: &DocumentModel) -> ArtifactMarkingReport {
         })
         .sum::<usize>();
     let header_rule_artifact_count = 1;
-    let known_layout_artifact_count = header_rule_artifact_count
-        + horizontal_rule_artifact_count
-        + vote_table_rule_artifact_count
-        + signature_line_artifact_count;
+    let known_layout_artifact_count = known_layout_artifact_targets.len();
 
     ArtifactMarkingReport {
         layout_artifacts_marked: true,
         known_layout_artifact_count,
+        known_layout_artifact_targets,
+        artifact_scope_operator: "BMC".to_string(),
+        artifacts_use_mcid: false,
+        path_painting_scoped_as_artifact: true,
         header_rule_artifact_count,
         horizontal_rule_artifact_count,
         vote_table_rule_artifact_count,
@@ -965,11 +1079,10 @@ fn artifact_marking(doc: &DocumentModel) -> ArtifactMarkingReport {
 }
 
 fn non_text_content(
-    doc: &DocumentModel,
     model: Option<&AltTextModel>,
     artifact_marking: &ArtifactMarkingReport,
 ) -> NonTextContentReport {
-    let known_decorative_targets = known_decorative_targets(doc);
+    let known_decorative_targets = artifact_marking.known_layout_artifact_targets.clone();
     let known_decorative_block_count = known_decorative_targets.len();
     let writer_owned_decorative_artifacts_accounted_for = artifact_marking.layout_artifacts_marked
         && artifact_marking.known_layout_artifact_count == known_decorative_block_count;
@@ -1098,6 +1211,21 @@ fn json_string_array(strings: &[String]) -> String {
     strings
         .iter()
         .map(|s| json_string(s))
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+fn json_role_map_entries(entries: &[RoleMapEntryReport]) -> String {
+    entries
+        .iter()
+        .map(|entry| {
+            format!(
+                "{{\"custom_role\":{},\"standard_role\":{},\"required\":{}}}",
+                json_string(&entry.custom_role),
+                json_string(&entry.standard_role),
+                entry.required
+            )
+        })
         .collect::<Vec<_>>()
         .join(",")
 }

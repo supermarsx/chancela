@@ -19,8 +19,8 @@ use crate::{DocError, accessibility, layout, selfcheck, xmp};
 pub use crate::accessibility::{
     AccessibilityInput, AccessibilityMetadata, AccessibilityReport, AltTextModel,
     ArtifactMarkingReport, DecorativeArtifact, HeadingHierarchyReport, MarkedContentCoverageReport,
-    MetadataValue, NonTextContentReport, PdfUaBlocker, RoleMapCoverageReport, TableSemanticsReport,
-    TextAlternative,
+    MetadataValue, NonTextContentReport, PdfUaBlocker, RoleMapCoverageReport, RoleMapEntryReport,
+    StructureTreeEvidenceReport, TableSemanticsReport, TextAlternative,
 };
 
 /// The bundled sRGB OutputIntent profile (CC0; see `assets/icc/PROVENANCE.md`).

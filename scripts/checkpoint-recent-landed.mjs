@@ -1954,6 +1954,11 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-doc/src/accessibility.rs",
+    "pub struct RoleMapEntryReport",
+    "PDF accessibility role-map target evidence report",
+  );
+  assertFileContains(
+    "crates/chancela-doc/src/accessibility.rs",
     "pub struct TableSemanticsReport",
     "PDF accessibility table-semantics blocker report",
   );
@@ -1961,6 +1966,11 @@ function assertCheckpointMap() {
     "crates/chancela-doc/src/accessibility.rs",
     "pub struct NonTextContentReport",
     "PDF accessibility non-text content blocker report",
+  );
+  assertFileContains(
+    "crates/chancela-doc/src/accessibility.rs",
+    "pub struct StructureTreeEvidenceReport",
+    "PDF accessibility structure-tree evidence report",
   );
   assertFileContains(
     "crates/chancela-doc/src/accessibility.rs",
@@ -1989,6 +1999,11 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-doc/src/tests.rs",
+    "accessibility_bounded_local_pdf_diagnostics_are_emitted_without_pdfua_claim",
+    "PDF accessibility v9 local diagnostics no-claim coverage",
+  );
+  assertFileContains(
+    "crates/chancela-doc/src/tests.rs",
     "accessibility_explicit_alt_text_decorative_model_keeps_limited_structure_blocker",
     "PDF accessibility bounded structure blocker retention coverage",
   );
@@ -2004,8 +2019,18 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-doc/src/tests.rs",
-    '\\"version\\":8',
-    "PDF accessibility report JSON v8 coverage",
+    '\\"version\\":9',
+    "PDF accessibility report JSON v9 coverage",
+  );
+  assertFileContains(
+    "crates/chancela-doc/src/tests.rs",
+    '\\"structure_tree\\":{',
+    "PDF accessibility JSON structure-tree marker",
+  );
+  assertFileContains(
+    "crates/chancela-doc/src/tests.rs",
+    '\\"mapped_roles\\":[',
+    "PDF accessibility JSON role-map target marker",
   );
   assertFileContains(
     "crates/chancela-doc/src/tests.rs",
@@ -2016,6 +2041,16 @@ function assertCheckpointMap() {
     "crates/chancela-doc/src/tests.rs",
     '\\"marked_content\\":{',
     "PDF accessibility JSON marked-content marker",
+  );
+  assertFileContains(
+    "crates/chancela-doc/src/tests.rs",
+    '\\"known_layout_artifact_targets\\":[',
+    "PDF accessibility JSON marked-artifact target marker",
+  );
+  assertFileContains(
+    "crates/chancela-doc/src/tests.rs",
+    '\\"artifact_scope_operator\\":\\"BMC\\"',
+    "PDF accessibility JSON marked-artifact operator marker",
   );
   assertFileContains(
     "crates/chancela-doc/src/tests.rs",
@@ -7816,8 +7851,8 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "accessibility report JSON version 8, structural-depth evidence",
-    "CI/E2E hardening plan PDF accessibility v8 structural-depth marker",
+    "accessibility report JSON version 9, structure-tree diagnostics",
+    "CI/E2E hardening plan PDF accessibility v9 structure-tree marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -7826,8 +7861,8 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "`writer_owned_decorative_artifacts_accounted_for`",
-    "CI/E2E hardening plan PDF accessibility writer-owned decorative marker",
+    "marked-artifact target/operator evidence",
+    "CI/E2E hardening plan PDF accessibility marked-artifact evidence marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -10006,8 +10041,8 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "PDF accessibility report JSON\n  version 8 now includes bounded marked-content coverage counts",
-    "spec coverage PDF accessibility report v8 marked-content marker",
+    "PDF accessibility report JSON\n  version 9 now includes bounded structure-tree diagnostics",
+    "spec coverage PDF accessibility report v9 structure-tree marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
