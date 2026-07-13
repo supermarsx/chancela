@@ -1887,7 +1887,14 @@ behavior, legal disposal, or legal-effect claims.
   customized permissions, preserves the subset invariant, and emits
   `role.seeded_drift_reconciled` only when an admin explicitly applies a change.
   The RBAC UI renders a manual-review warning, missing permission list, and
-  explicit apply step. There is still no startup auto-reconciliation, Owner edit,
+  explicit apply step. Focused route-stubbed browser proof in
+  `apps/web/e2e/seeded-role-drift.spec.ts` now pins that loading
+  `/configuracoes?sec=funcoes` does not POST reconciliation, `Rever defaults`
+  performs the review `GET`, the UI shows add-only `platform.logs.write`
+  defaults, `Aplicar defaults em falta` sends the expected empty `{}` apply
+  body, custom permissions remain selected, Owner/custom roles stay unchanged,
+  and the review action is disabled without `role.manage`.
+  There is still no startup auto-reconciliation, Owner edit,
   removal, unrestricted grant, or authorization bypass.
 - **Archive readability/ZK caveat metadata:** internal archive manifests now
   carry manifest-only `readability_caveats`, reject unknown caveat fields, keep
@@ -3538,7 +3545,10 @@ behavior, legal disposal, or legal-effect claims.
   review, and the bounded reconciliation endpoint can explicitly add only those
   missing seeded defaults after `role.manage` plus subset-invariant checks. It
   does not auto-reconcile persisted editable roles on load, touch Owner, remove
-  permissions, bypass role-management checks, or loosen authorization.
+  permissions, bypass role-management checks, or loosen authorization. The
+  browser proof is route-stubbed local UI evidence for explicit admin review and
+  apply only; it is not tenant, sync, ZK, archive, retention, or compliance
+  completion evidence.
 - Database key-ops status/preflight is a secret-free configuration/build/header classification and
   startup guard with web/API/CLI/store key-env/preflight/rekey evidence. The API/web execution path
   is limited to an already-open keyed SQLCipher store and refuses plaintext stores. It does not prove

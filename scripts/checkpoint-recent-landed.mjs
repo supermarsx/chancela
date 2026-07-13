@@ -1898,9 +1898,44 @@ function assertCheckpointMap() {
     "web RBAC seeded role drift explicit apply coverage",
   );
   assertFileContains(
+    "apps/web/e2e/seeded-role-drift.spec.ts",
+    "seeded role drift requires explicit browser review and preserves custom state",
+    "browser seeded role drift explicit review proof marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/seeded-role-drift.spec.ts",
+    "expect(reconciliationCalls.filter((call) => call.method === 'POST')).toEqual([])",
+    "browser seeded role drift no initial POST marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/seeded-role-drift.spec.ts",
+    "body: {}",
+    "browser seeded role drift empty apply body marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/seeded-role-drift.spec.ts",
+    "seeded role drift review is disabled without role.manage",
+    "browser seeded role drift no-role-manage disabled marker",
+  );
+  assertFileContains(
     "SPEC-COVERAGE.md",
     "`GET`/`POST /v1/roles/{id}/seeded-drift-reconciliation`",
     "spec coverage seeded role drift reconciliation marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "`apps/web/e2e/seeded-role-drift.spec.ts`",
+    "spec coverage seeded role drift browser proof marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "Seeded role drift browser proof",
+    "CI checkpoints seeded role drift browser proof marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "e2e/seeded-role-drift.spec.ts",
+    "CI/E2E seeded role drift browser proof marker",
   );
   assertFileContains(
     "crates/chancela-archive/src/lib.rs",

@@ -281,6 +281,15 @@ It intentionally reuses existing test surfaces:
   `cargo test -p chancela-api --test data_key_ops --locked`
 - API seeded role drift diagnostic:
   `cargo test -p chancela-api --locked customized_seeded_platform_admin_reports_missing_defaults_without_granting_them`
+- Seeded role drift browser proof:
+  `npm run test:browser --workspace apps/web -- e2e/seeded-role-drift.spec.ts`
+  loads `/configuracoes?sec=funcoes` with route-stubbed API calls and
+  proves no initial reconciliation `POST`, explicit `Rever defaults` review `GET`,
+  add-only/defaults UI for `platform.logs.write`, empty `{}` apply body,
+  retained customized permissions, unchanged Owner/custom rows, and disabled
+  review without `role.manage`. This is local browser evidence for explicit
+  admin apply only; it is not auto-privilege mutation, tenant/sync/ZK/archive,
+  retention, or compliance completion evidence.
 - API official signed-PDF handoff guardrail acknowledgement:
   `cargo test -p chancela-api --test official_signature_import --locked official_import_requires_guardrail_acknowledgement_without_artifact_or_event`
 - Official signed-PDF handoff browser proof:

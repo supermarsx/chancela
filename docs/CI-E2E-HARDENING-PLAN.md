@@ -1442,8 +1442,16 @@ settingsDefaults.test.ts contracts.test.ts`.
   `seeded_role_drift.missing_default_permissions` and
   `requires_manual_review` on editable seeded roles, while preserving the
   customized persisted role permissions. Focused RBAC UI coverage renders the
-  manual-review warning and missing-permission list. This is diagnostic only; it
-  does not auto-reconcile roles, grant permissions, or weaken authorization.
+  manual-review warning and missing-permission list. Focused route-stubbed
+  browser proof is `npm run test:browser --workspace apps/web --
+  e2e/seeded-role-drift.spec.ts`; it pins no initial reconciliation `POST`,
+  explicit `Rever defaults` review `GET`, add-only/defaults UI for
+  `platform.logs.write`, empty `{}` apply body, retained customized
+  permissions, unchanged Owner/custom rows, and disabled review without
+  `role.manage`. This is diagnostic and explicit-admin-apply evidence only; it
+  does not auto-reconcile roles, grant permissions, or weaken authorization; it
+  grants nothing on load and does not complete
+  tenant/sync/ZK/archive/retention/compliance work.
 - Current working-tree archive readability/ZK caveat checks: focused
   `chancela-archive` coverage pins manifest-only `readability_caveats`, old v1
   conservative defaults when the caveat block is missing, rejection of unknown
