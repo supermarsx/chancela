@@ -396,6 +396,116 @@ describe('catalog completeness matrix', () => {
   }, 15_000);
 });
 
+describe('still-Portuguese leak ratchet', () => {
+  // Values that are legitimately byte-identical across locales and must NOT be
+  // counted as untranslated leaks. Kept deliberately conservative and documented.
+  const SHARED_VALUES = new Set<string>([
+    'Chancela', // brand
+    // pure acronyms / technical identifiers that read the same in every language
+    'NIPC',
+    'NIF',
+    'CAE',
+    'TSA',
+    'TSL',
+    'CMD',
+    'CC',
+    'IBAN',
+    'RGPD',
+    'GDPR',
+    'PDF',
+    'PDF/A',
+    'SHA-256',
+    'PKCS#12',
+    'PKCS#12/PFX',
+    'ISO',
+    'URL',
+    'API',
+    'ID',
+    'TXT',
+    'PFX',
+    'e-mail',
+    'email',
+    'E-mail',
+  ]);
+
+  // A value is "allowed" to be identical to the source (i.e. not a leak) when it is a
+  // shared brand/acronym token, carries no letters at all (numbers, punctuation,
+  // symbols, whitespace), or is composed solely of interpolation placeholders.
+  const isAllowed = (value: string): boolean => {
+    const trimmed = value.trim();
+    if (trimmed === '') return true; // whitespace only
+    if (SHARED_VALUES.has(trimmed)) return true; // brand / acronym token
+    if (!/\p{L}/u.test(value)) return true; // no letters => language-neutral
+    if (/^(\s*\{[^}]+\}\s*)+$/u.test(value)) return true; // interpolation only
+    return false;
+  };
+
+  const nonSourceCatalogs: ReadonlyArray<readonly [string, Record<string, string>]> = [
+    ['en-US', enUS],
+    ['en-GB', enGB],
+    ['pt-BR', ptBR],
+    ['da-DK', daDK],
+    ['de-DE', deDE],
+    ['es-ES', esES],
+    ['fi-FI', fiFI],
+    ['fr-FR', frFR],
+    ['it-IT', itIT],
+    ['nl-NL', nlNL],
+    ['pl-PL', plPL],
+    ['sv-FI', svFI],
+    ['sv-SE', svSE],
+  ];
+
+  const countLeaks = (catalog: Record<string, string>): number => {
+    let leaks = 0;
+    for (const key of sourceKeys) {
+      const source = ptPT[key as keyof typeof ptPT] as string;
+      if (catalog[key] === source && !isAllowed(source)) leaks += 1;
+    }
+    return leaks;
+  };
+
+  /**
+   * Ratchet baseline: the CURRENT number of byte-identical still-Portuguese values per
+   * locale (computed by the deterministic heuristic above). The guard fails only when a
+   * locale's leak count INCREASES beyond its baseline — new leaks are blocked while
+   * existing debt is allowed. As translations land, REGENERATE these numbers downward
+   * (they must never be raised): temporarily `console.log(JSON.stringify(...))` the live
+   * counts below, run `npx vitest run src/i18n/i18n.test.ts`, and paste the lower values.
+   */
+  const BASELINE_LEAKS: Record<string, number> = {
+    'en-US': 214,
+    'en-GB': 214,
+    'pt-BR': 2165, // Brazilian Portuguese — legitimately overlaps European Portuguese
+    'da-DK': 562,
+    'de-DE': 530,
+    'es-ES': 743,
+    'fi-FI': 560,
+    'fr-FR': 569,
+    'it-IT': 608,
+    'nl-NL': 562,
+    'pl-PL': 568,
+    'sv-FI': 562,
+    'sv-SE': 562,
+  };
+
+  it.each(nonSourceCatalogs)(
+    'does not regress still-Portuguese leaks in %s',
+    (locale, catalog) => {
+      const baseline = BASELINE_LEAKS[locale];
+      expect(baseline, `no baseline recorded for ${locale}`).toBeDefined();
+      const current = countLeaks(catalog);
+      expect(
+        current,
+        `still-Portuguese leaks in ${locale} rose to ${current} (baseline ${baseline}). ` +
+          `A new value is byte-identical to the pt-PT source. Either translate the offending ` +
+          `key(s), or — if the count legitimately dropped and you are lowering the bar — ` +
+          `regenerate BASELINE_LEAKS in src/i18n/i18n.test.ts from the live counts.`,
+      ).toBeLessThanOrEqual(baseline);
+    },
+  );
+});
+
 describe('interpolate', () => {
   it('returns the template unchanged when there are no params', () => {
     expect(interpolate('Sem eventos')).toBe('Sem eventos');

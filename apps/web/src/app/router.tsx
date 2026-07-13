@@ -5,9 +5,37 @@
  * ata's `/atas/:id` is a stable reference.
  */
 import { Suspense, lazy, type ComponentType } from 'react';
-import { Navigate, createBrowserRouter, useLocation, useParams } from 'react-router-dom';
+import {
+  Navigate,
+  createBrowserRouter,
+  useLocation,
+  useParams,
+  useRouteError,
+} from 'react-router-dom';
 import { Layout } from './layout';
 import { RouteLoading } from './RouteLoading';
+import { CrashScreen } from './CrashScreen';
+
+/**
+ * React Router `errorElement` for the top-level routes. In a v6 DATA router, an error
+ * thrown while rendering a route element — including a `React.lazy` chunk-load rejection —
+ * is caught by React Router's OWN error boundary via `errorElement`, NOT by a React error
+ * boundary wrapped around `<RouterProvider>`. Without this, RR shows its built-in default
+ * error page (or, for the routes OUTSIDE `Layout`, an unguarded blank screen).
+ *
+ * Reuses the editorial {@link CrashScreen} (read-only). It renders without an initialised
+ * i18n store: `i18nStore.message()` falls back to the statically-imported pt-PT catalog,
+ * so the fallback is safe even when a crash happens before anything else is ready.
+ */
+export function RouteCrash() {
+  const error = useRouteError();
+  return (
+    <CrashScreen
+      error={error instanceof Error ? error : new Error(String(error))}
+      componentStack={null}
+    />
+  );
+}
 
 function lazyRoute<TModule, TName extends keyof TModule & string>(
   load: () => Promise<TModule>,
@@ -52,6 +80,7 @@ export const router = createBrowserRouter([
   {
     path: '/bem-vindo',
     element: lazyRoute(() => import('../features/onboarding/OnboardingWizard'), 'OnboardingWizard'),
+    errorElement: <RouteCrash />,
   },
   // Token-authenticated external invite landing page. It stays outside Layout because token holders
   // may be signed out; the page removes the token from the URL after first read.
@@ -61,10 +90,14 @@ export const router = createBrowserRouter([
       () => import('../features/signing/ExternalSignerInvitePage'),
       'ExternalSignerInvitePage',
     ),
+    errorElement: <RouteCrash />,
   },
   {
     path: '/',
     element: <Layout />,
+    // Root-level `errorElement` covers all children too, so any route render or lazy
+    // chunk-load failure inside the shell shows a recoverable fallback, not a blank page.
+    errorElement: <RouteCrash />,
     children: [
       {
         index: true,

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useDashboard } from '../../api/hooks';
 import { useT, type TFunction } from '../../i18n';
-import { Card, ErrorNote, Icon, Loading, PageHeader, SubNav, type SubNavItem } from '../../ui';
+import { Card, ErrorNote, Icon, PageHeader, SkeletonCards, SubNav, type SubNavItem } from '../../ui';
 import { NotificationList } from './NotificationList';
 import { buildDashboardNotifications } from './notifications';
 import {
@@ -93,7 +93,7 @@ export function NotificationsPage() {
 
       <Card>
         {isLoading || triage.isLoading ? (
-          <Loading />
+          <SkeletonCards count={4} />
         ) : error || triage.error ? (
           <ErrorNote error={error ?? triage.error} />
         ) : (

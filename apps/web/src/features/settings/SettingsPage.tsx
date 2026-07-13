@@ -99,6 +99,7 @@ import {
   Loading,
   PageHeader,
   Select,
+  SkeletonDeflist,
   SubNav,
   Toggle,
 } from '../../ui';
@@ -698,7 +699,7 @@ function PlatformLogTailPanel() {
           </Field>
         </div>
 
-        {logs.isLoading ? <Loading label={t('settings.platform.logs.loading')} /> : null}
+        {logs.isLoading ? <SkeletonDeflist rows={4} /> : null}
         {logs.error ? <ErrorNote error={logs.error} /> : null}
 
         {logs.data ? (

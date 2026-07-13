@@ -37,7 +37,7 @@ import {
   Icon,
   InlineWarning,
   Input,
-  Loading,
+  SkeletonTable,
   Table,
   useToast,
 } from '../../ui';
@@ -319,7 +319,7 @@ export function FuncoesSection() {
   const perms = useMemo(() => catalog.data?.permissions ?? [], [catalog.data]);
   const canManage = can('role.manage');
 
-  if (roles.isLoading || catalog.isLoading) return <Loading />;
+  if (roles.isLoading || catalog.isLoading) return <SkeletonTable rows={4} cols={4} />;
   if (roles.error) return <ErrorNote error={roles.error} />;
   if (catalog.error) return <ErrorNote error={catalog.error} />;
 

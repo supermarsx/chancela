@@ -36,8 +36,8 @@ import {
   Icon,
   InlineWarning,
   Input,
-  Loading,
   Select,
+  SkeletonTable,
   Table,
   useToast,
 } from '../../ui';
@@ -276,7 +276,7 @@ export function DelegacoesSection() {
   // A single "now" per render so every row's expiry compares against the same instant.
   const now = Date.now();
 
-  if (delegations.isLoading) return <Loading />;
+  if (delegations.isLoading) return <SkeletonTable rows={4} cols={7} />;
   if (delegations.error) return <ErrorNote error={delegations.error} />;
 
   const list = delegations.data ?? [];
