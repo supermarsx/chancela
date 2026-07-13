@@ -476,7 +476,7 @@ export const plPL: Catalog = {
   'entities.registrySection': 'Rejestr handlowy',
   'entities.booksCard': 'Księgi',
   'entities.chronology.title': 'Chronologia i graf',
-  'entities.chronology.loading': 'Ładowanie chronologii...',
+  'entities.chronology.loading': 'Ładowanie chronologii…',
   'entities.chronology.none': '—',
   'entities.chronology.boundary':
     'Techniczny odczyt na podstawie zaimportowanego zaświadczenia rejestrowego. Te grafy są dowodem pochodzenia i nawigacji; nie zastępują zaświadczenia ani nie nadają ważności prawnej.',
@@ -770,12 +770,26 @@ export const plPL: Catalog = {
   'acts.sealing.ready': 'Protokół jest zgodny i w trakcie podpisywania — można go zapieczętować.',
   'acts.sealing.readyWithWarnings':
     'Protokół ma nieblokujące ostrzeżenia zgodności. Sprawdź je i wyraźnie potwierdź przed zapieczętowaniem.',
-  'acts.sealing.warningAck.title': 'Potwierdź ostrzeżenia zgodności',
+  'acts.sealing.warningAck.title': 'Confirm manual sealing',
   'acts.sealing.warningAck.body':
-    'Istnieją nieblokujące ostrzeżenia zgodności. Pieczętowanie będzie kontynuowane dopiero po potwierdzeniu, że zostały sprawdzone.',
+    'Record the local reference for where the manually signed original is kept. This metadata does not validate the signature or certify the archive.',
   'acts.sealing.warningAck.checkbox':
-    'Wyraźnie potwierdzam te ostrzeżenia zgodności i chcę zapieczętować protokół.',
-  'acts.sealing.warningAck.confirm': 'Zapieczętuj protokół z ostrzeżeniami',
+    'I confirm the manual-signature original reference has been captured and want to seal the minute.',
+  'acts.sealing.warningAck.checkboxWithWarnings':
+    'I confirm I reviewed the compliance warnings, the manual-signature original reference has been captured, and I want to seal the minute.',
+  'acts.sealing.warningAck.confirm': 'Confirm and seal minute',
+  'acts.manualSignature.originalReference.label': 'Signed original reference',
+  'acts.manualSignature.originalReference.hint':
+    'Location, archive, folder, document id, or another internal reference.',
+  'acts.manualSignature.originalReference.tooLong':
+    'The signed original reference must be at most 512 characters.',
+  'acts.manualSignature.originalReference.displayLabel': 'Signed original',
+  'acts.manualSignature.custodian.label': 'Custodian',
+  'acts.manualSignature.custodian.hint': 'Responsible person, team, or service, if applicable.',
+  'acts.manualSignature.custodian.displayLabel': 'Custodian',
+  'acts.manualSignature.note.label': 'Note',
+  'acts.manualSignature.note.hint': 'Optional local context; do not record legal validation.',
+  'acts.manualSignature.note.displayLabel': 'Note',
   'acts.sealing.unavailableState': 'Pieczętowanie jest dostępne tylko w stanie „Podpisywanie”.',
   'acts.sealing.fixErrors': 'Popraw błędy zgodności, aby móc zapieczętować.',
   'acts.sealing.sealing': 'Pieczętowanie…',
@@ -2173,12 +2187,12 @@ export const plPL: Catalog = {
   'documents.preview.show': 'Podgląd dokumentu',
   'documents.preview.hide': 'Ukryj podgląd',
   'documents.preview.hint':
-    'Podgląd wygenerowany na podstawie bieżącego rekordu. Może się zmienić do momentu opieczętowania.',
+    'Podgląd wygenerowany na podstawie bieżącego rekordu. Może się zmienić do momentu zapieczętowania.',
   'documents.preview.empty': 'Dokument nie zawiera treści.',
   'documents.preview.nipc': 'NIPC {nipc}',
   'documents.preview.noTemplate.title': 'Brak dostępnego szablonu',
   'documents.preview.noTemplate.body':
-    'Dla tej rodziny podmiotów nie ma jeszcze szablonu dokumentu. Protokół można mimo to opieczętować; dokument stanie się dostępny po opublikowaniu szablonu.',
+    'Dla tej rodziny podmiotów nie ma jeszcze szablonu dokumentu. Protokół można mimo to zapieczętować; dokument stanie się dostępny po opublikowaniu szablonu.',
   'documents.print': 'Drukuj dokument',
   'documents.pageBreak': 'Podział strony',
   'documents.vote.label': 'Uchwała',
@@ -2189,7 +2203,7 @@ export const plPL: Catalog = {
   'documents.download.pending': 'Pobieranie…',
   'documents.download.noneTitle': 'Nie wygenerowano dokumentu',
   'documents.download.noneBody':
-    'Protokół został opieczętowany, ale ta rodzina podmiotów nie ma jeszcze szablonu, więc nie wygenerowano pliku PDF.',
+    'Protokół został zapieczętowany, ale ta rodzina podmiotów nie ma jeszcze szablonu, więc nie wygenerowano pliku PDF.',
   'documents.digest.label': 'Odcisk PDF:',
   'documents.template.title': 'Obowiązujący szablon',
   'documents.template.none': 'Brak szablonu dla tej rodziny i etapu.',
@@ -2676,8 +2690,8 @@ export const plPL: Catalog = {
   'toast.signing.downloaded': 'Podpisany PDF pobrany.',
 
   // --- Chain integrity + recovery + data management (t54) ------------------------
-  'integrity.cardTitle': 'Księgi i Integralność',
-  'data.cardTitle': 'Zarządzanie Danymi',
+  'integrity.cardTitle': 'Księgi i integralność',
+  'data.cardTitle': 'Zarządzanie danymi',
   'data.status.title': 'Storage status',
   'data.status.refresh': 'Refresh status',
   'data.status.refreshing': 'Refreshing…',
@@ -2805,7 +2819,7 @@ export const plPL: Catalog = {
   'degraded.title': 'System w trybie tylko do odczytu',
   'degraded.detail':
     'Łańcuch integralności jest przerwany. Zmiany są zablokowane do czasu naprawy.',
-  'degraded.link': 'Otwórz Księgi i Integralność',
+  'degraded.link': 'Otwórz Księgi i integralność',
   'integrity.report.title': 'Raport integralności',
   'integrity.report.healthy': 'Wszystkie łańcuchy nienaruszone',
   'integrity.report.broken': 'Integralność naruszona',
@@ -3154,7 +3168,7 @@ export const plPL: Catalog = {
   'documents.generated.form.recipients': 'Odbiorcy',
   'documents.generated.form.operatorNote': 'Notatka operatora',
   'documents.generated.form.submit': 'Zarejestruj dowód',
-  'documents.generated.form.submitting': 'Rejestrowanie...',
+  'documents.generated.form.submitting': 'Rejestrowanie…',
   'documents.generated.form.toast.success': 'Dowód zarejestrowany przez operatora zapisany.',
   'documents.import.sectionAria': 'Zaimportowane dokumenty referencyjne',
   'documents.import.title': 'Zaimportowane dokumenty',
@@ -3163,7 +3177,7 @@ export const plPL: Catalog = {
   'documents.import.serverValidation':
     'Serwer weryfikuje treść przed zapisem; odrzucenia nie są utrwalane.',
   'documents.import.nonCanonicalEvidence': 'Dowód niekanoniczny',
-  'documents.import.pending': 'Importowanie...',
+  'documents.import.pending': 'Importowanie…',
   'documents.import.choose': 'Importuj dowód',
   'documents.import.empty.title': 'Brak zaimportowanych dokumentów',
   'documents.import.empty.body': 'Ten protokół nie ma jeszcze zaimportowanego dowodu ani odniesienia.',
@@ -3206,12 +3220,12 @@ export const plPL: Catalog = {
   'documents.import.guardrails.checklist.unknown': 'Technical limit: {code}',
   'documents.import.validationAria': 'Raport walidacji importowanego dokumentu',
   'documents.import.validationTitle': 'Techniczna walidacja importu',
-  'documents.import.validationRejectedTitle': 'Import odrzucony przez walidacje',
+  'documents.import.validationRejectedTitle': 'Import odrzucony przez walidację',
   'documents.import.validationRejectedBody':
-    'Plik nie zostal zapisany; przejrzyj ponizsze bledy techniczne.',
+    'Plik nie został zapisany; przejrzyj poniższe błędy techniczne.',
   'documents.import.legacyWord.title': 'Starszy Microsoft Word .doc/OLE CFB',
   'documents.import.legacyWord.body':
-    'Starszy Microsoft Word .doc/OLE CFB jest zachowywany wylacznie jako niekanoniczny dowod. Makra i osadzone obiekty nie sa uruchamiane. Nie wykonano konwersji DOC do PDF/A ani kanonicznego zastapienia.',
+    'Starszy Microsoft Word .doc/OLE CFB jest zachowywany wyłącznie jako niekanoniczny dowód. Makra i osadzone obiekty nie są uruchamiane. Nie wykonano konwersji DOC do PDF/A ani kanonicznego zastąpienia.',
   'documents.import.legacyWord.detectedType': 'Wykryty typ',
   'documents.import.legacyWord.oleCfb': 'OLE CFB',
   'documents.import.legacyWord.legacyDoc': 'Starszy Word .doc',
@@ -3219,11 +3233,11 @@ export const plPL: Catalog = {
   'documents.import.legacyWord.conversion': 'Konwersja DOC do PDF/A',
   'documents.import.legacyWord.canonicalPdfa': 'Wygenerowano kanoniczny PDF/A',
   'documents.import.findings': 'Ustalenia walidacji',
-  'documents.import.toast.success': 'Dokument zaimportowany jako niekanoniczny dowod.',
+  'documents.import.toast.success': 'Dokument zaimportowany jako niekanoniczny dowód.',
   'documents.import.toast.validationRejected':
-    'Dokument odrzucony przez walidacje; nie zostal zaimportowany.',
-  'documents.import.readError.imported': 'Nie mozna odczytac importowanego pliku.',
-  'documents.import.readError.file': 'Nie mozna odczytac pliku.',
+    'Dokument odrzucony przez walidację; nie został zaimportowany.',
+  'documents.import.readError.imported': 'Nie można odczytać importowanego pliku.',
+  'documents.import.readError.file': 'Nie można odczytać pliku.',
   'externalInvite.crumbs': 'Podpis zewnętrzny',
   'externalInvite.title': 'Zaproszenie zewnętrzne',
   'externalInvite.status.pending': 'Oczekujące',
@@ -3236,7 +3250,7 @@ export const plPL: Catalog = {
     'Link wygasł, został odwołany lub nie odpowiada aktywnemu zaproszeniu zewnętrznemu.',
   'externalInvite.missingToken.title': 'Link bez tokenu',
   'externalInvite.missingToken.body': 'Otwórz pełny link wysłany przez operatora protokołu.',
-  'externalInvite.loading': 'Weryfikowanie zaproszenia...',
+  'externalInvite.loading': 'Weryfikowanie zaproszenia…',
   'externalInvite.toast.accepted': 'Zarejestrowano odpowiedź akceptującą.',
   'externalInvite.toast.declined': 'Zarejestrowano odrzucenie.',
   'externalInvite.tracking.title': 'Tracking only',
@@ -3259,7 +3273,7 @@ export const plPL: Catalog = {
   'externalInvite.workingCopy.title': 'Kopia robocza',
   'externalInvite.workingCopy.body':
     'Dostępny podgląd to niekanoniczny Markdown. Zachowany PDF/A oraz jakikolwiek podpisany plik PDF nie są udostępniane w ramach tego zaproszenia.',
-  'externalInvite.workingCopy.loading': 'Ładowanie kopii...',
+  'externalInvite.workingCopy.loading': 'Ładowanie kopii…',
   'externalInvite.workingCopy.preview': 'Podgląd kopii .md',
   'externalInvite.documentUnavailable.title': 'Dokument niedostępny',
   'externalInvite.documentUnavailable.body':
