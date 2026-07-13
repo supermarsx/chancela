@@ -1153,6 +1153,41 @@ function assertCheckpointMap() {
     "written-resolution editor review-depth rendering coverage",
   );
   assertFileContains(
+    "apps/web/e2e/written-resolution-evidence.spec.ts",
+    "Focused browser proof for written-resolution evidence receipts.",
+    "written-resolution evidence browser proof spec marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/written-resolution-evidence.spec.ts",
+    "expect(Object.keys(body)).toEqual(['written_resolution_evidence']);",
+    "written-resolution browser patch scope marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/written-resolution-evidence.spec.ts",
+    "expectEveryClaimFlagFalse(body);",
+    "written-resolution browser false-claim assertion marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/written-resolution-evidence.spec.ts",
+    "expectNoForbiddenClaimKeys(body);",
+    "written-resolution browser forbidden-claim assertion marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Written-resolution evidence receipt browser proof",
+    "spec coverage written-resolution receipt browser proof marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "Written-resolution evidence receipt browser proof",
+    "CI checkpoints written-resolution receipt browser proof marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "written-resolution evidence receipt browser checks",
+    "CI/E2E hardening written-resolution receipt browser proof marker",
+  );
+  assertFileContains(
     "crates/chancela-core/src/seal.rs",
     "written_resolution_evidence_binds_into_the_seal_digest_when_present",
     "written-resolution evidence seal digest binding coverage",
@@ -8336,7 +8371,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-12 from the current CI configuration and head `869e02f`",
+    "Updated 2026-07-13 from the current CI configuration and head `564821f`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(

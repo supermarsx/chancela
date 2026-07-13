@@ -1262,6 +1262,17 @@ Implementation checkpoints covered here:
   false proof/legal/authority flags; it is not proof of written consent, quorum,
   participant identity, legal acceptance, legal sufficiency, external validation,
   authority certification, or full written-resolution completion.
+- Current working-tree written-resolution evidence receipt browser proof keeps
+  Legal/Workflows/UX/CI **PARTIAL**: route-stubbed Playwright coverage now
+  loads a WrittenResolution act, records a local evidence receipt, asserts the
+  act `PATCH` body updates only `written_resolution_evidence`, preserves the
+  existing checklist/history, keeps every proof/legal/authority claim flag
+  false, and renders the updated receipt/history plus no-claim copy in the
+  browser. This is local metadata-only browser proof with stubbed routes; it is
+  not live provider evidence, legal acceptance, legal sufficiency, proof of
+  written consent/quorum/identity, external validation, legal-validity
+  certification, authority certification, act finalization, signing, seal, or
+  archive completion.
 - `6eecdc5` keeps UX **PARTIAL**: notification popup and notification page
   route/read/acknowledge/dismiss/restore controls are pinned as icon-only
   tooltip-backed actions with accessible names. This is interaction consistency
@@ -2117,6 +2128,13 @@ behavior, legal disposal, or legal-effect claims.
   consent, quorum, vote threshold, participant identity, legal acceptance, legal
   sufficiency, external validation, automatic approval, or authority
   certification.
+- **Written-resolution evidence receipt browser proof:** focused route-stubbed
+  Playwright coverage in `apps/web/e2e/written-resolution-evidence.spec.ts`
+  proves the browser form appends local receipt metadata through the existing act
+  patch contract, preserves current checklist/history fields, keeps all existing
+  no-claim flags false, and renders updated history/no-claim copy after the
+  stubbed response. This remains metadata-only local browser evidence, not a
+  legal/proof/certification/provider or authority-completion claim.
 - **Paper-book OCR browser workflow regression:** focused browser E2E now covers
   preserving a paper-book package as non-canonical evidence, requiring explicit
   acknowledgement before auxiliary OCR draft creation/review, refusing an

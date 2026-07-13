@@ -1,6 +1,6 @@
 # CI and E2E Hardening Plan
 
-Updated 2026-07-12 from the current CI configuration and head `869e02f`,
+Updated 2026-07-13 from the current CI configuration and head `564821f`,
 including coverage notes for the bounded PAdES DSS validation-time, PDF/UA v6
 structural-depth, retention due-candidate explicit evidence states, bounded
 archive/no-action evidence UI, duplicate-review guard/status surfacing, and
@@ -25,6 +25,7 @@ dispatch-evidence recording with dashboard reminder surfacing,
 document-bundle/archive generated dispatch-evidence metadata preservation,
 imported-document review receipt UI, trust catalog identifier-match explanations,
 password-required account creation/session hardening,
+written-resolution evidence receipt local browser proof,
 route-stubbed richer entity chronology visualization over existing structured
 graph evidence as source-linked technical visualization evidence only,
 plus local ASiC inspection endpoint and ASiC ZIP decompression-bound coverage,
@@ -1200,6 +1201,18 @@ settingsDefaults.test.ts contracts.test.ts`.
   projection only, with no download, OCR, conversion, PDF/A replacement, signed
   PDF, signature validation, seal, PDF/UA, certification, or legal acceptance
   behavior.
+- Current working-tree written-resolution evidence receipt browser checks:
+  focused route-stubbed Playwright proof is
+  `npm run test:browser --workspace apps/web --
+  e2e/written-resolution-evidence.spec.ts`. It pins the mounted Ata editor path
+  for a WrittenResolution act, local evidence receipt form fill/submit, exact
+  act `PATCH` body scoped to `written_resolution_evidence`, preservation of
+  existing checklist/history metadata, all proof/legal/authority claim flags
+  false, and updated receipt/history/no-claim rendering after the stubbed
+  response. Treat this as metadata-only local browser proof: no live provider,
+  legal acceptance, legal sufficiency, written-consent/quorum/identity proof,
+  external validation, legal-validity or authority certification, act
+  finalization, signing, seal, or archive completion.
 - Current working-tree trust catalog identifier-match checks: focused
   `cargo test -p chancela-api trust --locked` and `npm run test --workspace
   apps/web -- src/features/ferramentas/trust.test.tsx` coverage pins optional

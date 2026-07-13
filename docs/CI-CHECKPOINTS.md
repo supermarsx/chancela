@@ -28,7 +28,8 @@ provider validity or authority approval.
 
 `npm run test:checkpoint:recent-landed` is a focused local and CI guard for
 recently landed work that crosses Rust API tests, data key preflight guards,
-guardrail acknowledgements, written-resolution evidence status binding, trust
+guardrail acknowledgements, written-resolution evidence status binding and
+browser receipt proof, trust
 parsing, declared signer-capacity evidence preservation, live-provider static
 assurance, MCP resource/prompt coverage including workflow provenance review
 guidance and draft-vs-signed comparison review guidance, the bounded local
@@ -263,6 +264,17 @@ It intentionally reuses existing test surfaces:
   they do not notify authorities or data subjects, approve or execute
   transfers, file or complete DPIAs, complete legal approval, deliver
   provider/calendar/email/webhooks, or certify privacy compliance.
+- Written-resolution evidence receipt browser proof:
+  `npm run test:browser --workspace apps/web -- e2e/written-resolution-evidence.spec.ts`
+  pins a route-stubbed WrittenResolution act editor path for filling a local
+  evidence receipt, submitting only `written_resolution_evidence` through
+  `PATCH /v1/acts/{id}`, preserving existing checklist/history metadata,
+  keeping proof/legal/authority claim flags false, and rendering updated
+  receipt/history/no-claim copy after the stubbed response. This is metadata-only
+  local browser evidence; it is not live provider evidence, legal acceptance,
+  legal sufficiency, written-consent/quorum/identity proof, external validation,
+  legal-validity or authority certification, act finalization, signing, seal, or
+  archive completion.
 - API retained-export cleanup dry-run:
   `cargo test -p chancela-api --locked data_cleanup_`
 - API data key operations:
@@ -348,7 +360,9 @@ guardrail IDs, the API acknowledgement notice, client-declared trace context
 only, no PIN/OTP/CAN/credential/token/password/passphrase/private-key
 collection, and no trust-list, qualified-status, or legal-signing-acceptance
 claim copy,
-written-resolution evidence status/binding markers, declared signer-capacity
+written-resolution evidence status/binding markers and written-resolution
+browser receipt proof markers for
+`apps/web/e2e/written-resolution-evidence.spec.ts`, declared signer-capacity
 evidence markers with `not_checked_by_scap` and
 `declared_capacity_evidence_only`, local CC batch-signing UI markers for
 BatchSigningPanel, `useCcBatchSign`, `POST /v1/signature/cc/batch-sign`,
