@@ -204,7 +204,8 @@ export const svSE: Catalog = {
   'notifications.alert.entity.managerRemuneration.body':
     'Enheten {entity_name} har lednings-/förvaltningsfunktionärer i importerat registerbevis och ännu inget förseglat protokoll om ersättning eller utebliven ersättning. Registrera beslutet när det är tillämpligt.',
   'notifications.alert.entity.managerRemuneration.action': 'Öppna enhet',
-  'notifications.alert.entity.administratorRemuneration.title': 'Ange ersättning till styrelseledamöter',
+  'notifications.alert.entity.administratorRemuneration.title':
+    'Ange ersättning till styrelseledamöter',
   'notifications.alert.entity.administratorRemuneration.body':
     'Enheten {entity_name} har styrelseledamöter i importerat registerbevis och ännu inget förseglat protokoll om ersättning eller utebliven ersättning. Registrera beslutet när det är tillämpligt.',
   'notifications.alert.entity.administratorRemuneration.action': 'Öppna enhet',
@@ -733,7 +734,8 @@ export const svSE: Catalog = {
   'books.detail.legalHold.stateActive': 'Aktiv',
   'books.detail.legalHold.stateNone': 'Ingen spärr',
   'books.detail.legalHold.reasonLabel': 'Skäl för rättslig spärr',
-  'books.detail.legalHold.reasonPlaceholder': 'T.ex. tvist, revision eller begäran från en myndighet',
+  'books.detail.legalHold.reasonPlaceholder':
+    'T.ex. tvist, revision eller begäran från en myndighet',
   'books.detail.ocrReview.formLabel': 'Kompletterande OCR-granskning',
   'books.detail.ocrReview.statusLabel': 'Status för OCR-granskning',
   'books.detail.ocrReview.successorLabel': 'Efterföljande utkast',
@@ -747,10 +749,8 @@ export const svSE: Catalog = {
   'books.detail.ocrDossier.artifactsLabel':
     'Bevis på granskad konverteringskörning för dossier {id}',
   'books.detail.ocrDossier.createSectionLabel': 'Skapa OCR-konverteringsdossier för {id}',
-  'books.detail.ocrSummary.sectionLabel':
-    'Sammanfattning av OCR-djup och dossier för pappersboken',
-  'books.detail.preflight.sectionLabel':
-    'Lokal OCR/kanonisk rapport för import {id}',
+  'books.detail.ocrSummary.sectionLabel': 'Sammanfattning av OCR-djup och dossier för pappersboken',
+  'books.detail.preflight.sectionLabel': 'Lokal OCR/kanonisk rapport för import {id}',
   'books.detail.preflight.metadataOnlyTitle': 'Endast metadata, skrivskyddat, icke-kanoniskt',
   'books.detail.ocrDraft.sectionLabel': 'OCR-utkast för import {id}',
   'books.detail.ocrDraft.reviewTitle': 'OCR-utkast och kompletterande granskning',
@@ -1300,7 +1300,8 @@ export const svSE: Catalog = {
   'externalValidatorReports.rawFile.digestUnavailable':
     'Kunde inte beräkna SHA-256 i den här webbläsaren.',
   'externalValidatorReports.rawFile.empty': 'Den valda råa rapporten är tom.',
-  'externalValidatorReports.rawFile.tooLarge': 'Den råa rapporten överskrider den lokala gränsen på {max}.',
+  'externalValidatorReports.rawFile.tooLarge':
+    'Den råa rapporten överskrider den lokala gränsen på {max}.',
   'externalValidatorReports.rawFile.summaryTitle': 'Vald rå rapport',
   'externalValidatorReports.rawFile.filename': 'Filnamn',
   'externalValidatorReports.rawFile.provenance': 'Härkomst',
@@ -1398,7 +1399,8 @@ export const svSE: Catalog = {
   'legislacao.citations.title': 'Valda hänvisningar',
   'legislacao.citations.notice':
     'Informativa hänvisningar som stöd för utformning/efterlevnad; de ersätter inte den officiella publiceringen eller den juridiska granskningen.',
-  'legislacao.citations.empty': 'Fäst artiklar från korpuset för att förbereda en utkastsanteckning.',
+  'legislacao.citations.empty':
+    'Fäst artiklar från korpuset för att förbereda en utkastsanteckning.',
   'legislacao.citations.pin': 'Fäst hänvisning',
   'legislacao.citations.copy': 'Kopiera till utkast',
   'legislacao.citations.clear': 'Rensa',
@@ -1616,13 +1618,17 @@ export const svSE: Catalog = {
   'settings.platform.logs.context.empty': 'Ingen kontext',
   'settings.reminders.cardTitle': 'Instrumentpanelspåminnelser',
   'settings.reminders.enabled.label': 'Generera lokala påminnelser',
-  'settings.reminders.note': 'Lokal och rådgivande policy; den schemalägger inte externa kalendrar och förklarar inte rättslig tillräcklighet.',
+  'settings.reminders.note':
+    'Lokal och rådgivande policy; den schemalägger inte externa kalendrar och förklarar inte rättslig tillräcklighet.',
   'settings.reminders.dashboardLimit.label': 'Instrumentpanelsgräns',
-  'settings.reminders.dashboardLimit.hint': 'Högsta antal påminnelsekort som instrumentpanelen returnerar.',
+  'settings.reminders.dashboardLimit.hint':
+    'Högsta antal påminnelsekort som instrumentpanelen returnerar.',
   'settings.reminders.dueSoon.label': 'Förfaller snart',
-  'settings.reminders.dueSoon.hint': 'Dagar till förfall för att klassificeras som snart förfallande.',
+  'settings.reminders.dueSoon.hint':
+    'Dagar till förfall för att klassificeras som snart förfallande.',
   'settings.reminders.attendanceLookahead.label': 'Närvarofönster',
-  'settings.reminders.attendanceLookahead.hint': 'Framtida dagar som genomsöks efter handlingar med ofullständig närvaro.',
+  'settings.reminders.attendanceLookahead.hint':
+    'Framtida dagar som genomsöks efter handlingar med ofullständig närvaro.',
   'settings.reminders.sources.title': 'Källor',
   'settings.reminders.sources.aria': 'Källor för instrumentpanelspåminnelser',
   'settings.reminders.sources.profileCalendar': 'Profilkalender',
@@ -1630,19 +1636,26 @@ export const svSE: Catalog = {
   'settings.reminders.sources.attendanceHygiene': 'Närvarohygien',
   'settings.reminders.sources.privacyReviews': 'Integritetsgranskningar',
   'settings.retainedExportCleanup.cardTitle': 'Policy för rensning av bevarade exporter',
-  'settings.retainedExportCleanup.note': 'Standardvärden som endast används i förhandsvisningen för rensning av bevarade lokala exporter. De godkänner inte laglig lagring, arkivradering, kassering eller GDPR-radering.',
+  'settings.retainedExportCleanup.note':
+    'Standardvärden som endast används i förhandsvisningen för rensning av bevarade lokala exporter. De godkänner inte laglig lagring, arkivradering, kassering eller GDPR-radering.',
   'settings.retainedExportCleanup.minimumAge.label': 'Minsta ålder för exporter',
-  'settings.retainedExportCleanup.minimumAge.hint': 'Minsta antal dagar innan en bevarad lokal export kan visas som kvalificerad i förhandsvisningen.',
+  'settings.retainedExportCleanup.minimumAge.hint':
+    'Minsta antal dagar innan en bevarad lokal export kan visas som kvalificerad i förhandsvisningen.',
   'settings.retainedExportCleanup.keepLatest.label': 'Senaste exporter att behålla',
-  'settings.retainedExportCleanup.keepLatest.hint': 'Antal senaste exportfiler som hålls utanför rensningen, även när de redan är tillräckligt gamla.',
+  'settings.retainedExportCleanup.keepLatest.hint':
+    'Antal senaste exportfiler som hålls utanför rensningen, även när de redan är tillräckligt gamla.',
   'settings.backupRecovery.cardTitle': 'Lokal policy för återställning av säkerhetskopior',
-  'settings.backupRecovery.note': 'Operatörsdeklarerade mål för lokala varningar om övningarnas aktualitet. De utför ingen återställning, byter inte databasen, bevisar inte förvaring utanför platsen och certifierar varken RPO/RTO eller en policy för produktionssäkerhetskopiering.',
+  'settings.backupRecovery.note':
+    'Operatörsdeklarerade mål för lokala varningar om övningarnas aktualitet. De utför ingen återställning, byter inte databasen, bevisar inte förvaring utanför platsen och certifierar varken RPO/RTO eller en policy för produktionssäkerhetskopiering.',
   'settings.backupRecovery.maxDrillAge.label': 'Högsta övningsålder',
-  'settings.backupRecovery.maxDrillAge.hint': 'Högsta antal dagar innan det senaste verifierade övningskvittot visas som föråldrat.',
+  'settings.backupRecovery.maxDrillAge.hint':
+    'Högsta antal dagar innan det senaste verifierade övningskvittot visas som föråldrat.',
   'settings.backupRecovery.targetRpo.label': 'Mål-RPO',
-  'settings.backupRecovery.targetRpo.hint': 'Deklarerade minuter för det lokala målet för maximal dataförlust.',
+  'settings.backupRecovery.targetRpo.hint':
+    'Deklarerade minuter för det lokala målet för maximal dataförlust.',
   'settings.backupRecovery.targetRto.label': 'Mål-RTO',
-  'settings.backupRecovery.targetRto.hint': 'Deklarerade minuter för det lokala målet för maximal återställningstid.',
+  'settings.backupRecovery.targetRto.hint':
+    'Deklarerade minuter för det lokala målet för maximal återställningstid.',
   'settings.entityTable.title': 'Enhetstabell',
   'settings.entityTable.hint': 'Välj vilka kolumner som visas i listan över registrerade enheter.',
   'settings.entityTable.columns.aria': 'Kolumner i enhetstabellen',
@@ -1729,7 +1742,8 @@ export const svSE: Catalog = {
   'settings.registryAutoUpdate.table.retrieved': 'Senaste uppslagning',
   'settings.registryAutoUpdate.table.status': 'Status',
   'settings.registryAutoUpdate.table.action': 'Åtgärd',
-  'settings.registryAutoUpdate.dueReason': '{age} h sedan senaste uppslagning; tröskel {threshold} h.',
+  'settings.registryAutoUpdate.dueReason':
+    '{age} h sedan senaste uppslagning; tröskel {threshold} h.',
   'settings.registryAutoUpdate.dueReasonUnknown': 'Inget tillförlitligt uppslagningsdatum.',
   'settings.registryAutoUpdate.attempt.button': 'Begär försök',
   'settings.registryAutoUpdate.attempt.pending': 'Begär…',
@@ -1806,7 +1820,8 @@ export const svSE: Catalog = {
   'settings.privacy.retention.title': 'Lagringspolicyer',
   'settings.privacy.retention.lede':
     'Granska och underhåll lagringsscheman. Destruktiv körning är inte tillgänglig i det här gränssnittet.',
-  'settings.privacy.retention.searchPlaceholder': 'Namn, omfattning, kategori, schema eller rättslig grund',
+  'settings.privacy.retention.searchPlaceholder':
+    'Namn, omfattning, kategori, schema eller rättslig grund',
   'settings.privacy.retention.notice.title': 'Icke-destruktiv post',
   'settings.privacy.retention.notice.body':
     'Det här gränssnittet sparar endast policyer och kör simuleringar. Det skickar inga förfrågningar om radering, anonymisering, arkivering eller gallring.',
@@ -1879,7 +1894,8 @@ export const svSE: Catalog = {
     'Denna sammanfattning visar endast lokal status/granskning för operatörer. Den godkänner inte gallring, löser inte kandidater, tar inte bort legal hold och deklarerar inte rättslig efterlevnad.',
   'settings.privacy.dueCandidates.title': 'Förfallna lagringskandidater',
   'settings.privacy.execution.title': 'Kö för granskning av körning',
-  'settings.privacy.execution.searchPlaceholder': 'Policy, mål, ansvarig, blockering eller nästa steg',
+  'settings.privacy.execution.searchPlaceholder':
+    'Policy, mål, ansvarig, blockering eller nästa steg',
   'settings.privacy.execution.statusFilter': 'Körningsstatus',
   'settings.about.cardTitle': 'Om',
   'settings.about.serverVersion': 'Serverversion',
@@ -2433,6 +2449,46 @@ export const svSE: Catalog = {
   'signing.signed.timestampAbsent': 'Saknas',
   'signing.signed.digest': 'Fingeravtryck för signerad PDF',
   'signing.download': 'Ladda ner signerad PDF',
+  'signing.technicalComparison.aria':
+    'Local technical comparison between sealed act and signed PDF',
+  'signing.technicalComparison.kicker': 'Technical comparison',
+  'signing.technicalComparison.title': 'Local metadata for the sealed act and signed PDF',
+  'signing.technicalComparison.summary.aria': 'Local technical comparison summary',
+  'signing.technicalComparison.badge.local': 'Local metadata only',
+  'signing.technicalComparison.badge.noClaim': 'No claim',
+  'signing.technicalComparison.status.match': 'Metadata match',
+  'signing.technicalComparison.status.present': 'Supplied',
+  'signing.technicalComparison.status.partial': 'Partial',
+  'signing.technicalComparison.status.unavailable': 'Unavailable',
+  'signing.technicalComparison.status.mismatch': 'Mismatch',
+  'signing.technicalComparison.status.notClaimed': 'Not claimed',
+  'signing.technicalComparison.status.loading': 'Loading',
+  'signing.technicalComparison.row.actId': 'Act ID',
+  'signing.technicalComparison.row.sealedPayloadDigest': 'Sealed payload digest',
+  'signing.technicalComparison.row.canonicalPdfDigest': 'Canonical PDF digest',
+  'signing.technicalComparison.row.signedPdfDigest': 'Signed PDF digest',
+  'signing.technicalComparison.row.signedDocument': 'Signed document',
+  'signing.technicalComparison.row.signatureMetadata': 'Signature family/status',
+  'signing.technicalComparison.row.bundleFixity': 'Bundle fixity flags',
+  'signing.technicalComparison.detail.act': 'Act',
+  'signing.technicalComparison.detail.bundle': 'Bundle',
+  'signing.technicalComparison.detail.document': 'Document',
+  'signing.technicalComparison.detail.signature': 'Signature',
+  'signing.technicalComparison.detail.report': 'Report',
+  'signing.technicalComparison.detail.fixity': 'Fixity',
+  'signing.technicalComparison.detail.metadataFlag': 'Metadata flag',
+  'signing.technicalComparison.detail.status': 'Status',
+  'signing.technicalComparison.detail.signedAt': 'Recorded at',
+  'signing.technicalComparison.detail.documentId': 'Document ID',
+  'signing.technicalComparison.detail.download': 'Download',
+  'signing.technicalComparison.detail.attachments': 'Attachments',
+  'signing.technicalComparison.detail.present': 'present',
+  'signing.technicalComparison.detail.notSupplied': 'not supplied',
+  'signing.technicalComparison.detail.withoutDigest': 'without digest',
+  'signing.technicalComparison.bundleUnavailable':
+    'The document bundle is not loaded or did not supply a local validation report.',
+  'signing.technicalComparison.noClaim':
+    'Technical metadata review aid only: it does not read raw PDFs, recompute digests, validate trust, mutate archives, record reviewer notes, or decide legal validity, signature qualification, source certification, provider assurance, or external validation.',
   'signing.signed.qualifiedLabelCc': 'Kvalificerad elektronisk underskrift (Medborgarkort).',
   'signing.cc.start': 'Signera med Medborgarkort',
   'signing.cc.prompt.title': 'Signering med Medborgarkort',
@@ -2544,7 +2600,8 @@ export const svSE: Catalog = {
   'signing.remoteBatch.result.table.expires': 'Giltig till',
   'signing.remoteBatch.result.pending': 'Väntande',
   'signing.remoteBatch.result.error': 'Fel',
-  'signing.remoteBatch.result.confirmNormally': 'Bekräfta i det normala flödet för detta protokoll.',
+  'signing.remoteBatch.result.confirmNormally':
+    'Bekräfta i det normala flödet för detta protokoll.',
   'signing.remoteBatch.result.noSecret':
     'Svaret visar inga inloggningsuppgifter, koder eller aktiveringar.',
   'signing.signed.qualifiedLabelCsc':
@@ -2713,7 +2770,8 @@ export const svSE: Catalog = {
   'signing.official.notice':
     'Välj den PDF som redan signerats i Autenticação.gov eller en annan officiell överlämning. Chancela lagrar filen endast som tekniskt underlag och gör inga anspråk på validering mot förtroendelistan, kvalificerad status eller rättsligt slutförande.',
   'signing.official.file.label': 'Signerad PDF',
-  'signing.official.file.hint': 'Välj den signerade PDF som mottagits från den officiella applikationen.',
+  'signing.official.file.hint':
+    'Välj den signerade PDF som mottagits från den officiella applikationen.',
   'signing.official.provider.label': 'Leverantör',
   'signing.official.provider.hint':
     'Valfritt. Registrerar den leverantör som operatören anger; den används inte som auktoritet.',
@@ -2731,7 +2789,8 @@ export const svSE: Catalog = {
     'Chancela utför ingen validering mot förtroendelistan i det här flödet.',
   'signing.official.guardrails.qualified':
     'Chancela gör inga anspråk på kvalificerad status för den här importen.',
-  'signing.official.guardrails.legal': 'Chancela gör inga anspråk på rättsligt slutförande för den här importen.',
+  'signing.official.guardrails.legal':
+    'Chancela gör inga anspråk på rättsligt slutförande för den här importen.',
   'signing.official.guardrails.noSecret':
     'Det här flödet samlar inte in PIN-koder, OTP:er, CAN, autentiseringsuppgifter, tokens eller lösenord.',
   'signing.official.ack.label':
@@ -2763,7 +2822,8 @@ export const svSE: Catalog = {
   'signing.invites.expiresAt': 'Går ut',
   'signing.invites.purpose': 'Ändamål',
   'signing.invites.empty.title': 'Inga externa inbjudningar',
-  'signing.invites.empty.body': 'Det finns ännu inga externa inbjudningar registrerade för det här protokollet.',
+  'signing.invites.empty.body':
+    'Det finns ännu inga externa inbjudningar registrerade för det här protokollet.',
   'signing.invites.table.signer': 'Undertecknare',
   'signing.invites.table.status': 'Status',
   'signing.invites.table.workflow': 'Flöde',
@@ -2802,7 +2862,8 @@ export const svSE: Catalog = {
   'signing.envelopes.slot.required': 'Obligatoriskt fack',
   'signing.envelopes.slot.add': 'Lägg till fack',
   'signing.envelopes.empty.title': 'Inga kuvert för extern underskrift',
-  'signing.envelopes.empty.body': 'Det finns ännu inga flödeskuvert skapade för det här protokollet.',
+  'signing.envelopes.empty.body':
+    'Det finns ännu inga flödeskuvert skapade för det här protokollet.',
   'signing.envelopes.envelopeTitle': 'Kuvert {index}',
   'signing.envelopes.completed': 'Slutfört',
   'signing.envelopes.open': 'Öppet',
@@ -2917,7 +2978,8 @@ export const svSE: Catalog = {
   'data.status.usage.sqliteAverage': 'Genomsnitt: {bytes}/rad',
   'data.status.usage.sqliteAverageUnavailable': 'Genomsnitt: —',
   'data.status.usage.sqliteEstimateMethod.localLoadedPayload':
-    'Metod: lokal uppskattning från inläst nyttolast',  'data.status.usage.empty': 'Inga data rapporterade.',
+    'Metod: lokal uppskattning från inläst nyttolast',
+  'data.status.usage.empty': 'Inga data rapporterade.',
   'data.status.basis.filesystem': 'filsystem',
   'data.status.basis.sqlite_file': 'SQLite-fil',
   'data.status.basis.sqlite_logical_payload': 'SQLite logisk nyttolast',
@@ -2947,7 +3009,8 @@ export const svSE: Catalog = {
   'data.status.cleanup.pending': 'Rensar…',
   'data.status.cleanup.done': 'Rensning klar.',
   'data.status.cleanup.doneTitle': 'Underhåll klart',
-  'data.status.cleanup.result': 'Tog bort {files} filer och {directories} mappar och frigjorde {bytes}.',
+  'data.status.cleanup.result':
+    'Tog bort {files} filer och {directories} mappar och frigjorde {bytes}.',
   'data.status.backup.title': 'Operativ säkerhetskopia',
   'data.status.backup.body':
     'Skapar en varm säkerhetskopia av den beständiga instansen och returnerar endast ett icke-hemligt manifest.',
@@ -3234,7 +3297,8 @@ export const svSE: Catalog = {
   'settings.apiKeys.revokedToast': 'API-nyckel återkallad.',
   'settings.apiKeys.rotatedToast': 'API-nyckeln roterades.',
   'settings.apiKeys.empty': 'Inga API-nycklar',
-  'settings.apiKeys.emptyBody': 'Skapa en nyckel för att tillåta integrationsåtkomst med Bearer-autentisering.',
+  'settings.apiKeys.emptyBody':
+    'Skapa en nyckel för att tillåta integrationsåtkomst med Bearer-autentisering.',
   'settings.apiKeys.secret.title': 'Spara den här hemligheten nu',
   'settings.apiKeys.secret.body':
     'Den fullständiga hemligheten visas endast vid den här skapelsen. När du stänger det här meddelandet är endast prefixet och metadata tillgängliga.',
@@ -3373,7 +3437,8 @@ export const svSE: Catalog = {
   'documents.import.pending': 'Importerar...',
   'documents.import.choose': 'Importera underlag',
   'documents.import.empty.title': 'Inga importerade dokument',
-  'documents.import.empty.body': 'Det här protokollet har ännu inget importerat underlag eller referens.',
+  'documents.import.empty.body':
+    'Det här protokollet har ännu inget importerat underlag eller referens.',
   'documents.import.listAria': 'Importerade dokument',
   'documents.import.unnamed': 'Namnlöst importerat dokument',
   'documents.import.nonCanonical': 'Icke-kanoniskt',
@@ -3432,7 +3497,8 @@ export const svSE: Catalog = {
   'documents.import.readError.imported': 'Kunde inte läsa den importerade filen.',
   'documents.import.readError.file': 'Kunde inte läsa filen.',
   'documents.import.preflight.title': 'Lokal preflight för kanonisk konvertering',
-  'documents.import.preflight.hint': 'Endast lokalt metadatabevis; konverterar inte DOC, skapar inte PDF/A, kör inte OCR, validerar inte signaturer, anropar inte leverantörer och hävdar ingen rättslig acceptans.',
+  'documents.import.preflight.hint':
+    'Endast lokalt metadatabevis; konverterar inte DOC, skapar inte PDF/A, kör inte OCR, validerar inte signaturer, anropar inte leverantörer och hävdar ingen rättslig acceptans.',
   'documents.import.preflight.notIndicated': 'ej angivet',
   'documents.import.preflight.status.blocked': 'blockerad',
   'documents.import.preflight.status.notAttempted': 'ej försökt',
@@ -3452,8 +3518,10 @@ export const svSE: Catalog = {
   'documents.import.preflight.field.recordReplaced': 'Kanonisk post ersatt',
   'documents.import.preflight.evidenceObserved': 'Observerat bevis',
   'documents.import.preflight.blockers': 'Blockerare',
-  'documents.import.review.noticeFallback': 'Granskningen registrerar endast ett operativt bevarandebeslut; den kör inte OCR, konverterar inte byte, ersätter inte den kanoniska PDF/A och hävdar ingen rättslig acceptans.',
-  'documents.import.review.status.reviewedNonCanonical': 'Granskad: original bevarat endast som icke-kanoniskt bevis',
+  'documents.import.review.noticeFallback':
+    'Granskningen registrerar endast ett operativt bevarandebeslut; den kör inte OCR, konverterar inte byte, ersätter inte den kanoniska PDF/A och hävdar ingen rättslig acceptans.',
+  'documents.import.review.status.reviewedNonCanonical':
+    'Granskad: original bevarat endast som icke-kanoniskt bevis',
   'documents.import.review.status.rejected': 'Avvisad som icke-kanoniskt bevis',
   'documents.import.review.status.operatorRequired': 'Operatörsgranskning krävs',
   'documents.import.review.status.ocrRequired': 'Operatörsgranskning krävs för bevarad bild',
@@ -3469,9 +3537,11 @@ export const svSE: Catalog = {
   'documents.import.review.formAria': 'Operativ granskning av det importerade dokumentet',
   'documents.import.review.conservativeTitle': 'Konservativ granskning',
   'documents.import.review.statusLabel': 'Granskningsstatus',
-  'documents.import.review.noteHint': '{count}/{limit} tecken. Registrera endast det operativa beslutet; hävda inte OCR, konvertering eller rättslig acceptans.',
+  'documents.import.review.noteHint':
+    '{count}/{limit} tecken. Registrera endast det operativa beslutet; hävda inte OCR, konvertering eller rättslig acceptans.',
   'documents.import.review.guardrailsToAck': 'Skyddsräcken att erkänna',
-  'documents.import.review.ackLabel': 'Jag bekräftar att jag har granskat dessa skyddsräcken och att beslutet inte upphöjer det importerade dokumentet till en kanonisk post, en ersättande PDF/A, en signerad PDF eller rättslig acceptans.',
+  'documents.import.review.ackLabel':
+    'Jag bekräftar att jag har granskat dessa skyddsräcken och att beslutet inte upphöjer det importerade dokumentet till en kanonisk post, en ersättande PDF/A, en signerad PDF eller rättslig acceptans.',
   'documents.import.review.save': 'Spara granskning',
   'documents.import.review.saving': 'Sparar granskning',
   'documents.import.review.toast.saved': 'Granskning av importerat dokument sparad.',
@@ -3494,20 +3564,24 @@ export const svSE: Catalog = {
   'documents.import.receipt.notCreated': 'Skapades eller validerades inte av denna granskning.',
   'documents.import.receipt.notClaimed': 'Hävdades inte av denna granskning.',
   'documents.import.history.title': 'Teknisk granskningshistorik',
-  'documents.import.history.empty': 'Ingen teknisk historik registrerad utöver granskningens aktuella metadata.',
+  'documents.import.history.empty':
+    'Ingen teknisk historik registrerad utöver granskningens aktuella metadata.',
   'documents.import.history.decision': 'Beslut',
   'documents.import.history.recordedAt': 'Registrerad den',
   'documents.import.history.recordedBy': 'Registrerad av',
   'documents.import.history.note': 'Historisk anteckning',
   'documents.import.history.noAcknowledgedGuardrails': 'Inga erkända skyddsräcken i detta beslut',
   'documents.import.history.scope': 'Teknisk omfattning',
-  'documents.import.history.scopeBody': 'Granskningshistorik enbart baserad på metadata för icke-kanoniskt bevis; utan OCR, konvertering, PDF/A-ersättning, signaturvalidering, tidsstämpel, PDF/UA, certifiering eller rättslig acceptans.',
+  'documents.import.history.scopeBody':
+    'Granskningshistorik enbart baserad på metadata för icke-kanoniskt bevis; utan OCR, konvertering, PDF/A-ersättning, signaturvalidering, tidsstämpel, PDF/UA, certifiering eller rättslig acceptans.',
   'documents.import.depth.aria': 'Sammanfattning av den importerade granskningens djup',
   'documents.import.depth.title': 'Sammanfattning av granskningens djup',
   'documents.import.depth.includes': 'Inkluderar',
   'documents.import.depth.bytesPreserved': 'Byte bevarade ({status})',
-  'documents.import.depth.bytesNotIndicated': 'Bevarande av ursprungliga byte ej angivet i de inlästa metadata',
-  'documents.import.depth.includesValue': '{bytes}, SHA-256-digest, granskningsstatus {receipt} och operatörsanteckning {note}. Teknisk historik: {history}.',
+  'documents.import.depth.bytesNotIndicated':
+    'Bevarande av ursprungliga byte ej angivet i de inlästa metadata',
+  'documents.import.depth.includesValue':
+    '{bytes}, SHA-256-digest, granskningsstatus {receipt} och operatörsanteckning {note}. Teknisk historik: {history}.',
   'documents.import.depth.recorded': 'registrerad',
   'documents.import.depth.pending': 'väntande',
   'documents.import.depth.noteRecorded': 'registrerad',
@@ -3518,9 +3592,11 @@ export const svSE: Catalog = {
   'documents.import.depth.derivedStatus': 'Härledd status',
   'documents.import.depth.operatorNote': 'Operatörsanteckning',
   'documents.import.depth.excludes': 'Exkluderar',
-  'documents.import.depth.excludesValue': 'OCR, konvertering, PDF/A-ersättning, signerad PDF, signaturvalidering, tidsstämpel, PDF/UA och rättslig acceptans.',
+  'documents.import.depth.excludesValue':
+    'OCR, konvertering, PDF/A-ersättning, signerad PDF, signaturvalidering, tidsstämpel, PDF/UA och rättslig acceptans.',
   'documents.import.depth.noClaimFlags': 'Flaggor utan hävdande',
-  'documents.import.depth.noClaimFlagsValue': 'OCR: nej · konvertering: nej · PDF/A ersatt: nej · signerad PDF: nej · signatur: nej · tidsstämpel: nej · PDF/UA: nej · rättslig acceptans: nej.',
+  'documents.import.depth.noClaimFlagsValue':
+    'OCR: nej · konvertering: nej · PDF/A ersatt: nej · signerad PDF: nej · signatur: nej · tidsstämpel: nej · PDF/UA: nej · rättslig acceptans: nej.',
   'externalInvite.crumbs': 'Extern underskrift',
   'externalInvite.title': 'Extern inbjudan',
   'externalInvite.status.pending': 'Väntar',
@@ -3532,7 +3608,8 @@ export const svSE: Catalog = {
   'externalInvite.unavailable.body':
     'Länken har gått ut, återkallats eller motsvarar ingen aktiv extern inbjudan.',
   'externalInvite.missingToken.title': 'Länk utan token',
-  'externalInvite.missingToken.body': 'Öppna den fullständiga länken som skickats av protokollansvarig.',
+  'externalInvite.missingToken.body':
+    'Öppna den fullständiga länken som skickats av protokollansvarig.',
   'externalInvite.loading': 'Validerar inbjudan...',
   'externalInvite.toast.accepted': 'Accepterat svar registrerat.',
   'externalInvite.toast.declined': 'Avböjande registrerat.',
@@ -3755,7 +3832,8 @@ export const svSE: Catalog = {
   'signing.xades.level.label': 'Nivå',
   'signing.xades.level.b': 'XAdES-B',
   'signing.xades.level.t': 'XAdES-T (med tidsstämpel)',
-  'signing.xades.level.note': 'Nivåerna LT och LTA är inte tillgängliga i det här lokala verktyget.',
+  'signing.xades.level.note':
+    'Nivåerna LT och LTA är inte tillgängliga i det här lokala verktyget.',
   'signing.xades.submit': 'Producera XAdES',
   'signing.xades.submitting': 'Producerar…',
   'signing.xades.result.title': 'XAdES producerad',
@@ -3820,7 +3898,8 @@ export const svSE: Catalog = {
   'compliance.writtenResolution.review.reviewedLocators': 'Granskade lokaliserare',
   'compliance.writtenResolution.review.reviewedDigests': 'Granskade digests',
   'compliance.writtenResolution.review.boundEvidence': 'Bundet underlag',
-  'compliance.writtenResolution.review.boundary': 'Endast lokala metadata. Inget samtycke, beslutsförhet, identitet, rättslig tillräcklighet, extern validering, automatiskt godkännande eller myndighetscertifiering hävdas.',
+  'compliance.writtenResolution.review.boundary':
+    'Endast lokala metadata. Inget samtycke, beslutsförhet, identitet, rättslig tillräcklighet, extern validering, automatiskt godkännande eller myndighetscertifiering hävdas.',
   'compliance.writtenResolution.status.boundPresent': 'Bundet underlag finns',
   'compliance.writtenResolution.status.referencedOnly': 'Endast refererat',
   'compliance.writtenResolution.status.missing': 'Underlag saknas',
@@ -3830,7 +3909,8 @@ export const svSE: Catalog = {
   'compliance.writtenResolution.status.notRecorded': 'Ej registrerat',
   'acts.writtenResolution.card.title': 'Underlagskvitton för skriftligt beslut',
   'acts.writtenResolution.history.label': 'Kvittohistorik för skriftligt beslut',
-  'acts.writtenResolution.history.empty': 'Inga granskningskvitton för skriftligt beslut registrerade.',
+  'acts.writtenResolution.history.empty':
+    'Inga granskningskvitton för skriftligt beslut registrerade.',
   'acts.writtenResolution.receipt.reviewedEvidence': 'Granskat underlag',
   'acts.writtenResolution.receipt.notRecorded': 'Ej registrerat',
   'acts.writtenResolution.receipt.note': 'Anteckning',
@@ -3844,7 +3924,8 @@ export const svSE: Catalog = {
   'acts.writtenResolution.field.evidenceReference': 'Underlagsreferens',
   'acts.writtenResolution.field.evidenceDigest': 'Underlagsdigest',
   'acts.writtenResolution.field.receiptNotes': 'Kvittoanteckningar',
-  'acts.writtenResolution.guardrail': 'Endast lokala metadata; påståenden om bevis, rättslig tillräcklighet, leverantör, myndighet, slutförande, signering, försegling och arkivering förblir falska.',
+  'acts.writtenResolution.guardrail':
+    'Endast lokala metadata; påståenden om bevis, rättslig tillräcklighet, leverantör, myndighet, slutförande, signering, försegling och arkivering förblir falska.',
   'acts.writtenResolution.submit.recording': 'Registrerar kvitto…',
   'acts.writtenResolution.submit.record': 'Registrera lokalt kvitto',
   'acts.writtenResolution.reviewStatusOption.reviewed': 'Lokala metadata granskade',
@@ -3853,7 +3934,8 @@ export const svSE: Catalog = {
   'acts.writtenResolution.status.needsFollowUp': 'Kräver uppföljning',
   'acts.writtenResolution.status.notRecorded': 'Ej registrerat',
   // --- Field-help tooltips (wp12-e2) ----------------------------------------------
-  'fieldHelp.acts.title': 'Kort namn som identifierar protokollet i listor, förhandsvisningar och genererade dokument.',
+  'fieldHelp.acts.title':
+    'Kort namn som identifierar protokollet i listor, förhandsvisningar och genererade dokument.',
   'fieldHelp.acts.channel':
     'Sätt som mötet hölls på; aktiverar fält och kontroller som är specifika för distans- eller hybridmöten.',
   'fieldHelp.acts.meetingDate':
@@ -3884,8 +3966,7 @@ export const svSE: Catalog = {
     'Punkt som behandlats på dagordningen; strukturerade beslut kan kopplas till detta nummer.',
   'fieldHelp.acts.deliberationsText':
     'Fri text i protokollet. Använd den för den fullständiga formuleringen eller som komplement till de strukturerade besluten.',
-  'fieldHelp.acts.structuredAgenda':
-    'Kopplar beslutet till motsvarande punkt på dagordningen.',
+  'fieldHelp.acts.structuredAgenda': 'Kopplar beslutet till motsvarande punkt på dagordningen.',
   'fieldHelp.acts.structuredText':
     'Registrerar beslutet i strukturerat format för återanvändning i dokumentet och i uppföljningar.',
   'fieldHelp.acts.voteMode':
@@ -3906,118 +3987,146 @@ export const svSE: Catalog = {
   'fieldHelp.acts.signatorySigned':
     'Markerar att personen har undertecknat den tillämpliga fysiska eller elektroniska versionen.',
   'fieldHelp.acts.attachmentLabel': 'Kort beskrivning av bilagan som är kopplad till protokollet.',
-  'fieldHelp.acts.attachmentKind': 'Klassificering av bilagan för dokumentet och för det arkiverade beviset.',
+  'fieldHelp.acts.attachmentKind':
+    'Klassificering av bilagan för dokumentet och för det arkiverade beviset.',
   'fieldHelp.acts.beginningOfProof': 'Markera när bilagan ska behandlas som början till bevis.',
   'fieldHelp.entities.nipc':
     'Enhetens identifikationsnummer. Använd 9 portugisiska siffror; aktivera alternativet utan validering endast när det är tillämpligt.',
-  'fieldHelp.entities.seat': 'Adress eller ort för sätet som används i denna enhets böcker och dokument.',
+  'fieldHelp.entities.seat':
+    'Adress eller ort för sätet som används i denna enhets böcker och dokument.',
   'fieldHelp.entities.legalForm':
     'Enhetstyp som väljer den tillämpliga familjen av regler, böcker och mallar.',
-  'fieldHelp.entities.fiscalYearEnd': 'Dag för räkenskapsårets slut i formatet MM-DD; tomt använder 12-31.',
-  'fieldHelp.entities.statuteQuorum': 'Operativt värde som används för efterlevnadsvarningar om närvaro.',
+  'fieldHelp.entities.fiscalYearEnd':
+    'Dag för räkenskapsårets slut i formatet MM-DD; tomt använder 12-31.',
+  'fieldHelp.entities.statuteQuorum':
+    'Operativt värde som används för efterlevnadsvarningar om närvaro.',
   'fieldHelp.entities.statuteMajority': 'Bråk som används för efterlevnadsvarningar om beslut.',
-  'fieldHelp.entities.statuteNotice': 'Minsta antal dagar som används för varningar om kallelsefrist.',
+  'fieldHelp.entities.statuteNotice':
+    'Minsta antal dagar som används för varningar om kallelsefrist.',
   'fieldHelp.registry.accessCode':
     '12-siffrig kod som ger åtkomst till registerutdraget; den skickas endast för denna sökning och sparas inte.',
-  'fieldHelp.registry.email': 'Skickas endast när registertjänsten begär det för att öppna registerutdraget.',
+  'fieldHelp.registry.email':
+    'Skickas endast när registertjänsten begär det för att öppna registerutdraget.',
   'fieldHelp.registry.firma': 'Enhetens namn såsom det kom från det importerade registerutdraget.',
   'fieldHelp.registry.nipc': 'NIPC-identifierare som hämtats från registerutdraget, när den finns.',
-  'fieldHelp.registry.legalForm': 'Rättslig karaktär eller form normaliserad utifrån registerutdraget.',
+  'fieldHelp.registry.legalForm':
+    'Rättslig karaktär eller form normaliserad utifrån registerutdraget.',
   'fieldHelp.registry.matricula': 'Registreringsreferens angiven i handelsregistret.',
-  'fieldHelp.registry.sede': 'Säte som hämtats från registerutdraget; kan vara fri text eller en strukturerad adress.',
-  'fieldHelp.registry.dataConstituicao': 'Bildningsdatum som hämtats från registerutdraget, när det är tillgängligt.',
+  'fieldHelp.registry.sede':
+    'Säte som hämtats från registerutdraget; kan vara fri text eller en strukturerad adress.',
+  'fieldHelp.registry.dataConstituicao':
+    'Bildningsdatum som hämtats från registerutdraget, när det är tillgängligt.',
   'fieldHelp.registry.capital': 'Kapital tryckt på registerutdraget, utan ytterligare beräkning.',
-  'fieldHelp.registry.objeto': 'Verksamhetsföremål eller ändamål registrerat enligt texten som importerats från registerutdraget.',
+  'fieldHelp.registry.objeto':
+    'Verksamhetsföremål eller ändamål registrerat enligt texten som importerats från registerutdraget.',
   'fieldHelp.registry.cae':
     'Ekonomiska verksamheter från registerutdraget, berikade med CAE-katalogen när det är möjligt.',
-  'fieldHelp.registry.accessCodeMasked': 'Kod maskerad för revision; det fullständiga värdet visas aldrig.',
+  'fieldHelp.registry.accessCodeMasked':
+    'Kod maskerad för revision; det fullständiga värdet visas aldrig.',
   'fieldHelp.registry.retrievedAt': 'Tidpunkt då denna sökning utfördes.',
   'fieldHelp.registry.conservatoria': 'Registreringskontor angivet i det importerade dokumentet.',
   'fieldHelp.registry.oficial': 'Tjänsteman angiven i det importerade dokumentet.',
   'fieldHelp.registry.subscribedOn': 'Teckningsdatum angivet på registerutdraget.',
-  'fieldHelp.registry.validUntil': 'Giltighetsdatum angivet på registerutdraget; det förnyar inte sökningen.',
+  'fieldHelp.registry.validUntil':
+    'Giltighetsdatum angivet på registerutdraget; det förnyar inte sökningen.',
   'fieldHelp.registry.source': 'URL som använts för att hämta registerutdraget vid denna import.',
-  'fieldHelp.registry.digest': 'SHA-256 av den importerade HTML-koden, för att jämföra med originaldokumentet.',
+  'fieldHelp.registry.digest':
+    'SHA-256 av den importerade HTML-koden, för att jämföra med originaldokumentet.',
   'fieldHelp.registry.naturezaJuridica':
     'Rättslig karaktär såsom den lästes i registerutdragets inskrivning.',
-  'fieldHelp.registry.fiscalYearEnd': 'Räkenskapsårets slut angivet i inskrivningen, när det finns.',
-  'fieldHelp.registry.capitalRealization': 'Anteckning om kapitalinbetalning transkriberad från registerutdraget.',
+  'fieldHelp.registry.fiscalYearEnd':
+    'Räkenskapsårets slut angivet i inskrivningen, när det finns.',
+  'fieldHelp.registry.capitalRealization':
+    'Anteckning om kapitalinbetalning transkriberad från registerutdraget.',
   'fieldHelp.registry.deliberationDate': 'Beslutsdatum angivet i inskrivningen, när det finns.',
   'fieldHelp.registry.formaObrigar': 'Importerad text om vem som förpliktar enheten.',
-  "settings.providerCredentials.cardTitle": "Signeringsleverantörer",
-  "settings.providerCredentials.lede": "Hantera signeringsleverantörernas autentiseringsuppgifter, med flera nycklar per leverantör, prioritet och redundansväxling.",
-  "settings.providerCredentials.newEntry": "Ny post",
-  "settings.providerCredentials.empty": "Inga leverantörsuppgifter",
-  "settings.providerCredentials.emptyBody": "Inga autentiseringsuppgifter har sparats ännu. Lägg till en post för att komma igång.",
-  "settings.providerCredentials.protection.confidential.title": "Konfidentiell lagring",
-  "settings.providerCredentials.protection.confidential.body": "Autentiseringsuppgifterna krypteras med konfidentiellt skydd i vila.",
-  "settings.providerCredentials.protection.obfuscation.title": "Fördunkling — försvar på djupet",
-  "settings.providerCredentials.protection.obfuscation.body": "Autentiseringsuppgifterna krypteras, men detta är inte full konfidentialitet förrän du aktiverar SQLCipher eller OS-försegling.",
-  "settings.providerCredentials.protection.strictBlocked": "Strikt läge är på: du kan spara autentiseringsuppgifter först efter att ha aktiverat konfidentiellt skydd.",
-  "settings.providerCredentials.mode.cmd": "Chave Móvel Digital (CMD)",
-  "settings.providerCredentials.mode.csc": "CSC-QTSP",
-  "settings.providerCredentials.mode.scap": "SCAP (AMA)",
-  "settings.providerCredentials.mode.pkcs12": "Lokal PKCS#12",
-  "settings.providerCredentials.createdToast": "Post skapad.",
-  "settings.providerCredentials.updatedToast": "Post uppdaterad.",
-  "settings.providerCredentials.deletedToast": "Post borttagen.",
-  "settings.providerCredentials.reorderedToast": "Ordning uppdaterad.",
-  "settings.providerCredentials.failoverHint": "Poster prövas i prioritetsordning; lägre används när en högre inte kan nås.",
-  "settings.providerCredentials.provider.addEntry": "Lägg till post",
-  "settings.providerCredentials.provider.noEntries": "Inga poster för denna leverantör.",
-  "settings.providerCredentials.entry.unlabeled": "Post utan etikett",
-  "settings.providerCredentials.entry.priority": "Prioritet {priority}",
-  "settings.providerCredentials.entry.enabled": "Aktiverad",
-  "settings.providerCredentials.entry.disabled": "Inaktiverad",
-  "settings.providerCredentials.entry.moveUp": "Höj prioritet",
-  "settings.providerCredentials.entry.moveDown": "Sänk prioritet",
-  "settings.providerCredentials.entry.edit": "Redigera",
-  "settings.providerCredentials.entry.noFields": "Inga konfigurerade fält",
-  "settings.providerCredentials.entry.configured": "konfigurerad",
-  "settings.providerCredentials.entry.deleteConfirm.title": "Ta bort post",
-  "settings.providerCredentials.entry.deleteConfirm.intro": "Du håller på att ta bort posten ”{label}”. Denna åtgärd kan inte ångras.",
-  "settings.providerCredentials.entry.deleteConfirm.confirm": "Ta bort post",
-  "settings.providerCredentials.entry.deleteConfirm.pending": "Tar bort…",
-  "settings.providerCredentials.form.newEntry": "Ny post",
-  "settings.providerCredentials.form.editEntry": "Redigera post",
-  "settings.providerCredentials.form.mode": "Leverantörstyp",
-  "settings.providerCredentials.form.providerId": "Leverantörs-id",
-  "settings.providerCredentials.form.providerIdHint": "QTSP-id (CSC) eller identitetsetikett (PKCS#12).",
-  "settings.providerCredentials.form.label": "Etikett",
-  "settings.providerCredentials.form.labelPlaceholder": "Primär nyckel",
-  "settings.providerCredentials.form.enabled": "Post aktiverad",
-  "settings.providerCredentials.form.endpoint": "Slutpunkt (base_url)",
-  "settings.providerCredentials.form.endpointHint": "Åsidosättning av bas-URL för denna leverantör.",
-  "settings.providerCredentials.form.pfxWarning.title": "Privat nyckel i vila",
-  "settings.providerCredentials.form.pfxWarning.body": "Att lagra en PKCS#12-fil innebär att förvara en privat signeringsnyckel i vila. Föredra konfidentiellt skydd.",
-  "settings.providerCredentials.form.pfxHint": "Välj .pfx/.p12-filen; byten kodas på klienten.",
-  "settings.providerCredentials.form.pfxReplaceHint": "Välj en fil endast för att ersätta den nuvarande; lämna tomt för att behålla den.",
-  "settings.providerCredentials.form.secretHint": "Hemligheter är endast skrivbara och returneras aldrig. Lämna ett fält tomt för att behålla det oförändrat.",
-  "settings.providerCredentials.form.keepFieldHint": "Lämna tomt för att behålla det nuvarande värdet.",
-  "settings.providerCredentials.form.submit": "Spara",
-  "settings.providerCredentials.form.submitting": "Sparar…",
-  "settings.providerCredentials.field.applicationId": "Applikations-id",
-  "settings.providerCredentials.field.httpBasicUsername": "HTTP Basic-användarnamn",
-  "settings.providerCredentials.field.httpBasicPassword": "HTTP Basic-lösenord",
-  "settings.providerCredentials.field.amaCertPem": "AMA-certifikat (PEM)",
-  "settings.providerCredentials.field.clientId": "Klient-id",
-  "settings.providerCredentials.field.clientSecret": "Klienthemlighet",
-  "settings.providerCredentials.field.accessToken": "Åtkomsttoken",
-  "settings.providerCredentials.field.secret": "Hemlighet",
-  "settings.providerCredentials.field.passphrase": "Lösenfras",
-  "settings.providerCredentials.field.env": "Miljö",
-  "settings.providerCredentials.field.env.unset": "Ej angivet",
-  "settings.providerCredentials.field.env.preprod": "Förproduktion",
-  "settings.providerCredentials.field.env.prod": "Produktion",
-  "settings.providerCredentials.field.authorization": "Auktorisering",
-  "settings.providerCredentials.field.authorization.unset": "Ej angivet",
-  "settings.providerCredentials.field.authorization.service": "Tjänst",
-  "settings.providerCredentials.field.authorization.user": "Användare",
-  "settings.providerCredentials.field.credentialId": "Autentiserings-id",
-  "settings.providerCredentials.field.scope": "Omfattning (scope)",
-  "settings.providerCredentials.field.sandbox": "Sandlåda (sandbox)",
-  "settings.providerCredentials.field.environment": "Miljö",
-  "settings.providerCredentials.field.friendlyName": "Visningsnamn",
-  "settings.providerCredentials.field.localKeyId": "Local key ID (hex)",
-  "settings.providerCredentials.field.pfx": "PKCS#12/PFX-fil",
+  'settings.providerCredentials.cardTitle': 'Signeringsleverantörer',
+  'settings.providerCredentials.lede':
+    'Hantera signeringsleverantörernas autentiseringsuppgifter, med flera nycklar per leverantör, prioritet och redundansväxling.',
+  'settings.providerCredentials.newEntry': 'Ny post',
+  'settings.providerCredentials.empty': 'Inga leverantörsuppgifter',
+  'settings.providerCredentials.emptyBody':
+    'Inga autentiseringsuppgifter har sparats ännu. Lägg till en post för att komma igång.',
+  'settings.providerCredentials.protection.confidential.title': 'Konfidentiell lagring',
+  'settings.providerCredentials.protection.confidential.body':
+    'Autentiseringsuppgifterna krypteras med konfidentiellt skydd i vila.',
+  'settings.providerCredentials.protection.obfuscation.title': 'Fördunkling — försvar på djupet',
+  'settings.providerCredentials.protection.obfuscation.body':
+    'Autentiseringsuppgifterna krypteras, men detta är inte full konfidentialitet förrän du aktiverar SQLCipher eller OS-försegling.',
+  'settings.providerCredentials.protection.strictBlocked':
+    'Strikt läge är på: du kan spara autentiseringsuppgifter först efter att ha aktiverat konfidentiellt skydd.',
+  'settings.providerCredentials.mode.cmd': 'Chave Móvel Digital (CMD)',
+  'settings.providerCredentials.mode.csc': 'CSC-QTSP',
+  'settings.providerCredentials.mode.scap': 'SCAP (AMA)',
+  'settings.providerCredentials.mode.pkcs12': 'Lokal PKCS#12',
+  'settings.providerCredentials.createdToast': 'Post skapad.',
+  'settings.providerCredentials.updatedToast': 'Post uppdaterad.',
+  'settings.providerCredentials.deletedToast': 'Post borttagen.',
+  'settings.providerCredentials.reorderedToast': 'Ordning uppdaterad.',
+  'settings.providerCredentials.failoverHint':
+    'Poster prövas i prioritetsordning; lägre används när en högre inte kan nås.',
+  'settings.providerCredentials.provider.addEntry': 'Lägg till post',
+  'settings.providerCredentials.provider.noEntries': 'Inga poster för denna leverantör.',
+  'settings.providerCredentials.entry.unlabeled': 'Post utan etikett',
+  'settings.providerCredentials.entry.priority': 'Prioritet {priority}',
+  'settings.providerCredentials.entry.enabled': 'Aktiverad',
+  'settings.providerCredentials.entry.disabled': 'Inaktiverad',
+  'settings.providerCredentials.entry.moveUp': 'Höj prioritet',
+  'settings.providerCredentials.entry.moveDown': 'Sänk prioritet',
+  'settings.providerCredentials.entry.edit': 'Redigera',
+  'settings.providerCredentials.entry.noFields': 'Inga konfigurerade fält',
+  'settings.providerCredentials.entry.configured': 'konfigurerad',
+  'settings.providerCredentials.entry.deleteConfirm.title': 'Ta bort post',
+  'settings.providerCredentials.entry.deleteConfirm.intro':
+    'Du håller på att ta bort posten ”{label}”. Denna åtgärd kan inte ångras.',
+  'settings.providerCredentials.entry.deleteConfirm.confirm': 'Ta bort post',
+  'settings.providerCredentials.entry.deleteConfirm.pending': 'Tar bort…',
+  'settings.providerCredentials.form.newEntry': 'Ny post',
+  'settings.providerCredentials.form.editEntry': 'Redigera post',
+  'settings.providerCredentials.form.mode': 'Leverantörstyp',
+  'settings.providerCredentials.form.providerId': 'Leverantörs-id',
+  'settings.providerCredentials.form.providerIdHint':
+    'QTSP-id (CSC) eller identitetsetikett (PKCS#12).',
+  'settings.providerCredentials.form.label': 'Etikett',
+  'settings.providerCredentials.form.labelPlaceholder': 'Primär nyckel',
+  'settings.providerCredentials.form.enabled': 'Post aktiverad',
+  'settings.providerCredentials.form.endpoint': 'Slutpunkt (base_url)',
+  'settings.providerCredentials.form.endpointHint':
+    'Åsidosättning av bas-URL för denna leverantör.',
+  'settings.providerCredentials.form.pfxWarning.title': 'Privat nyckel i vila',
+  'settings.providerCredentials.form.pfxWarning.body':
+    'Att lagra en PKCS#12-fil innebär att förvara en privat signeringsnyckel i vila. Föredra konfidentiellt skydd.',
+  'settings.providerCredentials.form.pfxHint': 'Välj .pfx/.p12-filen; byten kodas på klienten.',
+  'settings.providerCredentials.form.pfxReplaceHint':
+    'Välj en fil endast för att ersätta den nuvarande; lämna tomt för att behålla den.',
+  'settings.providerCredentials.form.secretHint':
+    'Hemligheter är endast skrivbara och returneras aldrig. Lämna ett fält tomt för att behålla det oförändrat.',
+  'settings.providerCredentials.form.keepFieldHint':
+    'Lämna tomt för att behålla det nuvarande värdet.',
+  'settings.providerCredentials.form.submit': 'Spara',
+  'settings.providerCredentials.form.submitting': 'Sparar…',
+  'settings.providerCredentials.field.applicationId': 'Applikations-id',
+  'settings.providerCredentials.field.httpBasicUsername': 'HTTP Basic-användarnamn',
+  'settings.providerCredentials.field.httpBasicPassword': 'HTTP Basic-lösenord',
+  'settings.providerCredentials.field.amaCertPem': 'AMA-certifikat (PEM)',
+  'settings.providerCredentials.field.clientId': 'Klient-id',
+  'settings.providerCredentials.field.clientSecret': 'Klienthemlighet',
+  'settings.providerCredentials.field.accessToken': 'Åtkomsttoken',
+  'settings.providerCredentials.field.secret': 'Hemlighet',
+  'settings.providerCredentials.field.passphrase': 'Lösenfras',
+  'settings.providerCredentials.field.env': 'Miljö',
+  'settings.providerCredentials.field.env.unset': 'Ej angivet',
+  'settings.providerCredentials.field.env.preprod': 'Förproduktion',
+  'settings.providerCredentials.field.env.prod': 'Produktion',
+  'settings.providerCredentials.field.authorization': 'Auktorisering',
+  'settings.providerCredentials.field.authorization.unset': 'Ej angivet',
+  'settings.providerCredentials.field.authorization.service': 'Tjänst',
+  'settings.providerCredentials.field.authorization.user': 'Användare',
+  'settings.providerCredentials.field.credentialId': 'Autentiserings-id',
+  'settings.providerCredentials.field.scope': 'Omfattning (scope)',
+  'settings.providerCredentials.field.sandbox': 'Sandlåda (sandbox)',
+  'settings.providerCredentials.field.environment': 'Miljö',
+  'settings.providerCredentials.field.friendlyName': 'Visningsnamn',
+  'settings.providerCredentials.field.localKeyId': 'Local key ID (hex)',
+  'settings.providerCredentials.field.pfx': 'PKCS#12/PFX-fil',
 };

@@ -204,7 +204,8 @@ export const ptBR: Catalog = {
   'notifications.alert.entity.managerRemuneration.body':
     'A entidade {entity_name} tem membros da gerência/administração na evidência de registro importada e ainda não tem ata selada de remuneração ou de não remuneração. Registre a decisão quando aplicável.',
   'notifications.alert.entity.managerRemuneration.action': 'Abrir entidade',
-  'notifications.alert.entity.administratorRemuneration.title': 'Configurar remuneração do administrador',
+  'notifications.alert.entity.administratorRemuneration.title':
+    'Configurar remuneração do administrador',
   'notifications.alert.entity.administratorRemuneration.body':
     'A entidade {entity_name} tem administradores na evidência de registro importada e ainda não tem ata selada de remuneração ou de não remuneração. Registre a decisão quando aplicável.',
   'notifications.alert.entity.administratorRemuneration.action': 'Abrir entidade',
@@ -749,10 +750,8 @@ export const ptBR: Catalog = {
   'books.detail.ocrDossier.artifactsLabel':
     'Evidências de execução de conversão revisada do dossiê {id}',
   'books.detail.ocrDossier.createSectionLabel': 'Criar dossiê de conversão OCR para {id}',
-  'books.detail.ocrSummary.sectionLabel':
-    'Resumo de profundidade OCR e dossiê do livro em papel',
-  'books.detail.preflight.sectionLabel':
-    'Relatório OCR/canônico local da importação {id}',
+  'books.detail.ocrSummary.sectionLabel': 'Resumo de profundidade OCR e dossiê do livro em papel',
+  'books.detail.preflight.sectionLabel': 'Relatório OCR/canônico local da importação {id}',
   'books.detail.preflight.metadataOnlyTitle': 'Apenas metadados, somente leitura, não canônico',
   'books.detail.ocrDraft.sectionLabel': 'Rascunhos OCR da importação {id}',
   'books.detail.ocrDraft.reviewTitle': 'Rascunhos OCR e revisão auxiliar',
@@ -1620,13 +1619,16 @@ export const ptBR: Catalog = {
   'settings.platform.logs.context.empty': 'Sem contexto',
   'settings.reminders.cardTitle': 'Lembretes do painel',
   'settings.reminders.enabled.label': 'Gerar lembretes locais',
-  'settings.reminders.note': 'Política local e consultiva; não agenda calendários externos nem declara suficiência legal.',
+  'settings.reminders.note':
+    'Política local e consultiva; não agenda calendários externos nem declara suficiência legal.',
   'settings.reminders.dashboardLimit.label': 'Limite no painel',
-  'settings.reminders.dashboardLimit.hint': 'Número máximo de cartões de lembrete retornados pelo painel.',
+  'settings.reminders.dashboardLimit.hint':
+    'Número máximo de cartões de lembrete retornados pelo painel.',
   'settings.reminders.dueSoon.label': 'Prazo curto',
   'settings.reminders.dueSoon.hint': 'Dias até o vencimento para classificar como curto.',
   'settings.reminders.attendanceLookahead.label': 'Janela de presenças',
-  'settings.reminders.attendanceLookahead.hint': 'Dias futuros analisados para atos com presenças a concluir.',
+  'settings.reminders.attendanceLookahead.hint':
+    'Dias futuros analisados para atos com presenças a concluir.',
   'settings.reminders.sources.title': 'Fontes',
   'settings.reminders.sources.aria': 'Fontes de lembretes do painel',
   'settings.reminders.sources.profileCalendar': 'Calendário do perfil',
@@ -1634,19 +1636,26 @@ export const ptBR: Catalog = {
   'settings.reminders.sources.attendanceHygiene': 'Higiene de presenças',
   'settings.reminders.sources.privacyReviews': 'Revisões de privacidade',
   'settings.retainedExportCleanup.cardTitle': 'Política de limpeza de exportações retidas',
-  'settings.retainedExportCleanup.note': 'Valores padrão usados apenas na pré-visualização de limpeza de exportações locais retidas. Não aprovam retenção legal, exclusão de arquivo, descarte nem apagamento RGPD.',
+  'settings.retainedExportCleanup.note':
+    'Valores padrão usados apenas na pré-visualização de limpeza de exportações locais retidas. Não aprovam retenção legal, exclusão de arquivo, descarte nem apagamento RGPD.',
   'settings.retainedExportCleanup.minimumAge.label': 'Idade mínima das exportações',
-  'settings.retainedExportCleanup.minimumAge.hint': 'Dias mínimos antes de uma exportação local retida poder aparecer como elegível na pré-visualização.',
+  'settings.retainedExportCleanup.minimumAge.hint':
+    'Dias mínimos antes de uma exportação local retida poder aparecer como elegível na pré-visualização.',
   'settings.retainedExportCleanup.keepLatest.label': 'Exportações recentes a preservar',
-  'settings.retainedExportCleanup.keepLatest.hint': 'Número de arquivos de exportação mais recentes que ficam fora da limpeza, mesmo quando já têm idade suficiente.',
+  'settings.retainedExportCleanup.keepLatest.hint':
+    'Número de arquivos de exportação mais recentes que ficam fora da limpeza, mesmo quando já têm idade suficiente.',
   'settings.backupRecovery.cardTitle': 'Política local de recuperação de backups',
-  'settings.backupRecovery.note': 'Metas declaradas pelo operador para avisos locais de atualidade dos ensaios. Não executam restauração, não trocam o banco de dados, não provam custódia off-site nem certificam RPO/RTO ou política de backup de produção.',
+  'settings.backupRecovery.note':
+    'Metas declaradas pelo operador para avisos locais de atualidade dos ensaios. Não executam restauração, não trocam o banco de dados, não provam custódia off-site nem certificam RPO/RTO ou política de backup de produção.',
   'settings.backupRecovery.maxDrillAge.label': 'Idade máxima do ensaio',
-  'settings.backupRecovery.maxDrillAge.hint': 'Dias máximos antes de o último recibo de ensaio verificado aparecer como desatualizado.',
+  'settings.backupRecovery.maxDrillAge.hint':
+    'Dias máximos antes de o último recibo de ensaio verificado aparecer como desatualizado.',
   'settings.backupRecovery.targetRpo.label': 'RPO alvo',
-  'settings.backupRecovery.targetRpo.hint': 'Minutos declarados para o objetivo local de perda máxima de dados.',
+  'settings.backupRecovery.targetRpo.hint':
+    'Minutos declarados para o objetivo local de perda máxima de dados.',
   'settings.backupRecovery.targetRto.label': 'RTO alvo',
-  'settings.backupRecovery.targetRto.hint': 'Minutos declarados para o objetivo local de tempo máximo de recuperação.',
+  'settings.backupRecovery.targetRto.hint':
+    'Minutos declarados para o objetivo local de tempo máximo de recuperação.',
   'settings.entityTable.title': 'Tabela de entidades',
   'settings.entityTable.hint': 'Escolha as colunas visíveis na lista de entidades registradas.',
   'settings.entityTable.columns.aria': 'Colunas da tabela de entidades',
@@ -1770,7 +1779,8 @@ export const ptBR: Catalog = {
   'settings.privacy.empty.title': 'Sem registros',
   'settings.privacy.empty.body': 'Ainda não há registros nesta área de privacidade.',
   'settings.privacy.emptyResults.title': 'Sem resultados',
-  'settings.privacy.emptyResults.body': 'Altere a pesquisa ou os filtros para voltar a ver registros.',
+  'settings.privacy.emptyResults.body':
+    'Altere a pesquisa ou os filtros para voltar a ver registros.',
   'settings.privacy.table.action': 'Ação',
   'settings.privacy.toast.created': 'Registro de privacidade criado.',
   'settings.privacy.toast.updated': 'Registro de privacidade atualizado.',
@@ -2441,6 +2451,45 @@ export const ptBR: Catalog = {
   'signing.signed.timestampAbsent': 'Ausente',
   'signing.signed.digest': 'Impressão do PDF assinado',
   'signing.download': 'Baixar PDF assinado',
+  'signing.technicalComparison.aria': 'Comparação técnica local entre ato selado e PDF assinado',
+  'signing.technicalComparison.kicker': 'Comparação técnica',
+  'signing.technicalComparison.title': 'Metadados locais do ato selado e do PDF assinado',
+  'signing.technicalComparison.summary.aria': 'Resumo da comparação técnica local',
+  'signing.technicalComparison.badge.local': 'Só metadados locais',
+  'signing.technicalComparison.badge.noClaim': 'Sem reivindicação',
+  'signing.technicalComparison.status.match': 'Metadados coincidem',
+  'signing.technicalComparison.status.present': 'Fornecido',
+  'signing.technicalComparison.status.partial': 'Parcial',
+  'signing.technicalComparison.status.unavailable': 'Não fornecido',
+  'signing.technicalComparison.status.mismatch': 'Divergência',
+  'signing.technicalComparison.status.notClaimed': 'Não reivindicado',
+  'signing.technicalComparison.status.loading': 'Carregando',
+  'signing.technicalComparison.row.actId': 'ID do ato',
+  'signing.technicalComparison.row.sealedPayloadDigest': 'Digest do payload selado',
+  'signing.technicalComparison.row.canonicalPdfDigest': 'Digest do PDF canônico',
+  'signing.technicalComparison.row.signedPdfDigest': 'Digest do PDF assinado',
+  'signing.technicalComparison.row.signedDocument': 'Documento assinado',
+  'signing.technicalComparison.row.signatureMetadata': 'Família/status da assinatura',
+  'signing.technicalComparison.row.bundleFixity': 'Flags de fixidez do bundle',
+  'signing.technicalComparison.detail.act': 'Ato',
+  'signing.technicalComparison.detail.bundle': 'Bundle',
+  'signing.technicalComparison.detail.document': 'Documento',
+  'signing.technicalComparison.detail.signature': 'Assinatura',
+  'signing.technicalComparison.detail.report': 'Relatório',
+  'signing.technicalComparison.detail.fixity': 'Fixidez',
+  'signing.technicalComparison.detail.metadataFlag': 'Flag de metadados',
+  'signing.technicalComparison.detail.status': 'Status',
+  'signing.technicalComparison.detail.signedAt': 'Registrado em',
+  'signing.technicalComparison.detail.documentId': 'ID do documento',
+  'signing.technicalComparison.detail.download': 'Download',
+  'signing.technicalComparison.detail.attachments': 'Anexos',
+  'signing.technicalComparison.detail.present': 'presente',
+  'signing.technicalComparison.detail.notSupplied': 'não fornecido',
+  'signing.technicalComparison.detail.withoutDigest': 'sem digest',
+  'signing.technicalComparison.bundleUnavailable':
+    'O bundle de documento não está carregado ou não forneceu relatório de validação local.',
+  'signing.technicalComparison.noClaim':
+    'Auxílio de revisão técnica/metadata apenas: não lê PDF bruto, não recalcula digests, não valida confiança, não altera arquivo, não registra nota e não decide validade legal, qualificação da assinatura, certificação de origem, garantia de prestador ou validação externa.',
   'signing.signed.qualifiedLabelCc': 'Assinatura eletrônica qualificada (Cartão de Cidadão).',
   'signing.cc.start': 'Assinar com Cartão de Cidadão',
   'signing.cc.prompt.title': 'Assinatura com Cartão de Cidadão',
@@ -2479,7 +2528,8 @@ export const ptBR: Catalog = {
   'signing.ccBatch.source.current': 'Ata atual',
   'signing.ccBatch.source.manual': 'Adicionada por ID',
   'signing.ccBatch.selection.count': '{count} selecionadas de {max}',
-  'signing.ccBatch.selection.needMore': 'Selecione pelo menos duas atas para usar a assinatura em lote.',
+  'signing.ccBatch.selection.needMore':
+    'Selecione pelo menos duas atas para usar a assinatura em lote.',
   'signing.ccBatch.add.label': 'ID da ata',
   'signing.ccBatch.add.hint':
     'Adicione IDs de atas seladas quando esta tela não fornecer uma lista de vários documentos.',
@@ -2553,8 +2603,7 @@ export const ptBR: Catalog = {
   'signing.remoteBatch.result.pending': 'Pendente',
   'signing.remoteBatch.result.error': 'Erro',
   'signing.remoteBatch.result.confirmNormally': 'Confirmar no fluxo normal deste ato.',
-  'signing.remoteBatch.result.noSecret':
-    'A resposta não mostra credenciais, códigos ou ativações.',
+  'signing.remoteBatch.result.noSecret': 'A resposta não mostra credenciais, códigos ou ativações.',
   'signing.signed.qualifiedLabelCsc':
     'Assinatura eletrônica qualificada (certificado qualificado de prestador de confiança).',
   'signing.signed.localPkcs12Title': 'Ata assinada com certificado de software local',
@@ -2681,8 +2730,10 @@ export const ptBR: Catalog = {
     'Aviso: a API retornou uma alegação de perfil/LTV; revise antes de usar.',
   'signing.evidence.renewal.action.none': 'nenhuma ação',
   'signing.evidence.renewal.action.manualReview': 'revisão manual',
-  'signing.evidence.renewal.action.addSignatureTimestamp': 'adicionar carimbo de tempo à assinatura',
-  'signing.evidence.renewal.action.embedDssRevocationEvidence': 'incorporar evidência de revogação no DSS',
+  'signing.evidence.renewal.action.addSignatureTimestamp':
+    'adicionar carimbo de tempo à assinatura',
+  'signing.evidence.renewal.action.embedDssRevocationEvidence':
+    'incorporar evidência de revogação no DSS',
   'signing.evidence.renewal.action.recordDssValidationTime': 'registrar hora de validação do DSS',
   'signing.evidence.renewal.action.addDocumentTimestamp': 'adicionar carimbo de tempo ao documento',
   'signing.evidence.renewal.action.recordSignatureDssValidationTime':
@@ -2738,7 +2789,8 @@ export const ptBR: Catalog = {
     'A Chancela não realiza validação na Lista de Confiança neste fluxo.',
   'signing.official.guardrails.qualified':
     'A Chancela não reivindica estado qualificado para esta importação.',
-  'signing.official.guardrails.legal': 'A Chancela não reivindica conclusão jurídica para esta importação.',
+  'signing.official.guardrails.legal':
+    'A Chancela não reivindica conclusão jurídica para esta importação.',
   'signing.official.guardrails.noSecret':
     'Este fluxo não coleta PINs, OTPs, CANs, credenciais, tokens ou senhas.',
   'signing.official.ack.label':
@@ -2924,7 +2976,8 @@ export const ptBR: Catalog = {
   'data.status.usage.sqliteAverage': 'Média: {bytes}/linha',
   'data.status.usage.sqliteAverageUnavailable': 'Média: —',
   'data.status.usage.sqliteEstimateMethod.localLoadedPayload':
-    'Método: estimativa local da carga carregada',  'data.status.usage.empty': 'Sem dados reportados.',
+    'Método: estimativa local da carga carregada',
+  'data.status.usage.empty': 'Sem dados reportados.',
   'data.status.basis.filesystem': 'arquivos',
   'data.status.basis.sqlite_file': 'arquivo SQLite',
   'data.status.basis.sqlite_logical_payload': 'payload SQLite lógico',
@@ -3244,7 +3297,8 @@ export const ptBR: Catalog = {
   'settings.apiKeys.revokedToast': 'Chave de API revogada.',
   'settings.apiKeys.rotatedToast': 'Chave API girada.',
   'settings.apiKeys.empty': 'Sem chaves de API',
-  'settings.apiKeys.emptyBody': 'Crie uma chave para permitir acesso de integração com autenticação Bearer.',
+  'settings.apiKeys.emptyBody':
+    'Crie uma chave para permitir acesso de integração com autenticação Bearer.',
   'settings.apiKeys.secret.title': 'Salve este segredo agora',
   'settings.apiKeys.secret.body':
     'O segredo completo é mostrado apenas nesta criação. Depois de fechar este aviso, apenas o prefixo e os metadados permanecem disponíveis.',
@@ -3442,7 +3496,8 @@ export const ptBR: Catalog = {
   'documents.import.readError.imported': 'Não foi possível ler o arquivo importado.',
   'documents.import.readError.file': 'Não foi possível ler o arquivo.',
   'documents.import.preflight.title': 'Pré-flight local de conversão canônica',
-  'documents.import.preflight.hint': 'Evidência local de metadados apenas; não converte DOC, não cria PDF/A, não executa OCR, não valida assinaturas, não aciona fornecedores e não declara aceitação legal.',
+  'documents.import.preflight.hint':
+    'Evidência local de metadados apenas; não converte DOC, não cria PDF/A, não executa OCR, não valida assinaturas, não aciona fornecedores e não declara aceitação legal.',
   'documents.import.preflight.notIndicated': 'não indicado',
   'documents.import.preflight.status.blocked': 'bloqueado',
   'documents.import.preflight.status.notAttempted': 'não tentado',
@@ -3462,12 +3517,16 @@ export const ptBR: Catalog = {
   'documents.import.preflight.field.recordReplaced': 'Registro canônico substituído',
   'documents.import.preflight.evidenceObserved': 'Evidência observada',
   'documents.import.preflight.blockers': 'Bloqueios',
-  'documents.import.review.noticeFallback': 'A revisão registra apenas uma decisão de preservação operacional; não executa OCR, não converte bytes, não substitui o PDF/A canônico e não declara aceitação legal.',
-  'documents.import.review.status.reviewedNonCanonical': 'Revisado: original preservado apenas como evidência não canônica',
+  'documents.import.review.noticeFallback':
+    'A revisão registra apenas uma decisão de preservação operacional; não executa OCR, não converte bytes, não substitui o PDF/A canônico e não declara aceitação legal.',
+  'documents.import.review.status.reviewedNonCanonical':
+    'Revisado: original preservado apenas como evidência não canônica',
   'documents.import.review.status.rejected': 'Rejeitado como evidência não canônica',
   'documents.import.review.status.operatorRequired': 'Revisão do operador necessária',
-  'documents.import.review.status.ocrRequired': 'Revisão do operador necessária para imagem preservada',
-  'documents.import.review.status.legacyRequired': 'Revisão do operador necessária para arquivo legado',
+  'documents.import.review.status.ocrRequired':
+    'Revisão do operador necessária para imagem preservada',
+  'documents.import.review.status.legacyRequired':
+    'Revisão do operador necessária para arquivo legado',
   'documents.import.review.status.notIndicated': 'Revisão não indicada',
   'documents.import.review.operatorReview': 'Revisão do operador',
   'documents.import.review.reviewNotice': 'Aviso de revisão',
@@ -3479,9 +3538,11 @@ export const ptBR: Catalog = {
   'documents.import.review.formAria': 'Revisão operacional do documento importado',
   'documents.import.review.conservativeTitle': 'Revisão conservadora',
   'documents.import.review.statusLabel': 'Estado de revisão',
-  'documents.import.review.noteHint': '{count}/{limit} caracteres. Registre apenas a decisão operacional; não declare OCR, conversão ou aceitação legal.',
+  'documents.import.review.noteHint':
+    '{count}/{limit} caracteres. Registre apenas a decisão operacional; não declare OCR, conversão ou aceitação legal.',
   'documents.import.review.guardrailsToAck': 'Limites a reconhecer',
-  'documents.import.review.ackLabel': 'Confirmo que revi estes limites e que a decisão não promove o documento importado a registro canônico, PDF/A substituto, PDF assinado ou aceitação legal.',
+  'documents.import.review.ackLabel':
+    'Confirmo que revi estes limites e que a decisão não promove o documento importado a registro canônico, PDF/A substituto, PDF assinado ou aceitação legal.',
   'documents.import.review.save': 'Salvar revisão',
   'documents.import.review.saving': 'Salvando revisão',
   'documents.import.review.toast.saved': 'Revisão do documento importado salva.',
@@ -3504,20 +3565,24 @@ export const ptBR: Catalog = {
   'documents.import.receipt.notCreated': 'Não criado nem validado por esta revisão.',
   'documents.import.receipt.notClaimed': 'Não declarada por esta revisão.',
   'documents.import.history.title': 'Histórico técnico de revisão',
-  'documents.import.history.empty': 'Sem histórico técnico registrado além dos metadados atuais da revisão.',
+  'documents.import.history.empty':
+    'Sem histórico técnico registrado além dos metadados atuais da revisão.',
   'documents.import.history.decision': 'Decisão',
   'documents.import.history.recordedAt': 'Registrada em',
   'documents.import.history.recordedBy': 'Registrada por',
   'documents.import.history.note': 'Nota histórica',
   'documents.import.history.noAcknowledgedGuardrails': 'Sem limites reconhecidos nesta decisão',
   'documents.import.history.scope': 'Âmbito técnico',
-  'documents.import.history.scopeBody': 'Histórico de revisão metadata-only para evidência não canônica; sem OCR, conversão, substituição de PDF/A, validação de assinatura, carimbo, PDF/UA, certificação ou aceitação legal.',
+  'documents.import.history.scopeBody':
+    'Histórico de revisão metadata-only para evidência não canônica; sem OCR, conversão, substituição de PDF/A, validação de assinatura, carimbo, PDF/UA, certificação ou aceitação legal.',
   'documents.import.depth.aria': 'Resumo de profundidade da revisão importada',
   'documents.import.depth.title': 'Resumo de profundidade da revisão',
   'documents.import.depth.includes': 'Inclui',
   'documents.import.depth.bytesPreserved': 'Bytes preservados ({status})',
-  'documents.import.depth.bytesNotIndicated': 'Preservação dos bytes originais não indicada nos metadados carregados',
-  'documents.import.depth.includesValue': '{bytes}, digest SHA-256, estado de revisão {receipt} e nota do operador {note}. Histórico técnico: {history}.',
+  'documents.import.depth.bytesNotIndicated':
+    'Preservação dos bytes originais não indicada nos metadados carregados',
+  'documents.import.depth.includesValue':
+    '{bytes}, digest SHA-256, estado de revisão {receipt} e nota do operador {note}. Histórico técnico: {history}.',
   'documents.import.depth.recorded': 'registrado',
   'documents.import.depth.pending': 'pendente',
   'documents.import.depth.noteRecorded': 'registrada',
@@ -3528,9 +3593,11 @@ export const ptBR: Catalog = {
   'documents.import.depth.derivedStatus': 'Estado derivado',
   'documents.import.depth.operatorNote': 'Nota do operador',
   'documents.import.depth.excludes': 'Exclui',
-  'documents.import.depth.excludesValue': 'OCR, conversão, substituição de PDF/A, PDF assinado, validação de assinatura, carimbo, PDF/UA e aceitação legal.',
+  'documents.import.depth.excludesValue':
+    'OCR, conversão, substituição de PDF/A, PDF assinado, validação de assinatura, carimbo, PDF/UA e aceitação legal.',
   'documents.import.depth.noClaimFlags': 'Flags sem reivindicação',
-  'documents.import.depth.noClaimFlagsValue': 'OCR: não · conversão: não · PDF/A substituído: não · PDF assinado: não · assinatura: não · carimbo: não · PDF/UA: não · aceitação legal: não.',
+  'documents.import.depth.noClaimFlagsValue':
+    'OCR: não · conversão: não · PDF/A substituído: não · PDF assinado: não · assinatura: não · carimbo: não · PDF/UA: não · aceitação legal: não.',
   'externalInvite.crumbs': 'Assinatura externa',
   'externalInvite.title': 'Convite externo',
   'externalInvite.status.pending': 'Pendente',
@@ -3742,8 +3809,7 @@ export const ptBR: Catalog = {
   'signing.format.scap': 'Atributo profissional (SCAP)',
   'signing.tool.signer.legend': 'Certificado de software (PKCS#12)',
   'signing.tool.signer.file.label': 'Arquivo PKCS#12/PFX',
-  'signing.tool.signer.file.hint':
-    'O certificado é usado apenas para este pedido e nunca é salvo.',
+  'signing.tool.signer.file.hint': 'O certificado é usado apenas para este pedido e nunca é salvo.',
   'signing.tool.signer.passphrase.label': 'Frase secreta',
   'signing.tool.signer.passphrase.hint': 'Usada apenas para este pedido; nunca é salva.',
   'signing.tool.signer.friendlyName.label': 'Nome amigável (opcional)',
@@ -3823,14 +3889,16 @@ export const ptBR: Catalog = {
   'signing.scap.download': 'Baixar assinatura CAdES',
 
   // --- Written-resolution evidence receipts (wp12-e1) ----------------------------
-  'compliance.writtenResolution.review.label': 'Revisão de evidências locais da deliberação por escrito',
+  'compliance.writtenResolution.review.label':
+    'Revisão de evidências locais da deliberação por escrito',
   'compliance.writtenResolution.review.receiptRecorded': 'Comprovante registrado',
   'compliance.writtenResolution.review.receiptMissing': 'Comprovante de revisão ausente',
   'compliance.writtenResolution.review.reviewReceipts': 'Comprovantes de revisão',
   'compliance.writtenResolution.review.reviewedLocators': 'Localizadores revisados',
   'compliance.writtenResolution.review.reviewedDigests': 'Digests revisados',
   'compliance.writtenResolution.review.boundEvidence': 'Evidência vinculada',
-  'compliance.writtenResolution.review.boundary': 'Apenas metadados locais. Não se afirma consentimento, quórum, identidade, suficiência jurídica, validação externa, aprovação automática nem certificação por autoridade.',
+  'compliance.writtenResolution.review.boundary':
+    'Apenas metadados locais. Não se afirma consentimento, quórum, identidade, suficiência jurídica, validação externa, aprovação automática nem certificação por autoridade.',
   'compliance.writtenResolution.status.boundPresent': 'Evidência vinculada presente',
   'compliance.writtenResolution.status.referencedOnly': 'Apenas referenciada',
   'compliance.writtenResolution.status.missing': 'Evidência ausente',
@@ -3840,7 +3908,8 @@ export const ptBR: Catalog = {
   'compliance.writtenResolution.status.notRecorded': 'Não registrado',
   'acts.writtenResolution.card.title': 'Comprovantes de evidência da deliberação por escrito',
   'acts.writtenResolution.history.label': 'Histórico de comprovantes da deliberação por escrito',
-  'acts.writtenResolution.history.empty': 'Nenhum comprovante de revisão da deliberação por escrito registrado.',
+  'acts.writtenResolution.history.empty':
+    'Nenhum comprovante de revisão da deliberação por escrito registrado.',
   'acts.writtenResolution.receipt.reviewedEvidence': 'Evidência revisada',
   'acts.writtenResolution.receipt.notRecorded': 'Não registrado',
   'acts.writtenResolution.receipt.note': 'Nota',
@@ -3854,7 +3923,8 @@ export const ptBR: Catalog = {
   'acts.writtenResolution.field.evidenceReference': 'Referência da evidência',
   'acts.writtenResolution.field.evidenceDigest': 'Digest da evidência',
   'acts.writtenResolution.field.receiptNotes': 'Notas do comprovante',
-  'acts.writtenResolution.guardrail': 'Apenas metadados locais; as afirmações de prova, suficiência jurídica, provedor, autoridade, conclusão, assinatura, selo e arquivamento permanecem falsas.',
+  'acts.writtenResolution.guardrail':
+    'Apenas metadados locais; as afirmações de prova, suficiência jurídica, provedor, autoridade, conclusão, assinatura, selo e arquivamento permanecem falsas.',
   'acts.writtenResolution.submit.recording': 'Registrando comprovante…',
   'acts.writtenResolution.submit.record': 'Registrar comprovante local',
   'acts.writtenResolution.reviewStatusOption.reviewed': 'Metadados locais revisados',
@@ -3863,7 +3933,8 @@ export const ptBR: Catalog = {
   'acts.writtenResolution.status.needsFollowUp': 'Requer acompanhamento',
   'acts.writtenResolution.status.notRecorded': 'Não registrado',
   // --- Field-help tooltips (wp12-e2) ----------------------------------------------
-  'fieldHelp.acts.title': 'Nome curto que identifica a ata nas listas, pré-visualizações e documentos gerados.',
+  'fieldHelp.acts.title':
+    'Nome curto que identifica a ata nas listas, pré-visualizações e documentos gerados.',
   'fieldHelp.acts.channel':
     'Forma como a reunião ocorreu; ativa campos e verificações específicos para reuniões telemáticas ou híbridas.',
   'fieldHelp.acts.meetingDate':
@@ -3894,8 +3965,7 @@ export const ptBR: Catalog = {
     'Ponto tratado na ordem do dia; as deliberações estruturadas podem ficar ligadas a este número.',
   'fieldHelp.acts.deliberationsText':
     'Texto livre da ata. Use-o para a redação integral ou como complemento às deliberações estruturadas.',
-  'fieldHelp.acts.structuredAgenda':
-    'Liga a deliberação ao ponto correspondente da ordem do dia.',
+  'fieldHelp.acts.structuredAgenda': 'Liga a deliberação ao ponto correspondente da ordem do dia.',
   'fieldHelp.acts.structuredText':
     'Registra a deliberação em formato estruturado para reutilização no documento e em acompanhamentos.',
   'fieldHelp.acts.voteMode':
@@ -3916,31 +3986,43 @@ export const ptBR: Catalog = {
   'fieldHelp.acts.signatorySigned':
     'Marca que a pessoa assinou a versão física ou eletrônica aplicável.',
   'fieldHelp.acts.attachmentLabel': 'Descrição curta do anexo associado à ata.',
-  'fieldHelp.acts.attachmentKind': 'Classificação do anexo para o documento e para a prova arquivada.',
-  'fieldHelp.acts.beginningOfProof': 'Assinale quando o anexo deve ser tratado como início de prova.',
+  'fieldHelp.acts.attachmentKind':
+    'Classificação do anexo para o documento e para a prova arquivada.',
+  'fieldHelp.acts.beginningOfProof':
+    'Assinale quando o anexo deve ser tratado como início de prova.',
   'fieldHelp.entities.nipc':
     'Número de identificação da entidade. Use 9 dígitos portugueses; ative a opção sem validação apenas quando aplicável.',
-  'fieldHelp.entities.seat': 'Endereço ou localidade da sede usada nos livros e documentos desta entidade.',
+  'fieldHelp.entities.seat':
+    'Endereço ou localidade da sede usada nos livros e documentos desta entidade.',
   'fieldHelp.entities.legalForm':
     'Tipo de entidade que escolhe a família de regras, livros e modelos aplicáveis.',
-  'fieldHelp.entities.fiscalYearEnd': 'Dia de fechamento do exercício no formato MM-DD; em branco usa 12-31.',
-  'fieldHelp.entities.statuteQuorum': 'Valor operacional usado para avisos de conformidade sobre presenças.',
-  'fieldHelp.entities.statuteMajority': 'Fração usada para avisos de conformidade sobre deliberações.',
-  'fieldHelp.entities.statuteNotice': 'Dias mínimos usados para avisos de antecedência da convocação.',
+  'fieldHelp.entities.fiscalYearEnd':
+    'Dia de fechamento do exercício no formato MM-DD; em branco usa 12-31.',
+  'fieldHelp.entities.statuteQuorum':
+    'Valor operacional usado para avisos de conformidade sobre presenças.',
+  'fieldHelp.entities.statuteMajority':
+    'Fração usada para avisos de conformidade sobre deliberações.',
+  'fieldHelp.entities.statuteNotice':
+    'Dias mínimos usados para avisos de antecedência da convocação.',
   'fieldHelp.registry.accessCode':
     'Código de 12 dígitos que permite consultar a certidão; é enviado apenas para esta consulta e não é armazenado.',
-  'fieldHelp.registry.email': 'Enviado apenas quando o serviço do registro o solicitar para abrir a certidão.',
+  'fieldHelp.registry.email':
+    'Enviado apenas quando o serviço do registro o solicitar para abrir a certidão.',
   'fieldHelp.registry.firma': 'Nome da entidade tal como veio da certidão importada.',
   'fieldHelp.registry.nipc': 'Identificador NIPC extraído da certidão, quando presente.',
   'fieldHelp.registry.legalForm': 'Natureza ou forma jurídica normalizada a partir da certidão.',
   'fieldHelp.registry.matricula': 'Referência de matrícula indicada no registro comercial.',
-  'fieldHelp.registry.sede': 'Sede extraída da certidão; pode ser texto livre ou endereço estruturado.',
-  'fieldHelp.registry.dataConstituicao': 'Data de constituição extraída da certidão, quando disponível.',
+  'fieldHelp.registry.sede':
+    'Sede extraída da certidão; pode ser texto livre ou endereço estruturado.',
+  'fieldHelp.registry.dataConstituicao':
+    'Data de constituição extraída da certidão, quando disponível.',
   'fieldHelp.registry.capital': 'Capital impresso na certidão, sem cálculo adicional.',
-  'fieldHelp.registry.objeto': 'Objeto ou finalidade registrada conforme texto importado da certidão.',
+  'fieldHelp.registry.objeto':
+    'Objeto ou finalidade registrada conforme texto importado da certidão.',
   'fieldHelp.registry.cae':
     'Atividades econômicas da certidão, enriquecidas pelo catálogo CAE quando possível.',
-  'fieldHelp.registry.accessCodeMasked': 'Código ocultado para auditoria; o valor completo nunca é mostrado.',
+  'fieldHelp.registry.accessCodeMasked':
+    'Código ocultado para auditoria; o valor completo nunca é mostrado.',
   'fieldHelp.registry.retrievedAt': 'Momento em que esta consulta foi executada.',
   'fieldHelp.registry.conservatoria': 'Cartório de registro indicado no documento importado.',
   'fieldHelp.registry.oficial': 'Oficial indicado no documento importado.',
@@ -3950,84 +4032,99 @@ export const ptBR: Catalog = {
   'fieldHelp.registry.digest': 'SHA-256 do HTML importado, para comparar o documento original.',
   'fieldHelp.registry.naturezaJuridica':
     'Natureza jurídica tal como foi lida na inscrição da certidão.',
-  'fieldHelp.registry.fiscalYearEnd': 'Fechamento do exercício indicado na inscrição, quando presente.',
+  'fieldHelp.registry.fiscalYearEnd':
+    'Fechamento do exercício indicado na inscrição, quando presente.',
   'fieldHelp.registry.capitalRealization': 'Nota de realização do capital transcrita da certidão.',
-  'fieldHelp.registry.deliberationDate': 'Data da deliberação indicada na inscrição, quando presente.',
+  'fieldHelp.registry.deliberationDate':
+    'Data da deliberação indicada na inscrição, quando presente.',
   'fieldHelp.registry.formaObrigar': 'Texto importado sobre quem obriga a entidade.',
-  "settings.providerCredentials.cardTitle": "Provedores de assinatura",
-  "settings.providerCredentials.lede": "Gerencie as credenciais dos provedores de assinatura, com várias chaves por provedor, prioridade e alternância automática.",
-  "settings.providerCredentials.newEntry": "Nova entrada",
-  "settings.providerCredentials.empty": "Sem credenciais de provedor",
-  "settings.providerCredentials.emptyBody": "Ainda não há nenhuma credencial armazenada. Adicione uma entrada para começar.",
-  "settings.providerCredentials.protection.confidential.title": "Armazenamento confidencial",
-  "settings.providerCredentials.protection.confidential.body": "As credenciais são criptografadas com proteção confidencial em repouso.",
-  "settings.providerCredentials.protection.obfuscation.title": "Ofuscação — defesa em profundidade",
-  "settings.providerCredentials.protection.obfuscation.body": "As credenciais são criptografadas, mas isto não é confidencialidade total enquanto você não ativar o SQLCipher ou o selamento do sistema operacional.",
-  "settings.providerCredentials.protection.strictBlocked": "O modo estrito está ativo: você só pode salvar credenciais depois de ativar uma proteção confidencial.",
-  "settings.providerCredentials.mode.cmd": "Chave Móvel Digital (CMD)",
-  "settings.providerCredentials.mode.csc": "QTSP CSC",
-  "settings.providerCredentials.mode.scap": "SCAP (AMA)",
-  "settings.providerCredentials.mode.pkcs12": "PKCS#12 local",
-  "settings.providerCredentials.createdToast": "Entrada criada.",
-  "settings.providerCredentials.updatedToast": "Entrada atualizada.",
-  "settings.providerCredentials.deletedToast": "Entrada removida.",
-  "settings.providerCredentials.reorderedToast": "Ordem atualizada.",
-  "settings.providerCredentials.failoverHint": "As entradas são tentadas por ordem de prioridade; as seguintes são usadas quando uma anterior está inacessível.",
-  "settings.providerCredentials.provider.addEntry": "Adicionar entrada",
-  "settings.providerCredentials.provider.noEntries": "Sem entradas para este provedor.",
-  "settings.providerCredentials.entry.unlabeled": "Entrada sem rótulo",
-  "settings.providerCredentials.entry.priority": "Prioridade {priority}",
-  "settings.providerCredentials.entry.enabled": "Ativa",
-  "settings.providerCredentials.entry.disabled": "Desativada",
-  "settings.providerCredentials.entry.moveUp": "Subir prioridade",
-  "settings.providerCredentials.entry.moveDown": "Descer prioridade",
-  "settings.providerCredentials.entry.edit": "Editar",
-  "settings.providerCredentials.entry.noFields": "Sem campos configurados",
-  "settings.providerCredentials.entry.configured": "configurado",
-  "settings.providerCredentials.entry.deleteConfirm.title": "Remover entrada",
-  "settings.providerCredentials.entry.deleteConfirm.intro": "Você vai remover a entrada «{label}». Esta ação não pode ser desfeita.",
-  "settings.providerCredentials.entry.deleteConfirm.confirm": "Remover entrada",
-  "settings.providerCredentials.entry.deleteConfirm.pending": "Removendo…",
-  "settings.providerCredentials.form.newEntry": "Nova entrada",
-  "settings.providerCredentials.form.editEntry": "Editar entrada",
-  "settings.providerCredentials.form.mode": "Tipo de provedor",
-  "settings.providerCredentials.form.providerId": "Identificador do provedor",
-  "settings.providerCredentials.form.providerIdHint": "Identificador do QTSP (CSC) ou rótulo da identidade (PKCS#12).",
-  "settings.providerCredentials.form.label": "Rótulo",
-  "settings.providerCredentials.form.labelPlaceholder": "Chave primária",
-  "settings.providerCredentials.form.enabled": "Entrada ativa",
-  "settings.providerCredentials.form.endpoint": "Endereço (base_url)",
-  "settings.providerCredentials.form.endpointHint": "Substituição do endereço base para este provedor.",
-  "settings.providerCredentials.form.pfxWarning.title": "Chave privada em repouso",
-  "settings.providerCredentials.form.pfxWarning.body": "Salvar um arquivo PKCS#12 significa guardar uma chave de assinatura privada em repouso. Prefira uma proteção confidencial.",
-  "settings.providerCredentials.form.pfxHint": "Selecione o arquivo .pfx/.p12; os bytes são codificados no cliente.",
-  "settings.providerCredentials.form.pfxReplaceHint": "Selecione um arquivo só para substituir o atual; deixe vazio para manter.",
-  "settings.providerCredentials.form.secretHint": "Os segredos só podem ser gravados e nunca são retornados. Deixe um campo vazio para mantê-lo inalterado.",
-  "settings.providerCredentials.form.keepFieldHint": "Deixe vazio para manter o valor atual.",
-  "settings.providerCredentials.form.submit": "Salvar",
-  "settings.providerCredentials.form.submitting": "Salvando…",
-  "settings.providerCredentials.field.applicationId": "ID do aplicativo",
-  "settings.providerCredentials.field.httpBasicUsername": "Usuário HTTP Basic",
-  "settings.providerCredentials.field.httpBasicPassword": "Senha HTTP Basic",
-  "settings.providerCredentials.field.amaCertPem": "Certificado AMA (PEM)",
-  "settings.providerCredentials.field.clientId": "Client ID",
-  "settings.providerCredentials.field.clientSecret": "Client secret",
-  "settings.providerCredentials.field.accessToken": "Token de acesso",
-  "settings.providerCredentials.field.secret": "Segredo",
-  "settings.providerCredentials.field.passphrase": "Frase secreta",
-  "settings.providerCredentials.field.env": "Ambiente",
-  "settings.providerCredentials.field.env.unset": "Não definido",
-  "settings.providerCredentials.field.env.preprod": "Pré-produção",
-  "settings.providerCredentials.field.env.prod": "Produção",
-  "settings.providerCredentials.field.authorization": "Autorização",
-  "settings.providerCredentials.field.authorization.unset": "Não definida",
-  "settings.providerCredentials.field.authorization.service": "Serviço",
-  "settings.providerCredentials.field.authorization.user": "Usuário",
-  "settings.providerCredentials.field.credentialId": "ID da credencial",
-  "settings.providerCredentials.field.scope": "Escopo (scope)",
-  "settings.providerCredentials.field.sandbox": "Ambiente de testes (sandbox)",
-  "settings.providerCredentials.field.environment": "Ambiente",
-  "settings.providerCredentials.field.friendlyName": "Nome amigável",
-  "settings.providerCredentials.field.localKeyId": "Local key ID (hex)",
-  "settings.providerCredentials.field.pfx": "Arquivo PKCS#12/PFX",
+  'settings.providerCredentials.cardTitle': 'Provedores de assinatura',
+  'settings.providerCredentials.lede':
+    'Gerencie as credenciais dos provedores de assinatura, com várias chaves por provedor, prioridade e alternância automática.',
+  'settings.providerCredentials.newEntry': 'Nova entrada',
+  'settings.providerCredentials.empty': 'Sem credenciais de provedor',
+  'settings.providerCredentials.emptyBody':
+    'Ainda não há nenhuma credencial armazenada. Adicione uma entrada para começar.',
+  'settings.providerCredentials.protection.confidential.title': 'Armazenamento confidencial',
+  'settings.providerCredentials.protection.confidential.body':
+    'As credenciais são criptografadas com proteção confidencial em repouso.',
+  'settings.providerCredentials.protection.obfuscation.title': 'Ofuscação — defesa em profundidade',
+  'settings.providerCredentials.protection.obfuscation.body':
+    'As credenciais são criptografadas, mas isto não é confidencialidade total enquanto você não ativar o SQLCipher ou o selamento do sistema operacional.',
+  'settings.providerCredentials.protection.strictBlocked':
+    'O modo estrito está ativo: você só pode salvar credenciais depois de ativar uma proteção confidencial.',
+  'settings.providerCredentials.mode.cmd': 'Chave Móvel Digital (CMD)',
+  'settings.providerCredentials.mode.csc': 'QTSP CSC',
+  'settings.providerCredentials.mode.scap': 'SCAP (AMA)',
+  'settings.providerCredentials.mode.pkcs12': 'PKCS#12 local',
+  'settings.providerCredentials.createdToast': 'Entrada criada.',
+  'settings.providerCredentials.updatedToast': 'Entrada atualizada.',
+  'settings.providerCredentials.deletedToast': 'Entrada removida.',
+  'settings.providerCredentials.reorderedToast': 'Ordem atualizada.',
+  'settings.providerCredentials.failoverHint':
+    'As entradas são tentadas por ordem de prioridade; as seguintes são usadas quando uma anterior está inacessível.',
+  'settings.providerCredentials.provider.addEntry': 'Adicionar entrada',
+  'settings.providerCredentials.provider.noEntries': 'Sem entradas para este provedor.',
+  'settings.providerCredentials.entry.unlabeled': 'Entrada sem rótulo',
+  'settings.providerCredentials.entry.priority': 'Prioridade {priority}',
+  'settings.providerCredentials.entry.enabled': 'Ativa',
+  'settings.providerCredentials.entry.disabled': 'Desativada',
+  'settings.providerCredentials.entry.moveUp': 'Subir prioridade',
+  'settings.providerCredentials.entry.moveDown': 'Descer prioridade',
+  'settings.providerCredentials.entry.edit': 'Editar',
+  'settings.providerCredentials.entry.noFields': 'Sem campos configurados',
+  'settings.providerCredentials.entry.configured': 'configurado',
+  'settings.providerCredentials.entry.deleteConfirm.title': 'Remover entrada',
+  'settings.providerCredentials.entry.deleteConfirm.intro':
+    'Você vai remover a entrada «{label}». Esta ação não pode ser desfeita.',
+  'settings.providerCredentials.entry.deleteConfirm.confirm': 'Remover entrada',
+  'settings.providerCredentials.entry.deleteConfirm.pending': 'Removendo…',
+  'settings.providerCredentials.form.newEntry': 'Nova entrada',
+  'settings.providerCredentials.form.editEntry': 'Editar entrada',
+  'settings.providerCredentials.form.mode': 'Tipo de provedor',
+  'settings.providerCredentials.form.providerId': 'Identificador do provedor',
+  'settings.providerCredentials.form.providerIdHint':
+    'Identificador do QTSP (CSC) ou rótulo da identidade (PKCS#12).',
+  'settings.providerCredentials.form.label': 'Rótulo',
+  'settings.providerCredentials.form.labelPlaceholder': 'Chave primária',
+  'settings.providerCredentials.form.enabled': 'Entrada ativa',
+  'settings.providerCredentials.form.endpoint': 'Endereço (base_url)',
+  'settings.providerCredentials.form.endpointHint':
+    'Substituição do endereço base para este provedor.',
+  'settings.providerCredentials.form.pfxWarning.title': 'Chave privada em repouso',
+  'settings.providerCredentials.form.pfxWarning.body':
+    'Salvar um arquivo PKCS#12 significa guardar uma chave de assinatura privada em repouso. Prefira uma proteção confidencial.',
+  'settings.providerCredentials.form.pfxHint':
+    'Selecione o arquivo .pfx/.p12; os bytes são codificados no cliente.',
+  'settings.providerCredentials.form.pfxReplaceHint':
+    'Selecione um arquivo só para substituir o atual; deixe vazio para manter.',
+  'settings.providerCredentials.form.secretHint':
+    'Os segredos só podem ser gravados e nunca são retornados. Deixe um campo vazio para mantê-lo inalterado.',
+  'settings.providerCredentials.form.keepFieldHint': 'Deixe vazio para manter o valor atual.',
+  'settings.providerCredentials.form.submit': 'Salvar',
+  'settings.providerCredentials.form.submitting': 'Salvando…',
+  'settings.providerCredentials.field.applicationId': 'ID do aplicativo',
+  'settings.providerCredentials.field.httpBasicUsername': 'Usuário HTTP Basic',
+  'settings.providerCredentials.field.httpBasicPassword': 'Senha HTTP Basic',
+  'settings.providerCredentials.field.amaCertPem': 'Certificado AMA (PEM)',
+  'settings.providerCredentials.field.clientId': 'Client ID',
+  'settings.providerCredentials.field.clientSecret': 'Client secret',
+  'settings.providerCredentials.field.accessToken': 'Token de acesso',
+  'settings.providerCredentials.field.secret': 'Segredo',
+  'settings.providerCredentials.field.passphrase': 'Frase secreta',
+  'settings.providerCredentials.field.env': 'Ambiente',
+  'settings.providerCredentials.field.env.unset': 'Não definido',
+  'settings.providerCredentials.field.env.preprod': 'Pré-produção',
+  'settings.providerCredentials.field.env.prod': 'Produção',
+  'settings.providerCredentials.field.authorization': 'Autorização',
+  'settings.providerCredentials.field.authorization.unset': 'Não definida',
+  'settings.providerCredentials.field.authorization.service': 'Serviço',
+  'settings.providerCredentials.field.authorization.user': 'Usuário',
+  'settings.providerCredentials.field.credentialId': 'ID da credencial',
+  'settings.providerCredentials.field.scope': 'Escopo (scope)',
+  'settings.providerCredentials.field.sandbox': 'Ambiente de testes (sandbox)',
+  'settings.providerCredentials.field.environment': 'Ambiente',
+  'settings.providerCredentials.field.friendlyName': 'Nome amigável',
+  'settings.providerCredentials.field.localKeyId': 'Local key ID (hex)',
+  'settings.providerCredentials.field.pfx': 'Arquivo PKCS#12/PFX',
 };

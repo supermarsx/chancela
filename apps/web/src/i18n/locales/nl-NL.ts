@@ -202,7 +202,8 @@ export const nlNL: Catalog = {
   'notifications.alert.entity.managerRemuneration.body':
     'Entiteit {entity_name} heeft directie/bestuur in het geïmporteerde register en er zijn nog geen verzegelde notulen over bezoldiging of niet-bezoldiging. Leg het besluit vast wanneer van toepassing.',
   'notifications.alert.entity.managerRemuneration.action': 'Entiteit openen',
-  'notifications.alert.entity.administratorRemuneration.title': 'Bezoldiging van de bestuurders instellen',
+  'notifications.alert.entity.administratorRemuneration.title':
+    'Bezoldiging van de bestuurders instellen',
   'notifications.alert.entity.administratorRemuneration.body':
     'Entiteit {entity_name} heeft bestuurders in het geïmporteerde register en er zijn nog geen verzegelde notulen over bezoldiging of niet-bezoldiging. Leg het besluit vast wanneer van toepassing.',
   'notifications.alert.entity.administratorRemuneration.action': 'Entiteit openen',
@@ -233,7 +234,8 @@ export const nlNL: Catalog = {
   'notifications.reminder.annual.csc.title': 'Jaarlijkse algemene vergadering in behandeling',
   'notifications.reminder.annual.assoc.title': 'Jaarlijkse algemene vergadering in behandeling',
   'notifications.reminder.annual.fundacao.title': 'Jaarlijkse evaluatie in behandeling',
-  'notifications.reminder.annual.cooperativa.title': 'Jaarlijkse algemene vergadering in behandeling',
+  'notifications.reminder.annual.cooperativa.title':
+    'Jaarlijkse algemene vergadering in behandeling',
   'notifications.reminder.annual.body':
     'Er zijn geen verzegelde of gearchiveerde jaarlijkse notulen voor {entity_name} tegen {due_date}. Deze herinnering is adviserend en komt voort uit {source_rule}.',
   'notifications.reminder.annual.action': 'Entiteit openen',
@@ -345,8 +347,7 @@ export const nlNL: Catalog = {
     'Profielagenda: lokale adviesstatus; broncontrole in afwachting',
   'dashboard.profileCalendar.meta.supportedAdvisory':
     'Profielagenda: lokale adviesregel beschikbaar',
-  'dashboard.profileCalendar.meta.unsupportedAdvisory':
-    'Profielagenda: geen lokale adviesregel',
+  'dashboard.profileCalendar.meta.unsupportedAdvisory': 'Profielagenda: geen lokale adviesregel',
   'dashboard.profileCalendar.meta.unknownAdvisory':
     'Profielagenda: lokale adviesstatus te bevestigen',
   'dashboard.workQueue.integrity.badge': 'Integriteit',
@@ -476,7 +477,8 @@ export const nlNL: Catalog = {
   'entities.filters.activityKind.all': 'Elke wijziging',
   'entities.filters.activityKind.none': 'Zonder wijziging',
   'entities.filters.empty.title': 'Geen resultaten',
-  'entities.filters.empty.body': 'Pas de zoekopdracht of de filters aan om weer entiteiten te zien.',
+  'entities.filters.empty.body':
+    'Pas de zoekopdracht of de filters aan om weer entiteiten te zien.',
   'entities.identificationCard': 'Identificatie',
   'entities.field.nipc': 'NIPC',
   'entities.field.seat': 'Statutaire zetel',
@@ -749,8 +751,7 @@ export const nlNL: Catalog = {
   'books.detail.ocrDossier.createSectionLabel': 'OCR-conversiedossier maken voor {id}',
   'books.detail.ocrSummary.sectionLabel':
     'Samenvatting van OCR-diepte en dossier van het papieren boek',
-  'books.detail.preflight.sectionLabel':
-    'Lokaal OCR/canoniek rapport van import {id}',
+  'books.detail.preflight.sectionLabel': 'Lokaal OCR/canoniek rapport van import {id}',
   'books.detail.preflight.metadataOnlyTitle': 'Alleen metadata, alleen-lezen, niet-canoniek',
   'books.detail.ocrDraft.sectionLabel': 'OCR-concepten van import {id}',
   'books.detail.ocrDraft.reviewTitle': 'OCR-concepten en aanvullende controle',
@@ -861,7 +862,8 @@ export const nlNL: Catalog = {
     'De referentie van het ondertekende origineel mag geen controletekens bevatten.',
   'acts.manualSignature.originalReference.displayLabel': 'Ondertekend origineel',
   'acts.manualSignature.custodian.label': 'Bewaarder',
-  'acts.manualSignature.custodian.hint': 'Verantwoordelijke persoon, team of dienst, indien van toepassing.',
+  'acts.manualSignature.custodian.hint':
+    'Verantwoordelijke persoon, team of dienst, indien van toepassing.',
   'acts.manualSignature.custodian.displayLabel': 'Bewaarder',
   'acts.manualSignature.note.label': 'Notitie',
   'acts.manualSignature.note.hint': 'Optionele lokale context; leg geen juridische validatie vast.',
@@ -1176,7 +1178,8 @@ export const nlNL: Catalog = {
   'pdfValidator.action.pending': 'Valideren…',
   'pdfValidator.report.copyJson': 'JSON kopiëren',
   'pdfValidator.report.saveJson': 'JSON opslaan',
-  'pdfValidator.report.status': 'Lokaal bewijs-JSON-rapport beschikbaar om te kopiëren of op te slaan.',
+  'pdfValidator.report.status':
+    'Lokaal bewijs-JSON-rapport beschikbaar om te kopiëren of op te slaan.',
   'pdfValidator.report.copyFailed': 'Kon het rapport niet kopiëren.',
   'pdfValidator.failClosed.title': 'Validatie geweigerd',
   'pdfValidator.failClosed.body':
@@ -1302,7 +1305,8 @@ export const nlNL: Catalog = {
   'externalValidatorReports.rawFile.digestUnavailable':
     'Kon SHA-256 niet berekenen in deze browser.',
   'externalValidatorReports.rawFile.empty': 'Het geselecteerde ruwe rapport is leeg.',
-  'externalValidatorReports.rawFile.tooLarge': 'Het ruwe rapport overschrijdt de lokale limiet van {max}.',
+  'externalValidatorReports.rawFile.tooLarge':
+    'Het ruwe rapport overschrijdt de lokale limiet van {max}.',
   'externalValidatorReports.rawFile.summaryTitle': 'Geselecteerd ruw rapport',
   'externalValidatorReports.rawFile.filename': 'Bestandsnaam',
   'externalValidatorReports.rawFile.provenance': 'Herkomst',
@@ -1525,7 +1529,8 @@ export const nlNL: Catalog = {
     'validate_signature_bundle is alleen technisch bewijs, geen juridische claim van een gekwalificeerde handtekening.',
   'settings.platform.loading': 'Platformdiensten laden…',
   'settings.platform.empty.title': 'Geen diensten',
-  'settings.platform.empty.body': 'De backend heeft geen configureerbare platformdiensten geretourneerd.',
+  'settings.platform.empty.body':
+    'De backend heeft geen configureerbare platformdiensten geretourneerd.',
   'settings.platform.service.app': 'Applicatie',
   'settings.platform.service.api': 'API-server',
   'settings.platform.service.mcp_stdio': 'MCP-stdio-server',
@@ -1620,13 +1625,16 @@ export const nlNL: Catalog = {
   'settings.platform.logs.context.empty': 'Geen context',
   'settings.reminders.cardTitle': 'Dashboardherinneringen',
   'settings.reminders.enabled.label': 'Lokale herinneringen genereren',
-  'settings.reminders.note': 'Lokaal en adviserend beleid; het plant geen externe agenda’s en verklaart geen juridische toereikendheid.',
+  'settings.reminders.note':
+    'Lokaal en adviserend beleid; het plant geen externe agenda’s en verklaart geen juridische toereikendheid.',
   'settings.reminders.dashboardLimit.label': 'Dashboardlimiet',
-  'settings.reminders.dashboardLimit.hint': 'Maximaal aantal herinneringskaarten dat het dashboard teruggeeft.',
+  'settings.reminders.dashboardLimit.hint':
+    'Maximaal aantal herinneringskaarten dat het dashboard teruggeeft.',
   'settings.reminders.dueSoon.label': 'Binnenkort verschuldigd',
   'settings.reminders.dueSoon.hint': 'Dagen tot de vervaldatum om als binnenkort te classificeren.',
   'settings.reminders.attendanceLookahead.label': 'Aanwezigheidsvenster',
-  'settings.reminders.attendanceLookahead.hint': 'Toekomstige dagen die worden gescand op akten met onvolledige aanwezigheid.',
+  'settings.reminders.attendanceLookahead.hint':
+    'Toekomstige dagen die worden gescand op akten met onvolledige aanwezigheid.',
   'settings.reminders.sources.title': 'Bronnen',
   'settings.reminders.sources.aria': 'Bronnen van dashboardherinneringen',
   'settings.reminders.sources.profileCalendar': 'Profielagenda',
@@ -1634,21 +1642,29 @@ export const nlNL: Catalog = {
   'settings.reminders.sources.attendanceHygiene': 'Aanwezigheidshygiëne',
   'settings.reminders.sources.privacyReviews': 'Privacybeoordelingen',
   'settings.retainedExportCleanup.cardTitle': 'Opschoningsbeleid voor bewaarde exports',
-  'settings.retainedExportCleanup.note': 'Standaardwaarden die alleen worden gebruikt in de voorbeeldweergave voor het opschonen van bewaarde lokale exports. Ze keuren geen wettelijke bewaring, archiefverwijdering, vernietiging of AVG-wissing goed.',
+  'settings.retainedExportCleanup.note':
+    'Standaardwaarden die alleen worden gebruikt in de voorbeeldweergave voor het opschonen van bewaarde lokale exports. Ze keuren geen wettelijke bewaring, archiefverwijdering, vernietiging of AVG-wissing goed.',
   'settings.retainedExportCleanup.minimumAge.label': 'Minimale leeftijd van exports',
-  'settings.retainedExportCleanup.minimumAge.hint': 'Minimaal aantal dagen voordat een bewaarde lokale export in de voorbeeldweergave als in aanmerking komend kan verschijnen.',
+  'settings.retainedExportCleanup.minimumAge.hint':
+    'Minimaal aantal dagen voordat een bewaarde lokale export in de voorbeeldweergave als in aanmerking komend kan verschijnen.',
   'settings.retainedExportCleanup.keepLatest.label': 'Recente exports behouden',
-  'settings.retainedExportCleanup.keepLatest.hint': 'Aantal recentste exportbestanden dat buiten de opschoning blijft, zelfs wanneer ze al oud genoeg zijn.',
+  'settings.retainedExportCleanup.keepLatest.hint':
+    'Aantal recentste exportbestanden dat buiten de opschoning blijft, zelfs wanneer ze al oud genoeg zijn.',
   'settings.backupRecovery.cardTitle': 'Lokaal beleid voor back-upherstel',
-  'settings.backupRecovery.note': 'Door de operator verklaarde doelen voor lokale actualiteitswaarschuwingen van oefeningen. Ze voeren geen herstel uit, wisselen de database niet, bewijzen geen off-site bewaring en certificeren geen RPO/RTO of productieback-upbeleid.',
+  'settings.backupRecovery.note':
+    'Door de operator verklaarde doelen voor lokale actualiteitswaarschuwingen van oefeningen. Ze voeren geen herstel uit, wisselen de database niet, bewijzen geen off-site bewaring en certificeren geen RPO/RTO of productieback-upbeleid.',
   'settings.backupRecovery.maxDrillAge.label': 'Maximale oefeningsleeftijd',
-  'settings.backupRecovery.maxDrillAge.hint': 'Maximaal aantal dagen voordat het laatste geverifieerde oefeningsbewijs als verouderd verschijnt.',
+  'settings.backupRecovery.maxDrillAge.hint':
+    'Maximaal aantal dagen voordat het laatste geverifieerde oefeningsbewijs als verouderd verschijnt.',
   'settings.backupRecovery.targetRpo.label': 'Doel-RPO',
-  'settings.backupRecovery.targetRpo.hint': 'Verklaarde minuten voor het lokale doel van maximaal gegevensverlies.',
+  'settings.backupRecovery.targetRpo.hint':
+    'Verklaarde minuten voor het lokale doel van maximaal gegevensverlies.',
   'settings.backupRecovery.targetRto.label': 'Doel-RTO',
-  'settings.backupRecovery.targetRto.hint': 'Verklaarde minuten voor het lokale doel van maximale hersteltijd.',
+  'settings.backupRecovery.targetRto.hint':
+    'Verklaarde minuten voor het lokale doel van maximale hersteltijd.',
   'settings.entityTable.title': 'Entiteitentabel',
-  'settings.entityTable.hint': 'Kies de zichtbare kolommen in de lijst van geregistreerde entiteiten.',
+  'settings.entityTable.hint':
+    'Kies de zichtbare kolommen in de lijst van geregistreerde entiteiten.',
   'settings.entityTable.columns.aria': 'Kolommen van de entiteitentabel',
   'settings.registryAutoUpdate.cardTitle': 'Automatische bijwerking van permanent uittreksel',
   'settings.registryAutoUpdate.refreshPlan': 'Plan vernieuwen',
@@ -1733,7 +1749,8 @@ export const nlNL: Catalog = {
   'settings.registryAutoUpdate.table.retrieved': 'Laatste raadpleging',
   'settings.registryAutoUpdate.table.status': 'Status',
   'settings.registryAutoUpdate.table.action': 'Actie',
-  'settings.registryAutoUpdate.dueReason': '{age} u sinds laatste raadpleging; drempel {threshold} u.',
+  'settings.registryAutoUpdate.dueReason':
+    '{age} u sinds laatste raadpleging; drempel {threshold} u.',
   'settings.registryAutoUpdate.dueReasonUnknown': 'Geen betrouwbare raadpleegdatum.',
   'settings.registryAutoUpdate.attempt.button': 'Poging aanvragen',
   'settings.registryAutoUpdate.attempt.pending': 'Aanvragen…',
@@ -1765,12 +1782,14 @@ export const nlNL: Catalog = {
   'settings.privacy.form.edit': 'Record bewerken',
   'settings.privacy.form.new': 'Nieuw record',
   'settings.privacy.listHint': 'Eén invoer per regel of gescheiden door komma’s.',
-  'settings.privacy.listHintOptional': 'Optioneel. Eén invoer per regel of gescheiden door komma’s.',
+  'settings.privacy.listHintOptional':
+    'Optioneel. Eén invoer per regel of gescheiden door komma’s.',
   'settings.privacy.filter.search': 'Zoeken',
   'settings.privacy.empty.title': 'Geen records',
   'settings.privacy.empty.body': 'Er zijn nog geen records in dit privacygebied.',
   'settings.privacy.emptyResults.title': 'Geen resultaten',
-  'settings.privacy.emptyResults.body': 'Wijzig de zoekopdracht of filters om weer records te zien.',
+  'settings.privacy.emptyResults.body':
+    'Wijzig de zoekopdracht of filters om weer records te zien.',
   'settings.privacy.table.action': 'Actie',
   'settings.privacy.toast.created': 'Privacyrecord aangemaakt.',
   'settings.privacy.toast.updated': 'Privacyrecord bijgewerkt.',
@@ -1792,8 +1811,7 @@ export const nlNL: Catalog = {
   'settings.privacy.transfer.title': 'Doorgiftemaatregelen',
   'settings.privacy.transfer.lede':
     'Registreer maatregelen die op gegevensdoorgiften worden toegepast, inclusief ontvangers, mechanismen en waarborgen.',
-  'settings.privacy.transfer.searchPlaceholder':
-    'Naam, ontvanger, land, mechanisme of waarborg',
+  'settings.privacy.transfer.searchPlaceholder': 'Naam, ontvanger, land, mechanisme of waarborg',
   'settings.privacy.transfer.field.name': 'Naam van de maatregel',
   'settings.privacy.transfer.field.purpose': 'Doel',
   'settings.privacy.transfer.field.legalBasis': 'Rechtsgrond',
@@ -1853,7 +1871,8 @@ export const nlNL: Catalog = {
   'settings.privacy.retention.dryRun.executionSupported': 'uitvoering ondersteund',
   'settings.privacy.retention.dryRun.candidate': 'Kandidaat',
   'settings.privacy.retention.dryRun.empty.title': 'Geen overeenkomsten',
-  'settings.privacy.retention.dryRun.empty.body': 'Geen actief beleid kwam overeen met de kandidaat.',
+  'settings.privacy.retention.dryRun.empty.body':
+    'Geen actief beleid kwam overeen met de kandidaat.',
   'settings.privacy.retention.dryRun.column.result': 'Resultaat',
   'settings.privacy.register.field.processorName': 'Naam van de verwerker',
   'settings.privacy.register.field.dpiaTitle': 'DPIA-titel',
@@ -2442,6 +2461,46 @@ export const nlNL: Catalog = {
   'signing.signed.timestampAbsent': 'Afwezig',
   'signing.signed.digest': 'Vingerafdruk van ondertekende PDF',
   'signing.download': 'Ondertekende PDF downloaden',
+  'signing.technicalComparison.aria':
+    'Local technical comparison between sealed act and signed PDF',
+  'signing.technicalComparison.kicker': 'Technical comparison',
+  'signing.technicalComparison.title': 'Local metadata for the sealed act and signed PDF',
+  'signing.technicalComparison.summary.aria': 'Local technical comparison summary',
+  'signing.technicalComparison.badge.local': 'Local metadata only',
+  'signing.technicalComparison.badge.noClaim': 'No claim',
+  'signing.technicalComparison.status.match': 'Metadata match',
+  'signing.technicalComparison.status.present': 'Supplied',
+  'signing.technicalComparison.status.partial': 'Partial',
+  'signing.technicalComparison.status.unavailable': 'Unavailable',
+  'signing.technicalComparison.status.mismatch': 'Mismatch',
+  'signing.technicalComparison.status.notClaimed': 'Not claimed',
+  'signing.technicalComparison.status.loading': 'Loading',
+  'signing.technicalComparison.row.actId': 'Act ID',
+  'signing.technicalComparison.row.sealedPayloadDigest': 'Sealed payload digest',
+  'signing.technicalComparison.row.canonicalPdfDigest': 'Canonical PDF digest',
+  'signing.technicalComparison.row.signedPdfDigest': 'Signed PDF digest',
+  'signing.technicalComparison.row.signedDocument': 'Signed document',
+  'signing.technicalComparison.row.signatureMetadata': 'Signature family/status',
+  'signing.technicalComparison.row.bundleFixity': 'Bundle fixity flags',
+  'signing.technicalComparison.detail.act': 'Act',
+  'signing.technicalComparison.detail.bundle': 'Bundle',
+  'signing.technicalComparison.detail.document': 'Document',
+  'signing.technicalComparison.detail.signature': 'Signature',
+  'signing.technicalComparison.detail.report': 'Report',
+  'signing.technicalComparison.detail.fixity': 'Fixity',
+  'signing.technicalComparison.detail.metadataFlag': 'Metadata flag',
+  'signing.technicalComparison.detail.status': 'Status',
+  'signing.technicalComparison.detail.signedAt': 'Recorded at',
+  'signing.technicalComparison.detail.documentId': 'Document ID',
+  'signing.technicalComparison.detail.download': 'Download',
+  'signing.technicalComparison.detail.attachments': 'Attachments',
+  'signing.technicalComparison.detail.present': 'present',
+  'signing.technicalComparison.detail.notSupplied': 'not supplied',
+  'signing.technicalComparison.detail.withoutDigest': 'without digest',
+  'signing.technicalComparison.bundleUnavailable':
+    'The document bundle is not loaded or did not supply a local validation report.',
+  'signing.technicalComparison.noClaim':
+    'Technical metadata review aid only: it does not read raw PDFs, recompute digests, validate trust, mutate archives, record reviewer notes, or decide legal validity, signature qualification, source certification, provider assurance, or external validation.',
   'signing.signed.qualifiedLabelCc': 'Gekwalificeerde elektronische handtekening (Burgerkaart).',
   'signing.cc.start': 'Ondertekenen met Burgerkaart',
   'signing.cc.prompt.title': 'Ondertekenen met de Burgerkaart',
@@ -2480,7 +2539,8 @@ export const nlNL: Catalog = {
   'signing.ccBatch.source.current': 'Huidige notulen',
   'signing.ccBatch.source.manual': 'Toegevoegd via ID',
   'signing.ccBatch.selection.count': '{count} van {max} geselecteerd',
-  'signing.ccBatch.selection.needMore': 'Selecteer minstens twee notulen om batch-ondertekening te gebruiken.',
+  'signing.ccBatch.selection.needMore':
+    'Selecteer minstens twee notulen om batch-ondertekening te gebruiken.',
   'signing.ccBatch.add.label': 'Notulen-ID',
   'signing.ccBatch.add.hint':
     'Voeg ID’s van verzegelde notulen toe wanneer deze weergave geen lijst met meerdere documenten biedt.',
@@ -2492,7 +2552,8 @@ export const nlNL: Catalog = {
   'signing.ccBatch.capacity.hint':
     'Optioneel. Alleen door de operator verklaard bewijs; geen SCAP- of autoriteitsverificatie.',
   'signing.ccBatch.actor.label': 'Actor',
-  'signing.ccBatch.actor.hint': 'Optioneel. Wordt alleen als het actor-veld voor dit verzoek verzonden.',
+  'signing.ccBatch.actor.hint':
+    'Optioneel. Wordt alleen als het actor-veld voor dit verzoek verzonden.',
   'signing.ccBatch.pin.hint':
     'Optioneel en tijdelijk. Zonder pincode rapporteert de server authenticatie per document wanneer dat de gebruikte modus is.',
   'signing.ccBatch.submit': 'Batch ondertekenen met lokale CC',
@@ -2561,7 +2622,8 @@ export const nlNL: Catalog = {
   'signing.signed.localPkcs12Title': 'Notulen ondertekend met lokaal softwarecertificaat',
   'signing.signed.localPkcs12Label':
     'Lokale handtekening met PKCS#12/PFX-softwarecertificaat: alleen geavanceerd technisch bewijs; geen gekwalificeerde handtekening, CMD of verklaring van rechtsgeldigheid.',
-  'signing.signed.officialTitle': 'Notulen met een ondertekende PDF geïmporteerd uit Autenticação.gov',
+  'signing.signed.officialTitle':
+    'Notulen met een ondertekende PDF geïmporteerd uit Autenticação.gov',
   'signing.signed.officialLabel':
     'Ondertekende PDF geïmporteerd uit een officiële overdracht: alleen technisch bewijs; claimt geen validatie via de Vertrouwenslijst, gekwalificeerde status of juridische voltooiing.',
   'signing.signed.officialNote':
@@ -2665,7 +2727,8 @@ export const nlNL: Catalog = {
   'signing.evidence.longTerm.ltLocalTechnical': 'lokaal technisch bewijs B-LT',
   'signing.evidence.longTerm.ltLocalTechnicalPartial': 'gedeeltelijk lokaal technisch bewijs B-LT',
   'signing.evidence.longTerm.ltaLocalTechnical': 'lokaal technisch bewijs B-LTA',
-  'signing.evidence.longTerm.ltaLocalTechnicalPartial': 'gedeeltelijk lokaal technisch bewijs B-LTA',
+  'signing.evidence.longTerm.ltaLocalTechnicalPartial':
+    'gedeeltelijk lokaal technisch bewijs B-LTA',
   'signing.evidence.longTerm.ltNotImplemented': 'B-LT niet geïmplementeerd',
   'signing.evidence.longTerm.ltaNotImplemented': 'B-LTA niet geïmplementeerd',
   'signing.evidence.noDetails': 'Geen details',
@@ -2724,7 +2787,8 @@ export const nlNL: Catalog = {
   'signing.official.notice':
     'Kies de al in Autenticação.gov of een andere officiële overdracht ondertekende PDF. Chancela bewaart het bestand alleen als technisch bewijs en claimt geen validatie via de Vertrouwenslijst, gekwalificeerde status of juridische voltooiing.',
   'signing.official.file.label': 'Ondertekende PDF',
-  'signing.official.file.hint': 'Kies de ondertekende PDF die u van de officiële toepassing hebt ontvangen.',
+  'signing.official.file.hint':
+    'Kies de ondertekende PDF die u van de officiële toepassing hebt ontvangen.',
   'signing.official.provider.label': 'Provider',
   'signing.official.provider.hint':
     'Optioneel. Registreert de door de operator genoemde aanbieder; wordt niet als autoriteit gebruikt.',
@@ -2742,7 +2806,8 @@ export const nlNL: Catalog = {
     'Chancela voert in deze stroom geen validatie via de Vertrouwenslijst uit.',
   'signing.official.guardrails.qualified':
     'Chancela claimt voor deze import geen gekwalificeerde status.',
-  'signing.official.guardrails.legal': 'Chancela claimt voor deze import geen juridische voltooiing.',
+  'signing.official.guardrails.legal':
+    'Chancela claimt voor deze import geen juridische voltooiing.',
   'signing.official.guardrails.noSecret':
     'Deze stroom verzamelt geen pincodes, OTP’s, CAN’s, inloggegevens, tokens of wachtwoorden.',
   'signing.official.ack.label':
@@ -2774,7 +2839,8 @@ export const nlNL: Catalog = {
   'signing.invites.expiresAt': 'Verloopt op',
   'signing.invites.purpose': 'Doel',
   'signing.invites.empty.title': 'Geen externe uitnodigingen',
-  'signing.invites.empty.body': 'Er zijn nog geen externe uitnodigingen geregistreerd voor deze notulen.',
+  'signing.invites.empty.body':
+    'Er zijn nog geen externe uitnodigingen geregistreerd voor deze notulen.',
   'signing.invites.table.signer': 'Ondertekenaar',
   'signing.invites.table.status': 'Status',
   'signing.invites.table.workflow': 'Workflow',
@@ -2813,7 +2879,8 @@ export const nlNL: Catalog = {
   'signing.envelopes.slot.required': 'Verplicht slot',
   'signing.envelopes.slot.add': 'Slot toevoegen',
   'signing.envelopes.empty.title': 'Geen enveloppen voor externe ondertekening',
-  'signing.envelopes.empty.body': 'Er zijn nog geen workflow-enveloppen aangemaakt voor deze notulen.',
+  'signing.envelopes.empty.body':
+    'Er zijn nog geen workflow-enveloppen aangemaakt voor deze notulen.',
   'signing.envelopes.envelopeTitle': 'Envelop {index}',
   'signing.envelopes.completed': 'Voltooid',
   'signing.envelopes.open': 'Open',
@@ -2928,7 +2995,8 @@ export const nlNL: Catalog = {
   'data.status.usage.sqliteAverage': 'Gemiddelde: {bytes}/rij',
   'data.status.usage.sqliteAverageUnavailable': 'Gemiddelde: —',
   'data.status.usage.sqliteEstimateMethod.localLoadedPayload':
-    'Methode: lokale schatting op basis van geladen payload',  'data.status.usage.empty': 'Geen gegevens gerapporteerd.',
+    'Methode: lokale schatting op basis van geladen payload',
+  'data.status.usage.empty': 'Geen gegevens gerapporteerd.',
   'data.status.basis.filesystem': 'bestandssysteem',
   'data.status.basis.sqlite_file': 'SQLite-bestand',
   'data.status.basis.sqlite_logical_payload': 'SQLite logische payload',
@@ -2958,7 +3026,8 @@ export const nlNL: Catalog = {
   'data.status.cleanup.pending': 'Opruimen…',
   'data.status.cleanup.done': 'Opruimen voltooid.',
   'data.status.cleanup.doneTitle': 'Onderhoud voltooid',
-  'data.status.cleanup.result': '{files} bestanden en {directories} mappen verwijderd, {bytes} vrijgemaakt.',
+  'data.status.cleanup.result':
+    '{files} bestanden en {directories} mappen verwijderd, {bytes} vrijgemaakt.',
   'data.status.backup.title': 'Operationele back-up',
   'data.status.backup.body':
     'Maakt een hot back-up van de duurzame instantie en geeft alleen een niet-geheim manifest terug.',
@@ -3246,7 +3315,8 @@ export const nlNL: Catalog = {
   'settings.apiKeys.revokedToast': 'API-sleutel ingetrokken.',
   'settings.apiKeys.rotatedToast': 'API-sleutel geroteerd.',
   'settings.apiKeys.empty': 'Geen API-sleutels',
-  'settings.apiKeys.emptyBody': 'Maak een sleutel aan om integratietoegang met Bearer-authenticatie mogelijk te maken.',
+  'settings.apiKeys.emptyBody':
+    'Maak een sleutel aan om integratietoegang met Bearer-authenticatie mogelijk te maken.',
   'settings.apiKeys.secret.title': 'Bewaar dit geheim nu',
   'settings.apiKeys.secret.body':
     'Het volledige geheim wordt alleen bij deze aanmaak getoond. Nadat u deze melding sluit, blijven alleen het voorvoegsel en de metadata beschikbaar.',
@@ -3444,7 +3514,8 @@ export const nlNL: Catalog = {
   'documents.import.readError.imported': 'Kan het geimporteerde bestand niet lezen.',
   'documents.import.readError.file': 'Kan het bestand niet lezen.',
   'documents.import.preflight.title': 'Lokale preflight voor canonieke conversie',
-  'documents.import.preflight.hint': 'Alleen lokaal metadatabewijs; converteert geen DOC, maakt geen PDF/A, voert geen OCR uit, valideert geen handtekeningen, roept geen providers aan en claimt geen juridische aanvaarding.',
+  'documents.import.preflight.hint':
+    'Alleen lokaal metadatabewijs; converteert geen DOC, maakt geen PDF/A, voert geen OCR uit, valideert geen handtekeningen, roept geen providers aan en claimt geen juridische aanvaarding.',
   'documents.import.preflight.notIndicated': 'niet aangegeven',
   'documents.import.preflight.status.blocked': 'geblokkeerd',
   'documents.import.preflight.status.notAttempted': 'niet geprobeerd',
@@ -3464,12 +3535,16 @@ export const nlNL: Catalog = {
   'documents.import.preflight.field.recordReplaced': 'Canoniek record vervangen',
   'documents.import.preflight.evidenceObserved': 'Waargenomen bewijs',
   'documents.import.preflight.blockers': 'Blokkades',
-  'documents.import.review.noticeFallback': 'De beoordeling legt alleen een operationele bewaarbeslissing vast; ze voert geen OCR uit, converteert geen bytes, vervangt de canonieke PDF/A niet en claimt geen juridische aanvaarding.',
-  'documents.import.review.status.reviewedNonCanonical': 'Beoordeeld: origineel alleen bewaard als niet-canoniek bewijs',
+  'documents.import.review.noticeFallback':
+    'De beoordeling legt alleen een operationele bewaarbeslissing vast; ze voert geen OCR uit, converteert geen bytes, vervangt de canonieke PDF/A niet en claimt geen juridische aanvaarding.',
+  'documents.import.review.status.reviewedNonCanonical':
+    'Beoordeeld: origineel alleen bewaard als niet-canoniek bewijs',
   'documents.import.review.status.rejected': 'Afgewezen als niet-canoniek bewijs',
   'documents.import.review.status.operatorRequired': 'Beoordeling door operator vereist',
-  'documents.import.review.status.ocrRequired': 'Beoordeling door operator vereist voor bewaarde afbeelding',
-  'documents.import.review.status.legacyRequired': 'Beoordeling door operator vereist voor verouderd bestand',
+  'documents.import.review.status.ocrRequired':
+    'Beoordeling door operator vereist voor bewaarde afbeelding',
+  'documents.import.review.status.legacyRequired':
+    'Beoordeling door operator vereist voor verouderd bestand',
   'documents.import.review.status.notIndicated': 'Beoordeling niet aangegeven',
   'documents.import.review.operatorReview': 'Beoordeling door operator',
   'documents.import.review.reviewNotice': 'Beoordelingsmelding',
@@ -3481,9 +3556,11 @@ export const nlNL: Catalog = {
   'documents.import.review.formAria': 'Operationele beoordeling van het geïmporteerde document',
   'documents.import.review.conservativeTitle': 'Conservatieve beoordeling',
   'documents.import.review.statusLabel': 'Beoordelingsstatus',
-  'documents.import.review.noteHint': '{count}/{limit} tekens. Leg alleen de operationele beslissing vast; claim geen OCR, conversie of juridische aanvaarding.',
+  'documents.import.review.noteHint':
+    '{count}/{limit} tekens. Leg alleen de operationele beslissing vast; claim geen OCR, conversie of juridische aanvaarding.',
   'documents.import.review.guardrailsToAck': 'Te erkennen grenzen',
-  'documents.import.review.ackLabel': 'Ik bevestig dat ik deze grenzen heb beoordeeld en dat de beslissing het geïmporteerde document niet promoveert tot een canoniek record, een vervangende PDF/A, een ondertekende PDF of juridische aanvaarding.',
+  'documents.import.review.ackLabel':
+    'Ik bevestig dat ik deze grenzen heb beoordeeld en dat de beslissing het geïmporteerde document niet promoveert tot een canoniek record, een vervangende PDF/A, een ondertekende PDF of juridische aanvaarding.',
   'documents.import.review.save': 'Beoordeling opslaan',
   'documents.import.review.saving': 'Beoordeling opslaan',
   'documents.import.review.toast.saved': 'Beoordeling van geïmporteerd document opgeslagen.',
@@ -3506,20 +3583,24 @@ export const nlNL: Catalog = {
   'documents.import.receipt.notCreated': 'Niet gemaakt of gevalideerd door deze beoordeling.',
   'documents.import.receipt.notClaimed': 'Niet geclaimd door deze beoordeling.',
   'documents.import.history.title': 'Technische beoordelingsgeschiedenis',
-  'documents.import.history.empty': 'Geen technische geschiedenis vastgelegd buiten de huidige metadata van de beoordeling.',
+  'documents.import.history.empty':
+    'Geen technische geschiedenis vastgelegd buiten de huidige metadata van de beoordeling.',
   'documents.import.history.decision': 'Beslissing',
   'documents.import.history.recordedAt': 'Vastgelegd op',
   'documents.import.history.recordedBy': 'Vastgelegd door',
   'documents.import.history.note': 'Historische notitie',
   'documents.import.history.noAcknowledgedGuardrails': 'Geen erkende grenzen bij deze beslissing',
   'documents.import.history.scope': 'Technische reikwijdte',
-  'documents.import.history.scopeBody': 'Beoordelingsgeschiedenis uitsluitend op basis van metadata voor niet-canoniek bewijs; zonder OCR, conversie, PDF/A-vervanging, handtekeningvalidatie, tijdstempel, PDF/UA, certificering of juridische aanvaarding.',
+  'documents.import.history.scopeBody':
+    'Beoordelingsgeschiedenis uitsluitend op basis van metadata voor niet-canoniek bewijs; zonder OCR, conversie, PDF/A-vervanging, handtekeningvalidatie, tijdstempel, PDF/UA, certificering of juridische aanvaarding.',
   'documents.import.depth.aria': 'Samenvatting van de diepte van de geïmporteerde beoordeling',
   'documents.import.depth.title': 'Samenvatting van de beoordelingsdiepte',
   'documents.import.depth.includes': 'Omvat',
   'documents.import.depth.bytesPreserved': 'Bytes bewaard ({status})',
-  'documents.import.depth.bytesNotIndicated': 'Bewaring van oorspronkelijke bytes niet aangegeven in de geladen metadata',
-  'documents.import.depth.includesValue': '{bytes}, SHA-256-digest, beoordelingsstatus {receipt} en operatornotitie {note}. Technische geschiedenis: {history}.',
+  'documents.import.depth.bytesNotIndicated':
+    'Bewaring van oorspronkelijke bytes niet aangegeven in de geladen metadata',
+  'documents.import.depth.includesValue':
+    '{bytes}, SHA-256-digest, beoordelingsstatus {receipt} en operatornotitie {note}. Technische geschiedenis: {history}.',
   'documents.import.depth.recorded': 'vastgelegd',
   'documents.import.depth.pending': 'in behandeling',
   'documents.import.depth.noteRecorded': 'vastgelegd',
@@ -3530,9 +3611,11 @@ export const nlNL: Catalog = {
   'documents.import.depth.derivedStatus': 'Afgeleide status',
   'documents.import.depth.operatorNote': 'Operatornotitie',
   'documents.import.depth.excludes': 'Sluit uit',
-  'documents.import.depth.excludesValue': 'OCR, conversie, PDF/A-vervanging, ondertekende PDF, handtekeningvalidatie, tijdstempel, PDF/UA en juridische aanvaarding.',
+  'documents.import.depth.excludesValue':
+    'OCR, conversie, PDF/A-vervanging, ondertekende PDF, handtekeningvalidatie, tijdstempel, PDF/UA en juridische aanvaarding.',
   'documents.import.depth.noClaimFlags': 'Vlaggen zonder claim',
-  'documents.import.depth.noClaimFlagsValue': 'OCR: nee · conversie: nee · PDF/A vervangen: nee · ondertekende PDF: nee · handtekening: nee · tijdstempel: nee · PDF/UA: nee · juridische aanvaarding: nee.',
+  'documents.import.depth.noClaimFlagsValue':
+    'OCR: nee · conversie: nee · PDF/A vervangen: nee · ondertekende PDF: nee · handtekening: nee · tijdstempel: nee · PDF/UA: nee · juridische aanvaarding: nee.',
   'externalInvite.crumbs': 'Externe ondertekening',
   'externalInvite.title': 'Externe uitnodiging',
   'externalInvite.status.pending': 'In behandeling',
@@ -3544,7 +3627,8 @@ export const nlNL: Catalog = {
   'externalInvite.unavailable.body':
     'De link is verlopen, ingetrokken of komt niet overeen met een actieve externe uitnodiging.',
   'externalInvite.missingToken.title': 'Link zonder token',
-  'externalInvite.missingToken.body': 'Open de volledige link die door de operator van de notulen is verzonden.',
+  'externalInvite.missingToken.body':
+    'Open de volledige link die door de operator van de notulen is verzonden.',
   'externalInvite.loading': 'Uitnodiging valideren...',
   'externalInvite.toast.accepted': 'Geaccepteerd antwoord geregistreerd.',
   'externalInvite.toast.declined': 'Afwijzing geregistreerd.',
@@ -3748,9 +3832,11 @@ export const nlNL: Catalog = {
   'signing.tool.signer.file.hint':
     'Het certificaat wordt alleen voor dit verzoek gebruikt en nooit opgeslagen.',
   'signing.tool.signer.passphrase.label': 'Wachtwoordzin',
-  'signing.tool.signer.passphrase.hint': 'Alleen voor dit verzoek gebruikt; wordt nooit opgeslagen.',
+  'signing.tool.signer.passphrase.hint':
+    'Alleen voor dit verzoek gebruikt; wordt nooit opgeslagen.',
   'signing.tool.signer.friendlyName.label': 'Beschrijvende naam (optioneel)',
-  'signing.tool.signer.friendlyName.hint': 'Kiest de identiteit wanneer het bestand er meerdere bevat.',
+  'signing.tool.signer.friendlyName.hint':
+    'Kiest de identiteit wanneer het bestand er meerdere bevat.',
   'signing.tool.content.note': 'De handtekening wordt geproduceerd op de PDF/A van de notulen.',
   'signing.tool.coLocation.title': 'Alleen beschikbaar in de desktopapplicatie',
   'signing.tool.coLocation.body':
@@ -3768,7 +3854,8 @@ export const nlNL: Catalog = {
   'signing.xades.level.label': 'Niveau',
   'signing.xades.level.b': 'XAdES-B',
   'signing.xades.level.t': 'XAdES-T (met tijdstempel)',
-  'signing.xades.level.note': 'De niveaus LT en LTA zijn niet beschikbaar in dit lokale hulpmiddel.',
+  'signing.xades.level.note':
+    'De niveaus LT en LTA zijn niet beschikbaar in dit lokale hulpmiddel.',
   'signing.xades.submit': 'XAdES produceren',
   'signing.xades.submitting': 'Bezig met produceren…',
   'signing.xades.result.title': 'XAdES geproduceerd',
@@ -3826,14 +3913,16 @@ export const nlNL: Catalog = {
   'signing.scap.download': 'CAdES-handtekening downloaden',
 
   // --- Written-resolution evidence receipts (wp12-e1) ----------------------------
-  'compliance.writtenResolution.review.label': 'Lokale bewijsbeoordeling van het schriftelijk besluit',
+  'compliance.writtenResolution.review.label':
+    'Lokale bewijsbeoordeling van het schriftelijk besluit',
   'compliance.writtenResolution.review.receiptRecorded': 'Ontvangstbewijs vastgelegd',
   'compliance.writtenResolution.review.receiptMissing': 'Beoordelingsbewijs ontbreekt',
   'compliance.writtenResolution.review.reviewReceipts': 'Beoordelingsbewijzen',
   'compliance.writtenResolution.review.reviewedLocators': 'Beoordeelde locators',
   'compliance.writtenResolution.review.reviewedDigests': 'Beoordeelde digests',
   'compliance.writtenResolution.review.boundEvidence': 'Gekoppeld bewijs',
-  'compliance.writtenResolution.review.boundary': 'Alleen lokale metadata. Er wordt geen instemming, quorum, identiteit, juridische toereikendheid, externe validatie, automatische goedkeuring of certificering door een autoriteit geclaimd.',
+  'compliance.writtenResolution.review.boundary':
+    'Alleen lokale metadata. Er wordt geen instemming, quorum, identiteit, juridische toereikendheid, externe validatie, automatische goedkeuring of certificering door een autoriteit geclaimd.',
   'compliance.writtenResolution.status.boundPresent': 'Gekoppeld bewijs aanwezig',
   'compliance.writtenResolution.status.referencedOnly': 'Alleen gerefereerd',
   'compliance.writtenResolution.status.missing': 'Bewijs ontbreekt',
@@ -3842,8 +3931,10 @@ export const nlNL: Catalog = {
   'compliance.writtenResolution.status.needsFollowUp': 'Opvolging vereist',
   'compliance.writtenResolution.status.notRecorded': 'Niet vastgelegd',
   'acts.writtenResolution.card.title': 'Bewijsontvangstbewijzen van het schriftelijk besluit',
-  'acts.writtenResolution.history.label': 'Geschiedenis van ontvangstbewijzen van het schriftelijk besluit',
-  'acts.writtenResolution.history.empty': 'Geen beoordelingsbewijzen van het schriftelijk besluit vastgelegd.',
+  'acts.writtenResolution.history.label':
+    'Geschiedenis van ontvangstbewijzen van het schriftelijk besluit',
+  'acts.writtenResolution.history.empty':
+    'Geen beoordelingsbewijzen van het schriftelijk besluit vastgelegd.',
   'acts.writtenResolution.receipt.reviewedEvidence': 'Beoordeeld bewijs',
   'acts.writtenResolution.receipt.notRecorded': 'Niet vastgelegd',
   'acts.writtenResolution.receipt.note': 'Notitie',
@@ -3857,7 +3948,8 @@ export const nlNL: Catalog = {
   'acts.writtenResolution.field.evidenceReference': 'Bewijsreferentie',
   'acts.writtenResolution.field.evidenceDigest': 'Bewijsdigest',
   'acts.writtenResolution.field.receiptNotes': 'Notities bij ontvangstbewijs',
-  'acts.writtenResolution.guardrail': 'Alleen lokale metadata; claims van bewijs, juridische toereikendheid, provider, autoriteit, voltooiing, ondertekening, zegel en archivering blijven onwaar.',
+  'acts.writtenResolution.guardrail':
+    'Alleen lokale metadata; claims van bewijs, juridische toereikendheid, provider, autoriteit, voltooiing, ondertekening, zegel en archivering blijven onwaar.',
   'acts.writtenResolution.submit.recording': 'Ontvangstbewijs vastleggen…',
   'acts.writtenResolution.submit.record': 'Lokaal ontvangstbewijs vastleggen',
   'acts.writtenResolution.reviewStatusOption.reviewed': 'Lokale metadata beoordeeld',
@@ -3866,13 +3958,15 @@ export const nlNL: Catalog = {
   'acts.writtenResolution.status.needsFollowUp': 'Opvolging vereist',
   'acts.writtenResolution.status.notRecorded': 'Niet vastgelegd',
   // --- Field-help tooltips (wp12-e2) ----------------------------------------------
-  'fieldHelp.acts.title': 'Korte naam die de notulen identificeert in lijsten, voorbeelden en gegenereerde documenten.',
+  'fieldHelp.acts.title':
+    'Korte naam die de notulen identificeert in lijsten, voorbeelden en gegenereerde documenten.',
   'fieldHelp.acts.channel':
     'Manier waarop de vergadering plaatsvond; activeert velden en controles die specifiek zijn voor digitale of hybride vergaderingen.',
   'fieldHelp.acts.meetingDate':
     'Datum waarop de vergadering plaatsvond; voedt ook de nummering en de documentgeneratie.',
   'fieldHelp.acts.meetingTime': 'Begintijd die in de notulen is vastgelegd, indien van toepassing.',
-  'fieldHelp.acts.place': 'Fysieke locatie of sessieverwijzing die in de tekst van de notulen wordt gebruikt.',
+  'fieldHelp.acts.place':
+    'Fysieke locatie of sessieverwijzing die in de tekst van de notulen wordt gebruikt.',
   'fieldHelp.acts.attendanceReference':
     'Geef aan waar de presentielijst staat of hoe de deelnemers zijn geverifieerd.',
   'fieldHelp.acts.membersPresent':
@@ -3897,8 +3991,7 @@ export const nlNL: Catalog = {
     'Punt dat op de agenda is behandeld; gestructureerde besluiten kunnen aan dit nummer worden gekoppeld.',
   'fieldHelp.acts.deliberationsText':
     'Vrije tekst van de notulen. Gebruik deze voor de volledige formulering of als aanvulling op de gestructureerde besluiten.',
-  'fieldHelp.acts.structuredAgenda':
-    'Koppelt het besluit aan het bijbehorende agendapunt.',
+  'fieldHelp.acts.structuredAgenda': 'Koppelt het besluit aan het bijbehorende agendapunt.',
   'fieldHelp.acts.structuredText':
     'Legt het besluit in gestructureerde vorm vast voor hergebruik in het document en in opvolgingen.',
   'fieldHelp.acts.voteMode':
@@ -3911,7 +4004,8 @@ export const nlNL: Catalog = {
     'Benaming van het document dat aan de vergadering is voorgelegd, geraadpleegd of toegevoegd.',
   'fieldHelp.acts.referencedDocumentRef':
     'Interne verwijzing, link, nummer of locatie van dat document.',
-  'fieldHelp.acts.signatoryName': 'Persoon die als ondertekenaar van de notulen moet worden vermeld.',
+  'fieldHelp.acts.signatoryName':
+    'Persoon die als ondertekenaar van de notulen moet worden vermeld.',
   'fieldHelp.acts.signatoryCapacity':
     'Hoedanigheid waarin de persoon ondertekent, bijvoorbeeld voorzitter, lid of mede-eigenaar.',
   'fieldHelp.acts.signatoryPermilage':
@@ -3919,118 +4013,153 @@ export const nlNL: Catalog = {
   'fieldHelp.acts.signatorySigned':
     'Markeert dat de persoon de toepasselijke fysieke of elektronische versie heeft ondertekend.',
   'fieldHelp.acts.attachmentLabel': 'Korte beschrijving van de bij de notulen behorende bijlage.',
-  'fieldHelp.acts.attachmentKind': 'Classificatie van de bijlage voor het document en het gearchiveerde bewijs.',
-  'fieldHelp.acts.beginningOfProof': 'Vink aan wanneer de bijlage als begin van bewijs moet worden behandeld.',
+  'fieldHelp.acts.attachmentKind':
+    'Classificatie van de bijlage voor het document en het gearchiveerde bewijs.',
+  'fieldHelp.acts.beginningOfProof':
+    'Vink aan wanneer de bijlage als begin van bewijs moet worden behandeld.',
   'fieldHelp.entities.nipc':
     'Identificatienummer van de entiteit. Gebruik 9 Portugese cijfers; schakel de optie zonder validatie alleen in wanneer van toepassing.',
-  'fieldHelp.entities.seat': 'Adres of plaats van de zetel die in de boeken en documenten van deze entiteit wordt gebruikt.',
+  'fieldHelp.entities.seat':
+    'Adres of plaats van de zetel die in de boeken en documenten van deze entiteit wordt gebruikt.',
   'fieldHelp.entities.legalForm':
     'Type entiteit dat de toepasselijke familie van regels, boeken en sjablonen bepaalt.',
-  'fieldHelp.entities.fiscalYearEnd': 'Dag van afsluiting van het boekjaar in de notatie MM-DD; leeg gebruikt 12-31.',
-  'fieldHelp.entities.statuteQuorum': 'Operationele waarde die wordt gebruikt voor conformiteitswaarschuwingen over aanwezigheden.',
-  'fieldHelp.entities.statuteMajority': 'Breuk die wordt gebruikt voor conformiteitswaarschuwingen over besluiten.',
-  'fieldHelp.entities.statuteNotice': 'Minimum aantal dagen dat wordt gebruikt voor waarschuwingen over de oproepingstermijn.',
+  'fieldHelp.entities.fiscalYearEnd':
+    'Dag van afsluiting van het boekjaar in de notatie MM-DD; leeg gebruikt 12-31.',
+  'fieldHelp.entities.statuteQuorum':
+    'Operationele waarde die wordt gebruikt voor conformiteitswaarschuwingen over aanwezigheden.',
+  'fieldHelp.entities.statuteMajority':
+    'Breuk die wordt gebruikt voor conformiteitswaarschuwingen over besluiten.',
+  'fieldHelp.entities.statuteNotice':
+    'Minimum aantal dagen dat wordt gebruikt voor waarschuwingen over de oproepingstermijn.',
   'fieldHelp.registry.accessCode':
     'Code van 12 cijfers waarmee het uittreksel kan worden geraadpleegd; deze wordt alleen voor deze opvraging verzonden en niet bewaard.',
-  'fieldHelp.registry.email': 'Wordt alleen verzonden wanneer de registerdienst hierom vraagt om het uittreksel te openen.',
-  'fieldHelp.registry.firma': 'Naam van de entiteit zoals die uit het geïmporteerde uittreksel kwam.',
-  'fieldHelp.registry.nipc': 'NIPC-identificatie die uit het uittreksel is gehaald, indien aanwezig.',
-  'fieldHelp.registry.legalForm': 'Juridische aard of vorm, genormaliseerd op basis van het uittreksel.',
+  'fieldHelp.registry.email':
+    'Wordt alleen verzonden wanneer de registerdienst hierom vraagt om het uittreksel te openen.',
+  'fieldHelp.registry.firma':
+    'Naam van de entiteit zoals die uit het geïmporteerde uittreksel kwam.',
+  'fieldHelp.registry.nipc':
+    'NIPC-identificatie die uit het uittreksel is gehaald, indien aanwezig.',
+  'fieldHelp.registry.legalForm':
+    'Juridische aard of vorm, genormaliseerd op basis van het uittreksel.',
   'fieldHelp.registry.matricula': 'Inschrijvingsreferentie vermeld in het handelsregister.',
-  'fieldHelp.registry.sede': 'Zetel die uit het uittreksel is gehaald; kan vrije tekst of een gestructureerd adres zijn.',
-  'fieldHelp.registry.dataConstituicao': 'Oprichtingsdatum die uit het uittreksel is gehaald, indien beschikbaar.',
-  'fieldHelp.registry.capital': 'Kapitaal zoals afgedrukt op het uittreksel, zonder verdere berekening.',
-  'fieldHelp.registry.objeto': 'Doel of oogmerk vastgelegd volgens de uit het uittreksel geïmporteerde tekst.',
+  'fieldHelp.registry.sede':
+    'Zetel die uit het uittreksel is gehaald; kan vrije tekst of een gestructureerd adres zijn.',
+  'fieldHelp.registry.dataConstituicao':
+    'Oprichtingsdatum die uit het uittreksel is gehaald, indien beschikbaar.',
+  'fieldHelp.registry.capital':
+    'Kapitaal zoals afgedrukt op het uittreksel, zonder verdere berekening.',
+  'fieldHelp.registry.objeto':
+    'Doel of oogmerk vastgelegd volgens de uit het uittreksel geïmporteerde tekst.',
   'fieldHelp.registry.cae':
     'Economische activiteiten uit het uittreksel, waar mogelijk verrijkt met de CAE-catalogus.',
-  'fieldHelp.registry.accessCodeMasked': 'Code gemaskeerd voor auditdoeleinden; de volledige waarde wordt nooit getoond.',
+  'fieldHelp.registry.accessCodeMasked':
+    'Code gemaskeerd voor auditdoeleinden; de volledige waarde wordt nooit getoond.',
   'fieldHelp.registry.retrievedAt': 'Tijdstip waarop deze opvraging is uitgevoerd.',
   'fieldHelp.registry.conservatoria': 'Registerkantoor vermeld in het geïmporteerde document.',
   'fieldHelp.registry.oficial': 'Ambtenaar vermeld in het geïmporteerde document.',
   'fieldHelp.registry.subscribedOn': 'Datum van inschrijving vermeld op het uittreksel.',
-  'fieldHelp.registry.validUntil': 'Geldigheidsdatum vermeld op het uittreksel; deze vernieuwt de opvraging niet.',
-  'fieldHelp.registry.source': 'URL die is gebruikt om het uittreksel bij deze import te verkrijgen.',
-  'fieldHelp.registry.digest': 'SHA-256 van de geïmporteerde HTML, om met het originele document te vergelijken.',
+  'fieldHelp.registry.validUntil':
+    'Geldigheidsdatum vermeld op het uittreksel; deze vernieuwt de opvraging niet.',
+  'fieldHelp.registry.source':
+    'URL die is gebruikt om het uittreksel bij deze import te verkrijgen.',
+  'fieldHelp.registry.digest':
+    'SHA-256 van de geïmporteerde HTML, om met het originele document te vergelijken.',
   'fieldHelp.registry.naturezaJuridica':
     'Juridische aard zoals gelezen in de inschrijving van het uittreksel.',
-  'fieldHelp.registry.fiscalYearEnd': 'Afsluiting van het boekjaar vermeld in de inschrijving, indien aanwezig.',
-  'fieldHelp.registry.capitalRealization': 'Notitie over de volstorting van het kapitaal, overgenomen uit het uittreksel.',
-  'fieldHelp.registry.deliberationDate': 'Datum van het besluit vermeld in de inschrijving, indien aanwezig.',
+  'fieldHelp.registry.fiscalYearEnd':
+    'Afsluiting van het boekjaar vermeld in de inschrijving, indien aanwezig.',
+  'fieldHelp.registry.capitalRealization':
+    'Notitie over de volstorting van het kapitaal, overgenomen uit het uittreksel.',
+  'fieldHelp.registry.deliberationDate':
+    'Datum van het besluit vermeld in de inschrijving, indien aanwezig.',
   'fieldHelp.registry.formaObrigar': 'Geïmporteerde tekst over wie de entiteit bindt.',
-  "settings.providerCredentials.cardTitle": "Ondertekeningsproviders",
-  "settings.providerCredentials.lede": "Beheer de referenties van ondertekeningsproviders, met meerdere sleutels per provider, prioriteit en failover.",
-  "settings.providerCredentials.newEntry": "Nieuwe vermelding",
-  "settings.providerCredentials.empty": "Geen providerreferenties",
-  "settings.providerCredentials.emptyBody": "Er zijn nog geen referenties opgeslagen. Voeg een vermelding toe om te beginnen.",
-  "settings.providerCredentials.protection.confidential.title": "Vertrouwelijke opslag",
-  "settings.providerCredentials.protection.confidential.body": "Referenties worden in rust versleuteld met vertrouwelijke bescherming.",
-  "settings.providerCredentials.protection.obfuscation.title": "Verhulling — gelaagde verdediging",
-  "settings.providerCredentials.protection.obfuscation.body": "Referenties worden versleuteld, maar dit is geen volledige vertrouwelijkheid totdat u SQLCipher of OS-verzegeling inschakelt.",
-  "settings.providerCredentials.protection.strictBlocked": "De strikte modus staat aan: u kunt pas referenties opslaan nadat u vertrouwelijke bescherming hebt ingeschakeld.",
-  "settings.providerCredentials.mode.cmd": "Chave Móvel Digital (CMD)",
-  "settings.providerCredentials.mode.csc": "CSC-QTSP",
-  "settings.providerCredentials.mode.scap": "SCAP (AMA)",
-  "settings.providerCredentials.mode.pkcs12": "Lokale PKCS#12",
-  "settings.providerCredentials.createdToast": "Vermelding aangemaakt.",
-  "settings.providerCredentials.updatedToast": "Vermelding bijgewerkt.",
-  "settings.providerCredentials.deletedToast": "Vermelding verwijderd.",
-  "settings.providerCredentials.reorderedToast": "Volgorde bijgewerkt.",
-  "settings.providerCredentials.failoverHint": "Vermeldingen worden op prioriteitsvolgorde geprobeerd; lagere worden gebruikt wanneer een hogere onbereikbaar is.",
-  "settings.providerCredentials.provider.addEntry": "Vermelding toevoegen",
-  "settings.providerCredentials.provider.noEntries": "Geen vermeldingen voor deze provider.",
-  "settings.providerCredentials.entry.unlabeled": "Vermelding zonder label",
-  "settings.providerCredentials.entry.priority": "Prioriteit {priority}",
-  "settings.providerCredentials.entry.enabled": "Ingeschakeld",
-  "settings.providerCredentials.entry.disabled": "Uitgeschakeld",
-  "settings.providerCredentials.entry.moveUp": "Prioriteit verhogen",
-  "settings.providerCredentials.entry.moveDown": "Prioriteit verlagen",
-  "settings.providerCredentials.entry.edit": "Bewerken",
-  "settings.providerCredentials.entry.noFields": "Geen geconfigureerde velden",
-  "settings.providerCredentials.entry.configured": "geconfigureerd",
-  "settings.providerCredentials.entry.deleteConfirm.title": "Vermelding verwijderen",
-  "settings.providerCredentials.entry.deleteConfirm.intro": "U staat op het punt de vermelding “{label}” te verwijderen. Deze actie kan niet ongedaan worden gemaakt.",
-  "settings.providerCredentials.entry.deleteConfirm.confirm": "Vermelding verwijderen",
-  "settings.providerCredentials.entry.deleteConfirm.pending": "Bezig met verwijderen…",
-  "settings.providerCredentials.form.newEntry": "Nieuwe vermelding",
-  "settings.providerCredentials.form.editEntry": "Vermelding bewerken",
-  "settings.providerCredentials.form.mode": "Providertype",
-  "settings.providerCredentials.form.providerId": "Provideridentificatie",
-  "settings.providerCredentials.form.providerIdHint": "QTSP-identificatie (CSC) of identiteitslabel (PKCS#12).",
-  "settings.providerCredentials.form.label": "Label",
-  "settings.providerCredentials.form.labelPlaceholder": "Primaire sleutel",
-  "settings.providerCredentials.form.enabled": "Vermelding ingeschakeld",
-  "settings.providerCredentials.form.endpoint": "Eindpunt (base_url)",
-  "settings.providerCredentials.form.endpointHint": "Overschrijving van de basis-URL voor deze provider.",
-  "settings.providerCredentials.form.pfxWarning.title": "Privésleutel in rust",
-  "settings.providerCredentials.form.pfxWarning.body": "Een PKCS#12-bestand opslaan betekent dat u een privé-ondertekeningssleutel in rust bewaart. Geef de voorkeur aan vertrouwelijke bescherming.",
-  "settings.providerCredentials.form.pfxHint": "Selecteer het .pfx/.p12-bestand; de bytes worden op de client gecodeerd.",
-  "settings.providerCredentials.form.pfxReplaceHint": "Selecteer alleen een bestand om het huidige te vervangen; laat leeg om het te behouden.",
-  "settings.providerCredentials.form.secretHint": "Geheimen zijn alleen-schrijven en worden nooit teruggegeven. Laat een veld leeg om het ongewijzigd te laten.",
-  "settings.providerCredentials.form.keepFieldHint": "Laat leeg om de huidige waarde te behouden.",
-  "settings.providerCredentials.form.submit": "Opslaan",
-  "settings.providerCredentials.form.submitting": "Bezig met opslaan…",
-  "settings.providerCredentials.field.applicationId": "Toepassings-ID",
-  "settings.providerCredentials.field.httpBasicUsername": "HTTP Basic-gebruikersnaam",
-  "settings.providerCredentials.field.httpBasicPassword": "HTTP Basic-wachtwoord",
-  "settings.providerCredentials.field.amaCertPem": "AMA-certificaat (PEM)",
-  "settings.providerCredentials.field.clientId": "Client-ID",
-  "settings.providerCredentials.field.clientSecret": "Client secret",
-  "settings.providerCredentials.field.accessToken": "Toegangstoken",
-  "settings.providerCredentials.field.secret": "Geheim",
-  "settings.providerCredentials.field.passphrase": "Wachtwoordzin",
-  "settings.providerCredentials.field.env": "Omgeving",
-  "settings.providerCredentials.field.env.unset": "Niet ingesteld",
-  "settings.providerCredentials.field.env.preprod": "Preproductie",
-  "settings.providerCredentials.field.env.prod": "Productie",
-  "settings.providerCredentials.field.authorization": "Autorisatie",
-  "settings.providerCredentials.field.authorization.unset": "Niet ingesteld",
-  "settings.providerCredentials.field.authorization.service": "Service",
-  "settings.providerCredentials.field.authorization.user": "Gebruiker",
-  "settings.providerCredentials.field.credentialId": "Referentie-ID",
-  "settings.providerCredentials.field.scope": "Bereik (scope)",
-  "settings.providerCredentials.field.sandbox": "Sandbox",
-  "settings.providerCredentials.field.environment": "Omgeving",
-  "settings.providerCredentials.field.friendlyName": "Beschrijvende naam",
-  "settings.providerCredentials.field.localKeyId": "Local key ID (hex)",
-  "settings.providerCredentials.field.pfx": "PKCS#12/PFX-bestand",
+  'settings.providerCredentials.cardTitle': 'Ondertekeningsproviders',
+  'settings.providerCredentials.lede':
+    'Beheer de referenties van ondertekeningsproviders, met meerdere sleutels per provider, prioriteit en failover.',
+  'settings.providerCredentials.newEntry': 'Nieuwe vermelding',
+  'settings.providerCredentials.empty': 'Geen providerreferenties',
+  'settings.providerCredentials.emptyBody':
+    'Er zijn nog geen referenties opgeslagen. Voeg een vermelding toe om te beginnen.',
+  'settings.providerCredentials.protection.confidential.title': 'Vertrouwelijke opslag',
+  'settings.providerCredentials.protection.confidential.body':
+    'Referenties worden in rust versleuteld met vertrouwelijke bescherming.',
+  'settings.providerCredentials.protection.obfuscation.title': 'Verhulling — gelaagde verdediging',
+  'settings.providerCredentials.protection.obfuscation.body':
+    'Referenties worden versleuteld, maar dit is geen volledige vertrouwelijkheid totdat u SQLCipher of OS-verzegeling inschakelt.',
+  'settings.providerCredentials.protection.strictBlocked':
+    'De strikte modus staat aan: u kunt pas referenties opslaan nadat u vertrouwelijke bescherming hebt ingeschakeld.',
+  'settings.providerCredentials.mode.cmd': 'Chave Móvel Digital (CMD)',
+  'settings.providerCredentials.mode.csc': 'CSC-QTSP',
+  'settings.providerCredentials.mode.scap': 'SCAP (AMA)',
+  'settings.providerCredentials.mode.pkcs12': 'Lokale PKCS#12',
+  'settings.providerCredentials.createdToast': 'Vermelding aangemaakt.',
+  'settings.providerCredentials.updatedToast': 'Vermelding bijgewerkt.',
+  'settings.providerCredentials.deletedToast': 'Vermelding verwijderd.',
+  'settings.providerCredentials.reorderedToast': 'Volgorde bijgewerkt.',
+  'settings.providerCredentials.failoverHint':
+    'Vermeldingen worden op prioriteitsvolgorde geprobeerd; lagere worden gebruikt wanneer een hogere onbereikbaar is.',
+  'settings.providerCredentials.provider.addEntry': 'Vermelding toevoegen',
+  'settings.providerCredentials.provider.noEntries': 'Geen vermeldingen voor deze provider.',
+  'settings.providerCredentials.entry.unlabeled': 'Vermelding zonder label',
+  'settings.providerCredentials.entry.priority': 'Prioriteit {priority}',
+  'settings.providerCredentials.entry.enabled': 'Ingeschakeld',
+  'settings.providerCredentials.entry.disabled': 'Uitgeschakeld',
+  'settings.providerCredentials.entry.moveUp': 'Prioriteit verhogen',
+  'settings.providerCredentials.entry.moveDown': 'Prioriteit verlagen',
+  'settings.providerCredentials.entry.edit': 'Bewerken',
+  'settings.providerCredentials.entry.noFields': 'Geen geconfigureerde velden',
+  'settings.providerCredentials.entry.configured': 'geconfigureerd',
+  'settings.providerCredentials.entry.deleteConfirm.title': 'Vermelding verwijderen',
+  'settings.providerCredentials.entry.deleteConfirm.intro':
+    'U staat op het punt de vermelding “{label}” te verwijderen. Deze actie kan niet ongedaan worden gemaakt.',
+  'settings.providerCredentials.entry.deleteConfirm.confirm': 'Vermelding verwijderen',
+  'settings.providerCredentials.entry.deleteConfirm.pending': 'Bezig met verwijderen…',
+  'settings.providerCredentials.form.newEntry': 'Nieuwe vermelding',
+  'settings.providerCredentials.form.editEntry': 'Vermelding bewerken',
+  'settings.providerCredentials.form.mode': 'Providertype',
+  'settings.providerCredentials.form.providerId': 'Provideridentificatie',
+  'settings.providerCredentials.form.providerIdHint':
+    'QTSP-identificatie (CSC) of identiteitslabel (PKCS#12).',
+  'settings.providerCredentials.form.label': 'Label',
+  'settings.providerCredentials.form.labelPlaceholder': 'Primaire sleutel',
+  'settings.providerCredentials.form.enabled': 'Vermelding ingeschakeld',
+  'settings.providerCredentials.form.endpoint': 'Eindpunt (base_url)',
+  'settings.providerCredentials.form.endpointHint':
+    'Overschrijving van de basis-URL voor deze provider.',
+  'settings.providerCredentials.form.pfxWarning.title': 'Privésleutel in rust',
+  'settings.providerCredentials.form.pfxWarning.body':
+    'Een PKCS#12-bestand opslaan betekent dat u een privé-ondertekeningssleutel in rust bewaart. Geef de voorkeur aan vertrouwelijke bescherming.',
+  'settings.providerCredentials.form.pfxHint':
+    'Selecteer het .pfx/.p12-bestand; de bytes worden op de client gecodeerd.',
+  'settings.providerCredentials.form.pfxReplaceHint':
+    'Selecteer alleen een bestand om het huidige te vervangen; laat leeg om het te behouden.',
+  'settings.providerCredentials.form.secretHint':
+    'Geheimen zijn alleen-schrijven en worden nooit teruggegeven. Laat een veld leeg om het ongewijzigd te laten.',
+  'settings.providerCredentials.form.keepFieldHint': 'Laat leeg om de huidige waarde te behouden.',
+  'settings.providerCredentials.form.submit': 'Opslaan',
+  'settings.providerCredentials.form.submitting': 'Bezig met opslaan…',
+  'settings.providerCredentials.field.applicationId': 'Toepassings-ID',
+  'settings.providerCredentials.field.httpBasicUsername': 'HTTP Basic-gebruikersnaam',
+  'settings.providerCredentials.field.httpBasicPassword': 'HTTP Basic-wachtwoord',
+  'settings.providerCredentials.field.amaCertPem': 'AMA-certificaat (PEM)',
+  'settings.providerCredentials.field.clientId': 'Client-ID',
+  'settings.providerCredentials.field.clientSecret': 'Client secret',
+  'settings.providerCredentials.field.accessToken': 'Toegangstoken',
+  'settings.providerCredentials.field.secret': 'Geheim',
+  'settings.providerCredentials.field.passphrase': 'Wachtwoordzin',
+  'settings.providerCredentials.field.env': 'Omgeving',
+  'settings.providerCredentials.field.env.unset': 'Niet ingesteld',
+  'settings.providerCredentials.field.env.preprod': 'Preproductie',
+  'settings.providerCredentials.field.env.prod': 'Productie',
+  'settings.providerCredentials.field.authorization': 'Autorisatie',
+  'settings.providerCredentials.field.authorization.unset': 'Niet ingesteld',
+  'settings.providerCredentials.field.authorization.service': 'Service',
+  'settings.providerCredentials.field.authorization.user': 'Gebruiker',
+  'settings.providerCredentials.field.credentialId': 'Referentie-ID',
+  'settings.providerCredentials.field.scope': 'Bereik (scope)',
+  'settings.providerCredentials.field.sandbox': 'Sandbox',
+  'settings.providerCredentials.field.environment': 'Omgeving',
+  'settings.providerCredentials.field.friendlyName': 'Beschrijvende naam',
+  'settings.providerCredentials.field.localKeyId': 'Local key ID (hex)',
+  'settings.providerCredentials.field.pfx': 'PKCS#12/PFX-bestand',
 };

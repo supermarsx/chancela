@@ -54,6 +54,7 @@ import type {
   AsicSignerRole,
   AsicSignResponse,
   CreateExternalSignerInviteBody,
+  DocumentBundle,
   ExternalSignerIdentityRequirement,
   ExternalSignerInviteView,
   ExternalSignerSlotStatus,
@@ -68,6 +69,7 @@ import type {
   SignatureEvidenceStatus,
   SignatureFamily,
   SignatureProviderView,
+  SignedSignatureInfo,
   UpdateExternalSigningEnvelopeEvidenceBody,
   XadesPackaging,
   XadesSignResponse,
@@ -81,6 +83,7 @@ import { SealDesigner } from './seal-designer';
 import { signatureFamilyLabels } from '../../api/labels';
 import {
   keys,
+  useActDocumentBundle,
   useActSignature,
   useAsicSign,
   useCcSignSignature,
@@ -935,6 +938,408 @@ function SignatureEvidenceSummary({ evidence }: { evidence: SignatureEvidenceSta
         ) : null}
       </dl>
       <p className="field__hint">{t('signing.evidence.disclaimer')}</p>
+    </section>
+  );
+}
+
+type TechnicalComparisonKind =
+  'match' | 'present' | 'partial' | 'unavailable' | 'mismatch' | 'notClaimed' | 'loading';
+
+type TechnicalComparisonTone = 'neutral' | 'accent' | 'warn' | 'error' | 'ok';
+
+function hasMetadata(value: string | null | undefined): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function sameMetadata(left: string | null | undefined, right: string | null | undefined): boolean {
+  return (
+    hasMetadata(left) &&
+    hasMetadata(right) &&
+    left.trim().toLowerCase() === right.trim().toLowerCase()
+  );
+}
+
+function comparisonStatus(
+  kind: TechnicalComparisonKind,
+  t: TFunction,
+): { tone: TechnicalComparisonTone; label: string } {
+  switch (kind) {
+    case 'match':
+      return { tone: 'accent', label: t('signing.technicalComparison.status.match') };
+    case 'present':
+      return { tone: 'neutral', label: t('signing.technicalComparison.status.present') };
+    case 'partial':
+      return { tone: 'warn', label: t('signing.technicalComparison.status.partial') };
+    case 'mismatch':
+      return { tone: 'error', label: t('signing.technicalComparison.status.mismatch') };
+    case 'notClaimed':
+      return { tone: 'neutral', label: t('signing.technicalComparison.status.notClaimed') };
+    case 'loading':
+      return { tone: 'neutral', label: t('signing.technicalComparison.status.loading') };
+    case 'unavailable':
+    default:
+      return { tone: 'warn', label: t('signing.technicalComparison.status.unavailable') };
+  }
+}
+
+function technicalComparisonFamilyLabel(family: string, t: TFunction): string {
+  if (family === FAMILY_OFFICIAL_HANDOFF) return t('signing.official.family');
+  return signatureFamilyLabels[family as SignatureFamily] ?? family;
+}
+
+function TechnicalComparisonPanel({
+  act,
+  signed,
+  bundle,
+  bundleLoading,
+  bundleError,
+  formatDateTime,
+}: {
+  act: ActView;
+  signed: SignedSignatureInfo;
+  bundle?: DocumentBundle;
+  bundleLoading: boolean;
+  bundleError: unknown;
+  formatDateTime: (iso: string) => string;
+}) {
+  const t = useT();
+  const bundleReady = !!bundle && !bundleError;
+  const bundleMissingKind: TechnicalComparisonKind =
+    bundleLoading && !bundle ? 'loading' : 'unavailable';
+  const report = bundle?.validation_report;
+  const consistency = report?.bundle_document_consistency;
+  const fixity = report?.fixity;
+  const signedDocument = report?.signed_document;
+
+  function textValue(value: string | number | null | undefined): React.ReactNode {
+    if (typeof value === 'number') return value;
+    return hasMetadata(value) ? value : t('signing.technicalComparison.detail.notSupplied');
+  }
+
+  function digestValue(value: string | null | undefined): React.ReactNode {
+    return hasMetadata(value) ? (
+      <Digest value={value} copyable={false} />
+    ) : (
+      t('signing.technicalComparison.detail.notSupplied')
+    );
+  }
+
+  function boolValue(value: boolean | null | undefined): string {
+    if (value == null) return t('signing.technicalComparison.detail.notSupplied');
+    return value ? t('common.yes') : t('common.no');
+  }
+
+  function Detail({
+    label,
+    children,
+  }: {
+    label: string;
+    children: React.ReactNode;
+  }): React.ReactElement {
+    return (
+      <span className="signing-chip">
+        {label}: {children}
+      </span>
+    );
+  }
+
+  const actIdCandidates = [
+    bundle?.act_id,
+    consistency?.route_act_id,
+    consistency?.stored_document_act_id,
+  ].filter(hasMetadata);
+  const actIdKind: TechnicalComparisonKind = !bundleReady
+    ? bundleMissingKind
+    : actIdCandidates.length > 0 && actIdCandidates.every((id) => id === act.id)
+      ? 'match'
+      : 'mismatch';
+
+  const canonicalDigestCandidates = [
+    bundle?.document.pdf_digest,
+    fixity?.canonical_pdf_sha256,
+    fixity?.stored_pdf_digest,
+  ].filter(hasMetadata);
+  const canonicalDigestKind: TechnicalComparisonKind = !bundleReady
+    ? bundleMissingKind
+    : fixity?.canonical_pdf_digest_matches_metadata === false ||
+        (canonicalDigestCandidates.length > 1 &&
+          !canonicalDigestCandidates.every((value) =>
+            sameMetadata(value, canonicalDigestCandidates[0]),
+          ))
+      ? 'mismatch'
+      : canonicalDigestCandidates.length === 0
+        ? 'unavailable'
+        : fixity?.canonical_pdf_digest_matches_metadata === true ||
+            canonicalDigestCandidates.length > 1
+          ? 'match'
+          : 'partial';
+
+  const bundleSignedDigestCandidates = [
+    signedDocument?.signed_pdf_digest,
+    fixity?.signed_pdf_sha256,
+    fixity?.stored_signed_pdf_digest,
+  ].filter(hasMetadata);
+  const signedDigestMismatched =
+    signedDocument?.signed_pdf_digest_matches_metadata === false ||
+    fixity?.signed_pdf_digest_matches_metadata === false ||
+    bundleSignedDigestCandidates.some((value) => !sameMetadata(signed.signed_pdf_digest, value));
+  const signedDigestKind: TechnicalComparisonKind = !bundleReady
+    ? bundleMissingKind
+    : signedDocument?.present === false
+      ? 'unavailable'
+      : signedDigestMismatched
+        ? 'mismatch'
+        : bundleSignedDigestCandidates.length > 0
+          ? 'match'
+          : 'unavailable';
+
+  const signedDocumentHasId = hasMetadata(signedDocument?.document_id);
+  const signedDocumentHasDownload = hasMetadata(signedDocument?.download);
+  const signedDocumentKind: TechnicalComparisonKind = !bundleReady
+    ? bundleMissingKind
+    : signedDocument?.present === false || !signedDocument
+      ? 'unavailable'
+      : signedDocumentHasId && signedDocumentHasDownload
+        ? 'present'
+        : 'partial';
+
+  const signingTimeKind: TechnicalComparisonKind = !bundleReady
+    ? bundleMissingKind
+    : !hasMetadata(signedDocument?.signing_time)
+      ? 'unavailable'
+      : sameMetadata(signed.signing_time, signedDocument.signing_time)
+        ? 'match'
+        : 'mismatch';
+
+  const familyMatches = hasMetadata(signedDocument?.stored_signature_family)
+    ? sameMetadata(signed.family, signedDocument.stored_signature_family)
+    : null;
+  const levelMatches = hasMetadata(signedDocument?.stored_evidentiary_level)
+    ? sameMetadata(signed.evidentiary_level, signedDocument.stored_evidentiary_level)
+    : null;
+  const trustListCompared =
+    hasMetadata(signed.trusted_list_status) || hasMetadata(signedDocument?.trusted_list_status);
+  const trustListMatches = trustListCompared
+    ? sameMetadata(signed.trusted_list_status, signedDocument?.trusted_list_status)
+    : null;
+  const signatureMetadataChecks = [familyMatches, levelMatches, trustListMatches].filter(
+    (value): value is boolean => value != null,
+  );
+  const signatureMetadataKind: TechnicalComparisonKind = !bundleReady
+    ? bundleMissingKind
+    : signatureMetadataChecks.some((value) => !value)
+      ? 'mismatch'
+      : signatureMetadataChecks.length === 0 && !hasMetadata(signedDocument?.status)
+        ? 'unavailable'
+        : signatureMetadataChecks.length < (trustListCompared ? 3 : 2)
+          ? 'partial'
+          : 'match';
+
+  const attachmentsWithoutDigest = fixity?.attachments_without_digest ?? null;
+  const fixityFlags = [
+    fixity?.canonical_pdf_digest_matches_metadata,
+    fixity?.signed_pdf_digest_matches_metadata,
+    signedDocument?.document_id_matches_canonical,
+  ];
+  const bundleFixityKind: TechnicalComparisonKind = !bundleReady
+    ? bundleMissingKind
+    : fixityFlags.some((value) => value === false) ||
+        (attachmentsWithoutDigest != null && attachmentsWithoutDigest > 0)
+      ? 'mismatch'
+      : fixityFlags.some((value) => value == null)
+        ? 'partial'
+        : 'match';
+
+  const rows: {
+    key: string;
+    label: string;
+    kind: TechnicalComparisonKind;
+    wide?: boolean;
+    details: React.ReactNode[];
+  }[] = [
+    {
+      key: 'act-id',
+      label: t('signing.technicalComparison.row.actId'),
+      kind: actIdKind,
+      details: [
+        <Detail key="act" label={t('signing.technicalComparison.detail.act')}>
+          {act.id}
+        </Detail>,
+        <Detail key="bundle" label={t('signing.technicalComparison.detail.bundle')}>
+          {textValue(bundle?.act_id)}
+        </Detail>,
+        <Detail key="document" label={t('signing.technicalComparison.detail.document')}>
+          {textValue(consistency?.stored_document_act_id)}
+        </Detail>,
+      ],
+    },
+    {
+      key: 'payload-digest',
+      label: t('signing.technicalComparison.row.sealedPayloadDigest'),
+      kind: hasMetadata(act.payload_digest) ? 'present' : 'unavailable',
+      details: [
+        <Detail key="act" label={t('signing.technicalComparison.detail.act')}>
+          {digestValue(act.payload_digest)}
+        </Detail>,
+      ],
+    },
+    {
+      key: 'canonical-digest',
+      label: t('signing.technicalComparison.row.canonicalPdfDigest'),
+      kind: canonicalDigestKind,
+      wide: true,
+      details: [
+        <Detail key="document" label={t('signing.technicalComparison.detail.document')}>
+          {digestValue(bundle?.document.pdf_digest)}
+        </Detail>,
+        <Detail key="report" label={t('signing.technicalComparison.detail.report')}>
+          {digestValue(fixity?.canonical_pdf_sha256)}
+        </Detail>,
+        <Detail key="flag" label={t('signing.technicalComparison.detail.metadataFlag')}>
+          {boolValue(fixity?.canonical_pdf_digest_matches_metadata)}
+        </Detail>,
+      ],
+    },
+    {
+      key: 'signed-digest',
+      label: t('signing.technicalComparison.row.signedPdfDigest'),
+      kind: signedDigestKind,
+      wide: true,
+      details: [
+        <Detail key="signature" label={t('signing.technicalComparison.detail.signature')}>
+          {digestValue(signed.signed_pdf_digest)}
+        </Detail>,
+        <Detail key="report" label={t('signing.technicalComparison.detail.report')}>
+          {digestValue(signedDocument?.signed_pdf_digest)}
+        </Detail>,
+        <Detail key="fixity" label={t('signing.technicalComparison.detail.fixity')}>
+          {digestValue(fixity?.signed_pdf_sha256)}
+        </Detail>,
+      ],
+    },
+    {
+      key: 'signed-document',
+      label: t('signing.technicalComparison.row.signedDocument'),
+      kind: signedDocumentKind,
+      details: [
+        <Detail key="document" label={t('signing.technicalComparison.detail.document')}>
+          {textValue(signedDocument?.document_id)}
+        </Detail>,
+        <Detail key="download" label={t('signing.technicalComparison.detail.download')}>
+          {signedDocumentHasDownload
+            ? t('signing.technicalComparison.detail.present')
+            : t('signing.technicalComparison.detail.notSupplied')}
+        </Detail>,
+      ],
+    },
+    {
+      key: 'signing-time',
+      label: t('signing.signed.signingTime'),
+      kind: signingTimeKind,
+      details: [
+        <Detail key="signature" label={t('signing.technicalComparison.detail.signature')}>
+          {formatDateTime(signed.signing_time)}
+        </Detail>,
+        <Detail key="report" label={t('signing.technicalComparison.detail.report')}>
+          {hasMetadata(signedDocument?.signing_time)
+            ? formatDateTime(signedDocument.signing_time)
+            : t('signing.technicalComparison.detail.notSupplied')}
+        </Detail>,
+        <Detail key="signed-at" label={t('signing.technicalComparison.detail.signedAt')}>
+          {hasMetadata(signedDocument?.signed_at)
+            ? formatDateTime(signedDocument.signed_at)
+            : t('signing.technicalComparison.detail.notSupplied')}
+        </Detail>,
+      ],
+    },
+    {
+      key: 'signature-metadata',
+      label: t('signing.technicalComparison.row.signatureMetadata'),
+      kind: signatureMetadataKind,
+      wide: true,
+      details: [
+        <Detail key="family" label={t('signing.signed.family')}>
+          {technicalComparisonFamilyLabel(signed.family, t)}
+        </Detail>,
+        <Detail key="report-family" label={t('signing.technicalComparison.detail.report')}>
+          {hasMetadata(signedDocument?.stored_signature_family)
+            ? technicalComparisonFamilyLabel(signedDocument.stored_signature_family, t)
+            : t('signing.technicalComparison.detail.notSupplied')}
+        </Detail>,
+        <Detail key="level" label={t('signing.xades.level.label')}>
+          {textValue(signedDocument?.stored_evidentiary_level ?? signed.evidentiary_level)}
+        </Detail>,
+        <Detail key="status" label={t('signing.technicalComparison.detail.status')}>
+          {textValue(signedDocument?.status)}
+        </Detail>,
+        <Detail key="trust" label={t('signing.signed.trustedList')}>
+          {hasMetadata(signed.trusted_list_status)
+            ? trustedListLabel(signed.trusted_list_status, t)
+            : t('signing.technicalComparison.detail.notSupplied')}
+        </Detail>,
+      ],
+    },
+    {
+      key: 'bundle-fixity',
+      label: t('signing.technicalComparison.row.bundleFixity'),
+      kind: bundleFixityKind,
+      wide: true,
+      details: [
+        <Detail key="canonical" label={t('signing.technicalComparison.row.canonicalPdfDigest')}>
+          {boolValue(fixity?.canonical_pdf_digest_matches_metadata)}
+        </Detail>,
+        <Detail key="signed" label={t('signing.technicalComparison.row.signedPdfDigest')}>
+          {boolValue(fixity?.signed_pdf_digest_matches_metadata)}
+        </Detail>,
+        <Detail key="document-id" label={t('signing.technicalComparison.detail.documentId')}>
+          {boolValue(signedDocument?.document_id_matches_canonical)}
+        </Detail>,
+        <Detail key="attachments" label={t('signing.technicalComparison.detail.attachments')}>
+          {fixity
+            ? `${fixity.attachments_with_digest}/${fixity.attachment_count} · ${fixity.attachments_without_digest} ${t(
+                'signing.technicalComparison.detail.withoutDigest',
+              )}`
+            : t('signing.technicalComparison.detail.notSupplied')}
+        </Detail>,
+      ],
+    },
+  ];
+
+  return (
+    <section className="signing-evidence" aria-label={t('signing.technicalComparison.aria')}>
+      <div className="signing-evidence__head">
+        <div>
+          <p className="signing-kicker">{t('signing.technicalComparison.kicker')}</p>
+          <p className="signing-evidence__title">{t('signing.technicalComparison.title')}</p>
+        </div>
+        <div
+          className="signing-evidence__badges"
+          aria-label={t('signing.technicalComparison.summary.aria')}
+        >
+          <Badge tone="neutral">{t('signing.technicalComparison.badge.local')}</Badge>
+          <Badge tone="neutral">{t('signing.technicalComparison.badge.noClaim')}</Badge>
+        </div>
+      </div>
+      {!bundleReady && !bundleLoading ? (
+        <p className="field__hint">{t('signing.technicalComparison.bundleUnavailable')}</p>
+      ) : null}
+      <dl className="deflist signing-deflist signing-deflist--compact">
+        {rows.map((row) => {
+          const status = comparisonStatus(row.kind, t);
+          return (
+            <div key={row.key} className={row.wide ? 'signing-deflist__wide' : undefined}>
+              <dt>{row.label}</dt>
+              <dd>
+                <span className="signing-chipline">
+                  <Badge tone={status.tone}>{status.label}</Badge>
+                  {row.details}
+                </span>
+              </dd>
+            </div>
+          );
+        })}
+      </dl>
+      <p className="field__hint">{t('signing.technicalComparison.noClaim')}</p>
     </section>
   );
 }
@@ -2117,6 +2522,7 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
   );
 
   const data = status.data;
+  const documentBundle = useActDocumentBundle(act.id, sealed && data?.status === 'signed');
   // Only CSC QTSPs come from the picker list — CMD + CC always have their own always-available
   // entry actions and do not depend on the list resolving (older server / no `signing.perform`).
   const cscProviders = (providers.data ?? []).filter((p) => p.id !== CMD_PROVIDER_ID);
@@ -2481,6 +2887,14 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
             >
               {download.isPending ? t('documents.download.pending') : t('signing.download')}
             </Button>
+            <TechnicalComparisonPanel
+              act={act}
+              signed={data.signed}
+              bundle={documentBundle.data}
+              bundleLoading={documentBundle.isLoading}
+              bundleError={documentBundle.error}
+              formatDateTime={formatDateTime}
+            />
           </div>
         ) : step.kind === 'officialImport' ? (
           // --- Official app/provider handoff: upload an already-signed PDF as evidence only.

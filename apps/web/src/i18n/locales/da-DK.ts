@@ -734,7 +734,8 @@ export const daDK: Catalog = {
   'books.detail.legalHold.stateActive': 'Aktiv',
   'books.detail.legalHold.stateNone': 'Ingen tilbageholdelse',
   'books.detail.legalHold.reasonLabel': 'Årsag til juridisk tilbageholdelse',
-  'books.detail.legalHold.reasonPlaceholder': 'F.eks. retssag, revision eller anmodning fra en myndighed',
+  'books.detail.legalHold.reasonPlaceholder':
+    'F.eks. retssag, revision eller anmodning fra en myndighed',
   'books.detail.ocrReview.formLabel': 'Supplerende OCR-gennemgang',
   'books.detail.ocrReview.statusLabel': 'Status for OCR-gennemgang',
   'books.detail.ocrReview.successorLabel': 'Efterfølgende udkast',
@@ -748,10 +749,8 @@ export const daDK: Catalog = {
   'books.detail.ocrDossier.artifactsLabel':
     'Beviser for gennemgået konverteringskørsel for dossier {id}',
   'books.detail.ocrDossier.createSectionLabel': 'Opret OCR-konverteringsdossier for {id}',
-  'books.detail.ocrSummary.sectionLabel':
-    'Oversigt over OCR-dybde og dossier for papirbogen',
-  'books.detail.preflight.sectionLabel':
-    'Lokal OCR/kanonisk rapport for import {id}',
+  'books.detail.ocrSummary.sectionLabel': 'Oversigt over OCR-dybde og dossier for papirbogen',
+  'books.detail.preflight.sectionLabel': 'Lokal OCR/kanonisk rapport for import {id}',
   'books.detail.preflight.metadataOnlyTitle': 'Kun metadata, skrivebeskyttet, ikke-kanonisk',
   'books.detail.ocrDraft.sectionLabel': 'OCR-udkast for import {id}',
   'books.detail.ocrDraft.reviewTitle': 'OCR-udkast og supplerende gennemgang',
@@ -867,7 +866,8 @@ export const daDK: Catalog = {
   'acts.manualSignature.note.label': 'Note',
   'acts.manualSignature.note.hint': 'Valgfri lokal kontekst; registrér ikke juridisk validering.',
   'acts.manualSignature.note.displayLabel': 'Note',
-  'acts.sealing.unavailableState': 'Forsegling er kun tilgængelig i tilstanden »Under underskrift«.',
+  'acts.sealing.unavailableState':
+    'Forsegling er kun tilgængelig i tilstanden »Under underskrift«.',
   'acts.sealing.fixErrors': 'Ret overholdelsesfejlene, før du kan forsegle.',
   'acts.sealing.sealing': 'Forsegler…',
   'acts.sealing.seal': 'Forsegl protokol',
@@ -1176,7 +1176,8 @@ export const daDK: Catalog = {
   'pdfValidator.action.pending': 'Validerer…',
   'pdfValidator.report.copyJson': 'Kopiér JSON',
   'pdfValidator.report.saveJson': 'Gem JSON',
-  'pdfValidator.report.status': 'Lokal dokumentations-JSON-rapport tilgængelig til at kopiere eller gemme.',
+  'pdfValidator.report.status':
+    'Lokal dokumentations-JSON-rapport tilgængelig til at kopiere eller gemme.',
   'pdfValidator.report.copyFailed': 'Rapporten kunne ikke kopieres.',
   'pdfValidator.failClosed.title': 'Validering afvist',
   'pdfValidator.failClosed.body':
@@ -1302,7 +1303,8 @@ export const daDK: Catalog = {
   'externalValidatorReports.rawFile.digestUnavailable':
     'Kunne ikke beregne SHA-256 i denne browser.',
   'externalValidatorReports.rawFile.empty': 'Den valgte rå rapport er tom.',
-  'externalValidatorReports.rawFile.tooLarge': 'Den rå rapport overskrider den lokale grænse på {max}.',
+  'externalValidatorReports.rawFile.tooLarge':
+    'Den rå rapport overskrider den lokale grænse på {max}.',
   'externalValidatorReports.rawFile.summaryTitle': 'Valgt rå rapport',
   'externalValidatorReports.rawFile.filename': 'Filnavn',
   'externalValidatorReports.rawFile.provenance': 'Herkomst',
@@ -1541,7 +1543,8 @@ export const daDK: Catalog = {
   'settings.platform.effectiveLog': 'Effektivt logniveau',
   'settings.platform.limitations': 'Begrænsninger',
   'settings.platform.lastAction': 'Seneste handling',
-  'settings.platform.lastAction.empty': 'Der er endnu ikke registreret nogen handling for denne tjeneste.',
+  'settings.platform.lastAction.empty':
+    'Der er endnu ikke registreret nogen handling for denne tjeneste.',
   'settings.platform.action': 'Handling',
   'settings.platform.action.start': 'Start',
   'settings.platform.action.stop': 'Stop',
@@ -1617,13 +1620,16 @@ export const daDK: Catalog = {
   'settings.platform.logs.context.empty': 'Ingen kontekst',
   'settings.reminders.cardTitle': 'Dashboardpåmindelser',
   'settings.reminders.enabled.label': 'Generér lokale påmindelser',
-  'settings.reminders.note': 'Lokal og vejledende politik; den planlægger ikke eksterne kalendere og erklærer ikke juridisk tilstrækkelighed.',
+  'settings.reminders.note':
+    'Lokal og vejledende politik; den planlægger ikke eksterne kalendere og erklærer ikke juridisk tilstrækkelighed.',
   'settings.reminders.dashboardLimit.label': 'Dashboardgrænse',
-  'settings.reminders.dashboardLimit.hint': 'Maksimalt antal påmindelseskort, der returneres af dashboardet.',
+  'settings.reminders.dashboardLimit.hint':
+    'Maksimalt antal påmindelseskort, der returneres af dashboardet.',
   'settings.reminders.dueSoon.label': 'Forfalder snart',
   'settings.reminders.dueSoon.hint': 'Dage til forfald for at klassificere som snart forfaldende.',
   'settings.reminders.attendanceLookahead.label': 'Fremmødevindue',
-  'settings.reminders.attendanceLookahead.hint': 'Fremtidige dage, der scannes for akter med ufuldstændigt fremmøde.',
+  'settings.reminders.attendanceLookahead.hint':
+    'Fremtidige dage, der scannes for akter med ufuldstændigt fremmøde.',
   'settings.reminders.sources.title': 'Kilder',
   'settings.reminders.sources.aria': 'Kilder til dashboardpåmindelser',
   'settings.reminders.sources.profileCalendar': 'Profilkalender',
@@ -1631,19 +1637,26 @@ export const daDK: Catalog = {
   'settings.reminders.sources.attendanceHygiene': 'Fremmødehygiejne',
   'settings.reminders.sources.privacyReviews': 'Privatlivsgennemgange',
   'settings.retainedExportCleanup.cardTitle': 'Politik for oprydning af bevarede eksporter',
-  'settings.retainedExportCleanup.note': 'Standardværdier, der kun bruges i forhåndsvisningen af oprydning af bevarede lokale eksporter. De godkender ikke juridisk opbevaring, arkivsletning, bortskaffelse eller GDPR-sletning.',
+  'settings.retainedExportCleanup.note':
+    'Standardværdier, der kun bruges i forhåndsvisningen af oprydning af bevarede lokale eksporter. De godkender ikke juridisk opbevaring, arkivsletning, bortskaffelse eller GDPR-sletning.',
   'settings.retainedExportCleanup.minimumAge.label': 'Mindstealder for eksporter',
-  'settings.retainedExportCleanup.minimumAge.hint': 'Mindste antal dage, før en bevaret lokal eksport kan fremstå som kvalificeret i forhåndsvisningen.',
+  'settings.retainedExportCleanup.minimumAge.hint':
+    'Mindste antal dage, før en bevaret lokal eksport kan fremstå som kvalificeret i forhåndsvisningen.',
   'settings.retainedExportCleanup.keepLatest.label': 'Seneste eksporter, der bevares',
-  'settings.retainedExportCleanup.keepLatest.hint': 'Antal nyeste eksportfiler, der holdes uden for oprydning, selv når de allerede er gamle nok.',
+  'settings.retainedExportCleanup.keepLatest.hint':
+    'Antal nyeste eksportfiler, der holdes uden for oprydning, selv når de allerede er gamle nok.',
   'settings.backupRecovery.cardTitle': 'Lokal politik for gendannelse af sikkerhedskopier',
-  'settings.backupRecovery.note': 'Operatørerklærede mål for lokale advarsler om øvelsers friskhed. De udfører ikke gendannelse, udskifter ikke databasen, beviser ikke opbevaring off-site og certificerer hverken RPO/RTO eller en produktionssikkerhedskopipolitik.',
+  'settings.backupRecovery.note':
+    'Operatørerklærede mål for lokale advarsler om øvelsers friskhed. De udfører ikke gendannelse, udskifter ikke databasen, beviser ikke opbevaring off-site og certificerer hverken RPO/RTO eller en produktionssikkerhedskopipolitik.',
   'settings.backupRecovery.maxDrillAge.label': 'Maksimal øvelsesalder',
-  'settings.backupRecovery.maxDrillAge.hint': 'Maksimalt antal dage, før den seneste verificerede øvelseskvittering fremstår som forældet.',
+  'settings.backupRecovery.maxDrillAge.hint':
+    'Maksimalt antal dage, før den seneste verificerede øvelseskvittering fremstår som forældet.',
   'settings.backupRecovery.targetRpo.label': 'Mål-RPO',
-  'settings.backupRecovery.targetRpo.hint': 'Erklærede minutter for det lokale mål om maksimalt datatab.',
+  'settings.backupRecovery.targetRpo.hint':
+    'Erklærede minutter for det lokale mål om maksimalt datatab.',
   'settings.backupRecovery.targetRto.label': 'Mål-RTO',
-  'settings.backupRecovery.targetRto.hint': 'Erklærede minutter for det lokale mål om maksimal gendannelsestid.',
+  'settings.backupRecovery.targetRto.hint':
+    'Erklærede minutter for det lokale mål om maksimal gendannelsestid.',
   'settings.entityTable.title': 'Enhedstabel',
   'settings.entityTable.hint': 'Vælg de synlige kolonner i listen over registrerede enheder.',
   'settings.entityTable.columns.aria': 'Kolonner i enhedstabellen',
@@ -1789,8 +1802,7 @@ export const daDK: Catalog = {
   'settings.privacy.transfer.title': 'Overførselskontroller',
   'settings.privacy.transfer.lede':
     'Registrér kontroller anvendt på dataoverførsler, herunder modtagere, mekanismer og garantier.',
-  'settings.privacy.transfer.searchPlaceholder':
-    'Navn, modtager, land, mekanisme eller garanti',
+  'settings.privacy.transfer.searchPlaceholder': 'Navn, modtager, land, mekanisme eller garanti',
   'settings.privacy.transfer.field.name': 'Kontrolnavn',
   'settings.privacy.transfer.field.purpose': 'Formål',
   'settings.privacy.transfer.field.legalBasis': 'Retsgrundlag',
@@ -2057,7 +2069,8 @@ export const daDK: Catalog = {
   'acts.convening.channelNone': 'Ingen metode registreret',
   'acts.convening.antecedenceDays': 'Faktisk varsel (dage)',
   'acts.convening.evidenceReference': 'Dokumentation for indkaldelse',
-  'acts.convening.evidencePlaceholder': 'F.eks. doc:notice, RR123456789PT, URL til offentliggørelse',
+  'acts.convening.evidencePlaceholder':
+    'F.eks. doc:notice, RR123456789PT, URL til offentliggørelse',
   'acts.agenda': 'Dagsorden',
   'acts.agenda.itemAria': 'Dagsordenspunkt',
   'acts.agenda.placeholder': 'Beskrivelse af punktet',
@@ -2437,6 +2450,46 @@ export const daDK: Catalog = {
   'signing.signed.timestampAbsent': 'Ikke til stede',
   'signing.signed.digest': 'Fingeraftryk af signeret PDF',
   'signing.download': 'Download signeret PDF',
+  'signing.technicalComparison.aria':
+    'Local technical comparison between sealed act and signed PDF',
+  'signing.technicalComparison.kicker': 'Technical comparison',
+  'signing.technicalComparison.title': 'Local metadata for the sealed act and signed PDF',
+  'signing.technicalComparison.summary.aria': 'Local technical comparison summary',
+  'signing.technicalComparison.badge.local': 'Local metadata only',
+  'signing.technicalComparison.badge.noClaim': 'No claim',
+  'signing.technicalComparison.status.match': 'Metadata match',
+  'signing.technicalComparison.status.present': 'Supplied',
+  'signing.technicalComparison.status.partial': 'Partial',
+  'signing.technicalComparison.status.unavailable': 'Unavailable',
+  'signing.technicalComparison.status.mismatch': 'Mismatch',
+  'signing.technicalComparison.status.notClaimed': 'Not claimed',
+  'signing.technicalComparison.status.loading': 'Loading',
+  'signing.technicalComparison.row.actId': 'Act ID',
+  'signing.technicalComparison.row.sealedPayloadDigest': 'Sealed payload digest',
+  'signing.technicalComparison.row.canonicalPdfDigest': 'Canonical PDF digest',
+  'signing.technicalComparison.row.signedPdfDigest': 'Signed PDF digest',
+  'signing.technicalComparison.row.signedDocument': 'Signed document',
+  'signing.technicalComparison.row.signatureMetadata': 'Signature family/status',
+  'signing.technicalComparison.row.bundleFixity': 'Bundle fixity flags',
+  'signing.technicalComparison.detail.act': 'Act',
+  'signing.technicalComparison.detail.bundle': 'Bundle',
+  'signing.technicalComparison.detail.document': 'Document',
+  'signing.technicalComparison.detail.signature': 'Signature',
+  'signing.technicalComparison.detail.report': 'Report',
+  'signing.technicalComparison.detail.fixity': 'Fixity',
+  'signing.technicalComparison.detail.metadataFlag': 'Metadata flag',
+  'signing.technicalComparison.detail.status': 'Status',
+  'signing.technicalComparison.detail.signedAt': 'Recorded at',
+  'signing.technicalComparison.detail.documentId': 'Document ID',
+  'signing.technicalComparison.detail.download': 'Download',
+  'signing.technicalComparison.detail.attachments': 'Attachments',
+  'signing.technicalComparison.detail.present': 'present',
+  'signing.technicalComparison.detail.notSupplied': 'not supplied',
+  'signing.technicalComparison.detail.withoutDigest': 'without digest',
+  'signing.technicalComparison.bundleUnavailable':
+    'The document bundle is not loaded or did not supply a local validation report.',
+  'signing.technicalComparison.noClaim':
+    'Technical metadata review aid only: it does not read raw PDFs, recompute digests, validate trust, mutate archives, record reviewer notes, or decide legal validity, signature qualification, source certification, provider assurance, or external validation.',
   'signing.signed.qualifiedLabelCc': 'Kvalificeret elektronisk signatur (Borgerkort).',
   'signing.cc.start': 'Signer med Borgerkort',
   'signing.cc.prompt.title': 'Signering med Borgerkort',
@@ -2531,8 +2584,7 @@ export const daDK: Catalog = {
   'signing.remoteBatch.credential.label': 'Signeringslegitimation til fjernsessioner',
   'signing.remoteBatch.credential.hint':
     'Valgfri og midlertidig. Bruges kun til at starte disse sessioner; gemmes aldrig.',
-  'signing.remoteBatch.selection.needMore':
-    'Vælg mindst to akter, en udbyder og brugerreferencen.',
+  'signing.remoteBatch.selection.needMore': 'Vælg mindst to akter, en udbyder og brugerreferencen.',
   'signing.remoteBatch.submit': 'Start fjernsessioner',
   'signing.remoteBatch.submit.pending': 'Starter sessioner…',
   'signing.remoteBatch.reset': 'Ryd sessioner',
@@ -2678,7 +2730,8 @@ export const daDK: Catalog = {
   'signing.evidence.renewal.action.none': 'ingen handling',
   'signing.evidence.renewal.action.manualReview': 'manuel gennemgang',
   'signing.evidence.renewal.action.addSignatureTimestamp': 'tilføj signaturtidsstempel',
-  'signing.evidence.renewal.action.embedDssRevocationEvidence': 'indlejr DSS-tilbagekaldelsesdokumentation',
+  'signing.evidence.renewal.action.embedDssRevocationEvidence':
+    'indlejr DSS-tilbagekaldelsesdokumentation',
   'signing.evidence.renewal.action.recordDssValidationTime': 'registrér DSS-valideringstidspunkt',
   'signing.evidence.renewal.action.addDocumentTimestamp': 'tilføj dokumenttidsstempel',
   'signing.evidence.renewal.action.recordSignatureDssValidationTime':
@@ -2717,7 +2770,8 @@ export const daDK: Catalog = {
   'signing.official.notice':
     'Vælg den PDF, der allerede er signeret i Autenticação.gov eller en anden officiel overdragelse. Chancela gemmer kun filen som teknisk dokumentation og hævder ikke validering mod tillidslisten, kvalificeret status eller juridisk færdiggørelse.',
   'signing.official.file.label': 'Signeret PDF',
-  'signing.official.file.hint': 'Vælg den signerede PDF, der er modtaget fra den officielle applikation.',
+  'signing.official.file.hint':
+    'Vælg den signerede PDF, der er modtaget fra den officielle applikation.',
   'signing.official.provider.label': 'Udbyder',
   'signing.official.provider.hint':
     'Valgfrit. Registrerer den udbyder, operatøren har angivet; den bruges ikke som autoritet.',
@@ -2735,7 +2789,8 @@ export const daDK: Catalog = {
     'Chancela udfører ikke validering mod tillidslisten i dette forløb.',
   'signing.official.guardrails.qualified':
     'Chancela hævder ikke kvalificeret status for denne import.',
-  'signing.official.guardrails.legal': 'Chancela hævder ikke juridisk færdiggørelse for denne import.',
+  'signing.official.guardrails.legal':
+    'Chancela hævder ikke juridisk færdiggørelse for denne import.',
   'signing.official.guardrails.noSecret':
     'Dette forløb indsamler ikke PIN-koder, OTP’er, CAN’er, legitimationsoplysninger, tokens eller adgangskoder.',
   'signing.official.ack.label':
@@ -2767,7 +2822,8 @@ export const daDK: Catalog = {
   'signing.invites.expiresAt': 'Udløber den',
   'signing.invites.purpose': 'Formål',
   'signing.invites.empty.title': 'Ingen eksterne invitationer',
-  'signing.invites.empty.body': 'Der er endnu ingen eksterne invitationer registreret for denne protokol.',
+  'signing.invites.empty.body':
+    'Der er endnu ingen eksterne invitationer registreret for denne protokol.',
   'signing.invites.table.signer': 'Underskriver',
   'signing.invites.table.status': 'Status',
   'signing.invites.table.workflow': 'Flow',
@@ -2921,7 +2977,8 @@ export const daDK: Catalog = {
   'data.status.usage.sqliteAverage': 'Gennemsnit: {bytes}/række',
   'data.status.usage.sqliteAverageUnavailable': 'Gennemsnit: —',
   'data.status.usage.sqliteEstimateMethod.localLoadedPayload':
-    'Metode: skøn ud fra lokalt indlæst nyttelast',  'data.status.usage.empty': 'Ingen data rapporteret.',
+    'Metode: skøn ud fra lokalt indlæst nyttelast',
+  'data.status.usage.empty': 'Ingen data rapporteret.',
   'data.status.basis.filesystem': 'filsystem',
   'data.status.basis.sqlite_file': 'SQLite-fil',
   'data.status.basis.sqlite_logical_payload': 'SQLite logisk nyttelast',
@@ -2951,7 +3008,8 @@ export const daDK: Catalog = {
   'data.status.cleanup.pending': 'Rydder…',
   'data.status.cleanup.done': 'Rydning fuldført.',
   'data.status.cleanup.doneTitle': 'Vedligeholdelse fuldført',
-  'data.status.cleanup.result': 'Slettede {files} filer og {directories} mapper og frigjorde {bytes}.',
+  'data.status.cleanup.result':
+    'Slettede {files} filer og {directories} mapper og frigjorde {bytes}.',
   'data.status.backup.title': 'Driftssikkerhedskopi',
   'data.status.backup.body':
     'Opretter en varm sikkerhedskopi af den vedvarende instans og returnerer kun et ikke-hemmeligt manifest.',
@@ -3236,7 +3294,8 @@ export const daDK: Catalog = {
   'settings.apiKeys.revokedToast': 'API-nøgle tilbagekaldt.',
   'settings.apiKeys.rotatedToast': 'API-nøgle roteret.',
   'settings.apiKeys.empty': 'Ingen API-nøgler',
-  'settings.apiKeys.emptyBody': 'Opret en nøgle for at give integrationsadgang med Bearer-godkendelse.',
+  'settings.apiKeys.emptyBody':
+    'Opret en nøgle for at give integrationsadgang med Bearer-godkendelse.',
   'settings.apiKeys.secret.title': 'Gem denne hemmelighed nu',
   'settings.apiKeys.secret.body':
     'Den fulde hemmelighed vises kun ved denne oprettelse. Når du lukker denne besked, er kun præfikset og metadata tilgængelige.',
@@ -3375,7 +3434,8 @@ export const daDK: Catalog = {
   'documents.import.pending': 'Importerer...',
   'documents.import.choose': 'Importér dokumentation',
   'documents.import.empty.title': 'Ingen importerede dokumenter',
-  'documents.import.empty.body': 'Denne protokol har endnu ingen importeret dokumentation eller reference.',
+  'documents.import.empty.body':
+    'Denne protokol har endnu ingen importeret dokumentation eller reference.',
   'documents.import.listAria': 'Importerede dokumenter',
   'documents.import.unnamed': 'Importeret dokument uden navn',
   'documents.import.nonCanonical': 'Ikke-kanonisk',
@@ -3434,7 +3494,8 @@ export const daDK: Catalog = {
   'documents.import.readError.imported': 'Kunne ikke læse den importerede fil.',
   'documents.import.readError.file': 'Kunne ikke læse filen.',
   'documents.import.preflight.title': 'Lokal preflight for kanonisk konvertering',
-  'documents.import.preflight.hint': 'Kun lokalt metadatabevis; konverterer ikke DOC, opretter ikke PDF/A, kører ikke OCR, validerer ikke signaturer, kontakter ikke udbydere og hævder ingen juridisk accept.',
+  'documents.import.preflight.hint':
+    'Kun lokalt metadatabevis; konverterer ikke DOC, opretter ikke PDF/A, kører ikke OCR, validerer ikke signaturer, kontakter ikke udbydere og hævder ingen juridisk accept.',
   'documents.import.preflight.notIndicated': 'ikke angivet',
   'documents.import.preflight.status.blocked': 'blokeret',
   'documents.import.preflight.status.notAttempted': 'ikke forsøgt',
@@ -3454,8 +3515,10 @@ export const daDK: Catalog = {
   'documents.import.preflight.field.recordReplaced': 'Kanonisk post erstattet',
   'documents.import.preflight.evidenceObserved': 'Observeret bevis',
   'documents.import.preflight.blockers': 'Blokeringer',
-  'documents.import.review.noticeFallback': 'Gennemgangen registrerer kun en operationel bevaringsbeslutning; den kører ikke OCR, konverterer ikke bytes, erstatter ikke den kanoniske PDF/A og hævder ingen juridisk accept.',
-  'documents.import.review.status.reviewedNonCanonical': 'Gennemgået: original bevaret kun som ikke-kanonisk bevis',
+  'documents.import.review.noticeFallback':
+    'Gennemgangen registrerer kun en operationel bevaringsbeslutning; den kører ikke OCR, konverterer ikke bytes, erstatter ikke den kanoniske PDF/A og hævder ingen juridisk accept.',
+  'documents.import.review.status.reviewedNonCanonical':
+    'Gennemgået: original bevaret kun som ikke-kanonisk bevis',
   'documents.import.review.status.rejected': 'Afvist som ikke-kanonisk bevis',
   'documents.import.review.status.operatorRequired': 'Operatørgennemgang påkrævet',
   'documents.import.review.status.ocrRequired': 'Operatørgennemgang påkrævet for bevaret billede',
@@ -3471,9 +3534,11 @@ export const daDK: Catalog = {
   'documents.import.review.formAria': 'Operationel gennemgang af det importerede dokument',
   'documents.import.review.conservativeTitle': 'Konservativ gennemgang',
   'documents.import.review.statusLabel': 'Gennemgangsstatus',
-  'documents.import.review.noteHint': '{count}/{limit} tegn. Registrér kun den operationelle beslutning; hævd ikke OCR, konvertering eller juridisk accept.',
+  'documents.import.review.noteHint':
+    '{count}/{limit} tegn. Registrér kun den operationelle beslutning; hævd ikke OCR, konvertering eller juridisk accept.',
   'documents.import.review.guardrailsToAck': 'Værn der skal anerkendes',
-  'documents.import.review.ackLabel': 'Jeg bekræfter, at jeg har gennemgået disse værn, og at beslutningen ikke ophøjer det importerede dokument til en kanonisk post, en erstattende PDF/A, en signeret PDF eller juridisk accept.',
+  'documents.import.review.ackLabel':
+    'Jeg bekræfter, at jeg har gennemgået disse værn, og at beslutningen ikke ophøjer det importerede dokument til en kanonisk post, en erstattende PDF/A, en signeret PDF eller juridisk accept.',
   'documents.import.review.save': 'Gem gennemgang',
   'documents.import.review.saving': 'Gemmer gennemgang',
   'documents.import.review.toast.saved': 'Gennemgang af importeret dokument gemt.',
@@ -3496,20 +3561,24 @@ export const daDK: Catalog = {
   'documents.import.receipt.notCreated': 'Ikke oprettet eller valideret af denne gennemgang.',
   'documents.import.receipt.notClaimed': 'Ikke hævdet af denne gennemgang.',
   'documents.import.history.title': 'Teknisk gennemgangshistorik',
-  'documents.import.history.empty': 'Ingen teknisk historik registreret ud over gennemgangens aktuelle metadata.',
+  'documents.import.history.empty':
+    'Ingen teknisk historik registreret ud over gennemgangens aktuelle metadata.',
   'documents.import.history.decision': 'Beslutning',
   'documents.import.history.recordedAt': 'Registreret den',
   'documents.import.history.recordedBy': 'Registreret af',
   'documents.import.history.note': 'Historisk note',
   'documents.import.history.noAcknowledgedGuardrails': 'Ingen anerkendte værn i denne beslutning',
   'documents.import.history.scope': 'Teknisk omfang',
-  'documents.import.history.scopeBody': 'Gennemgangshistorik udelukkende baseret på metadata for ikke-kanonisk bevis; uden OCR, konvertering, PDF/A-erstatning, signaturvalidering, tidsstempel, PDF/UA, certificering eller juridisk accept.',
+  'documents.import.history.scopeBody':
+    'Gennemgangshistorik udelukkende baseret på metadata for ikke-kanonisk bevis; uden OCR, konvertering, PDF/A-erstatning, signaturvalidering, tidsstempel, PDF/UA, certificering eller juridisk accept.',
   'documents.import.depth.aria': 'Oversigt over dybden af den importerede gennemgang',
   'documents.import.depth.title': 'Oversigt over gennemgangens dybde',
   'documents.import.depth.includes': 'Omfatter',
   'documents.import.depth.bytesPreserved': 'Bytes bevaret ({status})',
-  'documents.import.depth.bytesNotIndicated': 'Bevaring af oprindelige bytes ikke angivet i de indlæste metadata',
-  'documents.import.depth.includesValue': '{bytes}, SHA-256-digest, gennemgangsstatus {receipt} og operatørnote {note}. Teknisk historik: {history}.',
+  'documents.import.depth.bytesNotIndicated':
+    'Bevaring af oprindelige bytes ikke angivet i de indlæste metadata',
+  'documents.import.depth.includesValue':
+    '{bytes}, SHA-256-digest, gennemgangsstatus {receipt} og operatørnote {note}. Teknisk historik: {history}.',
   'documents.import.depth.recorded': 'registreret',
   'documents.import.depth.pending': 'afventer',
   'documents.import.depth.noteRecorded': 'registreret',
@@ -3520,9 +3589,11 @@ export const daDK: Catalog = {
   'documents.import.depth.derivedStatus': 'Afledt status',
   'documents.import.depth.operatorNote': 'Operatørnote',
   'documents.import.depth.excludes': 'Udelukker',
-  'documents.import.depth.excludesValue': 'OCR, konvertering, PDF/A-erstatning, signeret PDF, signaturvalidering, tidsstempel, PDF/UA og juridisk accept.',
+  'documents.import.depth.excludesValue':
+    'OCR, konvertering, PDF/A-erstatning, signeret PDF, signaturvalidering, tidsstempel, PDF/UA og juridisk accept.',
   'documents.import.depth.noClaimFlags': 'Flag uden hævdelse',
-  'documents.import.depth.noClaimFlagsValue': 'OCR: nej · konvertering: nej · PDF/A erstattet: nej · signeret PDF: nej · signatur: nej · tidsstempel: nej · PDF/UA: nej · juridisk accept: nej.',
+  'documents.import.depth.noClaimFlagsValue':
+    'OCR: nej · konvertering: nej · PDF/A erstattet: nej · signeret PDF: nej · signatur: nej · tidsstempel: nej · PDF/UA: nej · juridisk accept: nej.',
   'externalInvite.crumbs': 'Ekstern signering',
   'externalInvite.title': 'Ekstern invitation',
   'externalInvite.status.pending': 'Afventer',
@@ -3705,8 +3776,7 @@ export const daDK: Catalog = {
   'trust.tsa.empty.title': 'Ingen TSA-poster',
   'trust.tsa.empty.body': 'Ingen tidsstempeltjeneste svarer til “{term}”.',
   'trust.tsa.detail.empty.title': 'Ingen TSA-post valgt',
-  'trust.tsa.detail.empty.body':
-    'Vælg en post for at se metadata, tjenestepunkter og identiteter.',
+  'trust.tsa.detail.empty.body': 'Vælg en post for at se metadata, tjenestepunkter og identiteter.',
   'trust.tsa.detail.grantedEffective': 'Tildelt / effektiv',
   'trust.tsa.detail.classification': 'Klassifikation',
   'trust.tsa.detail.trustBasis': 'Tillidsgrundlag',
@@ -3734,8 +3804,7 @@ export const daDK: Catalog = {
   'signing.format.scap': 'Professionelt attribut (SCAP)',
   'signing.tool.signer.legend': 'Softwarecertifikat (PKCS#12)',
   'signing.tool.signer.file.label': 'PKCS#12/PFX-fil',
-  'signing.tool.signer.file.hint':
-    'Certifikatet bruges kun til denne anmodning og gemmes aldrig.',
+  'signing.tool.signer.file.hint': 'Certifikatet bruges kun til denne anmodning og gemmes aldrig.',
   'signing.tool.signer.passphrase.label': 'Adgangssætning',
   'signing.tool.signer.passphrase.hint': 'Bruges kun til denne anmodning; gemmes aldrig.',
   'signing.tool.signer.friendlyName.label': 'Visningsnavn (valgfrit)',
@@ -3792,7 +3861,8 @@ export const daDK: Catalog = {
   'signing.scap.fullName.label': 'Fulde navn (valgfrit)',
   'signing.scap.loadAttributes': 'Søg attributter',
   'signing.scap.loadingAttributes': 'Søger…',
-  'signing.scap.attributes.empty': 'SCAP rapporterer ingen professionelle attributter for denne borger.',
+  'signing.scap.attributes.empty':
+    'SCAP rapporterer ingen professionelle attributter for denne borger.',
   'signing.scap.attributes.legend': 'Rapporterede attributter',
   'signing.scap.attribute.provider': 'Udbyder: {provider}',
   'signing.scap.attribute.validity': 'Gyldighed: {from} – {until}',
@@ -3815,14 +3885,16 @@ export const daDK: Catalog = {
   'signing.scap.download': 'Hent CAdES-signatur',
 
   // --- Written-resolution evidence receipts (wp12-e1) ----------------------------
-  'compliance.writtenResolution.review.label': 'Lokal dokumentationsgennemgang af skriftlig beslutning',
+  'compliance.writtenResolution.review.label':
+    'Lokal dokumentationsgennemgang af skriftlig beslutning',
   'compliance.writtenResolution.review.receiptRecorded': 'Kvittering registreret',
   'compliance.writtenResolution.review.receiptMissing': 'Gennemgangskvittering mangler',
   'compliance.writtenResolution.review.reviewReceipts': 'Gennemgangskvitteringer',
   'compliance.writtenResolution.review.reviewedLocators': 'Gennemgåede lokatorer',
   'compliance.writtenResolution.review.reviewedDigests': 'Gennemgåede digests',
   'compliance.writtenResolution.review.boundEvidence': 'Tilknyttet dokumentation',
-  'compliance.writtenResolution.review.boundary': 'Kun lokale metadata. Der hævdes hverken samtykke, beslutningsdygtighed, identitet, juridisk tilstrækkelighed, ekstern validering, automatisk godkendelse eller myndighedscertificering.',
+  'compliance.writtenResolution.review.boundary':
+    'Kun lokale metadata. Der hævdes hverken samtykke, beslutningsdygtighed, identitet, juridisk tilstrækkelighed, ekstern validering, automatisk godkendelse eller myndighedscertificering.',
   'compliance.writtenResolution.status.boundPresent': 'Tilknyttet dokumentation til stede',
   'compliance.writtenResolution.status.referencedOnly': 'Kun refereret',
   'compliance.writtenResolution.status.missing': 'Dokumentation mangler',
@@ -3832,7 +3904,8 @@ export const daDK: Catalog = {
   'compliance.writtenResolution.status.notRecorded': 'Ikke registreret',
   'acts.writtenResolution.card.title': 'Dokumentationskvitteringer for skriftlig beslutning',
   'acts.writtenResolution.history.label': 'Kvitteringshistorik for skriftlig beslutning',
-  'acts.writtenResolution.history.empty': 'Ingen gennemgangskvitteringer for skriftlig beslutning registreret.',
+  'acts.writtenResolution.history.empty':
+    'Ingen gennemgangskvitteringer for skriftlig beslutning registreret.',
   'acts.writtenResolution.receipt.reviewedEvidence': 'Gennemgået dokumentation',
   'acts.writtenResolution.receipt.notRecorded': 'Ikke registreret',
   'acts.writtenResolution.receipt.note': 'Note',
@@ -3846,7 +3919,8 @@ export const daDK: Catalog = {
   'acts.writtenResolution.field.evidenceReference': 'Dokumentationsreference',
   'acts.writtenResolution.field.evidenceDigest': 'Dokumentationsdigest',
   'acts.writtenResolution.field.receiptNotes': 'Kvitteringsnoter',
-  'acts.writtenResolution.guardrail': 'Kun lokale metadata; påstande om bevis, juridisk tilstrækkelighed, udbyder, myndighed, færdiggørelse, underskrift, segl og arkivering forbliver falske.',
+  'acts.writtenResolution.guardrail':
+    'Kun lokale metadata; påstande om bevis, juridisk tilstrækkelighed, udbyder, myndighed, færdiggørelse, underskrift, segl og arkivering forbliver falske.',
   'acts.writtenResolution.submit.recording': 'Registrerer kvittering…',
   'acts.writtenResolution.submit.record': 'Registrér lokal kvittering',
   'acts.writtenResolution.reviewStatusOption.reviewed': 'Lokale metadata gennemgået',
@@ -3855,12 +3929,14 @@ export const daDK: Catalog = {
   'acts.writtenResolution.status.needsFollowUp': 'Kræver opfølgning',
   'acts.writtenResolution.status.notRecorded': 'Ikke registreret',
   // --- Field-help tooltips (wp12-e2) ----------------------------------------------
-  'fieldHelp.acts.title': 'Kort navn, der identificerer referatet i lister, forhåndsvisninger og genererede dokumenter.',
+  'fieldHelp.acts.title':
+    'Kort navn, der identificerer referatet i lister, forhåndsvisninger og genererede dokumenter.',
   'fieldHelp.acts.channel':
     'Måden, mødet blev afholdt på; aktiverer felter og kontroller, der er specifikke for fjern- eller hybridmøder.',
   'fieldHelp.acts.meetingDate':
     'Dato, hvor mødet fandt sted; indgår også i nummereringen og dokumentgenereringen.',
-  'fieldHelp.acts.meetingTime': 'Starttidspunkt, der er registreret i referatet, når det er relevant.',
+  'fieldHelp.acts.meetingTime':
+    'Starttidspunkt, der er registreret i referatet, når det er relevant.',
   'fieldHelp.acts.place': 'Fysisk sted eller mødereference, der bruges i referatets tekst.',
   'fieldHelp.acts.attendanceReference':
     'Angiv, hvor deltagerlisten findes, eller hvordan deltagerne blev verificeret.',
@@ -3886,8 +3962,7 @@ export const daDK: Catalog = {
     'Punkt behandlet på dagsordenen; strukturerede beslutninger kan knyttes til dette nummer.',
   'fieldHelp.acts.deliberationsText':
     'Fri tekst i referatet. Brug den til den fulde formulering eller som supplement til de strukturerede beslutninger.',
-  'fieldHelp.acts.structuredAgenda':
-    'Knytter beslutningen til det tilsvarende dagsordenspunkt.',
+  'fieldHelp.acts.structuredAgenda': 'Knytter beslutningen til det tilsvarende dagsordenspunkt.',
   'fieldHelp.acts.structuredText':
     'Registrerer beslutningen i struktureret format til genbrug i dokumentet og i opfølgninger.',
   'fieldHelp.acts.voteMode':
@@ -3908,118 +3983,147 @@ export const daDK: Catalog = {
   'fieldHelp.acts.signatorySigned':
     'Markerer, at personen har underskrevet den relevante fysiske eller elektroniske version.',
   'fieldHelp.acts.attachmentLabel': 'Kort beskrivelse af det bilag, der er knyttet til referatet.',
-  'fieldHelp.acts.attachmentKind': 'Klassificering af bilaget til dokumentet og til den arkiverede dokumentation.',
+  'fieldHelp.acts.attachmentKind':
+    'Klassificering af bilaget til dokumentet og til den arkiverede dokumentation.',
   'fieldHelp.acts.beginningOfProof': 'Markér, når bilaget skal behandles som begyndende bevis.',
   'fieldHelp.entities.nipc':
     'Enhedens identifikationsnummer. Brug 9 portugisiske cifre; aktivér kun indstillingen uden validering, når det er relevant.',
-  'fieldHelp.entities.seat': 'Adresse eller sted for hjemstedet, der bruges i denne enheds bøger og dokumenter.',
+  'fieldHelp.entities.seat':
+    'Adresse eller sted for hjemstedet, der bruges i denne enheds bøger og dokumenter.',
   'fieldHelp.entities.legalForm':
     'Enhedstype, der vælger den relevante familie af regler, bøger og skabeloner.',
-  'fieldHelp.entities.fiscalYearEnd': 'Dag for regnskabsårets afslutning i formatet MM-DD; tom bruger 12-31.',
-  'fieldHelp.entities.statuteQuorum': 'Driftsværdi, der bruges til overholdelsesadvarsler om fremmøde.',
-  'fieldHelp.entities.statuteMajority': 'Brøk, der bruges til overholdelsesadvarsler om beslutninger.',
-  'fieldHelp.entities.statuteNotice': 'Minimum antal dage, der bruges til advarsler om indkaldelsesfrist.',
+  'fieldHelp.entities.fiscalYearEnd':
+    'Dag for regnskabsårets afslutning i formatet MM-DD; tom bruger 12-31.',
+  'fieldHelp.entities.statuteQuorum':
+    'Driftsværdi, der bruges til overholdelsesadvarsler om fremmøde.',
+  'fieldHelp.entities.statuteMajority':
+    'Brøk, der bruges til overholdelsesadvarsler om beslutninger.',
+  'fieldHelp.entities.statuteNotice':
+    'Minimum antal dage, der bruges til advarsler om indkaldelsesfrist.',
   'fieldHelp.registry.accessCode':
     '12-cifret kode, der giver adgang til attesten; den sendes kun til denne forespørgsel og gemmes ikke.',
-  'fieldHelp.registry.email': 'Sendes kun, når registreringstjenesten anmoder om den for at åbne attesten.',
+  'fieldHelp.registry.email':
+    'Sendes kun, når registreringstjenesten anmoder om den for at åbne attesten.',
   'fieldHelp.registry.firma': 'Enhedens navn, som det kom fra den importerede attest.',
   'fieldHelp.registry.nipc': 'NIPC-identifikator udtrukket fra attesten, når den er til stede.',
   'fieldHelp.registry.legalForm': 'Retlig karakter eller form normaliseret ud fra attesten.',
   'fieldHelp.registry.matricula': 'Registreringsreference angivet i handelsregistret.',
-  'fieldHelp.registry.sede': 'Hjemsted udtrukket fra attesten; kan være fri tekst eller en struktureret adresse.',
-  'fieldHelp.registry.dataConstituicao': 'Stiftelsesdato udtrukket fra attesten, når den er tilgængelig.',
+  'fieldHelp.registry.sede':
+    'Hjemsted udtrukket fra attesten; kan være fri tekst eller en struktureret adresse.',
+  'fieldHelp.registry.dataConstituicao':
+    'Stiftelsesdato udtrukket fra attesten, når den er tilgængelig.',
   'fieldHelp.registry.capital': 'Kapital trykt på attesten, uden yderligere beregning.',
-  'fieldHelp.registry.objeto': 'Formål eller genstand registreret i henhold til teksten importeret fra attesten.',
+  'fieldHelp.registry.objeto':
+    'Formål eller genstand registreret i henhold til teksten importeret fra attesten.',
   'fieldHelp.registry.cae':
     'Økonomiske aktiviteter fra attesten, beriget med CAE-kataloget, hvor det er muligt.',
-  'fieldHelp.registry.accessCodeMasked': 'Kode maskeret til revision; den fulde værdi vises aldrig.',
+  'fieldHelp.registry.accessCodeMasked':
+    'Kode maskeret til revision; den fulde værdi vises aldrig.',
   'fieldHelp.registry.retrievedAt': 'Tidspunkt, hvor denne forespørgsel blev udført.',
   'fieldHelp.registry.conservatoria': 'Registreringskontor angivet i det importerede dokument.',
   'fieldHelp.registry.oficial': 'Embedsmand angivet i det importerede dokument.',
   'fieldHelp.registry.subscribedOn': 'Tegningsdato angivet på attesten.',
-  'fieldHelp.registry.validUntil': 'Gyldighedsdato angivet på attesten; den fornyer ikke forespørgslen.',
+  'fieldHelp.registry.validUntil':
+    'Gyldighedsdato angivet på attesten; den fornyer ikke forespørgslen.',
   'fieldHelp.registry.source': 'URL brugt til at hente attesten ved denne import.',
-  'fieldHelp.registry.digest': 'SHA-256 af den importerede HTML til sammenligning med det oprindelige dokument.',
+  'fieldHelp.registry.digest':
+    'SHA-256 af den importerede HTML til sammenligning med det oprindelige dokument.',
   'fieldHelp.registry.naturezaJuridica':
     'Retlig karakter, som den blev læst i attestens indførsel.',
-  'fieldHelp.registry.fiscalYearEnd': 'Regnskabsårets afslutning angivet i indførslen, når den er til stede.',
-  'fieldHelp.registry.capitalRealization': 'Note om kapitalindbetaling transskriberet fra attesten.',
-  'fieldHelp.registry.deliberationDate': 'Beslutningsdato angivet i indførslen, når den er til stede.',
+  'fieldHelp.registry.fiscalYearEnd':
+    'Regnskabsårets afslutning angivet i indførslen, når den er til stede.',
+  'fieldHelp.registry.capitalRealization':
+    'Note om kapitalindbetaling transskriberet fra attesten.',
+  'fieldHelp.registry.deliberationDate':
+    'Beslutningsdato angivet i indførslen, når den er til stede.',
   'fieldHelp.registry.formaObrigar': 'Importeret tekst om, hvem der forpligter enheden.',
-  "settings.providerCredentials.cardTitle": "Signeringsudbydere",
-  "settings.providerCredentials.lede": "Administrer legitimationsoplysninger for signeringsudbydere med flere nøgler pr. udbyder, prioritet og failover.",
-  "settings.providerCredentials.newEntry": "Ny post",
-  "settings.providerCredentials.empty": "Ingen udbyder-legitimationsoplysninger",
-  "settings.providerCredentials.emptyBody": "Der er endnu ikke gemt nogen legitimationsoplysninger. Tilføj en post for at komme i gang.",
-  "settings.providerCredentials.protection.confidential.title": "Fortrolig lagring",
-  "settings.providerCredentials.protection.confidential.body": "Legitimationsoplysninger krypteres med fortrolig beskyttelse i hvile.",
-  "settings.providerCredentials.protection.obfuscation.title": "Sløring — forsvar i dybden",
-  "settings.providerCredentials.protection.obfuscation.body": "Legitimationsoplysninger krypteres, men det er ikke fuld fortrolighed, før du aktiverer SQLCipher eller OS-forsegling.",
-  "settings.providerCredentials.protection.strictBlocked": "Streng tilstand er slået til: du kan først gemme legitimationsoplysninger, når du har aktiveret fortrolig beskyttelse.",
-  "settings.providerCredentials.mode.cmd": "Chave Móvel Digital (CMD)",
-  "settings.providerCredentials.mode.csc": "CSC-QTSP",
-  "settings.providerCredentials.mode.scap": "SCAP (AMA)",
-  "settings.providerCredentials.mode.pkcs12": "Lokal PKCS#12",
-  "settings.providerCredentials.createdToast": "Post oprettet.",
-  "settings.providerCredentials.updatedToast": "Post opdateret.",
-  "settings.providerCredentials.deletedToast": "Post fjernet.",
-  "settings.providerCredentials.reorderedToast": "Rækkefølge opdateret.",
-  "settings.providerCredentials.failoverHint": "Poster forsøges i prioritetsrækkefølge; lavere bruges, når en højere ikke kan nås.",
-  "settings.providerCredentials.provider.addEntry": "Tilføj post",
-  "settings.providerCredentials.provider.noEntries": "Ingen poster for denne udbyder.",
-  "settings.providerCredentials.entry.unlabeled": "Post uden etiket",
-  "settings.providerCredentials.entry.priority": "Prioritet {priority}",
-  "settings.providerCredentials.entry.enabled": "Aktiveret",
-  "settings.providerCredentials.entry.disabled": "Deaktiveret",
-  "settings.providerCredentials.entry.moveUp": "Hæv prioritet",
-  "settings.providerCredentials.entry.moveDown": "Sænk prioritet",
-  "settings.providerCredentials.entry.edit": "Rediger",
-  "settings.providerCredentials.entry.noFields": "Ingen konfigurerede felter",
-  "settings.providerCredentials.entry.configured": "konfigureret",
-  "settings.providerCredentials.entry.deleteConfirm.title": "Fjern post",
-  "settings.providerCredentials.entry.deleteConfirm.intro": "Du er ved at fjerne posten “{label}”. Denne handling kan ikke fortrydes.",
-  "settings.providerCredentials.entry.deleteConfirm.confirm": "Fjern post",
-  "settings.providerCredentials.entry.deleteConfirm.pending": "Fjerner…",
-  "settings.providerCredentials.form.newEntry": "Ny post",
-  "settings.providerCredentials.form.editEntry": "Rediger post",
-  "settings.providerCredentials.form.mode": "Udbydertype",
-  "settings.providerCredentials.form.providerId": "Udbyder-id",
-  "settings.providerCredentials.form.providerIdHint": "QTSP-id (CSC) eller identitetsetiket (PKCS#12).",
-  "settings.providerCredentials.form.label": "Etiket",
-  "settings.providerCredentials.form.labelPlaceholder": "Primær nøgle",
-  "settings.providerCredentials.form.enabled": "Post aktiveret",
-  "settings.providerCredentials.form.endpoint": "Endepunkt (base_url)",
-  "settings.providerCredentials.form.endpointHint": "Tilsidesættelse af basis-URL for denne udbyder.",
-  "settings.providerCredentials.form.pfxWarning.title": "Privat nøgle i hvile",
-  "settings.providerCredentials.form.pfxWarning.body": "At gemme en PKCS#12-fil betyder at opbevare en privat signeringsnøgle i hvile. Foretræk fortrolig beskyttelse.",
-  "settings.providerCredentials.form.pfxHint": "Vælg .pfx/.p12-filen; bytes kodes på klienten.",
-  "settings.providerCredentials.form.pfxReplaceHint": "Vælg kun en fil for at erstatte den nuværende; lad stå tomt for at beholde den.",
-  "settings.providerCredentials.form.secretHint": "Hemmeligheder er skrivebeskyttede og returneres aldrig. Lad et felt stå tomt for at bevare det uændret.",
-  "settings.providerCredentials.form.keepFieldHint": "Lad stå tomt for at beholde den nuværende værdi.",
-  "settings.providerCredentials.form.submit": "Gem",
-  "settings.providerCredentials.form.submitting": "Gemmer…",
-  "settings.providerCredentials.field.applicationId": "Applikations-id",
-  "settings.providerCredentials.field.httpBasicUsername": "HTTP Basic-brugernavn",
-  "settings.providerCredentials.field.httpBasicPassword": "HTTP Basic-adgangskode",
-  "settings.providerCredentials.field.amaCertPem": "AMA-certifikat (PEM)",
-  "settings.providerCredentials.field.clientId": "Klient-id",
-  "settings.providerCredentials.field.clientSecret": "Klienthemmelighed",
-  "settings.providerCredentials.field.accessToken": "Adgangstoken",
-  "settings.providerCredentials.field.secret": "Hemmelighed",
-  "settings.providerCredentials.field.passphrase": "Adgangssætning",
-  "settings.providerCredentials.field.env": "Miljø",
-  "settings.providerCredentials.field.env.unset": "Ikke angivet",
-  "settings.providerCredentials.field.env.preprod": "Præproduktion",
-  "settings.providerCredentials.field.env.prod": "Produktion",
-  "settings.providerCredentials.field.authorization": "Autorisation",
-  "settings.providerCredentials.field.authorization.unset": "Ikke angivet",
-  "settings.providerCredentials.field.authorization.service": "Tjeneste",
-  "settings.providerCredentials.field.authorization.user": "Bruger",
-  "settings.providerCredentials.field.credentialId": "Legitimations-id",
-  "settings.providerCredentials.field.scope": "Omfang (scope)",
-  "settings.providerCredentials.field.sandbox": "Sandkasse (sandbox)",
-  "settings.providerCredentials.field.environment": "Miljø",
-  "settings.providerCredentials.field.friendlyName": "Visningsnavn",
-  "settings.providerCredentials.field.localKeyId": "Local key ID (hex)",
-  "settings.providerCredentials.field.pfx": "PKCS#12/PFX-fil",
+  'settings.providerCredentials.cardTitle': 'Signeringsudbydere',
+  'settings.providerCredentials.lede':
+    'Administrer legitimationsoplysninger for signeringsudbydere med flere nøgler pr. udbyder, prioritet og failover.',
+  'settings.providerCredentials.newEntry': 'Ny post',
+  'settings.providerCredentials.empty': 'Ingen udbyder-legitimationsoplysninger',
+  'settings.providerCredentials.emptyBody':
+    'Der er endnu ikke gemt nogen legitimationsoplysninger. Tilføj en post for at komme i gang.',
+  'settings.providerCredentials.protection.confidential.title': 'Fortrolig lagring',
+  'settings.providerCredentials.protection.confidential.body':
+    'Legitimationsoplysninger krypteres med fortrolig beskyttelse i hvile.',
+  'settings.providerCredentials.protection.obfuscation.title': 'Sløring — forsvar i dybden',
+  'settings.providerCredentials.protection.obfuscation.body':
+    'Legitimationsoplysninger krypteres, men det er ikke fuld fortrolighed, før du aktiverer SQLCipher eller OS-forsegling.',
+  'settings.providerCredentials.protection.strictBlocked':
+    'Streng tilstand er slået til: du kan først gemme legitimationsoplysninger, når du har aktiveret fortrolig beskyttelse.',
+  'settings.providerCredentials.mode.cmd': 'Chave Móvel Digital (CMD)',
+  'settings.providerCredentials.mode.csc': 'CSC-QTSP',
+  'settings.providerCredentials.mode.scap': 'SCAP (AMA)',
+  'settings.providerCredentials.mode.pkcs12': 'Lokal PKCS#12',
+  'settings.providerCredentials.createdToast': 'Post oprettet.',
+  'settings.providerCredentials.updatedToast': 'Post opdateret.',
+  'settings.providerCredentials.deletedToast': 'Post fjernet.',
+  'settings.providerCredentials.reorderedToast': 'Rækkefølge opdateret.',
+  'settings.providerCredentials.failoverHint':
+    'Poster forsøges i prioritetsrækkefølge; lavere bruges, når en højere ikke kan nås.',
+  'settings.providerCredentials.provider.addEntry': 'Tilføj post',
+  'settings.providerCredentials.provider.noEntries': 'Ingen poster for denne udbyder.',
+  'settings.providerCredentials.entry.unlabeled': 'Post uden etiket',
+  'settings.providerCredentials.entry.priority': 'Prioritet {priority}',
+  'settings.providerCredentials.entry.enabled': 'Aktiveret',
+  'settings.providerCredentials.entry.disabled': 'Deaktiveret',
+  'settings.providerCredentials.entry.moveUp': 'Hæv prioritet',
+  'settings.providerCredentials.entry.moveDown': 'Sænk prioritet',
+  'settings.providerCredentials.entry.edit': 'Rediger',
+  'settings.providerCredentials.entry.noFields': 'Ingen konfigurerede felter',
+  'settings.providerCredentials.entry.configured': 'konfigureret',
+  'settings.providerCredentials.entry.deleteConfirm.title': 'Fjern post',
+  'settings.providerCredentials.entry.deleteConfirm.intro':
+    'Du er ved at fjerne posten “{label}”. Denne handling kan ikke fortrydes.',
+  'settings.providerCredentials.entry.deleteConfirm.confirm': 'Fjern post',
+  'settings.providerCredentials.entry.deleteConfirm.pending': 'Fjerner…',
+  'settings.providerCredentials.form.newEntry': 'Ny post',
+  'settings.providerCredentials.form.editEntry': 'Rediger post',
+  'settings.providerCredentials.form.mode': 'Udbydertype',
+  'settings.providerCredentials.form.providerId': 'Udbyder-id',
+  'settings.providerCredentials.form.providerIdHint':
+    'QTSP-id (CSC) eller identitetsetiket (PKCS#12).',
+  'settings.providerCredentials.form.label': 'Etiket',
+  'settings.providerCredentials.form.labelPlaceholder': 'Primær nøgle',
+  'settings.providerCredentials.form.enabled': 'Post aktiveret',
+  'settings.providerCredentials.form.endpoint': 'Endepunkt (base_url)',
+  'settings.providerCredentials.form.endpointHint':
+    'Tilsidesættelse af basis-URL for denne udbyder.',
+  'settings.providerCredentials.form.pfxWarning.title': 'Privat nøgle i hvile',
+  'settings.providerCredentials.form.pfxWarning.body':
+    'At gemme en PKCS#12-fil betyder at opbevare en privat signeringsnøgle i hvile. Foretræk fortrolig beskyttelse.',
+  'settings.providerCredentials.form.pfxHint': 'Vælg .pfx/.p12-filen; bytes kodes på klienten.',
+  'settings.providerCredentials.form.pfxReplaceHint':
+    'Vælg kun en fil for at erstatte den nuværende; lad stå tomt for at beholde den.',
+  'settings.providerCredentials.form.secretHint':
+    'Hemmeligheder er skrivebeskyttede og returneres aldrig. Lad et felt stå tomt for at bevare det uændret.',
+  'settings.providerCredentials.form.keepFieldHint':
+    'Lad stå tomt for at beholde den nuværende værdi.',
+  'settings.providerCredentials.form.submit': 'Gem',
+  'settings.providerCredentials.form.submitting': 'Gemmer…',
+  'settings.providerCredentials.field.applicationId': 'Applikations-id',
+  'settings.providerCredentials.field.httpBasicUsername': 'HTTP Basic-brugernavn',
+  'settings.providerCredentials.field.httpBasicPassword': 'HTTP Basic-adgangskode',
+  'settings.providerCredentials.field.amaCertPem': 'AMA-certifikat (PEM)',
+  'settings.providerCredentials.field.clientId': 'Klient-id',
+  'settings.providerCredentials.field.clientSecret': 'Klienthemmelighed',
+  'settings.providerCredentials.field.accessToken': 'Adgangstoken',
+  'settings.providerCredentials.field.secret': 'Hemmelighed',
+  'settings.providerCredentials.field.passphrase': 'Adgangssætning',
+  'settings.providerCredentials.field.env': 'Miljø',
+  'settings.providerCredentials.field.env.unset': 'Ikke angivet',
+  'settings.providerCredentials.field.env.preprod': 'Præproduktion',
+  'settings.providerCredentials.field.env.prod': 'Produktion',
+  'settings.providerCredentials.field.authorization': 'Autorisation',
+  'settings.providerCredentials.field.authorization.unset': 'Ikke angivet',
+  'settings.providerCredentials.field.authorization.service': 'Tjeneste',
+  'settings.providerCredentials.field.authorization.user': 'Bruger',
+  'settings.providerCredentials.field.credentialId': 'Legitimations-id',
+  'settings.providerCredentials.field.scope': 'Omfang (scope)',
+  'settings.providerCredentials.field.sandbox': 'Sandkasse (sandbox)',
+  'settings.providerCredentials.field.environment': 'Miljø',
+  'settings.providerCredentials.field.friendlyName': 'Visningsnavn',
+  'settings.providerCredentials.field.localKeyId': 'Local key ID (hex)',
+  'settings.providerCredentials.field.pfx': 'PKCS#12/PFX-fil',
 };

@@ -11,6 +11,7 @@ import { StaticPermissionsProvider, permissionsValue } from '../session/permissi
 import { OFFICIAL_SIGNATURE_IMPORT_GUARDRAIL_IDS } from '../../api/types';
 import type {
   ActView,
+  DocumentBundle,
   ExternalSigningEnvelopeView,
   SignatureEvidenceStatus,
   SignatureStatusView,
@@ -108,6 +109,117 @@ const signedStatus: SignatureStatusView = {
   evidence: evidence('B-B', false, ['not_configured', 'lt_not_implemented', 'lta_not_implemented']),
 };
 
+const canonicalPdfDigest = '0f'.repeat(32);
+
+function signedAct(overrides: Partial<ActView> = {}): ActView {
+  return {
+    ...sealedAct,
+    payload_digest: '11'.repeat(32),
+    ...overrides,
+  };
+}
+
+function documentBundle({
+  fixity = {},
+  signedDocument = {},
+  document = {},
+  validation = {},
+}: {
+  fixity?: Partial<DocumentBundle['validation_report']['fixity']>;
+  signedDocument?: Partial<DocumentBundle['validation_report']['signed_document']>;
+  document?: Partial<DocumentBundle['document']>;
+  validation?: Partial<DocumentBundle['validation_report']>;
+} = {}): DocumentBundle {
+  const signedPdfDigest = signedStatus.signed!.signed_pdf_digest;
+  const baseFixity: DocumentBundle['validation_report']['fixity'] = {
+    canonical_pdf_sha256: canonicalPdfDigest,
+    stored_pdf_digest: canonicalPdfDigest,
+    canonical_pdf_digest_matches_metadata: true,
+    attachment_count: 0,
+    attachments_with_digest: 0,
+    attachments_without_digest: 0,
+    signed_pdf_sha256: signedPdfDigest,
+    stored_signed_pdf_digest: signedPdfDigest,
+    signed_pdf_digest_matches_metadata: true,
+  };
+  const baseSignedDocument: DocumentBundle['validation_report']['signed_document'] = {
+    present: true,
+    status: 'signed_pdf_metadata_present',
+    document_id: 'doc-1',
+    document_id_matches_canonical: true,
+    byte_length: 1456,
+    signed_pdf_digest: signedPdfDigest,
+    signed_pdf_digest_matches_metadata: true,
+    download: '/v1/acts/act-1/document/signed',
+    signing_time: signedStatus.signed!.signing_time,
+    signed_at: signedStatus.signed!.signed_at,
+    stored_signature_family: signedStatus.signed!.family,
+    stored_evidentiary_level: signedStatus.signed!.evidentiary_level,
+    trusted_list_status: signedStatus.signed!.trusted_list_status,
+    signer_cert_subject_present: true,
+    timestamp_token_present: signedStatus.signed!.timestamp_token,
+    structural_validation: null,
+  };
+
+  return {
+    act_id: 'act-1',
+    document: {
+      id: 'doc-1',
+      template_id: 'assoc-ata-ga',
+      pdf_digest: canonicalPdfDigest,
+      profile: 'pdfa-3',
+      created_at: '2026-07-06T09:59:00Z',
+      ...document,
+    },
+    pdf: {
+      media_type: 'application/pdf',
+      byte_length: 1234,
+      download: '/v1/acts/act-1/document',
+    },
+    attachments_manifest: [],
+    validation_report: {
+      report_kind: 'document_bundle_validation',
+      scope: 'generated_document_bundle',
+      status: 'technical_consistent',
+      legal_notice: 'Local document bundle metadata report only.',
+      bundle_document_consistency: {
+        route_act_id: 'act-1',
+        stored_document_act_id: 'act-1',
+        act_id_matches_document: true,
+        document_id_present: true,
+        template_id_present: true,
+        created_at_present: true,
+        profile_matches_expected: true,
+        attachments_manifest_count: 0,
+      },
+      canonical_pdf: {
+        present: true,
+        media_type: 'application/pdf',
+        byte_length: 1234,
+        download: '/v1/acts/act-1/document',
+        pdf_header_present: true,
+        version: '1.7',
+        eof_marker_present: true,
+        startxref_present: true,
+        pdfa_identification_markers_present: true,
+      },
+      fixity: { ...baseFixity, ...fixity },
+      signed_document: { ...baseSignedDocument, ...signedDocument },
+      non_certification: {
+        legal_validity_claimed: false,
+        pdfa_conformance_certified: false,
+        pdfua_conformance_claimed: false,
+        qualified_signature_claimed: false,
+        dglab_certification_claimed: false,
+        production_ltv_claimed: false,
+        trust_provider_validation_performed: false,
+      },
+      findings: [],
+      ...validation,
+    },
+  };
+}
+
 function evidence(
   current_level: string,
   timestamp_evidence_present: boolean,
@@ -202,6 +314,7 @@ function json(body: unknown, status = 200): Promise<Response> {
 }
 
 function emptyInviteList(url: string, method = 'GET'): Promise<Response> | null {
+  if (url.endsWith('/document/bundle') && method === 'GET') return json(documentBundle());
   if (url.includes('/signature/external-invites') && method === 'GET') return json([]);
   if (url.includes('/external-signing/envelopes') && method === 'GET') return json([]);
   return null;
@@ -478,6 +591,124 @@ describe('SigningPanel — signed status + download', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Descarregar PDF assinado' }));
     await waitFor(() => expect(createUrl).toHaveBeenCalled());
     expect(clickSpy).toHaveBeenCalled();
+  });
+
+  it('compares signed and bundle metadata when the local evidence matches', async () => {
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.endsWith('/signature')) return json(signedStatus);
+      return emptyInviteList(url) ?? Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(<SigningPanel act={signedAct()} />);
+
+    const panel = await screen.findByLabelText(
+      'Comparação técnica local entre ato selado e PDF assinado',
+    );
+    expect(within(panel).getByText('Só metadados locais')).toBeTruthy();
+    expect(within(panel).getByText('Sem reivindicação')).toBeTruthy();
+    expect(within(panel).getByText('Digest do payload selado')).toBeTruthy();
+
+    const signedDigestRow = within(panel).getAllByText('Digest do PDF assinado')[0].closest('div');
+    expect(signedDigestRow).toBeTruthy();
+    await waitFor(() =>
+      expect(within(signedDigestRow as HTMLElement).getByText('Metadados coincidem')).toBeTruthy(),
+    );
+
+    const signedDocumentRow = within(panel).getByText('Documento assinado').closest('div');
+    expect(signedDocumentRow).toBeTruthy();
+    expect(within(signedDocumentRow as HTMLElement).getByText('Fornecido')).toBeTruthy();
+    expect(panel.textContent).toContain('não lê PDF bruto');
+    expect(panel.textContent).toContain('não recalcula digests');
+  });
+
+  it('surfaces signed metadata mismatches without turning them into validity claims', async () => {
+    const mismatchedBundle = documentBundle({
+      fixity: {
+        signed_pdf_sha256: 'ff'.repeat(32),
+        stored_signed_pdf_digest: 'ff'.repeat(32),
+        signed_pdf_digest_matches_metadata: false,
+      },
+      signedDocument: {
+        signed_pdf_digest: 'ff'.repeat(32),
+        signed_pdf_digest_matches_metadata: false,
+      },
+    });
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.endsWith('/signature')) return json(signedStatus);
+      if (url.endsWith('/document/bundle')) return json(mismatchedBundle);
+      return emptyInviteList(url) ?? Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(<SigningPanel act={signedAct()} />);
+
+    const panel = await screen.findByLabelText(
+      'Comparação técnica local entre ato selado e PDF assinado',
+    );
+    const signedDigestRow = within(panel).getAllByText('Digest do PDF assinado')[0].closest('div');
+    expect(signedDigestRow).toBeTruthy();
+    await waitFor(() =>
+      expect(within(signedDigestRow as HTMLElement).getByText('Divergência')).toBeTruthy(),
+    );
+    expect(panel.textContent).toContain('não valida confiança');
+    expect(panel.textContent).not.toContain('validade legal confirmada');
+    expect(panel.textContent).not.toContain('validação externa concluída');
+  });
+
+  it('renders missing signed bundle metadata as unavailable instead of inferred', async () => {
+    const missingSignedBundle = documentBundle({
+      fixity: {
+        signed_pdf_sha256: null,
+        stored_signed_pdf_digest: null,
+        signed_pdf_digest_matches_metadata: null,
+      },
+      signedDocument: {
+        present: false,
+        status: 'not_supplied',
+        document_id: null,
+        document_id_matches_canonical: null,
+        byte_length: null,
+        signed_pdf_digest: null,
+        signed_pdf_digest_matches_metadata: null,
+        download: null,
+        signing_time: null,
+        signed_at: null,
+        stored_signature_family: null,
+        stored_evidentiary_level: null,
+        trusted_list_status: null,
+        signer_cert_subject_present: null,
+        timestamp_token_present: null,
+      },
+    });
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.endsWith('/signature')) return json(signedStatus);
+      if (url.endsWith('/document/bundle')) return json(missingSignedBundle);
+      return emptyInviteList(url) ?? Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(<SigningPanel act={signedAct()} />);
+
+    const panel = await screen.findByLabelText(
+      'Comparação técnica local entre ato selado e PDF assinado',
+    );
+    const signedDocumentRow = within(panel).getByText('Documento assinado').closest('div');
+    expect(signedDocumentRow).toBeTruthy();
+    await waitFor(() =>
+      expect(within(signedDocumentRow as HTMLElement).getByText('Não fornecido')).toBeTruthy(),
+    );
+    expect(
+      Array.from(signedDocumentRow!.querySelectorAll('.signing-chip')).filter((chip) =>
+        chip.textContent?.includes('não fornecido'),
+      ),
+    ).toHaveLength(2);
+
+    const signedDigestRow = within(panel).getAllByText('Digest do PDF assinado')[0].closest('div');
+    expect(signedDigestRow).toBeTruthy();
+    await waitFor(() =>
+      expect(within(signedDigestRow as HTMLElement).getByText('Não fornecido')).toBeTruthy(),
+    );
   });
 
   it('shows technical evidence status without implying B-LT/B-LTA support', async () => {
@@ -1833,8 +2064,9 @@ describe('SigningPanel — remote batch initiation', () => {
       }),
     );
     await waitFor(() =>
-      expect((batch.getByLabelText('Credencial para sessões remotas') as HTMLInputElement).value)
-        .toBe(''),
+      expect(
+        (batch.getByLabelText('Credencial para sessões remotas') as HTMLInputElement).value,
+      ).toBe(''),
     );
 
     expect(batch.getAllByText('Ativação por documento').length).toBeGreaterThan(0);
@@ -1843,7 +2075,9 @@ describe('SigningPanel — remote batch initiation', () => {
     expect(batch.getByText('código enviado para a primeira ata')).toBeTruthy();
     expect(batch.getByText('ato já assinado')).toBeTruthy();
     expect(batch.getByText('Confirmar no fluxo normal deste ato.')).toBeTruthy();
-    expect(batch.getByText('A resposta não mostra credenciais, códigos ou ativações.')).toBeTruthy();
+    expect(
+      batch.getByText('A resposta não mostra credenciais, códigos ou ativações.'),
+    ).toBeTruthy();
     expect(region.textContent).not.toContain('transient-secret');
   });
 
@@ -1899,9 +2133,9 @@ describe('SigningPanel — remote batch initiation', () => {
     });
 
     await waitFor(() => expect(batch.queryByText('sess-multicert')).toBeNull());
-    expect((batch.getByLabelText('Credencial para sessões remotas') as HTMLInputElement).value).toBe(
-      '',
-    );
+    expect(
+      (batch.getByLabelText('Credencial para sessões remotas') as HTMLInputElement).value,
+    ).toBe('');
 
     fireEvent.change(batch.getByLabelText('Prestador remoto'), {
       target: { value: 'multicert' },
@@ -1912,9 +2146,9 @@ describe('SigningPanel — remote batch initiation', () => {
     fireEvent.change(batch.getByLabelText('Prestador remoto'), {
       target: { value: 'digitalsign' },
     });
-    expect((batch.getByLabelText('Credencial para sessões remotas') as HTMLInputElement).value).toBe(
-      '',
-    );
+    expect(
+      (batch.getByLabelText('Credencial para sessões remotas') as HTMLInputElement).value,
+    ).toBe('');
     fireEvent.click(batch.getByRole('button', { name: 'Iniciar sessões remotas' }));
 
     await waitFor(() =>

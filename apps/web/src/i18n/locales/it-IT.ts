@@ -180,7 +180,8 @@ export const itIT: Catalog = {
   'notifications.alert.unknown.title': 'Avviso del pannello ({code})',
   'notifications.alert.unknown.body':
     'Il pannello ha segnalato un avviso senza una traduzione specifica. Dettaglio tecnico: {message}',
-  'notifications.alert.fallbackDetail': 'Il pannello ha segnalato questo elemento per la revisione.',
+  'notifications.alert.fallbackDetail':
+    'Il pannello ha segnalato questo elemento per la revisione.',
   'notifications.alert.ledger.integrity.title': 'Verifica la catena del registro',
   'notifications.alert.ledger.integrity.body':
     'Il pannello non ha potuto verificare la catena del registro. Verifica l’integrità prima di fare affidamento sulla cronologia di audit.',
@@ -201,11 +202,13 @@ export const itIT: Catalog = {
   'notifications.alert.entity.noOpenBook.body':
     'L’entità {entity_name} non ha alcun libro aperto registrato. Apri o importa un libro prima di redigere nuovi verbali.',
   'notifications.alert.entity.noOpenBook.action': 'Apri entità',
-  'notifications.alert.entity.managerRemuneration.title': 'Configura la remunerazione della gestione',
+  'notifications.alert.entity.managerRemuneration.title':
+    'Configura la remunerazione della gestione',
   'notifications.alert.entity.managerRemuneration.body':
     'L’entità {entity_name} ha membri della gestione/amministrazione nell’evidenza del registro importata e non ha ancora verbali sigillati di remunerazione o di non remunerazione. Registra la decisione quando applicabile.',
   'notifications.alert.entity.managerRemuneration.action': 'Apri entità',
-  'notifications.alert.entity.administratorRemuneration.title': 'Configura la remunerazione dell’amministratore',
+  'notifications.alert.entity.administratorRemuneration.title':
+    'Configura la remunerazione dell’amministratore',
   'notifications.alert.entity.administratorRemuneration.body':
     'L’entità {entity_name} ha amministratori nell’evidenza del registro importata e non ha ancora verbali sigillati di remunerazione o di non remunerazione. Registra la decisione quando applicabile.',
   'notifications.alert.entity.administratorRemuneration.action': 'Apri entità',
@@ -480,7 +483,8 @@ export const itIT: Catalog = {
   'entities.filters.activityKind.all': 'Qualsiasi modifica',
   'entities.filters.activityKind.none': 'Nessuna modifica',
   'entities.filters.empty.title': 'Nessun risultato',
-  'entities.filters.empty.body': 'Modifica la ricerca o i filtri per visualizzare di nuovo le entità.',
+  'entities.filters.empty.body':
+    'Modifica la ricerca o i filtri per visualizzare di nuovo le entità.',
   'entities.identificationCard': 'Identificazione',
   'entities.field.nipc': 'NIPC',
   'entities.field.seat': 'Sede',
@@ -753,8 +757,7 @@ export const itIT: Catalog = {
   'books.detail.ocrDossier.createSectionLabel': 'Crea dossier di conversione OCR per {id}',
   'books.detail.ocrSummary.sectionLabel':
     'Riepilogo della profondità OCR e del dossier del libro cartaceo',
-  'books.detail.preflight.sectionLabel':
-    'Report OCR/canonico locale dell’importazione {id}',
+  'books.detail.preflight.sectionLabel': 'Report OCR/canonico locale dell’importazione {id}',
   'books.detail.preflight.metadataOnlyTitle': 'Solo metadati, sola lettura, non canonico',
   'books.detail.ocrDraft.sectionLabel': 'Bozze OCR dell’importazione {id}',
   'books.detail.ocrDraft.reviewTitle': 'Bozze OCR e revisione ausiliaria',
@@ -868,7 +871,8 @@ export const itIT: Catalog = {
   'acts.manualSignature.custodian.hint': 'Persona, team o servizio responsabile, se applicabile.',
   'acts.manualSignature.custodian.displayLabel': 'Custode',
   'acts.manualSignature.note.label': 'Nota',
-  'acts.manualSignature.note.hint': 'Contesto locale facoltativo; non registrare una validazione legale.',
+  'acts.manualSignature.note.hint':
+    'Contesto locale facoltativo; non registrare una validazione legale.',
   'acts.manualSignature.note.displayLabel': 'Nota',
   'acts.sealing.unavailableState': 'La sigillatura è disponibile solo nello stato «In firma».',
   'acts.sealing.fixErrors': 'Correggi gli errori di conformità per poter sigillare.',
@@ -914,8 +918,7 @@ export const itIT: Catalog = {
   'acts.aiReview.localSummary.missing': 'Righe con campi di provenienza mancanti',
   'acts.aiReview.localSummary.claimFlags': 'Righe con dichiarazioni segnalate',
   'acts.aiReview.noClaim.title': 'Limiti della revisione locale',
-  'acts.aiReview.noClaim.provider':
-    'Non contatta provider IA né registra garanzie del provider.',
+  'acts.aiReview.noClaim.provider': 'Non contatta provider IA né registra garanzie del provider.',
   'acts.aiReview.noClaim.source':
     'Non certifica fonti, istruzioni o dati usati per costruire la bozza.',
   'acts.aiReview.noClaim.legal':
@@ -1528,7 +1531,8 @@ export const itIT: Catalog = {
     'validate_signature_bundle è solo evidenza tecnica, non una dichiarazione legale di firma qualificata.',
   'settings.platform.loading': 'Caricamento dei servizi della piattaforma…',
   'settings.platform.empty.title': 'Nessun servizio',
-  'settings.platform.empty.body': 'Il backend non ha restituito servizi della piattaforma configurabili.',
+  'settings.platform.empty.body':
+    'Il backend non ha restituito servizi della piattaforma configurabili.',
   'settings.platform.service.app': 'Applicazione',
   'settings.platform.service.api': 'Server API',
   'settings.platform.service.mcp_stdio': 'Server stdio MCP',
@@ -1547,7 +1551,8 @@ export const itIT: Catalog = {
   'settings.platform.effectiveLog': 'Log effettivo',
   'settings.platform.limitations': 'Limitazioni',
   'settings.platform.lastAction': 'Ultima azione',
-  'settings.platform.lastAction.empty': 'Non è ancora stata registrata alcuna azione per questo servizio.',
+  'settings.platform.lastAction.empty':
+    'Non è ancora stata registrata alcuna azione per questo servizio.',
   'settings.platform.action': 'Azione',
   'settings.platform.action.start': 'Avvia',
   'settings.platform.action.stop': 'Arresta',
@@ -1623,13 +1628,16 @@ export const itIT: Catalog = {
   'settings.platform.logs.context.empty': 'Nessun contesto',
   'settings.reminders.cardTitle': 'Promemoria del pannello',
   'settings.reminders.enabled.label': 'Genera promemoria locali',
-  'settings.reminders.note': 'Politica locale e consultiva; non pianifica calendari esterni né dichiara sufficienza legale.',
+  'settings.reminders.note':
+    'Politica locale e consultiva; non pianifica calendari esterni né dichiara sufficienza legale.',
   'settings.reminders.dashboardLimit.label': 'Limite nel pannello',
-  'settings.reminders.dashboardLimit.hint': 'Numero massimo di schede promemoria restituite dal pannello.',
+  'settings.reminders.dashboardLimit.hint':
+    'Numero massimo di schede promemoria restituite dal pannello.',
   'settings.reminders.dueSoon.label': 'Scadenza breve',
   'settings.reminders.dueSoon.hint': 'Giorni alla scadenza per classificare come breve.',
   'settings.reminders.attendanceLookahead.label': 'Finestra delle presenze',
-  'settings.reminders.attendanceLookahead.hint': 'Giorni futuri analizzati per atti con presenze da completare.',
+  'settings.reminders.attendanceLookahead.hint':
+    'Giorni futuri analizzati per atti con presenze da completare.',
   'settings.reminders.sources.title': 'Fonti',
   'settings.reminders.sources.aria': 'Fonti dei promemoria del pannello',
   'settings.reminders.sources.profileCalendar': 'Calendario del profilo',
@@ -1637,19 +1645,26 @@ export const itIT: Catalog = {
   'settings.reminders.sources.attendanceHygiene': 'Igiene delle presenze',
   'settings.reminders.sources.privacyReviews': 'Revisioni della privacy',
   'settings.retainedExportCleanup.cardTitle': 'Criterio di pulizia delle esportazioni conservate',
-  'settings.retainedExportCleanup.note': 'Valori predefiniti usati solo nell’anteprima di pulizia delle esportazioni locali conservate. Non approvano conservazione legale, eliminazione dall’archivio, smaltimento né cancellazione GDPR.',
+  'settings.retainedExportCleanup.note':
+    'Valori predefiniti usati solo nell’anteprima di pulizia delle esportazioni locali conservate. Non approvano conservazione legale, eliminazione dall’archivio, smaltimento né cancellazione GDPR.',
   'settings.retainedExportCleanup.minimumAge.label': 'Età minima delle esportazioni',
-  'settings.retainedExportCleanup.minimumAge.hint': 'Giorni minimi prima che un’esportazione locale conservata possa apparire come idonea nell’anteprima.',
+  'settings.retainedExportCleanup.minimumAge.hint':
+    'Giorni minimi prima che un’esportazione locale conservata possa apparire come idonea nell’anteprima.',
   'settings.retainedExportCleanup.keepLatest.label': 'Esportazioni recenti da conservare',
-  'settings.retainedExportCleanup.keepLatest.hint': 'Numero di file di esportazione più recenti esclusi dalla pulizia, anche quando hanno già età sufficiente.',
+  'settings.retainedExportCleanup.keepLatest.hint':
+    'Numero di file di esportazione più recenti esclusi dalla pulizia, anche quando hanno già età sufficiente.',
   'settings.backupRecovery.cardTitle': 'Criterio locale di ripristino dei backup',
-  'settings.backupRecovery.note': 'Obiettivi dichiarati dall’operatore per gli avvisi locali di aggiornamento delle prove. Non eseguono ripristini, non sostituiscono il database, non dimostrano custodia off-site e non certificano RPO/RTO né criteri di backup di produzione.',
+  'settings.backupRecovery.note':
+    'Obiettivi dichiarati dall’operatore per gli avvisi locali di aggiornamento delle prove. Non eseguono ripristini, non sostituiscono il database, non dimostrano custodia off-site e non certificano RPO/RTO né criteri di backup di produzione.',
   'settings.backupRecovery.maxDrillAge.label': 'Età massima della prova',
-  'settings.backupRecovery.maxDrillAge.hint': 'Giorni massimi prima che l’ultima ricevuta di prova verificata appaia come obsoleta.',
+  'settings.backupRecovery.maxDrillAge.hint':
+    'Giorni massimi prima che l’ultima ricevuta di prova verificata appaia come obsoleta.',
   'settings.backupRecovery.targetRpo.label': 'RPO obiettivo',
-  'settings.backupRecovery.targetRpo.hint': 'Minuti dichiarati per l’obiettivo locale di perdita massima di dati.',
+  'settings.backupRecovery.targetRpo.hint':
+    'Minuti dichiarati per l’obiettivo locale di perdita massima di dati.',
   'settings.backupRecovery.targetRto.label': 'RTO obiettivo',
-  'settings.backupRecovery.targetRto.hint': 'Minuti dichiarati per l’obiettivo locale di tempo massimo di ripristino.',
+  'settings.backupRecovery.targetRto.hint':
+    'Minuti dichiarati per l’obiettivo locale di tempo massimo di ripristino.',
   'settings.entityTable.title': 'Tabella delle entità',
   'settings.entityTable.hint': 'Scegli le colonne visibili nell’elenco delle entità registrate.',
   'settings.entityTable.columns.aria': 'Colonne della tabella delle entità',
@@ -1686,7 +1701,8 @@ export const itIT: Catalog = {
   'settings.registryAutoUpdate.maxAttempts.label': 'Massimo per esecuzione',
   'settings.registryAutoUpdate.maxAttempts.hint':
     'Limita quante entità il worker può elaborare durante un’esecuzione.',
-  'settings.registryAutoUpdate.entityDefaults.enabled': 'Nuove entità idonee per impostazione predefinita',
+  'settings.registryAutoUpdate.entityDefaults.enabled':
+    'Nuove entità idonee per impostazione predefinita',
   'settings.registryAutoUpdate.entityDefaults.hint':
     'Se abilitato, le entità con un codice di accesso al registro valido entrano nel piano quando è selezionato il loro profilo.',
   'settings.registryAutoUpdate.entityDefaults.allProfiles': 'Tutti i tipi di entità',
@@ -1736,7 +1752,8 @@ export const itIT: Catalog = {
   'settings.registryAutoUpdate.table.retrieved': 'Ultima consultazione',
   'settings.registryAutoUpdate.table.status': 'Stato',
   'settings.registryAutoUpdate.table.action': 'Azione',
-  'settings.registryAutoUpdate.dueReason': '{age} h dall’ultima consultazione; soglia {threshold} h.',
+  'settings.registryAutoUpdate.dueReason':
+    '{age} h dall’ultima consultazione; soglia {threshold} h.',
   'settings.registryAutoUpdate.dueReasonUnknown': 'Nessuna data di consultazione affidabile.',
   'settings.registryAutoUpdate.attempt.button': 'Richiedi tentativo',
   'settings.registryAutoUpdate.attempt.pending': 'Richiesta…',
@@ -1773,7 +1790,8 @@ export const itIT: Catalog = {
   'settings.privacy.empty.title': 'Nessuna registrazione',
   'settings.privacy.empty.body': 'Non ci sono ancora registrazioni in quest’area della privacy.',
   'settings.privacy.emptyResults.title': 'Nessun risultato',
-  'settings.privacy.emptyResults.body': 'Modifica la ricerca o i filtri per visualizzare di nuovo le registrazioni.',
+  'settings.privacy.emptyResults.body':
+    'Modifica la ricerca o i filtri per visualizzare di nuovo le registrazioni.',
   'settings.privacy.table.action': 'Azione',
   'settings.privacy.toast.created': 'Registrazione sulla privacy creata.',
   'settings.privacy.toast.updated': 'Registrazione sulla privacy aggiornata.',
@@ -1795,8 +1813,7 @@ export const itIT: Catalog = {
   'settings.privacy.transfer.title': 'Controlli sui trasferimenti',
   'settings.privacy.transfer.lede':
     'Registra i controlli applicati ai trasferimenti di dati, inclusi destinatari, meccanismi e garanzie.',
-  'settings.privacy.transfer.searchPlaceholder':
-    'Nome, destinatario, paese, meccanismo o garanzia',
+  'settings.privacy.transfer.searchPlaceholder': 'Nome, destinatario, paese, meccanismo o garanzia',
   'settings.privacy.transfer.field.name': 'Nome del controllo',
   'settings.privacy.transfer.field.purpose': 'Finalità',
   'settings.privacy.transfer.field.legalBasis': 'Base giuridica',
@@ -1856,7 +1873,8 @@ export const itIT: Catalog = {
   'settings.privacy.retention.dryRun.executionSupported': 'esecuzione supportata',
   'settings.privacy.retention.dryRun.candidate': 'Candidato',
   'settings.privacy.retention.dryRun.empty.title': 'Nessuna corrispondenza',
-  'settings.privacy.retention.dryRun.empty.body': 'Nessun criterio attivo ha corrisposto al candidato.',
+  'settings.privacy.retention.dryRun.empty.body':
+    'Nessun criterio attivo ha corrisposto al candidato.',
   'settings.privacy.retention.dryRun.column.result': 'Risultato',
   'settings.privacy.register.field.processorName': 'Nome del responsabile',
   'settings.privacy.register.field.dpiaTitle': 'Titolo della DPIA',
@@ -2443,6 +2461,46 @@ export const itIT: Catalog = {
   'signing.signed.timestampAbsent': 'Assente',
   'signing.signed.digest': 'Impronta del PDF firmato',
   'signing.download': 'Scarica PDF firmato',
+  'signing.technicalComparison.aria':
+    'Local technical comparison between sealed act and signed PDF',
+  'signing.technicalComparison.kicker': 'Technical comparison',
+  'signing.technicalComparison.title': 'Local metadata for the sealed act and signed PDF',
+  'signing.technicalComparison.summary.aria': 'Local technical comparison summary',
+  'signing.technicalComparison.badge.local': 'Local metadata only',
+  'signing.technicalComparison.badge.noClaim': 'No claim',
+  'signing.technicalComparison.status.match': 'Metadata match',
+  'signing.technicalComparison.status.present': 'Supplied',
+  'signing.technicalComparison.status.partial': 'Partial',
+  'signing.technicalComparison.status.unavailable': 'Unavailable',
+  'signing.technicalComparison.status.mismatch': 'Mismatch',
+  'signing.technicalComparison.status.notClaimed': 'Not claimed',
+  'signing.technicalComparison.status.loading': 'Loading',
+  'signing.technicalComparison.row.actId': 'Act ID',
+  'signing.technicalComparison.row.sealedPayloadDigest': 'Sealed payload digest',
+  'signing.technicalComparison.row.canonicalPdfDigest': 'Canonical PDF digest',
+  'signing.technicalComparison.row.signedPdfDigest': 'Signed PDF digest',
+  'signing.technicalComparison.row.signedDocument': 'Signed document',
+  'signing.technicalComparison.row.signatureMetadata': 'Signature family/status',
+  'signing.technicalComparison.row.bundleFixity': 'Bundle fixity flags',
+  'signing.technicalComparison.detail.act': 'Act',
+  'signing.technicalComparison.detail.bundle': 'Bundle',
+  'signing.technicalComparison.detail.document': 'Document',
+  'signing.technicalComparison.detail.signature': 'Signature',
+  'signing.technicalComparison.detail.report': 'Report',
+  'signing.technicalComparison.detail.fixity': 'Fixity',
+  'signing.technicalComparison.detail.metadataFlag': 'Metadata flag',
+  'signing.technicalComparison.detail.status': 'Status',
+  'signing.technicalComparison.detail.signedAt': 'Recorded at',
+  'signing.technicalComparison.detail.documentId': 'Document ID',
+  'signing.technicalComparison.detail.download': 'Download',
+  'signing.technicalComparison.detail.attachments': 'Attachments',
+  'signing.technicalComparison.detail.present': 'present',
+  'signing.technicalComparison.detail.notSupplied': 'not supplied',
+  'signing.technicalComparison.detail.withoutDigest': 'without digest',
+  'signing.technicalComparison.bundleUnavailable':
+    'The document bundle is not loaded or did not supply a local validation report.',
+  'signing.technicalComparison.noClaim':
+    'Technical metadata review aid only: it does not read raw PDFs, recompute digests, validate trust, mutate archives, record reviewer notes, or decide legal validity, signature qualification, source certification, provider assurance, or external validation.',
   'signing.signed.qualifiedLabelCc': 'Firma elettronica qualificata (Carta di Cittadino).',
   'signing.cc.start': 'Firma con Carta di Cittadino',
   'signing.cc.prompt.title': 'Firma con la Carta di Cittadino',
@@ -2481,7 +2539,8 @@ export const itIT: Catalog = {
   'signing.ccBatch.source.current': 'Verbale corrente',
   'signing.ccBatch.source.manual': 'Aggiunto tramite ID',
   'signing.ccBatch.selection.count': '{count} selezionati di {max}',
-  'signing.ccBatch.selection.needMore': 'Seleziona almeno due verbali per usare la firma in blocco.',
+  'signing.ccBatch.selection.needMore':
+    'Seleziona almeno due verbali per usare la firma in blocco.',
   'signing.ccBatch.add.label': 'ID del verbale',
   'signing.ccBatch.add.hint':
     'Aggiungi gli ID dei verbali sigillati quando questa schermata non fornisce un elenco multi-documento.',
@@ -2638,8 +2697,7 @@ export const itIT: Catalog = {
     'Soggetto del certificato usato nella firma, così come letto dal certificato.',
   'signing.signed.trustedList.help':
     'Stato tecnico restituito dalla consultazione della lista di fiducia. Non sostituisce una decisione giuridica.',
-  'signing.signed.digest.help':
-    'SHA-256 del PDF firmato. Serve per il confronto tecnico del file.',
+  'signing.signed.digest.help': 'SHA-256 del PDF firmato. Serve per il confronto tecnico del file.',
   'signing.trustedList.granted': 'Riconosciuto nella lista',
   'signing.trustedList.withdrawn': 'Ritirato dalla lista',
   'signing.trustedList.unknown': 'Senza conferma dalla lista',
@@ -2686,7 +2744,8 @@ export const itIT: Catalog = {
   'signing.evidence.renewal.action.none': 'nessuna azione',
   'signing.evidence.renewal.action.manualReview': 'revisione manuale',
   'signing.evidence.renewal.action.addSignatureTimestamp': 'aggiungi marca temporale della firma',
-  'signing.evidence.renewal.action.embedDssRevocationEvidence': 'incorpora l’evidenza di revoca DSS',
+  'signing.evidence.renewal.action.embedDssRevocationEvidence':
+    'incorpora l’evidenza di revoca DSS',
   'signing.evidence.renewal.action.recordDssValidationTime': 'registra l’ora di validazione DSS',
   'signing.evidence.renewal.action.addDocumentTimestamp': 'aggiungi marca temporale del documento',
   'signing.evidence.renewal.action.recordSignatureDssValidationTime':
@@ -2743,7 +2802,8 @@ export const itIT: Catalog = {
     'Chancela non esegue la validazione nell’Elenco di fiducia in questo flusso.',
   'signing.official.guardrails.qualified':
     'Chancela non dichiara lo stato qualificato per questa importazione.',
-  'signing.official.guardrails.legal': 'Chancela non dichiara il completamento legale per questa importazione.',
+  'signing.official.guardrails.legal':
+    'Chancela non dichiara il completamento legale per questa importazione.',
   'signing.official.guardrails.noSecret':
     'Questo flusso non raccoglie PIN, OTP, CAN, credenziali, token o password.',
   'signing.official.ack.label':
@@ -2894,7 +2954,8 @@ export const itIT: Catalog = {
   'data.status.mode.fallback_in_memory': 'Fallback in memoria',
   'data.status.dataDir': 'Cartella dei dati',
   'data.status.path.unconfigured': 'Nessuna cartella dei dati configurata',
-  'data.status.folderState': 'Configurata: {configured} · esiste: {exists} · directory: {directory}',
+  'data.status.folderState':
+    'Configurata: {configured} · esiste: {exists} · directory: {directory}',
   'data.status.durable': 'Archiviazione',
   'data.status.durable.open': 'Archivio durevole aperto',
   'data.status.durable.closed': 'In memoria',
@@ -2929,7 +2990,8 @@ export const itIT: Catalog = {
   'data.status.usage.sqliteAverage': 'Media: {bytes}/riga',
   'data.status.usage.sqliteAverageUnavailable': 'Media: —',
   'data.status.usage.sqliteEstimateMethod.localLoadedPayload':
-    'Metodo: stima locale del payload caricato',  'data.status.usage.empty': 'Nessun dato riportato.',
+    'Metodo: stima locale del payload caricato',
+  'data.status.usage.empty': 'Nessun dato riportato.',
   'data.status.basis.filesystem': 'filesystem',
   'data.status.basis.sqlite_file': 'File SQLite',
   'data.status.basis.sqlite_logical_payload': 'Payload logico SQLite',
@@ -2959,7 +3021,8 @@ export const itIT: Catalog = {
   'data.status.cleanup.pending': 'Pulizia…',
   'data.status.cleanup.done': 'Pulizia completata.',
   'data.status.cleanup.doneTitle': 'Manutenzione completata',
-  'data.status.cleanup.result': 'Eliminati {files} file e {directories} cartelle, liberando {bytes}.',
+  'data.status.cleanup.result':
+    'Eliminati {files} file e {directories} cartelle, liberando {bytes}.',
   'data.status.backup.title': 'Backup operativo',
   'data.status.backup.body':
     'Crea un backup a caldo dell’istanza durevole e restituisce solo un manifesto non segreto.',
@@ -3110,8 +3173,10 @@ export const itIT: Catalog = {
   'integrity.import.preflight.errorTitle': 'Verifica preliminare non riuscita',
   'integrity.import.confirm': 'Conferma importazione',
   'integrity.import.preflight.wouldImport': 'Importazione confermata consentita',
-  'integrity.import.preflight.wouldRecordLedgerEvent': 'La verifica preliminare registra un evento nel registro',
-  'integrity.import.preflight.wouldStoreImportRecord': 'La verifica preliminare conserva la registrazione dell’importazione',
+  'integrity.import.preflight.wouldRecordLedgerEvent':
+    'La verifica preliminare registra un evento nel registro',
+  'integrity.import.preflight.wouldStoreImportRecord':
+    'La verifica preliminare conserva la registrazione dell’importazione',
   'integrity.import.preflight.verdict': 'Verdetto',
   'integrity.import.preflight.entityId': 'Entità',
   'integrity.import.preflight.bookId': 'Libro',
@@ -3235,12 +3300,14 @@ export const itIT: Catalog = {
   'settings.apiKeys.permissions.label': 'Autorizzazioni',
   'settings.apiKeys.permissions.hint':
     'Le meta-autorizzazioni sono escluse. La chiave può ricevere solo le autorizzazioni che possiedi nell’ambito scelto.',
-  'settings.apiKeys.permissions.empty': 'Non è disponibile alcuna autorizzazione per le chiavi API.',
+  'settings.apiKeys.permissions.empty':
+    'Non è disponibile alcuna autorizzazione per le chiavi API.',
   'settings.apiKeys.expiry.label': 'Scadenza (facoltativa)',
   'settings.apiKeys.expiry.hint': 'Nessuna scadenza = fino a revoca.',
   'settings.apiKeys.rateLimit.rpm': 'Richieste al minuto',
   'settings.apiKeys.rateLimit.burst': 'Burst',
-  'settings.apiKeys.rateLimit.hint': 'Lascia entrambi vuoti per usare il valore predefinito del server.',
+  'settings.apiKeys.rateLimit.hint':
+    'Lascia entrambi vuoti per usare il valore predefinito del server.',
   'settings.apiKeys.rateLimit.incomplete': 'Compila entrambi i valori o lasciali entrambi vuoti.',
   'settings.apiKeys.submit': 'Crea chiave',
   'settings.apiKeys.creating': 'Creazione…',
@@ -3248,7 +3315,8 @@ export const itIT: Catalog = {
   'settings.apiKeys.revokedToast': 'Chiave API revocata.',
   'settings.apiKeys.rotatedToast': 'Chiave API ruotata.',
   'settings.apiKeys.empty': 'Nessuna chiave API',
-  'settings.apiKeys.emptyBody': 'Crea una chiave per consentire l’accesso delle integrazioni con autenticazione Bearer.',
+  'settings.apiKeys.emptyBody':
+    'Crea una chiave per consentire l’accesso delle integrazioni con autenticazione Bearer.',
   'settings.apiKeys.secret.title': 'Salva ora questo segreto',
   'settings.apiKeys.secret.body':
     'Il segreto completo viene mostrato solo per questa creazione. Dopo aver chiuso questo avviso, restano disponibili solo il prefisso e i metadati.',
@@ -3446,7 +3514,8 @@ export const itIT: Catalog = {
   'documents.import.readError.imported': 'Impossibile leggere il file importato.',
   'documents.import.readError.file': 'Impossibile leggere il file.',
   'documents.import.preflight.title': 'Verifica preliminare locale di conversione canonica',
-  'documents.import.preflight.hint': 'Solo evidenza locale dei metadati; non converte DOC, non crea PDF/A, non esegue OCR, non convalida firme, non contatta fornitori e non dichiara accettazione legale.',
+  'documents.import.preflight.hint':
+    'Solo evidenza locale dei metadati; non converte DOC, non crea PDF/A, non esegue OCR, non convalida firme, non contatta fornitori e non dichiara accettazione legale.',
   'documents.import.preflight.notIndicated': 'non indicato',
   'documents.import.preflight.status.blocked': 'bloccato',
   'documents.import.preflight.status.notAttempted': 'non tentato',
@@ -3466,12 +3535,16 @@ export const itIT: Catalog = {
   'documents.import.preflight.field.recordReplaced': 'Record canonico sostituito',
   'documents.import.preflight.evidenceObserved': 'Evidenza osservata',
   'documents.import.preflight.blockers': 'Blocchi',
-  'documents.import.review.noticeFallback': 'La revisione registra solo una decisione di conservazione operativa; non esegue OCR, non converte byte, non sostituisce il PDF/A canonico e non dichiara accettazione legale.',
-  'documents.import.review.status.reviewedNonCanonical': 'Revisionato: originale conservato solo come evidenza non canonica',
+  'documents.import.review.noticeFallback':
+    'La revisione registra solo una decisione di conservazione operativa; non esegue OCR, non converte byte, non sostituisce il PDF/A canonico e non dichiara accettazione legale.',
+  'documents.import.review.status.reviewedNonCanonical':
+    'Revisionato: originale conservato solo come evidenza non canonica',
   'documents.import.review.status.rejected': 'Rifiutato come evidenza non canonica',
   'documents.import.review.status.operatorRequired': 'Revisione dell’operatore necessaria',
-  'documents.import.review.status.ocrRequired': 'Revisione dell’operatore necessaria per immagine conservata',
-  'documents.import.review.status.legacyRequired': 'Revisione dell’operatore necessaria per file legacy',
+  'documents.import.review.status.ocrRequired':
+    'Revisione dell’operatore necessaria per immagine conservata',
+  'documents.import.review.status.legacyRequired':
+    'Revisione dell’operatore necessaria per file legacy',
   'documents.import.review.status.notIndicated': 'Revisione non indicata',
   'documents.import.review.operatorReview': 'Revisione dell’operatore',
   'documents.import.review.reviewNotice': 'Avviso di revisione',
@@ -3483,9 +3556,11 @@ export const itIT: Catalog = {
   'documents.import.review.formAria': 'Revisione operativa del documento importato',
   'documents.import.review.conservativeTitle': 'Revisione conservativa',
   'documents.import.review.statusLabel': 'Stato della revisione',
-  'documents.import.review.noteHint': '{count}/{limit} caratteri. Registrare solo la decisione operativa; non dichiarare OCR, conversione o accettazione legale.',
+  'documents.import.review.noteHint':
+    '{count}/{limit} caratteri. Registrare solo la decisione operativa; non dichiarare OCR, conversione o accettazione legale.',
   'documents.import.review.guardrailsToAck': 'Limiti da riconoscere',
-  'documents.import.review.ackLabel': 'Confermo di aver esaminato questi limiti e che la decisione non promuove il documento importato a record canonico, PDF/A sostitutivo, PDF firmato o accettazione legale.',
+  'documents.import.review.ackLabel':
+    'Confermo di aver esaminato questi limiti e che la decisione non promuove il documento importato a record canonico, PDF/A sostitutivo, PDF firmato o accettazione legale.',
   'documents.import.review.save': 'Salva revisione',
   'documents.import.review.saving': 'Salvataggio revisione',
   'documents.import.review.toast.saved': 'Revisione del documento importato salvata.',
@@ -3508,20 +3583,25 @@ export const itIT: Catalog = {
   'documents.import.receipt.notCreated': 'Non creato né convalidato da questa revisione.',
   'documents.import.receipt.notClaimed': 'Non dichiarata da questa revisione.',
   'documents.import.history.title': 'Cronologia tecnica della revisione',
-  'documents.import.history.empty': 'Nessuna cronologia tecnica registrata oltre ai metadati attuali della revisione.',
+  'documents.import.history.empty':
+    'Nessuna cronologia tecnica registrata oltre ai metadati attuali della revisione.',
   'documents.import.history.decision': 'Decisione',
   'documents.import.history.recordedAt': 'Registrata il',
   'documents.import.history.recordedBy': 'Registrata da',
   'documents.import.history.note': 'Nota storica',
-  'documents.import.history.noAcknowledgedGuardrails': 'Nessun limite riconosciuto in questa decisione',
+  'documents.import.history.noAcknowledgedGuardrails':
+    'Nessun limite riconosciuto in questa decisione',
   'documents.import.history.scope': 'Ambito tecnico',
-  'documents.import.history.scopeBody': 'Cronologia di revisione basata solo sui metadati per evidenza non canonica; senza OCR, conversione, sostituzione di PDF/A, convalida della firma, marca temporale, PDF/UA, certificazione o accettazione legale.',
+  'documents.import.history.scopeBody':
+    'Cronologia di revisione basata solo sui metadati per evidenza non canonica; senza OCR, conversione, sostituzione di PDF/A, convalida della firma, marca temporale, PDF/UA, certificazione o accettazione legale.',
   'documents.import.depth.aria': 'Riepilogo del livello di dettaglio della revisione importata',
   'documents.import.depth.title': 'Riepilogo del livello di dettaglio della revisione',
   'documents.import.depth.includes': 'Include',
   'documents.import.depth.bytesPreserved': 'Byte conservati ({status})',
-  'documents.import.depth.bytesNotIndicated': 'Conservazione dei byte originali non indicata nei metadati caricati',
-  'documents.import.depth.includesValue': '{bytes}, digest SHA-256, stato della revisione {receipt} e nota dell’operatore {note}. Cronologia tecnica: {history}.',
+  'documents.import.depth.bytesNotIndicated':
+    'Conservazione dei byte originali non indicata nei metadati caricati',
+  'documents.import.depth.includesValue':
+    '{bytes}, digest SHA-256, stato della revisione {receipt} e nota dell’operatore {note}. Cronologia tecnica: {history}.',
   'documents.import.depth.recorded': 'registrato',
   'documents.import.depth.pending': 'in sospeso',
   'documents.import.depth.noteRecorded': 'registrata',
@@ -3532,9 +3612,11 @@ export const itIT: Catalog = {
   'documents.import.depth.derivedStatus': 'Stato derivato',
   'documents.import.depth.operatorNote': 'Nota dell’operatore',
   'documents.import.depth.excludes': 'Esclude',
-  'documents.import.depth.excludesValue': 'OCR, conversione, sostituzione di PDF/A, PDF firmato, convalida della firma, marca temporale, PDF/UA e accettazione legale.',
+  'documents.import.depth.excludesValue':
+    'OCR, conversione, sostituzione di PDF/A, PDF firmato, convalida della firma, marca temporale, PDF/UA e accettazione legale.',
   'documents.import.depth.noClaimFlags': 'Contrassegni senza dichiarazione',
-  'documents.import.depth.noClaimFlagsValue': 'OCR: no · conversione: no · PDF/A sostituito: no · PDF firmato: no · firma: no · marca temporale: no · PDF/UA: no · accettazione legale: no.',
+  'documents.import.depth.noClaimFlagsValue':
+    'OCR: no · conversione: no · PDF/A sostituito: no · PDF firmato: no · firma: no · marca temporale: no · PDF/UA: no · accettazione legale: no.',
   'externalInvite.crumbs': 'Firma esterna',
   'externalInvite.title': 'Invito esterno',
   'externalInvite.status.pending': 'In sospeso',
@@ -3546,7 +3628,8 @@ export const itIT: Catalog = {
   'externalInvite.unavailable.body':
     'Il collegamento è scaduto, è stato revocato o non corrisponde a un invito esterno attivo.',
   'externalInvite.missingToken.title': 'Collegamento senza token',
-  'externalInvite.missingToken.body': 'Apri il collegamento completo inviato dall’operatore del verbale.',
+  'externalInvite.missingToken.body':
+    'Apri il collegamento completo inviato dall’operatore del verbale.',
   'externalInvite.loading': 'Convalida dell’invito...',
   'externalInvite.toast.accepted': 'Risposta di accettazione registrata.',
   'externalInvite.toast.declined': 'Rifiuto registrato.',
@@ -3750,9 +3833,11 @@ export const itIT: Catalog = {
   'signing.tool.signer.file.hint':
     'Il certificato è usato solo per questa richiesta e non viene mai conservato.',
   'signing.tool.signer.passphrase.label': 'Passphrase',
-  'signing.tool.signer.passphrase.hint': 'Usata solo per questa richiesta; non viene mai conservata.',
+  'signing.tool.signer.passphrase.hint':
+    'Usata solo per questa richiesta; non viene mai conservata.',
   'signing.tool.signer.friendlyName.label': 'Nome descrittivo (facoltativo)',
-  'signing.tool.signer.friendlyName.hint': 'Seleziona l’identità quando il file ne contiene più di una.',
+  'signing.tool.signer.friendlyName.hint':
+    'Seleziona l’identità quando il file ne contiene più di una.',
   'signing.tool.content.note': 'La firma è prodotta sul PDF/A del verbale.',
   'signing.tool.coLocation.title': 'Disponibile solo nell’applicazione desktop',
   'signing.tool.coLocation.body':
@@ -3805,7 +3890,8 @@ export const itIT: Catalog = {
   'signing.scap.fullName.label': 'Nome completo (facoltativo)',
   'signing.scap.loadAttributes': 'Cerca attributi',
   'signing.scap.loadingAttributes': 'Ricerca…',
-  'signing.scap.attributes.empty': 'La SCAP non riporta attributi professionali per questo cittadino.',
+  'signing.scap.attributes.empty':
+    'La SCAP non riporta attributi professionali per questo cittadino.',
   'signing.scap.attributes.legend': 'Attributi riportati',
   'signing.scap.attribute.provider': 'Prestatore: {provider}',
   'signing.scap.attribute.validity': 'Validità: {from} – {until}',
@@ -3828,14 +3914,16 @@ export const itIT: Catalog = {
   'signing.scap.download': 'Scarica firma CAdES',
 
   // --- Written-resolution evidence receipts (wp12-e1) ----------------------------
-  'compliance.writtenResolution.review.label': 'Revisione locale delle evidenze della delibera per iscritto',
+  'compliance.writtenResolution.review.label':
+    'Revisione locale delle evidenze della delibera per iscritto',
   'compliance.writtenResolution.review.receiptRecorded': 'Ricevuta registrata',
   'compliance.writtenResolution.review.receiptMissing': 'Ricevuta di revisione mancante',
   'compliance.writtenResolution.review.reviewReceipts': 'Ricevute di revisione',
   'compliance.writtenResolution.review.reviewedLocators': 'Localizzatori revisionati',
   'compliance.writtenResolution.review.reviewedDigests': 'Digest revisionati',
   'compliance.writtenResolution.review.boundEvidence': 'Evidenza vincolata',
-  'compliance.writtenResolution.review.boundary': 'Solo metadati locali. Non si dichiara consenso, quorum, identità, sufficienza giuridica, convalida esterna, approvazione automatica né certificazione da parte di un\'autorità.',
+  'compliance.writtenResolution.review.boundary':
+    "Solo metadati locali. Non si dichiara consenso, quorum, identità, sufficienza giuridica, convalida esterna, approvazione automatica né certificazione da parte di un'autorità.",
   'compliance.writtenResolution.status.boundPresent': 'Evidenza vincolata presente',
   'compliance.writtenResolution.status.referencedOnly': 'Solo referenziata',
   'compliance.writtenResolution.status.missing': 'Evidenza mancante',
@@ -3845,7 +3933,8 @@ export const itIT: Catalog = {
   'compliance.writtenResolution.status.notRecorded': 'Non registrato',
   'acts.writtenResolution.card.title': 'Ricevute di evidenza della delibera per iscritto',
   'acts.writtenResolution.history.label': 'Cronologia delle ricevute della delibera per iscritto',
-  'acts.writtenResolution.history.empty': 'Nessuna ricevuta di revisione della delibera per iscritto registrata.',
+  'acts.writtenResolution.history.empty':
+    'Nessuna ricevuta di revisione della delibera per iscritto registrata.',
   'acts.writtenResolution.receipt.reviewedEvidence': 'Evidenza revisionata',
   'acts.writtenResolution.receipt.notRecorded': 'Non registrato',
   'acts.writtenResolution.receipt.note': 'Nota',
@@ -3855,11 +3944,12 @@ export const itIT: Catalog = {
   'acts.writtenResolution.field.reviewer': 'Revisore',
   'acts.writtenResolution.field.reviewedAt': 'Revisionato il',
   'acts.writtenResolution.field.reviewStatus': 'Stato della revisione',
-  'acts.writtenResolution.field.evidenceLabel': 'Etichetta dell\'evidenza',
-  'acts.writtenResolution.field.evidenceReference': 'Riferimento dell\'evidenza',
-  'acts.writtenResolution.field.evidenceDigest': 'Digest dell\'evidenza',
+  'acts.writtenResolution.field.evidenceLabel': "Etichetta dell'evidenza",
+  'acts.writtenResolution.field.evidenceReference': "Riferimento dell'evidenza",
+  'acts.writtenResolution.field.evidenceDigest': "Digest dell'evidenza",
   'acts.writtenResolution.field.receiptNotes': 'Note della ricevuta',
-  'acts.writtenResolution.guardrail': 'Solo metadati locali; le dichiarazioni di prova, sufficienza giuridica, fornitore, autorità, completamento, firma, sigillo e archiviazione restano false.',
+  'acts.writtenResolution.guardrail':
+    'Solo metadati locali; le dichiarazioni di prova, sufficienza giuridica, fornitore, autorità, completamento, firma, sigillo e archiviazione restano false.',
   'acts.writtenResolution.submit.recording': 'Registrazione della ricevuta…',
   'acts.writtenResolution.submit.record': 'Registra ricevuta locale',
   'acts.writtenResolution.reviewStatusOption.reviewed': 'Metadati locali revisionati',
@@ -3868,7 +3958,8 @@ export const itIT: Catalog = {
   'acts.writtenResolution.status.needsFollowUp': 'Richiede follow-up',
   'acts.writtenResolution.status.notRecorded': 'Non registrato',
   // --- Field-help tooltips (wp12-e2) ----------------------------------------------
-  'fieldHelp.acts.title': 'Nome breve che identifica il verbale negli elenchi, nelle anteprime e nei documenti generati.',
+  'fieldHelp.acts.title':
+    'Nome breve che identifica il verbale negli elenchi, nelle anteprime e nei documenti generati.',
   'fieldHelp.acts.channel':
     'Modalità di svolgimento della riunione; abilita campi e controlli specifici per riunioni telematiche o ibride.',
   'fieldHelp.acts.meetingDate':
@@ -3921,118 +4012,151 @@ export const itIT: Catalog = {
   'fieldHelp.acts.signatorySigned':
     'Indica che la persona ha firmato la versione cartacea o elettronica applicabile.',
   'fieldHelp.acts.attachmentLabel': 'Breve descrizione dell’allegato associato al verbale.',
-  'fieldHelp.acts.attachmentKind': 'Classificazione dell’allegato per il documento e per la prova archiviata.',
-  'fieldHelp.acts.beginningOfProof': 'Contrassegnare quando l’allegato deve essere trattato come principio di prova.',
+  'fieldHelp.acts.attachmentKind':
+    'Classificazione dell’allegato per il documento e per la prova archiviata.',
+  'fieldHelp.acts.beginningOfProof':
+    'Contrassegnare quando l’allegato deve essere trattato come principio di prova.',
   'fieldHelp.entities.nipc':
     'Numero di identificazione dell’ente. Usare 9 cifre portoghesi; attivare l’opzione senza validazione solo quando applicabile.',
-  'fieldHelp.entities.seat': 'Indirizzo o località della sede usata nei libri e nei documenti di questo ente.',
+  'fieldHelp.entities.seat':
+    'Indirizzo o località della sede usata nei libri e nei documenti di questo ente.',
   'fieldHelp.entities.legalForm':
     'Tipo di ente che seleziona la famiglia di regole, libri e modelli applicabili.',
-  'fieldHelp.entities.fiscalYearEnd': 'Giorno di chiusura dell’esercizio nel formato MM-DD; vuoto usa 12-31.',
-  'fieldHelp.entities.statuteQuorum': 'Valore operativo usato per gli avvisi di conformità sulle presenze.',
-  'fieldHelp.entities.statuteMajority': 'Frazione usata per gli avvisi di conformità sulle delibere.',
-  'fieldHelp.entities.statuteNotice': 'Giorni minimi usati per gli avvisi di preavviso della convocazione.',
+  'fieldHelp.entities.fiscalYearEnd':
+    'Giorno di chiusura dell’esercizio nel formato MM-DD; vuoto usa 12-31.',
+  'fieldHelp.entities.statuteQuorum':
+    'Valore operativo usato per gli avvisi di conformità sulle presenze.',
+  'fieldHelp.entities.statuteMajority':
+    'Frazione usata per gli avvisi di conformità sulle delibere.',
+  'fieldHelp.entities.statuteNotice':
+    'Giorni minimi usati per gli avvisi di preavviso della convocazione.',
   'fieldHelp.registry.accessCode':
     'Codice di 12 cifre che consente di consultare il certificato; è inviato solo per questa consultazione e non viene conservato.',
-  'fieldHelp.registry.email': 'Inviata solo quando il servizio del registro lo richiede per aprire il certificato.',
+  'fieldHelp.registry.email':
+    'Inviata solo quando il servizio del registro lo richiede per aprire il certificato.',
   'fieldHelp.registry.firma': 'Nome dell’ente così come proveniente dal certificato importato.',
   'fieldHelp.registry.nipc': 'Identificativo NIPC estratto dal certificato, quando presente.',
-  'fieldHelp.registry.legalForm': 'Natura o forma giuridica normalizzata a partire dal certificato.',
+  'fieldHelp.registry.legalForm':
+    'Natura o forma giuridica normalizzata a partire dal certificato.',
   'fieldHelp.registry.matricula': 'Riferimento di iscrizione indicato nel registro delle imprese.',
-  'fieldHelp.registry.sede': 'Sede estratta dal certificato; può essere testo libero o indirizzo strutturato.',
-  'fieldHelp.registry.dataConstituicao': 'Data di costituzione estratta dal certificato, quando disponibile.',
+  'fieldHelp.registry.sede':
+    'Sede estratta dal certificato; può essere testo libero o indirizzo strutturato.',
+  'fieldHelp.registry.dataConstituicao':
+    'Data di costituzione estratta dal certificato, quando disponibile.',
   'fieldHelp.registry.capital': 'Capitale riportato sul certificato, senza ulteriori calcoli.',
-  'fieldHelp.registry.objeto': 'Oggetto o scopo registrato secondo il testo importato dal certificato.',
+  'fieldHelp.registry.objeto':
+    'Oggetto o scopo registrato secondo il testo importato dal certificato.',
   'fieldHelp.registry.cae':
     'Attività economiche del certificato, arricchite dal catalogo CAE quando possibile.',
-  'fieldHelp.registry.accessCodeMasked': 'Codice mascherato per l’audit; il valore completo non viene mai mostrato.',
+  'fieldHelp.registry.accessCodeMasked':
+    'Codice mascherato per l’audit; il valore completo non viene mai mostrato.',
   'fieldHelp.registry.retrievedAt': 'Momento in cui questa consultazione è stata eseguita.',
   'fieldHelp.registry.conservatoria': 'Ufficio del registro indicato nel documento importato.',
   'fieldHelp.registry.oficial': 'Funzionario indicato nel documento importato.',
   'fieldHelp.registry.subscribedOn': 'Data di sottoscrizione indicata sul certificato.',
-  'fieldHelp.registry.validUntil': 'Data di validità indicata sul certificato; non rinnova la consultazione.',
+  'fieldHelp.registry.validUntil':
+    'Data di validità indicata sul certificato; non rinnova la consultazione.',
   'fieldHelp.registry.source': 'URL usato per ottenere il certificato in questa importazione.',
-  'fieldHelp.registry.digest': 'SHA-256 dell’HTML importato, per confrontarlo con il documento originale.',
+  'fieldHelp.registry.digest':
+    'SHA-256 dell’HTML importato, per confrontarlo con il documento originale.',
   'fieldHelp.registry.naturezaJuridica':
     'Natura giuridica così come letta nell’iscrizione del certificato.',
-  'fieldHelp.registry.fiscalYearEnd': 'Chiusura dell’esercizio indicata nell’iscrizione, quando presente.',
-  'fieldHelp.registry.capitalRealization': 'Nota di versamento del capitale trascritta dal certificato.',
-  'fieldHelp.registry.deliberationDate': 'Data della delibera indicata nell’iscrizione, quando presente.',
+  'fieldHelp.registry.fiscalYearEnd':
+    'Chiusura dell’esercizio indicata nell’iscrizione, quando presente.',
+  'fieldHelp.registry.capitalRealization':
+    'Nota di versamento del capitale trascritta dal certificato.',
+  'fieldHelp.registry.deliberationDate':
+    'Data della delibera indicata nell’iscrizione, quando presente.',
   'fieldHelp.registry.formaObrigar': 'Testo importato su chi impegna l’ente.',
-  "settings.providerCredentials.cardTitle": "Provider di firma",
-  "settings.providerCredentials.lede": "Gestisci le credenziali dei provider di firma, con più chiavi per provider, priorità e failover.",
-  "settings.providerCredentials.newEntry": "Nuova voce",
-  "settings.providerCredentials.empty": "Nessuna credenziale del provider",
-  "settings.providerCredentials.emptyBody": "Non è ancora memorizzata alcuna credenziale. Aggiungi una voce per iniziare.",
-  "settings.providerCredentials.protection.confidential.title": "Archiviazione riservata",
-  "settings.providerCredentials.protection.confidential.body": "Le credenziali sono cifrate con protezione riservata a riposo.",
-  "settings.providerCredentials.protection.obfuscation.title": "Offuscamento — difesa in profondità",
-  "settings.providerCredentials.protection.obfuscation.body": "Le credenziali sono cifrate, ma non è riservatezza completa finché non attivi SQLCipher o il sigillo del sistema operativo.",
-  "settings.providerCredentials.protection.strictBlocked": "La modalità rigorosa è attiva: puoi memorizzare le credenziali solo dopo aver attivato una protezione riservata.",
-  "settings.providerCredentials.mode.cmd": "Chave Móvel Digital (CMD)",
-  "settings.providerCredentials.mode.csc": "QTSP CSC",
-  "settings.providerCredentials.mode.scap": "SCAP (AMA)",
-  "settings.providerCredentials.mode.pkcs12": "PKCS#12 locale",
-  "settings.providerCredentials.createdToast": "Voce creata.",
-  "settings.providerCredentials.updatedToast": "Voce aggiornata.",
-  "settings.providerCredentials.deletedToast": "Voce rimossa.",
-  "settings.providerCredentials.reorderedToast": "Ordine aggiornato.",
-  "settings.providerCredentials.failoverHint": "Le voci vengono provate in ordine di priorità; quelle inferiori sono usate quando una superiore non è raggiungibile.",
-  "settings.providerCredentials.provider.addEntry": "Aggiungi voce",
-  "settings.providerCredentials.provider.noEntries": "Nessuna voce per questo provider.",
-  "settings.providerCredentials.entry.unlabeled": "Voce senza etichetta",
-  "settings.providerCredentials.entry.priority": "Priorità {priority}",
-  "settings.providerCredentials.entry.enabled": "Attiva",
-  "settings.providerCredentials.entry.disabled": "Disattivata",
-  "settings.providerCredentials.entry.moveUp": "Aumenta priorità",
-  "settings.providerCredentials.entry.moveDown": "Riduci priorità",
-  "settings.providerCredentials.entry.edit": "Modifica",
-  "settings.providerCredentials.entry.noFields": "Nessun campo configurato",
-  "settings.providerCredentials.entry.configured": "configurato",
-  "settings.providerCredentials.entry.deleteConfirm.title": "Rimuovi voce",
-  "settings.providerCredentials.entry.deleteConfirm.intro": "Stai per rimuovere la voce «{label}». Questa azione non può essere annullata.",
-  "settings.providerCredentials.entry.deleteConfirm.confirm": "Rimuovi voce",
-  "settings.providerCredentials.entry.deleteConfirm.pending": "Rimozione…",
-  "settings.providerCredentials.form.newEntry": "Nuova voce",
-  "settings.providerCredentials.form.editEntry": "Modifica voce",
-  "settings.providerCredentials.form.mode": "Tipo di provider",
-  "settings.providerCredentials.form.providerId": "Identificatore del provider",
-  "settings.providerCredentials.form.providerIdHint": "Identificatore del QTSP (CSC) o etichetta dell'identità (PKCS#12).",
-  "settings.providerCredentials.form.label": "Etichetta",
-  "settings.providerCredentials.form.labelPlaceholder": "Chiave primaria",
-  "settings.providerCredentials.form.enabled": "Voce attiva",
-  "settings.providerCredentials.form.endpoint": "Endpoint (base_url)",
-  "settings.providerCredentials.form.endpointHint": "Sostituzione dell'URL di base per questo provider.",
-  "settings.providerCredentials.form.pfxWarning.title": "Chiave privata a riposo",
-  "settings.providerCredentials.form.pfxWarning.body": "Memorizzare un file PKCS#12 significa conservare una chiave di firma privata a riposo. Preferisci una protezione riservata.",
-  "settings.providerCredentials.form.pfxHint": "Seleziona il file .pfx/.p12; i byte vengono codificati sul client.",
-  "settings.providerCredentials.form.pfxReplaceHint": "Seleziona un file solo per sostituire quello attuale; lascia vuoto per mantenerlo.",
-  "settings.providerCredentials.form.secretHint": "I segreti sono di sola scrittura e non vengono mai restituiti. Lascia un campo vuoto per mantenerlo invariato.",
-  "settings.providerCredentials.form.keepFieldHint": "Lascia vuoto per mantenere il valore attuale.",
-  "settings.providerCredentials.form.submit": "Salva",
-  "settings.providerCredentials.form.submitting": "Salvataggio…",
-  "settings.providerCredentials.field.applicationId": "ID applicazione",
-  "settings.providerCredentials.field.httpBasicUsername": "Nome utente HTTP Basic",
-  "settings.providerCredentials.field.httpBasicPassword": "Password HTTP Basic",
-  "settings.providerCredentials.field.amaCertPem": "Certificato AMA (PEM)",
-  "settings.providerCredentials.field.clientId": "Client ID",
-  "settings.providerCredentials.field.clientSecret": "Client secret",
-  "settings.providerCredentials.field.accessToken": "Token di accesso",
-  "settings.providerCredentials.field.secret": "Segreto",
-  "settings.providerCredentials.field.passphrase": "Passphrase",
-  "settings.providerCredentials.field.env": "Ambiente",
-  "settings.providerCredentials.field.env.unset": "Non impostato",
-  "settings.providerCredentials.field.env.preprod": "Preproduzione",
-  "settings.providerCredentials.field.env.prod": "Produzione",
-  "settings.providerCredentials.field.authorization": "Autorizzazione",
-  "settings.providerCredentials.field.authorization.unset": "Non impostata",
-  "settings.providerCredentials.field.authorization.service": "Servizio",
-  "settings.providerCredentials.field.authorization.user": "Utente",
-  "settings.providerCredentials.field.credentialId": "ID credenziale",
-  "settings.providerCredentials.field.scope": "Ambito (scope)",
-  "settings.providerCredentials.field.sandbox": "Sandbox",
-  "settings.providerCredentials.field.environment": "Ambiente",
-  "settings.providerCredentials.field.friendlyName": "Nome descrittivo",
-  "settings.providerCredentials.field.localKeyId": "Local key ID (hex)",
-  "settings.providerCredentials.field.pfx": "File PKCS#12/PFX",
+  'settings.providerCredentials.cardTitle': 'Provider di firma',
+  'settings.providerCredentials.lede':
+    'Gestisci le credenziali dei provider di firma, con più chiavi per provider, priorità e failover.',
+  'settings.providerCredentials.newEntry': 'Nuova voce',
+  'settings.providerCredentials.empty': 'Nessuna credenziale del provider',
+  'settings.providerCredentials.emptyBody':
+    'Non è ancora memorizzata alcuna credenziale. Aggiungi una voce per iniziare.',
+  'settings.providerCredentials.protection.confidential.title': 'Archiviazione riservata',
+  'settings.providerCredentials.protection.confidential.body':
+    'Le credenziali sono cifrate con protezione riservata a riposo.',
+  'settings.providerCredentials.protection.obfuscation.title':
+    'Offuscamento — difesa in profondità',
+  'settings.providerCredentials.protection.obfuscation.body':
+    'Le credenziali sono cifrate, ma non è riservatezza completa finché non attivi SQLCipher o il sigillo del sistema operativo.',
+  'settings.providerCredentials.protection.strictBlocked':
+    'La modalità rigorosa è attiva: puoi memorizzare le credenziali solo dopo aver attivato una protezione riservata.',
+  'settings.providerCredentials.mode.cmd': 'Chave Móvel Digital (CMD)',
+  'settings.providerCredentials.mode.csc': 'QTSP CSC',
+  'settings.providerCredentials.mode.scap': 'SCAP (AMA)',
+  'settings.providerCredentials.mode.pkcs12': 'PKCS#12 locale',
+  'settings.providerCredentials.createdToast': 'Voce creata.',
+  'settings.providerCredentials.updatedToast': 'Voce aggiornata.',
+  'settings.providerCredentials.deletedToast': 'Voce rimossa.',
+  'settings.providerCredentials.reorderedToast': 'Ordine aggiornato.',
+  'settings.providerCredentials.failoverHint':
+    'Le voci vengono provate in ordine di priorità; quelle inferiori sono usate quando una superiore non è raggiungibile.',
+  'settings.providerCredentials.provider.addEntry': 'Aggiungi voce',
+  'settings.providerCredentials.provider.noEntries': 'Nessuna voce per questo provider.',
+  'settings.providerCredentials.entry.unlabeled': 'Voce senza etichetta',
+  'settings.providerCredentials.entry.priority': 'Priorità {priority}',
+  'settings.providerCredentials.entry.enabled': 'Attiva',
+  'settings.providerCredentials.entry.disabled': 'Disattivata',
+  'settings.providerCredentials.entry.moveUp': 'Aumenta priorità',
+  'settings.providerCredentials.entry.moveDown': 'Riduci priorità',
+  'settings.providerCredentials.entry.edit': 'Modifica',
+  'settings.providerCredentials.entry.noFields': 'Nessun campo configurato',
+  'settings.providerCredentials.entry.configured': 'configurato',
+  'settings.providerCredentials.entry.deleteConfirm.title': 'Rimuovi voce',
+  'settings.providerCredentials.entry.deleteConfirm.intro':
+    'Stai per rimuovere la voce «{label}». Questa azione non può essere annullata.',
+  'settings.providerCredentials.entry.deleteConfirm.confirm': 'Rimuovi voce',
+  'settings.providerCredentials.entry.deleteConfirm.pending': 'Rimozione…',
+  'settings.providerCredentials.form.newEntry': 'Nuova voce',
+  'settings.providerCredentials.form.editEntry': 'Modifica voce',
+  'settings.providerCredentials.form.mode': 'Tipo di provider',
+  'settings.providerCredentials.form.providerId': 'Identificatore del provider',
+  'settings.providerCredentials.form.providerIdHint':
+    "Identificatore del QTSP (CSC) o etichetta dell'identità (PKCS#12).",
+  'settings.providerCredentials.form.label': 'Etichetta',
+  'settings.providerCredentials.form.labelPlaceholder': 'Chiave primaria',
+  'settings.providerCredentials.form.enabled': 'Voce attiva',
+  'settings.providerCredentials.form.endpoint': 'Endpoint (base_url)',
+  'settings.providerCredentials.form.endpointHint':
+    "Sostituzione dell'URL di base per questo provider.",
+  'settings.providerCredentials.form.pfxWarning.title': 'Chiave privata a riposo',
+  'settings.providerCredentials.form.pfxWarning.body':
+    'Memorizzare un file PKCS#12 significa conservare una chiave di firma privata a riposo. Preferisci una protezione riservata.',
+  'settings.providerCredentials.form.pfxHint':
+    'Seleziona il file .pfx/.p12; i byte vengono codificati sul client.',
+  'settings.providerCredentials.form.pfxReplaceHint':
+    'Seleziona un file solo per sostituire quello attuale; lascia vuoto per mantenerlo.',
+  'settings.providerCredentials.form.secretHint':
+    'I segreti sono di sola scrittura e non vengono mai restituiti. Lascia un campo vuoto per mantenerlo invariato.',
+  'settings.providerCredentials.form.keepFieldHint':
+    'Lascia vuoto per mantenere il valore attuale.',
+  'settings.providerCredentials.form.submit': 'Salva',
+  'settings.providerCredentials.form.submitting': 'Salvataggio…',
+  'settings.providerCredentials.field.applicationId': 'ID applicazione',
+  'settings.providerCredentials.field.httpBasicUsername': 'Nome utente HTTP Basic',
+  'settings.providerCredentials.field.httpBasicPassword': 'Password HTTP Basic',
+  'settings.providerCredentials.field.amaCertPem': 'Certificato AMA (PEM)',
+  'settings.providerCredentials.field.clientId': 'Client ID',
+  'settings.providerCredentials.field.clientSecret': 'Client secret',
+  'settings.providerCredentials.field.accessToken': 'Token di accesso',
+  'settings.providerCredentials.field.secret': 'Segreto',
+  'settings.providerCredentials.field.passphrase': 'Passphrase',
+  'settings.providerCredentials.field.env': 'Ambiente',
+  'settings.providerCredentials.field.env.unset': 'Non impostato',
+  'settings.providerCredentials.field.env.preprod': 'Preproduzione',
+  'settings.providerCredentials.field.env.prod': 'Produzione',
+  'settings.providerCredentials.field.authorization': 'Autorizzazione',
+  'settings.providerCredentials.field.authorization.unset': 'Non impostata',
+  'settings.providerCredentials.field.authorization.service': 'Servizio',
+  'settings.providerCredentials.field.authorization.user': 'Utente',
+  'settings.providerCredentials.field.credentialId': 'ID credenziale',
+  'settings.providerCredentials.field.scope': 'Ambito (scope)',
+  'settings.providerCredentials.field.sandbox': 'Sandbox',
+  'settings.providerCredentials.field.environment': 'Ambiente',
+  'settings.providerCredentials.field.friendlyName': 'Nome descrittivo',
+  'settings.providerCredentials.field.localKeyId': 'Local key ID (hex)',
+  'settings.providerCredentials.field.pfx': 'File PKCS#12/PFX',
 };
