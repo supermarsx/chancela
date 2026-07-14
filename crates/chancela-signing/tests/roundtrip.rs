@@ -1269,12 +1269,12 @@ fn asic_unsupported_container_shapes_report_precise_gaps() {
     ]);
     let report = inspect_asic_profile(&multi_manifest).expect("inspect multi-manifest profile");
     assert_eq!(report.manifest_paths.len(), 2);
-    assert!(
-        report
-            .blockers
-            .iter()
-            .any(|blocker| blocker.contains("one ASiCManifest"))
-    );
+    assert!(report.blocker_details.iter().any(|blocker| {
+        blocker.id == AsicDiagnosticBlockerId::AsicEMultipleManifests
+            && blocker
+                .message
+                .contains("one parsed ASiCManifest per CAdES signature")
+    }));
     let err = validate_signature(&asic_artifact(multi_manifest), None).unwrap_err();
     assert!(matches!(err, SigningError::Asic(msg) if msg.contains("multiple ASiC-E ASiCManifest")));
 
@@ -1288,12 +1288,12 @@ fn asic_unsupported_container_shapes_report_precise_gaps() {
     let report = inspect_asic_profile(&multi_signature).expect("inspect multi-signature profile");
     assert_eq!(report.signature_profile, AsicSignatureProfile::Cades);
     assert_eq!(report.cades_signature_paths.len(), 2);
-    assert!(
-        report
-            .blockers
-            .iter()
-            .any(|blocker| blocker.contains("one CAdES signature"))
-    );
+    assert!(report.blocker_details.iter().any(|blocker| {
+        blocker.id == AsicDiagnosticBlockerId::AsicEMultipleCadesSignatures
+            && blocker
+                .message
+                .contains("one parsed ASiCManifest per CAdES signature")
+    }));
     let err = validate_signature(&asic_artifact(multi_signature), None).unwrap_err();
     assert!(
         matches!(err, SigningError::Asic(msg) if msg.contains("additional ASiC-E CAdES signature"))

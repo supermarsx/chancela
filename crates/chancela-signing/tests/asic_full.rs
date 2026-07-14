@@ -24,11 +24,12 @@ use x509_cert::name::Name;
 use x509_cert::serial_number::SerialNumber;
 use x509_cert::time::Validity;
 
-use chancela_signing::asic::AsicSignatureMemberKind;
+use chancela_signing::asic::{AsicDiagnosticBlockerId, AsicProfileShape, AsicSignatureMemberKind};
 use chancela_signing::{
     AsicContainerKind, AsicEMultiSignRequest, AsicPayload, AsicSignatureProfile, EvidentiaryLevel,
     MockProvider, SignerProvider, SigningError, SigningFamily, Timestamp, TimestampProvider,
-    XadesLevel, sign_asic_e_multi, sign_asic_s, sign_asic_s_xades, validate_asic_container,
+    XadesLevel, build_asic_e_manifest, extract_asic_e_container, inspect_asic_profile,
+    sign_asic_e_multi, sign_asic_s, sign_asic_s_xades, validate_asic_container,
 };
 
 const OID_SHA256_WITH_RSA: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.113549.1.1.11");
@@ -180,6 +181,20 @@ fn rewrite_member(
         out.write_all(&bytes).expect("write member");
     }
     out.finish().expect("finish zip").into_inner()
+}
+
+fn member_bytes(container: &[u8], target: &str) -> Vec<u8> {
+    let mut archive = zip::ZipArchive::new(Cursor::new(container)).expect("read zip");
+    for i in 0..archive.len() {
+        let mut file = archive.by_index(i).expect("member");
+        if file.name() != target {
+            continue;
+        }
+        let mut bytes = Vec::new();
+        file.read_to_end(&mut bytes).expect("read target member");
+        return bytes;
+    }
+    panic!("missing target member {target}");
 }
 
 fn add_member(container: &[u8], path: &str, bytes: &[u8]) -> Vec<u8> {
@@ -488,6 +503,235 @@ fn asic_e_multi_sig_two_cades_signers_each_get_a_manifest() {
             "META-INF/ASiCManifest002.xml".to_string()
         ]
     );
+}
+
+#[test]
+fn asic_e_multi_sig_single_cades_numbered_manifest_is_not_multi_manifest_profile() {
+    let cades = rsa_provider(SigningFamily::CartaoDeCidadao);
+    let raw = payloads();
+    let payloads = asic_payloads(&raw);
+
+    let container = sign_asic_e_multi(AsicEMultiSignRequest {
+        payloads: &payloads,
+        cades_signers: &[&cades],
+        xades_signers: &[],
+        signing_time: fixed_time(),
+        xades_level: XadesLevel::B,
+        xades_tsa: None,
+        archive_tsa: None,
+    })
+    .expect("sign one-CAdES numbered-manifest ASiC-E");
+
+    let profile = inspect_asic_profile(&container).expect("inspect one-CAdES profile");
+
+    assert_eq!(profile.signature_profile, AsicSignatureProfile::Cades);
+    assert_eq!(
+        profile.profile_shape,
+        AsicProfileShape::AsicECadesUnsupported
+    );
+    assert_ne!(
+        profile.profile_shape,
+        AsicProfileShape::AsicECadesMultiManifest
+    );
+    assert_eq!(profile.bounded_profile, None);
+    assert!(!profile.is_bounded_supported_candidate());
+    assert_eq!(
+        profile.manifest_paths,
+        vec!["META-INF/ASiCManifest001.xml".to_string()]
+    );
+    assert_eq!(
+        profile.cades_signature_paths,
+        vec!["META-INF/signature001.p7s".to_string()]
+    );
+    assert!(profile.blocker_details.iter().any(|blocker| {
+        blocker.id == AsicDiagnosticBlockerId::AsicEUnsupportedManifestPath
+            && blocker.id.as_str() == "asic_e_unsupported_manifest_path"
+            && blocker.member_path.as_deref() == Some("META-INF/ASiCManifest001.xml")
+    }));
+
+    let err = extract_asic_e_container(&container).unwrap_err();
+    assert!(
+        matches!(err, SigningError::Asic(ref msg) if msg.contains("unsupported ASiC-E manifest member META-INF/ASiCManifest001.xml")),
+        "got {err:?}"
+    );
+}
+
+#[test]
+fn asic_e_multi_sig_two_cades_profile_reports_manifest_wiring() {
+    let chair = rsa_provider(SigningFamily::CartaoDeCidadao);
+    let secretary = ecdsa_provider(SigningFamily::CartaoDeCidadao);
+    let raw = payloads();
+    let payloads = asic_payloads(&raw);
+
+    let container = sign_asic_e_multi(AsicEMultiSignRequest {
+        payloads: &payloads,
+        cades_signers: &[&chair, &secretary],
+        xades_signers: &[],
+        signing_time: fixed_time(),
+        xades_level: XadesLevel::B,
+        xades_tsa: None,
+        archive_tsa: None,
+    })
+    .expect("sign two-CAdES ASiC-E");
+
+    let profile = inspect_asic_profile(&container).expect("inspect two-CAdES profile");
+
+    assert_eq!(profile.signature_profile, AsicSignatureProfile::Cades);
+    assert_eq!(
+        profile.profile_shape,
+        AsicProfileShape::AsicECadesMultiManifest
+    );
+    assert_eq!(profile.bounded_profile, None);
+    assert!(!profile.is_bounded_supported_candidate());
+    assert!(
+        profile.blocker_details.is_empty(),
+        "{:?}",
+        profile.blocker_details
+    );
+    assert_eq!(profile.manifest_diagnostics.len(), 2);
+    assert_eq!(profile.signature_diagnostics.len(), 2);
+
+    let mut manifests = profile.manifest_paths.clone();
+    manifests.sort();
+    assert_eq!(
+        manifests,
+        vec![
+            "META-INF/ASiCManifest001.xml".to_string(),
+            "META-INF/ASiCManifest002.xml".to_string()
+        ]
+    );
+
+    for signature in &profile.signature_diagnostics {
+        assert_eq!(signature.member_kind, AsicSignatureMemberKind::Cades);
+        assert_eq!(signature.referenced_by_manifest_paths.len(), 1);
+        assert!(signature.blockers.is_empty(), "{signature:?}");
+    }
+    for manifest in &profile.manifest_diagnostics {
+        assert_eq!(manifest.signature_references.len(), 1);
+        assert!(manifest.signature_references[0].member_present);
+        assert_eq!(
+            manifest.signature_references[0].member_kind,
+            Some(AsicSignatureMemberKind::Cades)
+        );
+        assert_eq!(manifest.data_object_references.len(), 2);
+        assert!(
+            manifest
+                .data_object_references
+                .iter()
+                .all(|reference| reference.digest_matches == Some(true)),
+            "{manifest:?}"
+        );
+        assert!(manifest.blockers.is_empty(), "{manifest:?}");
+    }
+}
+
+#[test]
+fn asic_e_multi_sig_duplicate_manifest_reference_is_structured_blocker() {
+    let chair = rsa_provider(SigningFamily::CartaoDeCidadao);
+    let secretary = ecdsa_provider(SigningFamily::CartaoDeCidadao);
+    let raw = payloads();
+    let payloads = asic_payloads(&raw);
+
+    let container = sign_asic_e_multi(AsicEMultiSignRequest {
+        payloads: &payloads,
+        cades_signers: &[&chair, &secretary],
+        xades_signers: &[],
+        signing_time: fixed_time(),
+        xades_level: XadesLevel::B,
+        xades_tsa: None,
+        archive_tsa: None,
+    })
+    .expect("sign two-CAdES ASiC-E");
+    let first_manifest = member_bytes(&container, "META-INF/ASiCManifest001.xml");
+    let duplicated = rewrite_member(&container, "META-INF/ASiCManifest002.xml", |_| {
+        first_manifest.clone()
+    });
+
+    let profile = inspect_asic_profile(&duplicated).expect("inspect duplicated manifest ref");
+
+    assert_eq!(
+        profile.profile_shape,
+        AsicProfileShape::AsicECadesUnsupported
+    );
+    assert!(profile.blocker_details.iter().any(|blocker| {
+        blocker.id == AsicDiagnosticBlockerId::AsicEManifestDuplicateSignatureReference
+            && blocker.id.as_str() == "asic_e_manifest_duplicate_signature_reference"
+    }));
+    assert!(profile.blocker_details.iter().any(|blocker| {
+        blocker.id == AsicDiagnosticBlockerId::AsicEUnreferencedSignature
+            && blocker.member_path.as_deref() == Some("META-INF/signature002.p7s")
+    }));
+
+    let signature001 = profile
+        .signature_diagnostics
+        .iter()
+        .find(|signature| signature.path == "META-INF/signature001.p7s")
+        .expect("signature001 diagnostic");
+    assert_eq!(signature001.referenced_by_manifest_paths.len(), 2);
+    let signature002 = profile
+        .signature_diagnostics
+        .iter()
+        .find(|signature| signature.path == "META-INF/signature002.p7s")
+        .expect("signature002 diagnostic");
+    assert!(signature002.referenced_by_manifest_paths.is_empty());
+    assert!(
+        signature002
+            .blockers
+            .iter()
+            .any(|blocker| blocker.id == AsicDiagnosticBlockerId::AsicEUnreferencedSignature),
+        "{signature002:?}"
+    );
+}
+
+#[test]
+fn asic_e_multi_sig_missing_manifest_reference_is_structured_blocker() {
+    let chair = rsa_provider(SigningFamily::CartaoDeCidadao);
+    let secretary = ecdsa_provider(SigningFamily::CartaoDeCidadao);
+    let raw = payloads();
+    let payloads = asic_payloads(&raw);
+
+    let container = sign_asic_e_multi(AsicEMultiSignRequest {
+        payloads: &payloads,
+        cades_signers: &[&chair, &secretary],
+        xades_signers: &[],
+        signing_time: fixed_time(),
+        xades_level: XadesLevel::B,
+        xades_tsa: None,
+        archive_tsa: None,
+    })
+    .expect("sign two-CAdES ASiC-E");
+    let missing_signature_manifest =
+        build_asic_e_manifest(&payloads, "META-INF/signature999.p7s").unwrap();
+    let missing = rewrite_member(&container, "META-INF/ASiCManifest002.xml", |_| {
+        missing_signature_manifest.clone()
+    });
+
+    let profile = inspect_asic_profile(&missing).expect("inspect missing manifest ref");
+
+    assert_eq!(
+        profile.profile_shape,
+        AsicProfileShape::AsicECadesUnsupported
+    );
+    assert!(profile.blocker_details.iter().any(|blocker| {
+        blocker.id == AsicDiagnosticBlockerId::AsicEManifestReferencesMissingSignature
+            && blocker.id.as_str() == "asic_e_manifest_references_missing_signature"
+    }));
+    assert!(profile.blocker_details.iter().any(|blocker| {
+        blocker.id == AsicDiagnosticBlockerId::AsicEUnreferencedSignature
+            && blocker.member_path.as_deref() == Some("META-INF/signature002.p7s")
+    }));
+
+    let manifest002 = profile
+        .manifest_diagnostics
+        .iter()
+        .find(|manifest| manifest.path == "META-INF/ASiCManifest002.xml")
+        .expect("manifest002 diagnostic");
+    assert_eq!(manifest002.signature_references.len(), 1);
+    assert_eq!(
+        manifest002.signature_references[0].uri,
+        "META-INF/signature999.p7s"
+    );
+    assert!(!manifest002.signature_references[0].member_present);
 }
 
 #[test]

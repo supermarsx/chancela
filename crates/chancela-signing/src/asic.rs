@@ -193,6 +193,8 @@ pub enum AsicProfileShape {
     AsicSUnsigned,
     /// Bounded ASiC-E/CAdES single-manifest shape.
     AsicECadesSingleManifest,
+    /// ASiC-E/CAdES with one parsed `ASiCManifest` per CAdES signature member.
+    AsicECadesMultiManifest,
     /// ASiC-E with CAdES members, but outside the bounded single-manifest shape.
     AsicECadesUnsupported,
     /// ASiC-E carrying XAdES XML signature members.
@@ -257,6 +259,8 @@ pub enum AsicDiagnosticBlockerId {
     AsicEManifestParseFailed,
     /// An ASiC-E manifest referenced a signature member missing from the ZIP.
     AsicEManifestReferencesMissingSignature,
+    /// More than one parsed ASiC-E manifest referenced the same CAdES signature member.
+    AsicEManifestDuplicateSignatureReference,
     /// An ASiC-E CAdES signature member was not referenced by the parsed manifest.
     AsicEUnreferencedSignature,
     /// An ASiC-E manifest referenced a payload missing from the ZIP.
@@ -302,6 +306,9 @@ impl AsicDiagnosticBlockerId {
             AsicDiagnosticBlockerId::AsicEManifestParseFailed => "asic_e_manifest_parse_failed",
             AsicDiagnosticBlockerId::AsicEManifestReferencesMissingSignature => {
                 "asic_e_manifest_references_missing_signature"
+            }
+            AsicDiagnosticBlockerId::AsicEManifestDuplicateSignatureReference => {
+                "asic_e_manifest_duplicate_signature_reference"
             }
             AsicDiagnosticBlockerId::AsicEUnreferencedSignature => "asic_e_unreferenced_signature",
             AsicDiagnosticBlockerId::AsicEManifestReferencesMissingPayload => {
@@ -960,13 +967,29 @@ pub fn inspect_asic_profile(container: &[u8]) -> Result<AsicProfileReport, Signi
         &mut signature_diagnostics,
         &mut blocker_details,
     );
+    append_asic_e_cades_manifest_pairing_blockers(
+        container_kind,
+        &mut manifest_diagnostics,
+        &signature_diagnostics,
+        &mut blocker_details,
+    );
     append_manifest_unreferenced_payload_blockers(
         container_kind,
         &payload_paths,
         &mut manifest_diagnostics,
         &mut blocker_details,
     );
-    let profile_shape = profile_shape(container_kind, signature_profile, bounded_profile);
+    let cades_manifest_wiring_complete = cades_manifest_wiring_complete(
+        container_kind,
+        &manifest_diagnostics,
+        &signature_diagnostics,
+    );
+    let profile_shape = profile_shape(
+        container_kind,
+        signature_profile,
+        bounded_profile,
+        cades_manifest_wiring_complete,
+    );
     let blockers = blocker_details
         .iter()
         .map(|blocker| blocker.message.clone())
@@ -1503,6 +1526,7 @@ fn profile_shape(
     container_kind: AsicContainerKind,
     signature_profile: AsicSignatureProfile,
     bounded_profile: Option<AsicBoundedProfile>,
+    cades_manifest_wiring_complete: bool,
 ) -> AsicProfileShape {
     match (container_kind, signature_profile, bounded_profile) {
         (
@@ -1515,6 +1539,11 @@ fn profile_shape(
             AsicSignatureProfile::Cades,
             Some(AsicBoundedProfile::AsicECadesSingleManifest),
         ) => AsicProfileShape::AsicECadesSingleManifest,
+        (AsicContainerKind::AsicE, AsicSignatureProfile::Cades, _)
+            if cades_manifest_wiring_complete =>
+        {
+            AsicProfileShape::AsicECadesMultiManifest
+        }
         (AsicContainerKind::AsicS, AsicSignatureProfile::Cades, _) => {
             AsicProfileShape::AsicSCadesUnsupported
         }
@@ -1711,38 +1740,151 @@ fn append_unreferenced_signature_blockers(
     }
 }
 
+fn append_asic_e_cades_manifest_pairing_blockers(
+    container_kind: AsicContainerKind,
+    manifest_diagnostics: &mut [AsicManifestDiagnostic],
+    signature_diagnostics: &[AsicSignatureDiagnostic],
+    global_blockers: &mut Vec<AsicDiagnosticBlocker>,
+) {
+    if container_kind != AsicContainerKind::AsicE {
+        return;
+    }
+
+    let cades_count = signature_diagnostics
+        .iter()
+        .filter(|signature| signature.member_kind == AsicSignatureMemberKind::Cades)
+        .count();
+    if cades_count == 0 {
+        return;
+    }
+
+    if manifest_diagnostics.len() != cades_count {
+        if manifest_diagnostics.len() > 1 {
+            push_blocker(
+                global_blockers,
+                AsicDiagnosticBlockerId::AsicEMultipleManifests,
+                format!(
+                    "ASiC-E/CAdES local technical validation expects one parsed ASiCManifest per CAdES signature; found {} manifests and {} CAdES signatures",
+                    manifest_diagnostics.len(),
+                    cades_count
+                ),
+                None,
+            );
+        }
+        if cades_count > 1 {
+            push_blocker(
+                global_blockers,
+                AsicDiagnosticBlockerId::AsicEMultipleCadesSignatures,
+                format!(
+                    "ASiC-E/CAdES local technical validation expects one parsed ASiCManifest per CAdES signature; found {} manifests and {} CAdES signatures",
+                    manifest_diagnostics.len(),
+                    cades_count
+                ),
+                None,
+            );
+        }
+    }
+
+    let mut referenced_by: HashMap<String, Vec<usize>> = HashMap::new();
+    for (index, manifest) in manifest_diagnostics.iter().enumerate() {
+        for reference in &manifest.signature_references {
+            if reference.member_kind == Some(AsicSignatureMemberKind::Cades) {
+                referenced_by
+                    .entry(reference.uri.clone())
+                    .or_default()
+                    .push(index);
+            }
+        }
+    }
+
+    for (signature_path, manifest_indexes) in referenced_by {
+        if manifest_indexes.len() <= 1 {
+            continue;
+        }
+        for manifest_index in manifest_indexes {
+            let manifest = &mut manifest_diagnostics[manifest_index];
+            let blocker = diagnostic_blocker(
+                AsicDiagnosticBlockerId::AsicEManifestDuplicateSignatureReference,
+                format!(
+                    "ASiC-E CAdES signature member {signature_path} is referenced by multiple ASiCManifest members"
+                ),
+                Some(manifest.path.clone()),
+            );
+            global_blockers.push(blocker.clone());
+            manifest.blockers.push(blocker);
+        }
+    }
+}
+
+fn cades_manifest_wiring_complete(
+    container_kind: AsicContainerKind,
+    manifest_diagnostics: &[AsicManifestDiagnostic],
+    signature_diagnostics: &[AsicSignatureDiagnostic],
+) -> bool {
+    if container_kind != AsicContainerKind::AsicE {
+        return false;
+    }
+
+    let cades_signature_paths = signature_diagnostics
+        .iter()
+        .filter(|signature| signature.member_kind == AsicSignatureMemberKind::Cades)
+        .map(|signature| signature.path.as_str())
+        .collect::<HashSet<_>>();
+    if cades_signature_paths.len() <= 1 || manifest_diagnostics.len() != cades_signature_paths.len()
+    {
+        return false;
+    }
+
+    let mut referenced = HashSet::new();
+    for manifest in manifest_diagnostics {
+        let [reference] = manifest.signature_references.as_slice() else {
+            return false;
+        };
+        if reference.member_kind != Some(AsicSignatureMemberKind::Cades)
+            || !cades_signature_paths.contains(reference.uri.as_str())
+            || !referenced.insert(reference.uri.as_str())
+        {
+            return false;
+        }
+    }
+
+    referenced.len() == cades_signature_paths.len()
+}
+
 fn append_manifest_unreferenced_payload_blockers(
     container_kind: AsicContainerKind,
     payload_paths: &[String],
     manifest_diagnostics: &mut [AsicManifestDiagnostic],
     global_blockers: &mut Vec<AsicDiagnosticBlocker>,
 ) {
-    if container_kind != AsicContainerKind::AsicE || manifest_diagnostics.len() != 1 {
-        return;
-    }
-    let manifest = &mut manifest_diagnostics[0];
-    if manifest.data_object_references.is_empty() {
+    if container_kind != AsicContainerKind::AsicE {
         return;
     }
 
-    let referenced_payloads = manifest
-        .data_object_references
-        .iter()
-        .map(|reference| reference.uri.as_str())
-        .collect::<HashSet<_>>();
+    for manifest in manifest_diagnostics {
+        if manifest.data_object_references.is_empty() {
+            continue;
+        }
 
-    for payload_path in payload_paths {
-        if !referenced_payloads.contains(payload_path.as_str()) {
-            let blocker = diagnostic_blocker(
-                AsicDiagnosticBlockerId::AsicEManifestUnreferencedPayload,
-                format!(
-                    "ASiC-E payload {payload_path} is not referenced by manifest {}",
-                    manifest.path
-                ),
-                Some(manifest.path.clone()),
-            );
-            global_blockers.push(blocker.clone());
-            manifest.blockers.push(blocker);
+        let referenced_payloads = manifest
+            .data_object_references
+            .iter()
+            .map(|reference| reference.uri.as_str())
+            .collect::<HashSet<_>>();
+
+        for payload_path in payload_paths {
+            if !referenced_payloads.contains(payload_path.as_str()) {
+                let blocker = diagnostic_blocker(
+                    AsicDiagnosticBlockerId::AsicEManifestUnreferencedPayload,
+                    format!(
+                        "ASiC-E payload {payload_path} is not referenced by manifest {}",
+                        manifest.path
+                    ),
+                    Some(manifest.path.clone()),
+                );
+                global_blockers.push(blocker.clone());
+                manifest.blockers.push(blocker);
+            }
         }
     }
 }
@@ -1840,47 +1982,35 @@ fn append_profile_blockers(
                     None,
                 );
             }
-            match manifest_paths {
-                [] => push_blocker(
+            if !cades_signature_paths.is_empty() && manifest_paths.is_empty() {
+                push_blocker(
                     blockers,
                     AsicDiagnosticBlockerId::AsicEMissingManifest,
-                    format!("ASiC-E/CAdES requires {ASICE_MANIFEST_PATH}"),
+                    "ASiC-E/CAdES requires at least one ASiCManifest referencing each CAdES signature",
                     None,
-                ),
-                [path] if path.as_str() == ASICE_MANIFEST_PATH => {}
-                [path] => push_blocker(
-                    blockers,
-                    AsicDiagnosticBlockerId::AsicEUnsupportedManifestPath,
-                    format!("ASiC-E/CAdES supports only {ASICE_MANIFEST_PATH}; found {path}"),
-                    Some(path.clone()),
-                ),
-                _ => push_blocker(
-                    blockers,
-                    AsicDiagnosticBlockerId::AsicEMultipleManifests,
-                    format!(
-                        "ASiC-E/CAdES supports one ASiCManifest; found {}",
-                        manifest_paths.join(", ")
-                    ),
-                    None,
-                ),
+                );
             }
-            match cades_signature_paths {
-                [] => push_blocker(
+            if !manifest_paths.is_empty() && cades_signature_paths.is_empty() {
+                push_blocker(
                     blockers,
                     AsicDiagnosticBlockerId::AsicEMissingCadesSignature,
-                    "ASiC-E/CAdES requires one META-INF/*signature*.p7s member",
+                    "ASiC-E/CAdES manifests require a referenced META-INF/*signature*.p7s member",
                     None,
-                ),
-                [_] => {}
-                _ => push_blocker(
+                );
+            }
+            if manifest_paths.len() == 1
+                && cades_signature_paths.len() == 1
+                && manifest_paths[0] != ASICE_MANIFEST_PATH
+            {
+                push_blocker(
                     blockers,
-                    AsicDiagnosticBlockerId::AsicEMultipleCadesSignatures,
+                    AsicDiagnosticBlockerId::AsicEUnsupportedManifestPath,
                     format!(
-                        "ASiC-E/CAdES supports one CAdES signature member; found {}",
-                        cades_signature_paths.join(", ")
+                        "ASiC-E/CAdES single-signature validation supports only {ASICE_MANIFEST_PATH}; found {}",
+                        manifest_paths[0]
                     ),
-                    None,
-                ),
+                    Some(manifest_paths[0].clone()),
+                );
             }
         }
     }

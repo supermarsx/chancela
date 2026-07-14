@@ -897,6 +897,7 @@ fn profile_shape(value: AsicProfileShape) -> &'static str {
         AsicProfileShape::AsicSMixed => "asic_s_mixed",
         AsicProfileShape::AsicSUnsigned => "asic_s_unsigned",
         AsicProfileShape::AsicECadesSingleManifest => "asic_e_cades_single_manifest",
+        AsicProfileShape::AsicECadesMultiManifest => "asic_e_cades_multi_manifest",
         AsicProfileShape::AsicECadesUnsupported => "asic_e_cades_unsupported",
         AsicProfileShape::AsicEXades => "asic_e_xades",
         AsicProfileShape::AsicEMixed => "asic_e_mixed",

@@ -386,6 +386,61 @@ fn mixed_asic_e_with_archive_container() -> Vec<u8> {
     .expect("mixed asic e")
 }
 
+fn single_numbered_cades_asic_e_container() -> Vec<u8> {
+    let cades = provider(35);
+    let payloads = [
+        AsicPayload {
+            name: "minutes.txt",
+            bytes: b"approved minutes",
+            mime_type: Some("text/plain"),
+        },
+        AsicPayload {
+            name: "attachments/votes.csv",
+            bytes: b"member,vote\nA,yes\nB,yes\n",
+            mime_type: Some("text/csv"),
+        },
+    ];
+    let cades_signers: [&dyn SignerProvider; 1] = [&cades];
+    sign_asic_e_multi(AsicEMultiSignRequest {
+        payloads: &payloads,
+        cades_signers: &cades_signers,
+        xades_signers: &[],
+        signing_time: signing_time(),
+        xades_level: XadesLevel::B,
+        xades_tsa: None,
+        archive_tsa: None,
+    })
+    .expect("single numbered-cades asic e")
+}
+
+fn multi_cades_asic_e_container() -> Vec<u8> {
+    let chair = provider(33);
+    let secretary = provider(34);
+    let payloads = [
+        AsicPayload {
+            name: "minutes.txt",
+            bytes: b"approved minutes",
+            mime_type: Some("text/plain"),
+        },
+        AsicPayload {
+            name: "attachments/votes.csv",
+            bytes: b"member,vote\nA,yes\nB,yes\n",
+            mime_type: Some("text/csv"),
+        },
+    ];
+    let cades_signers: [&dyn SignerProvider; 2] = [&chair, &secretary];
+    sign_asic_e_multi(AsicEMultiSignRequest {
+        payloads: &payloads,
+        cades_signers: &cades_signers,
+        xades_signers: &[],
+        signing_time: signing_time(),
+        xades_level: XadesLevel::B,
+        xades_tsa: None,
+        archive_tsa: None,
+    })
+    .expect("multi-cades asic e")
+}
+
 fn asic_e_multiple_manifests_container() -> Vec<u8> {
     let (manifest, cades) = signed_asic_e_parts(21);
     zip_entries(&[
@@ -688,6 +743,164 @@ async fn asic_signature_validation_bounded_e_cades_two_payloads_validates_manife
             .all(|reference| reference["digest_matches"] == true)
     );
     assert_cades_no_claim_boundaries(&body["cades"]);
+}
+
+#[tokio::test]
+async fn asic_signature_validation_single_cades_numbered_manifest_is_not_multi_manifest_profile() {
+    let state = seeded_state();
+    let token = owner_session(&state).await;
+    let container = single_numbered_cades_asic_e_container();
+
+    let (status, body) = send(&state, post_asic(&token, &container)).await;
+
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_no_claim_boundaries(&body);
+    assert_eq!(body["status"], "valid");
+    assert_technical_performed(&body, true);
+    assert_eq!(body["profile"]["signature_profile"], "cades");
+    assert_eq!(body["profile"]["profile_shape"], "asic_e_cades_unsupported");
+    assert_ne!(
+        body["profile"]["profile_shape"],
+        "asic_e_cades_multi_manifest"
+    );
+    assert!(body["profile"]["bounded_profile"].is_null(), "{body}");
+    assert_eq!(body["profile"]["bounded_supported_candidate"], false);
+    assert_has_blocker(&body, "asic_e_unsupported_manifest_path");
+    assert_no_blocker(&body, "asic_e_multiple_manifests");
+    assert_no_blocker(&body, "asic_e_multiple_cades_signatures");
+    assert!(body["cades"].is_null(), "{body}");
+
+    let manifests = body["profile"]["manifest_diagnostics"]
+        .as_array()
+        .expect("manifest diagnostics");
+    assert_eq!(manifests.len(), 1, "{body}");
+    assert_eq!(manifests[0]["path"], "META-INF/ASiCManifest001.xml");
+    assert_eq!(
+        manifests[0]["signature_references"][0]["uri"],
+        "META-INF/signature001.p7s"
+    );
+    assert_eq!(
+        manifests[0]["signature_references"][0]["member_present"],
+        true
+    );
+    assert_eq!(
+        manifests[0]["signature_references"][0]["member_kind"],
+        "cades"
+    );
+
+    let signatures = body["profile"]["signature_diagnostics"]
+        .as_array()
+        .expect("signature diagnostics");
+    assert_eq!(signatures.len(), 1, "{body}");
+    assert_eq!(signatures[0]["path"], "META-INF/signature001.p7s");
+    assert_eq!(
+        signatures[0]["referenced_by_manifest_paths"][0],
+        "META-INF/ASiCManifest001.xml"
+    );
+}
+
+#[tokio::test]
+async fn asic_signature_validation_multi_cades_manifests_reports_local_structure_without_claims() {
+    let state = seeded_state();
+    let token = owner_session(&state).await;
+    let container = multi_cades_asic_e_container();
+
+    let (status, body) = send(&state, post_asic(&token, &container)).await;
+
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_no_claim_boundaries(&body);
+    assert_eq!(body["status"], "valid");
+    assert_eq!(body["xades_validation_performed"], false);
+    assert_technical_performed(&body, true);
+    assert_eq!(body["profile"]["signature_profile"], "cades");
+    assert_eq!(
+        body["profile"]["profile_shape"],
+        "asic_e_cades_multi_manifest"
+    );
+    assert!(body["profile"]["bounded_profile"].is_null(), "{body}");
+    assert_eq!(body["profile"]["bounded_supported_candidate"], false);
+    assert!(
+        body["profile"]["blockers"]
+            .as_array()
+            .expect("profile blockers")
+            .is_empty(),
+        "{body}"
+    );
+    assert!(body["cades"].is_null(), "{body}");
+
+    let manifests = body["profile"]["manifest_diagnostics"]
+        .as_array()
+        .expect("manifest diagnostics");
+    assert_eq!(manifests.len(), 2, "{body}");
+    for manifest in manifests {
+        assert_eq!(
+            manifest["signature_references"]
+                .as_array()
+                .expect("signature refs")
+                .len(),
+            1,
+            "{body}"
+        );
+        assert_eq!(manifest["signature_references"][0]["member_present"], true);
+        assert_eq!(manifest["signature_references"][0]["member_kind"], "cades");
+        assert_eq!(
+            manifest["data_object_references"]
+                .as_array()
+                .expect("data object refs")
+                .len(),
+            2,
+            "{body}"
+        );
+        assert!(
+            manifest["data_object_references"]
+                .as_array()
+                .expect("data object refs")
+                .iter()
+                .all(|reference| reference["digest_matches"] == true),
+            "{body}"
+        );
+        assert!(
+            manifest["blockers"]
+                .as_array()
+                .expect("manifest blockers")
+                .is_empty(),
+            "{body}"
+        );
+    }
+
+    let signature_diagnostics = body["profile"]["signature_diagnostics"]
+        .as_array()
+        .expect("signature diagnostics");
+    assert_eq!(signature_diagnostics.len(), 2, "{body}");
+    for signature in signature_diagnostics {
+        assert_eq!(signature["member_kind"], "cades");
+        assert_eq!(
+            signature["referenced_by_manifest_paths"]
+                .as_array()
+                .expect("referenced manifests")
+                .len(),
+            1,
+            "{body}"
+        );
+        assert!(
+            signature["blockers"]
+                .as_array()
+                .expect("signature blockers")
+                .is_empty(),
+            "{body}"
+        );
+    }
+
+    let technical_signatures = body["technical_validation"]["signatures"]
+        .as_array()
+        .expect("technical signatures");
+    assert_eq!(technical_signatures.len(), 2, "{body}");
+    assert!(
+        technical_signatures
+            .iter()
+            .all(|signature| signature["kind"] == "cades" && signature["valid"] == true),
+        "{body}"
+    );
 }
 
 #[tokio::test]
