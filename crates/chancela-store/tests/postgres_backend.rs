@@ -17,11 +17,14 @@
 //! database would contend on that lock. Run the ignored tests serially.
 #![cfg(feature = "postgres")]
 
+use std::path::{Path, PathBuf};
+
 use chancela_core::ActId;
 use chancela_ledger::Ledger;
+use chancela_store::recovery::ResetScope;
 use chancela_store::{
-    LedgerEventPageQuery, PendingCmdSession, Store, StoreBackendSelection, StoredDocument,
-    StoredFollowUp, StoredFollowUpStatus, StoredGeneratedDocumentDispatchEvidence,
+    LedgerEventPageQuery, PendingCmdSession, Store, StoreBackendSelection, StoreError,
+    StoredDocument, StoredFollowUp, StoredFollowUpStatus, StoredGeneratedDocumentDispatchEvidence,
     StoredImportedDocument, StoredImportedDocumentMeta, StoredImportedDocumentReviewStatus,
     StoredPaperBookImport, StoredPaperBookImportMeta, StoredPaperBookOcrConversionDossier,
     StoredPaperBookOcrConversionExecutionArtifact, StoredPaperBookOcrDraft,
@@ -494,4 +497,323 @@ fn runtime_reads_and_writes_roundtrip_on_postgres() {
         page.events[0].seq > page.events[1].seq,
         "events return newest-first"
     );
+}
+
+// =================================================================================================
+// wp15 — logical backup / restore / recovery for the Postgres backend
+// =================================================================================================
+
+/// A unique scratch directory for a backup archive (the bundle file lives on the local host even
+/// though the durability sink is Postgres).
+fn unique_data_dir(tag: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("chancela-wp15-{tag}-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).expect("create scratch dir");
+    dir
+}
+
+fn sample_document(act_id: ActId, tag: &str) -> StoredDocument {
+    StoredDocument {
+        id: format!("doc-{tag}-{}", uuid::Uuid::new_v4()),
+        act_id,
+        template_id: "csc-ata-ag/v1".to_string(),
+        pdf_digest: format!("{tag:0>8}"),
+        profile: "csc/sq".to_string(),
+        created_at: ts(1_770_000_000),
+        pdf_bytes: format!("%PDF-1.7 {tag}").into_bytes(),
+    }
+}
+
+/// Seed a blank, coherent instance: factory-reset to clear any residue, then append `events` and a
+/// generated document so there is real, checkable data to back up.
+fn seed_blank_instance(store: &Store, data_dir: &Path) -> (Ledger, ActId) {
+    let mut ledger = store.load().expect("load").ledger;
+    store
+        .reset(
+            &mut ledger,
+            data_dir,
+            ResetScope::BackendFactory,
+            false,
+            &[],
+            "amelia.marques",
+            ts(1_700_000_000),
+        )
+        .expect("factory reset to blank");
+    assert_eq!(ledger.len(), 0, "factory reset blanks the ledger");
+    (ledger, ActId(uuid::Uuid::new_v4()))
+}
+
+/// Round-trip: a logical backup captured mid-history restores every table + the ledger head exactly,
+/// reverting any writes made after the snapshot (the restored chain re-verifies, and the appended
+/// `ledger.restored` is the only addition beyond the snapshot length).
+#[test]
+#[ignore = "requires a live PostgreSQL at DATABASE_URL"]
+fn logical_backup_restore_roundtrips_on_postgres() {
+    let Some(database_url) = database_url() else {
+        eprintln!("skipping: DATABASE_URL not set");
+        return;
+    };
+    let store = Store::open_backend(StoreBackendSelection::Postgres { database_url })
+        .expect("open postgres backend");
+    let data_dir = unique_data_dir("roundtrip");
+    let (mut ledger, act_a) = seed_blank_instance(&store, &data_dir);
+
+    // Seed a couple of events + a document under act A.
+    for i in 0..2 {
+        let ev = ledger
+            .append(
+                "amelia.marques",
+                "application",
+                &format!("app.seed.{i}"),
+                None,
+                b"x",
+            )
+            .clone();
+        store.persist(|tx| tx.append_event(&ev)).unwrap();
+    }
+    let doc_a = sample_document(act_a, "a");
+    store.persist(|tx| tx.upsert_document(&doc_a)).unwrap();
+    let head_at_backup = ledger.head().map(|h| lower_hex(&h));
+    let len_at_backup = ledger.len() as u64;
+
+    // Backup captures this point-in-time.
+    let manifest = store.backup(&data_dir, &[]).expect("logical backup");
+    assert_eq!(
+        manifest.ledger_head, head_at_backup,
+        "manifest head == live head"
+    );
+    assert_eq!(manifest.ledger_length, len_at_backup);
+    assert!(manifest.ledger_verified, "snapshot chain verified");
+
+    // Mutate PAST the backup: another event + a document under act B.
+    let ev = ledger
+        .append(
+            "amelia.marques",
+            "application",
+            "app.after.backup",
+            None,
+            b"y",
+        )
+        .clone();
+    store.persist(|tx| tx.append_event(&ev)).unwrap();
+    let act_b = ActId(uuid::Uuid::new_v4());
+    let doc_b = sample_document(act_b, "b");
+    store.persist(|tx| tx.upsert_document(&doc_b)).unwrap();
+    assert!(store.document_for_act(act_b).unwrap().is_some());
+
+    // Restore reverts to the snapshot (all-or-nothing).
+    let mut restored_ledger = ledger.clone();
+    let outcome = store
+        .restore(
+            &mut restored_ledger,
+            Path::new(&manifest.path),
+            &data_dir,
+            "amelia.marques",
+            ts(1_800_000_000),
+        )
+        .expect("restore");
+    assert!(outcome.chain_verified);
+    assert_eq!(
+        outcome.ledger_length,
+        len_at_backup + 1,
+        "restored length = snapshot + the appended ledger.restored"
+    );
+
+    // Document A is back exactly; document B (post-backup) is gone; the reloaded chain verifies.
+    assert_eq!(
+        store.document_for_act(act_a).unwrap().as_ref(),
+        Some(&doc_a)
+    );
+    assert!(store.document_for_act(act_b).unwrap().is_none());
+    let loaded = store.load().unwrap();
+    assert!(loaded.chain_status.is_ok(), "restored chain re-verifies");
+
+    let _ = std::fs::remove_dir_all(&data_dir);
+}
+
+/// Domain-wipe preserves + audits the ledger; whole-instance start-over reinitializes a fresh
+/// single-event chain; factory-blank clears everything to a coherent empty instance whose meta
+/// (`instance_id`) still resolves.
+#[test]
+#[ignore = "requires a live PostgreSQL at DATABASE_URL"]
+fn wipe_start_over_and_factory_reset_stay_coherent_on_postgres() {
+    let Some(database_url) = database_url() else {
+        eprintln!("skipping: DATABASE_URL not set");
+        return;
+    };
+    let store = Store::open_backend(StoreBackendSelection::Postgres { database_url })
+        .expect("open postgres backend");
+    let data_dir = unique_data_dir("recovery");
+    let (mut ledger, act) = seed_blank_instance(&store, &data_dir);
+    let doc = sample_document(act, "seed");
+    store.persist(|tx| tx.upsert_document(&doc)).unwrap();
+
+    // Domain wipe: document cleared, ledger PRESERVED and grows a chained data.wiped, chain verifies.
+    let len_before_wipe = ledger.len();
+    store
+        .reset(
+            &mut ledger,
+            &data_dir,
+            ResetScope::BackendDomain,
+            false,
+            &[],
+            "amelia.marques",
+            ts(1_700_000_100),
+        )
+        .expect("domain wipe");
+    assert!(
+        store.document_for_act(act).unwrap().is_none(),
+        "domain data cleared"
+    );
+    assert!(
+        ledger.len() > len_before_wipe,
+        "data.wiped appended to the preserved ledger"
+    );
+    assert!(
+        store.load().unwrap().chain_status.is_ok(),
+        "post-wipe chain verifies"
+    );
+
+    // Whole-instance start-over: fresh ledger whose genesis is ledger.reinitialized.
+    store
+        .start_over_instance(
+            &mut ledger,
+            "clean slate",
+            "amelia.marques",
+            ts(1_700_000_200),
+            &data_dir,
+            &[],
+        )
+        .expect("start over instance");
+    let after = store.load().unwrap();
+    assert_eq!(
+        after.ledger.len(),
+        1,
+        "start-over seeds a single genesis event"
+    );
+    assert!(after.chain_status.is_ok(), "reinitialized chain verifies");
+
+    // Factory blank: everything gone, but the instance meta still resolves.
+    store
+        .reset(
+            &mut ledger,
+            &data_dir,
+            ResetScope::BackendFactory,
+            false,
+            &[],
+            "amelia.marques",
+            ts(1_700_000_300),
+        )
+        .expect("factory reset");
+    let blank = store.load().unwrap();
+    assert_eq!(blank.ledger.len(), 0);
+    assert!(blank.entities.is_empty() && blank.books.is_empty() && blank.acts.is_empty());
+    assert!(
+        !store.instance_id().unwrap().is_empty(),
+        "instance_id survives a factory blank"
+    );
+
+    let _ = std::fs::remove_dir_all(&data_dir);
+}
+
+/// A corrupted bundle is rejected by restore BEFORE any table is touched, so the live database is
+/// left exactly as it was (verify-before-trust; no partial apply).
+#[test]
+#[ignore = "requires a live PostgreSQL at DATABASE_URL"]
+fn restore_rejects_a_corrupt_bundle_and_leaves_the_database_unchanged() {
+    let Some(database_url) = database_url() else {
+        eprintln!("skipping: DATABASE_URL not set");
+        return;
+    };
+    let store = Store::open_backend(StoreBackendSelection::Postgres { database_url })
+        .expect("open postgres backend");
+    let data_dir = unique_data_dir("corrupt");
+    let (ledger, act_a) = seed_blank_instance(&store, &data_dir);
+    let doc_a = sample_document(act_a, "a");
+    store.persist(|tx| tx.upsert_document(&doc_a)).unwrap();
+
+    let manifest = store.backup(&data_dir, &[]).expect("logical backup");
+
+    // A distinguishing post-backup write that a partial/successful restore would remove.
+    let act_b = ActId(uuid::Uuid::new_v4());
+    let doc_b = sample_document(act_b, "b");
+    store.persist(|tx| tx.upsert_document(&doc_b)).unwrap();
+
+    // Corrupt the archive bytes.
+    let mut bytes = std::fs::read(&manifest.path).unwrap();
+    let mid = bytes.len() / 2;
+    bytes[mid] ^= 0xFF;
+    bytes[mid + 1] ^= 0xFF;
+    let corrupt_path = data_dir.join("corrupt-bundle.zip");
+    std::fs::write(&corrupt_path, &bytes).unwrap();
+
+    let mut restore_ledger = ledger.clone();
+    let err = store
+        .restore(
+            &mut restore_ledger,
+            &corrupt_path,
+            &data_dir,
+            "amelia.marques",
+            ts(1_800_000_000),
+        )
+        .expect_err("corrupt bundle must be refused");
+    assert!(matches!(err, StoreError::BadBackup(_)), "{err:?}");
+
+    // Untouched: BOTH documents still present (the restore never ran).
+    assert!(store.document_for_act(act_a).unwrap().is_some());
+    assert!(store.document_for_act(act_b).unwrap().is_some());
+
+    let _ = std::fs::remove_dir_all(&data_dir);
+}
+
+/// Cross-backend: a genuine SQLite file-swap bundle is refused by the Postgres logical restore with
+/// a clear, named error (the two bundle shapes are deliberately not interchangeable).
+#[test]
+#[ignore = "requires a live PostgreSQL at DATABASE_URL"]
+fn postgres_restore_rejects_a_sqlite_bundle() {
+    let Some(database_url) = database_url() else {
+        eprintln!("skipping: DATABASE_URL not set");
+        return;
+    };
+
+    // Produce a real SQLite backup.
+    let sqlite_dir = unique_data_dir("sqlite-src");
+    let sqlite_manifest = {
+        let sqlite = Store::open(&sqlite_dir).expect("open sqlite");
+        let mut sl = sqlite.load().unwrap().ledger;
+        let ev = sl
+            .append("amelia.marques", "application", "app.started", None, b"z")
+            .clone();
+        sqlite.persist(|tx| tx.append_event(&ev)).unwrap();
+        sqlite.backup(&sqlite_dir, &[]).expect("sqlite backup")
+    };
+
+    let store = Store::open_backend(StoreBackendSelection::Postgres { database_url })
+        .expect("open postgres backend");
+    let pg_dir = unique_data_dir("pg-dst");
+    let mut ledger = store.load().unwrap().ledger;
+    let err = store
+        .restore(
+            &mut ledger,
+            Path::new(&sqlite_manifest.path),
+            &pg_dir,
+            "amelia.marques",
+            ts(1_800_000_000),
+        )
+        .expect_err("a sqlite bundle must be refused by the postgres restore");
+    assert!(
+        matches!(err, StoreError::BadBackup(ref m) if m.contains("postgres logical backup manifest")),
+        "{err:?}"
+    );
+
+    let _ = std::fs::remove_dir_all(&sqlite_dir);
+    let _ = std::fs::remove_dir_all(&pg_dir);
+}
+
+/// Lowercase-hex helper (the crate's internal `hex` is not exported).
+fn lower_hex(bytes: &[u8]) -> String {
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        s.push_str(&format!("{b:02x}"));
+    }
+    s
 }

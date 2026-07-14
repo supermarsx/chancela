@@ -33,6 +33,8 @@
 pub mod dialect;
 #[cfg(feature = "postgres")]
 pub(crate) mod pg;
+#[cfg(feature = "postgres")]
+pub(crate) mod pg_backup;
 pub mod recovery;
 pub mod schema;
 
@@ -2650,6 +2652,13 @@ impl Store {
         data_dir: &Path,
         sidecars: &[PathBuf],
     ) -> Result<BackupManifest, StoreError> {
+        // The Postgres backend has no on-disk SQLite file to `VACUUM INTO`; it produces a portable
+        // logical export (all tables + the ledger head) into the same bundle/manifest shape instead
+        // (wp15). Dispatched here before the SQLite-only `locked_conn` path check below.
+        #[cfg(feature = "postgres")]
+        if let Backend::Postgres(backend) = &self.backend {
+            return self.pg_backup(backend, data_dir, sidecars);
+        }
         // In-memory / anonymous databases have no on-disk snapshot to bundle → NotPersistent
         // (the api maps this to the §3.2 422). A real file store reports its path here.
         {
@@ -2808,6 +2817,24 @@ impl<'conn> Tx<'conn> {
                 op: "raw SQLite transaction SQL (bespoke recovery / non-core writer)",
             }),
         }
+    }
+
+    /// Internal: run one or more parameter-free statements (`;`-separated) inside the enclosing
+    /// transaction on **either** backend. The recovery-plane row-clearing (`DELETE FROM …`) and the
+    /// re-anchor `events` rewrite use this so those atomic operations work on Postgres as well as
+    /// SQLite, instead of funnelling through the SQLite-only [`Tx::raw`] escape hatch. Not part of
+    /// the public API surface.
+    pub(crate) fn execute_recovery_batch(&self, sql: &str) -> Result<(), StoreError> {
+        match &self.kind {
+            TxKind::Sqlite(txn) => {
+                txn.execute_batch(sql)?;
+            }
+            #[cfg(feature = "postgres")]
+            TxKind::Postgres(cell) => {
+                cell.borrow_mut().batch_execute(sql)?;
+            }
+        }
+        Ok(())
     }
 
     /// Commit the enclosing transaction, consuming the handle. Called by [`Store::persist_result`]

@@ -41,12 +41,17 @@
 //! (paged `ledger_events_page`, the blob/by-id document reads, and the signed-document / pending-CMD
 //! / follow-up / imported-document / paper-book projections).
 //!
-//! Deferred **by design** (fail closed with [`crate::StoreError::UnsupportedOnPostgres`], pointing at
-//! PG-native tooling): the SQLite-file-shaped operator paths — `backup` (`VACUUM INTO` + zip),
-//! whole-store `restore`, and the [`crate::recovery`] domain-wipe / factory-blank / start-over /
-//! imported-book paths. Those paths require explicit Postgres-native backup/restore procedures and
-//! are not part of the request-serving runtime. They still funnel through the SQLite-only
-//! `Tx::raw` / `Store::locked_conn` accessors, which return `UnsupportedOnPostgres`.
+//! The operator paths that were SQLite-file-shaped are now covered by a **portable logical**
+//! implementation in [`crate::pg_backup`] (wp15): whole-store `backup` (an app-driven table export,
+//! no `pg_dump`/`VACUUM INTO`), verify-before-trust whole-store `restore` (one atomic
+//! `TRUNCATE`/`INSERT` transaction that re-verifies the ledger head), and the [`crate::recovery`]
+//! domain-wipe / factory-blank / whole-instance start-over / re-anchor paths (the row-clearing runs
+//! through the backend-agnostic [`crate::Tx::execute_recovery_batch`]).
+//!
+//! Still deferred **by design** (fail closed with [`crate::StoreError::UnsupportedOnPostgres`]): the
+//! **per-book** portability paths — `export_book` / `import_book` / `imported_books` / per-book
+//! `start_over_book` — plus the SQLite-temp-file `restore_preflight` drill. These read/mutate through
+//! the SQLite-only `Tx::raw` / `Store::locked_conn` accessors and are not part of the wp15 scope.
 
 use std::sync::{Arc, Mutex};
 
@@ -304,6 +309,13 @@ impl PostgresBackend {
 
     /// Borrow a pooled read connection for the runtime `Store` read projections.
     fn read(&self) -> Result<r2d2::PooledConnection<PgManager>, StoreError> {
+        Ok(self.pool.get()?)
+    }
+
+    /// Borrow a pooled connection for the logical backup/export path (wp15). Distinct from the
+    /// runtime [`read`] only in name/visibility so [`crate::pg_backup`] can drive its
+    /// `REPEATABLE READ`, `READ ONLY` export snapshot without reaching the private pool field.
+    pub(crate) fn checkout(&self) -> Result<r2d2::PooledConnection<PgManager>, StoreError> {
         Ok(self.pool.get()?)
     }
 

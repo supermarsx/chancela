@@ -992,6 +992,12 @@ impl Store {
         &self,
         restore: VerifiedRestoreZip<'_>,
     ) -> Result<RestoreOutcome, StoreError> {
+        // The Postgres backend restores a portable LOGICAL bundle (verify-before-trust, then one
+        // atomic `TRUNCATE`/`INSERT` transaction), not a SQLite file-swap (wp15).
+        #[cfg(feature = "postgres")]
+        if let crate::Backend::Postgres(backend) = &self.backend {
+            return self.pg_restore(backend, restore);
+        }
         let VerifiedRestoreZip {
             ledger,
             archive,
@@ -1379,11 +1385,75 @@ impl Store {
     /// The api calls `ledger.reanchor(actor, reason, at)` (E1) then this, under the ledger lock.
     pub fn persist_reanchored_ledger(&self, ledger: &Ledger) -> Result<(), StoreError> {
         self.persist(|tx| {
-            tx.raw()?.execute("DELETE FROM events", [])?;
+            tx.execute_recovery_batch("DELETE FROM events;")?;
             for event in ledger.events() {
                 tx.append_event(event)?;
             }
             Ok(())
+        })
+    }
+
+    /// Whole-store restore into the **Postgres** backend from a portable logical bundle (wp15).
+    ///
+    /// Same verify-before-trust / atomic guarantees as the SQLite path: the bundle's manifest
+    /// self-digest, every per-table fixity digest, and the ledger hash-chain are verified in
+    /// isolation FIRST; only then is the data loaded in ONE `TRUNCATE`/`INSERT` transaction that
+    /// re-verifies the ledger head before committing (all-or-rollback — never a partial restore, and
+    /// the prior database survives any failure). The instance sidecars are replaced afterwards, the
+    /// restored chain is reloaded, and a chained `ledger.restored` is appended.
+    #[cfg(feature = "postgres")]
+    fn pg_restore(
+        &self,
+        backend: &crate::pg::PostgresBackend,
+        restore: VerifiedRestoreZip<'_>,
+    ) -> Result<RestoreOutcome, StoreError> {
+        let VerifiedRestoreZip {
+            ledger,
+            archive,
+            data_dir,
+            actor,
+            at,
+            archive_bytes,
+            sidecars,
+        } = restore;
+
+        // 1. Verify-before-trust in isolation (rejects a tampered/incoherent/foreign bundle).
+        let verified = crate::pg_backup::verify_pg_backup_bundle(archive_bytes)?;
+
+        // 2. Atomic transactional load (all-or-rollback; re-verifies the ledger head before COMMIT).
+        backend.logical_restore(&verified)?;
+
+        // 3. Replace instance sidecars from the verified members, after the DB restore committed.
+        let sidecar_members = crate::pg_backup::sidecar_members(&verified.members);
+        if !sidecar_members.is_empty() || !sidecars.is_empty() {
+            let stage = data_dir.join(format!(".restore-sidecars-{}", utc_stamp(at)));
+            let _ = std::fs::remove_dir_all(&stage);
+            let staged_roots = stage_backup_sidecars(&stage, &sidecar_members)?;
+            replace_live_sidecars(data_dir, &stage, &staged_roots, sidecars)?;
+            let _ = std::fs::remove_dir_all(&stage);
+        }
+
+        // 4. Reload the restored chain, record the restore (chained), and hand back the new ledger.
+        let restored = self.load()?;
+        let mut restored_ledger = restored.ledger;
+        let record = RestoreRecord {
+            actor: actor.to_owned(),
+            at,
+            archive: archive.to_string_lossy().into_owned(),
+            source_instance_id: self.instance_id().ok(),
+            restored_length: restored_ledger.len() as u64,
+            restored_head: restored_ledger.head().map(|h| hex(&h)),
+        };
+        self.append_recovery_event(&mut restored_ledger, RESTORED_EVENT_KIND, actor, &record)?;
+
+        let ledger_length = restored_ledger.len() as u64;
+        let ledger_head = restored_ledger.head().map(|h| hex(&h));
+        *ledger = restored_ledger;
+        Ok(RestoreOutcome {
+            restored_from: archive.to_path_buf(),
+            ledger_length,
+            ledger_head,
+            chain_verified: true,
         })
     }
 
@@ -1907,27 +1977,24 @@ fn domain_table_names() -> Vec<String> {
     .collect()
 }
 
-/// Clear the domain aggregate tables (not the ledger).
+/// Clear the domain aggregate tables (not the ledger). Backend-agnostic (SQLite + Postgres) via the
+/// shared [`Tx::execute_recovery_batch`], so the wipe/start-over reset transactions are atomic on
+/// both backends (wp15).
 fn clear_domain(tx: &Tx<'_>) -> Result<(), StoreError> {
-    tx.raw()?.execute("DELETE FROM entities", [])?;
-    tx.raw()?.execute("DELETE FROM books", [])?;
-    tx.raw()?.execute("DELETE FROM acts", [])?;
-    tx.raw()?.execute("DELETE FROM registry_extracts", [])?;
-    tx.raw()?.execute("DELETE FROM documents", [])?;
-    tx.raw()?.execute("DELETE FROM follow_ups", [])?;
-    Ok(())
+    tx.execute_recovery_batch(
+        "DELETE FROM entities; DELETE FROM books; DELETE FROM acts; \
+         DELETE FROM registry_extracts; DELETE FROM documents; DELETE FROM follow_ups;",
+    )
 }
 
 /// Clear the import isolation namespace.
 fn clear_imported(tx: &Tx<'_>) -> Result<(), StoreError> {
-    tx.raw()?.execute("DELETE FROM imported_books", [])?;
-    Ok(())
+    tx.execute_recovery_batch("DELETE FROM imported_books;")
 }
 
 /// Clear the append-only ledger table (factory reset / whole-instance start-over only).
 fn clear_events(tx: &Tx<'_>) -> Result<(), StoreError> {
-    tx.raw()?.execute("DELETE FROM events", [])?;
-    Ok(())
+    tx.execute_recovery_batch("DELETE FROM events;")
 }
 
 /// The per-book-chain seq of `event` within `chain` (for deterministic bundle ordering).
