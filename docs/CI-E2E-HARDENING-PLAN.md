@@ -1,7 +1,7 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `f060f42`,
+and implementation snapshot `6d0c3ec`,
 including coverage notes for the bounded PAdES DSS validation-time, PDF/UA v10
 scoped table-header evidence, retention due-candidate explicit evidence states,
 bounded archive/no-action evidence UI, duplicate-review guard/status surfacing, and
@@ -10,6 +10,7 @@ retention execution review closure,
 recovery-drill custody
 receipt and optional-key contract tolerance, paper-book OCR conversion-dossier UI,
 local OCR/canonical rehearsal report, and reviewed conversion execution artifact evidence,
+dashboard backup recovery freshness advisory surfacing,
 CSC quota/delegation/revocation and standalone agenda-item template parity,
 retained-export cleanup dry-run planning, first-class template catalog metadata lint,
 external-signing workflow-only envelope UI, workflow reminder policy, and
@@ -1538,6 +1539,17 @@ settingsDefaults.test.ts contracts.test.ts`.
   swap, sidecar staging, ledger restore append, data deletion, SQLCipher-at-rest
   proof, off-site custody proof, RPO/RTO certification, production backup policy,
   FULL coverage, or legal archive certification is implemented or proven.
+- Current `6d0c3ec` backup recovery freshness advisory checks: API coverage pins
+  `backup.recovery.freshness_advisory` only for actors with `LedgerRecover` or
+  `DataBackup` authority, using existing stored receipt freshness states
+  (`no_receipt`, `stale`, `failed`) and omitting receipt IDs, archive paths,
+  manifests, findings, and live restore markers. Web notification/dashboard
+  coverage pins localized work-queue and notification copy,
+  `/configuracoes?sec=dados` routing, and fallback-sanitized rendering. This
+  remains local advisory surfacing over stored receipt metadata only; it does
+  not create a backup, execute a restore, mutate archives or live data, certify
+  RPO/RTO or production backup policy, prove DR readiness, or complete
+  compliance coverage.
 - Current working-tree sync/handoff preflight readiness checks: focused
   `cargo test -p chancela-api --locked --lib sync_handoff_preflight` coverage pins the
   read-only `GET /v1/sync/handoff-preflight` report, `ledger.recover@Global`
@@ -1684,7 +1696,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   --workspace apps/web -- e2e/session.spec.ts e2e/first-launch-onboarding.spec.ts`.
   Treat the static/unit/focused markers as the pinned slice, not broad
   Playwright-browser-suite or browser-matrix proof; the browser suite is not exhaustive.
-- Current checkpoint metadata/static checks through `f060f42`
+- Current checkpoint metadata/static checks through `6d0c3ec`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and

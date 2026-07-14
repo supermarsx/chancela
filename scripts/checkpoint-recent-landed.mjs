@@ -8222,6 +8222,76 @@ function assertCheckpointMap() {
     "web recovery freshness no-claim coverage",
   );
   assertFileContains(
+    "crates/chancela-api/src/dashboard.rs",
+    "let can_view_backup_recovery_freshness = authz",
+    "API dashboard backup recovery freshness authz gate marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/dashboard.rs",
+    "backup_recovery_freshness_alert(&freshness)",
+    "API dashboard backup recovery freshness alert builder marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/dashboard.rs",
+    "code: \"backup.recovery.freshness_advisory\".to_owned()",
+    "API dashboard backup recovery freshness advisory code marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/dashboard.rs",
+    "This is a local advisory from stored recovery-drill receipts only; it does not run recovery",
+    "API dashboard backup recovery freshness no-claim message marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/dashboard.rs",
+    "backup_recovery_freshness_alerts_cover_unfresh_states_without_receipt_internals",
+    "API dashboard backup recovery freshness redaction coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "dashboard_backup_recovery_freshness_advisory_is_recovery_authority_gated",
+    "API dashboard backup recovery freshness authority-gated coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "plain dashboard readers must not receive backup recovery freshness state",
+    "API dashboard backup recovery freshness reader denial coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/dashboard/DashboardPage.tsx",
+    "'backup.recovery.freshness_advisory': {\n    title: 'notifications.alert.backupRecoveryFreshness.title'",
+    "dashboard backup recovery freshness alert copy marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/dashboard/DashboardPage.test.tsx",
+    "renders backup recovery freshness alerts as bounded data-management advisories",
+    "dashboard backup recovery freshness bounded advisory coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/notifications/notifications.ts",
+    "'backup.recovery.freshness_advisory': {\n    title: 'notifications.alert.backupRecoveryFreshness.title'",
+    "notification-center backup recovery freshness alert copy marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/notifications/notifications.test.ts",
+    "renders backup recovery freshness advisories as local bounded alerts",
+    "notification-center backup recovery freshness bounded advisory coverage",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/locales/pt-PT.ts",
+    "'notifications.alert.backupRecoveryFreshness.title': 'Rever atualidade da recuperação de backups'",
+    "source-locale backup recovery freshness advisory title marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Current `6d0c3ec` backup recovery freshness advisory checks",
+    "CI/E2E hardening plan backup recovery freshness advisory checks marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "omitting receipt IDs, archive paths,\n  manifests, findings, and live restore markers",
+    "CI/E2E hardening plan backup recovery freshness redaction marker",
+  );
+  assertFileContains(
     "crates/chancela-api/src/lib.rs",
     "/v1/sync/handoff-preflight",
     "API sync handoff preflight route marker",
@@ -9312,7 +9382,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `f060f42`",
+    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `6d0c3ec`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
@@ -9932,7 +10002,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `f060f42`",
+    "Current checkpoint metadata/static checks through `6d0c3ec`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -10387,7 +10457,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `f060f42a63a753eedc237f464bf9a1ac55d2b937`",
+    "implementation snapshot `6d0c3ecbe043934d0af85095c8994e2906339e5e`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -10482,7 +10552,17 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Current `f060f42` keeps Workflows/UX/CI **PARTIAL**",
+    "Current `6d0c3ec` keeps Data/Workflows/UX/CI **PARTIAL**",
+    "spec coverage backup recovery freshness advisory checkpoint marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "it does not create backups, run or execute restores, mutate archives or\n  live data",
+    "spec coverage backup recovery freshness advisory no-overclaim marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Prior `f060f42` keeps Workflows/UX/CI **PARTIAL**",
     "spec coverage condominium annual reminder localization checkpoint marker",
   );
   assertFileContains(

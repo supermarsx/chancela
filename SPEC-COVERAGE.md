@@ -1,6 +1,6 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-14 from current implementation snapshot `f060f42a63a753eedc237f464bf9a1ac55d2b937`,
+*Updated 2026-07-14 from current implementation snapshot `6d0c3ecbe043934d0af85095c8994e2906339e5e`,
 with committed evidence refreshes for the recently landed Signatures & Trust
 provider-credential, stored runtime credential resolution, stored PKCS#12,
 remote batch-initiation surfaces, and Docker/Compose runtime-hardening
@@ -152,7 +152,8 @@ sync/handoff preflight reporting and `e8bcd19` archive filter reset icon
 semantics, followed by `d981694` web signed-act technical metadata comparison,
 then `6a2c91e` explicit ROL-02 seeded role archetypes, followed by
 `547408e` off-by-default Postgres store runtime write/read paths and
-`cec169c` SQLite-default, feature/config-gated database backend selection.
+`cec169c` SQLite-default, feature/config-gated database backend selection,
+then `6d0c3ec` dashboard backup recovery freshness advisory surfacing.
 Earlier coverage text remains prior snapshot context. All top-level spec areas remain **PARTIAL**.
 This is an implementation and test coverage snapshot, not a legal certification,
 not production CMD approval, not DRE verification promotion, not full PDF/UA
@@ -1792,7 +1793,19 @@ Implementation checkpoints covered here:
   validation and documentation alignment only, not production Postgres
   readiness, HA behavior, live database validation, migration completeness,
   performance proof, or broader architecture completion.
-- Current `f060f42` keeps Workflows/UX/CI **PARTIAL**: the existing
+- Current `6d0c3ec` keeps Data/Workflows/UX/CI **PARTIAL**: the dashboard now
+  surfaces `backup.recovery.freshness_advisory` alerts for actors with recovery
+  or backup authority when the local recovery-drill freshness status is
+  `no_receipt`, `stale`, or `failed`. The alert uses the existing stored
+  `BackupRecoveryFreshnessReview`, omits receipt IDs, archive paths, manifests,
+  findings, and raw receipt internals from alert params/rendering, routes to
+  Data Management settings, and is pinned by API, notification, and dashboard
+  work-queue coverage. This is local stored-receipt freshness advisory coverage
+  only: it does not create backups, run or execute restores, mutate archives or
+  live data, stage or replace sidecars, append `ledger.restored`, certify
+  RPO/RTO, prove production backup policy or DR readiness, or complete
+  compliance coverage.
+- Prior `f060f42` keeps Workflows/UX/CI **PARTIAL**: the existing
   `condominio-annual` backend reminder now renders through localized
   notification-center and dashboard work-queue copy using
   `notifications.reminder.annual.condominio.title` and the existing annual
@@ -2235,8 +2248,11 @@ behavior, legal disposal, or legal-effect claims.
   `freshness` summary (`no_receipt`/`fresh`/`stale`/`failed`) from the latest
   receipt while keeping restore performed, DB swap, off-site custody, RPO/RTO
   certification, and production backup-policy certification false. Data
-  Management and Settings render that local warning/summary. The related CAE
-  obtainer status comment was also updated as acceptance cleanup so it no longer
+  Management and Settings render that local warning/summary, and `6d0c3ec`
+  also exposes stale/no-receipt/failed freshness as a permission-gated
+  dashboard/notification advisory without receipt IDs, archive paths, manifests,
+  findings, or raw receipt internals. The related CAE obtainer status comment
+  was also updated as acceptance cleanup so it no longer
   describes implemented Rev.3/Rev.4 obtain logic as a skeleton. This is
   UI/status/documentation hygiene, non-destructive restore preflight evidence,
   bounded recovery-drill receipt evidence, and local operator-policy freshness
