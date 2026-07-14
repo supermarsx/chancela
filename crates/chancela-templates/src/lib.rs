@@ -1027,6 +1027,103 @@ mod tests {
     }
 
     #[test]
+    fn csc_structural_change_templates_keep_pending_law_refs_and_render_local_text() {
+        let reg = load_registry().expect("registry loads");
+        let expected = [
+            (
+                "csc-ata-fusao/v1",
+                "Ata de fusão da sociedade",
+                "aprovar a fusão da sociedade",
+                "artigos 97.º e seguintes",
+            ),
+            (
+                "csc-ata-cisao/v1",
+                "Ata de cisão da sociedade",
+                "aprovar a cisão da sociedade",
+                "artigos 118.º e seguintes",
+            ),
+            (
+                "csc-ata-liquidacao/v1",
+                "Ata de liquidação da sociedade",
+                "aprovar atos e etapas de liquidação da sociedade",
+                "artigos 146.º e seguintes",
+            ),
+        ];
+
+        for (id, title, structural_text, local_article_text) in expected {
+            let spec = reg
+                .get(id)
+                .unwrap_or_else(|| panic!("missing template {id}"));
+            assert_eq!(spec.family, EntityFamily::CommercialCompany);
+            assert_eq!(spec.stage, LifecycleStage::Ata);
+            assert_eq!(
+                spec.channels,
+                vec![
+                    MeetingChannel::Physical,
+                    MeetingChannel::Hybrid,
+                    MeetingChannel::Telematic,
+                    MeetingChannel::WrittenResolution,
+                ]
+            );
+            assert_eq!(
+                spec.signature_policy,
+                SignaturePolicyHint::QualifiedPreferred
+            );
+            assert_eq!(spec.rule_pack_id, "csc-art63/v2");
+            assert_eq!(spec.locale, "pt-PT");
+            assert!(
+                spec.law_references
+                    .iter()
+                    .all(|r| r.verification == TemplateLawReferenceVerification::Pending)
+            );
+            assert!(spec.law_references.iter().any(|r| {
+                r.source == TemplateLawReferenceSource::RulePack
+                    && r.source_id == "csc"
+                    && r.article.as_deref() == Some("63")
+            }));
+            assert!(spec.law_references.iter().any(|r| {
+                r.source == TemplateLawReferenceSource::ThresholdRegistry
+                    && r.source_id == "csc"
+                    && r.article.is_none()
+                    && r.threshold_id.as_deref() == Some("csc.deliberacao.maioria_qualificada")
+                    && r.citation == "CSC arts. 250.º, 265.º e 386.º"
+            }));
+
+            let mut ctx = coverage_ctx();
+            ctx["title"] = json!(title);
+            ctx["agenda"] = json!([{ "number": 1, "text": "Deliberação estrutural societária." }]);
+            ctx["deliberation_items"] = json!([{
+                "agenda_number": 1,
+                "text": format!("{title}: deliberação local conforme proposta."),
+                "vote": "Unanimous",
+                "statements": []
+            }]);
+            ctx["referenced_documents"] =
+                json!([{ "label": "Documentos estruturais", "reference": "Anexo E" }]);
+
+            let doc = render(spec, &ctx).unwrap_or_else(|e| panic!("{id} failed to render: {e:?}"));
+            let text = doc_text(&doc);
+            assert!(text.contains(title), "{id}: title missing: {text}");
+            assert!(
+                text.contains(structural_text),
+                "{id}: structural-change wording missing: {text}"
+            );
+            assert!(
+                text.contains(local_article_text),
+                "{id}: local article range wording missing: {text}"
+            );
+            assert!(
+                text.contains("[a definir:"),
+                "{id}: unresolved Pending threshold marker missing: {text}"
+            );
+            assert!(
+                text.contains("Documentos estruturais"),
+                "{id}: referenced structural documents missing: {text}"
+            );
+        }
+    }
+
+    #[test]
     fn catalog_includes_csc_delegation_and_revocation_templates() {
         let reg = load_registry().expect("registry loads");
         let expected = [
@@ -2209,11 +2306,11 @@ mod tests {
         // Whole-catalog census — a dropped or duplicated asset changes these counts.
         assert_eq!(
             reg.specs().len(),
-            101,
-            "expected the full authored catalog (~101 templates)"
+            104,
+            "expected the full authored catalog (~104 templates)"
         );
         let per_family = |f: EntityFamily| reg.specs().iter().filter(|s| s.family == f).count();
-        assert_eq!(per_family(EntityFamily::CommercialCompany), 41, "csc count");
+        assert_eq!(per_family(EntityFamily::CommercialCompany), 44, "csc count");
         assert_eq!(
             per_family(EntityFamily::Condominium),
             14,
