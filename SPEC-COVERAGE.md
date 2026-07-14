@@ -1,6 +1,6 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-14 from current implementation snapshot `6929fd94bc527e07086b2213ee8f240dc29f15f6`,
+*Updated 2026-07-14 from current implementation snapshot `4e5f7622334546936502c9115d30e65f4c6ef6a5`,
 with committed evidence refreshes for the recently landed Signatures & Trust
 provider-credential, stored runtime credential resolution, stored PKCS#12,
 remote batch-initiation surfaces, and Docker/Compose runtime-hardening
@@ -566,7 +566,7 @@ Implementation checkpoints covered here:
   append, production backup policy, RPO/RTO certification, disaster-recovery
   readiness, off-site custody proof, SQLCipher-at-rest proof, legal archive
   certification, FULL coverage, or new CAE provider/legal behavior.
-- Current `6929fd9` keeps Template Catalog/UX/CI **PARTIAL**: the embedded template
+- Current `4e5f762` keeps Template Catalog/UX/CI **PARTIAL**: the embedded template
   catalog now loads 104 JSON template assets (104 total / 44 CSC), including
   standalone
   `procuracao-representacao/v1` instruments for commercial companies,
@@ -727,6 +727,25 @@ Implementation checkpoints covered here:
   compliance completion, legal approval, notification, transfer execution,
   DPIA filing/completion, disposal, deletion, redaction, anonymization, erasure,
   AI/MCP completion, or provider/legal-service assurance.
+- Working tree keeps AI/MCP/Documents/Archive/CI **PARTIAL**: MCP now
+  advertises the read-only
+  `chancela://mcp/document-archive-review-summary` resource. With no arguments
+  it returns local input-shape guidance and no-claim boundaries; with
+  `arguments.document_archive` JSON it returns deterministic aggregate counts
+  for validation report/status, digest/fixity fields, signed-document state,
+  external-validator attachment statuses, PDF accessibility report versions,
+  PDF/UA blocker observations, row/column table-header evidence, archive and
+  evidence-index path markers, no-claim flag observations, and missing-evidence
+  blockers. The report avoids echoing raw reports, digest values, path values,
+  IDs, notes, raw PDF bytes, or secrets; makes no bridge/API/AI-provider/
+  legal-service/HTTP/SSE/provider calls; and keeps PDF/UA conformance, DGLAB
+  certification, legal validity, signature validity, archive certification,
+  provider validation, external-validator success, trust validation, and legal
+  review claims false. This is caller-supplied local JSON review signal only,
+  not PDF/UA conformance, DGLAB certification, legal validity, signature
+  validity, archive certification, provider validation, external-validator
+  success, trust validation, legal review, AI/MCP completion, or provider/legal
+  assurance.
 - Working tree keeps Data/Roles/Workflows/CI **PARTIAL**: `GET /v1/dashboard`
   now returns `recent_events: []` for guest/minimal redaction callers while
   Owner and `Leitor` sessions keep the recent ledger-event feed. Guest remains

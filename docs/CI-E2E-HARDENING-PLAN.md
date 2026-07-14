@@ -18,7 +18,8 @@ scaffolding and BookDetail JSON download,
 raw-byte per-book import preflight operator preview,
 richer Ata editor AI statement-source provenance rendering, explicit external-validator raw
 report upload UI guardrails, the raw external-validator raw-report byte download
-API, the MCP workflow provenance and draft-vs-signed comparison review aids,
+API, the MCP workflow provenance, draft-vs-signed comparison, privacy-control,
+and document/archive review aids,
 dashboard guest recent-events redaction, generated-document by-id download route,
 condominium absent-owner communication auto-generation, and operator-supplied
 dispatch-evidence recording with dashboard reminder surfacing,
@@ -273,6 +274,23 @@ test operating checklist for driving Chancela toward release confidence.
   transfer execution, DPIA filing/completion, disposal, deletion, redaction,
   anonymization, erasure, AI/MCP completion, or provider/legal-service
   assurance.
+- The current MCP document/archive review summary slice adds the read-only
+  `chancela://mcp/document-archive-review-summary` resource. With no arguments
+  it returns local input-shape guidance and no-claim boundaries; with
+  `arguments.document_archive` it returns deterministic aggregate counts for
+  validation report/status, digest/fixity fields, signed-document metadata,
+  external-validator attachment statuses, PDF accessibility v10 report/blocker
+  and row/column table-header evidence, archive/evidence-index path markers,
+  no-claim flag observations, and missing-evidence blockers. It echoes no raw
+  reports, digest values, path values, IDs, notes, raw PDF bytes, or secrets;
+  makes no bridge/API/AI-provider/legal-service/HTTP/SSE/provider calls; and
+  keeps PDF/UA conformance, DGLAB certification, legal validity, signature
+  validity, archive certification, provider validation, external-validator
+  success, trust validation, and legal-review claims false. Treat this as
+  caller-supplied local JSON review signal only, not PDF/UA conformance, DGLAB
+  certification, legal validity, signature validity, archive certification,
+  provider validation, external-validator success, trust validation, legal
+  review, AI/MCP completion, or provider/legal assurance.
 - The current dashboard guest redaction slice returns `recent_events: []` from
   `GET /v1/dashboard` for guest/minimal redaction callers, while Owner and
   `Leitor` sessions keep recent events. Guest still lacks `GET /v1/ledger/events`.
@@ -1145,6 +1163,24 @@ settingsDefaults.test.ts contracts.test.ts`.
   no transfer execution, no DPIA filing/completion, no disposal, no deletion,
   no redaction, no anonymization, no erasure, no provider/legal-service
   assurance, and no AI or MCP completion claim.
+- Current working-tree MCP document/archive review summary checks: focused
+  `cargo test -p chancela-mcp --locked document_archive_review_summary` coverage
+  pins the read-only `chancela://mcp/document-archive-review-summary` resource,
+  static no-argument input guidance, deterministic aggregate report mode for
+  `arguments.document_archive`, local JSON only, raw-report/no-echo coverage,
+  no extra resource params, no bridge/API/AI-provider/legal-service/HTTP/SSE/
+  provider calls, aggregate counts for validation report/status, digest/fixity
+  fields, signed-document state, external-validator attachments/statuses, PDF
+  accessibility v10 report versions, PDF/UA blockers, row/column table-header
+  evidence, archive/evidence-index path markers, no-claim observations, and
+  missing-evidence blockers, plus false PDF/UA conformance, DGLAB
+  certification, legal validity, signature validity, qualified-signature,
+  archive-certification, provider-validation, external-validator-success,
+  trust-validation, and legal-review claims. This is caller-supplied local JSON
+  review signal only: no PDF/UA conformance, no DGLAB certification, no legal
+  validity, no signature validity, no archive certification, no provider
+  validation, no external-validator success, no trust validation, no legal
+  review, no provider/legal assurance, and no AI or MCP completion claim.
 - Current working-tree dashboard guest recent-events redaction checks: focused
   `cargo test -p chancela-api --locked dashboard_recent_events_redacts_guest_feed_but_keeps_owner_and_reader_feed`
   coverage pins `recent_events: []` for guest/minimal dashboard readers, Owner
@@ -1537,7 +1573,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   --workspace apps/web -- e2e/session.spec.ts e2e/first-launch-onboarding.spec.ts`.
   Treat the static/unit/focused markers as the pinned slice, not broad
   Playwright-browser-suite or browser-matrix proof; the browser suite is not exhaustive.
-- Current checkpoint metadata/static checks through `6929fd9`
+- Current checkpoint metadata/static checks through `4e5f762`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and

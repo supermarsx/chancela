@@ -5483,6 +5483,91 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-mcp/src/server.rs",
+    "chancela://mcp/document-archive-review-summary",
+    "MCP document/archive review summary resource URI marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    "document_archive_review_summary_resource_payload",
+    "MCP document/archive review summary resource payload marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    "document_archive_review_summary_report_payload",
+    "MCP document/archive deterministic report payload marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    "resources_read_document_archive_review_summary_returns_static_guidance_without_http_or_secret",
+    "MCP document/archive static guidance coverage",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    "resources_read_document_archive_review_summary_accepts_arguments_and_is_deterministic_without_raw_reports_or_overclaims",
+    "MCP document/archive deterministic summary coverage",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    "resources_read_document_archive_review_summary_rejects_bad_arguments_and_extra_params",
+    "MCP document/archive invalid args coverage",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    '"kind": "chancela_mcp_document_archive_review_summary_report"',
+    "MCP document/archive deterministic summary report marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    '"source": "local_mcp_deterministic_document_archive_summarizer"',
+    "MCP document/archive local deterministic summarizer marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    '"raw_reports_exposed": false',
+    "MCP document/archive no raw-report exposure marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    '"path_values_echoed": false',
+    "MCP document/archive no path echo marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    '"http_sse_transport_added": false',
+    "MCP document/archive no HTTP SSE marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    '"pdf_ua_conformance": false',
+    "MCP document/archive no PDF-UA conformance claim marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    '"dglab_certification": false',
+    "MCP document/archive no DGLAB certification claim marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    '"signature_validity": false',
+    "MCP document/archive no signature validity claim marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    '"archive_certification": false',
+    "MCP document/archive no archive certification claim marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    '"external_validator_success": false',
+    "MCP document/archive no external-validator success claim marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    '"legal_review": false',
+    "MCP document/archive no legal review claim marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
     '"full_ai_mcp_completion_claimed": false',
     "MCP spec coverage no full AI/MCP completion marker",
   );
@@ -9060,6 +9145,31 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
+    "Current working-tree MCP document/archive review summary checks",
+    "CI/E2E hardening plan MCP document/archive checks marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "`chancela://mcp/document-archive-review-summary` resource",
+    "CI/E2E hardening plan MCP document/archive resource marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "`arguments.document_archive`, local JSON only, raw-report/no-echo coverage",
+    "CI/E2E hardening plan MCP document/archive local JSON/no-raw marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "no bridge/API/AI-provider/legal-service/HTTP/SSE/\n  provider calls",
+    "CI/E2E hardening plan MCP document/archive no-call marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "no PDF/UA conformance, no DGLAB certification, no legal\n  validity",
+    "CI/E2E hardening plan MCP document/archive no-claim marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
     "Current working-tree dashboard guest recent-events redaction checks",
     "CI/E2E hardening plan dashboard guest redaction checks marker",
   );
@@ -9445,7 +9555,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `6929fd9`",
+    "Current checkpoint metadata/static checks through `4e5f762`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -9885,7 +9995,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `6929fd94bc527e07086b2213ee8f240dc29f15f6`",
+    "implementation snapshot `4e5f7622334546936502c9115d30e65f4c6ef6a5`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -10262,6 +10372,31 @@ function assertCheckpointMap() {
     "SPEC-COVERAGE.md",
     "privacy/GDPR compliance completion, compliance certification, destructive\n  disposal, deletion, anonymization, redaction, and full-erasure claims false",
     "spec coverage MCP privacy-control no-claim marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "`chancela://mcp/document-archive-review-summary` resource",
+    "spec coverage MCP document/archive resource marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "`arguments.document_archive` JSON it returns deterministic aggregate counts",
+    "spec coverage MCP document/archive deterministic aggregate marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "avoids echoing raw reports, digest values, path values,\n  IDs, notes, raw PDF bytes, or secrets",
+    "spec coverage MCP document/archive no echo marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "makes no bridge/API/AI-provider/\n  legal-service/HTTP/SSE/provider calls",
+    "spec coverage MCP document/archive no-call marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "keeps PDF/UA conformance, DGLAB\n  certification, legal validity",
+    "spec coverage MCP document/archive no-claim marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
