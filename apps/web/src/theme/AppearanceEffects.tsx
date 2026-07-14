@@ -11,7 +11,8 @@ import { useEffect, useSyncExternalStore } from 'react';
 import { useSettings } from '../api/hooks';
 import { DEFAULT_SETTINGS } from '../api/types';
 import { grainStore } from './grainStore';
-import { applyAppearance, applyLocale } from './appearance';
+import { colorStore } from './colorStore';
+import { applyAppearance, applyColorOverrides, applyLocale } from './appearance';
 import { i18nStore } from '../i18n';
 
 export function AppearanceEffects() {
@@ -31,6 +32,16 @@ export function AppearanceEffects() {
   useEffect(() => {
     applyAppearance(appearance);
   }, [appearance]);
+
+  // Operator colour overrides (primary/secondary/background/surface). Client-only and
+  // localStorage-backed (see colorStore), so they persist without touching the settings
+  // wire contract. Each set field wins over theme.css via an inline custom property; an
+  // empty store clears them all and the theme defaults govern again. Because this whole
+  // component is unmounted in safe mode, custom colours are automatically bypassed there.
+  const colors = useSyncExternalStore(colorStore.subscribe, colorStore.get, colorStore.get);
+  useEffect(() => {
+    applyColorOverrides(colors);
+  }, [colors]);
 
   useEffect(() => {
     applyLocale(locale);

@@ -14,7 +14,14 @@
  * active section is deep-linkable (`?sec=`); the working copy spans all of them, so the
  * save flow stays a single whole-document PUT (global draft) reachable from every section.
  */
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   useHealth,
@@ -74,7 +81,9 @@ import { UI_VERSION } from '../../api/versionCheck';
 import { useT } from '../../i18n';
 import type { MessageKey } from '../../i18n';
 import { grainStore } from '../../theme/grainStore';
-import { applyAppearance, applyLocale } from '../../theme/appearance';
+import { colorStore } from '../../theme/colorStore';
+import { applyAppearance, applyLocale, COLOR_OVERRIDE_FIELDS } from '../../theme/appearance';
+import type { ColorOverrideField } from '../../theme/appearance';
 import { LivrosIntegridadeSection } from '../recovery/LivrosIntegridadeSection';
 import { GestaoDadosSection } from '../recovery/GestaoDadosSection';
 import { FuncoesSection } from '../rbac/FuncoesSection';
@@ -110,6 +119,18 @@ import { UsersList } from '../users/UserListPage';
 
 /** Trim to a value or `null` (the contract's "unset" for nullable strings). */
 const orNull = (s: string): string | null => (s.trim() === '' ? null : s.trim());
+
+/**
+ * Seed colours for the picker swatches when a field is UNSET — representative theme hexes
+ * so the picker opens on a sensible value. They do not override anything until the
+ * operator commits a choice (which is what actually writes {@link colorStore}).
+ */
+const COLOR_SEEDS: Record<ColorOverrideField, string> = {
+  primary: '#b8963e',
+  secondary: '#6b4d12',
+  background: '#f7f3ea',
+  surface: '#fffdf8',
+};
 
 function numberValue(value: string, fallback: number): number {
   const parsed = Number(value);
@@ -915,6 +936,13 @@ export function SettingsPage() {
     };
   }, []);
 
+  // Custom colour overrides (client-only, localStorage-backed). Edited directly on the
+  // store so they apply + persist live — the shell's AppearanceEffects subscribes too, so
+  // a picker change repaints the whole app immediately (no draft/save round-trip, exactly
+  // like the leather re-roll). An empty store means the theme defaults are in force.
+  const colors = useSyncExternalStore(colorStore.subscribe, colorStore.get, colorStore.get);
+  const hasColorOverrides = COLOR_OVERRIDE_FIELDS.some((f) => colors[f] !== undefined);
+
   // The normalised wire document the operator's edits currently amount to. Autosave
   // debounces every edit across all sub-tabs and PUTs this whole document (the §2.8
   // contract is a single whole-document PUT); the optimistic `useUpdateSettings` keeps
@@ -1195,6 +1223,68 @@ export function SettingsPage() {
                   >
                     {t('settings.appearance.reroll')}
                   </Button>
+                </div>
+
+                {/* Custom colours — operator-set primary/secondary/background/surface, with
+                    a reset to the app's default theme. Applied live via colorStore. */}
+                <div className="color-customizer">
+                  <div className="field__labelrow">
+                    <p className="color-customizer__title">
+                      {t('settings.appearance.colors.title')}
+                    </p>
+                    <FieldHelp text={t('settings.appearance.colors.help')} />
+                  </div>
+                  <p className="field__hint">{t('settings.appearance.colors.hint')}</p>
+
+                  <div className="color-customizer__grid">
+                    {COLOR_OVERRIDE_FIELDS.map((fieldKey) => {
+                      const inputId = `set-color-${fieldKey}`;
+                      const value = colors[fieldKey] ?? COLOR_SEEDS[fieldKey];
+                      const isSet = colors[fieldKey] !== undefined;
+                      return (
+                        <div key={fieldKey} className="color-customizer__field">
+                          <label className="field__label" htmlFor={inputId}>
+                            {t(`settings.appearance.colors.${fieldKey}.label`)}
+                          </label>
+                          <div className="color-customizer__row">
+                            <input
+                              id={inputId}
+                              className="color-customizer__swatch"
+                              type="color"
+                              value={value}
+                              onChange={(e) => colorStore.setField(fieldKey, e.target.value)}
+                            />
+                            {isSet ? (
+                              <IconButton
+                                type="button"
+                                variant="ghost"
+                                icon={<Icon.Refresh />}
+                                label={t('settings.appearance.colors.clearField')}
+                                onClick={() => colorStore.setField(fieldKey, undefined)}
+                              />
+                            ) : null}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="form__actions">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      icon={<Icon.Refresh />}
+                      disabled={!hasColorOverrides}
+                      onClick={() => colorStore.reset()}
+                    >
+                      {t('settings.appearance.colors.reset')}
+                    </Button>
+                    {!hasColorOverrides ? (
+                      <span className="field__hint color-customizer__status">
+                        {t('settings.appearance.colors.usingDefault')}
+                      </span>
+                    ) : null}
+                  </div>
                 </div>
               </div>
             </Card>

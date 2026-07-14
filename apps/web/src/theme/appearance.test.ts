@@ -2,9 +2,14 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   applyAppearance,
   applyButtonTexture,
+  applyColorOverrides,
   applyLocale,
   applyThemeMode,
   applyTextureIntensity,
+  isHexColor,
+  parseHexColor,
+  readableInk,
+  relativeLuminance,
 } from './appearance';
 import type { AppearanceSettings } from '../api/types';
 
@@ -17,6 +22,18 @@ afterEach(() => {
   root().style.removeProperty('--leather-grain-opacity');
   root().removeAttribute('data-button-texture');
   root().removeAttribute('lang');
+  for (const prop of [
+    '--accent',
+    '--accent-strong',
+    '--on-accent',
+    '--bg',
+    '--surface',
+    '--leather-base',
+    '--text',
+    '--text-muted',
+  ]) {
+    root().style.removeProperty(prop);
+  }
 });
 
 describe('applyThemeMode', () => {
@@ -58,6 +75,74 @@ describe('applyButtonTexture', () => {
     expect(root().getAttribute('data-button-texture')).toBe('on');
     applyButtonTexture(false);
     expect(root().getAttribute('data-button-texture')).toBe('off');
+  });
+});
+
+describe('colour helpers', () => {
+  it('validates hex colours', () => {
+    expect(isHexColor('#abc')).toBe(true);
+    expect(isHexColor('#AABBCC')).toBe(true);
+    expect(isHexColor('#12g')).toBe(false);
+    expect(isHexColor('abc')).toBe(false);
+    expect(isHexColor(undefined)).toBe(false);
+    expect(isHexColor('#abcd')).toBe(false);
+  });
+
+  it('parses shorthand and full hex to rgb', () => {
+    expect(parseHexColor('#fff')).toEqual([255, 255, 255]);
+    expect(parseHexColor('#000000')).toEqual([0, 0, 0]);
+    expect(parseHexColor('#1f6f4a')).toEqual([31, 111, 74]);
+    expect(parseHexColor('nope')).toBeNull();
+  });
+
+  it('orders luminance dark < light', () => {
+    const dark = relativeLuminance('#10241b')!;
+    const light = relativeLuminance('#f7f3ea')!;
+    expect(dark).toBeLessThan(light);
+    expect(relativeLuminance('bad')).toBeNull();
+  });
+
+  it('picks a legible ink for a background', () => {
+    // Light ground → dark ink; dark ground → light ink.
+    expect(readableInk('#ffffff')).toBe('#10241b');
+    expect(readableInk('#0b1a13')).toBe('#f7f3ea');
+  });
+});
+
+describe('applyColorOverrides', () => {
+  it('sets custom properties for set fields and derives readable tokens', () => {
+    applyColorOverrides({
+      primary: '#3355ff',
+      secondary: '#aa2244',
+      background: '#101010',
+      surface: '#202020',
+    });
+    const style = root().style;
+    expect(style.getPropertyValue('--accent-strong')).toBe('#3355ff');
+    expect(style.getPropertyValue('--accent')).toBe('#aa2244');
+    expect(style.getPropertyValue('--bg')).toBe('#101010');
+    expect(style.getPropertyValue('--leather-base')).toBe('#101010');
+    expect(style.getPropertyValue('--surface')).toBe('#202020');
+    // A dark surface derives a light ink so text stays legible.
+    expect(style.getPropertyValue('--text')).toBe('#f7f3ea');
+    expect(style.getPropertyValue('--on-accent')).not.toBe('');
+    expect(style.getPropertyValue('--text-muted')).toContain('color-mix');
+  });
+
+  it('clears properties for unset fields (theme default wins again)', () => {
+    applyColorOverrides({ primary: '#3355ff' });
+    expect(root().style.getPropertyValue('--accent-strong')).toBe('#3355ff');
+    applyColorOverrides({});
+    expect(root().style.getPropertyValue('--accent-strong')).toBe('');
+    expect(root().style.getPropertyValue('--accent')).toBe('');
+    expect(root().style.getPropertyValue('--bg')).toBe('');
+    expect(root().style.getPropertyValue('--text')).toBe('');
+  });
+
+  it('ignores malformed colours', () => {
+    applyColorOverrides({ primary: 'red', background: '#zzz' });
+    expect(root().style.getPropertyValue('--accent-strong')).toBe('');
+    expect(root().style.getPropertyValue('--bg')).toBe('');
   });
 });
 
