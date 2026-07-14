@@ -152,6 +152,17 @@ external providers, prove legal validity or legal capacity, certify dashboard
 or backup-policy completeness, complete RBAC/delegation policy, or make any
 spec area complete.
 
+The RBAC ledger verification regression markers prove that `cargo test -p
+chancela-api --test rbac_ledger_verify --locked` drives user-role assignment
+and unassignment, delegation grant and revoke, and role-catalog
+create/update/delete mutations through the real in-process API router, then
+asserts `GET /v1/ledger/verify`, `GET /v1/ledger/integrity`, direct
+`Ledger::verify()`, shared `application` audit-chain scoping, and no spurious
+`company:` chains after RBAC audit events. These markers are focused
+ledger-integrity regression coverage only. They do not complete RBAC,
+delegation policy, tenant authorization, legal-capacity validation, broad
+security certification, or any spec area.
+
 The Postgres store, backend-selection, logical recovery, and local
 advisory-lock/fail-closed cluster write gate and promotion handoff markers prove
 source/test coverage for the off-by-default backend runtime paths, API/server
@@ -337,6 +348,12 @@ It intentionally reuses existing test surfaces:
   delegation resolution, deterministic-shape/scale checks, and SQLite
   backup/restore fixity. The ignored Postgres variant is live-DB gated and is
   not default CI evidence.
+- API RBAC ledger verification:
+  `cargo test -p chancela-api --test rbac_ledger_verify --locked` including
+  role assignment/unassignment, delegation grant/revoke, role-catalog mutation,
+  `/v1/ledger/verify`, `/v1/ledger/integrity`, direct `Ledger::verify()`,
+  application-chain audit scoping, and no accidental `company:` chain for RBAC
+  audit events.
 - API and web privacy control review reminders:
   `cargo test -p chancela-api --locked privacy_control_review_reminders_cover_missing_overdue_and_source_toggle`
   plus the focused web unit lane for

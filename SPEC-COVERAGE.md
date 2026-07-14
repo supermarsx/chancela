@@ -1,6 +1,6 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-14 from current implementation snapshot `350b720de5f1259218a23b3aa1e30dab5e7822f1`,
+*Updated 2026-07-14 from current implementation snapshot `fc9e9b6d59f5b757617d2e04cc5490e30f7a4efb`,
 with committed evidence refreshes for the recently landed Signatures & Trust
 provider-credential, stored runtime credential resolution, stored PKCS#12,
 remote batch-initiation surfaces, and Docker/Compose runtime-hardening
@@ -166,7 +166,8 @@ backup/restore/recovery with fixity and atomicity markers, and the
 fail-closed promotion handoff markers, followed by `350b720` synthetic seed
 dataset integration coverage for API-created entities, books, acts, ledger,
 dashboard aggregates, RBAC, delegation resolution, and SQLite backup/restore
-fixity.
+fixity, and `fc9e9b6` RBAC ledger verification regression coverage for
+user-role, delegation, and role-catalog mutations.
 Earlier coverage text remains prior snapshot context. All top-level spec areas remain **PARTIAL**.
 This is an implementation and test coverage snapshot, not a legal certification,
 not production CMD approval, not DRE verification promotion, not full PDF/UA
@@ -196,6 +197,17 @@ being useful. The matrix below records the current factual coverage and the rema
 blockers.
 
 Implementation checkpoints covered here:
+
+- Current `fc9e9b6` keeps Roles & Access/Data/CI **PARTIAL**: `cargo test -p
+  chancela-api --test rbac_ledger_verify --locked` drives real in-process API
+  router requests for user-role assignment/unassignment, delegation
+  grant/revoke, and role catalog create/update/delete paths, then checks
+  `GET /v1/ledger/verify`, `GET /v1/ledger/integrity`, direct
+  `Ledger::verify()`, shared `application` audit-chain scoping, and absence of
+  spurious `company:` chains after those RBAC audit events. This is focused
+  security-regression and ledger-integrity coverage only: it does not complete
+  the role model, delegation policy, tenant policy, legal-capacity validation,
+  broad security certification, or any spec area.
 
 - Current `350b720` keeps Data/Entity/Workflows/Documents & Archive/Roles &
   Access/UX/CI **PARTIAL**: `cargo test -p chancela-api --test seed_dataset

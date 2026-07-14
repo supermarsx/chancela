@@ -1,7 +1,7 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `350b720`,
+and implementation snapshot `fc9e9b6`,
 including coverage notes for the bounded PAdES DSS validation-time, PDF/UA v10
 scoped table-header evidence, retention due-candidate explicit evidence states,
 bounded archive/no-action evidence UI, duplicate-review guard/status surfacing, and
@@ -47,8 +47,10 @@ acts as source-linked technical visualization evidence only,
 plus local ASiC inspection endpoint and ASiC ZIP decompression-bound coverage,
 plus release workflow static
 assurance for the unsigned/local-only trust posture and production-package
-manifest-required validation, plus synthetic seed dataset integration coverage
-over API-created entity/book/act/ledger/dashboard/RBAC/delegation paths. This
+manifest-required validation, synthetic seed dataset integration coverage
+over API-created entity/book/act/ledger/dashboard/RBAC/delegation paths, and
+RBAC ledger verification regression coverage for user-role, delegation, and
+role-catalog audit events. This
 plan is the build and
 test operating checklist for driving Chancela toward release confidence.
 
@@ -814,11 +816,11 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `350b720`
+## Focused Gate Snapshot Through `fc9e9b6`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08` and checkpoint-promoted on 2026-07-14 for
-current implementation head `350b720`. This is not an exhaustive current
+current implementation head `fc9e9b6`. This is not an exhaustive current
 green-run claim; browser, Docker, desktop, package signing/notarization, image
 signing/attestation, and live-provider limits above still apply.
 
@@ -1775,7 +1777,17 @@ settingsDefaults.test.ts contracts.test.ts`.
   legal-capacity proof, production backup-policy certification,
   RBAC/delegation completion, broad dashboard/business completeness, or spec
   completion.
-- Current checkpoint metadata/static checks through `350b720`
+- Current working-tree RBAC ledger verification regression checks: focused
+  `cargo test -p chancela-api --test rbac_ledger_verify --locked` coverage
+  drives user-role assignment/unassignment, delegation grant/revoke, and role
+  catalog create/update/delete paths through the real API router, then verifies
+  `/v1/ledger/verify`, `/v1/ledger/integrity`, direct `Ledger::verify()`, shared
+  `application` audit-chain scoping, and no accidental `company:` chain minting
+  for RBAC audit events. This is focused regression coverage only; it is not
+  full RBAC/delegation-policy completion, tenant authorization proof,
+  legal-capacity verification, broad security certification, or spec
+  completion.
+- Current checkpoint metadata/static checks through `fc9e9b6`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and

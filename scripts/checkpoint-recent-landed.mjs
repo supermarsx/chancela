@@ -143,6 +143,20 @@ const checks = [
     ],
   },
   {
+    name: "API RBAC ledger verification regression tests",
+    command: [
+      "cargo",
+      [
+        "test",
+        "-p",
+        "chancela-api",
+        "--test",
+        "rbac_ledger_verify",
+        "--locked",
+      ],
+    ],
+  },
+  {
     name: "API generated document durable by-id download test",
     command: [
       "cargo",
@@ -9662,12 +9676,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `350b720`",
+    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `fc9e9b6`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `350b720`",
+    "Focused Gate Snapshot Through `fc9e9b6`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -10292,7 +10306,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `350b720`",
+    "Current checkpoint metadata/static checks through `fc9e9b6`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -10772,7 +10786,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `350b720de5f1259218a23b3aa1e30dab5e7822f1`",
+    "implementation snapshot `fc9e9b6d59f5b757617d2e04cc5490e30f7a4efb`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -10807,6 +10821,26 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
+    "RBAC ledger verification regression coverage",
+    "spec coverage RBAC ledger verification header marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Current `fc9e9b6` keeps Roles & Access/Data/CI **PARTIAL**",
+    "spec coverage RBAC ledger verification checkpoint marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "shared `application` audit-chain scoping, and absence of\n  spurious `company:` chains",
+    "spec coverage RBAC ledger application-chain marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "it does not complete\n  the role model, delegation policy, tenant policy, legal-capacity validation,\n  broad security certification, or any spec area",
+    "spec coverage RBAC ledger no-claim marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
     "Current `350b720` keeps Data/Entity/Workflows/Documents & Archive/Roles &\n  Access/UX/CI **PARTIAL**",
     "spec coverage synthetic seed dataset checkpoint marker",
   );
@@ -10819,6 +10853,21 @@ function assertCheckpointMap() {
     "docs/CI-CHECKPOINTS.md",
     "The synthetic seed dataset integration markers prove",
     "CI checkpoints synthetic seed dataset summary marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "The RBAC ledger verification regression markers prove",
+    "CI checkpoints RBAC ledger summary marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "API RBAC ledger verification",
+    "CI checkpoints RBAC ledger lane marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "do not complete RBAC,\ndelegation policy, tenant authorization, legal-capacity validation, broad\nsecurity certification",
+    "CI checkpoints RBAC ledger no-claim marker",
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
@@ -10869,6 +10918,26 @@ function assertCheckpointMap() {
     "crates/chancela-api/tests/seed_dataset.rs",
     "restored ledger HEAD equals the original (fixity)",
     "API synthetic seed dataset backup restore fixity marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/rbac_ledger_verify.rs",
+    "rbac_mutations_via_api_keep_the_ledger_verify_healthy",
+    "API RBAC mutations ledger verification coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/rbac_ledger_verify.rs",
+    "role_catalog_mutations_via_api_keep_the_ledger_verify_healthy",
+    "API role catalog ledger verification coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/rbac_ledger_verify.rs",
+    "GET /v1/ledger/verify must be valid after RBAC mutation",
+    "API RBAC ledger verify route assertion marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/rbac_ledger_verify.rs",
+    "RBAC mutations must not mint a book-action chain",
+    "API RBAC no spurious company chain marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
