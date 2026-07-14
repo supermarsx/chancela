@@ -1,6 +1,6 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-14 from current implementation snapshot `e8bcd19d20ff99ce395ff3de209faebb53f19d48`,
+*Updated 2026-07-14 from current implementation snapshot `d9816949e2f22bcc2375dc811ceb39fb9bcc0adb`,
 with committed evidence refreshes for the recently landed Signatures & Trust
 provider-credential, stored runtime credential resolution, stored PKCS#12,
 remote batch-initiation surfaces, and Docker/Compose runtime-hardening
@@ -148,7 +148,7 @@ retention review-closure slice through `869e02f` (`6724d07` API route,
 `d95a9f5` contract/client coverage, `c6e668d` Settings closure action, and
 `869e02f` route-mocked browser proof), followed by `148106c` read-only
 sync/handoff preflight reporting and `e8bcd19` archive filter reset icon
-semantics.
+semantics, followed by `d981694` web signed-act technical metadata comparison.
 Earlier coverage text remains prior snapshot context. All top-level spec areas remain **PARTIAL**.
 This is an implementation and test coverage snapshot, not a legal certification,
 not production CMD approval, not DRE verification promotion, not full PDF/UA
@@ -172,6 +172,15 @@ being useful. The matrix below records the current factual coverage and the rema
 blockers.
 
 Implementation checkpoints covered here:
+
+- Current `d981694` keeps Signatures/Documents/UX/CI **PARTIAL**: the web
+  signing panel now renders a compact post-signed technical/local metadata
+  comparison using already-loaded Act, signature-status, and document-bundle
+  validation-report metadata. Focused tests cover signed match, signed
+  mismatch, missing signed metadata, no-overclaim copy, and i18n key coverage.
+  The panel does not fetch or parse raw PDFs, recompute digests, validate trust,
+  mutate archives, record reviewer notes, or make legal validity, source,
+  provider, or external-validation claims.
 
 - Current working-tree paper-book local OCR/canonical rehearsal report keeps
   Workflows, Documents & Archive, UX, and CI **PARTIAL**: `GET

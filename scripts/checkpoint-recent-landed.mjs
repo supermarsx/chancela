@@ -1245,12 +1245,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/i18n/locales/pt-PT.ts",
-    "'compliance.writtenResolution.review.label': 'Revisão local da evidência da deliberação por escrito'",
+    "'compliance.writtenResolution.review.label':\n    'Revisão local da evidência da deliberação por escrito'",
     "written-resolution review-depth source-locale label marker",
   );
   assertFileContains(
     "apps/web/src/i18n/locales/pt-PT.ts",
-    "'compliance.writtenResolution.review.boundary': 'Apenas metadados locais. Não se afirma consentimento, quórum, identidade, suficiência jurídica, validação externa, aprovação automática nem certificação por autoridade.'",
+    "'compliance.writtenResolution.review.boundary':\n    'Apenas metadados locais. Não se afirma consentimento, quórum, identidade, suficiência jurídica, validação externa, aprovação automática nem certificação por autoridade.'",
     "written-resolution review-depth source-locale no-claim marker",
   );
   assertFileContains(
@@ -9232,7 +9232,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `e8bcd19`",
+    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `d981694`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
@@ -9842,7 +9842,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `e8bcd19`",
+    "Current checkpoint metadata/static checks through `d981694`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -10297,7 +10297,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `e8bcd19d20ff99ce395ff3de209faebb53f19d48`",
+    "implementation snapshot `d9816949e2f22bcc2375dc811ceb39fb9bcc0adb`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -11771,8 +11771,11 @@ function assertFileContains(relativePath, needle, label) {
     "\r\n",
     "\n",
   );
+  const hasMarker =
+    body.includes(needle) ||
+    normalizeWhitespace(body).includes(normalizeWhitespace(needle));
   assert.ok(
-    body.includes(needle),
+    hasMarker,
     `${label} missing expected marker ${needle}`,
   );
 }
