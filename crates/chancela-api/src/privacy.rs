@@ -716,6 +716,80 @@ pub struct DpiaAdvisoryReviewSummary {
     pub compliance_certification_claimed: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DpiaTemplateFieldType {
+    Text,
+    Textarea,
+    Checklist,
+    Date,
+    EvidenceReference,
+    ReviewNote,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct DpiaTemplateChecklistItem {
+    pub id: &'static str,
+    pub label: &'static str,
+    pub field_type: DpiaTemplateFieldType,
+    pub required: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct DpiaTemplateSection {
+    pub id: &'static str,
+    pub title: &'static str,
+    pub description: &'static str,
+    pub prompts: Vec<&'static str>,
+    pub checklist: Vec<DpiaTemplateChecklistItem>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct DpiaTemplateNoClaims {
+    pub authority_filing_completed: bool,
+    pub authority_approval_obtained: bool,
+    pub cnpd_filing_completed: bool,
+    pub edpb_filing_completed: bool,
+    pub cnpd_or_edpb_approval_obtained: bool,
+    pub legal_review_accepted: bool,
+    pub legal_validation_completed: bool,
+    pub external_validation_completed: bool,
+    pub external_legal_validation_completed: bool,
+    pub external_delivery_completed: bool,
+    pub dpia_completed: bool,
+    pub dpia_completion_certified: bool,
+    pub compliance_certification_completed: bool,
+    pub transfer_approval_claimed: bool,
+    pub transfer_execution_claimed: bool,
+    pub authority_notification_claimed: bool,
+    pub subject_notification_claimed: bool,
+    pub automated_risk_scoring_performed: bool,
+    pub risk_score_authority_claimed: bool,
+    pub automated_legal_decision_made: bool,
+    pub register_mutation_performed: bool,
+    pub external_call_performed: bool,
+    pub raw_register_contents_included: bool,
+    pub processor_names_included: bool,
+    pub data_subjects_included: bool,
+    pub recipients_included: bool,
+    pub personal_data_included: bool,
+    pub secrets_included: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct DpiaTemplateView {
+    pub schema: &'static str,
+    pub template_id: &'static str,
+    pub title: &'static str,
+    pub version: u32,
+    pub language: &'static str,
+    pub scope: &'static str,
+    pub local_offline_guidance_only: bool,
+    pub sections: Vec<DpiaTemplateSection>,
+    pub operator_actions: Vec<&'static str>,
+    pub no_claims: DpiaTemplateNoClaims,
+}
+
 impl PrivacyRecordStatus {
     fn parse(raw: &str) -> Result<Self, ApiError> {
         match normalize_enum(raw).as_str() {
@@ -1097,6 +1171,300 @@ impl From<&DpiaRecord> for DpiaRecordView {
             updated_at: record.updated_at.clone(),
             updated_by: record.updated_by.clone(),
         }
+    }
+}
+
+fn dpia_template_view() -> DpiaTemplateView {
+    use DpiaTemplateFieldType::{Checklist, Date, EvidenceReference, ReviewNote, Text, Textarea};
+
+    let item = |id, label, field_type, required| DpiaTemplateChecklistItem {
+        id,
+        label,
+        field_type,
+        required,
+    };
+
+    DpiaTemplateView {
+        schema: "chancela-privacy-dpia-template/v1",
+        template_id: "privacy-dpia-guidance/v1",
+        title: "Local DPIA guidance template",
+        version: 1,
+        language: "en",
+        scope: "local_offline_guidance_only",
+        local_offline_guidance_only: true,
+        sections: vec![
+            DpiaTemplateSection {
+                id: "processing_description",
+                title: "Processing description",
+                description: "Capture the proposed processing with placeholders only; do not paste raw register records, subject data, recipients, processor names, or secrets.",
+                prompts: vec![
+                    "What processing activity is being assessed?",
+                    "What purpose and lawful-basis question should a human reviewer consider?",
+                    "Which data-category placeholders are in scope?",
+                    "Which system or workflow boundary is in scope?",
+                ],
+                checklist: vec![
+                    item("activity_label", "Processing activity label", Text, true),
+                    item("purpose_placeholder", "Purpose placeholder", Textarea, true),
+                    item(
+                        "lawful_basis_prompt",
+                        "Lawful-basis review prompt",
+                        Textarea,
+                        true,
+                    ),
+                    item(
+                        "data_category_placeholders",
+                        "Data-category placeholders",
+                        Checklist,
+                        true,
+                    ),
+                    item(
+                        "system_boundary",
+                        "System/workflow boundary",
+                        Textarea,
+                        false,
+                    ),
+                ],
+            },
+            DpiaTemplateSection {
+                id: "necessity_proportionality",
+                title: "Necessity and proportionality prompts",
+                description: "Guide a human review of necessity, minimization, retention, and alternatives without deciding legal sufficiency.",
+                prompts: vec![
+                    "Why is this processing necessary for the stated purpose?",
+                    "What lower-impact alternatives should be considered?",
+                    "What minimization or retention constraints should be reviewed?",
+                    "What transparency or operator-facing notice gaps should be checked?",
+                ],
+                checklist: vec![
+                    item(
+                        "necessity_rationale",
+                        "Necessity rationale prompt",
+                        Textarea,
+                        true,
+                    ),
+                    item(
+                        "less_intrusive_alternatives",
+                        "Alternatives to consider",
+                        Checklist,
+                        true,
+                    ),
+                    item(
+                        "minimization_controls",
+                        "Minimization controls to review",
+                        Checklist,
+                        true,
+                    ),
+                    item(
+                        "retention_prompt",
+                        "Retention review prompt",
+                        Textarea,
+                        false,
+                    ),
+                    item(
+                        "transparency_prompt",
+                        "Transparency review prompt",
+                        Textarea,
+                        false,
+                    ),
+                ],
+            },
+            DpiaTemplateSection {
+                id: "risk_prompts",
+                title: "Risk prompts",
+                description: "Collect qualitative risk prompts only; this template does not calculate, rank, or authorize risk.",
+                prompts: vec![
+                    "What rights-and-freedoms impacts should be reviewed?",
+                    "What confidentiality, integrity, availability, or misuse scenarios should be considered?",
+                    "What vulnerable-context or scale factors need human attention?",
+                    "What unresolved questions require escalation?",
+                ],
+                checklist: vec![
+                    item("rights_impacts", "Rights-impact prompts", Checklist, true),
+                    item(
+                        "misuse_scenarios",
+                        "Misuse or confidentiality scenarios",
+                        Checklist,
+                        true,
+                    ),
+                    item(
+                        "scale_context",
+                        "Scale/context review prompt",
+                        Textarea,
+                        false,
+                    ),
+                    item(
+                        "unresolved_questions",
+                        "Unresolved questions",
+                        Checklist,
+                        false,
+                    ),
+                    item(
+                        "risk_review_note",
+                        "Human risk review note",
+                        ReviewNote,
+                        false,
+                    ),
+                ],
+            },
+            DpiaTemplateSection {
+                id: "safeguards",
+                title: "Safeguards",
+                description: "List safeguards and evidence references for later human review; do not treat the list as certification or approval.",
+                prompts: vec![
+                    "Which technical and organizational safeguards should be evidenced?",
+                    "Which access-control, logging, retention, and security controls need review?",
+                    "Which residual safeguards need owner follow-up?",
+                ],
+                checklist: vec![
+                    item(
+                        "technical_safeguards",
+                        "Technical safeguards",
+                        Checklist,
+                        true,
+                    ),
+                    item(
+                        "organizational_safeguards",
+                        "Organizational safeguards",
+                        Checklist,
+                        true,
+                    ),
+                    item(
+                        "access_logging_controls",
+                        "Access/logging controls",
+                        Checklist,
+                        false,
+                    ),
+                    item(
+                        "evidence_references",
+                        "Local evidence references",
+                        EvidenceReference,
+                        false,
+                    ),
+                    item(
+                        "residual_follow_up",
+                        "Residual follow-up items",
+                        Checklist,
+                        false,
+                    ),
+                ],
+            },
+            DpiaTemplateSection {
+                id: "consultation_escalation",
+                title: "Consultation and escalation prompts",
+                description: "Record prompts for operator escalation decisions without claiming consultation occurred or authority approval was obtained.",
+                prompts: vec![
+                    "Which internal reviewer roles should inspect this DPIA?",
+                    "What consultation or escalation question remains open?",
+                    "What blocker prevents treating this as reviewed?",
+                    "What next operator action should be recorded outside this template?",
+                ],
+                checklist: vec![
+                    item(
+                        "reviewer_roles",
+                        "Reviewer role placeholders",
+                        Checklist,
+                        false,
+                    ),
+                    item(
+                        "consultation_questions",
+                        "Consultation questions",
+                        Checklist,
+                        false,
+                    ),
+                    item(
+                        "escalation_blockers",
+                        "Escalation blockers",
+                        Checklist,
+                        false,
+                    ),
+                    item(
+                        "target_review_date",
+                        "Target local review date",
+                        Date,
+                        false,
+                    ),
+                    item(
+                        "next_operator_action",
+                        "Next operator action",
+                        ReviewNote,
+                        true,
+                    ),
+                ],
+            },
+            DpiaTemplateSection {
+                id: "evidence_boundaries",
+                title: "Evidence and no-claim boundaries",
+                description: "Preserve the local/offline boundary and false no-claim flags when this template is exported, copied, or used for operator review.",
+                prompts: vec![
+                    "Which local evidence references support the prompts?",
+                    "Which authority, legal, external-validation, scoring, completion, and register-mutation claims remain false?",
+                    "What must be reviewed before any separate record is updated?",
+                ],
+                checklist: vec![
+                    item(
+                        "local_evidence_index",
+                        "Local evidence index placeholders",
+                        EvidenceReference,
+                        false,
+                    ),
+                    item(
+                        "false_no_claim_flags",
+                        "False no-claim flags acknowledged",
+                        Checklist,
+                        true,
+                    ),
+                    item(
+                        "no_sensitive_echo_check",
+                        "No sensitive/register echo check",
+                        Checklist,
+                        true,
+                    ),
+                    item(
+                        "separate_record_update_prompt",
+                        "Separate register update prompt",
+                        ReviewNote,
+                        false,
+                    ),
+                ],
+            },
+        ],
+        operator_actions: vec![
+            "Fill placeholders locally with human-authored notes outside this template response.",
+            "Review necessity, proportionality, risks, safeguards, and escalation questions before any separate DPIA register update.",
+            "Keep authority filing, legal acceptance, external validation, automated scoring, completion, certification, and register-mutation claims false unless separately evidenced outside this template.",
+            "Do not paste personal data, secrets, raw register contents, processor names, data subjects, or recipients into the template response.",
+        ],
+        no_claims: DpiaTemplateNoClaims {
+            authority_filing_completed: false,
+            authority_approval_obtained: false,
+            cnpd_filing_completed: false,
+            edpb_filing_completed: false,
+            cnpd_or_edpb_approval_obtained: false,
+            legal_review_accepted: false,
+            legal_validation_completed: false,
+            external_validation_completed: false,
+            external_legal_validation_completed: false,
+            external_delivery_completed: false,
+            dpia_completed: false,
+            dpia_completion_certified: false,
+            compliance_certification_completed: false,
+            transfer_approval_claimed: false,
+            transfer_execution_claimed: false,
+            authority_notification_claimed: false,
+            subject_notification_claimed: false,
+            automated_risk_scoring_performed: false,
+            risk_score_authority_claimed: false,
+            automated_legal_decision_made: false,
+            register_mutation_performed: false,
+            external_call_performed: false,
+            raw_register_contents_included: false,
+            processor_names_included: false,
+            data_subjects_included: false,
+            recipients_included: false,
+            personal_data_included: false,
+            secrets_included: false,
+        },
     }
 }
 
@@ -3084,6 +3452,15 @@ pub async fn list_dpia_records(
     let mut list: Vec<&DpiaRecord> = records.values().collect();
     list.sort_by(|a, b| a.created_at.cmp(&b.created_at).then(a.id.0.cmp(&b.id.0)));
     Ok(Json(list.into_iter().map(DpiaRecordView::from).collect()))
+}
+
+/// `GET /v1/privacy/dpia-template` — static local/offline DPIA guidance pack.
+pub async fn get_dpia_template(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+) -> Result<Json<DpiaTemplateView>, ApiError> {
+    require_privacy_record_manage(&state, &actor).await?;
+    Ok(Json(dpia_template_view()))
 }
 
 /// `PATCH /v1/privacy/dpias/{id}` — update a DPIA register record.

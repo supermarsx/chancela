@@ -225,6 +225,7 @@ export const keys = {
   apiKeys: ['api-keys'] as const,
   providerCredentials: ['signature', 'provider-credentials'] as const,
   privacyProcessors: ['privacy', 'processors'] as const,
+  privacyDpiaTemplate: ['privacy', 'dpia-template'] as const,
   privacyDpias: ['privacy', 'dpias'] as const,
   privacyBreachPlaybooks: ['privacy', 'breach-playbooks'] as const,
   privacyTransferControls: ['privacy', 'transfer-controls'] as const,
@@ -2449,6 +2450,14 @@ export function usePrivacyDpias(enabled = true) {
   return useQuery({
     queryKey: keys.privacyDpias,
     queryFn: () => api.listDpiaRecords(),
+    enabled,
+  });
+}
+
+export function usePrivacyDpiaTemplate(enabled = true) {
+  return useQuery({
+    queryKey: keys.privacyDpiaTemplate,
+    queryFn: () => api.getDpiaTemplate(),
     enabled,
   });
 }

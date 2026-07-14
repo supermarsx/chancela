@@ -3523,6 +3523,74 @@ export interface DpiaRecordView extends PrivacyRegisterRecordBase {
   advisory_review: DpiaAdvisoryReviewSummary;
 }
 
+export type DpiaTemplateFieldType =
+  | 'text'
+  | 'textarea'
+  | 'checklist'
+  | 'date'
+  | 'evidence_reference'
+  | 'review_note';
+
+export interface DpiaTemplateChecklistItem {
+  id: string;
+  label: string;
+  field_type: DpiaTemplateFieldType;
+  required: boolean;
+}
+
+export interface DpiaTemplateSection {
+  id: string;
+  title: string;
+  description: string;
+  prompts: string[];
+  checklist: DpiaTemplateChecklistItem[];
+}
+
+export interface DpiaTemplateNoClaims {
+  authority_filing_completed: false;
+  authority_approval_obtained: false;
+  cnpd_filing_completed: false;
+  edpb_filing_completed: false;
+  cnpd_or_edpb_approval_obtained: false;
+  legal_review_accepted: false;
+  legal_validation_completed: false;
+  external_validation_completed: false;
+  external_legal_validation_completed: false;
+  external_delivery_completed: false;
+  dpia_completed: false;
+  dpia_completion_certified: false;
+  compliance_certification_completed: false;
+  transfer_approval_claimed: false;
+  transfer_execution_claimed: false;
+  authority_notification_claimed: false;
+  subject_notification_claimed: false;
+  automated_risk_scoring_performed: false;
+  risk_score_authority_claimed: false;
+  automated_legal_decision_made: false;
+  register_mutation_performed: false;
+  external_call_performed: false;
+  raw_register_contents_included: false;
+  processor_names_included: false;
+  data_subjects_included: false;
+  recipients_included: false;
+  personal_data_included: false;
+  secrets_included: false;
+}
+
+/** Static local/offline DPIA guidance pack (`GET /v1/privacy/dpia-template`). */
+export interface DpiaTemplateView {
+  schema: 'chancela-privacy-dpia-template/v1' | string;
+  template_id: 'privacy-dpia-guidance/v1' | string;
+  title: string;
+  version: number;
+  language: string;
+  scope: 'local_offline_guidance_only' | string;
+  local_offline_guidance_only: true;
+  sections: DpiaTemplateSection[];
+  operator_actions: string[];
+  no_claims: DpiaTemplateNoClaims;
+}
+
 export interface BreachPlaybookView {
   id: string;
   title: string;

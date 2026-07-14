@@ -1,0 +1,297 @@
+{
+  "schema": "chancela-privacy-dpia-template/v1",
+  "template_id": "privacy-dpia-guidance/v1",
+  "title": "Local DPIA guidance template",
+  "version": 1,
+  "language": "en",
+  "scope": "local_offline_guidance_only",
+  "local_offline_guidance_only": true,
+  "sections": [
+    {
+      "id": "processing_description",
+      "title": "Processing description",
+      "description": "Capture the proposed processing with placeholders only; do not paste raw register records, subject data, recipients, processor names, or secrets.",
+      "prompts": [
+        "What processing activity is being assessed?",
+        "What purpose and lawful-basis question should a human reviewer consider?",
+        "Which data-category placeholders are in scope?",
+        "Which system or workflow boundary is in scope?"
+      ],
+      "checklist": [
+        {
+          "id": "activity_label",
+          "label": "Processing activity label",
+          "field_type": "text",
+          "required": true
+        },
+        {
+          "id": "purpose_placeholder",
+          "label": "Purpose placeholder",
+          "field_type": "textarea",
+          "required": true
+        },
+        {
+          "id": "lawful_basis_prompt",
+          "label": "Lawful-basis review prompt",
+          "field_type": "textarea",
+          "required": true
+        },
+        {
+          "id": "data_category_placeholders",
+          "label": "Data-category placeholders",
+          "field_type": "checklist",
+          "required": true
+        },
+        {
+          "id": "system_boundary",
+          "label": "System/workflow boundary",
+          "field_type": "textarea",
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "necessity_proportionality",
+      "title": "Necessity and proportionality prompts",
+      "description": "Guide a human review of necessity, minimization, retention, and alternatives without deciding legal sufficiency.",
+      "prompts": [
+        "Why is this processing necessary for the stated purpose?",
+        "What lower-impact alternatives should be considered?",
+        "What minimization or retention constraints should be reviewed?",
+        "What transparency or operator-facing notice gaps should be checked?"
+      ],
+      "checklist": [
+        {
+          "id": "necessity_rationale",
+          "label": "Necessity rationale prompt",
+          "field_type": "textarea",
+          "required": true
+        },
+        {
+          "id": "less_intrusive_alternatives",
+          "label": "Alternatives to consider",
+          "field_type": "checklist",
+          "required": true
+        },
+        {
+          "id": "minimization_controls",
+          "label": "Minimization controls to review",
+          "field_type": "checklist",
+          "required": true
+        },
+        {
+          "id": "retention_prompt",
+          "label": "Retention review prompt",
+          "field_type": "textarea",
+          "required": false
+        },
+        {
+          "id": "transparency_prompt",
+          "label": "Transparency review prompt",
+          "field_type": "textarea",
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "risk_prompts",
+      "title": "Risk prompts",
+      "description": "Collect qualitative risk prompts only; this template does not calculate, rank, or authorize risk.",
+      "prompts": [
+        "What rights-and-freedoms impacts should be reviewed?",
+        "What confidentiality, integrity, availability, or misuse scenarios should be considered?",
+        "What vulnerable-context or scale factors need human attention?",
+        "What unresolved questions require escalation?"
+      ],
+      "checklist": [
+        {
+          "id": "rights_impacts",
+          "label": "Rights-impact prompts",
+          "field_type": "checklist",
+          "required": true
+        },
+        {
+          "id": "misuse_scenarios",
+          "label": "Misuse or confidentiality scenarios",
+          "field_type": "checklist",
+          "required": true
+        },
+        {
+          "id": "scale_context",
+          "label": "Scale/context review prompt",
+          "field_type": "textarea",
+          "required": false
+        },
+        {
+          "id": "unresolved_questions",
+          "label": "Unresolved questions",
+          "field_type": "checklist",
+          "required": false
+        },
+        {
+          "id": "risk_review_note",
+          "label": "Human risk review note",
+          "field_type": "review_note",
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "safeguards",
+      "title": "Safeguards",
+      "description": "List safeguards and evidence references for later human review; do not treat the list as certification or approval.",
+      "prompts": [
+        "Which technical and organizational safeguards should be evidenced?",
+        "Which access-control, logging, retention, and security controls need review?",
+        "Which residual safeguards need owner follow-up?"
+      ],
+      "checklist": [
+        {
+          "id": "technical_safeguards",
+          "label": "Technical safeguards",
+          "field_type": "checklist",
+          "required": true
+        },
+        {
+          "id": "organizational_safeguards",
+          "label": "Organizational safeguards",
+          "field_type": "checklist",
+          "required": true
+        },
+        {
+          "id": "access_logging_controls",
+          "label": "Access/logging controls",
+          "field_type": "checklist",
+          "required": false
+        },
+        {
+          "id": "evidence_references",
+          "label": "Local evidence references",
+          "field_type": "evidence_reference",
+          "required": false
+        },
+        {
+          "id": "residual_follow_up",
+          "label": "Residual follow-up items",
+          "field_type": "checklist",
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "consultation_escalation",
+      "title": "Consultation and escalation prompts",
+      "description": "Record prompts for operator escalation decisions without claiming consultation occurred or authority approval was obtained.",
+      "prompts": [
+        "Which internal reviewer roles should inspect this DPIA?",
+        "What consultation or escalation question remains open?",
+        "What blocker prevents treating this as reviewed?",
+        "What next operator action should be recorded outside this template?"
+      ],
+      "checklist": [
+        {
+          "id": "reviewer_roles",
+          "label": "Reviewer role placeholders",
+          "field_type": "checklist",
+          "required": false
+        },
+        {
+          "id": "consultation_questions",
+          "label": "Consultation questions",
+          "field_type": "checklist",
+          "required": false
+        },
+        {
+          "id": "escalation_blockers",
+          "label": "Escalation blockers",
+          "field_type": "checklist",
+          "required": false
+        },
+        {
+          "id": "target_review_date",
+          "label": "Target local review date",
+          "field_type": "date",
+          "required": false
+        },
+        {
+          "id": "next_operator_action",
+          "label": "Next operator action",
+          "field_type": "review_note",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "evidence_boundaries",
+      "title": "Evidence and no-claim boundaries",
+      "description": "Preserve the local/offline boundary and false no-claim flags when this template is exported, copied, or used for operator review.",
+      "prompts": [
+        "Which local evidence references support the prompts?",
+        "Which authority, legal, external-validation, scoring, completion, and register-mutation claims remain false?",
+        "What must be reviewed before any separate record is updated?"
+      ],
+      "checklist": [
+        {
+          "id": "local_evidence_index",
+          "label": "Local evidence index placeholders",
+          "field_type": "evidence_reference",
+          "required": false
+        },
+        {
+          "id": "false_no_claim_flags",
+          "label": "False no-claim flags acknowledged",
+          "field_type": "checklist",
+          "required": true
+        },
+        {
+          "id": "no_sensitive_echo_check",
+          "label": "No sensitive/register echo check",
+          "field_type": "checklist",
+          "required": true
+        },
+        {
+          "id": "separate_record_update_prompt",
+          "label": "Separate register update prompt",
+          "field_type": "review_note",
+          "required": false
+        }
+      ]
+    }
+  ],
+  "operator_actions": [
+    "Fill placeholders locally with human-authored notes outside this template response.",
+    "Review necessity, proportionality, risks, safeguards, and escalation questions before any separate DPIA register update.",
+    "Keep authority filing, legal acceptance, external validation, automated scoring, completion, certification, and register-mutation claims false unless separately evidenced outside this template.",
+    "Do not paste personal data, secrets, raw register contents, processor names, data subjects, or recipients into the template response."
+  ],
+  "no_claims": {
+    "authority_filing_completed": false,
+    "authority_approval_obtained": false,
+    "cnpd_filing_completed": false,
+    "edpb_filing_completed": false,
+    "cnpd_or_edpb_approval_obtained": false,
+    "legal_review_accepted": false,
+    "legal_validation_completed": false,
+    "external_validation_completed": false,
+    "external_legal_validation_completed": false,
+    "external_delivery_completed": false,
+    "dpia_completed": false,
+    "dpia_completion_certified": false,
+    "compliance_certification_completed": false,
+    "transfer_approval_claimed": false,
+    "transfer_execution_claimed": false,
+    "authority_notification_claimed": false,
+    "subject_notification_claimed": false,
+    "automated_risk_scoring_performed": false,
+    "risk_score_authority_claimed": false,
+    "automated_legal_decision_made": false,
+    "register_mutation_performed": false,
+    "external_call_performed": false,
+    "raw_register_contents_included": false,
+    "processor_names_included": false,
+    "data_subjects_included": false,
+    "recipients_included": false,
+    "personal_data_included": false,
+    "secrets_included": false
+  }
+}

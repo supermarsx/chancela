@@ -127,6 +127,10 @@ import {
   type DpiaAdvisoryReviewSummary,
   type DpiaEvidenceReceipt,
   type DpiaRecordView,
+  type DpiaTemplateChecklistItem,
+  type DpiaTemplateNoClaims,
+  type DpiaTemplateSection,
+  type DpiaTemplateView,
   type DsrRequestView,
   type Entity,
   type EntityCalendarPreset,
@@ -859,6 +863,153 @@ function assertDpiaAdvisoryReview(obj: unknown, label: string): DpiaAdvisoryRevi
     `${label}.compliance_certification_claimed`,
   ).toBe(false);
   return summary;
+}
+
+function assertDpiaTemplateChecklistItem(
+  obj: unknown,
+  label: string,
+): DpiaTemplateChecklistItem {
+  const item = assertExactKeys<DpiaTemplateChecklistItem>(
+    obj,
+    {
+      id: true,
+      label: true,
+      field_type: true,
+      required: true,
+    },
+    label,
+  );
+  expect(item.id.length, `${label}.id`).toBeGreaterThan(0);
+  expect(item.label.length, `${label}.label`).toBeGreaterThan(0);
+  expect(
+    ['text', 'textarea', 'checklist', 'date', 'evidence_reference', 'review_note'],
+    `${label}.field_type`,
+  ).toContain(item.field_type);
+  expect(typeof item.required, `${label}.required`).toBe('boolean');
+  return item;
+}
+
+function assertDpiaTemplateSection(obj: unknown, label: string): DpiaTemplateSection {
+  const section = assertExactKeys<DpiaTemplateSection>(
+    obj,
+    {
+      id: true,
+      title: true,
+      description: true,
+      prompts: true,
+      checklist: true,
+    },
+    label,
+  );
+  expect(section.id.length, `${label}.id`).toBeGreaterThan(0);
+  expect(section.title.length, `${label}.title`).toBeGreaterThan(0);
+  expect(section.description.length, `${label}.description`).toBeGreaterThan(0);
+  expect(section.prompts.length, `${label}.prompts`).toBeGreaterThan(0);
+  for (const prompt of section.prompts) {
+    expect(prompt.length, `${label}.prompts[]`).toBeGreaterThan(0);
+  }
+  expect(section.checklist.length, `${label}.checklist`).toBeGreaterThan(0);
+  section.checklist.forEach((item, index) =>
+    assertDpiaTemplateChecklistItem(item, `${label}.checklist[${index}]`),
+  );
+  return section;
+}
+
+function assertDpiaTemplateNoClaims(obj: unknown, label: string): DpiaTemplateNoClaims {
+  const noClaims = assertExactKeys<DpiaTemplateNoClaims>(
+    obj,
+    {
+      authority_filing_completed: true,
+      authority_approval_obtained: true,
+      cnpd_filing_completed: true,
+      edpb_filing_completed: true,
+      cnpd_or_edpb_approval_obtained: true,
+      legal_review_accepted: true,
+      legal_validation_completed: true,
+      external_validation_completed: true,
+      external_legal_validation_completed: true,
+      external_delivery_completed: true,
+      dpia_completed: true,
+      dpia_completion_certified: true,
+      compliance_certification_completed: true,
+      transfer_approval_claimed: true,
+      transfer_execution_claimed: true,
+      authority_notification_claimed: true,
+      subject_notification_claimed: true,
+      automated_risk_scoring_performed: true,
+      risk_score_authority_claimed: true,
+      automated_legal_decision_made: true,
+      register_mutation_performed: true,
+      external_call_performed: true,
+      raw_register_contents_included: true,
+      processor_names_included: true,
+      data_subjects_included: true,
+      recipients_included: true,
+      personal_data_included: true,
+      secrets_included: true,
+    },
+    label,
+  );
+  for (const [key, value] of Object.entries(noClaims)) {
+    expect(value, `${label}.${key}`).toBe(false);
+  }
+  return noClaims;
+}
+
+function assertDpiaTemplate(obj: unknown, label: string): DpiaTemplateView {
+  const template = assertExactKeys<DpiaTemplateView>(
+    obj,
+    {
+      schema: true,
+      template_id: true,
+      title: true,
+      version: true,
+      language: true,
+      scope: true,
+      local_offline_guidance_only: true,
+      sections: true,
+      operator_actions: true,
+      no_claims: true,
+    },
+    label,
+  );
+  expect(template.schema, `${label}.schema`).toBe('chancela-privacy-dpia-template/v1');
+  expect(template.template_id, `${label}.template_id`).toBe('privacy-dpia-guidance/v1');
+  expect(template.scope, `${label}.scope`).toBe('local_offline_guidance_only');
+  expect(template.local_offline_guidance_only, `${label}.local_offline_guidance_only`).toBe(true);
+  expect(template.sections.length, `${label}.sections`).toBeGreaterThanOrEqual(6);
+  const sectionIds = template.sections.map((section) => section.id);
+  expect(sectionIds, `${label}.section ids`).toEqual([
+    'processing_description',
+    'necessity_proportionality',
+    'risk_prompts',
+    'safeguards',
+    'consultation_escalation',
+    'evidence_boundaries',
+  ]);
+  template.sections.forEach((section, index) =>
+    assertDpiaTemplateSection(section, `${label}.sections[${index}]`),
+  );
+  expect(template.operator_actions.length, `${label}.operator_actions`).toBeGreaterThan(0);
+  assertDpiaTemplateNoClaims(template.no_claims, `${label}.no_claims`);
+
+  const text = JSON.stringify(template);
+  for (const forbidden of [
+    'SENTINEL_LIVE_',
+    'password_hash',
+    'recovery_phrase',
+    'api_key_secret',
+    'bearer_token',
+    'attestation_private_key',
+    'subprocessors',
+    'recipient_id',
+    'data_subject_id',
+    'subject_identifier',
+    'raw_register_record',
+  ]) {
+    expect(text.includes(forbidden), `${label} must not include ${forbidden}`).toBe(false);
+  }
+  return template;
 }
 
 function assertBreachPlaybook(obj: unknown, label: string): BreachPlaybookView {
@@ -6288,6 +6439,12 @@ describe('contract fixtures parse through the real client', () => {
     assertDpiaRecord(dpias[0], 'DpiaRecordView');
   });
 
+  it('privacy.dpia-template.json → DpiaTemplateView (GET /v1/privacy/dpia-template)', async () => {
+    stubFetch(fixture('privacy.dpia-template.json'));
+    const template: DpiaTemplateView = await api.getDpiaTemplate();
+    assertDpiaTemplate(template, 'DpiaTemplateView');
+  });
+
   it('privacy.breach-playbooks.json → BreachPlaybookView[] (GET /v1/privacy/breach-playbooks)', async () => {
     stubFetch(fixture('privacy.breach-playbooks.json'));
     const playbooks: BreachPlaybookView[] = await api.listBreachPlaybooks();
@@ -6571,6 +6728,7 @@ describe('contract fixtures — cross-cutting guarantees', () => {
       'user.dsr-requests.json',
       'privacy.processors.json',
       'privacy.dpias.json',
+      'privacy.dpia-template.json',
       'privacy.breach-playbooks.json',
       'privacy.transfer-controls.json',
       'retention.policies.json',

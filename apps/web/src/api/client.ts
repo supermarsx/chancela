@@ -65,6 +65,7 @@ import type {
   DocumentModel,
   DraftActBody,
   DpiaRecordView,
+  DpiaTemplateView,
   DsrRequestView,
   Entity,
   EntityChronologyView,
@@ -904,6 +905,7 @@ export const api = {
   patchProcessorRecord: (id: string, body: PatchProcessorRecordBody) =>
     patch<ProcessorRecordView>(`/v1/privacy/processors/${id}`, body),
   listDpiaRecords: () => get<DpiaRecordView[]>('/v1/privacy/dpias'),
+  getDpiaTemplate: () => get<DpiaTemplateView>('/v1/privacy/dpia-template'),
   createDpiaRecord: (body: CreateDpiaRecordBody) => post<DpiaRecordView>('/v1/privacy/dpias', body),
   patchDpiaRecord: (id: string, body: PatchDpiaRecordBody) =>
     patch<DpiaRecordView>(`/v1/privacy/dpias/${id}`, body),

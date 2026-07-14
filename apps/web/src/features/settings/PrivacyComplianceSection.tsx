@@ -13,6 +13,7 @@ import {
   usePatchPrivacyRetentionPolicy,
   usePatchPrivacyTransferControl,
   usePrivacyBreachPlaybooks,
+  usePrivacyDpiaTemplate,
   usePrivacyDpias,
   usePrivacyRetentionCandidateResolutions,
   usePrivacyRetentionDueCandidates,
@@ -38,6 +39,8 @@ import {
   type CreateTransferControlBody,
   type DpiaEvidenceKind,
   type DpiaRecordView,
+  type DpiaTemplateNoClaims,
+  type DpiaTemplateView,
   type PatchBreachPlaybookBody,
   type PatchDpiaRecordBody,
   type PatchProcessorRecordBody,
@@ -810,6 +813,113 @@ function AdvisoryReviewBadge({ review }: { review: PrivacyAdvisoryReviewSummary 
       </Badge>
       <span className="muted">{advisoryReviewDetail(review)}</span>
     </div>
+  );
+}
+
+function DpiaTemplateGuidancePanel({
+  template,
+  loading,
+  error,
+}: {
+  template: DpiaTemplateView | null;
+  loading: boolean;
+  error: unknown;
+}) {
+  const noClaims = template
+    ? (Object.entries(template.no_claims) as [keyof DpiaTemplateNoClaims, false][])
+    : [];
+
+  return (
+    <Card title="Modelo DPIA local">
+      <div className="stack">
+        <p className="field__hint">
+          Pacote local/offline de campos, perguntas e verificações para DPIA; não lê nem apresenta
+          registos de DPIA, processadores, titulares, destinatários, notas, bases legais ou segredos.
+        </p>
+        {loading ? (
+          <SkeletonTable cols={3} />
+        ) : error ? (
+          <ErrorNote error={error} />
+        ) : !template ? (
+          <EmptyState title="Modelo indisponível">
+            <p>O pacote DPIA local não foi devolvido pela API.</p>
+          </EmptyState>
+        ) : (
+          <>
+            <dl className="deflist">
+              <div>
+                <dt>Identificador</dt>
+                <dd>{template.template_id}</dd>
+              </div>
+              <div>
+                <dt>Âmbito</dt>
+                <dd>{template.scope}</dd>
+              </div>
+              <div>
+                <dt>Execução</dt>
+                <dd>local_offline_guidance_only: {String(template.local_offline_guidance_only)}</dd>
+              </div>
+            </dl>
+
+            <Table
+              head={
+                <tr>
+                  <th>Secção</th>
+                  <th>Perguntas</th>
+                  <th>Campos/checklist</th>
+                </tr>
+              }
+            >
+              {template.sections.map((section) => (
+                <tr key={section.id}>
+                  <td>
+                    {section.title}
+                    <br />
+                    <span className="muted">{section.description}</span>
+                  </td>
+                  <td>
+                    <ul>
+                      {section.prompts.map((prompt) => (
+                        <li key={`${section.id}-${prompt}`}>{prompt}</li>
+                      ))}
+                    </ul>
+                  </td>
+                  <td>
+                    <ul>
+                      {section.checklist.map((item) => (
+                        <li key={item.id}>
+                          {item.label} · {item.field_type} · required: {String(item.required)}
+                        </li>
+                      ))}
+                    </ul>
+                  </td>
+                </tr>
+              ))}
+            </Table>
+
+            <div className="stack--tight">
+              <strong>Flags sem alegação</strong>
+              <div className="tag-row">
+                {noClaims.map(([key, value]) => (
+                  <span key={key}>
+                    {key}: <Badge tone="neutral">{String(value)}</Badge>
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            <div className="stack--tight">
+              <strong>Ações do operador</strong>
+              <ul>
+                {template.operator_actions.map((action) => (
+                  <li key={action}>{action}</li>
+                ))}
+              </ul>
+            </div>
+          </>
+        )}
+      </div>
+    </Card>
   );
 }
 
@@ -3263,6 +3373,7 @@ export function PrivacyComplianceSection() {
     string | null
   >(null);
   const processors = usePrivacyProcessors(canManage);
+  const dpiaTemplate = usePrivacyDpiaTemplate(canManage);
   const dpias = usePrivacyDpias(canManage);
   const breachPlaybooks = usePrivacyBreachPlaybooks(canManage);
   const transferControls = usePrivacyTransferControls(canManage);
@@ -3366,6 +3477,12 @@ export function PrivacyComplianceSection() {
       <InlineWarning tone="info" title={t('settings.privacy.notice.title')}>
         {t('settings.privacy.notice.body')}
       </InlineWarning>
+
+      <DpiaTemplateGuidancePanel
+        template={dpiaTemplate.data ?? null}
+        loading={dpiaTemplate.isLoading}
+        error={dpiaTemplate.error}
+      />
 
       <RegisterPanel
         kind="processor"

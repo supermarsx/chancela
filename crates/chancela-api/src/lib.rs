@@ -56,11 +56,12 @@
 //!   request tracking with JSON sidecar durability in data-dir mode and ledger-audited lifecycle
 //!   transitions.
 //! - `GET|POST /v1/privacy/processors`, `PATCH /v1/privacy/processors/{id}`,
+//!   `GET /v1/privacy/dpia-template`,
 //!   `GET|POST /v1/privacy/dpias`, `PATCH /v1/privacy/dpias/{id}`,
 //!   `GET|POST /v1/privacy/breach-playbooks`, `PATCH /v1/privacy/breach-playbooks/{id}`,
 //!   `GET|POST /v1/privacy/transfer-controls`, `PATCH /v1/privacy/transfer-controls/{id}` —
-//!   bounded privacy control registers with JSON sidecar durability in data-dir mode and
-//!   ledger-audited create/update transitions.
+//!   a static local/offline DPIA guidance pack plus bounded privacy control registers with JSON
+//!   sidecar durability in data-dir mode and ledger-audited create/update transitions.
 //! - `GET|POST /v1/privacy/retention-policies`, `PATCH /v1/privacy/retention-policies/{id}`,
 //!   `POST /v1/privacy/retention-policies/dry-run`,
 //!   `GET /v1/privacy/retention-due-candidates`,
@@ -1715,6 +1716,7 @@ pub fn router(state: AppState) -> Router {
             "/v1/privacy/processors/{id}",
             patch(privacy::patch_processor_record),
         )
+        .route("/v1/privacy/dpia-template", get(privacy::get_dpia_template))
         .route(
             "/v1/privacy/dpias",
             get(privacy::list_dpia_records).post(privacy::create_dpia_record),

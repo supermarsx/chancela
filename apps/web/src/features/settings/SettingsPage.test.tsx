@@ -4,6 +4,7 @@ import { SettingsPage } from './SettingsPage';
 import {
   DEFAULT_SETTINGS,
   RETENTION_DISPOSAL_ACTIONS,
+  type DpiaTemplateView,
   type PrivacyAdvisoryReviewStatus,
   type PrivacyAdvisoryReviewSummary,
   type RetentionCandidateResolutionRecord,
@@ -139,6 +140,136 @@ const DPIA_ONE = {
   created_by: 'amelia.marques',
   updated_at: '2026-07-09T11:00:00Z',
   updated_by: 'amelia.marques',
+};
+
+const DPIA_TEMPLATE: DpiaTemplateView = {
+  schema: 'chancela-privacy-dpia-template/v1',
+  template_id: 'privacy-dpia-guidance/v1',
+  title: 'Local DPIA guidance template',
+  version: 1,
+  language: 'en',
+  scope: 'local_offline_guidance_only',
+  local_offline_guidance_only: true,
+  sections: [
+    {
+      id: 'processing_description',
+      title: 'Processing description',
+      description: 'Use placeholders only; do not paste live register records.',
+      prompts: ['What processing activity is being assessed?'],
+      checklist: [
+        {
+          id: 'activity_label',
+          label: 'Processing activity label',
+          field_type: 'text',
+          required: true,
+        },
+      ],
+    },
+    {
+      id: 'necessity_proportionality',
+      title: 'Necessity and proportionality prompts',
+      description: 'Guide human review without deciding legal sufficiency.',
+      prompts: ['What lower-impact alternatives should be considered?'],
+      checklist: [
+        {
+          id: 'necessity_rationale',
+          label: 'Necessity rationale prompt',
+          field_type: 'textarea',
+          required: true,
+        },
+      ],
+    },
+    {
+      id: 'risk_prompts',
+      title: 'Risk prompts',
+      description: 'Qualitative prompts only; no scoring authority.',
+      prompts: ['What unresolved questions require escalation?'],
+      checklist: [
+        {
+          id: 'risk_review_note',
+          label: 'Human risk review note',
+          field_type: 'review_note',
+          required: false,
+        },
+      ],
+    },
+    {
+      id: 'safeguards',
+      title: 'Safeguards',
+      description: 'List safeguards for later human review.',
+      prompts: ['Which safeguards should be evidenced?'],
+      checklist: [
+        {
+          id: 'evidence_references',
+          label: 'Local evidence references',
+          field_type: 'evidence_reference',
+          required: false,
+        },
+      ],
+    },
+    {
+      id: 'consultation_escalation',
+      title: 'Consultation and escalation prompts',
+      description: 'Escalation prompts without authority approval claims.',
+      prompts: ['What blocker prevents treating this as reviewed?'],
+      checklist: [
+        {
+          id: 'next_operator_action',
+          label: 'Next operator action',
+          field_type: 'review_note',
+          required: true,
+        },
+      ],
+    },
+    {
+      id: 'evidence_boundaries',
+      title: 'Evidence and no-claim boundaries',
+      description: 'Keep local/offline boundaries and false flags visible.',
+      prompts: ['Which no-claim flags remain false?'],
+      checklist: [
+        {
+          id: 'false_no_claim_flags',
+          label: 'False no-claim flags acknowledged',
+          field_type: 'checklist',
+          required: true,
+        },
+      ],
+    },
+  ],
+  operator_actions: [
+    'Review the prompts before any separate DPIA register update.',
+    'Keep authority, legal, external, scoring, completion, certification, and mutation claims false.',
+  ],
+  no_claims: {
+    authority_filing_completed: false,
+    authority_approval_obtained: false,
+    cnpd_filing_completed: false,
+    edpb_filing_completed: false,
+    cnpd_or_edpb_approval_obtained: false,
+    legal_review_accepted: false,
+    legal_validation_completed: false,
+    external_validation_completed: false,
+    external_legal_validation_completed: false,
+    external_delivery_completed: false,
+    dpia_completed: false,
+    dpia_completion_certified: false,
+    compliance_certification_completed: false,
+    transfer_approval_claimed: false,
+    transfer_execution_claimed: false,
+    authority_notification_claimed: false,
+    subject_notification_claimed: false,
+    automated_risk_scoring_performed: false,
+    risk_score_authority_claimed: false,
+    automated_legal_decision_made: false,
+    register_mutation_performed: false,
+    external_call_performed: false,
+    raw_register_contents_included: false,
+    processor_names_included: false,
+    data_subjects_included: false,
+    recipients_included: false,
+    personal_data_included: false,
+    secrets_included: false,
+  },
 };
 
 function advisoryReviewSummary(
@@ -1882,6 +2013,12 @@ function privacyFetch(
       }
       return Promise.resolve(jsonResponse(retentionDueCandidatesReport));
     }
+    if (url.includes('/v1/privacy/dpia-template')) {
+      if (method !== 'GET') {
+        return Promise.resolve(jsonResponse({ error: 'method not allowed' }, 405));
+      }
+      return Promise.resolve(jsonResponse(DPIA_TEMPLATE));
+    }
     if (url.includes('/v1/privacy/processors')) {
       if (method === 'POST') {
         const body = JSON.parse(init?.body as string) as Omit<ProcessorRecordMetadata, 'id'>;
@@ -3099,6 +3236,63 @@ describe('SettingsPage', () => {
       target: { value: 'critical' },
     });
     expect(await within(dpiaPanel!).findByText('Sem resultados')).toBeTruthy();
+  });
+
+  it('renders the static DPIA guidance pack without echoing live register values', async () => {
+    const sentinelProcessor = {
+      ...PROCESSOR_ONE,
+      name: 'SENTINEL_LIVE_PROCESSOR_NAME',
+      legal_basis: 'SENTINEL_LIVE_PROCESSOR_LEGAL_BASIS',
+      subprocessors: ['SENTINEL_LIVE_SUBPROCESSOR_NAME'],
+    };
+    const sentinelDpia = {
+      ...DPIA_ONE,
+      title: 'SENTINEL_LIVE_DPIA_TITLE',
+      purpose: 'SENTINEL_LIVE_DPIA_PURPOSE',
+      legal_basis: 'SENTINEL_LIVE_DPIA_LEGAL_BASIS',
+      subprocessors: ['SENTINEL_LIVE_DPIA_SUBPROCESSOR'],
+      evidence_receipts: [
+        {
+          ...DPIA_ONE.evidence_receipts[0],
+          notes: 'SENTINEL_LIVE_DPIA_NOTE',
+        },
+      ],
+    };
+    const { fn, calls } = privacyFetch([sentinelProcessor], [sentinelDpia]);
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+
+    const panel = (await screen.findByText('Modelo DPIA local')).closest('section');
+    expect(panel).toBeTruthy();
+    expect(await within(panel!).findByText('privacy-dpia-guidance/v1')).toBeTruthy();
+    expect(within(panel!).getByText('Processing description')).toBeTruthy();
+    expect(within(panel!).getByText('Risk prompts')).toBeTruthy();
+    expect(within(panel!).getByText(/authority_filing_completed:/)).toBeTruthy();
+    expect(within(panel!).getByText(/automated_risk_scoring_performed:/)).toBeTruthy();
+    expect(within(panel!).getByText(/register_mutation_performed:/)).toBeTruthy();
+    expect(within(panel!).getByText(/external_call_performed:/)).toBeTruthy();
+
+    for (const forbidden of [
+      'SENTINEL_LIVE_PROCESSOR_NAME',
+      'SENTINEL_LIVE_PROCESSOR_LEGAL_BASIS',
+      'SENTINEL_LIVE_SUBPROCESSOR_NAME',
+      'SENTINEL_LIVE_DPIA_TITLE',
+      'SENTINEL_LIVE_DPIA_PURPOSE',
+      'SENTINEL_LIVE_DPIA_LEGAL_BASIS',
+      'SENTINEL_LIVE_DPIA_SUBPROCESSOR',
+      'SENTINEL_LIVE_DPIA_NOTE',
+      'password_hash',
+      'api_key_secret',
+    ]) {
+      expect(within(panel!).queryByText(forbidden)).toBeNull();
+    }
+
+    await waitFor(() => {
+      expect(calls.some((call) => call.url.endsWith('/v1/privacy/dpia-template'))).toBe(true);
+    });
+    const templateCalls = calls.filter((call) => call.url.endsWith('/v1/privacy/dpia-template'));
+    expect(templateCalls.every((call) => call.method === 'GET')).toBe(true);
   });
 
   it('creates and patches DPIA local review receipts from the privacy settings tab', async () => {

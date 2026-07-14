@@ -70,6 +70,14 @@ async fn send(state: AppState, req: Request<Body>) -> (StatusCode, Value) {
     (status, value)
 }
 
+async fn send_status(state: AppState, req: Request<Body>) -> StatusCode {
+    router(state)
+        .oneshot(req)
+        .await
+        .expect("router responds")
+        .status()
+}
+
 fn get(uri: &str) -> Request<Body> {
     Request::builder()
         .uri(uri)
@@ -2028,6 +2036,231 @@ async fn dpia_records_allow_user_manage_list_update_and_audit() {
             && e["actor"] == json!("owner")
             && e.get("payload").is_none()
     }));
+}
+
+#[tokio::test]
+async fn dpia_template_is_static_guidance_only_with_no_echo_or_claims() {
+    let tmp = TempDir::new();
+    let state = AppState::with_data_dir(tmp.dir.clone());
+    let (_owner, owner_token) = bootstrap_owner(&state).await;
+
+    let processor_payload = json!({
+        "name": "SENTINEL_LIVE_PROCESSOR_NAME",
+        "purpose": "SENTINEL_LIVE_PROCESSOR_PURPOSE",
+        "legal_basis": "SENTINEL_LIVE_PROCESSOR_LEGAL_BASIS",
+        "data_categories": ["SENTINEL_LIVE_PROCESSOR_CATEGORY"],
+        "subprocessors": ["SENTINEL_LIVE_SUBPROCESSOR_NAME"],
+        "risk_level": "medium",
+        "status": "active"
+    });
+    let (status, processor) = send(
+        state.clone(),
+        with_session(
+            post_json("/v1/privacy/processors", processor_payload),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "processor seed: {processor}");
+
+    let dpia_payload = json!({
+        "title": "SENTINEL_LIVE_DPIA_TITLE",
+        "purpose": "SENTINEL_LIVE_DPIA_PURPOSE",
+        "legal_basis": "SENTINEL_LIVE_DPIA_LEGAL_BASIS",
+        "data_categories": ["SENTINEL_LIVE_DPIA_CATEGORY"],
+        "subprocessors": ["SENTINEL_LIVE_DPIA_SUBPROCESSOR"],
+        "risk_level": "high",
+        "status": "under_review",
+        "evidence_receipt": {
+            "evidence_type": "review",
+            "notes": "SENTINEL_LIVE_DPIA_NOTE",
+            "authority_filing_completed": false,
+            "legal_review_accepted": false,
+            "legal_certification_completed": false,
+            "external_delivery_completed": false,
+            "dpia_completed": false,
+            "compliance_certification_completed": false
+        }
+    });
+    let (status, dpia) = send(
+        state.clone(),
+        with_session(post_json("/v1/privacy/dpias", dpia_payload), &owner_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "dpia seed: {dpia}");
+
+    let (status, before_events) = send(
+        state.clone(),
+        with_session(get("/v1/ledger/events?limit=1000"), &owner_token),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "ledger before template: {before_events}"
+    );
+    let before_event_count = before_events.as_array().expect("ledger events").len();
+
+    let (status, template) = send(
+        state.clone(),
+        with_session(get("/v1/privacy/dpia-template"), &owner_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "template fetch: {template}");
+    assert_eq!(
+        template["schema"],
+        json!("chancela-privacy-dpia-template/v1")
+    );
+    assert_eq!(template["template_id"], json!("privacy-dpia-guidance/v1"));
+    assert_eq!(template["scope"], json!("local_offline_guidance_only"));
+    assert_eq!(template["local_offline_guidance_only"], json!(true));
+    let section_ids: Vec<&str> = template["sections"]
+        .as_array()
+        .expect("sections")
+        .iter()
+        .map(|section| section["id"].as_str().expect("section id"))
+        .collect();
+    assert_eq!(
+        section_ids,
+        vec![
+            "processing_description",
+            "necessity_proportionality",
+            "risk_prompts",
+            "safeguards",
+            "consultation_escalation",
+            "evidence_boundaries",
+        ]
+    );
+    assert!(
+        template["sections"]
+            .as_array()
+            .expect("sections")
+            .iter()
+            .all(|section| {
+                section["prompts"]
+                    .as_array()
+                    .is_some_and(|prompts| !prompts.is_empty())
+                    && section["checklist"]
+                        .as_array()
+                        .is_some_and(|checklist| !checklist.is_empty())
+            }),
+        "every section has prompts and checklist fields"
+    );
+
+    let no_claims = template["no_claims"].as_object().expect("no_claims object");
+    for flag in [
+        "authority_filing_completed",
+        "authority_approval_obtained",
+        "cnpd_filing_completed",
+        "edpb_filing_completed",
+        "cnpd_or_edpb_approval_obtained",
+        "legal_review_accepted",
+        "legal_validation_completed",
+        "external_validation_completed",
+        "external_legal_validation_completed",
+        "external_delivery_completed",
+        "dpia_completed",
+        "dpia_completion_certified",
+        "compliance_certification_completed",
+        "transfer_approval_claimed",
+        "transfer_execution_claimed",
+        "authority_notification_claimed",
+        "subject_notification_claimed",
+        "automated_risk_scoring_performed",
+        "risk_score_authority_claimed",
+        "automated_legal_decision_made",
+        "register_mutation_performed",
+        "external_call_performed",
+        "raw_register_contents_included",
+        "processor_names_included",
+        "data_subjects_included",
+        "recipients_included",
+        "personal_data_included",
+        "secrets_included",
+    ] {
+        assert_eq!(no_claims.get(flag), Some(&json!(false)), "{flag} false");
+    }
+
+    let template_text = template.to_string();
+    for forbidden in [
+        "SENTINEL_LIVE_PROCESSOR_NAME",
+        "SENTINEL_LIVE_PROCESSOR_PURPOSE",
+        "SENTINEL_LIVE_PROCESSOR_LEGAL_BASIS",
+        "SENTINEL_LIVE_PROCESSOR_CATEGORY",
+        "SENTINEL_LIVE_SUBPROCESSOR_NAME",
+        "SENTINEL_LIVE_DPIA_TITLE",
+        "SENTINEL_LIVE_DPIA_PURPOSE",
+        "SENTINEL_LIVE_DPIA_LEGAL_BASIS",
+        "SENTINEL_LIVE_DPIA_CATEGORY",
+        "SENTINEL_LIVE_DPIA_SUBPROCESSOR",
+        "SENTINEL_LIVE_DPIA_NOTE",
+        "password_hash",
+        "recovery_phrase",
+        "api_key_secret",
+        "bearer_token",
+    ] {
+        assert!(
+            !template_text.contains(forbidden),
+            "template must not echo {forbidden}"
+        );
+    }
+
+    let (status, after_events) = send(
+        state.clone(),
+        with_session(get("/v1/ledger/events?limit=1000"), &owner_token),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "ledger after template: {after_events}"
+    );
+    assert_eq!(
+        after_events.as_array().expect("ledger events").len(),
+        before_event_count,
+        "GET template does not append audit/mutation events"
+    );
+
+    let (status, dpias_after) = send(
+        state.clone(),
+        with_session(get("/v1/privacy/dpias"), &owner_token),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "dpias after template: {dpias_after}"
+    );
+    assert_eq!(dpias_after.as_array().expect("dpias after").len(), 1);
+
+    let (status, processors_after) = send(
+        state.clone(),
+        with_session(get("/v1/privacy/processors"), &owner_token),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "processors after template: {processors_after}"
+    );
+    assert_eq!(
+        processors_after.as_array().expect("processors after").len(),
+        1
+    );
+
+    let status = send_status(
+        state,
+        with_session(
+            post_json("/v1/privacy/dpia-template", json!({"claim": "mutate"})),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_ne!(
+        status,
+        StatusCode::OK,
+        "DPIA template exposes no successful mutation route"
+    );
 }
 
 #[tokio::test]
