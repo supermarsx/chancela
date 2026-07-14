@@ -7986,6 +7986,56 @@ function assertCheckpointMap() {
     "data management cleanup list marker",
   );
   assertFileContains(
+    "crates/chancela-api/src/data_status.rs",
+    'CleanupTarget::PlatformLogs => "platform_logs"',
+    "API platform-log cleanup target id marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "data_cleanup_platform_logs_deletes_sidecar_and_clears_ring_only",
+    "API platform-log cleanup sidecar-only coverage marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/data_status.rs",
+    "protected target resolved outside the data directory",
+    "API platform-log cleanup canonical path safety marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/data_status.rs",
+    "require_permission(&state, &actor, Permission::SettingsManage, Scope::Global).await?",
+    "API data cleanup settings.manage gate marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "target: 'platform_logs'",
+    "data management platform-log cleanup row target marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "data.status.help.platformLogsCleanup",
+    "data management platform-log cleanup help marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "cleanupRows).toHaveLength(3)",
+    "data management three cleanup rows coverage marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "Remove apenas o ficheiro local platform-logs.json",
+    "data management platform-log sidecar-only row copy marker",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/locales/en-GB.ts",
+    "It does not remove stdout/stderr, SIEM, ledger or audit-chain records.",
+    "data management platform-log cleanup no-stdout-SIEM-audit-locale marker",
+  );
+  assertFileContains(
+    "apps/web/src/api/types.ts",
+    "export type DataCleanupTarget = 'crash' | 'exports' | 'platform_logs';",
+    "web data cleanup target union platform_logs marker",
+  );
+  assertFileContains(
     "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
     "previews retained export cleanup before explicit confirmed execution",
     "data management retained-export preview-before-execution coverage",
@@ -9711,12 +9761,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `b86adb3`",
+    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `3a42f02`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `b86adb3`",
+    "Focused Gate Snapshot Through `3a42f02`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -10341,7 +10391,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `b86adb3`",
+    "Current checkpoint metadata/static checks through `3a42f02`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -10831,8 +10881,63 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `b86adb3c9a6b3913792600e3c5c27e54f675e471`",
+    "implementation snapshot `3a42f02e09f1445e7639e13bf27fdcc0588d105d`",
     "spec coverage current implementation snapshot marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Current `3a42f02` keeps Data/Architecture/UX/CI **PARTIAL**",
+    "spec coverage platform-log cleanup checkpoint marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "`platform_logs` maintenance target under the\n  existing `settings.manage` gate",
+    "spec coverage platform-log cleanup settings.manage marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "deletes only the `platform-logs.json` sidecar root",
+    "spec coverage platform-log cleanup sidecar-only marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "adds no stdout/stderr capture, MCP child-process logging, SIEM/log\n  shipping, platform audit/ledger deletion",
+    "spec coverage platform-log cleanup no stdout/SIEM/audit deletion marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "legal retention, archive disposal, compliance\n  completion, or broader data-lifecycle claim",
+    "spec coverage platform-log cleanup no legal/compliance marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "bounded platform-log\nsidecar cleanup target markers",
+    "CI checkpoints platform-log cleanup lane marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "data_cleanup_platform_logs_deletes_sidecar_and_clears_ring_only",
+    "CI checkpoints platform-log cleanup command marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "They do not prove stdout/stderr capture or cleanup,\nMCP process-log collection, SIEM/log shipping, audit/ledger deletion",
+    "CI checkpoints platform-log cleanup no stdout/SIEM/audit marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "bounded platform-log sidecar cleanup target coverage",
+    "CI/E2E hardening plan platform-log cleanup top marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Platform-log cleanup uses the `platform_logs` target, is constrained to the\n  canonical configured data directory",
+    "CI/E2E hardening plan platform-log cleanup canonical marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "does not clean\n  stdout/stderr, SIEM/log shipping, audit/ledger records",
+    "CI/E2E hardening plan platform-log cleanup no stdout/SIEM/audit marker",
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",

@@ -1,6 +1,6 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-14 from current implementation snapshot `b86adb3c9a6b3913792600e3c5c27e54f675e471`,
+*Updated 2026-07-14 from current implementation snapshot `3a42f02e09f1445e7639e13bf27fdcc0588d105d`,
 with committed evidence refreshes for the recently landed Signatures & Trust
 provider-credential, stored runtime credential resolution, stored PKCS#12,
 remote batch-initiation surfaces, and Docker/Compose runtime-hardening
@@ -171,7 +171,8 @@ user-role, delegation, and role-catalog mutations, `47ed33b` PDF/UA
 blocker-delta evidence without a conformance claim, `b680b36` MCP meeting
 metadata extraction review over caller-supplied local JSON/text metadata only,
 and `b86adb3` deterministic local template law-reference audit coverage against
-the embedded corpus.
+the embedded corpus, followed by `3a42f02` bounded platform-log cleanup target
+coverage.
 Earlier coverage text remains prior snapshot context. All top-level spec areas remain **PARTIAL**.
 This is an implementation and test coverage snapshot, not a legal certification,
 not production CMD approval, not DRE verification promotion, not full PDF/UA
@@ -201,6 +202,22 @@ being useful. The matrix below records the current factual coverage and the rema
 blockers.
 
 Implementation checkpoints covered here:
+
+- Current `3a42f02` keeps Data/Architecture/UX/CI **PARTIAL**: `POST
+  /v1/data/cleanup` now accepts the `platform_logs` maintenance target under the
+  existing `settings.manage` gate, resolves cleanup targets under the canonical
+  configured data directory, deletes only the `platform-logs.json` sidecar root
+  selected by the data-status classifier, and clears the current in-memory
+  platform log ring so the Settings Data Management row reflects the sidecar
+  removal. The web Data Management panel now shows a compact platform-log
+  maintenance row alongside crash reports and retained exports, with source
+  locale copy saying it removes only the local `platform-logs.json` queue and
+  does not touch ledger, audit, books, acts, settings, stdout/stderr, SIEM, or
+  the audit chain. This is bounded local platform-log sidecar maintenance only:
+  it adds no stdout/stderr capture, MCP child-process logging, SIEM/log
+  shipping, platform audit/ledger deletion, durable log-retention policy,
+  retention/disposal execution, legal retention, archive disposal, compliance
+  completion, or broader data-lifecycle claim.
 
 - Current `b86adb3` keeps Legal/Compliance, Template Catalog, and CI
   **PARTIAL**: `cargo test -p chancela-api --test law_reference_coverage
@@ -621,7 +638,7 @@ Implementation checkpoints covered here:
   readiness, TLS/remote PG readiness, multi-node operational certification,
   backup-policy/RPO/RTO certification, legal/DR certification, external sync
   readiness, or a replacement for SQLite/SQLCipher validation.
-- Working tree keeps Data/Architecture/CI **PARTIAL**: data-status filesystem
+- Current `bac4337` keeps Data/Architecture/CI **PARTIAL**: data-status filesystem
   telemetry now classifies `platform-logs.json` under `platform_logs` and
   `backup-recovery-drills.json` under `backup_recovery_drills`, while preserving
   the existing durable data-folder permission/status behavior and filesystem
@@ -3141,8 +3158,11 @@ behavior, legal disposal, or legal-effect claims.
   persistence mode, configured data folder, directory existence/type, read/create/write/delete
   permission probes, durable SQLite open state, schema/ledger counters, and filesystem plus SQLite
   logical usage breakdowns. `POST /v1/data/cleanup` is gated by `settings.manage` and performs
-  maintenance cleanup for crash reports and retained exports only, reporting requested/skipped
-  targets and byte counts without broad deletion semantics. Retained-export cleanup now has
+  maintenance cleanup for crash reports, platform-log sidecar files, and retained exports, reporting
+  requested/skipped targets and byte counts without broad deletion semantics. Platform-log cleanup
+  resolves the configured data directory before deleting only the `platform-logs.json` sidecar root
+  and clearing the current API ring; it does not remove audit/ledger/domain records or stdout/stderr/
+  SIEM material. Retained-export cleanup now has
   export-only dry-run, minimum-age, and keep-latest policy controls; dry-run reports
   `would_delete_files`, `would_delete_directories`, and `would_delete_bytes`, returns a
   server-bound `preview_token`, keeps every `deleted_*` counter at zero, and rejects those
@@ -4266,7 +4286,11 @@ behavior, legal disposal, or legal-effect claims.
   transfers, accept/certify legal review, complete DPIAs, deliver externally, mutate registers from
   the template, call external services, produce automated legal decisions/risk-scoring authority, or
   certify GDPR compliance.
-- Data cleanup is bounded storage maintenance for crash reports and retained exports. Retained-export
+- Data cleanup is bounded storage maintenance for crash reports, platform-log sidecar files, and
+  retained exports. Platform-log cleanup removes only the local `platform-logs.json` sidecar target
+  selected under the canonical configured data directory and clears the current API ring; it is not
+  stdout/stderr capture cleanup, SIEM/log-shipping cleanup, platform audit/ledger deletion, legal
+  retention, archive disposal, or compliance completion. Retained-export
   dry-run, minimum-age, and keep-latest options are policy controls for that cleanup target only; the
   dry-run surface reports `would_delete_*` planning counters, a server-bound `preview_token`, and zero
   `deleted_*` counters. The Settings preview states that no files were removed; retained-export
@@ -4279,8 +4303,9 @@ behavior, legal disposal, or legal-effect claims.
   server-selected retained-export manifest.
 - Data-status filesystem categories for `platform-logs.json` and
   `backup-recovery-drills.json` are telemetry labels for usage/status display.
-  They do not change cleanup targets, execute retention, delete files, prove
-  legal custody, or certify data-lifecycle compliance.
+  The `platform_logs` label is now also the bounded cleanup selector for the
+  platform-log sidecar only; it does not execute retention, delete audit/ledger
+  or domain records, prove legal custody, or certify data-lifecycle compliance.
 - Retention due-candidate scanner rows, review-only `execution_request` records,
   bounded archive/no-action evidence records, retention execution history,
   workflow blockers, required approvals, operator decisions, and audit evidence

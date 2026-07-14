@@ -57,7 +57,8 @@ bounded archive/no-action evidence UI, plus active/suppressed candidate counts
 and suppression-summary copy for safe bounded evidence omissions, retention
 review-closure route/client/contract/Settings/browser markers with separate
 closure fields and false mutation flags,
-retained-export cleanup preview-token/manifest gating, compliance legal-basis
+retained-export cleanup preview-token/manifest gating, bounded platform-log
+sidecar cleanup target markers, compliance legal-basis
 internal Legislação corpus deep links, forwarded platform-log sanitized
 accepted/denied/rejected/suppressed audit markers, the first-class
 `template_catalog_metadata_lint` command for post-act template
@@ -398,6 +399,8 @@ It intentionally reuses existing test surfaces:
   archive completion.
 - API retained-export cleanup preview-token/manifest execution:
   `cargo test -p chancela-api --locked data_cleanup_`
+- API platform-log sidecar cleanup target:
+  `cargo test -p chancela-api --locked data_cleanup_platform_logs_deletes_sidecar_and_clears_ring_only`
 - API data key operations:
   `cargo test -p chancela-api --test data_key_ops --locked`
 - API seeded role drift diagnostic:
@@ -652,6 +655,12 @@ include focused Playwright auth proof in `apps/web/e2e/session.spec.ts` and
 remains unclaimed. They are not SSO, legal identity proof, tenant model, email
 verification, credential recovery completion, or broad Playwright-browser-suite
 proof.
+Platform-log cleanup markers pin only the `settings.manage`-gated
+`platform_logs` storage-maintenance target for the local `platform-logs.json`
+sidecar/current API ring. They do not prove stdout/stderr capture or cleanup,
+MCP process-log collection, SIEM/log shipping, audit/ledger deletion, domain
+record deletion, log-retention/disposal execution, or legal/compliance
+completion.
 Static markers are deletion/rename guards only; the retention archive/no-action
 markers pin explicit non-destructive evidence states, bounded evidence UI
 copy/payload shape, active/suppressed candidate counts, and suppression-summary

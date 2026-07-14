@@ -1,7 +1,7 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `b86adb3`,
+and implementation snapshot `3a42f02`,
 including coverage notes for the bounded PAdES DSS validation-time, PDF/UA v11
 blocker-delta and scoped table-header evidence, retention due-candidate explicit evidence states,
 bounded archive/no-action evidence UI, duplicate-review guard/status surfacing, and
@@ -15,6 +15,7 @@ CSC quota/delegation/revocation and standalone agenda-item template parity,
 retained-export cleanup preview-token/manifest-gated execution evidence,
 compliance legal-basis internal corpus deep links, first-class template catalog metadata lint,
 deterministic local template law-reference corpus audit coverage,
+bounded platform-log sidecar cleanup target coverage,
 external-signing workflow-only envelope UI, workflow reminder policy, and
 structured platform-log forwarded-ingest/failure-audit slices, ROL-02 seeded
 role archetype explicitness, Postgres store runtime write/read marker coverage,
@@ -129,9 +130,14 @@ test operating checklist for driving Chancela toward release confidence.
 - Release packages are unsigned/not notarized, and Docker images are not
   signed/attested.
 - The current Data Management slice adds `settings.manage`-gated cleanup for
-  crash reports and retained exports plus SQLite logical usage estimates,
+  crash reports, the local platform-log sidecar, and retained exports plus SQLite logical usage estimates,
   including per-table logical payload entries surfaced in the web UI. Treat it
   as storage maintenance coverage, not legal data-lifecycle certification.
+  Platform-log cleanup uses the `platform_logs` target, is constrained to the
+  canonical configured data directory, removes only the `platform-logs.json`
+  sidecar selected by the data-status classifier, clears the current API ring,
+  and leaves ledger/audit/domain records, stdout/stderr, SIEM/log shipping,
+  legal retention, disposal, and compliance claims out of scope.
   The retained-export action now uses export-only dry-run planning for the
   Settings preview: `would_delete_*` counters and a server-bound `preview_token`
   are reported while `deleted_*` counters stay zero, and the preview copy states
@@ -648,7 +654,7 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
   or context, and stream or secret-like context keys; writes accepted entries
   only when global/service thresholds allow them; and appends sanitized ledger
   events only for accepted retained entries.
-- Storage cleanup presents crash reports and retained exports as separate
+- Storage cleanup presents crash reports, platform logs, and retained exports as separate
   bounded maintenance rows, rejects unknown cleanup targets, and preserves
   permission/usage diagnostics after a failed cleanup. Retained-export dry-run
   preview reports `would_delete_*` plus a server-bound `preview_token`, keeps
@@ -657,6 +663,10 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
   preview plus the shared confirmation modal, posts the `preview_token`, rejects
   missing/stale/mismatched tokens, executes only the server-selected preview
   manifest, and renders `deleted_*` execution counts.
+  Platform-log cleanup is a direct `platform_logs` maintenance target only for
+  the local `platform-logs.json` sidecar/current API ring; it does not clean
+  stdout/stderr, SIEM/log shipping, audit/ledger records, domain records, or
+  any legal-retention/disposal surface.
 - SQLCipher package defaults are checked statically, and plaintext development
   paths remain explicit so local tests do not silently claim production
   encrypted deployment.
@@ -830,11 +840,11 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `b86adb3`
+## Focused Gate Snapshot Through `3a42f02`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08` and checkpoint-promoted on 2026-07-14 for
-current implementation head `b86adb3`. This is not an exhaustive current
+current implementation head `3a42f02`. This is not an exhaustive current
 green-run claim; browser, Docker, desktop, package signing/notarization, image
 signing/attestation, and live-provider limits above still apply.
 
@@ -1817,7 +1827,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   full RBAC/delegation-policy completion, tenant authorization proof,
   legal-capacity verification, broad security certification, or spec
   completion.
-- Current checkpoint metadata/static checks through `b86adb3`
+- Current checkpoint metadata/static checks through `3a42f02`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
@@ -1827,7 +1837,8 @@ settingsDefaults.test.ts contracts.test.ts`.
   hardening-plan head, MCP meeting metadata extraction review resource, PDF table-structure semantics, export save-prompt
   routing, dashboard dates tab, notification footer icon-only action, and
   clarified platform operations UI, user/signatory email capture, and compact
-  Data Management cleanup controls, retained-export dry-run planning with
+  Data Management cleanup controls, platform-log cleanup target/row markers,
+  retained-export dry-run planning with
   `would_delete_*`/zero-`deleted_*` counters and preview-only no-files-removed
   Settings payload markers, retained-export preview-token/manifest-gated
   execution markers with `deleted_*` result counters and no deletion outside the
