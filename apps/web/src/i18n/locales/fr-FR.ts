@@ -4204,4 +4204,50 @@ export const frFR: Catalog = {
   'settings.providerCredentials.field.friendlyName': 'Nom convivial',
   'settings.providerCredentials.field.localKeyId': 'Local key ID (hex)',
   'settings.providerCredentials.field.pfx': 'Fichier PKCS#12/PFX',
+  'settings.providerCredentials.help.mode':
+    'Type de fournisseur de signature à configurer. Ex. : CSC/QTSP pour la signature à distance, PKCS#12 pour un certificat local.',
+  'settings.providerCredentials.help.providerId':
+    'Identifiant interne qui distingue ce fournisseur des autres du même type. Ex. : « encosto-qtsp ».',
+  'settings.providerCredentials.help.label':
+    'Nom libre pour reconnaître cette entrée dans la liste. Ex. : « Clé principale » ou « Secours ».',
+  'settings.providerCredentials.help.enabled':
+    'Lorsqu’elle est active, cette entrée rejoint la chaîne de secours ; désactivez-la pour l’exclure sans la supprimer.',
+  'settings.providerCredentials.help.endpoint':
+    'URL de base de l’API du fournisseur, remplaçant la valeur par défaut. Ex. : https://qtsp.example.com/csc/v1',
+  'settings.providerCredentials.help.pfx':
+    'Fichier de certificat .pfx/.p12 contenant la clé privée de signature. Ex. : « signature.pfx » exporté de la PKI.',
+  'settings.providerCredentials.help.applicationId':
+    'ApplicationId attribué par l’AMA pour la Chave Móvel Digital / SCAP. Ex. : un GUID comme 1a2b3c4d-5e6f-7890-abcd-ef1234567890.',
+  'settings.providerCredentials.help.httpBasicUsername':
+    'Nom d’utilisateur d’authentification HTTP Basic, lorsque le fournisseur l’exige devant l’API. Ex. : « chancela-prod ».',
+  'settings.providerCredentials.help.httpBasicPassword':
+    'Mot de passe d’authentification HTTP Basic accompagnant l’utilisateur. Ex. : une longue chaîne secrète fournie par le fournisseur.',
+  'settings.providerCredentials.help.amaCertPem':
+    'Certificat client de l’AMA au format PEM, utilisé pour le TLS mutuel avec SCMD. Ex. : le bloc « -----BEGIN CERTIFICATE-----… ».',
+  'settings.providerCredentials.help.clientId':
+    'Identifiant OAuth2 du client attribué par le QTSP. Ex. : « chancela-prod ».',
+  'settings.providerCredentials.help.clientSecret':
+    'Secret OAuth2 du client associé au Client ID. Ex. : une longue chaîne secrète attribuée par le QTSP.',
+  'settings.providerCredentials.help.accessToken':
+    'Jeton d’accès déjà émis, en alternative au flux Client ID/secret. Ex. : une chaîne « eyJ… » à validité limitée.',
+  'settings.providerCredentials.help.secret':
+    'Secret de l’application SCAP attribué par l’AMA. Ex. : une longue chaîne secrète émise lors de l’enregistrement de l’application.',
+  'settings.providerCredentials.help.passphrase':
+    'Mot de passe qui protège le fichier .pfx/.p12. Ex. : celui défini lors de l’exportation du certificat.',
+  'settings.providerCredentials.help.env':
+    'Environnement du fournisseur auquel cette entrée se connecte. Ex. : « Préproduction » pour les tests, « Production » pour un usage réel.',
+  'settings.providerCredentials.help.authorization':
+    'Comment la session de signature est autorisée auprès du QTSP. Ex. : « Service » pour les identifiants du compte, « Utilisateur » quand chaque signataire autorise.',
+  'settings.providerCredentials.help.credentialId':
+    'Identifiant de la credential de signature au QTSP lorsqu’il en expose plusieurs. Ex. : « cred-12ab34 ».',
+  'settings.providerCredentials.help.scope':
+    'Portées OAuth2 demandées au QTSP, séparées par des espaces. Ex. : « service credential ».',
+  'settings.providerCredentials.help.sandbox':
+    'Active le mode test du fournisseur, sans effet réel. Ex. : activé pendant l’intégration, désactivé en production.',
+  'settings.providerCredentials.help.environment':
+    'Environnement du service SCAP auquel cette entrée se connecte. Ex. : « Préproduction » pour les tests, « Production » pour un usage réel.',
+  'settings.providerCredentials.help.friendlyName':
+    'Sélectionne l’identité dans un .pfx à plusieurs certificats, par le nom convivial. Ex. : « Ma signature ».',
+  'settings.providerCredentials.help.localKeyId':
+    'Sélectionne l’identité dans un .pfx par le localKeyId en hexadécimal. Ex. : « 3a7f9c2b ».',
 };

@@ -4166,4 +4166,50 @@ export const ptPT = {
   'settings.providerCredentials.field.friendlyName': 'Nome amigável',
   'settings.providerCredentials.field.localKeyId': 'Local key ID (hex)',
   'settings.providerCredentials.field.pfx': 'Ficheiro PKCS#12/PFX',
+  'settings.providerCredentials.help.mode':
+    'Tipo de fornecedor de assinatura a configurar. Ex.: CSC/QTSP para assinatura remota, PKCS#12 para um certificado local.',
+  'settings.providerCredentials.help.providerId':
+    'Identificador interno que distingue este fornecedor dos restantes do mesmo tipo. Ex.: «encosto-qtsp».',
+  'settings.providerCredentials.help.label':
+    'Nome livre para reconhecer esta entrada na lista. Ex.: «Chave primária» ou «Contingência».',
+  'settings.providerCredentials.help.enabled':
+    'Quando ativa, esta entrada entra na cadeia de recurso; desative para a excluir sem a apagar.',
+  'settings.providerCredentials.help.endpoint':
+    'URL base da API do fornecedor, substituindo o valor por omissão. Ex.: https://qtsp.exemplo.pt/csc/v1',
+  'settings.providerCredentials.help.pfx':
+    'Ficheiro de certificado .pfx/.p12 que contém a chave privada de assinatura. Ex.: «assinatura.pfx» exportado da PKI.',
+  'settings.providerCredentials.help.applicationId':
+    'ApplicationId atribuído pela AMA para a Chave Móvel Digital / SCAP. Ex.: um GUID como 1a2b3c4d-5e6f-7890-abcd-ef1234567890.',
+  'settings.providerCredentials.help.httpBasicUsername':
+    'Utilizador de autenticação HTTP Basic, quando o fornecedor a exige à frente da API. Ex.: «chancela-prod».',
+  'settings.providerCredentials.help.httpBasicPassword':
+    'Palavra-passe de autenticação HTTP Basic que acompanha o utilizador. Ex.: uma cadeia secreta longa fornecida pelo fornecedor.',
+  'settings.providerCredentials.help.amaCertPem':
+    'Certificado cliente da AMA em formato PEM, usado no TLS mútuo com o SCMD. Ex.: o bloco «-----BEGIN CERTIFICATE-----…».',
+  'settings.providerCredentials.help.clientId':
+    'Identificador OAuth2 do cliente atribuído pelo QTSP. Ex.: «chancela-prod».',
+  'settings.providerCredentials.help.clientSecret':
+    'Segredo OAuth2 do cliente emparelhado com o Client ID. Ex.: uma cadeia secreta longa atribuída pelo QTSP.',
+  'settings.providerCredentials.help.accessToken':
+    'Token de acesso já emitido, em alternativa ao fluxo Client ID/secret. Ex.: uma cadeia «eyJ…» com validade limitada.',
+  'settings.providerCredentials.help.secret':
+    'Segredo da aplicação SCAP atribuído pela AMA. Ex.: uma cadeia secreta longa emitida ao registar a aplicação.',
+  'settings.providerCredentials.help.passphrase':
+    'Palavra-passe que protege o ficheiro .pfx/.p12. Ex.: a que definiu ao exportar o certificado.',
+  'settings.providerCredentials.help.env':
+    'Ambiente do fornecedor a que esta entrada se liga. Ex.: «Pré-produção» para testes, «Produção» para uso real.',
+  'settings.providerCredentials.help.authorization':
+    'Como a sessão de assinatura é autorizada no QTSP. Ex.: «Serviço» para credenciais da conta, «Utilizador» quando cada signatário autoriza.',
+  'settings.providerCredentials.help.credentialId':
+    'Identificador da credencial de assinatura no QTSP quando expõe várias. Ex.: «cred-12ab34».',
+  'settings.providerCredentials.help.scope':
+    'Âmbitos OAuth2 pedidos ao QTSP, separados por espaços. Ex.: «service credential».',
+  'settings.providerCredentials.help.sandbox':
+    'Ativa o modo de testes do fornecedor, sem efeitos reais. Ex.: ligado durante a integração, desligado em produção.',
+  'settings.providerCredentials.help.environment':
+    'Ambiente do serviço SCAP a que esta entrada se liga. Ex.: «Pré-produção» para testes, «Produção» para uso real.',
+  'settings.providerCredentials.help.friendlyName':
+    'Seleciona a identidade dentro de um .pfx com vários certificados, pelo nome amigável. Ex.: «A minha assinatura».',
+  'settings.providerCredentials.help.localKeyId':
+    'Seleciona a identidade dentro de um .pfx pelo localKeyId em hexadecimal. Ex.: «3a7f9c2b».',
 };

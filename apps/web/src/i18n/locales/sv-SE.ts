@@ -4160,4 +4160,50 @@ export const svSE: Catalog = {
   'settings.providerCredentials.field.friendlyName': 'Visningsnamn',
   'settings.providerCredentials.field.localKeyId': 'Local key ID (hex)',
   'settings.providerCredentials.field.pfx': 'PKCS#12/PFX-fil',
+  'settings.providerCredentials.help.mode':
+    'Typ av signaturleverantör som ska konfigureras. T.ex. CSC/QTSP för fjärrsignering, PKCS#12 för ett lokalt certifikat.',
+  'settings.providerCredentials.help.providerId':
+    'Intern identifierare som skiljer den här leverantören från andra av samma typ. T.ex. ”encosto-qtsp”.',
+  'settings.providerCredentials.help.label':
+    'Fritt namn för att känna igen den här posten i listan. T.ex. ”Primär nyckel” eller ”Reserv”.',
+  'settings.providerCredentials.help.enabled':
+    'När den är aktiv ingår den här posten i failover-kedjan; inaktivera den för att utesluta den utan att radera den.',
+  'settings.providerCredentials.help.endpoint':
+    'Bas-URL för leverantörens API som åsidosätter standardvärdet. T.ex. https://qtsp.example.com/csc/v1',
+  'settings.providerCredentials.help.pfx':
+    'Certifikatfil .pfx/.p12 som innehåller den privata signeringsnyckeln. T.ex. ”signatur.pfx” exporterad från PKI.',
+  'settings.providerCredentials.help.applicationId':
+    'ApplicationId som tilldelats av AMA för Chave Móvel Digital / SCAP. T.ex. ett GUID som 1a2b3c4d-5e6f-7890-abcd-ef1234567890.',
+  'settings.providerCredentials.help.httpBasicUsername':
+    'Användarnamn för HTTP Basic-autentisering, när leverantören kräver det framför API:et. T.ex. ”chancela-prod”.',
+  'settings.providerCredentials.help.httpBasicPassword':
+    'Lösenord för HTTP Basic-autentisering som hör till användarnamnet. T.ex. en lång hemlig sträng från leverantören.',
+  'settings.providerCredentials.help.amaCertPem':
+    'AMA-klientcertifikat i PEM-format, används för ömsesidig TLS med SCMD. T.ex. blocket ”-----BEGIN CERTIFICATE-----…”.',
+  'settings.providerCredentials.help.clientId':
+    'OAuth2-klientidentifierare som tilldelats av QTSP. T.ex. ”chancela-prod”.',
+  'settings.providerCredentials.help.clientSecret':
+    'OAuth2-klienthemlighet som paras med Client ID. T.ex. en lång hemlig sträng tilldelad av QTSP.',
+  'settings.providerCredentials.help.accessToken':
+    'En redan utfärdad åtkomsttoken som alternativ till Client ID/hemlighet-flödet. T.ex. en ”eyJ…”-sträng med begränsad giltighet.',
+  'settings.providerCredentials.help.secret':
+    'SCAP-programhemlighet som tilldelats av AMA. T.ex. en lång hemlig sträng som utfärdas vid registrering av programmet.',
+  'settings.providerCredentials.help.passphrase':
+    'Lösenord som skyddar .pfx/.p12-filen. T.ex. det du angav när du exporterade certifikatet.',
+  'settings.providerCredentials.help.env':
+    'Leverantörsmiljö som den här posten ansluter till. T.ex. ”Förproduktion” för test, ”Produktion” för verklig användning.',
+  'settings.providerCredentials.help.authorization':
+    'Hur signeringssessionen auktoriseras hos QTSP. T.ex. ”Tjänst” för kontouppgifter, ”Användare” när varje undertecknare auktoriserar.',
+  'settings.providerCredentials.help.credentialId':
+    'Identifierare för signeringscredentialen hos QTSP när den exponerar flera. T.ex. ”cred-12ab34”.',
+  'settings.providerCredentials.help.scope':
+    'OAuth2-omfattningar som begärs av QTSP, åtskilda med blanksteg. T.ex. ”service credential”.',
+  'settings.providerCredentials.help.sandbox':
+    'Aktiverar leverantörens testläge, utan verkliga effekter. T.ex. på under integrationen, av i produktion.',
+  'settings.providerCredentials.help.environment':
+    'SCAP-tjänstmiljö som den här posten ansluter till. T.ex. ”Förproduktion” för test, ”Produktion” för verklig användning.',
+  'settings.providerCredentials.help.friendlyName':
+    'Väljer identiteten i en .pfx med flera certifikat utifrån det beskrivande namnet. T.ex. ”Min signatur”.',
+  'settings.providerCredentials.help.localKeyId':
+    'Väljer identiteten i en .pfx utifrån localKeyId i hexadecimal. T.ex. ”3a7f9c2b”.',
 };

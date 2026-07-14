@@ -4167,4 +4167,50 @@ export const fiFI: Catalog = {
   'settings.providerCredentials.field.friendlyName': 'Kuvaava nimi',
   'settings.providerCredentials.field.localKeyId': 'Local key ID (hex)',
   'settings.providerCredentials.field.pfx': 'PKCS#12/PFX-tiedosto',
+  'settings.providerCredentials.help.mode':
+    'Määritettävän allekirjoituspalvelun tyyppi. Esim. CSC/QTSP etäallekirjoitukseen, PKCS#12 paikalliseen varmenteeseen.',
+  'settings.providerCredentials.help.providerId':
+    'Sisäinen tunniste, joka erottaa tämän palveluntarjoajan muista samantyyppisistä. Esim. ”encosto-qtsp”.',
+  'settings.providerCredentials.help.label':
+    'Vapaa nimi tämän merkinnän tunnistamiseksi luettelossa. Esim. ”Ensisijainen avain” tai ”Varajärjestely”.',
+  'settings.providerCredentials.help.enabled':
+    'Kun aktiivinen, tämä merkintä kuuluu vikasietoketjuun; poista käytöstä sulkeaksesi sen pois poistamatta sitä.',
+  'settings.providerCredentials.help.endpoint':
+    'Palveluntarjoajan API:n perus-URL, joka korvaa oletusarvon. Esim. https://qtsp.example.com/csc/v1',
+  'settings.providerCredentials.help.pfx':
+    'Varmennetiedosto .pfx/.p12, joka sisältää yksityisen allekirjoitusavaimen. Esim. ”allekirjoitus.pfx”, viety PKI:stä.',
+  'settings.providerCredentials.help.applicationId':
+    'AMA:n Chave Móvel Digital / SCAP -palvelulle myöntämä ApplicationId. Esim. GUID kuten 1a2b3c4d-5e6f-7890-abcd-ef1234567890.',
+  'settings.providerCredentials.help.httpBasicUsername':
+    'HTTP Basic -todennuksen käyttäjätunnus, kun palveluntarjoaja vaatii sen API:n edessä. Esim. ”chancela-prod”.',
+  'settings.providerCredentials.help.httpBasicPassword':
+    'HTTP Basic -todennuksen salasana, joka kuuluu käyttäjätunnukseen. Esim. pitkä salainen merkkijono palveluntarjoajalta.',
+  'settings.providerCredentials.help.amaCertPem':
+    'AMA:n asiakasvarmenne PEM-muodossa, käytetään keskinäisessä TLS:ssä SCMD:n kanssa. Esim. lohko ”-----BEGIN CERTIFICATE-----…”.',
+  'settings.providerCredentials.help.clientId':
+    'QTSP:n myöntämä OAuth2-asiakastunnus. Esim. ”chancela-prod”.',
+  'settings.providerCredentials.help.clientSecret':
+    'Client ID:hen liitetty OAuth2-asiakassalaisuus. Esim. pitkä salainen QTSP:n myöntämä merkkijono.',
+  'settings.providerCredentials.help.accessToken':
+    'Jo myönnetty käyttöoikeustunnus vaihtoehtona Client ID/salaisuus-kululle. Esim. ”eyJ…”-merkkijono rajoitetulla voimassaololla.',
+  'settings.providerCredentials.help.secret':
+    'AMA:n myöntämä SCAP-sovelluksen salaisuus. Esim. pitkä salainen merkkijono, joka myönnetään sovellusta rekisteröitäessä.',
+  'settings.providerCredentials.help.passphrase':
+    'Salasana, joka suojaa .pfx/.p12-tiedostoa. Esim. se, jonka määritit varmennetta vietäessä.',
+  'settings.providerCredentials.help.env':
+    'Palveluntarjoajan ympäristö, johon tämä merkintä yhdistää. Esim. ”Esituotanto” testaukseen, ”Tuotanto” todelliseen käyttöön.',
+  'settings.providerCredentials.help.authorization':
+    'Miten allekirjoitusistunto valtuutetaan QTSP:ssä. Esim. ”Palvelu” tilin tunnuksille, ”Käyttäjä”, kun kukin allekirjoittaja valtuuttaa.',
+  'settings.providerCredentials.help.credentialId':
+    'Allekirjoitustunnisteen tunniste QTSP:ssä, kun se tarjoaa useita. Esim. ”cred-12ab34”.',
+  'settings.providerCredentials.help.scope':
+    'QTSP:ltä pyydetyt OAuth2-laajuudet välilyönnein eroteltuina. Esim. ”service credential”.',
+  'settings.providerCredentials.help.sandbox':
+    'Ottaa käyttöön palveluntarjoajan testitilan ilman todellisia vaikutuksia. Esim. päällä integroinnissa, pois tuotannossa.',
+  'settings.providerCredentials.help.environment':
+    'SCAP-palvelun ympäristö, johon tämä merkintä yhdistää. Esim. ”Esituotanto” testaukseen, ”Tuotanto” todelliseen käyttöön.',
+  'settings.providerCredentials.help.friendlyName':
+    'Valitsee identiteetin useita varmenteita sisältävästä .pfx-tiedostosta kuvaavan nimen perusteella. Esim. ”Oma allekirjoitukseni”.',
+  'settings.providerCredentials.help.localKeyId':
+    'Valitsee identiteetin .pfx-tiedostosta localKeyId:n perusteella heksadesimaalina. Esim. ”3a7f9c2b”.',
 };

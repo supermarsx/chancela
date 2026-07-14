@@ -39,6 +39,7 @@ import {
   EmptyState,
   ErrorNote,
   Field,
+  FieldHelp,
   Icon,
   InlineWarning,
   Input,
@@ -49,6 +50,7 @@ import {
 } from '../../ui';
 import { ConfirmActionModal } from '../../ui/ConfirmActionModal';
 import { GateButton, GateIconButton, useCan } from '../session/permissions';
+import { providerCredentialsFieldHelp, providerCredentialFieldHelp } from './fieldHelp';
 
 /** The modes an operator can configure, in display order. */
 const MODES: CredentialMode[] = ['cmd', 'csc', 'scap', 'pkcs12'];
@@ -329,7 +331,11 @@ function EntryForm({
         }}
       >
         {!isEdit && providerId === undefined ? (
-          <Field label={t('settings.providerCredentials.form.mode')} htmlFor={`${idBase}-mode`}>
+          <Field
+            label={t('settings.providerCredentials.form.mode')}
+            htmlFor={`${idBase}-mode`}
+            help={providerCredentialsFieldHelp.mode}
+          >
             <Select
               id={`${idBase}-mode`}
               value={form.mode}
@@ -344,6 +350,7 @@ function EntryForm({
             label={t('settings.providerCredentials.form.providerId')}
             htmlFor={`${idBase}-provider`}
             hint={t('settings.providerCredentials.form.providerIdHint')}
+            help={providerCredentialsFieldHelp.providerId}
           >
             <Input
               id={`${idBase}-provider`}
@@ -354,7 +361,11 @@ function EntryForm({
           </Field>
         ) : null}
 
-        <Field label={t('settings.providerCredentials.form.label')} htmlFor={`${idBase}-label`}>
+        <Field
+          label={t('settings.providerCredentials.form.label')}
+          htmlFor={`${idBase}-label`}
+          help={providerCredentialsFieldHelp.label}
+        >
           <Input
             id={`${idBase}-label`}
             value={form.label}
@@ -365,7 +376,12 @@ function EntryForm({
         </Field>
 
         <Toggle
-          label={t('settings.providerCredentials.form.enabled')}
+          label={
+            <>
+              {t('settings.providerCredentials.form.enabled')}{' '}
+              <FieldHelp text={providerCredentialsFieldHelp.enabled} />
+            </>
+          }
           checked={form.enabled}
           onChange={(enabled) => setForm((f) => ({ ...f, enabled }))}
         />
@@ -375,6 +391,7 @@ function EntryForm({
             label={t('settings.providerCredentials.form.endpoint')}
             htmlFor={`${idBase}-endpoint`}
             hint={t('settings.providerCredentials.form.endpointHint')}
+            help={providerCredentialsFieldHelp.endpoint}
           >
             <Input
               id={`${idBase}-endpoint`}
@@ -389,11 +406,17 @@ function EntryForm({
         {SELECTOR_FIELDS[mode].map((spec) => {
           const id = `${idBase}-sel-${spec.name}`;
           const value = form.selectors[spec.name] ?? '';
+          const help = providerCredentialFieldHelp(spec.name);
           if (spec.kind === 'toggle') {
             return (
               <Toggle
                 key={spec.name}
-                label={t(spec.labelKey)}
+                label={
+                  <>
+                    {t(spec.labelKey)}
+                    {help ? <> <FieldHelp text={help} /></> : null}
+                  </>
+                }
                 checked={value === 'true'}
                 onChange={(on) => setSelector(spec.name, on ? 'true' : 'false')}
               />
@@ -413,7 +436,7 @@ function EntryForm({
                     { value: 'user', label: t('settings.providerCredentials.field.authorization.user') },
                   ];
             return (
-              <Field key={spec.name} label={t(spec.labelKey)} htmlFor={id}>
+              <Field key={spec.name} label={t(spec.labelKey)} htmlFor={id} help={help}>
                 <Select
                   id={id}
                   value={value}
@@ -424,7 +447,7 @@ function EntryForm({
             );
           }
           return (
-            <Field key={spec.name} label={t(spec.labelKey)} htmlFor={id}>
+            <Field key={spec.name} label={t(spec.labelKey)} htmlFor={id} help={help}>
               <Input
                 id={id}
                 value={value}
@@ -443,6 +466,7 @@ function EntryForm({
             <Field
               label={t('settings.providerCredentials.field.pfx')}
               htmlFor={`${idBase}-pfx`}
+              help={providerCredentialsFieldHelp.pfx}
               hint={
                 isEdit
                   ? t('settings.providerCredentials.form.pfxReplaceHint')
@@ -476,6 +500,7 @@ function EntryForm({
               key={spec.name}
               label={t(spec.labelKey)}
               htmlFor={id}
+              help={providerCredentialFieldHelp(spec.name)}
               hint={isEdit ? t('settings.providerCredentials.form.keepFieldHint') : undefined}
             >
               <Input

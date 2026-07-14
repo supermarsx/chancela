@@ -4110,4 +4110,50 @@ export const enGB: Catalog = {
   'settings.providerCredentials.field.friendlyName': 'Friendly name',
   'settings.providerCredentials.field.localKeyId': 'Local key ID (hex)',
   'settings.providerCredentials.field.pfx': 'PKCS#12/PFX file',
+  'settings.providerCredentials.help.mode':
+    'Which type of signature provider to configure. E.g. CSC/QTSP for remote signing, PKCS#12 for a local certificate.',
+  'settings.providerCredentials.help.providerId':
+    'Internal identifier that distinguishes this provider from others of the same type. E.g. “encosto-qtsp”.',
+  'settings.providerCredentials.help.label':
+    'Free-form name to recognise this entry in the list. E.g. “Primary key” or “Fallback”.',
+  'settings.providerCredentials.help.enabled':
+    'When active, this entry joins the failover chain; disable it to exclude it without deleting it.',
+  'settings.providerCredentials.help.endpoint':
+    'Base URL of the provider API, overriding the default. E.g. https://qtsp.example.com/csc/v1',
+  'settings.providerCredentials.help.pfx':
+    'Certificate .pfx/.p12 file that contains the private signing key. E.g. “signature.pfx” exported from your PKI.',
+  'settings.providerCredentials.help.applicationId':
+    'ApplicationId assigned by AMA for Chave Móvel Digital / SCAP. E.g. a GUID like 1a2b3c4d-5e6f-7890-abcd-ef1234567890.',
+  'settings.providerCredentials.help.httpBasicUsername':
+    'HTTP Basic authentication username, when the provider requires it in front of the API. E.g. “chancela-prod”.',
+  'settings.providerCredentials.help.httpBasicPassword':
+    'HTTP Basic authentication password that goes with the username. E.g. a long secret string provided by the provider.',
+  'settings.providerCredentials.help.amaCertPem':
+    'AMA client certificate in PEM format, used for mutual TLS with SCMD. E.g. the “-----BEGIN CERTIFICATE-----…” block.',
+  'settings.providerCredentials.help.clientId':
+    'OAuth2 client identifier assigned by the QTSP. E.g. “chancela-prod”.',
+  'settings.providerCredentials.help.clientSecret':
+    'OAuth2 client secret paired with the Client ID. E.g. a long secret string assigned by the QTSP.',
+  'settings.providerCredentials.help.accessToken':
+    'An already-issued access token, as an alternative to the Client ID/secret flow. E.g. an “eyJ…” string with limited validity.',
+  'settings.providerCredentials.help.secret':
+    'SCAP application secret assigned by AMA. E.g. a long secret string issued when registering the application.',
+  'settings.providerCredentials.help.passphrase':
+    'Passphrase that protects the .pfx/.p12 file. E.g. the one you set when exporting the certificate.',
+  'settings.providerCredentials.help.env':
+    'Provider environment this entry connects to. E.g. “Pre-production” for testing, “Production” for real use.',
+  'settings.providerCredentials.help.authorization':
+    'How the signing session is authorised at the QTSP. E.g. “Service” for account credentials, “User” when each signatory authorises.',
+  'settings.providerCredentials.help.credentialId':
+    'Identifier of the signing credential at the QTSP when it exposes several. E.g. “cred-12ab34”.',
+  'settings.providerCredentials.help.scope':
+    'OAuth2 scopes requested from the QTSP, space-separated. E.g. “service credential”.',
+  'settings.providerCredentials.help.sandbox':
+    'Enables the provider’s test mode, with no real effects. E.g. on during integration, off in production.',
+  'settings.providerCredentials.help.environment':
+    'SCAP service environment this entry connects to. E.g. “Pre-production” for testing, “Production” for real use.',
+  'settings.providerCredentials.help.friendlyName':
+    'Selects the identity inside a .pfx with multiple certificates, by friendly name. E.g. “My signature”.',
+  'settings.providerCredentials.help.localKeyId':
+    'Selects the identity inside a .pfx by localKeyId in hexadecimal. E.g. “3a7f9c2b”.',
 };

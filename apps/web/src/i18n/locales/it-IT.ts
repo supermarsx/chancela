@@ -4189,4 +4189,50 @@ export const itIT: Catalog = {
   'settings.providerCredentials.field.friendlyName': 'Nome descrittivo',
   'settings.providerCredentials.field.localKeyId': 'Local key ID (hex)',
   'settings.providerCredentials.field.pfx': 'File PKCS#12/PFX',
+  'settings.providerCredentials.help.mode':
+    'Tipo di fornitore di firma da configurare. Es.: CSC/QTSP per la firma remota, PKCS#12 per un certificato locale.',
+  'settings.providerCredentials.help.providerId':
+    'Identificatore interno che distingue questo fornitore dagli altri dello stesso tipo. Es.: «encosto-qtsp».',
+  'settings.providerCredentials.help.label':
+    'Nome libero per riconoscere questa voce nell’elenco. Es.: «Chiave primaria» o «Riserva».',
+  'settings.providerCredentials.help.enabled':
+    'Quando è attiva, questa voce entra nella catena di failover; disattivala per escluderla senza eliminarla.',
+  'settings.providerCredentials.help.endpoint':
+    'URL di base dell’API del fornitore, che sostituisce il valore predefinito. Es.: https://qtsp.example.com/csc/v1',
+  'settings.providerCredentials.help.pfx':
+    'File di certificato .pfx/.p12 che contiene la chiave privata di firma. Es.: «firma.pfx» esportato dalla PKI.',
+  'settings.providerCredentials.help.applicationId':
+    'ApplicationId assegnato dall’AMA per la Chave Móvel Digital / SCAP. Es.: un GUID come 1a2b3c4d-5e6f-7890-abcd-ef1234567890.',
+  'settings.providerCredentials.help.httpBasicUsername':
+    'Nome utente dell’autenticazione HTTP Basic, quando il fornitore la richiede davanti all’API. Es.: «chancela-prod».',
+  'settings.providerCredentials.help.httpBasicPassword':
+    'Password dell’autenticazione HTTP Basic che accompagna il nome utente. Es.: una lunga stringa segreta fornita dal fornitore.',
+  'settings.providerCredentials.help.amaCertPem':
+    'Certificato client dell’AMA in formato PEM, usato per il TLS reciproco con SCMD. Es.: il blocco «-----BEGIN CERTIFICATE-----…».',
+  'settings.providerCredentials.help.clientId':
+    'Identificatore OAuth2 del client assegnato dal QTSP. Es.: «chancela-prod».',
+  'settings.providerCredentials.help.clientSecret':
+    'Secret OAuth2 del client abbinato al Client ID. Es.: una lunga stringa segreta assegnata dal QTSP.',
+  'settings.providerCredentials.help.accessToken':
+    'Token di accesso già emesso, in alternativa al flusso Client ID/secret. Es.: una stringa «eyJ…» con validità limitata.',
+  'settings.providerCredentials.help.secret':
+    'Secret dell’applicazione SCAP assegnato dall’AMA. Es.: una lunga stringa segreta emessa alla registrazione dell’applicazione.',
+  'settings.providerCredentials.help.passphrase':
+    'Password che protegge il file .pfx/.p12. Es.: quella impostata all’esportazione del certificato.',
+  'settings.providerCredentials.help.env':
+    'Ambiente del fornitore a cui questa voce si collega. Es.: «Preproduzione» per i test, «Produzione» per l’uso reale.',
+  'settings.providerCredentials.help.authorization':
+    'Come viene autorizzata la sessione di firma presso il QTSP. Es.: «Servizio» per le credenziali dell’account, «Utente» quando ogni firmatario autorizza.',
+  'settings.providerCredentials.help.credentialId':
+    'Identificatore della credenziale di firma presso il QTSP quando ne espone diverse. Es.: «cred-12ab34».',
+  'settings.providerCredentials.help.scope':
+    'Ambiti OAuth2 richiesti al QTSP, separati da spazi. Es.: «service credential».',
+  'settings.providerCredentials.help.sandbox':
+    'Attiva la modalità di test del fornitore, senza effetti reali. Es.: attiva durante l’integrazione, disattivata in produzione.',
+  'settings.providerCredentials.help.environment':
+    'Ambiente del servizio SCAP a cui questa voce si collega. Es.: «Preproduzione» per i test, «Produzione» per l’uso reale.',
+  'settings.providerCredentials.help.friendlyName':
+    'Seleziona l’identità in un .pfx con più certificati, in base al nome descrittivo. Es.: «La mia firma».',
+  'settings.providerCredentials.help.localKeyId':
+    'Seleziona l’identità in un .pfx in base al localKeyId in esadecimale. Es.: «3a7f9c2b».',
 };

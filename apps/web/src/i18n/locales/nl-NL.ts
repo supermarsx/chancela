@@ -4192,4 +4192,50 @@ export const nlNL: Catalog = {
   'settings.providerCredentials.field.friendlyName': 'Beschrijvende naam',
   'settings.providerCredentials.field.localKeyId': 'Local key ID (hex)',
   'settings.providerCredentials.field.pfx': 'PKCS#12/PFX-bestand',
+  'settings.providerCredentials.help.mode':
+    'Type ondertekeningsprovider dat u wilt configureren. Bijv. CSC/QTSP voor ondertekening op afstand, PKCS#12 voor een lokaal certificaat.',
+  'settings.providerCredentials.help.providerId':
+    'Interne identificatie die deze provider onderscheidt van andere van hetzelfde type. Bijv. „encosto-qtsp”.',
+  'settings.providerCredentials.help.label':
+    'Vrije naam om deze vermelding in de lijst te herkennen. Bijv. „Primaire sleutel” of „Uitwijk”.',
+  'settings.providerCredentials.help.enabled':
+    'Wanneer actief, maakt deze vermelding deel uit van de failover-keten; schakel uit om deze uit te sluiten zonder te verwijderen.',
+  'settings.providerCredentials.help.endpoint':
+    'Basis-URL van de provider-API, die de standaardwaarde vervangt. Bijv. https://qtsp.example.com/csc/v1',
+  'settings.providerCredentials.help.pfx':
+    'Certificaatbestand .pfx/.p12 dat de private ondertekeningssleutel bevat. Bijv. „handtekening.pfx” geëxporteerd uit de PKI.',
+  'settings.providerCredentials.help.applicationId':
+    'Door de AMA toegewezen ApplicationId voor Chave Móvel Digital / SCAP. Bijv. een GUID zoals 1a2b3c4d-5e6f-7890-abcd-ef1234567890.',
+  'settings.providerCredentials.help.httpBasicUsername':
+    'Gebruikersnaam voor HTTP Basic-authenticatie, wanneer de provider deze vóór de API vereist. Bijv. „chancela-prod”.',
+  'settings.providerCredentials.help.httpBasicPassword':
+    'Wachtwoord voor HTTP Basic-authenticatie dat bij de gebruikersnaam hoort. Bijv. een lange geheime tekenreeks van de provider.',
+  'settings.providerCredentials.help.amaCertPem':
+    'AMA-clientcertificaat in PEM-formaat, gebruikt voor wederzijdse TLS met SCMD. Bijv. het blok „-----BEGIN CERTIFICATE-----…”.',
+  'settings.providerCredentials.help.clientId':
+    'Door de QTSP toegewezen OAuth2-client-identificatie. Bijv. „chancela-prod”.',
+  'settings.providerCredentials.help.clientSecret':
+    'OAuth2-clientgeheim gekoppeld aan de Client ID. Bijv. een lange geheime tekenreeks toegewezen door de QTSP.',
+  'settings.providerCredentials.help.accessToken':
+    'Een reeds uitgegeven toegangstoken, als alternatief voor de Client ID/geheim-stroom. Bijv. een „eyJ…”-tekenreeks met beperkte geldigheid.',
+  'settings.providerCredentials.help.secret':
+    'Door de AMA toegewezen geheim van de SCAP-toepassing. Bijv. een lange geheime tekenreeks uitgegeven bij het registreren van de toepassing.',
+  'settings.providerCredentials.help.passphrase':
+    'Wachtwoord dat het .pfx/.p12-bestand beschermt. Bijv. het wachtwoord dat u instelde bij het exporteren van het certificaat.',
+  'settings.providerCredentials.help.env':
+    'Provideromgeving waarmee deze vermelding verbinding maakt. Bijv. „Preproductie” voor testen, „Productie” voor echt gebruik.',
+  'settings.providerCredentials.help.authorization':
+    'Hoe de ondertekeningssessie bij de QTSP wordt geautoriseerd. Bijv. „Service” voor accountgegevens, „Gebruiker” wanneer elke ondertekenaar autoriseert.',
+  'settings.providerCredentials.help.credentialId':
+    'Identificatie van de ondertekeningscredential bij de QTSP wanneer er meerdere worden aangeboden. Bijv. „cred-12ab34”.',
+  'settings.providerCredentials.help.scope':
+    'OAuth2-scopes aangevraagd bij de QTSP, gescheiden door spaties. Bijv. „service credential”.',
+  'settings.providerCredentials.help.sandbox':
+    'Schakelt de testmodus van de provider in, zonder echte effecten. Bijv. aan tijdens integratie, uit in productie.',
+  'settings.providerCredentials.help.environment':
+    'SCAP-serviceomgeving waarmee deze vermelding verbinding maakt. Bijv. „Preproductie” voor testen, „Productie” voor echt gebruik.',
+  'settings.providerCredentials.help.friendlyName':
+    'Selecteert de identiteit in een .pfx met meerdere certificaten, op beschrijvende naam. Bijv. „Mijn handtekening”.',
+  'settings.providerCredentials.help.localKeyId':
+    'Selecteert de identiteit in een .pfx op localKeyId in hexadecimaal. Bijv. „3a7f9c2b”.',
 };

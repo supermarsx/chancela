@@ -4156,4 +4156,50 @@ export const daDK: Catalog = {
   'settings.providerCredentials.field.friendlyName': 'Visningsnavn',
   'settings.providerCredentials.field.localKeyId': 'Local key ID (hex)',
   'settings.providerCredentials.field.pfx': 'PKCS#12/PFX-fil',
+  'settings.providerCredentials.help.mode':
+    'Typen af signaturudbyder, der skal konfigureres. F.eks. CSC/QTSP til fjernsignering, PKCS#12 til et lokalt certifikat.',
+  'settings.providerCredentials.help.providerId':
+    'Intern identifikator, der adskiller denne udbyder fra andre af samme type. F.eks. »encosto-qtsp«.',
+  'settings.providerCredentials.help.label':
+    'Fri tekst til at genkende denne post på listen. F.eks. »Primær nøgle« eller »Reserve«.',
+  'settings.providerCredentials.help.enabled':
+    'Når den er aktiv, indgår denne post i failover-kæden; deaktivér den for at udelade den uden at slette den.',
+  'settings.providerCredentials.help.endpoint':
+    'Basis-URL for udbyderens API, der tilsidesætter standardværdien. F.eks. https://qtsp.example.com/csc/v1',
+  'settings.providerCredentials.help.pfx':
+    'Certifikatfil .pfx/.p12, der indeholder den private signeringsnøgle. F.eks. »signatur.pfx« eksporteret fra PKI.',
+  'settings.providerCredentials.help.applicationId':
+    'ApplicationId tildelt af AMA til Chave Móvel Digital / SCAP. F.eks. en GUID som 1a2b3c4d-5e6f-7890-abcd-ef1234567890.',
+  'settings.providerCredentials.help.httpBasicUsername':
+    'Brugernavn til HTTP Basic-godkendelse, når udbyderen kræver det foran API’et. F.eks. »chancela-prod«.',
+  'settings.providerCredentials.help.httpBasicPassword':
+    'Adgangskode til HTTP Basic-godkendelse, der følger med brugernavnet. F.eks. en lang hemmelig streng fra udbyderen.',
+  'settings.providerCredentials.help.amaCertPem':
+    'AMA-klientcertifikat i PEM-format, brugt til gensidig TLS med SCMD. F.eks. blokken »-----BEGIN CERTIFICATE-----…«.',
+  'settings.providerCredentials.help.clientId':
+    'OAuth2-klientidentifikator tildelt af QTSP. F.eks. »chancela-prod«.',
+  'settings.providerCredentials.help.clientSecret':
+    'OAuth2-klienthemmelighed parret med Client ID. F.eks. en lang hemmelig streng tildelt af QTSP.',
+  'settings.providerCredentials.help.accessToken':
+    'Et allerede udstedt adgangstoken som alternativ til Client ID/hemmelighed-flowet. F.eks. en »eyJ…«-streng med begrænset gyldighed.',
+  'settings.providerCredentials.help.secret':
+    'SCAP-programhemmelighed tildelt af AMA. F.eks. en lang hemmelig streng udstedt ved registrering af programmet.',
+  'settings.providerCredentials.help.passphrase':
+    'Adgangskode, der beskytter .pfx/.p12-filen. F.eks. den, du angav ved eksport af certifikatet.',
+  'settings.providerCredentials.help.env':
+    'Udbydermiljø, som denne post opretter forbindelse til. F.eks. »Præproduktion« til test, »Produktion« til reel brug.',
+  'settings.providerCredentials.help.authorization':
+    'Hvordan signeringssessionen godkendes hos QTSP. F.eks. »Tjeneste« for kontooplysninger, »Bruger«, når hver underskriver godkender.',
+  'settings.providerCredentials.help.credentialId':
+    'Identifikator for signeringscredential hos QTSP, når den viser flere. F.eks. »cred-12ab34«.',
+  'settings.providerCredentials.help.scope':
+    'OAuth2-scopes anmodet hos QTSP, adskilt af mellemrum. F.eks. »service credential«.',
+  'settings.providerCredentials.help.sandbox':
+    'Aktiverer udbyderens testtilstand uden reelle virkninger. F.eks. slået til under integration, fra i produktion.',
+  'settings.providerCredentials.help.environment':
+    'SCAP-tjenestemiljø, som denne post opretter forbindelse til. F.eks. »Præproduktion« til test, »Produktion« til reel brug.',
+  'settings.providerCredentials.help.friendlyName':
+    'Vælger identiteten i en .pfx med flere certifikater ud fra det beskrivende navn. F.eks. »Min signatur«.',
+  'settings.providerCredentials.help.localKeyId':
+    'Vælger identiteten i en .pfx ud fra localKeyId i hexadecimal. F.eks. »3a7f9c2b«.',
 };

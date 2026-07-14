@@ -4210,4 +4210,50 @@ export const deDE: Catalog = {
   'settings.providerCredentials.field.friendlyName': 'Anzeigename',
   'settings.providerCredentials.field.localKeyId': 'Local Key ID (Hex)',
   'settings.providerCredentials.field.pfx': 'PKCS#12/PFX-Datei',
+  'settings.providerCredentials.help.mode':
+    'Art des zu konfigurierenden Signaturanbieters. Z. B. CSC/QTSP für Fernsignatur, PKCS#12 für ein lokales Zertifikat.',
+  'settings.providerCredentials.help.providerId':
+    'Interne Kennung, die diesen Anbieter von anderen desselben Typs unterscheidet. Z. B. „encosto-qtsp“.',
+  'settings.providerCredentials.help.label':
+    'Freier Name, um diesen Eintrag in der Liste zu erkennen. Z. B. „Primärschlüssel“ oder „Ausweichoption“.',
+  'settings.providerCredentials.help.enabled':
+    'Wenn aktiv, gehört dieser Eintrag zur Ausfallkette; deaktivieren Sie ihn, um ihn ohne Löschen auszuschließen.',
+  'settings.providerCredentials.help.endpoint':
+    'Basis-URL der Anbieter-API, die den Standardwert ersetzt. Z. B. https://qtsp.example.com/csc/v1',
+  'settings.providerCredentials.help.pfx':
+    'Zertifikatsdatei .pfx/.p12, die den privaten Signaturschlüssel enthält. Z. B. „signatur.pfx“, aus der PKI exportiert.',
+  'settings.providerCredentials.help.applicationId':
+    'Von der AMA für Chave Móvel Digital / SCAP vergebene ApplicationId. Z. B. eine GUID wie 1a2b3c4d-5e6f-7890-abcd-ef1234567890.',
+  'settings.providerCredentials.help.httpBasicUsername':
+    'Benutzername der HTTP-Basic-Authentifizierung, wenn der Anbieter sie vor der API verlangt. Z. B. „chancela-prod“.',
+  'settings.providerCredentials.help.httpBasicPassword':
+    'Passwort der HTTP-Basic-Authentifizierung, das zum Benutzernamen gehört. Z. B. eine lange geheime Zeichenfolge des Anbieters.',
+  'settings.providerCredentials.help.amaCertPem':
+    'AMA-Client-Zertifikat im PEM-Format, für gegenseitiges TLS mit SCMD. Z. B. der Block „-----BEGIN CERTIFICATE-----…“.',
+  'settings.providerCredentials.help.clientId':
+    'Vom QTSP vergebene OAuth2-Client-Kennung. Z. B. „chancela-prod“.',
+  'settings.providerCredentials.help.clientSecret':
+    'OAuth2-Client-Secret, das mit der Client-ID gepaart ist. Z. B. eine lange geheime, vom QTSP vergebene Zeichenfolge.',
+  'settings.providerCredentials.help.accessToken':
+    'Bereits ausgestelltes Zugriffstoken als Alternative zum Client-ID/Secret-Ablauf. Z. B. eine „eyJ…“-Zeichenfolge mit begrenzter Gültigkeit.',
+  'settings.providerCredentials.help.secret':
+    'Von der AMA vergebenes Secret der SCAP-Anwendung. Z. B. eine lange geheime Zeichenfolge, die bei der Registrierung ausgestellt wird.',
+  'settings.providerCredentials.help.passphrase':
+    'Passwort, das die .pfx/.p12-Datei schützt. Z. B. das beim Exportieren des Zertifikats festgelegte.',
+  'settings.providerCredentials.help.env':
+    'Anbieterumgebung, mit der dieser Eintrag verbunden ist. Z. B. „Vorproduktion“ zum Testen, „Produktion“ für den echten Einsatz.',
+  'settings.providerCredentials.help.authorization':
+    'Wie die Signatursitzung beim QTSP autorisiert wird. Z. B. „Dienst“ für Kontoanmeldedaten, „Benutzer“, wenn jeder Unterzeichner autorisiert.',
+  'settings.providerCredentials.help.credentialId':
+    'Kennung der Signatur-Credential beim QTSP, wenn er mehrere bereitstellt. Z. B. „cred-12ab34“.',
+  'settings.providerCredentials.help.scope':
+    'Beim QTSP angeforderte OAuth2-Scopes, durch Leerzeichen getrennt. Z. B. „service credential“.',
+  'settings.providerCredentials.help.sandbox':
+    'Aktiviert den Testmodus des Anbieters, ohne reale Wirkung. Z. B. bei der Integration ein, in der Produktion aus.',
+  'settings.providerCredentials.help.environment':
+    'SCAP-Dienstumgebung, mit der dieser Eintrag verbunden ist. Z. B. „Vorproduktion“ zum Testen, „Produktion“ für den echten Einsatz.',
+  'settings.providerCredentials.help.friendlyName':
+    'Wählt die Identität in einem .pfx mit mehreren Zertifikaten anhand des Anzeigenamens. Z. B. „Meine Signatur“.',
+  'settings.providerCredentials.help.localKeyId':
+    'Wählt die Identität in einem .pfx anhand der localKeyId in Hexadezimal. Z. B. „3a7f9c2b“.',
 };
