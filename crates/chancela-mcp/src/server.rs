@@ -342,7 +342,7 @@ impl<T: HttpTransport> McpServer<T> {
                     "uri": MCP_WORKFLOW_PROVENANCE_REVIEW_RESOURCE_URI,
                     "name": "workflow_provenance_review",
                     "title": "Workflow Provenance Review",
-                    "description": "Read-only static workflow provenance review aid. Contains no secrets, performs no bridge or provider calls, and makes no legal-validity, source-certification, provider, or trust claims.",
+                    "description": "Read-only workflow provenance review resource. Without arguments it returns static guidance; with workflow_evidence JSON or text it returns deterministic aggregate local counts only. Contains no secrets, performs no bridge, API, AI, or provider calls, and makes no legal-validity, source-certification, workflow-completion, provider-assurance, trust, external-validation, signature-qualification, or extraction-accuracy claims.",
                     "mimeType": "application/json",
                     "annotations": {
                         "audience": ["user", "assistant"],
@@ -429,6 +429,18 @@ impl<T: HttpTransport> McpServer<T> {
                 );
             }
         };
+        let workflow_arguments = if uri == MCP_WORKFLOW_PROVENANCE_REVIEW_RESOURCE_URI {
+            if params.keys().any(|key| key != "uri" && key != "arguments") {
+                return JsonRpcResponse::error(
+                    id,
+                    codes::INVALID_PARAMS,
+                    "workflow provenance review resource accepts only uri or uri plus arguments",
+                );
+            }
+            params.get("arguments")
+        } else {
+            None
+        };
         let draft_signed_arguments = if uri == MCP_DRAFT_SIGNED_COMPARISON_REVIEW_RESOURCE_URI {
             if params.keys().any(|key| key != "uri" && key != "arguments") {
                 return JsonRpcResponse::error(
@@ -495,9 +507,19 @@ impl<T: HttpTransport> McpServer<T> {
         let payload = match uri {
             MCP_STATUS_RESOURCE_URI => self.status_resource_payload(),
             MCP_SPEC_09_COVERAGE_RESOURCE_URI => self.spec_09_coverage_resource_payload(),
-            MCP_WORKFLOW_PROVENANCE_REVIEW_RESOURCE_URI => {
-                self.workflow_provenance_review_resource_payload()
-            }
+            MCP_WORKFLOW_PROVENANCE_REVIEW_RESOURCE_URI => match workflow_arguments {
+                Some(arguments) => match workflow_provenance_review_report_payload(arguments) {
+                    Ok(payload) => payload,
+                    Err(message) => {
+                        return JsonRpcResponse::error(
+                            id,
+                            codes::INVALID_PARAMS,
+                            format!("invalid workflow provenance review arguments: {message}"),
+                        );
+                    }
+                },
+                None => self.workflow_provenance_review_resource_payload(),
+            },
             MCP_DRAFT_SIGNED_COMPARISON_REVIEW_RESOURCE_URI => match draft_signed_arguments {
                 Some(arguments) => match draft_signed_comparison_report_payload(arguments) {
                     Ok(payload) => payload,
@@ -2048,6 +2070,121 @@ const CHRONOLOGY_MISSING_EVIDENCE_PATHS: &[&str] = &[
     "provenance_missing",
     "source_missing",
 ];
+const WORKFLOW_EVIDENCE_RECORD_ARRAY_KEYS: &[&str] = &[
+    "workflows",
+    "workflow_records",
+    "workflow_evidence_records",
+    "workflow_evidence",
+    "lifecycle_events",
+    "events",
+    "records",
+    "items",
+];
+const WORKFLOW_STATE_PATHS: &[&str] = &[
+    "workflow_state",
+    "workflow_status",
+    "workflow.state",
+    "workflow.status",
+    "lifecycle_state",
+    "lifecycle_status",
+    "lifecycle.state",
+    "lifecycle.status",
+    "act_lifecycle_state",
+    "act_lifecycle_status",
+    "state",
+    "status",
+    "phase",
+];
+const WORKFLOW_STATE_LABELS: &[&str] = &[
+    "draft",
+    "pending",
+    "queued",
+    "review",
+    "under_review",
+    "awaiting_review",
+    "approved",
+    "accepted",
+    "rejected",
+    "signed",
+    "sealed",
+    "archived",
+    "corrected",
+    "cancelled",
+    "completed",
+    "failed",
+    "open",
+    "closed",
+    "missing",
+    "unknown",
+];
+const WORKFLOW_HUMAN_REVIEW_PATHS: &[&str] = &[
+    "human_review.decision",
+    "human_review.status",
+    "human_review_decision",
+    "human_review_status",
+    "human_verification.decision",
+    "human_verification.status",
+    "human_verification_decision",
+    "human_verification_status",
+    "operator_review.decision",
+    "operator_review.status",
+    "operator_review_decision",
+    "operator_review_status",
+    "review.decision",
+    "review.status",
+    "review_decision",
+    "review_status",
+    "reviewer_decision",
+];
+const WORKFLOW_LEDGER_REF_MARKERS: &[&str] = &[
+    "ledger_ref",
+    "ledger_refs",
+    "ledger_event",
+    "ledger_event_id",
+    "ledger_event_ids",
+    "ledger_entry",
+    "ledger_anchor",
+];
+const WORKFLOW_ARCHIVE_REF_MARKERS: &[&str] = &[
+    "archive_ref",
+    "archive_refs",
+    "archive_id",
+    "archive_package",
+    "archive_manifest",
+    "manifest_id",
+    "preservation_ref",
+];
+const WORKFLOW_SIGNATURE_REF_MARKERS: &[&str] = &[
+    "signature_ref",
+    "signature_refs",
+    "signature_id",
+    "signature_bundle",
+    "signature_bundle_id",
+    "signed_document_ref",
+    "timestamp_token",
+    "doctimestamp",
+];
+const WORKFLOW_DIGEST_MARKERS: &[&str] =
+    &["digest", "checksum", "sha256", "sha_256", "hash", "fixity"];
+const WORKFLOW_IMPORTED_GENERATED_DOCUMENT_REF_MARKERS: &[&str] = &[
+    "imported_document",
+    "imported_document_ref",
+    "imported_document_id",
+    "imported_source",
+    "source_record",
+    "source_record_id",
+    "source_record_ids",
+    "generated_document",
+    "generated_document_ref",
+    "generated_document_id",
+    "document_ref",
+    "document_refs",
+    "document_id",
+    "document_uri",
+    "document_path",
+    "canonical_document",
+    "ocr_document",
+];
 
 #[derive(Debug, Clone, Copy)]
 struct PrivacyFalseClaimFlagSpec {
@@ -2638,6 +2775,283 @@ const DOCUMENT_ARCHIVE_NO_CLAIM_FLAG_SPECS: &[DocumentArchiveNoClaimFlagSpec] = 
         ],
     },
 ];
+
+fn workflow_provenance_review_report_payload(arguments: &Value) -> Result<Value, String> {
+    let args = arguments
+        .as_object()
+        .ok_or_else(|| "arguments must be an object".to_string())?;
+    if args.keys().any(|key| key != "workflow_evidence") {
+        return Err(
+            "workflow provenance review arguments accept only workflow_evidence".to_string(),
+        );
+    }
+    let workflow_evidence = args
+        .get("workflow_evidence")
+        .ok_or_else(|| "workflow_evidence must be supplied".to_string())?;
+    let (evidence, input_format) = workflow_evidence_value(workflow_evidence)?;
+    let records = workflow_evidence_records(&evidence);
+    let state_counts = workflow_state_counts(&evidence, records.as_slice());
+    let human_review_counts = workflow_human_review_decision_counts(&evidence, records.as_slice());
+    let missing_human_review_decision_count =
+        human_review_counts.get("missing").copied().unwrap_or(0);
+    let evidence_marker_counts = workflow_evidence_marker_counts(&evidence);
+    let warning_counts = workflow_warning_marker_counts(&evidence);
+
+    Ok(json!({
+        "kind": "chancela_mcp_workflow_provenance_review_report",
+        "schema_version": 1,
+        "source": "local_mcp_deterministic_workflow_provenance_reviewer",
+        "offline": true,
+        "local_json_only": true,
+        "local_json_or_text_only": true,
+        "deterministic": true,
+        "aggregate_counts_only": true,
+        "human_verification_required": true,
+        "bridge_calls": false,
+        "api_calls": false,
+        "provider_calls": false,
+        "ai_provider_calls": false,
+        "legal_service_calls": false,
+        "http_sse_transport_added": false,
+        "raw_document_text_echoed": false,
+        "raw_uploaded_bytes_echoed": false,
+        "contacts_echoed": false,
+        "credentials_secrets_access_codes_echoed": false,
+        "secrets_in_resource": false,
+        "legal_validity_claimed": false,
+        "source_certification_claimed": false,
+        "workflow_completion_claimed": false,
+        "provider_assurance_claimed": false,
+        "trust_claimed": false,
+        "external_validation_claimed": false,
+        "signature_qualification_claimed": false,
+        "extraction_accuracy_claimed": false,
+        "claims": {
+            "legal_validity": false,
+            "source_certification": false,
+            "workflow_completion": false,
+            "provider_assurance": false,
+            "provider": false,
+            "trust": false,
+            "external_validation": false,
+            "signature_qualification": false,
+            "extraction_accuracy": false,
+            "archive_certification": false
+        },
+        "workflow_provenance_summary": {
+            "input_format": input_format,
+            "record_count": records.len(),
+            "workflow_lifecycle_state_counts": state_counts,
+            "human_review_decision_status_counts": human_review_counts,
+            "missing_human_review_decision_count": missing_human_review_decision_count,
+            "evidence_marker_counts": evidence_marker_counts,
+            "warning_counts": warning_counts,
+            "raw_values_echoed": false
+        },
+        "recognized_fields": {
+            "record_arrays": WORKFLOW_EVIDENCE_RECORD_ARRAY_KEYS,
+            "workflow_lifecycle_state": WORKFLOW_STATE_PATHS,
+            "human_review_decision_status": WORKFLOW_HUMAN_REVIEW_PATHS,
+            "ledger_refs": WORKFLOW_LEDGER_REF_MARKERS,
+            "archive_refs": WORKFLOW_ARCHIVE_REF_MARKERS,
+            "signature_refs": WORKFLOW_SIGNATURE_REF_MARKERS,
+            "digest_markers": WORKFLOW_DIGEST_MARKERS,
+            "imported_generated_document_refs": WORKFLOW_IMPORTED_GENERATED_DOCUMENT_REF_MARKERS
+        },
+        "workflow_provenance_review_caveats": [
+            "This is a deterministic local aggregate report over caller-supplied workflow_evidence JSON or text only.",
+            "Caller-supplied values, document text, contacts, credentials, secrets, access codes, and uploaded bytes are not echoed.",
+            "Unrecognized workflow, lifecycle, and human-review labels are counted as other instead of being echoed.",
+            "Evidence marker counts only indicate field-marker presence; they do not validate ledger, archive, signature, digest, imported-document, generated-document, or source-record authenticity."
+        ],
+        "operator_boundaries": [
+            "No bridge, API, AI-provider, legal-service, HTTP/SSE, registry, trust, archive, signature, extraction, or provider calls were made.",
+            "No legal validity, source certification, workflow completion, provider assurance, trust status, external validation, signature qualification, or extraction accuracy is claimed.",
+            "Human review and normal platform evidence checks remain required."
+        ]
+    }))
+}
+
+fn workflow_evidence_value(value: &Value) -> Result<(Value, &'static str), String> {
+    match value {
+        Value::Object(_) => Ok((value.clone(), "json_object")),
+        Value::Array(_) => Ok((value.clone(), "json_array")),
+        Value::String(text) => match serde_json::from_str::<Value>(text) {
+            Ok(parsed) if parsed.is_object() => Ok((parsed, "json_string_object")),
+            Ok(parsed) if parsed.is_array() => Ok((parsed, "json_string_array")),
+            Ok(_) => {
+                Err("workflow_evidence JSON text must decode to an object or array".to_string())
+            }
+            Err(_) => Ok((Value::String(text.clone()), "text_metadata")),
+        },
+        _ => Err("workflow_evidence must be a JSON object, array, or text string".to_string()),
+    }
+}
+
+fn workflow_evidence_records(evidence: &Value) -> Vec<&Value> {
+    let mut records = Vec::new();
+    match evidence {
+        Value::Array(values) => {
+            records.extend(values.iter().filter(|value| value.is_object()));
+        }
+        Value::Object(_) => {
+            collect_workflow_evidence_records(evidence, &mut records);
+            if records.is_empty() {
+                records.push(evidence);
+            }
+        }
+        _ => {}
+    }
+    records
+}
+
+fn collect_workflow_evidence_records<'a>(value: &'a Value, records: &mut Vec<&'a Value>) {
+    match value {
+        Value::Object(map) => {
+            for (key, child) in map {
+                let normalized = normalize_chronology_label(key);
+                if WORKFLOW_EVIDENCE_RECORD_ARRAY_KEYS.contains(&normalized.as_str()) {
+                    if let Value::Array(values) = child {
+                        records.extend(values.iter().filter(|value| value.is_object()));
+                        continue;
+                    }
+                }
+                collect_workflow_evidence_records(child, records);
+            }
+        }
+        Value::Array(values) => {
+            for child in values {
+                collect_workflow_evidence_records(child, records);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn workflow_state_counts(evidence: &Value, records: &[&Value]) -> BTreeMap<String, usize> {
+    let mut counts = initialized_workflow_state_counts();
+    if records.is_empty() {
+        if let Value::String(text) = evidence {
+            count_workflow_text_labels(text, WORKFLOW_STATE_LABELS, &mut counts);
+        }
+        return counts;
+    }
+
+    for record in records {
+        let state = privacy_bounded_classification(
+            first_located_value(record, WORKFLOW_STATE_PATHS),
+            "missing",
+            WORKFLOW_STATE_LABELS,
+        );
+        increment_count(&mut counts, state);
+    }
+    counts
+}
+
+fn initialized_workflow_state_counts() -> BTreeMap<String, usize> {
+    WORKFLOW_STATE_LABELS
+        .iter()
+        .chain(["other"].iter())
+        .map(|label| ((*label).to_string(), 0usize))
+        .collect()
+}
+
+fn workflow_human_review_decision_counts(
+    evidence: &Value,
+    records: &[&Value],
+) -> BTreeMap<String, usize> {
+    let mut counts = initialized_human_review_decision_counts();
+    if records.is_empty() {
+        if let Value::String(text) = evidence {
+            let normalized = normalize_chronology_label(text);
+            for label in ["pending", "accepted", "rejected"] {
+                if normalized.contains(label) {
+                    increment_count(&mut counts, label.to_string());
+                }
+            }
+        }
+        return counts;
+    }
+
+    for record in records {
+        let bucket = workflow_human_review_decision_bucket(first_located_value(
+            record,
+            WORKFLOW_HUMAN_REVIEW_PATHS,
+        ));
+        increment_count(&mut counts, bucket.to_string());
+    }
+    counts
+}
+
+fn initialized_human_review_decision_counts() -> BTreeMap<String, usize> {
+    ["pending", "accepted", "rejected", "missing", "other"]
+        .into_iter()
+        .map(|label| (label.to_string(), 0usize))
+        .collect()
+}
+
+fn workflow_human_review_decision_bucket(value: Option<LocatedValue<'_>>) -> &'static str {
+    let Some(located) = value else {
+        return "missing";
+    };
+    if is_unknown_comparison_value(located.value) {
+        return "missing";
+    }
+    let normalized = match located.value {
+        Value::String(value) => normalize_chronology_label(value),
+        Value::Bool(true) => return "accepted",
+        Value::Bool(false) => return "rejected",
+        Value::Number(_) | Value::Array(_) | Value::Object(_) => return "other",
+        Value::Null => return "missing",
+    };
+    match normalized.as_str() {
+        "pending"
+        | "pending_human_verification"
+        | "awaiting_review"
+        | "under_review"
+        | "needs_review"
+        | "review_required"
+        | "queued"
+        | "open" => "pending",
+        "accepted" | "accepted_by_human" | "approved" | "verified" | "verified_by_human"
+        | "completed" | "passed" => "accepted",
+        "rejected" | "rejected_by_human" | "denied" | "declined" | "failed" => "rejected",
+        "missing" | "unknown" | "not_available" | "n/a" => "missing",
+        _ => "other",
+    }
+}
+
+fn workflow_evidence_marker_counts(evidence: &Value) -> Value {
+    json!({
+        "ledger_refs": meeting_marker_key_count(evidence, WORKFLOW_LEDGER_REF_MARKERS),
+        "archive_refs": meeting_marker_key_count(evidence, WORKFLOW_ARCHIVE_REF_MARKERS),
+        "signature_refs": meeting_marker_key_count(evidence, WORKFLOW_SIGNATURE_REF_MARKERS),
+        "digest_markers": meeting_marker_key_count(evidence, WORKFLOW_DIGEST_MARKERS),
+        "imported_generated_document_refs": meeting_marker_key_count(
+            evidence,
+            WORKFLOW_IMPORTED_GENERATED_DOCUMENT_REF_MARKERS
+        ),
+        "values_echoed": false
+    })
+}
+
+fn workflow_warning_marker_counts(evidence: &Value) -> Value {
+    json!({
+        "raw_content_field_count": meeting_marker_key_count(evidence, MEETING_RAW_CONTENT_KEY_MARKERS),
+        "contact_field_count": meeting_marker_key_count(evidence, MEETING_CONTACT_KEY_MARKERS),
+        "secret_like_field_count": meeting_marker_key_count(evidence, MEETING_SECRET_KEY_MARKERS),
+        "raw_values_echoed": false
+    })
+}
+
+fn count_workflow_text_labels(text: &str, labels: &[&str], counts: &mut BTreeMap<String, usize>) {
+    let normalized = normalize_chronology_label(text);
+    for label in labels {
+        if normalized.contains(label) {
+            increment_count(counts, (*label).to_string());
+        }
+    }
+}
 
 fn meeting_metadata_extraction_review_report_payload(arguments: &Value) -> Result<Value, String> {
     let args = arguments
@@ -6110,6 +6524,304 @@ mod tests {
         for category in categories {
             assert!(!category["checkpoints"].as_array().unwrap().is_empty());
         }
+        assert!(server.bridge_recorded().is_empty());
+    }
+
+    #[test]
+    fn resources_read_workflow_provenance_review_accepts_arguments_and_counts_without_echoing_raw_values()
+     {
+        let server = McpServer::from_config(&enabled_cfg(), MockTransport::new(200, "{}")).unwrap();
+        let evidence_a = json!({
+            "workflows": [
+                {
+                    "workflow_state": "draft",
+                    "human_review": { "status": "pending" },
+                    "ledger_event_id": "ledger-secret-1",
+                    "archive_ref": "archive-secret-1",
+                    "signature_ref": "signature-secret-1",
+                    "content_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                },
+                {
+                    "lifecycle_status": "signed",
+                    "human_review_decision": "accepted",
+                    "imported_document_id": "imported-secret-1",
+                    "generated_document_ref": "generated-secret-1",
+                    "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                    "raw_document_text": "RAW WORKFLOW BODY THAT MUST NOT ECHO",
+                    "contact": {
+                        "name": "Sensitive Reviewer",
+                        "email": "reviewer@example.com",
+                        "phone": "+351 900 111 222"
+                    },
+                    "credentials": "Bearer chk_ab12cd_secretsecret"
+                },
+                {
+                    "workflow_state": "archived",
+                    "ledger_ref": "ledger-secret-2",
+                    "manifest_id": "manifest-secret-1",
+                    "source_record_id": "source-secret-1",
+                    "checksum": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                    "access_code": "919191",
+                    "uploaded_bytes": "AAECAwQF"
+                }
+            ]
+        });
+        let evidence_b = json!({
+            "workflows": [
+                {
+                    "uploaded_bytes": "AAECAwQF",
+                    "access_code": "919191",
+                    "checksum": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                    "source_record_id": "source-secret-1",
+                    "manifest_id": "manifest-secret-1",
+                    "ledger_ref": "ledger-secret-2",
+                    "workflow_state": "archived"
+                },
+                {
+                    "credentials": "Bearer chk_ab12cd_secretsecret",
+                    "contact": {
+                        "phone": "+351 900 111 222",
+                        "email": "reviewer@example.com",
+                        "name": "Sensitive Reviewer"
+                    },
+                    "raw_document_text": "RAW WORKFLOW BODY THAT MUST NOT ECHO",
+                    "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                    "generated_document_ref": "generated-secret-1",
+                    "imported_document_id": "imported-secret-1",
+                    "human_review_decision": "accepted",
+                    "lifecycle_status": "signed"
+                },
+                {
+                    "content_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "signature_ref": "signature-secret-1",
+                    "archive_ref": "archive-secret-1",
+                    "ledger_event_id": "ledger-secret-1",
+                    "human_review": { "status": "pending" },
+                    "workflow_state": "draft"
+                }
+            ]
+        });
+        let params_a = json!({
+            "uri": MCP_WORKFLOW_PROVENANCE_REVIEW_RESOURCE_URI,
+            "arguments": {
+                "workflow_evidence": evidence_a
+            }
+        });
+        let params_b = json!({
+            "arguments": {
+                "workflow_evidence": evidence_b
+            },
+            "uri": MCP_WORKFLOW_PROVENANCE_REVIEW_RESOURCE_URI
+        });
+
+        let response_a = server
+            .handle(&req("resources/read", 85, params_a))
+            .unwrap()
+            .result
+            .unwrap();
+        let response_b = server
+            .handle(&req("resources/read", 86, params_b))
+            .unwrap()
+            .result
+            .unwrap();
+        let text_a = response_a["contents"][0]["text"].as_str().unwrap();
+        let text_b = response_b["contents"][0]["text"].as_str().unwrap();
+        assert_eq!(
+            text_a, text_b,
+            "workflow provenance report output must be deterministic"
+        );
+        for sensitive in [
+            "ledger-secret-1",
+            "archive-secret-1",
+            "signature-secret-1",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "imported-secret-1",
+            "generated-secret-1",
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "RAW WORKFLOW BODY THAT MUST NOT ECHO",
+            "Sensitive Reviewer",
+            "reviewer@example.com",
+            "+351 900 111 222",
+            "chk_ab12cd_secretsecret",
+            "ledger-secret-2",
+            "manifest-secret-1",
+            "source-secret-1",
+            "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "919191",
+            "AAECAwQF",
+        ] {
+            assert!(
+                !text_a.contains(sensitive),
+                "workflow provenance report must not echo caller value {sensitive:?}: {text_a}"
+            );
+        }
+        assert!(!text_a.contains("\"legal_validity\": true"));
+        assert!(!text_a.contains("\"source_certification\": true"));
+        assert!(!text_a.contains("\"workflow_completion\": true"));
+        assert!(!text_a.contains("\"provider_assurance\": true"));
+        assert!(!text_a.contains("\"trust\": true"));
+        assert!(!text_a.contains("\"external_validation\": true"));
+        assert!(!text_a.contains("\"signature_qualification\": true"));
+        assert!(!text_a.contains("\"extraction_accuracy\": true"));
+
+        let report: Value = serde_json::from_str(text_a).unwrap();
+        assert_eq!(
+            report["kind"],
+            json!("chancela_mcp_workflow_provenance_review_report")
+        );
+        assert_eq!(report["local_json_only"], json!(true));
+        assert_eq!(report["bridge_calls"], json!(false));
+        assert_eq!(report["api_calls"], json!(false));
+        assert_eq!(report["provider_calls"], json!(false));
+        assert_eq!(report["ai_provider_calls"], json!(false));
+        assert_eq!(report["raw_document_text_echoed"], json!(false));
+        assert_eq!(report["raw_uploaded_bytes_echoed"], json!(false));
+        assert_eq!(report["contacts_echoed"], json!(false));
+        assert_eq!(
+            report["credentials_secrets_access_codes_echoed"],
+            json!(false)
+        );
+        assert_eq!(report["claims"]["legal_validity"], json!(false));
+        assert_eq!(report["claims"]["source_certification"], json!(false));
+        assert_eq!(report["claims"]["workflow_completion"], json!(false));
+        assert_eq!(report["claims"]["provider_assurance"], json!(false));
+        assert_eq!(report["claims"]["trust"], json!(false));
+        assert_eq!(report["claims"]["external_validation"], json!(false));
+        assert_eq!(report["claims"]["signature_qualification"], json!(false));
+        assert_eq!(report["claims"]["extraction_accuracy"], json!(false));
+
+        let summary = &report["workflow_provenance_summary"];
+        assert_eq!(summary["input_format"], json!("json_object"));
+        assert_eq!(summary["record_count"], json!(3));
+        assert_eq!(
+            summary["workflow_lifecycle_state_counts"]["draft"],
+            json!(1)
+        );
+        assert_eq!(
+            summary["workflow_lifecycle_state_counts"]["signed"],
+            json!(1)
+        );
+        assert_eq!(
+            summary["workflow_lifecycle_state_counts"]["archived"],
+            json!(1)
+        );
+        assert_eq!(
+            summary["human_review_decision_status_counts"]["pending"],
+            json!(1)
+        );
+        assert_eq!(
+            summary["human_review_decision_status_counts"]["accepted"],
+            json!(1)
+        );
+        assert_eq!(
+            summary["human_review_decision_status_counts"]["missing"],
+            json!(1)
+        );
+        assert_eq!(summary["missing_human_review_decision_count"], json!(1));
+        assert_eq!(summary["evidence_marker_counts"]["ledger_refs"], json!(2));
+        assert_eq!(summary["evidence_marker_counts"]["archive_refs"], json!(2));
+        assert_eq!(
+            summary["evidence_marker_counts"]["signature_refs"],
+            json!(1)
+        );
+        assert_eq!(
+            summary["evidence_marker_counts"]["digest_markers"],
+            json!(3)
+        );
+        assert_eq!(
+            summary["evidence_marker_counts"]["imported_generated_document_refs"],
+            json!(3)
+        );
+        assert!(
+            summary["warning_counts"]["raw_content_field_count"]
+                .as_u64()
+                .unwrap()
+                >= 2
+        );
+        assert!(
+            summary["warning_counts"]["contact_field_count"]
+                .as_u64()
+                .unwrap()
+                >= 1
+        );
+        assert!(
+            summary["warning_counts"]["secret_like_field_count"]
+                .as_u64()
+                .unwrap()
+                >= 2
+        );
+        assert!(server.bridge_recorded().is_empty());
+    }
+
+    #[test]
+    fn resources_read_workflow_provenance_review_rejects_bad_arguments_and_extra_params() {
+        let server = McpServer::from_config(&enabled_cfg(), MockTransport::new(200, "{}")).unwrap();
+
+        let missing_workflow_evidence = server
+            .handle(&req(
+                "resources/read",
+                87,
+                json!({
+                    "uri": MCP_WORKFLOW_PROVENANCE_REVIEW_RESOURCE_URI,
+                    "arguments": {}
+                }),
+            ))
+            .unwrap();
+        let error = missing_workflow_evidence.error.unwrap();
+        assert_eq!(error.code, codes::INVALID_PARAMS);
+        assert!(error.message.contains("workflow_evidence must be supplied"));
+
+        let extra_argument = server
+            .handle(&req(
+                "resources/read",
+                88,
+                json!({
+                    "uri": MCP_WORKFLOW_PROVENANCE_REVIEW_RESOURCE_URI,
+                    "arguments": {
+                        "workflow_evidence": {},
+                        "raw_document_text": "must not be accepted"
+                    }
+                }),
+            ))
+            .unwrap();
+        let error = extra_argument.error.unwrap();
+        assert_eq!(error.code, codes::INVALID_PARAMS);
+        assert!(error.message.contains("accept only workflow_evidence"));
+
+        let unsupported_workflow_evidence = server
+            .handle(&req(
+                "resources/read",
+                89,
+                json!({
+                    "uri": MCP_WORKFLOW_PROVENANCE_REVIEW_RESOURCE_URI,
+                    "arguments": {
+                        "workflow_evidence": 42
+                    }
+                }),
+            ))
+            .unwrap();
+        let error = unsupported_workflow_evidence.error.unwrap();
+        assert_eq!(error.code, codes::INVALID_PARAMS);
+        assert!(
+            error
+                .message
+                .contains("workflow_evidence must be a JSON object, array, or text string")
+        );
+
+        let extra_param = server
+            .handle(&req(
+                "resources/read",
+                90,
+                json!({
+                    "uri": MCP_WORKFLOW_PROVENANCE_REVIEW_RESOURCE_URI,
+                    "cursor": "ignored"
+                }),
+            ))
+            .unwrap();
+        let error = extra_param.error.unwrap();
+        assert_eq!(error.code, codes::INVALID_PARAMS);
+        assert!(error.message.contains("uri plus arguments"));
+
         assert!(server.bridge_recorded().is_empty());
     }
 
