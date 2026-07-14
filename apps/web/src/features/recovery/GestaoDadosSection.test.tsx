@@ -1255,6 +1255,14 @@ describe('GestaoDadosSection', () => {
     }
 
     expect(await screen.findByText('Recibo de ensaio registado')).toBeTruthy();
+    // Verdict-first: a plain-language result leads; the dense evidence is disclosed on demand.
+    expect(screen.getByText('Cópia de segurança verificada e restaurável')).toBeTruthy();
+    expect(
+      screen.getByText(
+        'A pré-validação e o restauro isolado tiveram sucesso, sem qualquer restauro ao vivo.',
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText('Evidência técnica')).toBeTruthy();
     expect(screen.queryByText(archive)).toBeNull();
     expect(screen.getByText('chancela-backup-drill.cbackup')).toBeTruthy();
     expect(screen.getByText('chancela-backup-manifest/v1')).toBeTruthy();

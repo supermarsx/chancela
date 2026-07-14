@@ -103,6 +103,11 @@ function RestorePreflightReport({
   const ready = report.ready && !missingManifest;
   const tone = ready ? 'info' : allErrors.length > 0 || missingManifest ? 'error' : 'warn';
   const status = ready ? 'ready' : report.ok && !missingManifest ? 'blocked' : 'error';
+  const verdictWhy = ready
+    ? t('integrity.restore.preflight.verdictReady')
+    : tone === 'error'
+      ? t('integrity.restore.preflight.verdictError')
+      : t('integrity.restore.preflight.verdictBlocked');
 
   return (
     <InlineWarning
@@ -113,13 +118,25 @@ function RestorePreflightReport({
           : t('integrity.restore.preflight.blockedTitle')
       }
     >
-      <dl className="deflist deflist--tight">
-        <div>
-          <dt>{t('integrity.restore.preflight.status')}</dt>
-          <dd>
-            <Badge tone={ready ? 'ok' : 'warn'}>{status}</Badge>
-          </dd>
-        </div>
+      <div className="preflight-verdict">
+        <p className="preflight-verdict__why">
+          <Badge tone={ready ? 'ok' : 'warn'}>{ready ? '✓' : '✗'}</Badge> {verdictWhy}
+        </p>
+        <p className="preflight-verdict__next">
+          <strong>{t('integrity.restore.preflight.nextStep')}:</strong>{' '}
+          {redactSensitiveText(report.next_step)}
+        </p>
+        <p className="field__hint">{t('integrity.restore.preflight.nonMutating')}</p>
+      </div>
+      <details className="preflight-evidence">
+        <summary>{t('integrity.restore.preflight.evidenceToggle')}</summary>
+        <dl className="deflist deflist--tight">
+          <div>
+            <dt>{t('integrity.restore.preflight.status')}</dt>
+            <dd>
+              <Badge tone={ready ? 'ok' : 'warn'}>{status}</Badge>
+            </dd>
+          </div>
         <div>
           <dt>{t('integrity.restore.preflight.encrypted')}</dt>
           <dd>{report.encrypted ? t('common.yes') : t('common.no')}</dd>
@@ -162,12 +179,8 @@ function RestorePreflightReport({
             </div>
           </>
         ) : null}
-        <div>
-          <dt>{t('integrity.restore.preflight.nextStep')}</dt>
-          <dd>{redactSensitiveText(report.next_step)}</dd>
-        </div>
-      </dl>
-      <div className="stack--tight">
+        </dl>
+        <div className="stack--tight">
         {errors.length > 0 ? (
           <>
             <h5>{t('integrity.restore.preflight.errors')}</h5>
@@ -198,7 +211,8 @@ function RestorePreflightReport({
             {t('integrity.restore.preflight.findings.more', { count: hiddenFindings })}
           </p>
         ) : null}
-      </div>
+        </div>
+      </details>
     </InlineWarning>
   );
 }

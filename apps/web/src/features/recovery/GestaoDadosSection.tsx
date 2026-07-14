@@ -528,12 +528,36 @@ function RecoveryDrillReceiptReport({
     { label: 'Sem certificação de custódia off-site', confirmed: !receipt.offsite_custody_proven },
     { label: 'Sem certificação legal ou de arquivo', confirmed: !receipt.legal_archive_certified },
   ];
+  const isolatedVerified =
+    receipt.isolated_restore_verified &&
+    receipt.isolated_restore_verification.status === 'verified';
+  const drillVerified = receipt.preflight_ok && receipt.preflight_ready && isolatedVerified;
   return (
     <InlineWarning
-      tone={receipt.preflight_ready ? 'info' : 'warn'}
-      title="Recibo de ensaio registado"
+      tone={drillVerified ? 'info' : 'warn'}
+      title={t(
+        drillVerified
+          ? 'data.status.recoveryDrill.verdictTitleOk'
+          : 'data.status.recoveryDrill.verdictTitleFailed',
+      )}
     >
       <div className="stack--tight">
+        <div className="recovery-verdict">
+          <p className="recovery-verdict__eyebrow">
+            {t('data.status.recoveryDrill.receiptEyebrow')}
+          </p>
+          <p className="recovery-verdict__why">
+            <Badge tone={drillVerified ? 'ok' : 'warn'}>{drillVerified ? '✓' : '✗'}</Badge>{' '}
+            {t(
+              drillVerified
+                ? 'data.status.recoveryDrill.verdictWhyOk'
+                : 'data.status.recoveryDrill.verdictWhyFailed',
+            )}
+          </p>
+        </div>
+        <details className="recovery-evidence">
+          <summary>{t('data.status.recoveryDrill.evidenceToggle')}</summary>
+          <div className="stack--tight">
         <dl className="deflist data-status-summary">
           <div className="deflist__wide">
             <dt>Arquivo verificado</dt>
@@ -630,6 +654,8 @@ function RecoveryDrillReceiptReport({
             ))}
           </dl>
         </div>
+          </div>
+        </details>
       </div>
     </InlineWarning>
   );

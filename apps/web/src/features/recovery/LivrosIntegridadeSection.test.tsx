@@ -601,6 +601,12 @@ describe('LivrosIntegridadeSection', () => {
 
     const dialog = await screen.findByRole('dialog', { name: 'Restaurar de cópia de segurança' });
     expect(await within(dialog).findByText('Backup pronto para restauro')).toBeTruthy();
+    // Verdict-first: a plain-language result leads, with the technical evidence tucked
+    // behind a collapsible summary.
+    expect(
+      within(dialog).getByText('Esta cópia de segurança é válida e pode ser restaurada.'),
+    ).toBeTruthy();
+    expect(within(dialog).getByText('Evidência técnica')).toBeTruthy();
     expect(within(dialog).getByText('Eventos no livro-razão')).toBeTruthy();
     expect(within(dialog).getByText('42')).toBeTruthy();
     expect(within(dialog).getByText('Membros no arquivo')).toBeTruthy();

@@ -2284,6 +2284,50 @@ a.btn.btn--iconOnly {
   text-align: right;
 }
 
+/* The "all books" list adds an owning-entity column, so the fixed layout is rebalanced
+   to make room without squeezing the others. Scoped to the modifier so the entity's own
+   book list (no entity column) keeps its original widths. */
+.books-table--with-entity .table th[data-book-column='Entity'] {
+  width: 20%;
+}
+
+.books-table--with-entity .table th[data-book-column='Kind'] {
+  width: 14%;
+}
+
+.books-table--with-entity .table th[data-book-column='Purpose'] {
+  width: 24%;
+}
+
+.books-table--with-entity .table th[data-book-column='State'] {
+  width: 12%;
+}
+
+.books-table--with-entity .table th[data-book-column='Opening'] {
+  width: 13%;
+}
+
+.books-table--with-entity .table th[data-book-column='LastAct'] {
+  width: 9%;
+}
+
+.books-table__entity {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.books-table__entity-link {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.books-table__entity-loading {
+  display: inline-block;
+}
+
 .books-table__cell--truncate {
   overflow: hidden;
 }
@@ -2344,6 +2388,26 @@ a.btn.btn--iconOnly {
 
   .books-table .table th[data-book-column='Actions'] {
     width: 12%;
+  }
+
+  .books-table--with-entity .table th[data-book-column='Entity'] {
+    width: 26%;
+  }
+
+  .books-table--with-entity .table th[data-book-column='Kind'] {
+    width: 20%;
+  }
+
+  .books-table--with-entity .table th[data-book-column='Purpose'] {
+    width: 30%;
+  }
+
+  .books-table--with-entity .table th[data-book-column='State'] {
+    width: 14%;
+  }
+
+  .books-table--with-entity .table th[data-book-column='Actions'] {
+    width: 10%;
   }
 }
 
