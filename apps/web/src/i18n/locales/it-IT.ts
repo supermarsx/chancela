@@ -3053,6 +3053,12 @@ export const itIT: Catalog = {
   'data.status.cleanup.crash.button': 'Pulisci gli arresti anomali',
   'data.status.cleanup.crash.confirm':
     'Eliminare i rapporti di arresto anomalo conservati in questa cartella dei dati? Questo non elimina libri, verbali o impostazioni.',
+  'data.status.cleanup.platformLogs.title': 'Log di piattaforma',
+  'data.status.cleanup.platformLogs.body':
+    'Rimuove solo il file locale platform-logs.json usato dalla coda breve di diagnostica della piattaforma. Non tocca ledger, catena di audit o dati di dominio.',
+  'data.status.cleanup.platformLogs.button': 'Pulisci log',
+  'data.status.cleanup.platformLogs.confirm':
+    'Pulire il file locale platform-logs.json in questa cartella dati? Questa azione non elimina audit, ledger, libri, verbali o impostazioni.',
   'data.status.cleanup.exports.title': 'Esportazioni conservate',
   'data.status.cleanup.exports.body':
     'Rimuove i pacchetti di esportazione conservati dal server. Conserva copie esterne prima della pulizia.',
@@ -4439,6 +4445,7 @@ export const itIT: Catalog = {
   'data.status.help.keyRotation': 'La rotazione sostituisce la chiave di cifratura SQLCipher del database durevole mantenendo i dati. La pre-verifica è di sola lettura; l’esecuzione applica il rekey.',
   'data.status.help.exportCleanup': 'Rimuove solo i vecchi file di esportazione locali secondo la politica configurata. Non è cancellazione legale, completamento GDPR né eliminazione di archivio.',
   'data.status.help.crashCleanup': 'Rimuove le vecchie diagnostiche di crash locali salvate su disco. Non tocca il ledger né i dati di dominio.',
+  'data.status.help.platformLogsCleanup': 'Rimuove solo la coda locale dei log di piattaforma salvata in platform-logs.json. Non rimuove stdout/stderr, SIEM, ledger o catena di audit.',
   'data.status.help.startOver': 'Ricomincia archivia la cronologia attuale e prosegue con dati di dominio vuoti, mantenendo utenti e impostazioni. Una reimpostazione, invece, cancella i dati in modo distruttivo.',
   'data.status.help.reset': 'Cancella dati elimina i dati di dominio ma preserva il ledger; un ripristino di fabbrica cancella tutto in un’istanza nuova. Tutte richiedono la frase esatta e la riautenticazione.',
 };

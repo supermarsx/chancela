@@ -3040,6 +3040,12 @@ export const ptBR: Catalog = {
   'data.status.cleanup.crash.button': 'Limpar falhas',
   'data.status.cleanup.crash.confirm':
     'Apagar relatórios de falha guardados nesta pasta de dados? Esta ação não apaga livros, atas ou configurações.',
+  'data.status.cleanup.platformLogs.title': 'Registros da plataforma',
+  'data.status.cleanup.platformLogs.body':
+    'Remove apenas o arquivo local platform-logs.json usado pela fila curta de diagnóstico da plataforma. Não mexe no ledger, na auditoria ou nos dados de domínio.',
+  'data.status.cleanup.platformLogs.button': 'Limpar registros',
+  'data.status.cleanup.platformLogs.confirm':
+    'Limpar o arquivo local platform-logs.json desta pasta de dados? Esta ação não exclui auditoria, ledger, livros, atas ou configurações.',
   'data.status.cleanup.exports.title': 'Exportações retidas',
   'data.status.cleanup.exports.body':
     'Remove pacotes de exportação salvos pelo servidor. Mantenha cópias externas antes de limpar.',
@@ -4408,6 +4414,7 @@ export const ptBR: Catalog = {
   'data.status.help.keyRotation': 'A rotação substitui a chave de criptografia SQLCipher do banco de dados durável, mantendo os dados. A verificação prévia é somente leitura; a execução aplica o rekey.',
   'data.status.help.exportCleanup': 'Remove apenas arquivos de exportação locais antigos conforme a política configurada. Não é exclusão legal, conclusão de LGPD nem eliminação de arquivo.',
   'data.status.help.crashCleanup': 'Remove diagnósticos locais de falhas antigas salvos em disco. Não afeta o ledger nem os dados de domínio.',
+  'data.status.help.platformLogsCleanup': 'Remove só a fila local de registros da plataforma salva em platform-logs.json. Não remove stdout/stderr, SIEM, ledger ou cadeia de auditoria.',
   'data.status.help.startOver': 'Recomeçar arquiva o histórico atual e continua com dados de domínio vazios, mantendo usuários e configurações. A redefinição, por sua vez, apaga dados de forma destrutiva.',
   'data.status.help.reset': 'Limpar dados apaga os dados de domínio, mas preserva o ledger; a redefinição de fábrica apaga tudo para uma instância nova. Todas exigem a frase exata e reautenticação.',
 };

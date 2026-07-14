@@ -3040,6 +3040,12 @@ export const daDK: Catalog = {
   'data.status.cleanup.crash.button': 'Ryd nedbrud',
   'data.status.cleanup.crash.confirm':
     'Slet nedbrudsrapporter gemt i denne datamappe? Dette sletter ikke bøger, protokoller eller indstillinger.',
+  'data.status.cleanup.platformLogs.title': 'Platformlogge',
+  'data.status.cleanup.platformLogs.body':
+    'Fjerner kun den lokale fil platform-logs.json, der bruges af den korte platformdiagnostikkø. Det påvirker ikke ledger, revisionskæde eller domænedata.',
+  'data.status.cleanup.platformLogs.button': 'Ryd logge',
+  'data.status.cleanup.platformLogs.confirm':
+    'Rydde den lokale fil platform-logs.json i denne datamappe? Dette sletter ikke revision, ledger, bøger, protokoller eller indstillinger.',
   'data.status.cleanup.exports.title': 'Bevarede eksporter',
   'data.status.cleanup.exports.body':
     'Fjerner eksportpakker bevaret af serveren. Behold eksterne kopier, før du rydder.',
@@ -4406,6 +4412,7 @@ export const daDK: Catalog = {
   'data.status.help.keyRotation': 'Rotation udskifter den varige databases SQLCipher-krypteringsnøgle, mens dataene bevares. Forhåndstjekket er skrivebeskyttet; udførelsen anvender rekey.',
   'data.status.help.exportCleanup': 'Fjerner kun gamle lokale eksportfiler i henhold til den konfigurerede politik. Det er ikke juridisk sletning, GDPR-afslutning eller arkivsletning.',
   'data.status.help.crashCleanup': 'Fjerner gamle lokale nedbrudsdiagnoser gemt på disken. Det påvirker ikke ledgeren eller domænedataene.',
+  'data.status.help.platformLogsCleanup': 'Fjerner kun den lokale platformlogkø i platform-logs.json. Fjerner ikke stdout/stderr, SIEM, ledger eller revisionskæde.',
   'data.status.help.startOver': 'Start forfra arkiverer den aktuelle historik og fortsætter med tomme domænedata, mens brugere og indstillinger bevares. En nulstilling sletter derimod data destruktivt.',
   'data.status.help.reset': 'Ryd data sletter domænedata, men bevarer ledgeren; en fabriksnulstilling sletter alt til en ny instans. Alle kræver den nøjagtige frase og fornyet godkendelse.',
 };

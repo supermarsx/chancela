@@ -3047,6 +3047,12 @@ export const fiFI: Catalog = {
   'data.status.cleanup.crash.button': 'Siivoa kaatumiset',
   'data.status.cleanup.crash.confirm':
     'Poistetaanko tähän datakansioon tallennetut kaatumisraportit? Tämä ei poista kirjoja, pöytäkirjoja tai asetuksia.',
+  'data.status.cleanup.platformLogs.title': 'Alustan lokit',
+  'data.status.cleanup.platformLogs.body':
+    'Poistaa vain paikallisen platform-logs.json-tiedoston, jota lyhyt alustan diagnostiikkajono käyttää. Ledger, auditointiketju ja toimialuedata eivät muutu.',
+  'data.status.cleanup.platformLogs.button': 'Siivoa lokit',
+  'data.status.cleanup.platformLogs.confirm':
+    'Siivotaanko paikallinen platform-logs.json-tiedosto tästä datakansiosta? Tämä ei poista auditointia, ledgeriä, kirjoja, pöytäkirjoja tai asetuksia.',
   'data.status.cleanup.exports.title': 'Säilytetyt viennit',
   'data.status.cleanup.exports.body':
     'Poistaa palvelimen säilyttämät vientipaketit. Säilytä ulkoiset kopiot ennen siivoamista.',
@@ -4417,6 +4423,7 @@ export const fiFI: Catalog = {
   'data.status.help.keyRotation': 'Kierto korvaa pysyvän tietokannan SQLCipher-salausavaimen säilyttäen tiedot. Esitarkistus on vain luku; suoritus soveltaa rekeyn.',
   'data.status.help.exportCleanup': 'Poistaa vain vanhoja paikallisia vientitiedostoja määritetyn käytännön mukaan. Tämä ei ole laillinen poisto, GDPR-täyttymys eikä arkiston poisto.',
   'data.status.help.crashCleanup': 'Poistaa vanhoja paikallisia kaatumisdiagnostiikkoja levyltä. Se ei vaikuta ledgeriin eikä toimialuedataan.',
+  'data.status.help.platformLogsCleanup': 'Poistaa vain paikallisen alustan lokijonon tiedostosta platform-logs.json. Ei poista stdout/stderr-, SIEM-, ledger- tai auditointiketjutietoja.',
   'data.status.help.startOver': 'Aloita alusta arkistoi nykyisen historian ja jatkaa tyhjällä toimialuedatalla säilyttäen käyttäjät ja asetukset. Nollaus sen sijaan poistaa tiedot tuhoavasti.',
   'data.status.help.reset': 'Tyhjennä tiedot poistaa toimialuedatan mutta säilyttää ledgerin; tehdasnollaus pyyhkii kaiken uuteen instanssiin. Kaikki vaativat tarkan lauseen ja uudelleentodennuksen.',
 };

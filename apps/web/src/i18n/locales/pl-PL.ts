@@ -3042,6 +3042,12 @@ export const plPL: Catalog = {
   'data.status.cleanup.crash.button': 'Wyczyść awarie',
   'data.status.cleanup.crash.confirm':
     'Usunąć raporty awarii przechowywane w tym folderze danych? Nie usuwa to ksiąg, protokołów ani ustawień.',
+  'data.status.cleanup.platformLogs.title': 'Logi platformy',
+  'data.status.cleanup.platformLogs.body':
+    'Usuwa tylko lokalny plik platform-logs.json używany przez krótką kolejkę diagnostyczną platformy. Nie narusza księgi, łańcucha audytu ani danych domenowych.',
+  'data.status.cleanup.platformLogs.button': 'Wyczyść logi',
+  'data.status.cleanup.platformLogs.confirm':
+    'Wyczyścić lokalny plik platform-logs.json w tym folderze danych? Ta akcja nie usuwa audytu, księgi, ksiąg, protokołów ani ustawień.',
   'data.status.cleanup.exports.title': 'Zachowane eksporty',
   'data.status.cleanup.exports.body':
     'Usuwa pakiety eksportu zachowane przez serwer. Zachowaj kopie zewnętrzne przed czyszczeniem.',
@@ -4416,6 +4422,7 @@ export const plPL: Catalog = {
   'data.status.help.keyRotation': 'Rotacja zastępuje klucz szyfrowania SQLCipher trwałej bazy danych, zachowując dane. Kontrola wstępna jest tylko do odczytu; wykonanie stosuje rekey.',
   'data.status.help.exportCleanup': 'Usuwa tylko stare lokalne pliki eksportu zgodnie ze skonfigurowaną polityką. To nie jest usunięcie prawne, zakończenie RODO ani usunięcie archiwum.',
   'data.status.help.crashCleanup': 'Usuwa stare lokalne diagnostyki awarii zapisane na dysku. Nie narusza księgi ani danych domeny.',
+  'data.status.help.platformLogsCleanup': 'Usuwa tylko lokalną kolejkę logów platformy zapisaną w platform-logs.json. Nie usuwa stdout/stderr, SIEM, księgi ani łańcucha audytu.',
   'data.status.help.startOver': 'Rozpoczęcie od nowa archiwizuje bieżącą historię i kontynuuje z pustymi danymi domeny, zachowując użytkowników i ustawienia. Resetowanie natomiast usuwa dane w sposób destrukcyjny.',
   'data.status.help.reset': 'Czyszczenie danych usuwa dane domeny, ale zachowuje księgę; reset fabryczny usuwa wszystko do nowej instancji. Wszystkie wymagają dokładnej frazy i ponownego uwierzytelnienia.',
 };

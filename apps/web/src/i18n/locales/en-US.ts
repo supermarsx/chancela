@@ -3023,6 +3023,12 @@ export const enUS: Catalog = {
   'data.status.cleanup.crash.button': 'Clean crashes',
   'data.status.cleanup.crash.confirm':
     'Delete crash reports stored in this data folder? This does not delete books, minutes or settings.',
+  'data.status.cleanup.platformLogs.title': 'Platform logs',
+  'data.status.cleanup.platformLogs.body':
+    'Removes only the local platform-logs.json file used by the short platform diagnostic tail. It does not touch the ledger, audit chain or domain data.',
+  'data.status.cleanup.platformLogs.button': 'Clean logs',
+  'data.status.cleanup.platformLogs.confirm':
+    'Clean the local platform-logs.json file in this data folder? This does not delete audit, ledger, books, minutes or settings.',
   'data.status.cleanup.exports.title': 'Retained exports',
   'data.status.cleanup.exports.body':
     'Removes export packages retained by the server. Keep external copies before cleaning.',
@@ -4379,6 +4385,7 @@ export const enUS: Catalog = {
   'data.status.help.keyRotation': 'Rotation replaces the durable database’s SQLCipher encryption key while keeping the data. The preflight is read-only; execution applies the rekey.',
   'data.status.help.exportCleanup': 'Removes only old local export files per the configured policy. It is not legal erasure, GDPR completion or archive deletion.',
   'data.status.help.crashCleanup': 'Removes old local crash diagnostics stored on disk. It does not touch the ledger or domain data.',
+  'data.status.help.platformLogsCleanup': 'Removes only the local platform log tail stored in platform-logs.json. It does not remove stdout/stderr, SIEM, ledger or audit-chain records.',
   'data.status.help.startOver': 'Start over archives the current history and continues with empty domain data, keeping users and settings. A reset, by contrast, erases data destructively.',
   'data.status.help.reset': 'Clearing data erases domain data but preserves the ledger; a factory reset wipes everything to a fresh instance. All require the exact phrase and re-authentication.',
 };

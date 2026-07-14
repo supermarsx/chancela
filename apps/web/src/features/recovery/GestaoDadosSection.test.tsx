@@ -82,6 +82,16 @@ const durableStatus: DataStatusResponse = {
         relative_roots: ['crash-reports'],
       },
       {
+        id: 'platform_logs',
+        label: 'Platform logs',
+        bytes: 256,
+        basis: 'filesystem',
+        exact: true,
+        file_count: 1,
+        directory_count: 0,
+        relative_roots: ['platform-logs.json'],
+      },
+      {
         id: 'exports',
         label: 'Exports',
         bytes: 512,
@@ -567,13 +577,14 @@ describe('GestaoDadosSection', () => {
     expect(screen.getByText('Database')).toBeTruthy();
     expect(screen.getByText('Ledger payloads')).toBeTruthy();
     expect(screen.getByText('Relatórios de falha')).toBeTruthy();
+    expect(screen.getByText('Registos de plataforma')).toBeTruthy();
     expect(screen.getByText('Exportações retidas')).toBeTruthy();
     expect(screen.getByText(/Total:/).textContent).toContain('4 KB');
     const maintenanceSection = screen
       .getByRole('heading', { name: 'Manutenção' })
       .closest('section')!;
     const cleanupRows = within(maintenanceSection).getAllByRole('listitem');
-    expect(cleanupRows).toHaveLength(2);
+    expect(cleanupRows).toHaveLength(3);
     const crashCleanup = within(maintenanceSection).getByText('Relatórios de falha').closest('li')!;
     expect(crashCleanup.querySelector('.data-status-cleanup__main')?.textContent).toContain(
       'Remove diagnósticos locais de falhas antigas',
@@ -582,6 +593,18 @@ describe('GestaoDadosSection', () => {
       '512 B',
     );
     expect(within(crashCleanup).getByRole('button', { name: 'Limpar falhas' })).toBeTruthy();
+    const platformLogsCleanup = within(maintenanceSection)
+      .getByText('Registos de plataforma')
+      .closest('li')!;
+    expect(platformLogsCleanup.querySelector('.data-status-cleanup__main')?.textContent).toContain(
+      'Remove apenas o ficheiro local platform-logs.json',
+    );
+    expect(platformLogsCleanup.querySelector('.data-status-cleanup__metric')?.textContent).toContain(
+      '256 B',
+    );
+    expect(
+      within(platformLogsCleanup).getByRole('button', { name: 'Limpar registos' }),
+    ).toBeTruthy();
     const usageSection = screen.getByRole('heading', { name: 'Utilização' }).closest('section')!;
     const databaseRow = within(usageSection).getByText('Database').closest('li')!;
     expect(within(databaseRow).getByText('ficheiro SQLite')).toBeTruthy();
@@ -861,9 +884,10 @@ describe('GestaoDadosSection', () => {
       .getByRole('heading', { name: 'Manutenção' })
       .closest('section')!;
     const cleanupRows = within(maintenanceSection).getAllByRole('listitem');
-    expect(cleanupRows).toHaveLength(2);
+    expect(cleanupRows).toHaveLength(3);
     expect(cleanupRows[0].textContent).toContain('Relatórios de falha');
-    expect(cleanupRows[1].textContent).toContain('Exportações retidas');
+    expect(cleanupRows[1].textContent).toContain('Registos de plataforma');
+    expect(cleanupRows[2].textContent).toContain('Exportações retidas');
 
     fireEvent.click(screen.getByRole('button', { name: 'Limpar falhas' }));
     const confirmBtns = screen.getAllByRole('button', { name: 'Limpar falhas' });
@@ -874,6 +898,50 @@ describe('GestaoDadosSection', () => {
     expect(cleanupCall.method).toBe('POST');
     expect(JSON.parse(cleanupCall.body as string)).toEqual({ target: 'crash' });
     expect(await screen.findByText(/Apagados 1 ficheiros e 1 pastas/)).toBeTruthy();
+    await waitFor(() =>
+      expect(calls.filter((c) => c.url.includes('/v1/data/status'))).toHaveLength(2),
+    );
+  });
+
+  it('cleans platform logs from the storage maintenance panel and refreshes status', async () => {
+    const cleanedStatus: DataStatusResponse = {
+      ...durableStatus,
+      usage: {
+        ...durableStatus.usage,
+        filesystem: durableStatus.usage.filesystem.filter(
+          (concern) => concern.id !== 'platform_logs',
+        ),
+      },
+    };
+    const calls = installFetch([durableStatus, cleanedStatus], (url) => {
+      if (url.includes('/v1/data/cleanup')) {
+        return jsonResponse({
+          target: 'platform_logs',
+          data_dir: 'F:\\ChancelaData',
+          dry_run: false,
+          deleted_bytes: 256,
+          deleted_files: 1,
+          deleted_directories: 0,
+          would_delete_bytes: 0,
+          would_delete_files: 0,
+          would_delete_directories: 0,
+          skipped: [],
+        });
+      }
+      return null;
+    });
+    renderWithProviders(<GestaoDadosSection />);
+    await screen.findByText('F:\\ChancelaData');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Limpar registos' }));
+    const confirmBtns = screen.getAllByRole('button', { name: 'Limpar registos' });
+    fireEvent.click(confirmBtns[confirmBtns.length - 1]);
+
+    await waitFor(() => expect(calls.some((c) => c.url.includes('/v1/data/cleanup'))).toBe(true));
+    const cleanupCall = calls.find((c) => c.url.includes('/v1/data/cleanup'))!;
+    expect(cleanupCall.method).toBe('POST');
+    expect(JSON.parse(cleanupCall.body as string)).toEqual({ target: 'platform_logs' });
+    expect(await screen.findByText(/Apagados 1 ficheiros e 0 pastas/)).toBeTruthy();
     await waitFor(() =>
       expect(calls.filter((c) => c.url.includes('/v1/data/status'))).toHaveLength(2),
     );
@@ -957,6 +1025,12 @@ describe('GestaoDadosSection', () => {
     );
     const crashRow = within(maintenanceSection).getByText('Relatórios de falha').closest('li')!;
     const crashCleanupButton = within(crashRow).getByRole('button', { name: 'Limpar falhas' });
+    const platformLogsRow = within(maintenanceSection)
+      .getByText('Registos de plataforma')
+      .closest('li')!;
+    const platformLogsCleanupButton = within(platformLogsRow).getByRole('button', {
+      name: 'Limpar registos',
+    });
     const previewButton = within(exportsRow).getByRole('button', {
       name: 'Pré-visualizar limpeza',
     });
@@ -965,6 +1039,7 @@ describe('GestaoDadosSection', () => {
     }) as HTMLButtonElement;
     expect(previewButton.classList.contains('btn--danger')).toBe(false);
     expect(crashCleanupButton.classList.contains('btn--danger')).toBe(false);
+    expect(platformLogsCleanupButton.classList.contains('btn--danger')).toBe(false);
     expect(executeBeforePreview.classList.contains('btn--danger')).toBe(false);
     expect(executeBeforePreview.querySelector('.btn__icon svg')?.innerHTML).toBe(
       crashCleanupButton.querySelector('.btn__icon svg')?.innerHTML,

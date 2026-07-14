@@ -13232,6 +13232,59 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn data_cleanup_platform_logs_deletes_sidecar_and_clears_ring_only() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.dir.clone());
+        seed_platform_log(
+            &state,
+            "api",
+            PlatformLogLevel::Info,
+            "platform.services",
+            "test platform log",
+            None,
+        )
+        .await;
+        let log_file = tmp.dir.join(platform_logs::PLATFORM_LOGS_FILE);
+        assert!(log_file.is_file(), "platform log sidecar is present");
+
+        let crash = tmp.dir.join("crash");
+        std::fs::create_dir_all(&crash).expect("crash dir");
+        std::fs::write(crash.join("kept.log"), b"crash").expect("crash file");
+        let exports = tmp.dir.join("exports");
+        std::fs::create_dir_all(&exports).expect("exports dir");
+        std::fs::write(exports.join("kept.zip"), b"export").expect("export file");
+
+        let (status, body) = send(
+            state.clone(),
+            post_json("/v1/data/cleanup", json!({ "target": "platform_logs" })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "body: {body}");
+        assert_eq!(body["target"], "platform_logs");
+        assert_eq!(body["dry_run"], false);
+        assert_eq!(body["deleted_files"], 1);
+        assert_eq!(body["deleted_directories"], 0);
+        assert!(
+            body["deleted_bytes"]
+                .as_u64()
+                .is_some_and(|bytes| bytes > 0),
+            "platform log sidecar bytes counted: {body}"
+        );
+        assert!(!log_file.exists(), "platform log sidecar deleted");
+        assert!(crash.join("kept.log").is_file(), "crash reports untouched");
+        assert!(exports.join("kept.zip").is_file(), "exports untouched");
+
+        let (status, logs) = send(state, get("/v1/platform/logs")).await;
+        assert_eq!(status, StatusCode::OK, "body: {logs}");
+        assert_eq!(logs["logs"], json!([]));
+        assert_eq!(logs["retention"]["retained_count"], 0);
+        assert_eq!(
+            logs["retention"]["source"],
+            platform_logs::PLATFORM_LOGS_FILE
+        );
+    }
+
+    #[tokio::test]
     async fn data_cleanup_exports_execution_requires_preview_token() {
         let tmp = TempDir::new();
         let state = AppState::with_data_dir(tmp.dir.clone());

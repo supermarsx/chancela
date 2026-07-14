@@ -129,6 +129,7 @@ type CleanupConfig = {
   body: MessageKey;
   button: MessageKey;
   confirm: MessageKey;
+  help: MessageKey;
 };
 
 const CLEANUP_TARGETS: CleanupConfig[] = [
@@ -138,6 +139,15 @@ const CLEANUP_TARGETS: CleanupConfig[] = [
     body: 'data.status.cleanup.crash.body',
     button: 'data.status.cleanup.crash.button',
     confirm: 'data.status.cleanup.crash.confirm',
+    help: 'data.status.help.crashCleanup',
+  },
+  {
+    target: 'platform_logs',
+    title: 'data.status.cleanup.platformLogs.title',
+    body: 'data.status.cleanup.platformLogs.body',
+    button: 'data.status.cleanup.platformLogs.button',
+    confirm: 'data.status.cleanup.platformLogs.confirm',
+    help: 'data.status.help.platformLogsCleanup',
   },
   {
     target: 'exports',
@@ -145,6 +155,7 @@ const CLEANUP_TARGETS: CleanupConfig[] = [
     body: 'data.status.cleanup.exports.body',
     button: 'data.status.cleanup.exports.button',
     confirm: 'data.status.cleanup.exports.confirm',
+    help: 'data.status.help.exportCleanup',
   },
 ];
 
@@ -1744,11 +1755,7 @@ function DataStatusPanel({
                       <h5>
                         {t(target.title)}{' '}
                         <FieldHelp
-                          text={t(
-                            isExportsPreview
-                              ? 'data.status.help.exportCleanup'
-                              : 'data.status.help.crashCleanup',
-                          )}
+                          text={t(target.help)}
                         />
                       </h5>
                       <span className="data-status-cleanup__description">

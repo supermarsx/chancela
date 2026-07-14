@@ -3082,6 +3082,12 @@ export const deDE: Catalog = {
   'data.status.cleanup.crash.button': 'Abstürze bereinigen',
   'data.status.cleanup.crash.confirm':
     'In diesem Datenordner gespeicherte Absturzberichte löschen? Bücher, Protokolle oder Einstellungen werden dadurch nicht gelöscht.',
+  'data.status.cleanup.platformLogs.title': 'Plattformprotokolle',
+  'data.status.cleanup.platformLogs.body':
+    'Entfernt nur die lokale Datei platform-logs.json für die kurze Plattform-Diagnosewarteschlange. Ledger, Auditkette und Fachdaten bleiben unberührt.',
+  'data.status.cleanup.platformLogs.button': 'Protokolle bereinigen',
+  'data.status.cleanup.platformLogs.confirm':
+    'Die lokale Datei platform-logs.json in diesem Datenordner bereinigen? Diese Aktion löscht keine Auditdaten, Ledger, Bücher, Protokolle oder Einstellungen.',
   'data.status.cleanup.exports.title': 'Aufbewahrte Exporte',
   'data.status.cleanup.exports.body':
     'Entfernt vom Server aufbewahrte Exportpakete. Bewahren Sie externe Kopien auf, bevor Sie bereinigen.',
@@ -4460,6 +4466,7 @@ export const deDE: Catalog = {
   'data.status.help.keyRotation': 'Die Rotation ersetzt den SQLCipher-Verschlüsselungsschlüssel der dauerhaften Datenbank unter Erhalt der Daten. Die Vorprüfung ist schreibgeschützt; die Ausführung wendet den Rekey an.',
   'data.status.help.exportCleanup': 'Entfernt nur alte lokale Exportdateien gemäß der konfigurierten Richtlinie. Dies ist keine rechtliche Löschung, kein DSGVO-Abschluss und keine Archivlöschung.',
   'data.status.help.crashCleanup': 'Entfernt alte lokale Absturzdiagnosen von der Festplatte. Das Ledger und die Domänendaten bleiben unberührt.',
+  'data.status.help.platformLogsCleanup': 'Entfernt nur die lokale Plattformprotokoll-Warteschlange in platform-logs.json. Entfernt weder stdout/stderr noch SIEM, Ledger oder Auditkette.',
   'data.status.help.startOver': 'Neu beginnen archiviert den aktuellen Verlauf und läuft mit leeren Domänendaten weiter, wobei Benutzer und Einstellungen erhalten bleiben. Ein Zurücksetzen löscht Daten dagegen destruktiv.',
   'data.status.help.reset': 'Daten löschen entfernt Domänendaten, erhält aber das Ledger; ein Werksreset löscht alles auf eine frische Instanz. Alle erfordern die exakte Phrase und erneute Authentifizierung.',
 };

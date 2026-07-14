@@ -3070,6 +3070,12 @@ export const frFR: Catalog = {
   'data.status.cleanup.crash.button': 'Nettoyer les défaillances',
   'data.status.cleanup.crash.confirm':
     'Supprimer les rapports de défaillance stockés dans ce dossier de données ? Cela ne supprime ni les registres, ni les procès-verbaux, ni les paramètres.',
+  'data.status.cleanup.platformLogs.title': 'Journaux de plateforme',
+  'data.status.cleanup.platformLogs.body':
+    'Supprime uniquement le fichier local platform-logs.json utilisé par la courte file de diagnostic de plateforme. Ne touche ni au registre, ni à l’audit, ni aux données métier.',
+  'data.status.cleanup.platformLogs.button': 'Nettoyer les journaux',
+  'data.status.cleanup.platformLogs.confirm':
+    'Nettoyer le fichier local platform-logs.json de ce dossier de données ? Cette action ne supprime ni audit, ni registre, ni livres, ni procès-verbaux, ni paramètres.',
   'data.status.cleanup.exports.title': 'Exports conservés',
   'data.status.cleanup.exports.body':
     'Supprime les paquets d’export conservés par le serveur. Conservez des copies externes avant le nettoyage.',
@@ -4454,6 +4460,7 @@ export const frFR: Catalog = {
   'data.status.help.keyRotation': 'La rotation remplace la clé de chiffrement SQLCipher de la base de données durable tout en conservant les données. La pré-vérification est en lecture seule ; l’exécution applique le rekey.',
   'data.status.help.exportCleanup': 'Supprime uniquement les anciens fichiers d’export locaux selon la politique configurée. Ce n’est pas un effacement légal, un achèvement RGPD ni une suppression d’archive.',
   'data.status.help.crashCleanup': 'Supprime les anciens diagnostics de plantage locaux stockés sur le disque. N’affecte ni le registre ni les données de domaine.',
+  'data.status.help.platformLogsCleanup': 'Supprime seulement la file locale des journaux de plateforme stockée dans platform-logs.json. Ne supprime ni stdout/stderr, ni SIEM, ni registre, ni chaîne d’audit.',
   'data.status.help.startOver': 'Recommencer archive l’historique actuel et continue avec des données de domaine vides, en conservant les utilisateurs et les paramètres. Une réinitialisation, elle, efface les données de façon destructive.',
   'data.status.help.reset': 'Effacer les données supprime les données de domaine mais préserve le registre ; une réinitialisation d’usine efface tout vers une instance neuve. Toutes exigent la phrase exacte et une réauthentification.',
 };

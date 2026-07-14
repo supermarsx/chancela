@@ -3058,6 +3058,12 @@ export const nlNL: Catalog = {
   'data.status.cleanup.crash.button': 'Crashes opruimen',
   'data.status.cleanup.crash.confirm':
     'Crashrapporten die in deze gegevensmap zijn opgeslagen verwijderen? Dit verwijdert geen boeken, notulen of instellingen.',
+  'data.status.cleanup.platformLogs.title': 'Platformlogs',
+  'data.status.cleanup.platformLogs.body':
+    'Verwijdert alleen het lokale bestand platform-logs.json voor de korte diagnostische platformrij. Het grootboek, de auditketen en domeingegevens blijven ongemoeid.',
+  'data.status.cleanup.platformLogs.button': 'Logs opruimen',
+  'data.status.cleanup.platformLogs.confirm':
+    'Het lokale bestand platform-logs.json in deze gegevensmap opruimen? Hiermee worden geen audit, grootboek, boeken, notulen of instellingen verwijderd.',
   'data.status.cleanup.exports.title': 'Bewaarde exports',
   'data.status.cleanup.exports.body':
     'Verwijdert exportpakketten die door de server worden bewaard. Bewaar externe kopieën voordat u opruimt.',
@@ -4442,6 +4448,7 @@ export const nlNL: Catalog = {
   'data.status.help.keyRotation': 'Rotatie vervangt de SQLCipher-versleutelingssleutel van de duurzame database met behoud van de gegevens. De voorcontrole is alleen-lezen; de uitvoering past de rekey toe.',
   'data.status.help.exportCleanup': 'Verwijdert alleen oude lokale exportbestanden volgens het geconfigureerde beleid. Het is geen wettelijke wissing, AVG-afronding of archiefverwijdering.',
   'data.status.help.crashCleanup': 'Verwijdert oude lokale crashdiagnostiek die op schijf is opgeslagen. Het raakt het grootboek en de domeingegevens niet aan.',
+  'data.status.help.platformLogsCleanup': 'Verwijdert alleen de lokale platformlogrij in platform-logs.json. Verwijdert geen stdout/stderr, SIEM, grootboek of auditketen.',
   'data.status.help.startOver': 'Opnieuw beginnen archiveert de huidige geschiedenis en gaat verder met lege domeingegevens, met behoud van gebruikers en instellingen. Een reset wist gegevens daarentegen destructief.',
   'data.status.help.reset': 'Gegevens wissen verwijdert domeingegevens maar behoudt het grootboek; een fabrieksreset wist alles naar een nieuwe instantie. Alle vereisen de exacte zin en herauthenticatie.',
 };

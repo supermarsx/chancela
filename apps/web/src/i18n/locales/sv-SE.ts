@@ -3042,6 +3042,12 @@ export const svSE: Catalog = {
   'data.status.cleanup.crash.button': 'Rensa krascher',
   'data.status.cleanup.crash.confirm':
     'Ta bort kraschrapporter som lagrats i den här datamappen? Detta raderar inte böcker, protokoll eller inställningar.',
+  'data.status.cleanup.platformLogs.title': 'Plattformsloggar',
+  'data.status.cleanup.platformLogs.body':
+    'Tar endast bort den lokala filen platform-logs.json som används av den korta diagnostikkön för plattformen. Den påverkar inte liggare, granskningskedja eller domändata.',
+  'data.status.cleanup.platformLogs.button': 'Rensa loggar',
+  'data.status.cleanup.platformLogs.confirm':
+    'Rensa den lokala filen platform-logs.json i den här datamappen? Detta raderar inte granskning, liggare, böcker, protokoll eller inställningar.',
   'data.status.cleanup.exports.title': 'Behållna exporter',
   'data.status.cleanup.exports.body':
     'Tar bort exportpaket som behållits av servern. Behåll externa kopior innan du rensar.',
@@ -4410,6 +4416,7 @@ export const svSE: Catalog = {
   'data.status.help.keyRotation': 'Rotationen ersätter den varaktiga databasens SQLCipher-krypteringsnyckel medan data behålls. Förkontrollen är skrivskyddad; körningen tillämpar rekey.',
   'data.status.help.exportCleanup': 'Tar bort endast gamla lokala exportfiler enligt den konfigurerade policyn. Det är inte juridisk radering, GDPR-slutförande eller arkivradering.',
   'data.status.help.crashCleanup': 'Tar bort gamla lokala kraschdiagnoser som lagrats på disk. Det påverkar inte liggaren eller domändata.',
+  'data.status.help.platformLogsCleanup': 'Tar bara bort den lokala plattformsloggkön i platform-logs.json. Tar inte bort stdout/stderr, SIEM, liggare eller granskningskedja.',
   'data.status.help.startOver': 'Börja om arkiverar den aktuella historiken och fortsätter med tom domändata, samtidigt som användare och inställningar behålls. En återställning raderar däremot data destruktivt.',
   'data.status.help.reset': 'Rensa data raderar domändata men bevarar liggaren; en fabriksåterställning rensar allt till en ny instans. Alla kräver den exakta frasen och omautentisering.',
 };

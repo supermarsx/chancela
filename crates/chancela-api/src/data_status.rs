@@ -308,6 +308,7 @@ struct ConcernAccumulator {
 enum CleanupTarget {
     Crash,
     Exports,
+    PlatformLogs,
 }
 
 impl CleanupTarget {
@@ -315,6 +316,7 @@ impl CleanupTarget {
         match self {
             CleanupTarget::Crash => "crash",
             CleanupTarget::Exports => "exports",
+            CleanupTarget::PlatformLogs => "platform_logs",
         }
     }
 }
@@ -515,7 +517,7 @@ pub async fn get_data_status(
     }))
 }
 
-/// `POST /v1/data/cleanup` - bounded storage cleanup for crash reports or retained exports.
+/// `POST /v1/data/cleanup` - bounded storage cleanup for crash reports, platform logs, or retained exports.
 pub async fn cleanup_data(
     State(state): State<AppState>,
     actor: CurrentActor,
@@ -580,6 +582,9 @@ pub async fn cleanup_data(
     let mut response = task::spawn_blocking(move || cleanup_data_dir(data_dir, target, policy))
         .await
         .map_err(|e| ApiError::Internal(format!("data cleanup worker failed: {e}")))??;
+    if target == CleanupTarget::PlatformLogs {
+        state.platform_logs.write().await.clear();
+    }
     response.data_dir = Some(data_dir_display);
     Ok(Json(response))
 }
@@ -692,8 +697,9 @@ fn parse_cleanup_target(raw: &str) -> Result<CleanupTarget, ApiError> {
     match raw.trim() {
         "crash" => Ok(CleanupTarget::Crash),
         "exports" => Ok(CleanupTarget::Exports),
+        "platform_logs" => Ok(CleanupTarget::PlatformLogs),
         other => Err(ApiError::Unprocessable(format!(
-            "unsupported cleanup target {other:?} (use crash | exports)"
+            "unsupported cleanup target {other:?} (use crash | exports | platform_logs)"
         ))),
     }
 }

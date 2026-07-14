@@ -3056,6 +3056,12 @@ export const esES: Catalog = {
   'data.status.cleanup.crash.button': 'Limpiar fallos',
   'data.status.cleanup.crash.confirm':
     '¿Eliminar los informes de fallo guardados en esta carpeta de datos? Esto no borra libros, actas ni configuración.',
+  'data.status.cleanup.platformLogs.title': 'Registros de plataforma',
+  'data.status.cleanup.platformLogs.body':
+    'Elimina solo el archivo local platform-logs.json usado por la cola corta de diagnóstico de plataforma. No toca el ledger, la auditoría ni los datos de dominio.',
+  'data.status.cleanup.platformLogs.button': 'Limpiar registros',
+  'data.status.cleanup.platformLogs.confirm':
+    '¿Limpiar el archivo local platform-logs.json de esta carpeta de datos? Esta acción no elimina auditoría, ledger, libros, actas ni configuración.',
   'data.status.cleanup.exports.title': 'Exportaciones conservadas',
   'data.status.cleanup.exports.body':
     'Elimina los paquetes de exportación conservados por el servidor. Guarde copias externas antes de limpiar.',
@@ -4436,6 +4442,7 @@ export const esES: Catalog = {
   'data.status.help.keyRotation': 'La rotación sustituye la clave de cifrado SQLCipher de la base de datos duradera, conservando los datos. La comprobación previa es de solo lectura; la ejecución aplica el rekey.',
   'data.status.help.exportCleanup': 'Elimina solo archivos de exportación locales antiguos según la política configurada. No es borrado legal, cumplimiento del RGPD ni eliminación de archivo.',
   'data.status.help.crashCleanup': 'Elimina diagnósticos locales de fallos antiguos guardados en disco. No afecta al ledger ni a los datos de dominio.',
+  'data.status.help.platformLogsCleanup': 'Elimina solo la cola local de registros de plataforma guardada en platform-logs.json. No elimina stdout/stderr, SIEM, ledger ni cadena de auditoría.',
   'data.status.help.startOver': 'Reiniciar archiva el historial actual y continúa con datos de dominio vacíos, conservando usuarios y ajustes. El restablecimiento, en cambio, borra datos de forma destructiva.',
   'data.status.help.reset': 'Limpiar datos borra los datos de dominio pero conserva el ledger; el restablecimiento de fábrica borra todo a una instancia nueva. Todas requieren la frase exacta y reautenticación.',
 };

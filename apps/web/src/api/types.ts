@@ -7197,7 +7197,7 @@ export interface DataStatusResponse {
 }
 
 /** Bounded storage-maintenance targets under the configured data directory. */
-export type DataCleanupTarget = 'crash' | 'exports';
+export type DataCleanupTarget = 'crash' | 'exports' | 'platform_logs';
 
 /** `POST /v1/data/cleanup` request for non-domain storage maintenance. */
 export interface DataCleanupBody {

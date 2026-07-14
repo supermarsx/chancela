@@ -3137,6 +3137,12 @@ export const ptPT = {
   'data.status.cleanup.crash.button': 'Limpar falhas',
   'data.status.cleanup.crash.confirm':
     'Apagar relatórios de falha guardados nesta pasta de dados? Esta ação não apaga livros, atas ou definições.',
+  'data.status.cleanup.platformLogs.title': 'Registos de plataforma',
+  'data.status.cleanup.platformLogs.body':
+    'Remove apenas o ficheiro local platform-logs.json usado pela fila curta de diagnóstico da plataforma. Não toca no ledger, auditoria ou dados de domínio.',
+  'data.status.cleanup.platformLogs.button': 'Limpar registos',
+  'data.status.cleanup.platformLogs.confirm':
+    'Limpar o ficheiro local platform-logs.json desta pasta de dados? Esta ação não apaga auditoria, ledger, livros, atas ou definições.',
   'data.status.cleanup.exports.title': 'Exportações retidas',
   'data.status.cleanup.exports.body':
     'Remove pacotes de exportação guardados pelo servidor. Mantenha cópias externas antes de limpar.',
@@ -4416,6 +4422,7 @@ export const ptPT = {
   'data.status.help.keyRotation': 'A rotação substitui a chave de cifra SQLCipher da base de dados durável, mantendo os dados. A verificação prévia é só de leitura; a execução aplica o rekey.',
   'data.status.help.exportCleanup': 'Remove apenas ficheiros de exportação locais antigos segundo a política configurada. Não é apagamento legal, conclusão RGPD nem eliminação de arquivo.',
   'data.status.help.crashCleanup': 'Remove diagnósticos locais de falhas antigas guardados em disco. Não afeta o ledger nem os dados de domínio.',
+  'data.status.help.platformLogsCleanup': 'Remove só a fila local de registos de plataforma guardada em platform-logs.json. Não remove stdout/stderr, SIEM, ledger ou cadeia de auditoria.',
   'data.status.help.startOver': 'Recomeçar arquiva o histórico atual e continua com dados de domínio vazios, mantendo utilizadores e definições. A reposição, ao contrário, apaga dados de forma destrutiva.',
   'data.status.help.reset': 'Limpar dados apaga os dados de domínio mas preserva o ledger; a reposição de fábrica apaga tudo para uma instância nova. Todas exigem a frase exata e reautenticação.',
 };
