@@ -2700,6 +2700,11 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
+    "retention executions, DSR requests, caller-supplied retention due-candidate\n  reports, and caller-supplied candidate-resolution records",
+    "CI checkpoints MCP privacy-control retention aggregate marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
     "makes no bridge/API/AI-provider/legal-service/provider calls",
     "CI checkpoints MCP privacy-control no-call boundary marker",
   );
@@ -5500,6 +5505,26 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-mcp/src/server.rs",
+    "retention_due_candidate_counts",
+    "MCP privacy-control retention due-candidate aggregate marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    "retention_candidate_resolution_counts",
+    "MCP privacy-control retention candidate-resolution aggregate marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    "resources_read_privacy_control_review_summary_counts_retention_candidate_aggregates_without_echoing_sensitive_values",
+    "MCP privacy-control retention aggregate privacy coverage",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    "resources_read_privacy_control_review_summary_allows_missing_retention_candidate_inputs",
+    "MCP privacy-control missing retention candidate inputs coverage",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
     "resources_read_privacy_control_review_summary_rejects_bad_arguments_and_extra_params",
     "MCP privacy-control review summary invalid args coverage",
   );
@@ -5572,6 +5597,21 @@ function assertCheckpointMap() {
     "crates/chancela-mcp/src/server.rs",
     '"full_erasure": false',
     "MCP privacy-control no full erasure claim marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    '"erasure_completion": false',
+    "MCP privacy-control no erasure completion claim marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    '"legal_hold_mutation": false',
+    "MCP privacy-control no legal-hold mutation claim marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    '"retention_policy_mutation": false',
+    "MCP privacy-control no retention-policy mutation claim marker",
   );
   assertFileContains(
     "crates/chancela-mcp/src/server.rs",
@@ -9232,7 +9272,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `d981694`",
+    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `b2ceed0`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
@@ -9424,6 +9464,16 @@ function assertCheckpointMap() {
     "docs/CI-E2E-HARDENING-PLAN.md",
     "no bridge/API/AI-provider/legal-service/provider\n  calls",
     "CI/E2E hardening plan MCP privacy-control no-call marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "caller-supplied retention due-candidate status/outcome/evidence-state\n  buckets",
+    "CI/E2E hardening plan MCP privacy-control due-candidate aggregate marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "candidate-resolution disposition buckets",
+    "CI/E2E hardening plan MCP privacy-control resolution disposition marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -9842,7 +9892,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `d981694`",
+    "Current checkpoint metadata/static checks through `b2ceed0`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -10297,7 +10347,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `d9816949e2f22bcc2375dc811ceb39fb9bcc0adb`",
+    "implementation snapshot `b2ceed09e0b51506eb258f4808aa53e686075a3e`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -10662,18 +10712,23 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "without echoing names, notes, legal bases, recipients, subjects, data\n  categories, or secrets",
+    "counts, and evidence-only flags without echoing names, ids, notes, legal\n  bases, recipients, subjects, data categories, raw evidence text, or secrets",
     "spec coverage MCP privacy-control no echo marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "makes no bridge/API/AI-provider/legal-service/\n  provider calls",
+    "bridge/API/AI-provider/legal-service/provider calls and keeps legal",
     "spec coverage MCP privacy-control no-call marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "privacy/GDPR compliance completion, compliance certification, destructive\n  disposal, deletion, anonymization, redaction, and full-erasure claims false",
+    "anonymization, redaction, erasure, legal-hold mutation,\n  retention-policy mutation, and full-erasure claims false",
     "spec coverage MCP privacy-control no-claim marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "candidate-resolution disposition buckets, blocker/approval presence",
+    "spec coverage MCP privacy-control retention candidate-resolution marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",

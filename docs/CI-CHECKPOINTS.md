@@ -367,12 +367,15 @@ It intentionally reuses existing test surfaces:
   `chancela://mcp/privacy-control-review-summary` static guidance and
   caller-supplied `arguments.privacy_controls` aggregate counts for
   processors, DPIAs, breach playbooks, transfer controls, retention policies,
-  retention executions, and DSR requests. The privacy-control resource is local
-  JSON only, makes no bridge/API/AI-provider/legal-service/provider calls,
-  echoes no names, notes, legal bases, recipients, subjects, data categories,
+  retention executions, DSR requests, caller-supplied retention due-candidate
+  reports, and caller-supplied candidate-resolution records. The
+  privacy-control resource is local JSON only, makes no
+  bridge/API/AI-provider/legal-service/provider calls, echoes no names, ids,
+  notes, legal bases, recipients, subjects, data categories, raw evidence text,
   or secrets, and keeps legal approval/completion, notification,
-  transfer/DPIA/compliance, disposal, deletion, anonymization, redaction, and
-  full-erasure claims false.
+  transfer/DPIA/compliance, disposal, deletion, anonymization, redaction,
+  erasure, legal-hold mutation, retention-policy mutation, and full-erasure
+  claims false.
 - Template catalog metadata/semantic lint:
   `cargo test -p chancela-templates --locked` and
   `cargo run -p chancela-templates --bin template_catalog_metadata_lint --locked`

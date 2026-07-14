@@ -1,6 +1,6 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-14 from current implementation snapshot `d9816949e2f22bcc2375dc811ceb39fb9bcc0adb`,
+*Updated 2026-07-14 from current implementation snapshot `b2ceed09e0b51506eb258f4808aa53e686075a3e`,
 with committed evidence refreshes for the recently landed Signatures & Trust
 provider-credential, stored runtime credential resolution, stored PKCS#12,
 remote batch-initiation surfaces, and Docker/Compose runtime-hardening
@@ -760,26 +760,34 @@ Implementation checkpoints covered here:
   advisory review signal only, not chronology certification, ownership
   determination, legal validity, AI/MCP completion, registry/provider assurance,
   or source certification.
-- Working tree keeps AI/MCP/Legal/Compliance/Data/CI **PARTIAL**: MCP now
+- Current `b2ceed0` keeps AI/MCP/Legal/Compliance/Data/CI **PARTIAL**: MCP now
   advertises the read-only
   `chancela://mcp/privacy-control-review-summary` resource. With no arguments it
   returns local input-shape guidance and no-claim boundaries; with
   `arguments.privacy_controls` JSON it returns deterministic aggregate counts
   only for processors, DPIAs, breach playbooks, transfer controls, retention
-  policies, retention executions, and DSR requests. The report counts
-  risk/status buckets, advisory-review statuses, review/drill receipts, missing
-  advisory-review markers, no-claim flag observations, retention execution
-  status/outcome/evidence-state buckets, and DSR type/status/outcome buckets
-  without echoing names, notes, legal bases, recipients, subjects, data
-  categories, or secrets. It makes no bridge/API/AI-provider/legal-service/
-  provider calls and keeps legal approval/completion, authority/data-subject
-  notification, transfer approval/execution, DPIA authority filing/completion,
-  privacy/GDPR compliance completion, compliance certification, destructive
-  disposal, deletion, anonymization, redaction, and full-erasure claims false.
-  This is caller-supplied local JSON review signal only, not privacy/GDPR
-  compliance completion, legal approval, notification, transfer execution,
-  DPIA filing/completion, disposal, deletion, redaction, anonymization, erasure,
-  AI/MCP completion, or provider/legal-service assurance.
+  policies, retention executions, DSR requests, optional retention
+  due-candidate reports, and optional retention candidate-resolution records.
+  The report counts risk/status buckets, advisory-review statuses,
+  review/drill receipts, missing advisory-review markers, no-claim flag
+  observations, retention execution status/outcome/evidence-state buckets, DSR
+  type/status/outcome buckets, due-candidate status/outcome/evidence-state
+  buckets, bounded suppression counts, latest-resolution presence/disposition
+  buckets, candidate-resolution disposition buckets, blocker/approval presence
+  counts, and evidence-only flags without echoing names, ids, notes, legal
+  bases, recipients, subjects, data categories, raw evidence text, or secrets.
+  Unknown labels are counted as `other`/`missing`. It makes no
+  bridge/API/AI-provider/legal-service/provider calls and keeps legal
+  approval/completion, authority/data-subject notification, transfer
+  approval/execution, DPIA authority filing/completion, privacy/GDPR compliance
+  completion, compliance certification, destructive disposal, deletion,
+  anonymization, redaction, erasure, legal-hold mutation,
+  retention-policy mutation, and full-erasure claims false. This is
+  caller-supplied local JSON review signal only, not privacy/GDPR compliance
+  completion, legal approval, notification, transfer execution, DPIA
+  filing/completion, disposal, deletion, redaction, anonymization, erasure,
+  legal-hold mutation, retention-policy mutation, AI/MCP completion, or
+  provider/legal-service assurance.
 - Working tree keeps AI/MCP/Documents/Archive/CI **PARTIAL**: MCP now
   advertises the read-only
   `chancela://mcp/document-archive-review-summary` resource. With no arguments

@@ -1,7 +1,7 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `d981694`,
+and implementation snapshot `b2ceed0`,
 including coverage notes for the bounded PAdES DSS validation-time, PDF/UA v10
 scoped table-header evidence, retention due-candidate explicit evidence states,
 bounded archive/no-action evidence UI, duplicate-review guard/status surfacing, and
@@ -280,17 +280,24 @@ test operating checklist for driving Chancela toward release confidence.
   it returns local input-shape guidance and no-claim boundaries; with
   `arguments.privacy_controls` it returns deterministic aggregate counts only
   for local processors, DPIAs, breach playbooks, transfer controls, retention
-  policies, retention executions, and DSR requests. It echoes no record names,
-  notes, legal bases, recipients, subjects, data categories, or secrets; makes
-  no bridge/API/AI-provider/legal-service/provider calls; and keeps legal
+  policies, retention executions, DSR requests, optional
+  `retention_due_candidates` reports, and optional
+  `retention_candidate_resolutions` records. It buckets due-candidate
+  status/outcome/evidence-state labels, bounded-suppression counts, latest
+  resolution presence/dispositions, candidate-resolution dispositions,
+  blocker/approval presence, evidence-only flags, and false/no-claim
+  observations without echoing record names, ids, notes, legal bases,
+  recipients, subjects, data categories, raw evidence text, or secrets. It
+  makes no bridge/API/AI-provider/legal-service/provider calls; and keeps legal
   approval/completion, notification, transfer execution, DPIA
   filing/completion, compliance certification, privacy/GDPR completion,
-  destructive disposal, deletion, anonymization, redaction, and full-erasure
-  claims false. Treat this as caller-supplied local JSON review signal only,
-  not privacy/GDPR compliance completion, legal approval, notification,
-  transfer execution, DPIA filing/completion, disposal, deletion, redaction,
-  anonymization, erasure, AI/MCP completion, or provider/legal-service
-  assurance.
+  destructive disposal, deletion, anonymization, redaction, erasure,
+  legal-hold mutation, retention-policy mutation, and full-erasure claims
+  false. Treat this as caller-supplied local JSON review signal only, not
+  privacy/GDPR compliance completion, legal approval, notification, transfer
+  execution, DPIA filing/completion, disposal, deletion, redaction,
+  anonymization, erasure, legal-hold mutation, retention-policy mutation,
+  AI/MCP completion, or provider/legal-service assurance.
 - The current MCP document/archive review summary slice adds the read-only
   `chancela://mcp/document-archive-review-summary` resource. With no arguments
   it returns local input-shape guidance and no-claim boundaries; with
@@ -1172,14 +1179,22 @@ settingsDefaults.test.ts contracts.test.ts`.
   no extra resource params, no bridge/API/AI-provider/legal-service/provider
   calls, aggregate counts for privacy records, advisory review status,
   review/drill receipts, missing advisory review, no-claim flags, retention
-  execution status/outcome/evidence state, and DSR type/status/outcome, plus
-  false legal approval/completion, notification, transfer, DPIA, compliance,
-  disposal, deletion, anonymization, redaction, full-erasure, provider, and
-  legal-service claims. This is caller-supplied local JSON review signal only:
-  no privacy/GDPR compliance completion, no legal approval, no notification,
-  no transfer execution, no DPIA filing/completion, no disposal, no deletion,
-  no redaction, no anonymization, no erasure, no provider/legal-service
-  assurance, and no AI or MCP completion claim.
+  execution status/outcome/evidence state, DSR type/status/outcome,
+  caller-supplied retention due-candidate status/outcome/evidence-state
+  buckets, bounded suppression counts, latest-resolution presence and
+  disposition buckets, candidate-resolution disposition buckets,
+  blocker/approval presence counts, evidence-only flags, and missing/unknown
+  optional input behavior, plus false legal approval/completion, notification,
+  transfer, DPIA, compliance, disposal, deletion, anonymization, redaction,
+  erasure, legal-hold mutation, retention-policy mutation, full-erasure,
+  provider, and legal-service claims. Unknown labels are counted as
+  `other`/`missing` and sensitive ids, notes, legal bases, subjects,
+  recipients, data categories, and raw evidence text are not echoed. This is
+  caller-supplied local JSON review signal only: no privacy/GDPR compliance
+  completion, no legal approval, no notification, no transfer execution, no
+  DPIA filing/completion, no disposal, no deletion, no redaction, no
+  anonymization, no erasure, no legal-hold or retention-policy mutation, no
+  provider/legal-service assurance, and no AI or MCP completion claim.
 - Current working-tree MCP document/archive review summary checks: focused
   `cargo test -p chancela-mcp --locked document_archive_review_summary` coverage
   pins the read-only `chancela://mcp/document-archive-review-summary` resource,
@@ -1621,7 +1636,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   --workspace apps/web -- e2e/session.spec.ts e2e/first-launch-onboarding.spec.ts`.
   Treat the static/unit/focused markers as the pinned slice, not broad
   Playwright-browser-suite or browser-matrix proof; the browser suite is not exhaustive.
-- Current checkpoint metadata/static checks through `d981694`
+- Current checkpoint metadata/static checks through `b2ceed0`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
