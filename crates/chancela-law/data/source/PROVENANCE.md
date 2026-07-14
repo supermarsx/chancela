@@ -188,6 +188,37 @@ step with a connected/headless browser that renders the SPA and extract the DOM 
 (b) obtain user-supplied authoritative text (official PDF export from the DRE "descarregar" button)
 to vendor from. The 3 EU regs can be fanned out with the existing curl+CELEX pipeline immediately.
 
+## wp20 re-attempt — vendor the 40 Pending DRE articles — 2026-07-14
+
+**Outcome: 0 articles vendored to Verified. All 40 Pending DRE articles remain `Pending` — the
+authentic, integrity-correct outcome.** No statute body was written and no article was flipped.
+This run independently re-confirmed the two blockers and found neither is removable without
+fabricating a source or forging a human legal-approval that did not occur:
+
+1. **Source is still unreachable.** `WebFetch` of the CSC consolidated page
+   (`diariodarepublica.pt/dr/legislacao-consolidada/decreto-lei/1986-34443975`) returns no article
+   text (JS-gated OutSystems SPA), and the ELI resolver
+   (`data.dre.pt/eli/dec-lei/262/1986/p/cons/20260101`) 301-redirects into that same SPA — matching
+   the 2026-07-08 pilot. `WebFetch` only ever yields the SPA shell, which is explicitly not good
+   enough for `Verified` under the authenticity rule. `list_connected_browsers` returned `[]`, so no
+   rendered-DOM capture was possible in this run either. The official verbatim text of these 40
+   articles therefore could not be reliably obtained from an authoritative source.
+2. **The legal-approval gate blocks promotion regardless of source access.** Even had the text been
+   obtained, every one of the six DRE diplomas is gated by `dre-captures.manifest.json`: an article
+   may become `Verified` only when its manifest row is `reviewer_status: Approved` +
+   `legal_approval_status: Approved` + `approval_marker: LEGAL_APPROVED_FOR_VERIFIED` + a captured
+   artifact and its `sha256` (enforced by `tests/dre_capture_manifest.rs`). No such human legal
+   review has occurred. Setting those fields — or editing the tests that hard-assert CSC 255.º/399.º
+   stay `Pending` — would be a false claim that official verbatim text and legal sign-off exist, which
+   the authenticity gate exists to prevent. This run did **not** do so.
+
+Per the accuracy-over-completeness rule, all 40 stay `Pending` and render
+`[NÃO VERIFICADO / fonte pendente]`. The unblock path is unchanged from the pilot's fan-out
+recommendation above: a connected/headless browser (or a user-supplied official DRE PDF export),
+followed by the operator + legal-review approval workflow in `dre-captures.manifest.json`. Nothing
+here is legally certified; the corpus remains reference-safe with an honest `Pending` gap rather than
+an unauthentic body.
+
 ## Regeneration
 
 ```
