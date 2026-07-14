@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -8,7 +9,7 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 
 function usage() {
   console.error(`Usage:
-  node scripts/check-release-trust.mjs package --input <release-artifact.json> [--manifest <manifest.json>] [--expect-mode <unsigned-dev|production>]
+  node scripts/check-release-trust.mjs package --input <release-artifact.json> [--manifest <manifest.json>] [--package <tarball>] [--expect-mode <unsigned-dev|production>]
   node scripts/check-release-trust.mjs docker --input <signing-status.json> [--expect-mode <local-ci|production>]
   node scripts/check-release-trust.mjs self-test`);
 }
@@ -39,6 +40,14 @@ function readJson(inputPath, label) {
     return JSON.parse(fs.readFileSync(inputPath, "utf8").replace(/^\uFEFF/, ""));
   } catch (error) {
     fail(`${label}: invalid JSON: ${error.message}`);
+  }
+}
+
+function sha256File(inputPath, label) {
+  try {
+    return crypto.createHash("sha256").update(fs.readFileSync(inputPath)).digest("hex");
+  } catch (error) {
+    fail(`${label}: unable to hash package file: ${error.message}`);
   }
 }
 
@@ -386,11 +395,26 @@ function compareManifestSummary(manifest, summary) {
   }
 }
 
-function validatePackageSummary(summary, { manifest, expectedMode }) {
+function validatePackageSummary(summary, { manifest, expectedMode, packagePath }) {
   requireRecord(summary, "release artifact");
   requireNonEmptyString(summary.package, "release artifact.package");
   if (!isSha256(summary.packageSha256)) {
     fail("release artifact.packageSha256 must be a SHA-256 hex digest");
+  }
+
+  if (packagePath) {
+    const actualPackage = path.basename(packagePath);
+    const actualPackageSha256 = sha256File(packagePath, packagePath);
+    if (summary.package !== actualPackage) {
+      fail(
+        `release artifact.package ${summary.package} does not match package file ${actualPackage}`,
+      );
+    }
+    if (summary.packageSha256.toLowerCase() !== actualPackageSha256) {
+      fail(
+        `release artifact.packageSha256 does not match package file SHA-256 ${actualPackageSha256}`,
+      );
+    }
   }
 
   const trust = requireRecord(summary.releaseTrust, "release artifact.releaseTrust");
@@ -854,6 +878,11 @@ function guardReleaseWorkflow(releaseText) {
   );
   requireWorkflowCommand(
     packageJob,
+    /node\s+scripts\/check-release-trust\.mjs\s+package[\s\S]*--package\s+'?\$\{\{\s*steps\.collect\.outputs\.package\s*\}\}'?/,
+    ".github/workflows/release.yml jobs.package must validate release trust metadata against the collected package",
+  );
+  requireWorkflowCommand(
+    packageJob,
     /node\s+scripts\/release-supply-chain\.mjs\s+sbom\s+--output\s+\$sbomPath\s+--package\s+'?\$\{\{\s*steps\.collect\.outputs\.package\s*\}\}'?/,
     ".github/workflows/release.yml jobs.package must generate the SBOM with --package linkage",
   );
@@ -1080,6 +1109,11 @@ function runSelfTest() {
   try {
     const packagePath = path.join(tmpDir, "release-artifact.json");
     const manifestPath = path.join(tmpDir, "manifest.json");
+    const tarballPath = path.join(tmpDir, summary.package);
+    fs.writeFileSync(tarballPath, "fixture package bytes\n");
+    const packageBoundSummary = structuredClone(summary);
+    packageBoundSummary.packageSha256 = sha256File(tarballPath, "self-test package tarball");
+
     fs.writeFileSync(packagePath, `${JSON.stringify(summary, null, 2)}\n`);
     fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
     const fileSummary = readJson(packagePath, "self-test release artifact");
@@ -1088,6 +1122,36 @@ function runSelfTest() {
       manifest: fileManifest,
       expectedMode: "unsigned-dev",
     });
+
+    validatePackageSummary(packageBoundSummary, {
+      manifest,
+      expectedMode: "unsigned-dev",
+      packagePath: tarballPath,
+    });
+
+    const packageNameMismatch = structuredClone(packageBoundSummary);
+    packageNameMismatch.package = "chancela-0.1.0-windows-x64.tar.gz";
+    expectFail(
+      () =>
+        validatePackageSummary(packageNameMismatch, {
+          manifest,
+          expectedMode: "unsigned-dev",
+          packagePath: tarballPath,
+        }),
+      "release artifact.package",
+    );
+
+    const packageHashMismatch = structuredClone(packageBoundSummary);
+    packageHashMismatch.packageSha256 = "0".repeat(64);
+    expectFail(
+      () =>
+        validatePackageSummary(packageHashMismatch, {
+          manifest,
+          expectedMode: "unsigned-dev",
+          packagePath: tarballPath,
+        }),
+      "release artifact.packageSha256",
+    );
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
@@ -1119,8 +1183,11 @@ try {
     const manifestPath = options.get("manifest")
       ? resolveInput(options.get("manifest"))
       : undefined;
+    const packagePath = options.get("package")
+      ? resolveInput(options.get("package"))
+      : undefined;
     const manifest = manifestPath ? readJson(manifestPath, options.get("manifest")) : undefined;
-    const mode = validatePackageSummary(summary, { manifest, expectedMode });
+    const mode = validatePackageSummary(summary, { manifest, expectedMode, packagePath });
     console.log(`[release-trust] Package trust declaration passed (${mode})`);
   } else if (command === "docker") {
     const status = readJson(inputPath, input);

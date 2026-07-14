@@ -183,6 +183,7 @@ jobs:
           node scripts/check-release-trust.mjs package `
             --input '${{ steps.collect.outputs.release_summary }}' `
             --manifest '${{ steps.collect.outputs.manifest }}' `
+            --package '${{ steps.collect.outputs.package }}' `
             --expect-mode unsigned-dev
 
       - name: Generate dependency SBOM
