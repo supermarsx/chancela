@@ -9719,6 +9719,21 @@ function assertCheckpointMap() {
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "markers drift from the declared implementation snapshot",
+    "CI checkpoints spec coverage declared snapshot guard marker",
+  );
+  assertFileContains(
+    "scripts/check-spec-coverage.mjs",
+    "ancestor reached through pure spec/checker checkpoint commits",
+    "spec coverage checker chained checkpoint convention marker",
+  );
+  assertFileContains(
+    "scripts/check-spec-coverage.mjs",
+    "\"scripts/checkpoint-recent-landed.mjs\"",
+    "spec coverage checker checkpoint-only path allowlist marker",
+  );
+  assertFileContains(
     "SPEC-COVERAGE.md",
     "release clean-source provenance gating, seeded role-drift\ndiagnostics",
     "spec coverage five-slice header marker",

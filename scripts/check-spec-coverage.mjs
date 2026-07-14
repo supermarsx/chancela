@@ -25,21 +25,25 @@ const expectedSpecs = [
   "11",
 ];
 const allowedStatuses = new Set(["PARTIAL", "BLOCKED", "COMPLETE"]);
+const checkpointPaths = new Set([
+  "SPEC-COVERAGE.md",
+  "docs/CI-CHECKPOINTS.md",
+  "docs/CI-E2E-HARDENING-PLAN.md",
+  "scripts/check-spec-coverage.mjs",
+  "scripts/checkpoint-recent-landed.mjs",
+]);
 
 const body = readFileSync(coveragePath, "utf8");
 const ciCheckpoints = readFileSync(ciCheckpointsPath, "utf8");
 const hardeningPlan = readFileSync(hardeningPlanPath, "utf8");
 const recentLanded = readFileSync(recentLandedPath, "utf8");
 const currentHead = gitRevParse("HEAD");
-const currentHeadShort = currentHead.slice(0, 7);
-const snapshotCommit = extractSnapshotCommit(body);
+const declaredSnapshotCommit = extractSnapshotCommit(body);
+const snapshotCommit = gitRevParse(`${declaredSnapshotCommit}^{commit}`);
+const snapshotCommitShort = snapshotCommit.slice(0, 7);
 const rows = parseSpecRows(body);
 
-assert.equal(
-  snapshotCommit,
-  currentHead,
-  `implementation snapshot ${snapshotCommit} does not match current HEAD ${currentHead}`,
-);
+assertSnapshotCommitIsCurrentOrCheckpointParent();
 
 assert.equal(
   rows.length,
@@ -149,27 +153,27 @@ function assertRequiredSection(section) {
 function assertSnapshotCoherence() {
   assertIncludes(
     body,
-    `Current \`${currentHeadShort}\``,
+    `Current \`${snapshotCommitShort}\``,
     "SPEC-COVERAGE.md current checkpoint short marker",
   );
   assertIncludes(
     hardeningPlan,
-    `Current checkpoint metadata/static checks through \`${currentHeadShort}\``,
+    `Current checkpoint metadata/static checks through \`${snapshotCommitShort}\``,
     "CI/E2E hardening plan current checkpoint marker",
   );
   assertIncludes(
     recentLanded,
-    `implementation snapshot \`${currentHead}\``,
+    `implementation snapshot \`${snapshotCommit}\``,
     "recent-landed static map spec snapshot marker",
   );
   assertIncludes(
     recentLanded,
-    `Current checkpoint metadata/static checks through \`${currentHeadShort}\``,
+    `Current checkpoint metadata/static checks through \`${snapshotCommitShort}\``,
     "recent-landed static map hardening-plan checkpoint marker",
   );
   assertIncludes(
     ciCheckpoints,
-    "markers drift from current HEAD",
+    "markers drift from the declared implementation snapshot",
     "CI checkpoints spec coverage drift-check description",
   );
 }
@@ -181,8 +185,86 @@ function assertIncludes(markdown, needle, label) {
   );
 }
 
+function assertSnapshotCommitIsCurrentOrCheckpointParent() {
+  if (snapshotCommit === currentHead) {
+    return;
+  }
+
+  let candidate = currentHead;
+  const checkpointCommits = [];
+
+  while (candidate !== snapshotCommit) {
+    const parents = gitCommitParents(candidate);
+    assert.equal(
+      parents.length,
+      1,
+      `implementation snapshot ${snapshotCommit} is not current HEAD ${currentHead}, and checkpoint candidate ${candidate} is not a single-parent commit`,
+    );
+
+    const changedPaths = gitChangedPaths(candidate);
+    assert.ok(
+      changedPaths.length > 0,
+      `checkpoint candidate ${candidate} has no changed paths to classify as a pure spec/checker checkpoint commit`,
+    );
+
+    const nonCheckpointPaths = changedPaths.filter(
+      (path) => !checkpointPaths.has(path),
+    );
+    assert.deepEqual(
+      nonCheckpointPaths,
+      [],
+      `implementation snapshot ${snapshotCommit} is behind checkpoint commit ${candidate}, but that commit also changes non-checkpoint files: ${nonCheckpointPaths.join(
+        ", ",
+      )}`,
+    );
+
+    checkpointCommits.push(candidate);
+    candidate = parents[0];
+  }
+
+  assert.ok(
+    checkpointCommits.length > 0,
+    `implementation snapshot ${snapshotCommit} must match current HEAD ${currentHead} or an ancestor reached through pure spec/checker checkpoint commits`,
+  );
+}
+
+function gitCommitParents(revision) {
+  const line = gitOutput(["rev-list", "--parents", "-n", "1", revision]);
+  const [head, ...parents] = line.split(/\s+/u);
+  assert.equal(
+    head,
+    gitRevParse(revision),
+    `git rev-list ${revision} did not match rev-parse ${revision}`,
+  );
+  return parents;
+}
+
+function gitChangedPaths(revision) {
+  const output = gitOutput([
+    "diff-tree",
+    "--no-commit-id",
+    "--name-only",
+    "-r",
+    revision,
+  ]);
+  if (output.length === 0) {
+    return [];
+  }
+  return output.split(/\r?\n/u).filter(Boolean);
+}
+
 function gitRevParse(revision) {
-  const result = spawnSync("git", ["rev-parse", revision], {
+  const commit = gitOutput(["rev-parse", revision]);
+  assert.match(
+    commit,
+    /^[0-9a-f]{40}$/u,
+    `git rev-parse ${revision} returned invalid commit ${commit}`,
+  );
+  return commit;
+}
+
+function gitOutput(args) {
+  const result = spawnSync("git", args, {
     cwd: repoRoot,
     encoding: "utf8",
   });
@@ -194,14 +276,8 @@ function gitRevParse(revision) {
   assert.equal(
     result.status,
     0,
-    `git rev-parse ${revision} failed: ${result.stderr.trim()}`,
+    `git ${args.join(" ")} failed: ${result.stderr.trim()}`,
   );
 
-  const commit = result.stdout.trim();
-  assert.match(
-    commit,
-    /^[0-9a-f]{40}$/u,
-    `git rev-parse ${revision} returned invalid commit ${commit}`,
-  );
-  return commit;
+  return result.stdout.trim();
 }
