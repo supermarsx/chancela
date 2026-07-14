@@ -893,7 +893,7 @@ impl<T: HttpTransport> McpServer<T> {
             "optional_arguments": [
                 {
                     "name": "privacy_controls",
-                    "description": "Caller-supplied local JSON object containing optional arrays named processors, dpias, breach_playbooks, transfer_controls, retention_policies, retention_executions, and dsr_requests. The resource returns aggregate counts only and does not echo record names, notes, legal bases, recipients, subjects, data categories, or secrets.",
+                    "description": "Caller-supplied local JSON object containing optional arrays named processors, dpias, breach_playbooks, transfer_controls, retention_policies, retention_executions, dsr_requests, retention_candidate_resolutions, plus an optional retention_due_candidates report object. The resource returns aggregate counts only and does not echo record names, ids, notes, legal bases, recipients, subjects, data categories, raw evidence text, or secrets.",
                 }
             ],
             "expected_input_shape": {
@@ -907,7 +907,9 @@ impl<T: HttpTransport> McpServer<T> {
                             "transfer_controls": "array of local transfer-control objects",
                             "retention_policies": "array of local retention-policy objects",
                             "retention_executions": "array of local retention-execution objects",
-                            "dsr_requests": "array of local DSR request objects"
+                            "dsr_requests": "array of local DSR request objects",
+                            "retention_due_candidates": "optional local RetentionDueCandidatesReport object",
+                            "retention_candidate_resolutions": "optional array of local RetentionCandidateResolutionRecord objects"
                         }
                     }
                 }
@@ -919,7 +921,9 @@ impl<T: HttpTransport> McpServer<T> {
                 "transfer_controls",
                 "retention_policies",
                 "retention_executions",
-                "dsr_requests"
+                "dsr_requests",
+                "retention_due_candidates",
+                "retention_candidate_resolutions"
             ],
             "summary_categories": [
                 {
@@ -952,6 +956,22 @@ impl<T: HttpTransport> McpServer<T> {
                     "checkpoints": [
                         "Count retention execution status, outcome, and evidence-state buckets.",
                         "Keep destructive disposal and full-erasure completion claims false."
+                    ],
+                },
+                {
+                    "id": "retention_due_candidate_counts",
+                    "title": "Retention due-candidate counts",
+                    "checkpoints": [
+                        "Count caller-supplied due-candidate status, outcome, evidence-state, bounded suppression, latest-resolution, blocker, and approval buckets.",
+                        "Bucket unrecognized candidate labels as other and never echo candidate ids, names, notes, legal bases, raw evidence, or schedule text."
+                    ],
+                },
+                {
+                    "id": "retention_candidate_resolution_counts",
+                    "title": "Retention candidate-resolution counts",
+                    "checkpoints": [
+                        "Count caller-supplied evidence-only resolution dispositions, candidate-snapshot blocker and approval presence, and no-claim observations.",
+                        "Treat disposal, deletion, redaction, erasure, legal-completion, legal-hold, and retention-policy mutation fields as caveat counts only."
                     ],
                 },
                 {
@@ -994,6 +1014,9 @@ impl<T: HttpTransport> McpServer<T> {
                 "anonymization_completion": false,
                 "redaction_completion": false,
                 "full_erasure": false,
+                "erasure_completion": false,
+                "legal_hold_mutation": false,
+                "retention_policy_mutation": false,
                 "provider": false,
                 "legal_service": false
             },
@@ -1761,6 +1784,22 @@ impl PrivacyReceiptCounts {
     }
 }
 
+#[derive(Debug, Default)]
+struct RetentionCandidatePresenceCounts {
+    records_with_blockers: usize,
+    records_without_blockers: usize,
+    blocker_count_total: usize,
+    records_with_required_approvals: usize,
+    records_without_required_approvals: usize,
+    required_approval_count_total: usize,
+    records_with_legal_hold_blockers: usize,
+    records_without_legal_hold_blockers: usize,
+    legal_hold_blocker_count_total: usize,
+    records_with_findings: usize,
+    records_without_findings: usize,
+    finding_count_total: usize,
+}
+
 const PRIVACY_CONTROL_COLLECTIONS: &[&str] = &[
     "processors",
     "dpias",
@@ -1770,6 +1809,8 @@ const PRIVACY_CONTROL_COLLECTIONS: &[&str] = &[
     "retention_executions",
     "dsr_requests",
 ];
+const PRIVACY_RETENTION_DUE_CANDIDATES_KEY: &str = "retention_due_candidates";
+const PRIVACY_RETENTION_CANDIDATE_RESOLUTIONS_KEY: &str = "retention_candidate_resolutions";
 const PRIVACY_RISK_PATHS: &[&str] = &[
     "risk_level",
     "risk",
@@ -1809,6 +1850,12 @@ const PRIVACY_RETENTION_EVIDENCE_STATE_PATHS: &[&str] = &[
     "candidate_evidence_state",
     "prior_execution.evidence_state",
 ];
+const PRIVACY_RETENTION_DUE_CANDIDATE_STATUS_PATHS: &[&str] =
+    &["status", "state", "execution_status"];
+const PRIVACY_RETENTION_DUE_CANDIDATE_OUTCOME_PATHS: &[&str] =
+    &["outcome", "execution_outcome", "prior_execution.outcome"];
+const PRIVACY_RETENTION_CANDIDATE_RESOLUTION_DISPOSITION_PATHS: &[&str] =
+    &["disposition", "resolution_disposition"];
 const PRIVACY_DSR_TYPE_PATHS: &[&str] = &["request_type", "type", "dsr_type"];
 const PRIVACY_DSR_STATUS_PATHS: &[&str] = &["status", "state"];
 const PRIVACY_DSR_OUTCOME_PATHS: &[&str] = &["outcome", "execution_outcome"];
@@ -1873,6 +1920,38 @@ const PRIVACY_RETENTION_EVIDENCE_STATE_LABELS: &[&str] = &[
     "bounded_archive_recorded",
     "bounded_no_action_recorded",
     "prior_bounded_evidence_available",
+    "missing",
+    "unknown",
+];
+const PRIVACY_RETENTION_DUE_CANDIDATE_STATUS_LABELS: &[&str] = &[
+    "awaiting_review",
+    "blocked",
+    "executed",
+    "open",
+    "review_closed",
+    "missing",
+    "unknown",
+];
+const PRIVACY_RETENTION_DUE_CANDIDATE_OUTCOME_LABELS: &[&str] = &[
+    "blocked_missing_policy",
+    "blocked_stale_policy",
+    "blocked_policy_mismatch",
+    "blocked_legal_hold",
+    "blocked_destructive_action",
+    "blocked_approval_mismatch",
+    "blocked_missing_target",
+    "blocked_unsupported_period",
+    "manual_review_required",
+    "bounded_archive_recorded",
+    "bounded_no_action_recorded",
+    "already_executed",
+    "missing",
+    "unknown",
+];
+const PRIVACY_RETENTION_CANDIDATE_RESOLUTION_DISPOSITION_LABELS: &[&str] = &[
+    "evidence_acknowledged",
+    "follow_up_required",
+    "blocked_follow_up",
     "missing",
     "unknown",
 ];
@@ -2024,6 +2103,26 @@ const PRIVACY_FALSE_CLAIM_FLAG_SPECS: &[PrivacyFalseClaimFlagSpec] = &[
             "full_erasure_completed",
             "full_erasure_claimed",
             "destructive_mutation_completed",
+        ],
+    },
+    PrivacyFalseClaimFlagSpec {
+        id: "erasure_completion",
+        field_names: &["erasure_completed", "erasure_completion_claimed"],
+    },
+    PrivacyFalseClaimFlagSpec {
+        id: "legal_hold_mutation",
+        field_names: &[
+            "legal_hold_mutated",
+            "legal_hold_resolved",
+            "legal_hold_mutation_claimed",
+        ],
+    },
+    PrivacyFalseClaimFlagSpec {
+        id: "retention_policy_mutation",
+        field_names: &[
+            "retention_policy_mutated",
+            "retention_policy_changed",
+            "retention_policy_mutation_claimed",
         ],
     },
 ];
@@ -2526,6 +2625,10 @@ fn privacy_control_review_summary_report_payload(arguments: &Value) -> Result<Va
     let privacy_controls = privacy_controls
         .as_object()
         .ok_or_else(|| "privacy_controls must be an object".to_string())?;
+    let retention_due_candidates_report =
+        privacy_retention_due_candidates_report(privacy_controls)?;
+    let retention_candidate_resolution_records =
+        privacy_retention_candidate_resolution_records(privacy_controls)?;
 
     let mut total_records = 0usize;
     let mut record_counts = BTreeMap::new();
@@ -2659,6 +2762,11 @@ fn privacy_control_review_summary_report_payload(arguments: &Value) -> Result<Va
     }
     record_counts.insert("total_records".to_string(), total_records);
 
+    let retention_due_candidate_counts =
+        retention_due_candidate_counts(retention_due_candidates_report)?;
+    let retention_candidate_resolution_counts =
+        retention_candidate_resolution_counts(retention_candidate_resolution_records);
+
     let false_claim_explicit_false_total = false_claim_flag_counts
         .values()
         .map(|counts| counts.get("explicit_false").copied().unwrap_or(0))
@@ -2703,6 +2811,9 @@ fn privacy_control_review_summary_report_payload(arguments: &Value) -> Result<Va
             "anonymization_completion": false,
             "redaction_completion": false,
             "full_erasure": false,
+            "erasure_completion": false,
+            "legal_hold_mutation": false,
+            "retention_policy_mutation": false,
             "provider": false,
             "legal_service": false
         },
@@ -2736,6 +2847,8 @@ fn privacy_control_review_summary_report_payload(arguments: &Value) -> Result<Va
                 "outcome_counts": retention_execution_outcome_counts,
                 "evidence_state_counts": retention_execution_evidence_state_counts
             },
+            "retention_due_candidate_counts": retention_due_candidate_counts,
+            "retention_candidate_resolution_counts": retention_candidate_resolution_counts,
             "dsr_request_counts": {
                 "record_count": record_counts.get("dsr_requests").copied().unwrap_or(0),
                 "request_type_counts": dsr_type_counts,
@@ -2745,14 +2858,14 @@ fn privacy_control_review_summary_report_payload(arguments: &Value) -> Result<Va
         },
         "privacy_review_caveats": [
             "This is a deterministic local aggregate summary over caller-supplied privacy_controls JSON only.",
-            "The report does not echo record names, titles, notes, legal bases, recipients, subjects, data categories, actor names, raw evidence text, or secrets.",
-            "Unrecognized risk, status, receipt, retention, and DSR labels are counted as other instead of being echoed.",
-            "Truthy caller-supplied no-claim fields are counted as caveats only and do not create approval, notification, transfer, filing, certification, completion, disposal, deletion, anonymization, redaction, or erasure claims.",
-            "Counts do not validate legal sufficiency, authority notification, data-subject notification, transfer approval, transfer execution, DPIA filing, DPIA completion, compliance certification, privacy/GDPR compliance completion, destructive disposal, deletion, anonymization, redaction, or full erasure."
+            "The report does not echo record names, titles, ids, notes, legal bases, recipients, subjects, data categories, actor names, raw evidence text, or secrets.",
+            "Unrecognized risk, status, receipt, retention, candidate, resolution, and DSR labels are counted as other instead of being echoed.",
+            "Truthy caller-supplied no-claim fields are counted as caveats only and do not create approval, notification, transfer, filing, certification, completion, disposal, deletion, anonymization, redaction, erasure, legal-hold mutation, or retention-policy mutation claims.",
+            "Counts do not validate legal sufficiency, authority notification, data-subject notification, transfer approval, transfer execution, DPIA filing, DPIA completion, compliance certification, privacy/GDPR compliance completion, destructive disposal, deletion, anonymization, redaction, erasure, legal disposal, legal hold, retention policy, or full erasure."
         ],
         "operator_boundaries": [
-            "No bridge, API, AI-provider, legal-service, provider, notification, transfer, filing, certification, disposal, deletion, anonymization, redaction, or erasure calls were made.",
-            "No legal approval, legal completion, authority notification, data-subject notification, transfer approval, transfer execution, DPIA authority filing, DPIA completion, compliance certification, privacy/GDPR compliance completion, destructive disposal, deletion, anonymization, redaction, or full erasure is claimed.",
+            "No bridge, API, AI-provider, legal-service, provider, notification, transfer, filing, certification, disposal, deletion, anonymization, redaction, erasure, legal-hold, or retention-policy calls were made.",
+            "No legal approval, legal completion, authority notification, data-subject notification, transfer approval, transfer execution, DPIA authority filing, DPIA completion, compliance certification, privacy/GDPR compliance completion, destructive disposal, deletion, anonymization, redaction, erasure, legal-hold mutation, retention-policy mutation, or full erasure is claimed.",
             "Human review, legal review, normal platform permissions, and source evidence checks remain required."
         ]
     }))
@@ -2900,6 +3013,298 @@ impl DocumentArchivePdfAccessibilitySummary {
             || self.blocker_total > 0
             || self.table_semantics_object_count > 0
     }
+}
+
+impl RetentionCandidatePresenceCounts {
+    fn add_record(&mut self, record: &Value) {
+        let blocker_count =
+            usize_or_array_len_at_paths(record, &["blockers", "blocker_count"]).unwrap_or(0);
+        self.blocker_count_total += blocker_count;
+        if blocker_count > 0 {
+            self.records_with_blockers += 1;
+        } else {
+            self.records_without_blockers += 1;
+        }
+
+        let required_approval_count =
+            usize_or_array_len_at_paths(record, &["required_approvals", "required_approval_count"])
+                .unwrap_or(0);
+        self.required_approval_count_total += required_approval_count;
+        if required_approval_count > 0 {
+            self.records_with_required_approvals += 1;
+        } else {
+            self.records_without_required_approvals += 1;
+        }
+
+        let legal_hold_blocker_count = usize_or_array_len_at_paths(
+            record,
+            &["legal_hold_blockers", "legal_hold_blocker_count"],
+        )
+        .unwrap_or(0);
+        self.legal_hold_blocker_count_total += legal_hold_blocker_count;
+        if legal_hold_blocker_count > 0 {
+            self.records_with_legal_hold_blockers += 1;
+        } else {
+            self.records_without_legal_hold_blockers += 1;
+        }
+
+        let finding_count =
+            usize_or_array_len_at_paths(record, &["findings", "finding_count"]).unwrap_or(0);
+        self.finding_count_total += finding_count;
+        if finding_count > 0 {
+            self.records_with_findings += 1;
+        } else {
+            self.records_without_findings += 1;
+        }
+    }
+}
+
+fn privacy_retention_due_candidates_report<'a>(
+    privacy_controls: &'a serde_json::Map<String, Value>,
+) -> Result<Option<&'a Value>, String> {
+    let Some(report) = privacy_controls.get(PRIVACY_RETENTION_DUE_CANDIDATES_KEY) else {
+        return Ok(None);
+    };
+    if !report.is_object() {
+        return Err("privacy_controls.retention_due_candidates must be an object".to_string());
+    }
+    Ok(Some(report))
+}
+
+fn privacy_retention_candidate_resolution_records<'a>(
+    privacy_controls: &'a serde_json::Map<String, Value>,
+) -> Result<&'a [Value], String> {
+    let Some(records) = privacy_controls.get(PRIVACY_RETENTION_CANDIDATE_RESOLUTIONS_KEY) else {
+        return Ok(&[]);
+    };
+    let records = records.as_array().ok_or_else(|| {
+        "privacy_controls.retention_candidate_resolutions must be an array".to_string()
+    })?;
+    if let Some(index) = records.iter().position(|record| !record.is_object()) {
+        return Err(format!(
+            "privacy_controls.retention_candidate_resolutions[{index}] must be an object"
+        ));
+    }
+    Ok(records.as_slice())
+}
+
+fn retention_due_candidate_records(report: Option<&Value>) -> Result<&[Value], String> {
+    let Some(report) = report else {
+        return Ok(&[]);
+    };
+    let Some(candidates) = report.get("candidates") else {
+        return Ok(&[]);
+    };
+    let candidates = candidates.as_array().ok_or_else(|| {
+        "privacy_controls.retention_due_candidates.candidates must be an array".to_string()
+    })?;
+    if let Some(index) = candidates.iter().position(|record| !record.is_object()) {
+        return Err(format!(
+            "privacy_controls.retention_due_candidates.candidates[{index}] must be an object"
+        ));
+    }
+    Ok(candidates.as_slice())
+}
+
+fn retention_due_candidate_counts(report: Option<&Value>) -> Result<Value, String> {
+    let candidates = retention_due_candidate_records(report)?;
+    let mut candidate_status_counts = BTreeMap::new();
+    let mut outcome_counts = BTreeMap::new();
+    let mut evidence_state_counts = BTreeMap::new();
+    let mut latest_resolution_disposition_counts = BTreeMap::new();
+    let mut candidates_with_latest_resolution = 0usize;
+    let mut candidates_without_latest_resolution = 0usize;
+    let mut candidates_with_resolution_record_count = 0usize;
+    let mut candidates_without_resolution_record_count = 0usize;
+    let mut presence_counts = RetentionCandidatePresenceCounts::default();
+    let mut no_claim_counts = initial_privacy_false_claim_flag_counts();
+
+    for candidate in candidates {
+        let status = privacy_bounded_classification(
+            first_located_value(candidate, PRIVACY_RETENTION_DUE_CANDIDATE_STATUS_PATHS),
+            "missing",
+            PRIVACY_RETENTION_DUE_CANDIDATE_STATUS_LABELS,
+        );
+        increment_count(&mut candidate_status_counts, status);
+
+        let outcome = privacy_bounded_classification(
+            first_located_value(candidate, PRIVACY_RETENTION_DUE_CANDIDATE_OUTCOME_PATHS),
+            "missing",
+            PRIVACY_RETENTION_DUE_CANDIDATE_OUTCOME_LABELS,
+        );
+        increment_count(&mut outcome_counts, outcome);
+
+        let evidence_state = privacy_bounded_classification(
+            first_located_value(candidate, PRIVACY_RETENTION_EVIDENCE_STATE_PATHS),
+            "missing",
+            PRIVACY_RETENTION_EVIDENCE_STATE_LABELS,
+        );
+        increment_count(&mut evidence_state_counts, evidence_state);
+
+        match value_at_dotted_path(candidate, "latest_resolution").filter(|value| value.is_object())
+        {
+            Some(latest_resolution) => {
+                candidates_with_latest_resolution += 1;
+                let disposition = privacy_bounded_classification(
+                    first_located_value(
+                        latest_resolution,
+                        PRIVACY_RETENTION_CANDIDATE_RESOLUTION_DISPOSITION_PATHS,
+                    ),
+                    "missing",
+                    PRIVACY_RETENTION_CANDIDATE_RESOLUTION_DISPOSITION_LABELS,
+                );
+                increment_count(&mut latest_resolution_disposition_counts, disposition);
+            }
+            None => candidates_without_latest_resolution += 1,
+        }
+
+        if usize_at_paths(candidate, &["candidate_resolution_record_count"]).unwrap_or(0) > 0 {
+            candidates_with_resolution_record_count += 1;
+        } else {
+            candidates_without_resolution_record_count += 1;
+        }
+
+        presence_counts.add_record(candidate);
+        for spec in PRIVACY_FALSE_CLAIM_FLAG_SPECS {
+            if let Some(counts) = no_claim_counts.get_mut(spec.id) {
+                count_privacy_false_claim_flag_observations(candidate, spec, counts);
+            }
+        }
+    }
+
+    let reported_candidate_count =
+        report.and_then(|report| usize_at_paths(report, &["candidate_count"]));
+    let reported_suppressed_candidate_count =
+        report.and_then(|report| usize_at_paths(report, &["suppressed_candidate_count"]));
+    let reported_suppressed_by_bounded_evidence_count =
+        report.and_then(|report| usize_at_paths(report, &["suppressed_by_bounded_evidence_count"]));
+    let suppression_summary_suppressed_by_bounded_evidence_count = report.and_then(|report| {
+        usize_at_paths(
+            report,
+            &["suppression_summary.suppressed_by_bounded_evidence_count"],
+        )
+    });
+    let reported_candidate_resolution_record_count =
+        report.and_then(|report| usize_at_paths(report, &["candidate_resolution_record_count"]));
+    let reported_candidates_with_resolution_count =
+        report.and_then(|report| usize_at_paths(report, &["candidates_with_resolution_count"]));
+
+    Ok(json!({
+        "report_supplied": report.is_some(),
+        "candidate_record_count": candidates.len(),
+        "reported_candidate_count": reported_candidate_count.unwrap_or(0),
+        "candidate_status_counts": candidate_status_counts,
+        "outcome_counts": outcome_counts,
+        "evidence_state_counts": evidence_state_counts,
+        "suppressed_by_bounded_evidence_counts": {
+            "suppressed_candidate_count": reported_suppressed_candidate_count.unwrap_or(0),
+            "top_level_suppressed_by_bounded_evidence_count": reported_suppressed_by_bounded_evidence_count.unwrap_or(0),
+            "suppression_summary_suppressed_by_bounded_evidence_count": suppression_summary_suppressed_by_bounded_evidence_count.unwrap_or(0)
+        },
+        "candidate_resolution_presence_counts": {
+            "reported_candidate_resolution_record_count": reported_candidate_resolution_record_count.unwrap_or(0),
+            "reported_candidates_with_resolution_count": reported_candidates_with_resolution_count.unwrap_or(0),
+            "candidates_with_latest_resolution": candidates_with_latest_resolution,
+            "candidates_without_latest_resolution": candidates_without_latest_resolution,
+            "candidates_with_resolution_record_count": candidates_with_resolution_record_count,
+            "candidates_without_resolution_record_count": candidates_without_resolution_record_count,
+            "latest_resolution_disposition_counts": latest_resolution_disposition_counts
+        },
+        "blocker_approval_presence_counts": retention_candidate_presence_counts_value(&presence_counts),
+        "no_claim_flag_counts": privacy_false_claim_flag_counts_summary(&no_claim_counts)
+    }))
+}
+
+fn retention_candidate_resolution_counts(records: &[Value]) -> Value {
+    let mut disposition_counts = BTreeMap::new();
+    let mut evidence_only_counts = initial_boolean_observation_counts();
+    let mut records_with_candidate_snapshot = 0usize;
+    let mut records_without_candidate_snapshot = 0usize;
+    let mut candidate_status_counts = BTreeMap::new();
+    let mut outcome_counts = BTreeMap::new();
+    let mut evidence_state_counts = BTreeMap::new();
+    let mut presence_counts = RetentionCandidatePresenceCounts::default();
+    let mut no_claim_counts = initial_privacy_false_claim_flag_counts();
+
+    for record in records {
+        let disposition = privacy_bounded_classification(
+            first_located_value(
+                record,
+                PRIVACY_RETENTION_CANDIDATE_RESOLUTION_DISPOSITION_PATHS,
+            ),
+            "missing",
+            PRIVACY_RETENTION_CANDIDATE_RESOLUTION_DISPOSITION_LABELS,
+        );
+        increment_count(&mut disposition_counts, disposition);
+
+        count_boolean_observation_at_path(record, "evidence_only", &mut evidence_only_counts);
+
+        match value_at_dotted_path(record, "candidate").filter(|value| value.is_object()) {
+            Some(candidate) => {
+                records_with_candidate_snapshot += 1;
+                let status = privacy_bounded_classification(
+                    first_located_value(candidate, PRIVACY_RETENTION_DUE_CANDIDATE_STATUS_PATHS),
+                    "missing",
+                    PRIVACY_RETENTION_DUE_CANDIDATE_STATUS_LABELS,
+                );
+                increment_count(&mut candidate_status_counts, status);
+
+                let outcome = privacy_bounded_classification(
+                    first_located_value(candidate, PRIVACY_RETENTION_DUE_CANDIDATE_OUTCOME_PATHS),
+                    "missing",
+                    PRIVACY_RETENTION_DUE_CANDIDATE_OUTCOME_LABELS,
+                );
+                increment_count(&mut outcome_counts, outcome);
+
+                let evidence_state = privacy_bounded_classification(
+                    first_located_value(candidate, PRIVACY_RETENTION_EVIDENCE_STATE_PATHS),
+                    "missing",
+                    PRIVACY_RETENTION_EVIDENCE_STATE_LABELS,
+                );
+                increment_count(&mut evidence_state_counts, evidence_state);
+                presence_counts.add_record(candidate);
+            }
+            None => records_without_candidate_snapshot += 1,
+        }
+
+        for spec in PRIVACY_FALSE_CLAIM_FLAG_SPECS {
+            if let Some(counts) = no_claim_counts.get_mut(spec.id) {
+                count_privacy_false_claim_flag_observations(record, spec, counts);
+            }
+        }
+    }
+
+    json!({
+        "record_count": records.len(),
+        "disposition_counts": disposition_counts,
+        "evidence_only_counts": evidence_only_counts,
+        "candidate_snapshot_counts": {
+            "records_with_candidate_snapshot": records_with_candidate_snapshot,
+            "records_without_candidate_snapshot": records_without_candidate_snapshot,
+            "candidate_status_counts": candidate_status_counts,
+            "outcome_counts": outcome_counts,
+            "evidence_state_counts": evidence_state_counts
+        },
+        "blocker_approval_presence_counts": retention_candidate_presence_counts_value(&presence_counts),
+        "no_claim_flag_counts": privacy_false_claim_flag_counts_summary(&no_claim_counts)
+    })
+}
+
+fn retention_candidate_presence_counts_value(counts: &RetentionCandidatePresenceCounts) -> Value {
+    json!({
+        "records_with_blockers": counts.records_with_blockers,
+        "records_without_blockers": counts.records_without_blockers,
+        "blocker_count_total": counts.blocker_count_total,
+        "records_with_required_approvals": counts.records_with_required_approvals,
+        "records_without_required_approvals": counts.records_without_required_approvals,
+        "required_approval_count_total": counts.required_approval_count_total,
+        "records_with_legal_hold_blockers": counts.records_with_legal_hold_blockers,
+        "records_without_legal_hold_blockers": counts.records_without_legal_hold_blockers,
+        "legal_hold_blocker_count_total": counts.legal_hold_blocker_count_total,
+        "records_with_findings": counts.records_with_findings,
+        "records_without_findings": counts.records_without_findings,
+        "finding_count_total": counts.finding_count_total
+    })
 }
 
 fn document_archive_report_present(root: &Value) -> bool {
@@ -3569,6 +3974,32 @@ fn initial_privacy_false_claim_flag_counts() -> BTreeMap<String, BTreeMap<String
         .collect()
 }
 
+fn privacy_false_claim_flag_counts_summary(
+    counts: &BTreeMap<String, BTreeMap<String, usize>>,
+) -> Value {
+    let explicit_false_total = counts
+        .values()
+        .map(|counts| counts.get("explicit_false").copied().unwrap_or(0))
+        .sum::<usize>();
+    let truthy_total = counts
+        .values()
+        .map(|counts| counts.get("truthy").copied().unwrap_or(0))
+        .sum::<usize>();
+    let other_present_total = counts
+        .values()
+        .map(|counts| counts.get("other_present").copied().unwrap_or(0))
+        .sum::<usize>();
+
+    json!({
+        "by_flag": counts,
+        "totals": {
+            "explicit_false": explicit_false_total,
+            "truthy": truthy_total,
+            "other_present": other_present_total
+        }
+    })
+}
+
 fn count_privacy_false_claim_flag_observations(
     value: &Value,
     spec: &PrivacyFalseClaimFlagSpec,
@@ -3681,8 +4112,42 @@ fn usize_at_paths(record: &Value, paths: &[&str]) -> Option<usize> {
         .find_map(|path| value_at_dotted_path(record, path).and_then(usize_from_value))
 }
 
+fn usize_or_array_len_at_paths(record: &Value, paths: &[&str]) -> Option<usize> {
+    paths.iter().find_map(|path| {
+        value_at_dotted_path(record, path).and_then(|value| match value {
+            Value::Array(values) => Some(values.len()),
+            _ => usize_from_value(value),
+        })
+    })
+}
+
 fn usize_from_value(value: &Value) -> Option<usize> {
     value.as_u64().and_then(|value| usize::try_from(value).ok())
+}
+
+fn initial_boolean_observation_counts() -> BTreeMap<String, usize> {
+    BTreeMap::from([
+        ("explicit_false".to_string(), 0usize),
+        ("truthy".to_string(), 0usize),
+        ("other_present".to_string(), 0usize),
+        ("missing".to_string(), 0usize),
+    ])
+}
+
+fn count_boolean_observation_at_path(
+    record: &Value,
+    path: &str,
+    counts: &mut BTreeMap<String, usize>,
+) {
+    let bucket = match value_at_dotted_path(record, path) {
+        Some(value) => match privacy_boolean_observation(value) {
+            Some(false) => "explicit_false",
+            Some(true) => "truthy",
+            None => "other_present",
+        },
+        None => "missing",
+    };
+    increment_count(counts, bucket.to_string());
 }
 
 fn privacy_receipt_counts_value(counts: PrivacyReceiptCounts) -> Value {
@@ -5459,6 +5924,9 @@ mod tests {
             "anonymization_completion",
             "redaction_completion",
             "full_erasure",
+            "erasure_completion",
+            "legal_hold_mutation",
+            "retention_policy_mutation",
             "provider",
             "legal_service",
         ] {
@@ -5478,6 +5946,8 @@ mod tests {
             "retention_policies",
             "retention_executions",
             "dsr_requests",
+            "retention_due_candidates",
+            "retention_candidate_resolutions",
         ] {
             assert!(
                 categories.iter().any(|category| category == expected),
@@ -5922,6 +6392,9 @@ mod tests {
             "anonymization_completion",
             "redaction_completion",
             "full_erasure",
+            "erasure_completion",
+            "legal_hold_mutation",
+            "retention_policy_mutation",
             "provider",
             "legal_service",
         ] {
@@ -6065,6 +6538,355 @@ mod tests {
         assert_eq!(
             summary["false_claim_flag_counts"]["totals"]["truthy"],
             json!(2)
+        );
+        assert!(server.bridge_recorded().is_empty());
+    }
+
+    #[test]
+    fn resources_read_privacy_control_review_summary_counts_retention_candidate_aggregates_without_echoing_sensitive_values()
+     {
+        let server = McpServer::from_config(&enabled_cfg(), MockTransport::new(200, "{}")).unwrap();
+        let due_fixture: Value = serde_json::from_str(include_str!(
+            "../../../contracts/retention.due-candidates.json"
+        ))
+        .unwrap();
+        let resolution_fixture: Value = serde_json::from_str(include_str!(
+            "../../../contracts/retention.candidate-resolutions.json"
+        ))
+        .unwrap();
+        let fixture_candidate = due_fixture["candidates"][0].clone();
+        let fixture_resolution = resolution_fixture.as_array().unwrap()[0].clone();
+        let unknown_candidate = json!({
+            "candidate_id": "candidate-secret-alpha",
+            "policy_name": "Secret retention policy name",
+            "legal_basis": "Secret legal basis text",
+            "data_categories": ["Secret payroll category"],
+            "recipients": ["Secret recipient"],
+            "subject_user_id": "subject-secret-alpha",
+            "notes": "operator secret note",
+            "status": "secret raw status label",
+            "outcome": "secret raw outcome label",
+            "candidate_evidence_state": "secret raw evidence state",
+            "candidate_resolution_record_count": 2,
+            "latest_resolution": {
+                "id": "latest-resolution-secret",
+                "recorded_by": "privacy secret actor",
+                "disposition": "secret raw disposition",
+                "note": "latest secret note",
+                "legal_completion_claimed": "maybe"
+            },
+            "blockers": [{ "message": "secret blocker text" }],
+            "required_approvals": [{ "reason": "secret approval text" }],
+            "legal_hold_blockers": [],
+            "findings": [{ "message": "secret finding text" }],
+            "destructive_disposal_completed": false,
+            "disposal_completed": true,
+            "full_erasure_completed": false,
+            "erasure_completed": "maybe",
+            "legal_hold_mutated": false,
+            "retention_policy_mutated": "no"
+        });
+        let unknown_resolution = json!({
+            "id": "resolution-record-secret",
+            "candidate_id": "candidate-secret-alpha",
+            "candidate_fingerprint": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "recorded_by": "privacy manager secret",
+            "disposition": "secret raw disposition",
+            "note": "resolution secret note",
+            "evidence": [
+                {
+                    "label": "secret evidence label",
+                    "value": "secret raw evidence text"
+                }
+            ],
+            "evidence_only": true,
+            "destructive_disposal_completed": false,
+            "disposal_completed": "yes",
+            "full_erasure_completed": false,
+            "erasure_completed": false,
+            "legal_hold_mutated": true,
+            "retention_policy_changed": "maybe",
+            "legal_completion_claimed": false,
+            "legal_disposal_completed": false,
+            "candidate": {
+                "candidate_id": "candidate-secret-alpha",
+                "status": "secret candidate status",
+                "outcome": "secret candidate outcome",
+                "candidate_evidence_state": "secret candidate evidence state",
+                "blocker_count": 2,
+                "required_approval_count": 0,
+                "legal_hold_blocker_count": 1,
+                "finding_count": 3
+            }
+        });
+        let due_candidates_a = json!({
+            "candidate_count": 2,
+            "suppressed_candidate_count": due_fixture["suppressed_candidate_count"],
+            "suppressed_by_bounded_evidence_count": due_fixture["suppressed_by_bounded_evidence_count"],
+            "candidate_resolution_record_count": 3,
+            "candidates_with_resolution_count": 2,
+            "suppression_summary": due_fixture["suppression_summary"],
+            "candidates": [fixture_candidate.clone(), unknown_candidate.clone()]
+        });
+        let due_candidates_b = json!({
+            "suppression_summary": due_fixture["suppression_summary"],
+            "candidates_with_resolution_count": 2,
+            "candidate_resolution_record_count": 3,
+            "suppressed_by_bounded_evidence_count": due_fixture["suppressed_by_bounded_evidence_count"],
+            "suppressed_candidate_count": due_fixture["suppressed_candidate_count"],
+            "candidate_count": 2,
+            "candidates": [unknown_candidate, fixture_candidate]
+        });
+        let resolutions_a = json!([fixture_resolution.clone(), unknown_resolution.clone()]);
+        let resolutions_b = json!([unknown_resolution, fixture_resolution]);
+
+        let params_a = json!({
+            "uri": MCP_PRIVACY_CONTROL_REVIEW_SUMMARY_RESOURCE_URI,
+            "arguments": {
+                "privacy_controls": {
+                    "retention_due_candidates": due_candidates_a,
+                    "retention_candidate_resolutions": resolutions_a
+                }
+            }
+        });
+        let params_b = json!({
+            "arguments": {
+                "privacy_controls": {
+                    "retention_candidate_resolutions": resolutions_b,
+                    "retention_due_candidates": due_candidates_b
+                }
+            },
+            "uri": MCP_PRIVACY_CONTROL_REVIEW_SUMMARY_RESOURCE_URI
+        });
+        let response_a = server
+            .handle(&req("resources/read", 69, params_a))
+            .unwrap()
+            .result
+            .unwrap();
+        let response_b = server
+            .handle(&req("resources/read", 70, params_b))
+            .unwrap()
+            .result
+            .unwrap();
+        let text_a = response_a["contents"][0]["text"].as_str().unwrap();
+        let text_b = response_b["contents"][0]["text"].as_str().unwrap();
+        assert_eq!(
+            text_a, text_b,
+            "retention aggregate output must be deterministic"
+        );
+        for sensitive in [
+            "retention-candidate-unsupported",
+            "retention-candidate-resolution-1",
+            "Unsupported archival period",
+            "Board preservation hold",
+            "privacy-manager",
+            "Correct the retention schedule",
+            "candidate-secret-alpha",
+            "Secret retention policy name",
+            "Secret legal basis text",
+            "Secret payroll category",
+            "Secret recipient",
+            "subject-secret-alpha",
+            "operator secret note",
+            "secret raw status label",
+            "secret raw disposition",
+            "latest-resolution-secret",
+            "secret evidence label",
+            "secret raw evidence text",
+            "privacy manager secret",
+            "secret blocker text",
+            "secret approval text",
+            "secret finding text",
+        ] {
+            assert!(
+                !text_a.contains(sensitive),
+                "retention summary must not echo sensitive caller value {sensitive:?}: {text_a}"
+            );
+        }
+        assert!(!text_a.contains("\"destructive_disposal\": true"));
+        assert!(!text_a.contains("\"deletion_completion\": true"));
+        assert!(!text_a.contains("\"erasure_completion\": true"));
+        assert!(!text_a.contains("\"legal_hold_mutation\": true"));
+        assert!(!text_a.contains("\"retention_policy_mutation\": true"));
+
+        let report: Value = serde_json::from_str(text_a).unwrap();
+        let summary = &report["privacy_control_summary"];
+        assert_eq!(summary["record_counts"]["total_records"], json!(0));
+
+        let due = &summary["retention_due_candidate_counts"];
+        assert_eq!(due["report_supplied"], json!(true));
+        assert_eq!(due["candidate_record_count"], json!(2));
+        assert_eq!(due["reported_candidate_count"], json!(2));
+        assert_eq!(due["candidate_status_counts"]["blocked"], json!(1));
+        assert_eq!(due["candidate_status_counts"]["other"], json!(1));
+        assert_eq!(
+            due["outcome_counts"]["blocked_unsupported_period"],
+            json!(1)
+        );
+        assert_eq!(due["outcome_counts"]["other"], json!(1));
+        assert_eq!(due["evidence_state_counts"]["blocked"], json!(1));
+        assert_eq!(due["evidence_state_counts"]["other"], json!(1));
+        assert_eq!(
+            due["suppressed_by_bounded_evidence_counts"]["suppressed_candidate_count"],
+            json!(2)
+        );
+        assert_eq!(
+            due["suppressed_by_bounded_evidence_counts"]["top_level_suppressed_by_bounded_evidence_count"],
+            json!(2)
+        );
+        assert_eq!(
+            due["suppressed_by_bounded_evidence_counts"]["suppression_summary_suppressed_by_bounded_evidence_count"],
+            json!(2)
+        );
+        assert_eq!(
+            due["candidate_resolution_presence_counts"]["reported_candidate_resolution_record_count"],
+            json!(3)
+        );
+        assert_eq!(
+            due["candidate_resolution_presence_counts"]["reported_candidates_with_resolution_count"],
+            json!(2)
+        );
+        assert_eq!(
+            due["candidate_resolution_presence_counts"]["candidates_with_latest_resolution"],
+            json!(2)
+        );
+        assert_eq!(
+            due["candidate_resolution_presence_counts"]["candidates_with_resolution_record_count"],
+            json!(2)
+        );
+        assert_eq!(
+            due["candidate_resolution_presence_counts"]["latest_resolution_disposition_counts"]["blocked_follow_up"],
+            json!(1)
+        );
+        assert_eq!(
+            due["candidate_resolution_presence_counts"]["latest_resolution_disposition_counts"]["other"],
+            json!(1)
+        );
+        assert_eq!(
+            due["blocker_approval_presence_counts"]["records_with_blockers"],
+            json!(2)
+        );
+        assert_eq!(
+            due["blocker_approval_presence_counts"]["records_with_required_approvals"],
+            json!(2)
+        );
+        assert_eq!(
+            due["blocker_approval_presence_counts"]["records_with_legal_hold_blockers"],
+            json!(1)
+        );
+        assert_eq!(
+            due["blocker_approval_presence_counts"]["records_without_legal_hold_blockers"],
+            json!(1)
+        );
+        assert_eq!(
+            due["no_claim_flag_counts"]["by_flag"]["destructive_disposal"]["truthy"],
+            json!(1)
+        );
+        assert_eq!(
+            due["no_claim_flag_counts"]["by_flag"]["erasure_completion"]["other_present"],
+            json!(1)
+        );
+
+        let resolutions = &summary["retention_candidate_resolution_counts"];
+        assert_eq!(resolutions["record_count"], json!(2));
+        assert_eq!(
+            resolutions["disposition_counts"]["blocked_follow_up"],
+            json!(1)
+        );
+        assert_eq!(resolutions["disposition_counts"]["other"], json!(1));
+        assert_eq!(resolutions["evidence_only_counts"]["truthy"], json!(2));
+        assert_eq!(
+            resolutions["candidate_snapshot_counts"]["records_with_candidate_snapshot"],
+            json!(2)
+        );
+        assert_eq!(
+            resolutions["candidate_snapshot_counts"]["candidate_status_counts"]["blocked"],
+            json!(1)
+        );
+        assert_eq!(
+            resolutions["candidate_snapshot_counts"]["candidate_status_counts"]["other"],
+            json!(1)
+        );
+        assert_eq!(
+            resolutions["candidate_snapshot_counts"]["outcome_counts"]["blocked_unsupported_period"],
+            json!(1)
+        );
+        assert_eq!(
+            resolutions["candidate_snapshot_counts"]["outcome_counts"]["other"],
+            json!(1)
+        );
+        assert_eq!(
+            resolutions["candidate_snapshot_counts"]["evidence_state_counts"]["blocked"],
+            json!(1)
+        );
+        assert_eq!(
+            resolutions["candidate_snapshot_counts"]["evidence_state_counts"]["other"],
+            json!(1)
+        );
+        assert_eq!(
+            resolutions["blocker_approval_presence_counts"]["records_with_blockers"],
+            json!(2)
+        );
+        assert_eq!(
+            resolutions["blocker_approval_presence_counts"]["records_with_required_approvals"],
+            json!(1)
+        );
+        assert_eq!(
+            resolutions["no_claim_flag_counts"]["by_flag"]["legal_hold_mutation"]["truthy"],
+            json!(1)
+        );
+        assert_eq!(
+            resolutions["no_claim_flag_counts"]["by_flag"]["retention_policy_mutation"]["other_present"],
+            json!(1)
+        );
+        assert!(server.bridge_recorded().is_empty());
+    }
+
+    #[test]
+    fn resources_read_privacy_control_review_summary_allows_missing_retention_candidate_inputs() {
+        let server = McpServer::from_config(&enabled_cfg(), MockTransport::new(200, "{}")).unwrap();
+        let resp = server
+            .handle(&req(
+                "resources/read",
+                71,
+                json!({
+                    "uri": MCP_PRIVACY_CONTROL_REVIEW_SUMMARY_RESOURCE_URI,
+                    "arguments": {
+                        "privacy_controls": {}
+                    }
+                }),
+            ))
+            .unwrap();
+        let text = resp.result.unwrap()["contents"][0]["text"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let report: Value = serde_json::from_str(&text).unwrap();
+        let summary = &report["privacy_control_summary"];
+        assert_eq!(summary["record_counts"]["total_records"], json!(0));
+        assert_eq!(
+            summary["retention_due_candidate_counts"]["report_supplied"],
+            json!(false)
+        );
+        assert_eq!(
+            summary["retention_due_candidate_counts"]["candidate_record_count"],
+            json!(0)
+        );
+        assert_eq!(
+            summary["retention_due_candidate_counts"]["suppressed_by_bounded_evidence_counts"]["top_level_suppressed_by_bounded_evidence_count"],
+            json!(0)
+        );
+        assert_eq!(
+            summary["retention_due_candidate_counts"]["candidate_resolution_presence_counts"]["candidates_with_latest_resolution"],
+            json!(0)
+        );
+        assert_eq!(
+            summary["retention_candidate_resolution_counts"]["record_count"],
+            json!(0)
+        );
+        assert_eq!(
+            summary["retention_candidate_resolution_counts"]["evidence_only_counts"]["missing"],
+            json!(0)
         );
         assert!(server.bridge_recorded().is_empty());
     }
@@ -6685,10 +7507,78 @@ mod tests {
                 .contains("privacy_controls.dpias[0] must be an object")
         );
 
-        let extra_param = server
+        let non_object_due_candidates = server
             .handle(&req(
                 "resources/read",
                 70,
+                json!({
+                    "uri": MCP_PRIVACY_CONTROL_REVIEW_SUMMARY_RESOURCE_URI,
+                    "arguments": {
+                        "privacy_controls": {
+                            "retention_due_candidates": []
+                        }
+                    }
+                }),
+            ))
+            .unwrap();
+        let error = non_object_due_candidates.error.unwrap();
+        assert_eq!(error.code, codes::INVALID_PARAMS);
+        assert!(
+            error
+                .message
+                .contains("privacy_controls.retention_due_candidates must be an object")
+        );
+
+        let non_array_due_candidate_records = server
+            .handle(&req(
+                "resources/read",
+                71,
+                json!({
+                    "uri": MCP_PRIVACY_CONTROL_REVIEW_SUMMARY_RESOURCE_URI,
+                    "arguments": {
+                        "privacy_controls": {
+                            "retention_due_candidates": {
+                                "candidates": {}
+                            }
+                        }
+                    }
+                }),
+            ))
+            .unwrap();
+        let error = non_array_due_candidate_records.error.unwrap();
+        assert_eq!(error.code, codes::INVALID_PARAMS);
+        assert!(
+            error
+                .message
+                .contains("privacy_controls.retention_due_candidates.candidates must be an array")
+        );
+
+        let non_array_candidate_resolutions = server
+            .handle(&req(
+                "resources/read",
+                72,
+                json!({
+                    "uri": MCP_PRIVACY_CONTROL_REVIEW_SUMMARY_RESOURCE_URI,
+                    "arguments": {
+                        "privacy_controls": {
+                            "retention_candidate_resolutions": {}
+                        }
+                    }
+                }),
+            ))
+            .unwrap();
+        let error = non_array_candidate_resolutions.error.unwrap();
+        assert_eq!(error.code, codes::INVALID_PARAMS);
+        assert!(
+            error
+                .message
+                .contains("privacy_controls.retention_candidate_resolutions must be an array")
+        );
+
+        let extra_param = server
+            .handle(&req(
+                "resources/read",
+                73,
                 json!({
                     "uri": MCP_PRIVACY_CONTROL_REVIEW_SUMMARY_RESOURCE_URI,
                     "cursor": "ignored"
