@@ -391,12 +391,30 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+// The Gestão de dados surface splits into three sub-sub-tabs reached through the shared
+// SubNav. "Armazenamento" (storage usage/permissions/maintenance) is the default; the
+// backup/recovery surface and the key-rotation + reset surface live behind their tabs.
+const TAB_BACKUP = 'Cópias e recuperação';
+const TAB_KEYS = 'Chaves e reposição';
+
+async function selectTab(name: string) {
+  fireEvent.click(await screen.findByRole('button', { name }));
+}
+
 describe('GestaoDadosSection', () => {
-  it('offers backup creation plus the five distinct data-management operations', async () => {
+  it('offers backup creation plus the five distinct data-management operations across sub-sub-tabs', async () => {
     installFetch();
     renderWithProviders(<GestaoDadosSection />);
+    // Storage sub-sub-tab is the default landing surface.
+    expect(await screen.findByText('Estado do armazenamento')).toBeTruthy();
+    // Backup + recovery sub-sub-tab hosts the hot backup action.
+    await selectTab(TAB_BACKUP);
+    expect((await screen.findAllByRole('button', { name: 'Criar backup' })).length).toBeGreaterThan(
+      0,
+    );
+    // Keys + reset sub-sub-tab hosts the five distinct reset/recomeço operations.
+    await selectTab(TAB_KEYS);
     for (const name of [
-      'Criar backup',
       'Repor interface',
       'Recomeçar',
       'Limpar dados',
@@ -405,12 +423,12 @@ describe('GestaoDadosSection', () => {
     ]) {
       expect((await screen.findAllByRole('button', { name })).length).toBeGreaterThan(0);
     }
-    expect(await screen.findByText('Estado do armazenamento')).toBeTruthy();
   });
 
   it('renders local backup recovery policy freshness without claiming restore or RPO/RTO certification', async () => {
     installFetch();
     renderWithProviders(<GestaoDadosSection />);
+    await selectTab(TAB_BACKUP);
 
     expect(await screen.findByText('Política local de recuperação')).toBeTruthy();
     expect(screen.getByText('Estado do ensaio')).toBeTruthy();
@@ -427,6 +445,7 @@ describe('GestaoDadosSection', () => {
   it('renders sync handoff preflight as local-only evidence with missing verified backup proof', async () => {
     installFetch();
     renderWithProviders(<GestaoDadosSection />);
+    await selectTab(TAB_BACKUP);
 
     expect((await screen.findAllByText('Pré-validação local de handoff')).length).toBeGreaterThan(
       0,
@@ -610,6 +629,7 @@ describe('GestaoDadosSection', () => {
       return null;
     });
     renderWithProviders(<GestaoDadosSection />);
+    await selectTab(TAB_KEYS);
     const current = (await screen.findByLabelText('Chave atual')) as HTMLInputElement;
     const replacement = screen.getByLabelText('Chave de substituição') as HTMLInputElement;
     fireEvent.change(current, { target: { value: currentSecret } });
@@ -677,6 +697,7 @@ describe('GestaoDadosSection', () => {
     });
 
     renderWithProviders(<GestaoDadosSection />);
+    await selectTab(TAB_KEYS);
     const current = (await screen.findByLabelText('Chave atual')) as HTMLInputElement;
     const replacement = screen.getByLabelText('Chave de substituição') as HTMLInputElement;
     fireEvent.change(current, { target: { value: currentSecret } });
@@ -718,6 +739,7 @@ describe('GestaoDadosSection', () => {
       return null;
     });
     renderWithProviders(<GestaoDadosSection />);
+    await selectTab(TAB_KEYS);
     const current = (await screen.findByLabelText('Chave atual')) as HTMLInputElement;
     const replacement = screen.getByLabelText('Chave de substituição') as HTMLInputElement;
     fireEvent.change(current, { target: { value: currentSecret } });
@@ -1112,6 +1134,7 @@ describe('GestaoDadosSection', () => {
       return null;
     });
     renderWithProviders(<GestaoDadosSection />);
+    await selectTab(TAB_BACKUP);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Criar backup' }));
 
@@ -1147,6 +1170,7 @@ describe('GestaoDadosSection', () => {
       return null;
     });
     renderWithProviders(<GestaoDadosSection />);
+    await selectTab(TAB_BACKUP);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Criar backup' }));
 
@@ -1243,6 +1267,7 @@ describe('GestaoDadosSection', () => {
       return null;
     });
     renderWithProviders(<GestaoDadosSection />);
+    await selectTab(TAB_BACKUP);
 
     fireEvent.change(await screen.findByLabelText('Arquivo do backup para ensaio'), {
       target: { value: archive },
@@ -1354,7 +1379,10 @@ describe('GestaoDadosSection', () => {
     renderWithProviders(<GestaoDadosSection />);
 
     expect(await screen.findByText('Sem pasta de dados configurada')).toBeTruthy();
-    const backupButton = screen.getByRole('button', { name: 'Criar backup' }) as HTMLButtonElement;
+    await selectTab(TAB_BACKUP);
+    const backupButton = (await screen.findByRole('button', {
+      name: 'Criar backup',
+    })) as HTMLButtonElement;
     expect(backupButton.disabled).toBe(true);
     expect(screen.getAllByText('Requer armazenamento durável em disco.').length).toBeGreaterThan(0);
   });
@@ -1372,8 +1400,9 @@ describe('GestaoDadosSection', () => {
     });
     renderWithProviders(<GestaoDadosSection />);
     await screen.findByText('Estado do armazenamento');
+    await selectTab(TAB_KEYS);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Limpar dados' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Limpar dados' }));
 
     // The confirm button inside the modal shares the label; it is the last match.
     const confirmBtns = screen.getAllByRole('button', { name: 'Limpar dados' });
@@ -1414,8 +1443,9 @@ describe('GestaoDadosSection', () => {
     });
     renderWithProviders(<GestaoDadosSection />);
     await screen.findByText('Estado do armazenamento');
+    await selectTab(TAB_KEYS);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Repor interface' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Repor interface' }));
     // The client-only modal has no phrase / re-auth, so confirm is immediately available.
     const confirmBtns = screen.getAllByRole('button', { name: 'Repor interface' });
     fireEvent.click(confirmBtns[confirmBtns.length - 1]);

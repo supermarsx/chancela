@@ -20,7 +20,7 @@
  * Every destructive server op routes the shared {@link ConfirmActionModal} (type-phrase + step-up
  * re-auth + export-first); the server enforces the same gates. Nothing is silently destructive.
  */
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, type ReactNode, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   useCleanDataStorage,
@@ -66,10 +66,12 @@ import {
   ConfirmActionModal,
   ErrorNote,
   Field,
+  FieldHelp,
   Icon,
   InlineWarning,
   Input,
   Loading,
+  SubNav,
   TextArea,
   useToast,
 } from '../../ui';
@@ -77,6 +79,14 @@ import { GateButton } from '../session/permissions';
 import { resetFrontend } from './frontendReset';
 
 type Dialog = 'none' | 'frontend' | 'startover' | 'domain' | 'factory' | 'full';
+
+/** The Gestão de dados surface splits into three logically-grouped sub-sub-tabs reached
+ *  through the shared `<SubNav>` (the same segmented idiom the Operations surface uses):
+ *  "Armazenamento" holds storage usage, folder permissions and local file cleanup;
+ *  "Cópias e recuperação" holds backup, recovery drills and the restore/handoff preflights;
+ *  "Chaves e reposição" holds data-key rotation plus the reset/recomeço operations, keeping
+ *  the destructive resets separated from the everyday storage view. */
+type GestaoTab = 'armazenamento' | 'copias' | 'chaves';
 
 const DEFAULT_EXPORT_CLEANUP_POLICY = DEFAULT_SETTINGS.data_management.retained_export_cleanup;
 
@@ -1319,7 +1329,13 @@ function SqliteLogicalUsageList({
   );
 }
 
-function DataStatusPanel() {
+function DataStatusPanel({
+  tab,
+  resetControls,
+}: {
+  tab: GestaoTab;
+  resetControls: ReactNode;
+}) {
   const t = useT();
   const locale = useLocale();
   const toast = useToast();
@@ -1475,24 +1491,27 @@ function DataStatusPanel() {
   }
 
   return (
-    <Card
-      title={t('data.status.title')}
-      actions={
-        <Button
-          type="button"
-          variant="secondary"
-          icon={<Icon.Refresh />}
-          disabled={status.isFetching}
-          onClick={() => void status.refetch()}
-        >
-          {status.isFetching ? t('data.status.refreshing') : t('data.status.refresh')}
-        </Button>
-      }
-    >
-      {status.isLoading ? <Loading label={t('data.status.loading')} /> : null}
-      {status.isError ? <ErrorNote error={status.error} /> : null}
-      {data ? (
-        <div className="data-status">
+    <>
+      <div className="route-transition stack" key={tab}>
+        {tab === 'armazenamento' ? (
+          <Card
+            title={t('data.status.title')}
+            actions={
+              <Button
+                type="button"
+                variant="secondary"
+                icon={<Icon.Refresh />}
+                disabled={status.isFetching}
+                onClick={() => void status.refetch()}
+              >
+                {status.isFetching ? t('data.status.refreshing') : t('data.status.refresh')}
+              </Button>
+            }
+          >
+            {status.isLoading ? <Loading label={t('data.status.loading')} /> : null}
+            {status.isError ? <ErrorNote error={status.error} /> : null}
+            {data ? (
+              <div className="data-status">
           <dl className="deflist data-status-summary">
             <div>
               <dt>{t('data.status.mode')}</dt>
@@ -1650,6 +1669,133 @@ function DataStatusPanel() {
             ) : null}
           </section>
 
+          <section className="data-status-section" aria-labelledby="data-status-maintenance">
+            <div className="data-status-section__head">
+              <div>
+                <h4 id="data-status-maintenance">{t('data.status.cleanup.title')}</h4>
+                <p className="data-status-section__hint">{t('data.status.cleanup.body')}</p>
+              </div>
+            </div>
+            <ul className="data-status-cleanups">
+              {CLEANUP_TARGETS.map((target) => {
+                const usage = usageForTarget(data.usage.filesystem, target.target);
+                const isExportsPreview = target.target === 'exports';
+                const isTargetPending =
+                  cleanup.isPending &&
+                  (isExportsPreview ? previewingExports : cleanupTarget === target.target);
+                return (
+                  <li key={target.target} className="data-status-cleanup">
+                    <div className="data-status-cleanup__main">
+                      <h5>
+                        {t(target.title)}{' '}
+                        <FieldHelp
+                          text={t(
+                            isExportsPreview
+                              ? 'data.status.help.exportCleanup'
+                              : 'data.status.help.crashCleanup',
+                          )}
+                        />
+                      </h5>
+                      <span className="data-status-cleanup__description">
+                        {isExportsPreview ? exportCleanupDescription : t(target.body)}
+                      </span>
+                      {isExportsPreview && hasExportCleanupPreview ? (
+                        <span className="data-status-cleanup__description">
+                          {EXPORT_CLEANUP_CONFIRM_DESCRIPTION}
+                        </span>
+                      ) : null}
+                    </div>
+                    <p className="data-status-cleanup__metric">
+                      <span className="mono">{formatBytes(usage?.bytes ?? 0, locale)}</span>
+                      <span>
+                        {t('data.status.cleanup.items', {
+                          files: new Intl.NumberFormat(locale).format(usage?.file_count ?? 0),
+                          directories: new Intl.NumberFormat(locale).format(
+                            usage?.directory_count ?? 0,
+                          ),
+                        })}
+                      </span>
+                    </p>
+                    <div className="data-status-cleanup__actions">
+                      <GateButton
+                        perm="settings.manage"
+                        type="button"
+                        variant="secondary"
+                        className={isExportsPreview ? undefined : 'btn--danger'}
+                        icon={isExportsPreview ? <Icon.Search /> : <Icon.Trash />}
+                        disabled={!canClean || cleanup.isPending}
+                        onClick={() => {
+                          if (isExportsPreview) {
+                            void previewExportsCleanup();
+                            return;
+                          }
+                          setCleanupTarget(target.target);
+                        }}
+                      >
+                        {isTargetPending
+                          ? isExportsPreview
+                            ? EXPORT_CLEANUP_PREVIEW_PENDING
+                            : t('data.status.cleanup.pending')
+                          : isExportsPreview
+                            ? EXPORT_CLEANUP_PREVIEW_BUTTON
+                            : t(target.button)}
+                      </GateButton>
+                      {isExportsPreview ? (
+                        <GateButton
+                          perm="settings.manage"
+                          type="button"
+                          variant="secondary"
+                          className="btn--danger"
+                          icon={<Icon.Trash />}
+                          title={EXPORT_CLEANUP_EXECUTION_TOOLTIP}
+                          disabled={!canClean || cleanup.isPending || !hasExportCleanupPreview}
+                          onClick={() => setCleanupTarget('exports')}
+                        >
+                          {cleanup.isPending && cleanupTarget === 'exports'
+                            ? EXPORT_CLEANUP_EXECUTION_PENDING
+                            : EXPORT_CLEANUP_EXECUTION_BUTTON}
+                        </GateButton>
+                      ) : null}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+            {lastCleanup ? (
+              <InlineWarning
+                tone="info"
+                title={
+                  lastCleanup.dry_run
+                    ? EXPORT_CLEANUP_PREVIEW_TITLE
+                    : lastCleanup.target === 'exports'
+                      ? EXPORT_CLEANUP_EXECUTION_TITLE
+                      : t('data.status.cleanup.doneTitle')
+                }
+              >
+                <p>{cleanupSummary(lastCleanup, t, locale)}</p>
+                {lastCleanup.skipped.length > 0 ? (
+                  <ul className="plain-list">
+                    {lastCleanup.skipped.map((item) => (
+                      <li key={item} className="mono">
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </InlineWarning>
+            ) : null}
+          </section>
+              </div>
+            ) : null}
+          </Card>
+        ) : null}
+
+        {tab === 'copias' ? (
+          <Card title={t('data.status.tab.backup')}>
+            {status.isLoading ? <Loading label={t('data.status.loading')} /> : null}
+            {status.isError ? <ErrorNote error={status.error} /> : null}
+            {data ? (
+              <div className="data-status">
           <section className="data-status-section" aria-labelledby="data-status-backup">
             <div className="data-status-section__head">
               <div>
@@ -1684,7 +1830,8 @@ function DataStatusPanel() {
                 <h4 id="data-status-recovery-drill">Ensaio de recuperação sem restauro</h4>
                 <p className="data-status-section__hint">
                   Executa a pré-validação existente do backup e grava um recibo de custódia. Não
-                  restaura, não troca a base de dados e não prepara sidecars.
+                  restaura, não troca a base de dados e não prepara sidecars.{' '}
+                  <FieldHelp text={t('data.status.help.recoveryDrill')} />
                 </p>
               </div>
             </div>
@@ -1803,119 +1950,26 @@ function DataStatusPanel() {
             ) : null}
           </section>
 
-          <section className="data-status-section" aria-labelledby="data-status-maintenance">
-            <div className="data-status-section__head">
-              <div>
-                <h4 id="data-status-maintenance">{t('data.status.cleanup.title')}</h4>
-                <p className="data-status-section__hint">{t('data.status.cleanup.body')}</p>
               </div>
-            </div>
-            <ul className="data-status-cleanups">
-              {CLEANUP_TARGETS.map((target) => {
-                const usage = usageForTarget(data.usage.filesystem, target.target);
-                const isExportsPreview = target.target === 'exports';
-                const isTargetPending =
-                  cleanup.isPending &&
-                  (isExportsPreview ? previewingExports : cleanupTarget === target.target);
-                return (
-                  <li key={target.target} className="data-status-cleanup">
-                    <div className="data-status-cleanup__main">
-                      <h5>{t(target.title)}</h5>
-                      <span className="data-status-cleanup__description">
-                        {isExportsPreview ? exportCleanupDescription : t(target.body)}
-                      </span>
-                      {isExportsPreview && hasExportCleanupPreview ? (
-                        <span className="data-status-cleanup__description">
-                          {EXPORT_CLEANUP_CONFIRM_DESCRIPTION}
-                        </span>
-                      ) : null}
-                    </div>
-                    <p className="data-status-cleanup__metric">
-                      <span className="mono">{formatBytes(usage?.bytes ?? 0, locale)}</span>
-                      <span>
-                        {t('data.status.cleanup.items', {
-                          files: new Intl.NumberFormat(locale).format(usage?.file_count ?? 0),
-                          directories: new Intl.NumberFormat(locale).format(
-                            usage?.directory_count ?? 0,
-                          ),
-                        })}
-                      </span>
-                    </p>
-                    <div className="data-status-cleanup__actions">
-                      <GateButton
-                        perm="settings.manage"
-                        type="button"
-                        variant="secondary"
-                        className={isExportsPreview ? undefined : 'btn--danger'}
-                        icon={isExportsPreview ? <Icon.Search /> : <Icon.Trash />}
-                        disabled={!canClean || cleanup.isPending}
-                        onClick={() => {
-                          if (isExportsPreview) {
-                            void previewExportsCleanup();
-                            return;
-                          }
-                          setCleanupTarget(target.target);
-                        }}
-                      >
-                        {isTargetPending
-                          ? isExportsPreview
-                            ? EXPORT_CLEANUP_PREVIEW_PENDING
-                            : t('data.status.cleanup.pending')
-                          : isExportsPreview
-                            ? EXPORT_CLEANUP_PREVIEW_BUTTON
-                            : t(target.button)}
-                      </GateButton>
-                      {isExportsPreview ? (
-                        <GateButton
-                          perm="settings.manage"
-                          type="button"
-                          variant="secondary"
-                          className="btn--danger"
-                          icon={<Icon.Trash />}
-                          title={EXPORT_CLEANUP_EXECUTION_TOOLTIP}
-                          disabled={!canClean || cleanup.isPending || !hasExportCleanupPreview}
-                          onClick={() => setCleanupTarget('exports')}
-                        >
-                          {cleanup.isPending && cleanupTarget === 'exports'
-                            ? EXPORT_CLEANUP_EXECUTION_PENDING
-                            : EXPORT_CLEANUP_EXECUTION_BUTTON}
-                        </GateButton>
-                      ) : null}
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-            {lastCleanup ? (
-              <InlineWarning
-                tone="info"
-                title={
-                  lastCleanup.dry_run
-                    ? EXPORT_CLEANUP_PREVIEW_TITLE
-                    : lastCleanup.target === 'exports'
-                      ? EXPORT_CLEANUP_EXECUTION_TITLE
-                      : t('data.status.cleanup.doneTitle')
-                }
-              >
-                <p>{cleanupSummary(lastCleanup, t, locale)}</p>
-                {lastCleanup.skipped.length > 0 ? (
-                  <ul className="plain-list">
-                    {lastCleanup.skipped.map((item) => (
-                      <li key={item} className="mono">
-                        {item}
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
-              </InlineWarning>
             ) : null}
-          </section>
+          </Card>
+        ) : null}
 
+        {tab === 'chaves' ? (
+          <>
+            <Card title={t('data.status.tab.keys')}>
+              {status.isLoading ? <Loading label={t('data.status.loading')} /> : null}
+              {status.isError ? <ErrorNote error={status.error} /> : null}
+              {data ? (
+                <div className="data-status">
           <section className="data-status-section" aria-labelledby="data-status-key-rotation">
             <div className="data-status-section__head">
               <div>
                 <h4 id="data-status-key-rotation">{t('data.status.keyRotation.title')}</h4>
-                <p className="data-status-section__hint">{t('data.status.keyRotation.body')}</p>
+                <p className="data-status-section__hint">
+                  {t('data.status.keyRotation.body')}{' '}
+                  <FieldHelp text={t('data.status.help.keyRotation')} />
+                </p>
               </div>
             </div>
             <form className="form" onSubmit={(event) => void submitKeyRotationPreflight(event)}>
@@ -2024,8 +2078,13 @@ function DataStatusPanel() {
               <DataKeyRotationExecutionReport execution={lastExecution} t={t} locale={locale} />
             ) : null}
           </section>
-        </div>
-      ) : null}
+                </div>
+              ) : null}
+            </Card>
+            {resetControls}
+          </>
+        ) : null}
+      </div>
 
       <ConfirmActionModal
         open={activeCleanup !== null}
@@ -2083,7 +2142,7 @@ function DataStatusPanel() {
           toast.success(t('data.status.cleanup.done'));
         }}
       />
-    </Card>
+    </>
   );
 }
 
@@ -2097,12 +2156,22 @@ export function GestaoDadosSection() {
   const [dialog, setDialog] = useState<Dialog>('none');
   const [reason, setReason] = useState('');
   const [lastOutcome, setLastOutcome] = useState<ResetOutcomeView | null>(null);
+  const [tab, setTab] = useState<GestaoTab>('armazenamento');
   const close = () => setDialog('none');
 
-  return (
-    <div className="stack">
-      <DataStatusPanel />
+  const tabDescription =
+    tab === 'armazenamento'
+      ? t('data.status.tab.storage.desc')
+      : tab === 'copias'
+        ? t('data.status.tab.backup.desc')
+        : t('data.status.tab.keys.desc');
 
+  // The "Chaves e reposição" sub-sub-tab hosts the data-key rotation surface (rendered by
+  // DataStatusPanel) followed by these reset/recomeço controls, so the destructive resets
+  // stay clearly separated from the everyday storage view while keeping every confirm +
+  // step-up gate intact.
+  const resetControls = (
+    <>
       {/* 1 · Repor interface (client-only) -------------------------------------- */}
       <Card title={t('data.frontend.title')}>
         <div className="stack--tight">
@@ -2123,7 +2192,9 @@ export function GestaoDadosSection() {
       {/* 2 · Recomeçar instância (non-destructive, keeps running) --------------- */}
       <Card title={t('data.startOver.title')}>
         <div className="stack--tight">
-          <p className="field__hint">{t('data.startOver.body')}</p>
+          <p className="field__hint">
+            {t('data.startOver.body')} <FieldHelp text={t('data.status.help.startOver')} />
+          </p>
           <div className="row-wrap">
             <GateButton
               perm="data.start_over"
@@ -2145,7 +2216,8 @@ export function GestaoDadosSection() {
       <Card title={t('data.destructive.title')}>
         <div className="stack--tight">
           <InlineWarning tone="error" title={t('data.destructive.warnTitle')}>
-            {t('data.destructive.warnBody')}
+            {t('data.destructive.warnBody')}{' '}
+            <FieldHelp text={t('data.status.help.reset')} />
           </InlineWarning>
           <div className="row-wrap">
             <GateButton
@@ -2198,6 +2270,36 @@ export function GestaoDadosSection() {
           ) : null}
         </div>
       </Card>
+    </>
+  );
+
+  return (
+    <div className="stack">
+      <SubNav
+        items={[
+          {
+            id: 'armazenamento',
+            label: t('data.status.tab.storage'),
+            icon: <Icon.Layers />,
+          },
+          {
+            id: 'copias',
+            label: t('data.status.tab.backup'),
+            icon: <Icon.Archive />,
+          },
+          {
+            id: 'chaves',
+            label: t('data.status.tab.keys'),
+            icon: <Icon.Shuffle />,
+          },
+        ]}
+        active={tab}
+        onSelect={setTab}
+        ariaLabel={t('data.status.subnav.aria')}
+      />
+      <p className="field__hint">{tabDescription}</p>
+
+      <DataStatusPanel tab={tab} resetControls={resetControls} />
 
       {/* 1 · Repor interface modal (client-only — NO server call) --------------- */}
       <ConfirmActionModal
