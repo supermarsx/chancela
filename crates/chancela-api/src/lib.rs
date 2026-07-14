@@ -4046,6 +4046,39 @@ mod tests {
         install_test_ledger(state, ledger).await;
     }
 
+    fn bulk_application_ledger(event_count: usize) -> Ledger {
+        let mut ledger = Ledger::new();
+        for i in 0..event_count {
+            ledger.append(
+                "bulk.actor",
+                "settings",
+                "settings.updated",
+                None,
+                format!("payload-{i}").as_bytes(),
+            );
+        }
+        ledger
+    }
+
+    fn accented_archive_search_ledger() -> Ledger {
+        let mut ledger = Ledger::new();
+        ledger.append(
+            "arquivo.admin",
+            "settings/livros",
+            "archive.note",
+            Some("Aprovação dos livros em reunião ordinária"),
+            b"accented-archive-note",
+        );
+        ledger.append(
+            "arquivo.admin",
+            "settings/livros",
+            "archive.note",
+            Some("Revisão de arquivo sem o termo pesquisado"),
+            b"archive-note-noise",
+        );
+        ledger
+    }
+
     fn event_seqs(value: &Value) -> Vec<u64> {
         value["events"]
             .as_array()
@@ -4058,18 +4091,7 @@ mod tests {
     #[tokio::test]
     async fn ledger_events_page_handles_thousand_event_chain_without_duplicates() {
         let state = fresh_state().await;
-        {
-            let mut ledger = state.ledger.write().await;
-            for i in 0..1005 {
-                ledger.append(
-                    "bulk.actor",
-                    "settings",
-                    "settings.updated",
-                    None,
-                    format!("payload-{i}").as_bytes(),
-                );
-            }
-        }
+        install_test_ledger(&state, bulk_application_ledger(1005)).await;
 
         let (status, first) = send(
             state.clone(),
@@ -4136,6 +4158,105 @@ mod tests {
                 .expect("error")
                 .contains("only desc"),
             "{unsupported}"
+        );
+    }
+
+    #[tokio::test]
+    async fn ledger_events_page_search_folds_accents_like_livros_filters() {
+        let state = fresh_state().await;
+        install_test_ledger(&state, accented_archive_search_ledger()).await;
+
+        let (status, page) = send(
+            state,
+            get("/v1/ledger/events/page?q=reuniao%20ordinaria&chain=application&limit=10"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let events = page["events"].as_array().expect("events");
+        assert_eq!(events.len(), 1, "{page}");
+        assert_eq!(
+            events[0]["justification"],
+            "Aprovação dos livros em reunião ordinária"
+        );
+
+        let tmp = TempDir::new();
+        {
+            let first = AppState::with_data_dir(tmp.dir.clone());
+            install_test_ledger(&first, accented_archive_search_ledger()).await;
+        }
+        let restarted = AppState::with_data_dir(tmp.dir.clone());
+        *restarted.ledger.write().await = Ledger::new();
+
+        let (status, page) = send(
+            restarted,
+            get("/v1/ledger/events/page?q=reuniao%20ordinaria&chain=application&limit=10"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let events = page["events"].as_array().expect("events");
+        assert_eq!(events.len(), 1, "{page}");
+        assert_eq!(
+            events[0]["justification"],
+            "Aprovação dos livros em reunião ordinária"
+        );
+    }
+
+    #[tokio::test]
+    async fn ledger_events_page_persistent_thousand_event_chain_pages_after_reload_and_clear() {
+        let tmp = TempDir::new();
+        {
+            let first = AppState::with_data_dir(tmp.dir.clone());
+            install_test_ledger(&first, bulk_application_ledger(1005)).await;
+        }
+
+        let restarted = AppState::with_data_dir(tmp.dir.clone());
+        *restarted.ledger.write().await = Ledger::new();
+
+        let (status, first) = send(
+            restarted.clone(),
+            get("/v1/ledger/events/page?chain=application&limit=50&order=desc"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(first["limit"], 50);
+        assert_eq!(first["order"], "desc");
+        assert_eq!(first["has_more"], true);
+        let first_events = first["events"].as_array().expect("first events");
+        assert_eq!(first_events.len(), 50, "first page must be bounded");
+        assert_eq!(first_events[0]["seq"], 1004);
+        assert_eq!(first_events[49]["seq"], 955);
+        assert!(
+            first_events
+                .windows(2)
+                .all(|pair| pair[0]["seq"].as_u64() > pair[1]["seq"].as_u64()),
+            "page is newest-first: {first_events:?}"
+        );
+
+        let cursor = first["next_cursor"].as_u64().expect("next cursor");
+        assert_eq!(cursor, 955);
+        let (status, second) = send(
+            restarted,
+            get(&format!(
+                "/v1/ledger/events/page?chain=application&limit=50&order=desc&before_seq={cursor}"
+            )),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(second["has_more"], true);
+        assert_eq!(second["next_cursor"], 905);
+        let second_events = second["events"].as_array().expect("second events");
+        assert_eq!(second_events.len(), 50);
+        assert_eq!(second_events[0]["seq"], 954);
+        assert_eq!(second_events[49]["seq"], 905);
+        let first_seq: std::collections::HashSet<u64> = first_events
+            .iter()
+            .map(|event| event["seq"].as_u64().expect("seq"))
+            .collect();
+        assert!(
+            second_events
+                .iter()
+                .all(|event| !first_seq.contains(&event["seq"].as_u64().expect("seq"))),
+            "second page has no duplicate seq from first page"
         );
     }
 
@@ -4312,6 +4433,35 @@ mod tests {
                 }));
             }
         }
+    }
+
+    #[tokio::test]
+    async fn ledger_archive_document_search_folds_accents_for_audit_exports() {
+        let state = fresh_state().await;
+        install_test_ledger(&state, accented_archive_search_ledger()).await;
+
+        let (status, ctype, _disposition, export_bytes) = send_download(
+            state,
+            get("/v1/ledger/archive/document?format=json&q=aprovacao&chain=application&limit=10"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(ctype, "application/json");
+        let export: Value = serde_json::from_slice(&export_bytes).expect("archive json");
+        assert_eq!(export["event_count"], 1);
+        assert_eq!(export["export_scope"], "bounded_first_page");
+        assert_eq!(export["page_limit"], 10);
+        assert!(
+            export["filters"]
+                .as_str()
+                .expect("filters")
+                .contains("pesquisa contem aprovacao"),
+            "{export}"
+        );
+        assert_eq!(
+            export["events"][0]["justification"],
+            "Aprovação dos livros em reunião ordinária"
+        );
     }
 
     #[tokio::test]

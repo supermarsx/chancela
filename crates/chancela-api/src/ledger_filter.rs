@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 
 use chancela_ledger::Event;
+use chancela_store::normalize_ledger_event_search_text;
 use serde::{Deserialize, Deserializer};
 use time::format_description::well_known::Rfc3339;
 use time::macros::format_description;
@@ -154,12 +155,12 @@ impl LedgerEventFilters {
 
 fn normalize_query(query: Option<String>) -> Option<String> {
     query
-        .map(|q| q.trim().to_lowercase())
+        .map(|q| normalize_ledger_event_search_text(q.trim()))
         .filter(|q| !q.is_empty())
 }
 
 fn contains_query(value: impl AsRef<str>, query: &str) -> bool {
-    value.as_ref().to_lowercase().contains(query)
+    normalize_ledger_event_search_text(value.as_ref()).contains(query)
 }
 
 fn event_matches_query(event: &Event, query: &str) -> bool {
@@ -327,6 +328,34 @@ mod tests {
             LedgerEventFilters::from_parts(Some(payload_prefix), None, &[], None, None, None)
                 .expect("payload query");
         assert!(by_payload.matches(event));
+    }
+
+    #[test]
+    fn ledger_events_page_query_filter_folds_accents_like_livros_search() {
+        let mut ledger = chancela_ledger::Ledger::new();
+        let event = ledger.append(
+            "Arquivo.Admin",
+            "settings/livros",
+            "archive.note",
+            Some("Aprovação dos livros em reunião ordinária"),
+            b"archive-note",
+        );
+
+        let by_justification = LedgerEventFilters::from_parts(
+            Some("reuniao ordinaria".to_owned()),
+            None,
+            &[],
+            None,
+            None,
+            None,
+        )
+        .expect("folded justification query");
+        assert!(by_justification.matches(event));
+
+        let by_scope =
+            LedgerEventFilters::from_parts(Some("LIVROS".to_owned()), None, &[], None, None, None)
+                .expect("case-folded scope query");
+        assert!(by_scope.matches(event));
     }
 
     #[test]

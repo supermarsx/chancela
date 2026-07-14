@@ -249,6 +249,32 @@ pub struct LedgerEventPage {
     pub limit: usize,
 }
 
+/// Normalize ledger free-text search the same way the archive UI's `livros` search does:
+/// lowercase and fold common Latin diacritics while leaving all other substring semantics intact.
+pub fn normalize_ledger_event_search_text(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for c in value.chars().flat_map(|c| c.to_lowercase()) {
+        match c {
+            '\u{0300}'..='\u{036f}' => {}
+            '\u{00e0}' | '\u{00e1}' | '\u{00e2}' | '\u{00e3}' | '\u{00e4}' | '\u{00e5}' => {
+                out.push('a')
+            }
+            '\u{00e7}' => out.push('c'),
+            '\u{00e8}' | '\u{00e9}' | '\u{00ea}' | '\u{00eb}' => out.push('e'),
+            '\u{00ec}' | '\u{00ed}' | '\u{00ee}' | '\u{00ef}' => out.push('i'),
+            '\u{00f1}' => out.push('n'),
+            '\u{00f2}' | '\u{00f3}' | '\u{00f4}' | '\u{00f5}' | '\u{00f6}' => out.push('o'),
+            '\u{00f9}' | '\u{00fa}' | '\u{00fb}' | '\u{00fc}' => out.push('u'),
+            '\u{00fd}' | '\u{00ff}' => out.push('y'),
+            '\u{00e6}' => out.push_str("ae"),
+            '\u{0153}' => out.push_str("oe"),
+            '\u{00df}' => out.push_str("ss"),
+            other => out.push(other),
+        }
+    }
+    out
+}
+
 /// Options for opening the durable store.
 ///
 /// By default no SQLCipher key is supplied, so [`Store::open`] and [`StoreOpenOptions::default`]
@@ -3420,7 +3446,7 @@ fn sqlite_limit_value(limit: usize) -> i64 {
 
 fn normalize_event_page_query(query: Option<&str>) -> Option<String> {
     query
-        .map(|query| query.trim().to_lowercase())
+        .map(|query| normalize_ledger_event_search_text(query.trim()))
         .filter(|query| !query.is_empty())
 }
 
@@ -3455,7 +3481,7 @@ fn event_matches_page_query(event: &Event, query: &str) -> bool {
 }
 
 fn contains_event_page_query(value: impl AsRef<str>, query: &str) -> bool {
-    value.as_ref().to_lowercase().contains(query)
+    normalize_ledger_event_search_text(value.as_ref()).contains(query)
 }
 
 fn format_event_timestamp(timestamp: OffsetDateTime) -> String {
