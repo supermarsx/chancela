@@ -1,6 +1,6 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-14 from current implementation snapshot `9f58b9cbab4aff447079162729a3d5700f0f8e49`,
+*Updated 2026-07-14 from current implementation snapshot `114c8be056805454461a777ae7a95a1d82d4e5d9`,
 with committed evidence refreshes for the recently landed Signatures & Trust
 provider-credential, stored runtime credential resolution, stored PKCS#12,
 remote batch-initiation surfaces, and Docker/Compose runtime-hardening
@@ -565,7 +565,7 @@ Implementation checkpoints covered here:
   append, production backup policy, RPO/RTO certification, disaster-recovery
   readiness, off-site custody proof, SQLCipher-at-rest proof, legal archive
   certification, FULL coverage, or new CAE provider/legal behavior.
-- Current `9f58b9c` keeps Template Catalog/UX/CI **PARTIAL**: the embedded template
+- Current `114c8be` keeps Template Catalog/UX/CI **PARTIAL**: the embedded template
   catalog now loads 104 JSON template assets (104 total / 44 CSC), including
   standalone
   `procuracao-representacao/v1` instruments for commercial companies,
@@ -2154,7 +2154,11 @@ behavior, legal disposal, or legal-effect claims.
   consistency, plus local embedded-evidence diagnostics that report
   caller-supplied XAdES signature-timestamp, certificate/revocation-value, and
   archive-timestamp indicators or incomplete/unreferenced timestamp blockers as
-  technical-only presence checks. The legacy bounded `cades` report remains for compatibility with
+  technical-only presence checks. ASiC-E/CAdES structural diagnostics now
+  distinguish local multi-manifest wiring where there is one parsed ASiCManifest
+  per CAdES signature, expose duplicate or missing manifest signature references
+  as blockers, and still leave trust/provider/legal conclusions unclaimed. The
+  legacy bounded `cades` report remains for compatibility with
   prior ASiC-S/CAdES and ASiC-E/CAdES callers. The ZIP reader now accounts
   actual decompressed member and aggregate sizes for payloads, manifests, CAdES
   signatures, XAdES signatures, unsupported `META-INF`, and other non-directory
@@ -3137,15 +3141,16 @@ behavior, legal disposal, or legal-effect claims.
   blocked, and local-only paths without entering secrets in the UI. The desktop-gated API can also
   sign a sealed act with transient local PKCS#12/PFX inputs and stores only the signed PDF plus
   public certificate evidence. `chancela-signing` now has focused signing/validation tests and docs
-  that keep XAdES generation and production conformance unsupported while recognizing the bounded
-  ASiC-S/CAdES and ASiC-E/CAdES manifest slices. The API-level ASiC inspection route is also local
+  that keep production conformance unsupported while recognizing the bounded
+  ASiC-S/CAdES, bounded ASiC-E/CAdES manifest, and local ASiC-E multi-CAdES
+  manifest/signature wiring slices. The API-level ASiC inspection route is also local
   technical evidence only: it can inspect member shape, blockers, bounded CAdES compatibility
   reports, and `technical_validation` projected from `validate_asic_container` for CAdES, XAdES,
   mixed ASiC-E signatures, and archive timestamps. Local PKCS#12 signing is advanced local
   technical evidence only, not CMD, not a remote
   qualified provider flow, not trust-list validation, and not legal qualified-signature status.
-  XAdES/ASiC-XAdES generation, full legal/trust/provider/QES/B-LT/B-LTA/eIDAS/production conformance,
-  ASiC-E profiles beyond one CAdES-signed manifest binding payload digests, embedded LT/LTA evidence,
+  full legal/trust/provider/QES/B-LT/B-LTA/eIDAS/production conformance,
+  provider-native or legally reviewed ASiC-E profiles beyond local structural/cryptographic checks,
   and legal qualified-signature claims remain explicitly out of scope.
 - **CMD legal integration position:** `docs/CMD-LEGAL-INTEGRATION.md` records the current product
   stance: Chancela can integrate with CMD/CC/QTSP flows without itself becoming the qualified trust
@@ -3623,8 +3628,10 @@ behavior, legal disposal, or legal-effect claims.
   provider-driven renewal, production B-LT/B-LTA, QES, qualified status, or
   trust-policy determinations.
 - Bounded ASiC-E/CAdES support signs and validates one ASiCManifest/digest-binding container shape;
-  it is not XAdES, ASiC-XAdES validation, embedded LT/LTA evidence, broad ETSI profile completeness,
-  production ASiC compliance, or legal validity assessment.
+  the local ASiC validator and inspector also handle ASiC-E multi-CAdES containers when there is
+  one parsed ASiCManifest per CAdES signature and each manifest binds the packaged payload digests.
+  This is not provider-native batch signing, trust validation, embedded LT/LTA trust evidence, broad
+  ETSI profile completeness, production ASiC compliance, or legal validity assessment.
 - `POST /v1/signature/asic/inspect` is a read-only local technical inspection endpoint for a
   caller-supplied base64 ASiC ZIP. It validates declared fixity, base64, readable ZIP structure, and
   unsafe member paths; reports profile shape, bounded profile, blockers, member paths, manifest and
@@ -3639,7 +3646,9 @@ behavior, legal disposal, or legal-effect claims.
   compliance.
 - ASiC structural diagnostics expose member-shape classifications, manifest/signature diagnostics,
   blocker IDs, and actual decompressed-size blockers so operators/tests can understand why a package
-  is outside the bounded profile slice. Technical signature/archive timestamp validation remains
+  is outside the bounded profile slice or why multi-manifest ASiC-E/CAdES wiring is incomplete.
+  Duplicate or missing ASiCManifest signature references remain structured local blockers.
+  Technical signature/archive timestamp validation remains
   local cryptographic evidence only; embedded LT/LTA-like diagnostics report local member/element
   indicators and blockers only; this does not establish CAdES/XAdES trust, fetch or prove LTV
   sufficiency, certify broad ASiC profile compliance, or create legal/qualified-signature validity.

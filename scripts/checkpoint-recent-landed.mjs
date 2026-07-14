@@ -1483,6 +1483,11 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-signing/src/asic.rs",
+    "AsicECadesMultiManifest",
+    "ASiC-E multi-CAdES manifest profile-shape marker",
+  );
+  assertFileContains(
+    "crates/chancela-signing/src/asic.rs",
     "pub struct AsicManifestDiagnostic",
     "ASiC manifest diagnostic type",
   );
@@ -1500,6 +1505,16 @@ function assertCheckpointMap() {
     "crates/chancela-signing/src/asic.rs",
     "legal validity, or production compliance",
     "ASiC structural diagnostics conservative boundary copy",
+  );
+  assertFileContains(
+    "crates/chancela-signing/src/asic.rs",
+    "fn cades_manifest_wiring_complete",
+    "ASiC-E CAdES manifest/signature wiring helper marker",
+  );
+  assertFileContains(
+    "crates/chancela-signing/src/asic.rs",
+    "asic_e_manifest_duplicate_signature_reference",
+    "ASiC-E duplicate manifest signature-reference blocker marker",
   );
   assertFileContains(
     "crates/chancela-signing/tests/roundtrip.rs",
@@ -1707,6 +1722,26 @@ function assertCheckpointMap() {
     "API ASiC inspection XAdES technical report coverage",
   );
   assertFileContains(
+    "crates/chancela-signing/tests/asic_full.rs",
+    "asic_e_multi_sig_two_cades_profile_reports_manifest_wiring",
+    "signing ASiC-E multi-CAdES structural wiring coverage",
+  );
+  assertFileContains(
+    "crates/chancela-signing/tests/asic_full.rs",
+    "asic_e_multi_sig_duplicate_manifest_reference_is_structured_blocker",
+    "signing ASiC-E duplicate manifest reference blocker coverage",
+  );
+  assertFileContains(
+    "crates/chancela-signing/tests/asic_full.rs",
+    "asic_e_multi_sig_missing_manifest_reference_is_structured_blocker",
+    "signing ASiC-E missing manifest reference blocker coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/asic_signature_validation.rs",
+    "asic_signature_validation_multi_cades_manifests_reports_local_structure_without_claims",
+    "API ASiC inspection multi-CAdES manifest wiring no-claim coverage",
+  );
+  assertFileContains(
     "crates/chancela-api/tests/asic_signature_validation.rs",
     "asic_signature_validation_mixed_e_cades_xades_archive_timestamp_reports_consistency",
     "API ASiC inspection mixed/archive timestamp coverage",
@@ -1750,6 +1785,11 @@ function assertCheckpointMap() {
     "SPEC-COVERAGE.md",
     "embedded LT/LTA-like diagnostics report local member/element",
     "spec coverage ASiC embedded LT/LTA technical-only marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "one parsed ASiCManifest per CAdES signature",
+    "spec coverage ASiC-E multi-CAdES structural wiring marker",
   );
   assertFileContains(
     "crates/chancela-signing/src/asic.rs",
@@ -9375,7 +9415,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `9f58b9c`",
+    "Current checkpoint metadata/static checks through `114c8be`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -9815,7 +9855,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `9f58b9cbab4aff447079162729a3d5700f0f8e49`",
+    "implementation snapshot `114c8be056805454461a777ae7a95a1d82d4e5d9`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
