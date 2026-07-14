@@ -14,8 +14,10 @@ sqlcipher = ["chancela-store/sqlcipher"]
 # wp14 Phase 2: enable the off-by-default PostgreSQL durability backend (self-hosted server only).
 # Propagates to chancela-store's `postgres` feature so `CHANCELA_DB_BACKEND=postgres` + `DATABASE_URL`
 # can select it at runtime. Default features are unchanged, so the desktop/browser embedded builds
-# and the plain `cargo build` stay SQLite-only with an unchanged dependency graph.
-postgres = ["chancela-store/postgres"]
+# and the plain `cargo build` stay SQLite-only with an unchanged dependency graph. wp16 P1 additionally
+# pulls in the synchronous `postgres` crate directly so the follower change-feed can run its own
+# dedicated `LISTEN chancela_ledger` connection (never the store's writer / read pool).
+postgres = ["chancela-store/postgres", "dep:postgres"]
 # wp14 Phase 4: enable the OPTIONAL Redis cache-aside backend. OFF by default; when on, the cache is
 # still inert unless `REDIS_URL`/`REDIS_URL_FILE` is set at runtime (else NullCache). The in-process
 # `Ledger::verify()` memo (the real single-node win) needs NO feature — it is always compiled.
@@ -47,6 +49,10 @@ argon2 = { workspace = true }
 moka = { workspace = true }
 # wp14 Phase 4: OPTIONAL Redis cache-aside backend, gated by the off-by-default `redis` feature.
 redis = { workspace = true, optional = true }
+# wp16 P1: synchronous PostgreSQL driver for the follower change-feed's dedicated LISTEN/NOTIFY
+# connection. Same version as chancela-store's backend so the lock stays unified; only pulled in with
+# the off-by-default `postgres` feature, so the default SQLite build's dependency graph is unchanged.
+postgres = { version = "0.19", optional = true }
 axum = { workspace = true }
 base64 = { workspace = true }
 chacha20poly1305 = { workspace = true }

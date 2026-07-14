@@ -67,6 +67,17 @@ use time::{Date, OffsetDateTime};
 /// The database file created inside the data directory passed to [`Store::open`].
 pub const DB_FILE: &str = "chancela.db";
 
+/// The fixed primary-key value for the single-row `settings` table (schema v16, wp16 P3b). The
+/// settings sidecar is one document, so it lives as one row keyed by this constant; [`Tx::put_settings`]
+/// upserts it and [`Store::settings`] reads it back.
+pub const SETTINGS_SINGLETON_ID: &str = "settings";
+
+/// wp16 P1 — the Postgres `LISTEN/NOTIFY` channel the leader signals a durable ledger append on and
+/// that followers listen on for near-real-time change-feed wakes (plan §2.2). The payload is the new
+/// durable `MAX(seq)`; delivery is best-effort, so a follower's seq-poll backstop is what guarantees
+/// convergence. Exposed so the API-layer follower change-feed uses the identical channel name.
+pub const CLUSTER_CHANGE_CHANNEL: &str = "chancela_ledger";
+
 /// Prefix identifying an encrypted whole-instance backup envelope.
 pub const BACKUP_ENVELOPE_MAGIC: &[u8] = b"chancela-backup-envelope/v1\n";
 const SQLITE_PLAINTEXT_HEADER: &[u8; 16] = b"SQLite format 3\0";
@@ -867,6 +878,25 @@ pub struct LoadedState {
     /// the api (E3) queries this to serve `GET /v1/ledger/integrity` and enter its degraded state.
     /// Open still never blocks on a break — the degraded 503 gate is E3's decision.
     pub integrity: IntegrityReport,
+}
+
+/// wp16 P1 — just the aggregate read-models a follower re-reads when it applies a change-feed delta,
+/// **without** re-scanning the whole `events` table (plan §2.3). Populated by
+/// [`Store::cluster_load_aggregates`]; the follower keeps its incrementally-applied in-memory ledger
+/// and swaps these bounded maps in. The document / signed-document read models self-heal on read
+/// (store fallback on a miss), so they are not part of this snapshot.
+#[derive(Debug)]
+pub struct AggregateSnapshot {
+    /// All entities, keyed by id.
+    pub entities: HashMap<EntityId, Entity>,
+    /// All books, keyed by id.
+    pub books: HashMap<BookId, Book>,
+    /// All acts, keyed by id.
+    pub acts: HashMap<ActId, Act>,
+    /// All imported certidão extracts, keyed by the owning entity id.
+    pub registry_extracts: HashMap<EntityId, RegistryExtract>,
+    /// All act-scoped follow-up/task rows, keyed by id.
+    pub follow_ups: HashMap<String, StoredFollowUp>,
 }
 
 /// A description of one backup archive, returned by [`Store::backup`] and by `POST /v1/backup`
@@ -1784,6 +1814,66 @@ impl Store {
             Backend::Sqlite(_) => Ok(None),
             #[cfg(feature = "postgres")]
             Backend::Postgres(backend) => backend.durable_max_seq(),
+        }
+    }
+
+    /// wp16 P1 — the ordered ledger tail `seq > after_seq` for the follower change-feed's incremental
+    /// delta apply (plan §2.2/§2.3). SQLite is single-node (never a follower), so it has no change
+    /// feed and returns an empty delta.
+    pub fn cluster_events_since(&self, after_seq: i64) -> Result<Vec<Event>, StoreError> {
+        match &self.backend {
+            Backend::Sqlite(_) => {
+                let _ = after_seq;
+                Ok(Vec::new())
+            }
+            #[cfg(feature = "postgres")]
+            Backend::Postgres(backend) => backend.events_since(after_seq),
+        }
+    }
+
+    /// wp16 P1 — re-read only the bounded aggregate read-models (no `events` scan), the follower's
+    /// simple v1 aggregate refresh when it applies a change-feed delta (plan §2.3). SQLite is
+    /// single-node, so this falls back to the aggregate half of [`Store::load`].
+    pub fn cluster_load_aggregates(&self) -> Result<AggregateSnapshot, StoreError> {
+        match &self.backend {
+            Backend::Sqlite(_) => {
+                let loaded = self.load()?;
+                Ok(AggregateSnapshot {
+                    entities: loaded.entities,
+                    books: loaded.books,
+                    acts: loaded.acts,
+                    registry_extracts: loaded.registry_extracts,
+                    follow_ups: loaded.follow_ups,
+                })
+            }
+            #[cfg(feature = "postgres")]
+            Backend::Postgres(backend) => backend.load_aggregates(),
+        }
+    }
+
+    /// wp16 P1 — the leader's change signal: `NOTIFY chancela_ledger, '<max_seq>'` after a durable
+    /// append commits (plan §2.2). Best-effort by design — a missed notification is caught by the
+    /// follower's seq-poll backstop — so callers may ignore the result. No-op on SQLite (single-node,
+    /// no followers to wake).
+    pub fn cluster_notify_append(&self, max_seq: i64) -> Result<(), StoreError> {
+        match &self.backend {
+            Backend::Sqlite(_) => {
+                let _ = max_seq;
+                Ok(())
+            }
+            #[cfg(feature = "postgres")]
+            Backend::Postgres(backend) => backend.notify_append(max_seq),
+        }
+    }
+
+    /// wp16 P1 — the libpq DSN for the follower change-feed's own dedicated `LISTEN` connection (plan
+    /// §2.2). `None` on SQLite (no change feed) so the API only spawns a listener on the electing
+    /// Postgres backend.
+    pub fn cluster_listen_dsn(&self) -> Option<String> {
+        match &self.backend {
+            Backend::Sqlite(_) => None,
+            #[cfg(feature = "postgres")]
+            Backend::Postgres(backend) => Some(backend.listen_dsn()),
         }
     }
 

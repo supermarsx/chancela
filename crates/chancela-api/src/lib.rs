@@ -100,6 +100,9 @@ mod chronology;
 // wp16 P0: Postgres-advisory-lock leader election / step-down / failover handoff (active-passive HA).
 // Compiled in every build; inert unless the durable backend is an electing one (Postgres).
 mod cluster;
+// wp16 P1: follower change-feed (LISTEN/NOTIFY + seq-poll) with fail-closed incremental delta apply.
+// Compiled in every build; the DB-touching feed is Postgres-gated, the pure delta core is always on.
+mod cluster_feed;
 #[allow(dead_code)]
 mod credential_resolve;
 mod dashboard;
@@ -896,6 +899,15 @@ impl AppState {
                 "failed to persist to the durable store",
                 e,
             ));
+        }
+        // wp16 P1: the durable append committed — signal followers so they apply it near-real-time
+        // (plan §2.2). Best-effort by design: a missed NOTIFY (leader crash between commit and signal,
+        // no listener) is still caught by every follower's seq-poll backstop, so a failure here must
+        // never fail the write. No-op on SQLite (single-node, no followers).
+        if let Err(e) = store.cluster_notify_append((len as i64) - 1) {
+            eprintln!(
+                "cluster: NOTIFY on append failed ({e}); followers will catch up via seq-poll"
+            );
         }
         Ok(())
     }
@@ -2026,6 +2038,9 @@ pub fn app(state: AppState, web_dist: Option<PathBuf>) -> Router {
     // build spawns nothing. Spawned here (inside the server's tokio runtime) so the bounded advisory
     // lock polling loop is active when the Postgres backend is selected.
     cluster::spawn_cluster_supervisor(state.clone());
+    // wp16 P1: mount the follower change-feed (LISTEN/NOTIFY + seq-poll → fail-closed incremental
+    // delta apply). Inert unless the backend is an electing one (Postgres); no-op on SQLite/in-memory.
+    cluster_feed::spawn_cluster_feed(state.clone());
     let api = router(state);
     let app = match web_dist {
         Some(dir) => {
@@ -2096,6 +2111,11 @@ struct HealthResponse {
     integrity: &'static str,
     /// Whether the instance is in degraded read-only mode (mirrors `integrity == "broken"`).
     degraded: bool,
+    /// wp16 P1 — cluster role + replica lag (durable `MAX(seq)` vs this node's applied `seq`), present
+    /// only on an electing (Postgres) cluster node. Lets callers / load balancers see follower
+    /// staleness (bounded-lag eventual consistency, plan §2.4); absent on single-node deployments.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cluster: Option<cluster_feed::ClusterReplicaLag>,
 }
 
 /// Liveness probe; also reports the running crate version (used by the Docker healthcheck) and,
@@ -2106,6 +2126,7 @@ async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
     let ledger_verified = state.chain_status.as_ref().map(|status| status.is_ok());
     let store_schema_version = persistent.then_some(chancela_store::schema::SCHEMA_VERSION);
     let degraded = *state.degraded.read().await;
+    let cluster = state.cluster_read_lag().await;
     Json(HealthResponse {
         status: "ok",
         version: env!("CARGO_PKG_VERSION"),
@@ -2115,6 +2136,7 @@ async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
         store_schema_version,
         integrity: if degraded { "broken" } else { "ok" },
         degraded,
+        cluster,
     })
 }
 

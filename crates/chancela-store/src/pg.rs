@@ -86,6 +86,11 @@ pub(crate) const WRITER_ADVISORY_LOCK_KEY: i64 = 0x0C_1A_17_CE_1A_17_CE_11u64 as
 pub(crate) const ADD_IMPORTED_DOCUMENTS_GUARDRAIL_ACK_COLUMN: &str = "ALTER TABLE imported_documents ADD COLUMN IF NOT EXISTS \
      operator_acknowledged_guardrail_ids_json TEXT NOT NULL DEFAULT '[]';";
 
+/// wp16 P1 change-feed tail query. Kept as a named contract so tests can pin the ordering and
+/// strict `seq > after_seq` semantics the follower's fail-closed delta seam depends on.
+pub(crate) const EVENTS_SINCE_SQL: &str = "SELECT seq, id, actor, justification, timestamp, scope, kind, payload_digest, \
+     prev_hash, hash, links FROM events WHERE seq > $1 ORDER BY seq";
+
 /// The `r2d2` connection manager type for the read pool.
 type PgManager = PostgresConnectionManager<NoTls>;
 
@@ -114,6 +119,10 @@ pub(crate) struct PostgresBackend {
     /// as the defence-in-depth fence (§4.3): a write / heartbeat that no longer owns the current
     /// durable epoch fails closed.
     pub(crate) my_epoch: Arc<AtomicI64>,
+    /// The libpq connection string this backend opened with. Retained so wp16 P1's follower
+    /// change-feed can open its **own dedicated** `LISTEN chancela_ledger` connection without ever
+    /// touching the writer session or the read pool (plan §2.2).
+    pub(crate) dsn: Arc<str>,
 }
 
 impl std::fmt::Debug for PostgresBackend {
@@ -175,6 +184,7 @@ impl PostgresBackend {
             writes_enabled: Arc::new(AtomicBool::new(is_leader)),
             node_id,
             my_epoch: Arc::new(AtomicI64::new(epoch)),
+            dsn: Arc::from(database_url),
         })
     }
 
@@ -244,71 +254,8 @@ impl PostgresBackend {
     /// [`LoadedState`], byte-for-byte the same reconstruction as the SQLite [`crate::Store::load`]
     /// path (the `events` rows feed `Ledger::try_from_events`, which re-verifies the chain).
     pub(crate) fn load(&self) -> Result<LoadedState, StoreError> {
-        use std::collections::HashMap;
-
         let mut client = self.pool.get()?;
-
-        let mut entities = HashMap::new();
-        for row in client.query("SELECT json FROM entities", &[])? {
-            let json: String = row.get(0);
-            let entity: Entity = serde_json::from_str(&json)?;
-            entities.insert(entity.id, entity);
-        }
-
-        let mut books = HashMap::new();
-        for row in client.query("SELECT json FROM books", &[])? {
-            let json: String = row.get(0);
-            let book: Book = serde_json::from_str(&json)?;
-            books.insert(book.id, book);
-        }
-
-        let mut acts = HashMap::new();
-        for row in client.query("SELECT json FROM acts", &[])? {
-            let json: String = row.get(0);
-            let act: Act = serde_json::from_str(&json)?;
-            acts.insert(act.id, act);
-        }
-
-        let mut registry_extracts = HashMap::new();
-        for row in client.query("SELECT entity_id, json FROM registry_extracts", &[])? {
-            let entity_id_raw: String = row.get(0);
-            let json: String = row.get(1);
-            let entity_id: EntityId = parse_uuid_newtype(&entity_id_raw)?;
-            let extract: RegistryExtract = serde_json::from_str(&json)?;
-            registry_extracts.insert(entity_id, extract);
-        }
-
-        let mut follow_ups = HashMap::new();
-        for row in client.query(
-            "SELECT id, act_id, agenda_number, deliberation_index, title, detail, due_date, \
-             assignee, assignee_display, status, created_at, created_by, completed_at, \
-             completed_by FROM follow_ups",
-            &[],
-        )? {
-            let agenda_number_raw: Option<i64> = row.get(2);
-            let deliberation_index_raw: Option<i64> = row.get(3);
-            let due_date_raw: Option<String> = row.get(6);
-            let status_raw: String = row.get(9);
-            let created_at_raw: String = row.get(10);
-            let completed_at_raw: Option<String> = row.get(12);
-            let follow_up = StoredFollowUp {
-                id: row.get(0),
-                act_id: parse_uuid_newtype(&row.get::<_, String>(1))?,
-                agenda_number: agenda_number_raw.map(int_to_u32).transpose()?,
-                deliberation_index: deliberation_index_raw.map(int_to_u32).transpose()?,
-                title: row.get(4),
-                detail: row.get(5),
-                due_date: due_date_raw.as_deref().map(parse_date).transpose()?,
-                assignee: row.get(7),
-                assignee_display: row.get(8),
-                status: StoredFollowUpStatus::parse(&status_raw)?,
-                created_at: parse_rfc3339(&created_at_raw)?,
-                created_by: row.get(11),
-                completed_at: completed_at_raw.as_deref().map(parse_rfc3339).transpose()?,
-                completed_by: row.get(13),
-            };
-            follow_ups.insert(follow_up.id.clone(), follow_up);
-        }
+        let aggregates = load_aggregate_maps(&mut client)?;
 
         let mut events = Vec::new();
         for row in client.query(
@@ -316,34 +263,61 @@ impl PostgresBackend {
              prev_hash, hash, links FROM events ORDER BY seq",
             &[],
         )? {
-            let raw = RawEventRow {
-                seq: row.get(0),
-                id: row.get(1),
-                actor: row.get(2),
-                justification: row.get(3),
-                timestamp: row.get(4),
-                scope: row.get(5),
-                kind: row.get(6),
-                payload_digest: row.get(7),
-                prev_hash: row.get(8),
-                hash: row.get(9),
-                links: row.get(10),
-            };
-            events.push(raw.into_event()?);
+            events.push(raw_event_row(&row).into_event()?);
         }
 
         let (ledger, chain_status) = Ledger::try_from_events(events);
         let integrity = ledger.integrity_report();
         Ok(LoadedState {
-            entities,
-            books,
-            acts,
-            registry_extracts,
-            follow_ups,
+            entities: aggregates.entities,
+            books: aggregates.books,
+            acts: aggregates.acts,
+            registry_extracts: aggregates.registry_extracts,
+            follow_ups: aggregates.follow_ups,
             ledger,
             chain_status,
             integrity,
         })
+    }
+
+    /// wp16 P1 — re-read **only** the aggregate read-model tables (no `events` scan), the store-side
+    /// half of a follower's incremental delta apply (plan §2.3). The follower applies the ledger tail
+    /// incrementally (seam-verified) and refreshes the small, bounded aggregate maps through this —
+    /// the plan's sanctioned "simple v1" aggregate refresh, `O(aggregates)` not `O(all-events)`.
+    pub(crate) fn load_aggregates(&self) -> Result<crate::AggregateSnapshot, StoreError> {
+        let mut client = self.pool.get()?;
+        load_aggregate_maps(&mut client)
+    }
+
+    /// wp16 P1 — the ordered ledger tail `seq > after_seq` (plan §2.2/§2.3). The follower change-feed
+    /// pulls this delta on a NOTIFY wake or a seq-poll tick and appends it onto its in-memory ledger
+    /// after a fail-closed continuity check. Passing `-1` returns the whole chain (`seq >= 0`).
+    pub(crate) fn events_since(
+        &self,
+        after_seq: i64,
+    ) -> Result<Vec<chancela_ledger::Event>, StoreError> {
+        let mut client = self.pool.get()?;
+        let mut events = Vec::new();
+        for row in client.query(EVENTS_SINCE_SQL, &[&after_seq])? {
+            events.push(raw_event_row(&row).into_event()?);
+        }
+        Ok(events)
+    }
+
+    /// wp16 P1 — the leader's transactional-ish change signal (plan §2.2). After a durable append
+    /// commits, the leader issues `NOTIFY chancela_ledger, '<max_seq>'` on the writer session so
+    /// followers wake immediately; a missed notification is still caught by the follower's seq-poll
+    /// backstop, so this is best-effort by design. `max_seq` is a plain integer (no injection risk).
+    pub(crate) fn notify_append(&self, max_seq: i64) -> Result<(), StoreError> {
+        let mut writer = self.writer();
+        writer.batch_execute(&notify_append_sql(max_seq))?;
+        Ok(())
+    }
+
+    /// wp16 P1 — the libpq DSN this backend opened with, so the follower change-feed can open its own
+    /// dedicated `LISTEN` connection (never the writer / read pool). See [`Self::dsn`].
+    pub(crate) fn listen_dsn(&self) -> String {
+        self.dsn.to_string()
     }
 
     /// Borrow a pooled read connection for the runtime `Store` read projections.
@@ -836,6 +810,88 @@ fn value_to_pg_param(value: &Value) -> Box<dyn ToSql + Sync> {
     }
 }
 
+/// Read the four aggregate read-models (`entities`/`books`/`acts`/`registry_extracts`) plus
+/// `follow_ups` on `client` into an [`crate::AggregateSnapshot`], byte-for-byte the same
+/// reconstruction the boot [`PostgresBackend::load`] does. Shared by `load` (which then also scans
+/// `events`) and by [`PostgresBackend::load_aggregates`] (the events-free follower refresh, §2.3).
+fn load_aggregate_maps(client: &mut Client) -> Result<crate::AggregateSnapshot, StoreError> {
+    use std::collections::HashMap;
+
+    let mut entities = HashMap::new();
+    for row in client.query("SELECT json FROM entities", &[])? {
+        let json: String = row.get(0);
+        let entity: Entity = serde_json::from_str(&json)?;
+        entities.insert(entity.id, entity);
+    }
+
+    let mut books = HashMap::new();
+    for row in client.query("SELECT json FROM books", &[])? {
+        let json: String = row.get(0);
+        let book: Book = serde_json::from_str(&json)?;
+        books.insert(book.id, book);
+    }
+
+    let mut acts = HashMap::new();
+    for row in client.query("SELECT json FROM acts", &[])? {
+        let json: String = row.get(0);
+        let act: Act = serde_json::from_str(&json)?;
+        acts.insert(act.id, act);
+    }
+
+    let mut registry_extracts = HashMap::new();
+    for row in client.query("SELECT entity_id, json FROM registry_extracts", &[])? {
+        let entity_id_raw: String = row.get(0);
+        let json: String = row.get(1);
+        let entity_id: EntityId = parse_uuid_newtype(&entity_id_raw)?;
+        let extract: RegistryExtract = serde_json::from_str(&json)?;
+        registry_extracts.insert(entity_id, extract);
+    }
+
+    let mut follow_ups = HashMap::new();
+    for row in client.query(
+        "SELECT id, act_id, agenda_number, deliberation_index, title, detail, due_date, \
+         assignee, assignee_display, status, created_at, created_by, completed_at, \
+         completed_by FROM follow_ups",
+        &[],
+    )? {
+        let agenda_number_raw: Option<i64> = row.get(2);
+        let deliberation_index_raw: Option<i64> = row.get(3);
+        let due_date_raw: Option<String> = row.get(6);
+        let status_raw: String = row.get(9);
+        let created_at_raw: String = row.get(10);
+        let completed_at_raw: Option<String> = row.get(12);
+        let follow_up = StoredFollowUp {
+            id: row.get(0),
+            act_id: parse_uuid_newtype(&row.get::<_, String>(1))?,
+            agenda_number: agenda_number_raw.map(int_to_u32).transpose()?,
+            deliberation_index: deliberation_index_raw.map(int_to_u32).transpose()?,
+            title: row.get(4),
+            detail: row.get(5),
+            due_date: due_date_raw.as_deref().map(parse_date).transpose()?,
+            assignee: row.get(7),
+            assignee_display: row.get(8),
+            status: StoredFollowUpStatus::parse(&status_raw)?,
+            created_at: parse_rfc3339(&created_at_raw)?,
+            created_by: row.get(11),
+            completed_at: completed_at_raw.as_deref().map(parse_rfc3339).transpose()?,
+            completed_by: row.get(13),
+        };
+        follow_ups.insert(follow_up.id.clone(), follow_up);
+    }
+
+    Ok(crate::AggregateSnapshot {
+        entities,
+        books,
+        acts,
+        registry_extracts,
+        follow_ups,
+    })
+}
+
+fn notify_append_sql(max_seq: i64) -> String {
+    format!("NOTIFY {}, '{max_seq}'", crate::CLUSTER_CHANGE_CHANNEL)
+}
+
 /// Read one `events` row (as pooled/`postgres` types) into a [`RawEventRow`], matching the boot
 /// [`PostgresBackend::load`] projection so `into_event` rebuilds an identical [`chancela_ledger::Event`].
 pub(crate) fn raw_event_row(row: &Row) -> RawEventRow {
@@ -1157,6 +1213,36 @@ mod tests {
         assert!(
             ADD_IMPORTED_DOCUMENTS_GUARDRAIL_ACK_COLUMN.contains(column),
             "additive guard must add the same column contract: {ADD_IMPORTED_DOCUMENTS_GUARDRAIL_ACK_COLUMN}"
+        );
+    }
+
+    #[test]
+    fn change_feed_tail_query_is_strictly_ordered_after_seq() {
+        assert!(
+            EVENTS_SINCE_SQL.contains("WHERE seq > $1"),
+            "tail fetch must be strictly after the applied seq: {EVENTS_SINCE_SQL}"
+        );
+        assert!(
+            EVENTS_SINCE_SQL.ends_with("ORDER BY seq"),
+            "tail fetch must be oldest-first for delta continuity checks: {EVENTS_SINCE_SQL}"
+        );
+        assert!(
+            EVENTS_SINCE_SQL.contains("prev_hash, hash, links"),
+            "tail fetch must include the hash-chain material needed to rebuild ledger events"
+        );
+    }
+
+    #[test]
+    fn notify_append_uses_the_shared_change_channel_and_plain_seq_payload() {
+        let sql = notify_append_sql(42);
+        assert_eq!(
+            sql,
+            format!("NOTIFY {}, '42'", crate::CLUSTER_CHANGE_CHANNEL)
+        );
+        assert_eq!(
+            crate::CLUSTER_CHANGE_CHANNEL,
+            "chancela_ledger",
+            "API LISTEN and store NOTIFY must share the same channel"
         );
     }
 }

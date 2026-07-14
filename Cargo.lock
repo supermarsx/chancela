@@ -453,6 +453,7 @@ dependencies = [
  "moka",
  "p12",
  "p256",
+ "postgres",
  "rand_core 0.6.4",
  "redis",
  "reqwest",
