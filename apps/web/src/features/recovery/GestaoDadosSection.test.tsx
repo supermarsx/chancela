@@ -2,7 +2,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { GestaoDadosSection } from './GestaoDadosSection';
 import { renderWithProviders } from '../../test/utils';
-import { DEFAULT_SETTINGS, type DataStatusResponse } from '../../api/types';
+import {
+  DEFAULT_SETTINGS,
+  type DataStatusResponse,
+  type SyncHandoffPreflightReport,
+} from '../../api/types';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -226,6 +230,129 @@ const defaultRecoveryDrillList = {
   },
 };
 
+const defaultSyncHandoffPreflight: SyncHandoffPreflightReport = {
+  report_kind: 'sync_handoff_preflight',
+  endpoint: '/v1/sync/handoff-preflight',
+  generated_at: '2026-07-14T12:00:00Z',
+  readiness: {
+    status: 'missing_local_evidence',
+    local_handoff_review_ready: false,
+    production_sync_ready: false,
+    external_connector_ready: false,
+    active_sync_performed: false,
+  },
+  data_status: {
+    data_dir_configured: true,
+    durable_store_open: true,
+    ledger_length: 42,
+    ledger_healthy: true,
+    ledger_degraded: false,
+    global_chain_verified: true,
+    global_chain_first_break: null,
+    boot_chain_status_ok: true,
+  },
+  backup: {
+    backup_route: '/v1/backup',
+    recovery_drill_route: '/v1/backup/recovery-drills',
+    durable_receipts: true,
+    backup_directory: {
+      relative_path: 'backups',
+      scanned: true,
+      present: true,
+      untrusted_candidate_file_count: 1,
+      total_candidate_bytes: 1024,
+      latest_candidate_file: {
+        file_name: 'chancela-backup-test.zip',
+        bytes: 1024,
+        modified_at: '2026-07-14T12:00:00Z',
+      },
+      validation_performed: false,
+      validated_manifest_evidence_present: false,
+      scan_error: null,
+    },
+    recovery_drill_receipt_count: 1,
+    verified_recovery_drill_evidence: false,
+    latest_recovery_drill: {
+      id: 'drill-unverified',
+      created_at: '2026-07-14T12:05:00Z',
+      archive_label: 'chancela-backup-test.zip',
+      preflight_ok: true,
+      preflight_ready: true,
+      encrypted: false,
+      ledger_verified: false,
+      manifest_evidence_present: true,
+      manifest_ledger_verified: false,
+      manifest_ledger_length: 42,
+      manifest_member_count: 0,
+      manifest_db_member_present: false,
+      manifest_sidecar_member_count: 0,
+      manifest_total_member_bytes: 0,
+      isolated_restore_verified: false,
+      isolated_restore_status: 'failed',
+      isolated_snapshot_ledger_verified: false,
+      isolated_snapshot_cleanup_verified: false,
+      verified_manifest_and_isolated_snapshot: false,
+      restore_executed: false,
+      live_db_swapped: false,
+      sidecars_staged: false,
+      ledger_restored_appended: false,
+      data_deleted: false,
+      offsite_custody_proven: false,
+      legal_archive_certified: false,
+    },
+  },
+  book_bundles: {
+    export_route: '/v1/books/{id}/export',
+    import_preflight_route: '/v1/books/import/preflight',
+    import_confirmation_route: '/v1/books/import',
+    import_preflight_read_only: true,
+    max_import_bundle_bytes: 67108864,
+    collision_policies: ['refuse', 'quarantine_copy'],
+    durable_store_required: true,
+    durable_store_available: true,
+    retained_export_relative_path: 'exports',
+    book_count: 1,
+    open_book_count: 0,
+    closed_book_count: 1,
+  },
+  archive_dglab: {
+    archive_package_route: '/v1/books/{id}/archive/package',
+    local_dglab_manifest_route: '/v1/books/{id}/archive/local-dglab-interchange-manifest',
+    local_dglab_manifest_read_only: true,
+    local_dglab_manifest_route_available: true,
+    book_count: 1,
+    closed_book_count: 1,
+    sealed_or_archived_act_count: 1,
+    preserved_document_count: 1,
+    signed_document_count: 0,
+    external_validator_report_metadata_count: 0,
+    dglab_certification_claimed: false,
+    archive_certification_claimed: false,
+  },
+  no_claims: {
+    active_sync_implemented: false,
+    connector_protocol_implemented: false,
+    background_job_configured: false,
+    upload_or_download_performed: false,
+    import_performed: false,
+    records_mutated: false,
+    production_sync_readiness_claimed: false,
+    external_connector_compatibility_claimed: false,
+    legal_validity_claimed: false,
+    dglab_certification_claimed: false,
+    archive_certification_claimed: false,
+    signing_notarization_attestation_claimed: false,
+    deployment_readiness_claimed: false,
+  },
+  blockers: [],
+  missing_evidence: [
+    'no validated whole-instance backup manifest or verified recovery-drill evidence is available',
+  ],
+  operator_actions: [
+    'use explicit existing confirmation endpoints for any later export/import/recovery action; this report itself is read-only',
+  ],
+};
+
 function installFetch(
   statuses: DataStatusResponse[] = [durableStatus],
   extra?: (url: string, init: RequestInit | undefined) => Response | Promise<Response> | null,
@@ -247,6 +374,9 @@ function installFetch(
     }
     if (url === '/v1/backup/recovery-drills' && method === 'GET') {
       return Promise.resolve(jsonResponse(defaultRecoveryDrillList));
+    }
+    if (url === '/v1/sync/handoff-preflight' && method === 'GET') {
+      return Promise.resolve(jsonResponse(defaultSyncHandoffPreflight));
     }
     const response = extra?.(url, init);
     if (response) return Promise.resolve(response);
@@ -291,6 +421,26 @@ describe('GestaoDadosSection', () => {
     expect(document.body.textContent).toContain('sem certificação de RPO/RTO');
     expect(document.body.textContent).toContain(
       'sem certificação de política de backup de produção',
+    );
+  });
+
+  it('renders sync handoff preflight as local-only evidence with missing verified backup proof', async () => {
+    installFetch();
+    renderWithProviders(<GestaoDadosSection />);
+
+    expect((await screen.findAllByText('Pré-validação local de handoff')).length).toBeGreaterThan(
+      0,
+    );
+    expect(screen.getByText('missing_local_evidence')).toBeTruthy();
+    expect(screen.getByText('Candidatos não validados')).toBeTruthy();
+    expect(screen.getByText('chancela-backup-test.zip (1 KB)')).toBeTruthy();
+    expect(screen.getByText('Evidência verificada')).toBeTruthy();
+    expect(screen.getAllByText('missing').length).toBeGreaterThanOrEqual(1);
+    expect(document.body.textContent).toContain(
+      'no validated whole-instance backup manifest or verified recovery-drill evidence is available',
+    );
+    expect(document.body.textContent).toContain(
+      'use explicit existing confirmation endpoints for any later export/import/recovery action',
     );
   });
 
@@ -916,7 +1066,8 @@ describe('GestaoDadosSection', () => {
           c.method === 'GET' &&
           (c.url.includes('/v1/data/status') ||
             c.url.includes('/v1/settings') ||
-            c.url.includes('/v1/backup/recovery-drills')),
+            c.url.includes('/v1/backup/recovery-drills') ||
+            c.url.includes('/v1/sync/handoff-preflight')),
       ),
     ).toBe(true);
     expect(calls.some((c) => c.url.includes('/v1/settings') && c.method === 'GET')).toBe(true);

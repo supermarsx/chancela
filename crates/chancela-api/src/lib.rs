@@ -40,6 +40,8 @@
 //! - `GET /v1/books/{id}/archive/local-dglab-interchange-manifest` — read-only local DGLAB
 //!   interchange manifest scaffold derived from the internal preservation manifest; no official
 //!   DGLAB/legal-archive certification claim.
+//! - `GET /v1/sync/handoff-preflight` — read-only local sync/handoff preflight readiness report
+//!   composed from local evidence only; no active sync, connector, provider, or certification claim.
 //! - `GET /v1/dashboard` — WFL-40 counts and recent events (§2.7).
 //! - `GET|PUT /v1/settings` — the typed, versioned application settings document (§2.8).
 //! - `GET /v1/platform/services`, `POST /v1/platform/services/{id}/actions/{action}` —
@@ -133,6 +135,7 @@ mod session;
 mod settings;
 mod signature;
 mod signature_pkcs12_stored;
+mod sync_handoff;
 mod trust;
 mod users;
 mod xades_signature;
@@ -1567,6 +1570,10 @@ pub fn router(state: AppState) -> Router {
             "/v1/backup/recovery-drills",
             get(backup_recovery::list_backup_recovery_drills)
                 .post(backup_recovery::create_backup_recovery_drill),
+        )
+        .route(
+            "/v1/sync/handoff-preflight",
+            get(sync_handoff::get_sync_handoff_preflight),
         )
         .route("/v1/books/{id}/export", post(bundles::export_book))
         .route(
@@ -16599,6 +16606,48 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("chancela-api-t54-{}", Uuid::new_v4()));
         std::fs::create_dir_all(&dir).expect("temp data dir");
         AppState::with_data_dir(dir)
+    }
+
+    async fn sync_handoff_router_snapshot(
+        state: &AppState,
+    ) -> (usize, usize, usize, usize, usize, usize) {
+        (
+            state.books.read().await.len(),
+            state.acts.read().await.len(),
+            state.documents.read().await.len(),
+            state.backup_recovery_drill_receipts.read().await.len(),
+            state.ledger.read().await.len(),
+            state.signed_documents.read().await.len(),
+        )
+    }
+
+    #[tokio::test]
+    async fn sync_handoff_preflight_http_requires_ledger_recover_and_does_not_mutate() {
+        let state = AppState::default();
+
+        let (status, _) = send_raw(state.clone(), get("/v1/sync/handoff-preflight")).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+        let no_perms = powerless_token(&state).await;
+        let (status, body) = send_raw(
+            state.clone(),
+            with_session(get("/v1/sync/handoff-preflight"), &no_perms),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+
+        let owner = auth_token(&state).await;
+        let before = sync_handoff_router_snapshot(&state).await;
+        let (status, report) = send_raw(
+            state.clone(),
+            with_session(get("/v1/sync/handoff-preflight"), &owner),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{report}");
+        assert_eq!(report["report_kind"], "sync_handoff_preflight");
+        assert_eq!(report["readiness"]["status"], "blocked");
+        assert_eq!(report["no_claims"]["records_mutated"], false);
+        assert_eq!(sync_handoff_router_snapshot(&state).await, before);
     }
 
     /// Create an entity + open a book on `state` using `token`; returns `(entity_id, book_id)`.

@@ -173,6 +173,7 @@ export const keys = {
   ledgerIntegrity: ['ledger', 'integrity'] as const,
   ledgerRestorePreflight: ['ledger', 'restore', 'preflight'] as const,
   backupRecoveryDrills: ['backup', 'recovery-drills'] as const,
+  syncHandoffPreflight: ['sync', 'handoff-preflight'] as const,
   dataStatus: ['data', 'status'] as const,
   dataBackup: ['data', 'backup'] as const,
   dataKeyRotationPreflight: ['data', 'key-rotation', 'preflight'] as const,
@@ -1534,6 +1535,16 @@ export function useBackupRecoveryDrills() {
     queryKey: keys.backupRecoveryDrills,
     queryFn: () => api.listBackupRecoveryDrills(),
     staleTime: 60_000,
+  });
+}
+
+/** Read-only local sync/handoff preflight evidence report. No connector or provider call runs. */
+export function useSyncHandoffPreflight() {
+  return useQuery({
+    queryKey: keys.syncHandoffPreflight,
+    queryFn: () => api.syncHandoffPreflight(),
+    staleTime: 30_000,
+    retry: false,
   });
 }
 

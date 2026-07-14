@@ -6191,6 +6191,148 @@ export interface BackupRecoveryDrillList {
   freshness: BackupRecoveryFreshnessReview;
 }
 
+export type SyncHandoffReadinessStatus =
+  'blocked' | 'missing_local_evidence' | 'local_review_ready';
+
+/** Local-only readiness status for `GET /v1/sync/handoff-preflight`. */
+export interface SyncHandoffReadiness {
+  status: SyncHandoffReadinessStatus;
+  local_handoff_review_ready: boolean;
+  production_sync_ready: false;
+  external_connector_ready: false;
+  active_sync_performed: false;
+}
+
+export interface SyncHandoffDataStatus {
+  data_dir_configured: boolean;
+  durable_store_open: boolean;
+  ledger_length: number;
+  ledger_healthy: boolean;
+  ledger_degraded: boolean;
+  global_chain_verified: boolean;
+  global_chain_first_break: string | null;
+  boot_chain_status_ok: boolean | null;
+}
+
+export interface SyncHandoffBackupCandidateSummary {
+  file_name: string;
+  bytes: number;
+  modified_at: string | null;
+}
+
+export interface SyncHandoffBackupDirectoryEvidence {
+  relative_path: 'backups';
+  scanned: boolean;
+  present: boolean;
+  untrusted_candidate_file_count: number;
+  total_candidate_bytes: number;
+  latest_candidate_file: SyncHandoffBackupCandidateSummary | null;
+  validation_performed: false;
+  validated_manifest_evidence_present: false;
+  scan_error: string | null;
+}
+
+export interface SyncHandoffRecoveryDrillSummary {
+  id: string;
+  created_at: string;
+  archive_label: string;
+  preflight_ok: boolean;
+  preflight_ready: boolean;
+  encrypted: boolean | null;
+  ledger_verified: boolean;
+  manifest_evidence_present: boolean;
+  manifest_ledger_verified: boolean | null;
+  manifest_ledger_length: number | null;
+  manifest_member_count: number | null;
+  manifest_db_member_present: boolean | null;
+  manifest_sidecar_member_count: number | null;
+  manifest_total_member_bytes: number | null;
+  isolated_restore_verified: boolean;
+  isolated_restore_status: string;
+  isolated_snapshot_ledger_verified: boolean;
+  isolated_snapshot_cleanup_verified: boolean;
+  verified_manifest_and_isolated_snapshot: boolean;
+  restore_executed: false;
+  live_db_swapped: false;
+  sidecars_staged: false;
+  ledger_restored_appended: false;
+  data_deleted: false;
+  offsite_custody_proven: false;
+  legal_archive_certified: false;
+}
+
+export interface SyncHandoffBackupEvidence {
+  backup_route: '/v1/backup';
+  recovery_drill_route: '/v1/backup/recovery-drills';
+  durable_receipts: boolean;
+  backup_directory: SyncHandoffBackupDirectoryEvidence;
+  recovery_drill_receipt_count: number;
+  verified_recovery_drill_evidence: boolean;
+  latest_recovery_drill: SyncHandoffRecoveryDrillSummary | null;
+}
+
+export interface SyncHandoffBookBundleEvidence {
+  export_route: '/v1/books/{id}/export';
+  import_preflight_route: '/v1/books/import/preflight';
+  import_confirmation_route: '/v1/books/import';
+  import_preflight_read_only: true;
+  max_import_bundle_bytes: number;
+  collision_policies: ['refuse', 'quarantine_copy'];
+  durable_store_required: true;
+  durable_store_available: boolean;
+  retained_export_relative_path: 'exports';
+  book_count: number;
+  open_book_count: number;
+  closed_book_count: number;
+}
+
+export interface SyncHandoffArchiveDglabEvidence {
+  archive_package_route: '/v1/books/{id}/archive/package';
+  local_dglab_manifest_route: '/v1/books/{id}/archive/local-dglab-interchange-manifest';
+  local_dglab_manifest_read_only: true;
+  local_dglab_manifest_route_available: boolean;
+  book_count: number;
+  closed_book_count: number;
+  sealed_or_archived_act_count: number;
+  preserved_document_count: number;
+  signed_document_count: number;
+  external_validator_report_metadata_count: number;
+  dglab_certification_claimed: false;
+  archive_certification_claimed: false;
+}
+
+export interface SyncHandoffNoClaims {
+  active_sync_implemented: false;
+  connector_protocol_implemented: false;
+  background_job_configured: false;
+  upload_or_download_performed: false;
+  import_performed: false;
+  records_mutated: false;
+  production_sync_readiness_claimed: false;
+  external_connector_compatibility_claimed: false;
+  legal_validity_claimed: false;
+  dglab_certification_claimed: false;
+  archive_certification_claimed: false;
+  signing_notarization_attestation_claimed: false;
+  deployment_readiness_claimed: false;
+}
+
+/** Read-only local sync/handoff preflight report. No active sync or provider call is performed. */
+export interface SyncHandoffPreflightReport {
+  report_kind: 'sync_handoff_preflight';
+  endpoint: '/v1/sync/handoff-preflight';
+  generated_at: string;
+  readiness: SyncHandoffReadiness;
+  data_status: SyncHandoffDataStatus;
+  backup: SyncHandoffBackupEvidence;
+  book_bundles: SyncHandoffBookBundleEvidence;
+  archive_dglab: SyncHandoffArchiveDglabEvidence;
+  no_claims: SyncHandoffNoClaims;
+  blockers: string[];
+  missing_evidence: string[];
+  operator_actions: string[];
+}
+
 // --- Hot backup (§3.2, plan t30) ------------------------------------------------
 //
 // The `POST /v1/backup` response — the manifest of a hot backup archive. Mirrors the

@@ -325,6 +325,10 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
         "/v1/books/paper-import/{id}/conversion-dossiers",
         RouteClass::Gated,
     ), // GET book.import@Global (metadata-only OCR dossier list)
+    (
+        "/v1/books/paper-import/{id}/ocr-canonical-rehearsal",
+        RouteClass::Gated,
+    ), // GET book.import@Global (read-only local OCR/canonical rehearsal)
     ("/v1/books/paper-import/{id}/bytes", RouteClass::Gated), // GET book.import@Global (package bytes)
     ("/v1/books/{id}/legal-hold", RouteClass::Gated),         // GET/PUT/DELETE book.export@Book
     ("/v1/books/{id}/archive/package", RouteClass::Gated),    // GET book.export@Book
@@ -474,6 +478,7 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/data/start-over", RouteClass::Gated),             // POST data.start_over@Global + step-up
     ("/v1/backup", RouteClass::Gated),                      // POST data.backup@Global
     ("/v1/backup/recovery-drills", RouteClass::Gated), // GET/POST ledger.recover@Global (preflight-only receipt)
+    ("/v1/sync/handoff-preflight", RouteClass::Gated), // GET ledger.recover@Global (read-only local evidence report)
     ("/v1/dashboard", RouteClass::Gated),              // GET act.read@Global
     ("/v1/notifications/triage", RouteClass::Gated),   // GET act.read@Global
     ("/v1/notifications/triage/{id}", RouteClass::Gated), // PATCH act.read@Global
@@ -720,6 +725,22 @@ mod tests {
     fn local_dglab_interchange_manifest_route_is_classified_as_gated() {
         assert_eq!(
             classify("/v1/books/{id}/archive/local-dglab-interchange-manifest"),
+            Some(RouteClass::Gated)
+        );
+    }
+
+    #[test]
+    fn paper_book_ocr_canonical_rehearsal_route_is_classified_as_gated() {
+        assert_eq!(
+            classify("/v1/books/paper-import/{id}/ocr-canonical-rehearsal"),
+            Some(RouteClass::Gated)
+        );
+    }
+
+    #[test]
+    fn sync_handoff_preflight_route_is_classified_as_gated() {
+        assert_eq!(
+            classify("/v1/sync/handoff-preflight"),
             Some(RouteClass::Gated)
         );
     }

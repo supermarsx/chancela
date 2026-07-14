@@ -200,4 +200,15 @@ async fn live_responses_match_the_canonical_contracts() {
         &manifest,
         &contract("backup.manifest.json"),
     );
+
+    // Local sync/handoff preflight report (sync.handoff-preflight.json). This composes only local
+    // evidence from the durable state, untrusted backup candidates, and recovery receipts; it does
+    // not perform sync or touch providers/connectors.
+    let (status, handoff) = h.get_json_auth("/v1/sync/handoff-preflight", &token).await;
+    assert_eq!(status, 200, "sync handoff preflight: {handoff}");
+    assert_shape(
+        "sync.handoff-preflight",
+        &handoff,
+        &contract("sync.handoff-preflight.json"),
+    );
 }

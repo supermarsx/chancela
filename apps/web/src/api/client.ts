@@ -232,6 +232,7 @@ import type {
   BackupRecoveryDrillList,
   BackupRecoveryDrillReceipt,
   BackupManifest,
+  SyncHandoffPreflightReport,
   ImportOutcomeView,
   CollisionPolicy,
   StartOverBookBody,
@@ -1105,6 +1106,7 @@ export const api = {
   createBackupRecoveryDrill: (body: BackupRecoveryDrillBody) =>
     post<BackupRecoveryDrillReceipt>('/v1/backup/recovery-drills', body),
   listBackupRecoveryDrills: () => get<BackupRecoveryDrillList>('/v1/backup/recovery-drills'),
+  syncHandoffPreflight: () => get<SyncHandoffPreflightReport>('/v1/sync/handoff-preflight'),
   // Take a hot backup and return its manifest (`POST /v1/backup`, contract §3.2, t30). No
   // body; gated by `data.backup`@Global. 422 when the instance has no on-disk persistence
   // (in-memory mode). Server-response-modelled — no backup UI drives this yet.

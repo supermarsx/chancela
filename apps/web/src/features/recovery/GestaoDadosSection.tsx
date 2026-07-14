@@ -33,6 +33,7 @@ import {
   useResetData,
   useSettings,
   useStartOverInstance,
+  useSyncHandoffPreflight,
 } from '../../api/hooks';
 import {
   DEFAULT_SETTINGS,
@@ -55,6 +56,7 @@ import {
   type DataUsageBasis,
   type DataUsageConcern,
   type ResetOutcomeView,
+  type SyncHandoffPreflightReport,
 } from '../../api/types';
 import { useLocale, useT, type MessageKey, type TFunction } from '../../i18n';
 import {
@@ -714,6 +716,179 @@ function RecoveryFreshnessReviewReport({
   );
 }
 
+function SyncHandoffPreflightReportCard({
+  report,
+  locale,
+  t,
+}: {
+  report: SyncHandoffPreflightReport;
+  locale: string;
+  t: TFunction;
+}) {
+  const blockerCount = report.blockers.length + report.missing_evidence.length;
+  const tone = report.readiness.local_handoff_review_ready
+    ? 'info'
+    : blockerCount > 0
+      ? 'warn'
+      : 'info';
+  const readinessTone = report.readiness.local_handoff_review_ready
+    ? 'ok'
+    : blockerCount > 0
+      ? 'warn'
+      : 'neutral';
+  const latestCandidate = report.backup.backup_directory.latest_candidate_file;
+  const latestDrill = report.backup.latest_recovery_drill;
+  const noClaimRows = [
+    ['Sem sincronização ativa', report.no_claims.active_sync_implemented],
+    ['Sem conector externo', report.no_claims.connector_protocol_implemented],
+    ['Sem importação executada', report.no_claims.import_performed],
+    ['Sem registos alterados', report.no_claims.records_mutated],
+    [
+      'Sem certificação DGLAB/arquivo',
+      report.no_claims.dglab_certification_claimed ||
+        report.no_claims.archive_certification_claimed,
+    ],
+    ['Sem prontidão de produção', report.no_claims.production_sync_readiness_claimed],
+  ] as const;
+
+  return (
+    <InlineWarning tone={tone} title="Pré-validação local de handoff">
+      <dl className="deflist data-status-summary">
+        <div>
+          <dt>Estado</dt>
+          <dd>
+            <Badge tone={readinessTone}>{report.readiness.status}</Badge>
+          </dd>
+        </div>
+        <div>
+          <dt>Gerado em</dt>
+          <dd>{formatTimestamp(report.generated_at, locale)}</dd>
+        </div>
+        <div>
+          <dt>Candidatos não validados</dt>
+          <dd>
+            {new Intl.NumberFormat(locale).format(
+              report.backup.backup_directory.untrusted_candidate_file_count,
+            )}{' '}
+            /{' '}
+            <span className="mono">
+              {formatBytes(report.backup.backup_directory.total_candidate_bytes, locale)}
+            </span>
+          </dd>
+        </div>
+        <div>
+          <dt>Candidato não validado mais recente</dt>
+          <dd className="mono">
+            {latestCandidate
+              ? `${latestCandidate.file_name} (${formatBytes(latestCandidate.bytes, locale)})`
+              : '—'}
+          </dd>
+        </div>
+        <div>
+          <dt>Evidência verificada</dt>
+          <dd>
+            <Badge tone={report.backup.verified_recovery_drill_evidence ? 'ok' : 'warn'}>
+              {report.backup.verified_recovery_drill_evidence ? 'verified' : 'missing'}
+            </Badge>
+          </dd>
+        </div>
+        <div>
+          <dt>Ensaios de recuperação</dt>
+          <dd>
+            {new Intl.NumberFormat(locale).format(report.backup.recovery_drill_receipt_count)}
+          </dd>
+        </div>
+        <div>
+          <dt>Último ensaio</dt>
+          <dd>
+            {latestDrill ? (
+              <Badge tone={latestDrill.verified_manifest_and_isolated_snapshot ? 'ok' : 'warn'}>
+                {latestDrill.verified_manifest_and_isolated_snapshot ? 'verified' : 'missing'}
+              </Badge>
+            ) : (
+              '—'
+            )}
+          </dd>
+        </div>
+        <div>
+          <dt>Livros</dt>
+          <dd>
+            {new Intl.NumberFormat(locale).format(report.book_bundles.book_count)} total /{' '}
+            {new Intl.NumberFormat(locale).format(report.book_bundles.closed_book_count)} fechados
+          </dd>
+        </div>
+        <div>
+          <dt>Atos preserváveis</dt>
+          <dd>
+            {new Intl.NumberFormat(locale).format(
+              report.archive_dglab.sealed_or_archived_act_count,
+            )}
+          </dd>
+        </div>
+        <div>
+          <dt>Documentos preservados</dt>
+          <dd>
+            {new Intl.NumberFormat(locale).format(report.archive_dglab.preserved_document_count)}
+          </dd>
+        </div>
+        <div>
+          <dt>Pré-validação de importação</dt>
+          <dd>
+            <Badge tone={report.book_bundles.import_preflight_read_only ? 'ok' : 'warn'}>
+              {report.book_bundles.import_preflight_read_only ? 'read-only' : 'mutating'}
+            </Badge>
+          </dd>
+        </div>
+        <div className="deflist__wide">
+          <dt>Sem alegações</dt>
+          <dd>
+            <ul className="plain-list">
+              {noClaimRows.map(([label, claimed]) => (
+                <li key={label}>
+                  {label}:{' '}
+                  <Badge tone={!claimed ? 'ok' : 'warn'}>
+                    {!claimed ? t('common.yes') : t('common.no')}
+                  </Badge>
+                </li>
+              ))}
+            </ul>
+          </dd>
+        </div>
+      </dl>
+      {report.blockers.length > 0 ? (
+        <div>
+          <h5>Bloqueios</h5>
+          <ul className="plain-list">
+            {report.blockers.map((blocker) => (
+              <li key={blocker}>{blocker}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {report.missing_evidence.length > 0 ? (
+        <div>
+          <h5>Evidência em falta</h5>
+          <ul className="plain-list">
+            {report.missing_evidence.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {report.operator_actions.length > 0 ? (
+        <div>
+          <h5>Ações do operador</h5>
+          <ul className="plain-list">
+            {report.operator_actions.map((action) => (
+              <li key={action}>{action}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </InlineWarning>
+  );
+}
+
 function DataKeyRotationPreflightReport({
   report,
   t,
@@ -1096,6 +1271,7 @@ function DataStatusPanel() {
   const backup = useCreateBackup();
   const recoveryDrill = useCreateBackupRecoveryDrill();
   const recoveryDrills = useBackupRecoveryDrills();
+  const syncHandoffPreflight = useSyncHandoffPreflight();
   const cleanup = useCleanDataStorage();
   const keyRotationPreflight = useDataKeyRotationPreflight();
   const keyRotationExecution = useDataKeyRotationExecution();
@@ -1544,6 +1720,29 @@ function DataStatusPanel() {
             </form>
             {lastDrillReceipt ? (
               <RecoveryDrillReceiptReport receipt={lastDrillReceipt} t={t} locale={locale} />
+            ) : null}
+          </section>
+
+          <section className="data-status-section" aria-labelledby="data-status-sync-handoff">
+            <div className="data-status-section__head">
+              <div>
+                <h4 id="data-status-sync-handoff">Pré-validação local de handoff</h4>
+                <p className="data-status-section__hint">
+                  Compõe apenas evidência local: candidatos de backup, ensaios verificados, pacotes
+                  de livros, arquivo e estado do ledger.
+                </p>
+              </div>
+            </div>
+            {syncHandoffPreflight.isLoading ? (
+              <Loading label="A carregar pré-validação local de handoff" />
+            ) : null}
+            {syncHandoffPreflight.error ? <ErrorNote error={syncHandoffPreflight.error} /> : null}
+            {syncHandoffPreflight.data ? (
+              <SyncHandoffPreflightReportCard
+                report={syncHandoffPreflight.data}
+                locale={locale}
+                t={t}
+              />
             ) : null}
           </section>
 

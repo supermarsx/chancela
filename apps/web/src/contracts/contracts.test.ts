@@ -78,6 +78,16 @@ import {
   type BackupRecoveryFreshnessReview,
   type BackupRecoveryPolicySettings,
   type BookView,
+  type SyncHandoffArchiveDglabEvidence,
+  type SyncHandoffBackupCandidateSummary,
+  type SyncHandoffBackupDirectoryEvidence,
+  type SyncHandoffBackupEvidence,
+  type SyncHandoffBookBundleEvidence,
+  type SyncHandoffDataStatus,
+  type SyncHandoffNoClaims,
+  type SyncHandoffPreflightReport,
+  type SyncHandoffReadiness,
+  type SyncHandoffRecoveryDrillSummary,
   type BreachPlaybookEvidenceReceipt,
   type BreachPlaybookView,
   type CaeSourceEntry,
@@ -5685,6 +5695,258 @@ describe('contract fixtures parse through the real client', () => {
     expect(freshness.production_backup_policy_certified).toBe(false);
   });
 
+  it('sync.handoff-preflight.json → SyncHandoffPreflightReport (GET /v1/sync/handoff-preflight)', async () => {
+    stubFetch(fixture('sync.handoff-preflight.json'));
+    const report: SyncHandoffPreflightReport = await api.syncHandoffPreflight();
+    assertExactKeys<SyncHandoffPreflightReport>(
+      report,
+      {
+        report_kind: true,
+        endpoint: true,
+        generated_at: true,
+        readiness: true,
+        data_status: true,
+        backup: true,
+        book_bundles: true,
+        archive_dglab: true,
+        no_claims: true,
+        blockers: true,
+        missing_evidence: true,
+        operator_actions: true,
+      },
+      'SyncHandoffPreflightReport',
+    );
+    expect(report.report_kind).toBe('sync_handoff_preflight');
+    expect(report.endpoint).toBe('/v1/sync/handoff-preflight');
+    assertTimestamp(report.generated_at, 'SyncHandoffPreflightReport.generated_at');
+
+    const readiness = assertExactKeys<SyncHandoffReadiness>(
+      report.readiness,
+      {
+        status: true,
+        local_handoff_review_ready: true,
+        production_sync_ready: true,
+        external_connector_ready: true,
+        active_sync_performed: true,
+      },
+      'SyncHandoffPreflightReport.readiness',
+    );
+    expect(['blocked', 'missing_local_evidence', 'local_review_ready']).toContain(readiness.status);
+    expect(readiness.status).toBe('missing_local_evidence');
+    expect(typeof readiness.local_handoff_review_ready).toBe('boolean');
+    expect(readiness.local_handoff_review_ready).toBe(false);
+    expect(readiness.production_sync_ready).toBe(false);
+    expect(readiness.external_connector_ready).toBe(false);
+    expect(readiness.active_sync_performed).toBe(false);
+
+    const dataStatus = assertExactKeys<SyncHandoffDataStatus>(
+      report.data_status,
+      {
+        data_dir_configured: true,
+        durable_store_open: true,
+        ledger_length: true,
+        ledger_healthy: true,
+        ledger_degraded: true,
+        global_chain_verified: true,
+        global_chain_first_break: true,
+        boot_chain_status_ok: true,
+      },
+      'SyncHandoffPreflightReport.data_status',
+    );
+    expect(typeof dataStatus.data_dir_configured).toBe('boolean');
+    expect(typeof dataStatus.durable_store_open).toBe('boolean');
+    expect(Number.isInteger(dataStatus.ledger_length)).toBe(true);
+    expect(typeof dataStatus.ledger_healthy).toBe('boolean');
+    expect(typeof dataStatus.ledger_degraded).toBe('boolean');
+    expect(typeof dataStatus.global_chain_verified).toBe('boolean');
+    if (dataStatus.global_chain_first_break !== null) {
+      expect(dataStatus.global_chain_first_break.length).toBeGreaterThan(0);
+    }
+    if (dataStatus.boot_chain_status_ok !== null) {
+      expect(typeof dataStatus.boot_chain_status_ok).toBe('boolean');
+    }
+
+    const backup = assertExactKeys<SyncHandoffBackupEvidence>(
+      report.backup,
+      {
+        backup_route: true,
+        recovery_drill_route: true,
+        durable_receipts: true,
+        backup_directory: true,
+        recovery_drill_receipt_count: true,
+        verified_recovery_drill_evidence: true,
+        latest_recovery_drill: true,
+      },
+      'SyncHandoffPreflightReport.backup',
+    );
+    expect(backup.backup_route).toBe('/v1/backup');
+    expect(backup.recovery_drill_route).toBe('/v1/backup/recovery-drills');
+    expect(typeof backup.durable_receipts).toBe('boolean');
+    expect(Number.isInteger(backup.recovery_drill_receipt_count)).toBe(true);
+    expect(typeof backup.verified_recovery_drill_evidence).toBe('boolean');
+    const backupDirectory = assertExactKeys<SyncHandoffBackupDirectoryEvidence>(
+      backup.backup_directory,
+      {
+        relative_path: true,
+        scanned: true,
+        present: true,
+        untrusted_candidate_file_count: true,
+        total_candidate_bytes: true,
+        latest_candidate_file: true,
+        validation_performed: true,
+        validated_manifest_evidence_present: true,
+        scan_error: true,
+      },
+      'SyncHandoffPreflightReport.backup.backup_directory',
+    );
+    expect(backupDirectory.relative_path).toBe('backups');
+    expect(typeof backupDirectory.scanned).toBe('boolean');
+    expect(typeof backupDirectory.present).toBe('boolean');
+    expect(Number.isInteger(backupDirectory.untrusted_candidate_file_count)).toBe(true);
+    expect(Number.isInteger(backupDirectory.total_candidate_bytes)).toBe(true);
+    expect(backupDirectory.validation_performed).toBe(false);
+    expect(backupDirectory.validated_manifest_evidence_present).toBe(false);
+    if (backupDirectory.latest_candidate_file !== null) {
+      const latest = assertExactKeys<SyncHandoffBackupCandidateSummary>(
+        backupDirectory.latest_candidate_file,
+        { file_name: true, bytes: true, modified_at: true },
+        'SyncHandoffPreflightReport.backup.backup_directory.latest_candidate_file',
+      );
+      expect(latest.file_name.length).toBeGreaterThan(0);
+      expect(Number.isInteger(latest.bytes)).toBe(true);
+      if (latest.modified_at !== null) {
+        assertTimestamp(latest.modified_at, 'SyncHandoffBackupCandidateSummary.modified_at');
+      }
+    }
+    if (backup.latest_recovery_drill !== null) {
+      const drill = assertExactKeys<SyncHandoffRecoveryDrillSummary>(
+        backup.latest_recovery_drill,
+        {
+          id: true,
+          created_at: true,
+          archive_label: true,
+          preflight_ok: true,
+          preflight_ready: true,
+          encrypted: true,
+          ledger_verified: true,
+          manifest_evidence_present: true,
+          manifest_ledger_verified: true,
+          manifest_ledger_length: true,
+          manifest_member_count: true,
+          manifest_db_member_present: true,
+          manifest_sidecar_member_count: true,
+          manifest_total_member_bytes: true,
+          isolated_restore_verified: true,
+          isolated_restore_status: true,
+          isolated_snapshot_ledger_verified: true,
+          isolated_snapshot_cleanup_verified: true,
+          verified_manifest_and_isolated_snapshot: true,
+          restore_executed: true,
+          live_db_swapped: true,
+          sidecars_staged: true,
+          ledger_restored_appended: true,
+          data_deleted: true,
+          offsite_custody_proven: true,
+          legal_archive_certified: true,
+        },
+        'SyncHandoffPreflightReport.backup.latest_recovery_drill',
+      );
+      assertTimestamp(drill.created_at, 'SyncHandoffRecoveryDrillSummary.created_at');
+      expect(drill.archive_label.length).toBeGreaterThan(0);
+      expect(typeof drill.preflight_ready).toBe('boolean');
+      if (drill.encrypted !== null) expect(typeof drill.encrypted).toBe('boolean');
+      if (drill.manifest_ledger_verified !== null) {
+        expect(typeof drill.manifest_ledger_verified).toBe('boolean');
+      }
+      if (drill.manifest_db_member_present !== null) {
+        expect(typeof drill.manifest_db_member_present).toBe('boolean');
+      }
+      expect(typeof drill.isolated_restore_status).toBe('string');
+      expect(typeof drill.verified_manifest_and_isolated_snapshot).toBe('boolean');
+      expect(drill.restore_executed).toBe(false);
+      expect(drill.live_db_swapped).toBe(false);
+      expect(drill.sidecars_staged).toBe(false);
+      expect(drill.ledger_restored_appended).toBe(false);
+      expect(drill.data_deleted).toBe(false);
+      expect(drill.offsite_custody_proven).toBe(false);
+      expect(drill.legal_archive_certified).toBe(false);
+    }
+
+    const bundles = assertExactKeys<SyncHandoffBookBundleEvidence>(
+      report.book_bundles,
+      {
+        export_route: true,
+        import_preflight_route: true,
+        import_confirmation_route: true,
+        import_preflight_read_only: true,
+        max_import_bundle_bytes: true,
+        collision_policies: true,
+        durable_store_required: true,
+        durable_store_available: true,
+        retained_export_relative_path: true,
+        book_count: true,
+        open_book_count: true,
+        closed_book_count: true,
+      },
+      'SyncHandoffPreflightReport.book_bundles',
+    );
+    expect(bundles.export_route).toBe('/v1/books/{id}/export');
+    expect(bundles.import_preflight_route).toBe('/v1/books/import/preflight');
+    expect(bundles.import_confirmation_route).toBe('/v1/books/import');
+    expect(bundles.import_preflight_read_only).toBe(true);
+    expect(bundles.collision_policies).toEqual(['refuse', 'quarantine_copy']);
+    expect(bundles.durable_store_required).toBe(true);
+    expect(bundles.retained_export_relative_path).toBe('exports');
+
+    const archive = assertExactKeys<SyncHandoffArchiveDglabEvidence>(
+      report.archive_dglab,
+      {
+        archive_package_route: true,
+        local_dglab_manifest_route: true,
+        local_dglab_manifest_read_only: true,
+        local_dglab_manifest_route_available: true,
+        book_count: true,
+        closed_book_count: true,
+        sealed_or_archived_act_count: true,
+        preserved_document_count: true,
+        signed_document_count: true,
+        external_validator_report_metadata_count: true,
+        dglab_certification_claimed: true,
+        archive_certification_claimed: true,
+      },
+      'SyncHandoffPreflightReport.archive_dglab',
+    );
+    expect(archive.local_dglab_manifest_read_only).toBe(true);
+    expect(typeof archive.local_dglab_manifest_route_available).toBe('boolean');
+    expect(archive.dglab_certification_claimed).toBe(false);
+    expect(archive.archive_certification_claimed).toBe(false);
+
+    const noClaims = assertExactKeys<SyncHandoffNoClaims>(
+      report.no_claims,
+      {
+        active_sync_implemented: true,
+        connector_protocol_implemented: true,
+        background_job_configured: true,
+        upload_or_download_performed: true,
+        import_performed: true,
+        records_mutated: true,
+        production_sync_readiness_claimed: true,
+        external_connector_compatibility_claimed: true,
+        legal_validity_claimed: true,
+        dglab_certification_claimed: true,
+        archive_certification_claimed: true,
+        signing_notarization_attestation_claimed: true,
+        deployment_readiness_claimed: true,
+      },
+      'SyncHandoffPreflightReport.no_claims',
+    );
+    expect(Object.values(noClaims).every((value) => value === false)).toBe(true);
+    expect(Array.isArray(report.blockers)).toBe(true);
+    expect(Array.isArray(report.missing_evidence)).toBe(true);
+    expect(Array.isArray(report.operator_actions)).toBe(true);
+    expect(report.operator_actions.length).toBeGreaterThan(0);
+  });
+
   it('data.status.json → DataStatusResponse (GET /v1/data/status)', async () => {
     stubFetch(fixture('data.status.json'));
     const status: DataStatusResponse = await api.dataStatus();
@@ -6299,6 +6561,7 @@ describe('contract fixtures — cross-cutting guarantees', () => {
       'backup.manifest.json',
       'backup.recovery-drill.json',
       'backup.recovery-drill-list.json',
+      'sync.handoff-preflight.json',
       'data.status.json',
       'user.json',
       'session.json',

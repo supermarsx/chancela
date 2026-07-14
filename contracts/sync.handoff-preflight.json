@@ -1,0 +1,125 @@
+{
+  "report_kind": "sync_handoff_preflight",
+  "endpoint": "/v1/sync/handoff-preflight",
+  "generated_at": "2026-07-14T12:00:00Z",
+  "readiness": {
+    "status": "missing_local_evidence",
+    "local_handoff_review_ready": false,
+    "production_sync_ready": false,
+    "external_connector_ready": false,
+    "active_sync_performed": false
+  },
+  "data_status": {
+    "data_dir_configured": true,
+    "durable_store_open": true,
+    "ledger_length": 12,
+    "ledger_healthy": true,
+    "ledger_degraded": false,
+    "global_chain_verified": true,
+    "global_chain_first_break": null,
+    "boot_chain_status_ok": true
+  },
+  "backup": {
+    "backup_route": "/v1/backup",
+    "recovery_drill_route": "/v1/backup/recovery-drills",
+    "durable_receipts": true,
+    "backup_directory": {
+      "relative_path": "backups",
+      "scanned": true,
+      "present": true,
+      "untrusted_candidate_file_count": 1,
+      "total_candidate_bytes": 1048576,
+      "latest_candidate_file": {
+        "file_name": "chancela-backup-20260714T120000Z.zip",
+        "bytes": 1048576,
+        "modified_at": "2026-07-14T12:00:00Z"
+      },
+      "validation_performed": false,
+      "validated_manifest_evidence_present": false,
+      "scan_error": null
+    },
+    "recovery_drill_receipt_count": 1,
+    "verified_recovery_drill_evidence": false,
+    "latest_recovery_drill": {
+      "id": "drill-20260714",
+      "created_at": "2026-07-14T12:05:00Z",
+      "archive_label": "chancela-backup-20260714T120000Z.zip",
+      "preflight_ok": true,
+      "preflight_ready": true,
+      "encrypted": false,
+      "ledger_verified": false,
+      "manifest_evidence_present": true,
+      "manifest_ledger_verified": false,
+      "manifest_ledger_length": 12,
+      "manifest_member_count": 0,
+      "manifest_db_member_present": false,
+      "manifest_sidecar_member_count": 0,
+      "manifest_total_member_bytes": 0,
+      "isolated_restore_verified": false,
+      "isolated_restore_status": "failed",
+      "isolated_snapshot_ledger_verified": false,
+      "isolated_snapshot_cleanup_verified": false,
+      "verified_manifest_and_isolated_snapshot": false,
+      "restore_executed": false,
+      "live_db_swapped": false,
+      "sidecars_staged": false,
+      "ledger_restored_appended": false,
+      "data_deleted": false,
+      "offsite_custody_proven": false,
+      "legal_archive_certified": false
+    }
+  },
+  "book_bundles": {
+    "export_route": "/v1/books/{id}/export",
+    "import_preflight_route": "/v1/books/import/preflight",
+    "import_confirmation_route": "/v1/books/import",
+    "import_preflight_read_only": true,
+    "max_import_bundle_bytes": 67108864,
+    "collision_policies": ["refuse", "quarantine_copy"],
+    "durable_store_required": true,
+    "durable_store_available": true,
+    "retained_export_relative_path": "exports",
+    "book_count": 2,
+    "open_book_count": 1,
+    "closed_book_count": 1
+  },
+  "archive_dglab": {
+    "archive_package_route": "/v1/books/{id}/archive/package",
+    "local_dglab_manifest_route": "/v1/books/{id}/archive/local-dglab-interchange-manifest",
+    "local_dglab_manifest_read_only": true,
+    "local_dglab_manifest_route_available": true,
+    "book_count": 2,
+    "closed_book_count": 1,
+    "sealed_or_archived_act_count": 3,
+    "preserved_document_count": 3,
+    "signed_document_count": 1,
+    "external_validator_report_metadata_count": 1,
+    "dglab_certification_claimed": false,
+    "archive_certification_claimed": false
+  },
+  "no_claims": {
+    "active_sync_implemented": false,
+    "connector_protocol_implemented": false,
+    "background_job_configured": false,
+    "upload_or_download_performed": false,
+    "import_performed": false,
+    "records_mutated": false,
+    "production_sync_readiness_claimed": false,
+    "external_connector_compatibility_claimed": false,
+    "legal_validity_claimed": false,
+    "dglab_certification_claimed": false,
+    "archive_certification_claimed": false,
+    "signing_notarization_attestation_claimed": false,
+    "deployment_readiness_claimed": false
+  },
+  "blockers": [],
+  "missing_evidence": [
+    "no validated whole-instance backup manifest or verified recovery-drill evidence is available; local backup files are only untrusted candidates in this read-only report",
+    "latest backup recovery drill lacks verified manifest, ledger, database-member, and isolated-snapshot evidence",
+    "latest backup recovery drill has no verified backup manifest/member evidence summary"
+  ],
+  "operator_actions": [
+    "take a local hot backup through /v1/backup and record a verified recovery-drill receipt before relying on backup evidence",
+    "use explicit existing confirmation endpoints for any later export/import/recovery action; this report itself is read-only"
+  ]
+}

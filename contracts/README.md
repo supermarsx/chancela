@@ -54,6 +54,7 @@ counts, state transitions). Together they pin both shape and semantics.
 | `api-key.create.json`          | `ApiKeyCreated` — `POST /v1/api-keys` one-time secret response                         | integration API-key lifecycle                                      |
 | `api-key.revoke.json`          | `ApiKeyView` — `DELETE /v1/api-keys/{id}` metadata-only response                       | integration API-key lifecycle                                      |
 | `api-key.rotate.json`          | `ApiKeyCreated` — `POST /v1/api-keys/{id}/rotate` one-time replacement secret response | integration API-key lifecycle                                      |
+| `sync.handoff-preflight.json`  | `SyncHandoffPreflightReport` — `GET /v1/sync/handoff-preflight` local evidence report  | local sync/handoff preflight readiness, no active sync/connector   |
 
 ## Enum encodings (bare variant names, pinned by the contract)
 
