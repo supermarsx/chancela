@@ -46,6 +46,9 @@ pub const MCP_PRIVACY_CONTROL_REVIEW_SUMMARY_RESOURCE_URI: &str =
 /// Read-only MCP resource URI for local document/archive review summaries.
 pub const MCP_DOCUMENT_ARCHIVE_REVIEW_SUMMARY_RESOURCE_URI: &str =
     "chancela://mcp/document-archive-review-summary";
+/// Read-only MCP resource URI for local meeting metadata extraction review.
+pub const MCP_MEETING_METADATA_EXTRACTION_REVIEW_RESOURCE_URI: &str =
+    "chancela://mcp/meeting-metadata-extraction-review";
 
 const DRAFT_MINUTES_REVIEW_PROMPT_NAME: &str = "draft_minutes_human_review_checklist";
 const DRAFT_MINUTES_REVIEW_PROMPT_TITLE: &str = "Draft Minutes Human Review Checklist";
@@ -389,6 +392,17 @@ impl<T: HttpTransport> McpServer<T> {
                         "audience": ["user", "assistant"],
                         "priority": 0.65,
                     },
+                },
+                {
+                    "uri": MCP_MEETING_METADATA_EXTRACTION_REVIEW_RESOURCE_URI,
+                    "name": "meeting_metadata_extraction_review",
+                    "title": "Meeting Metadata Extraction Review",
+                    "description": "Read-only local meeting metadata extraction review resource. Without arguments it returns static guidance; with meeting_document JSON or text metadata it returns deterministic candidate counts, bounded channel classification, evidence markers, blockers, warnings, and no-claim flags. Contains no secrets, performs no bridge, API, AI, legal-service, HTTP/SSE, or provider calls, does not echo raw document text, names, contacts, emails, phone numbers, access codes, credentials, secrets, or uploaded bytes, and makes no legal-validity, source-certification, or workflow-completion claims.",
+                    "mimeType": "application/json",
+                    "annotations": {
+                        "audience": ["user", "assistant"],
+                        "priority": 0.65,
+                    },
                 }
             ]
         })
@@ -464,6 +478,20 @@ impl<T: HttpTransport> McpServer<T> {
         } else {
             None
         };
+        let meeting_metadata_arguments = if uri
+            == MCP_MEETING_METADATA_EXTRACTION_REVIEW_RESOURCE_URI
+        {
+            if params.keys().any(|key| key != "uri" && key != "arguments") {
+                return JsonRpcResponse::error(
+                    id,
+                    codes::INVALID_PARAMS,
+                    "meeting metadata extraction review resource accepts only uri or uri plus arguments",
+                );
+            }
+            params.get("arguments")
+        } else {
+            None
+        };
         let payload = match uri {
             MCP_STATUS_RESOURCE_URI => self.status_resource_payload(),
             MCP_SPEC_09_COVERAGE_RESOURCE_URI => self.spec_09_coverage_resource_payload(),
@@ -525,6 +553,24 @@ impl<T: HttpTransport> McpServer<T> {
                     }
                 }
                 None => self.document_archive_review_summary_resource_payload(),
+            },
+            MCP_MEETING_METADATA_EXTRACTION_REVIEW_RESOURCE_URI => match meeting_metadata_arguments
+            {
+                Some(arguments) => {
+                    match meeting_metadata_extraction_review_report_payload(arguments) {
+                        Ok(payload) => payload,
+                        Err(message) => {
+                            return JsonRpcResponse::error(
+                                id,
+                                codes::INVALID_PARAMS,
+                                format!(
+                                    "invalid meeting metadata extraction review arguments: {message}"
+                                ),
+                            );
+                        }
+                    }
+                }
+                None => self.meeting_metadata_extraction_review_resource_payload(),
             },
             _ => {
                 return JsonRpcResponse::error_with_data(
@@ -638,6 +684,7 @@ impl<T: HttpTransport> McpServer<T> {
                             MCP_CHRONOLOGY_REVIEW_SUMMARY_RESOURCE_URI,
                             MCP_PRIVACY_CONTROL_REVIEW_SUMMARY_RESOURCE_URI,
                             MCP_DOCUMENT_ARCHIVE_REVIEW_SUMMARY_RESOURCE_URI,
+                            MCP_MEETING_METADATA_EXTRACTION_REVIEW_RESOURCE_URI,
                         ],
                         "prompts": prompt_names,
                     },
@@ -679,12 +726,13 @@ impl<T: HttpTransport> McpServer<T> {
                     MCP_CHRONOLOGY_REVIEW_SUMMARY_RESOURCE_URI,
                     MCP_PRIVACY_CONTROL_REVIEW_SUMMARY_RESOURCE_URI,
                     MCP_DOCUMENT_ARCHIVE_REVIEW_SUMMARY_RESOURCE_URI,
+                    MCP_MEETING_METADATA_EXTRACTION_REVIEW_RESOURCE_URI,
                 ],
                 "prompts": [
                     WORKFLOW_PROVENANCE_REVIEW_PROMPT_NAME,
                     DRAFT_SIGNED_COMPARISON_REVIEW_PROMPT_NAME,
                 ],
-                "purpose": "offline_human_review_guidance_plus_deterministic_local_draft_signed_chronology_privacy_control_and_document_archive_metadata_summaries",
+                "purpose": "offline_human_review_guidance_plus_deterministic_local_draft_signed_chronology_privacy_control_document_archive_and_meeting_metadata_summaries",
                 "ai_01_claimed": false,
                 "ai_02_claimed": false,
                 "full_ai_mcp_completion_claimed": false,
@@ -1137,6 +1185,111 @@ impl<T: HttpTransport> McpServer<T> {
         })
     }
 
+    fn meeting_metadata_extraction_review_resource_payload(&self) -> Value {
+        json!({
+            "kind": "chancela_mcp_meeting_metadata_extraction_review",
+            "schema_version": 1,
+            "source": "static_mcp_review_aid",
+            "offline": true,
+            "static": true,
+            "local_json_or_text_metadata_only": true,
+            "arguments": [],
+            "optional_arguments": [
+                {
+                    "name": "meeting_document",
+                    "description": "Caller-supplied local JSON object metadata, JSON string metadata, or plain text metadata. The resource returns deterministic aggregate candidates, blockers, and warnings only; it does not echo raw document text, names, contacts, emails, phone numbers, secrets, access codes, credentials, or raw uploaded bytes.",
+                }
+            ],
+            "expected_input_shape": {
+                "resources_read_params": {
+                    "uri": MCP_MEETING_METADATA_EXTRACTION_REVIEW_RESOURCE_URI,
+                    "arguments": {
+                        "meeting_document": {
+                            "meeting_date": "optional string date metadata",
+                            "meeting_time": "optional string time metadata",
+                            "dispatch_date": "optional string date metadata",
+                            "channel": "optional bounded meeting channel metadata",
+                            "agenda_items": "optional array used only for count metadata",
+                            "second_call_present": "optional boolean or marker metadata",
+                            "evidence_reference": "optional evidence/source/reference marker metadata"
+                        }
+                    }
+                }
+            },
+            "summary_categories": [
+                {
+                    "id": "metadata_candidate_counts",
+                    "title": "Metadata candidate counts",
+                    "checkpoints": [
+                        "Count conservative meeting metadata candidates from recognized local JSON keys or text labels.",
+                        "Report presence and ambiguity without echoing the supplied values.",
+                        "Treat missing required review fields as blockers, not inferred truth."
+                    ],
+                },
+                {
+                    "id": "agenda_and_call_markers",
+                    "title": "Agenda and call markers",
+                    "checkpoints": [
+                        "Count agenda item arrays or explicit agenda_item_count markers when supplied.",
+                        "Count second-call markers as present or missing without deciding legal sufficiency.",
+                    ],
+                },
+                {
+                    "id": "evidence_and_safety_markers",
+                    "title": "Evidence and safety markers",
+                    "checkpoints": [
+                        "Count evidence/source/reference markers without echoing IDs, paths, text, digests, names, or contacts.",
+                        "Flag raw content, contact, credential, access-code, secret, or uploaded-byte markers as review warnings.",
+                    ],
+                },
+                {
+                    "id": "human_review_boundaries",
+                    "title": "Human review boundaries",
+                    "checkpoints": [
+                        "Require human verification for every extracted candidate.",
+                        "Do not claim legal validity, source certification, workflow completion, provider activity, or API activity."
+                    ],
+                }
+            ],
+            "human_verification_required": true,
+            "ai_provider_called": false,
+            "api_called": false,
+            "legal_validity_claimed": false,
+            "source_certification_claimed": false,
+            "workflow_completion_claimed": false,
+            "bridge_calls": false,
+            "api_calls": false,
+            "provider_calls": false,
+            "ai_provider_calls": false,
+            "legal_service_calls": false,
+            "http_sse_transport_added": false,
+            "raw_document_text_echoed": false,
+            "raw_document_bytes_echoed": false,
+            "names_contacts_emails_phones_echoed": false,
+            "secrets_access_codes_credentials_echoed": false,
+            "secrets_in_resource": false,
+            "claims": {
+                "legal_validity": false,
+                "source_certification": false,
+                "workflow_completion": false,
+                "ai_completion": false,
+                "provider": false,
+                "trust": false,
+                "external_validation": false,
+                "archive_certification": false,
+                "signature_qualification": false
+            },
+            "operator_boundaries": [
+                "Use only caller-supplied local meeting metadata in resources/read arguments.",
+                "Do not include raw minutes text, uploaded bytes, names, contacts, emails, phone numbers, access codes, credentials, API keys, secrets, or unnecessary personal data in caller metadata.",
+                "Use this summary as advisory local review assistance only.",
+                "No bridge, API, AI-provider, legal-service, HTTP/SSE, registry, trust, archive, signature, or provider calls are made.",
+                "No legal validity, source certification, workflow completion, provider assurance, or trust status is claimed.",
+                "Human verification and normal platform evidence checks remain required."
+            ],
+        })
+    }
+
     fn draft_signed_comparison_review_resource_payload(&self) -> Value {
         json!({
             "kind": "chancela_mcp_draft_signed_comparison_review",
@@ -1568,6 +1721,141 @@ struct LocatedValue<'a> {
     path: &'static str,
     value: &'a Value,
 }
+
+#[derive(Debug, Clone, Copy)]
+struct MeetingMetadataCandidateSpec {
+    id: &'static str,
+    key_names: &'static [&'static str],
+}
+
+const MEETING_METADATA_CANDIDATE_SPECS: &[MeetingMetadataCandidateSpec] = &[
+    MeetingMetadataCandidateSpec {
+        id: "meeting_date",
+        key_names: &[
+            "meeting_date",
+            "meeting_day",
+            "assembly_date",
+            "session_date",
+            "date",
+        ],
+    },
+    MeetingMetadataCandidateSpec {
+        id: "meeting_time",
+        key_names: &[
+            "meeting_time",
+            "meeting_hour",
+            "assembly_time",
+            "session_time",
+            "time",
+            "hour",
+        ],
+    },
+    MeetingMetadataCandidateSpec {
+        id: "dispatch_date",
+        key_names: &[
+            "dispatch_date",
+            "notice_dispatch_date",
+            "convocation_dispatch_date",
+            "sent_date",
+            "notice_sent_date",
+            "notice_date",
+        ],
+    },
+    MeetingMetadataCandidateSpec {
+        id: "channel",
+        key_names: &[
+            "channel",
+            "meeting_channel",
+            "meeting_mode",
+            "attendance_channel",
+            "location_type",
+            "venue_type",
+        ],
+    },
+];
+const MEETING_AGENDA_ITEM_COUNT_KEYS: &[&str] = &[
+    "agenda_item_count",
+    "agenda_items_count",
+    "agenda_count",
+    "agenda_points_count",
+    "order_of_business_count",
+];
+const MEETING_AGENDA_ARRAY_KEYS: &[&str] = &[
+    "agenda",
+    "agenda_items",
+    "agenda_points",
+    "order_of_business",
+    "items",
+];
+const MEETING_SECOND_CALL_KEYS: &[&str] = &[
+    "second_call_present",
+    "second_call",
+    "segunda_convocatoria",
+    "second_notice",
+    "second_session",
+];
+const MEETING_EVIDENCE_REFERENCE_KEYS: &[&str] = &[
+    "evidence_reference",
+    "evidence_references",
+    "evidence_ref",
+    "source_reference",
+    "source_record_id",
+    "source_record_ids",
+    "ledger_event_id",
+    "ledger_event_ids",
+    "manifest_id",
+    "digest",
+    "checksum",
+    "sha256",
+];
+const MEETING_RAW_CONTENT_KEY_MARKERS: &[&str] = &[
+    "raw_document",
+    "raw_text",
+    "document_text",
+    "full_text",
+    "transcript",
+    "body",
+    "content",
+    "content_base64",
+    "bytes",
+    "uploaded_bytes",
+    "file_bytes",
+    "payload_bytes",
+];
+const MEETING_CONTACT_KEY_MARKERS: &[&str] = &[
+    "name",
+    "full_name",
+    "contact",
+    "contacts",
+    "email",
+    "emails",
+    "phone",
+    "phones",
+    "telephone",
+    "mobile",
+    "address",
+];
+const MEETING_SECRET_KEY_MARKERS: &[&str] = &[
+    "secret",
+    "access_code",
+    "access_token",
+    "credential",
+    "credentials",
+    "password",
+    "passcode",
+    "token",
+    "api_key",
+    "apikey",
+    "bearer",
+];
+const MEETING_CHANNEL_LABELS: &[&str] = &[
+    "in_person",
+    "remote",
+    "hybrid",
+    "written",
+    "other",
+    "missing",
+];
 
 const DRAFT_SIGNED_FIELD_SPECS: &[DraftSignedFieldSpec] = &[
     DraftSignedFieldSpec {
@@ -2350,6 +2638,199 @@ const DOCUMENT_ARCHIVE_NO_CLAIM_FLAG_SPECS: &[DocumentArchiveNoClaimFlagSpec] = 
         ],
     },
 ];
+
+fn meeting_metadata_extraction_review_report_payload(arguments: &Value) -> Result<Value, String> {
+    let args = arguments
+        .as_object()
+        .ok_or_else(|| "arguments must be an object".to_string())?;
+    if args.keys().any(|key| key != "meeting_document") {
+        return Err(
+            "meeting metadata extraction arguments accept only meeting_document".to_string(),
+        );
+    }
+    let meeting_document = args
+        .get("meeting_document")
+        .ok_or_else(|| "meeting_document must be supplied".to_string())?;
+    let (metadata, input_format) = meeting_document_metadata_value(meeting_document)?;
+
+    let mut candidate_fields = BTreeMap::new();
+    for spec in MEETING_METADATA_CANDIDATE_SPECS {
+        let count = meeting_metadata_key_count(&metadata, spec.key_names);
+        candidate_fields.insert(
+            spec.id.to_string(),
+            json!({
+                "present": count > 0,
+                "candidate_count": count,
+                "ambiguous": count > 1,
+                "values_echoed": false
+            }),
+        );
+    }
+
+    let agenda_summary = meeting_agenda_item_count_summary(&metadata);
+    let second_call_counts =
+        meeting_boolean_marker_counts(&metadata, MEETING_SECOND_CALL_KEYS, "second_call");
+    let evidence_reference_count =
+        meeting_metadata_key_count(&metadata, MEETING_EVIDENCE_REFERENCE_KEYS);
+    let channel_counts = meeting_channel_classification_counts(&metadata);
+    let raw_content_marker_count =
+        meeting_marker_key_count(&metadata, MEETING_RAW_CONTENT_KEY_MARKERS);
+    let contact_marker_count = meeting_marker_key_count(&metadata, MEETING_CONTACT_KEY_MARKERS);
+    let secret_marker_count = meeting_marker_key_count(&metadata, MEETING_SECRET_KEY_MARKERS);
+
+    let mut blockers = BTreeSet::new();
+    let mut warnings = BTreeSet::new();
+    for required in ["meeting_date", "dispatch_date"] {
+        let present = candidate_fields
+            .get(required)
+            .and_then(|field| field.get("present"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let ambiguous = candidate_fields
+            .get(required)
+            .and_then(|field| field.get("ambiguous"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        if !present {
+            blockers.insert(format!("{required}_missing"));
+        }
+        if ambiguous {
+            warnings.insert(format!("{required}_ambiguous"));
+        }
+    }
+    for advisory in ["meeting_time", "channel"] {
+        let present = candidate_fields
+            .get(advisory)
+            .and_then(|field| field.get("present"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let ambiguous = candidate_fields
+            .get(advisory)
+            .and_then(|field| field.get("ambiguous"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        if !present {
+            warnings.insert(format!("{advisory}_missing"));
+        }
+        if ambiguous {
+            warnings.insert(format!("{advisory}_ambiguous"));
+        }
+    }
+    if agenda_summary
+        .get("agenda_item_count_present")
+        .and_then(Value::as_bool)
+        != Some(true)
+    {
+        blockers.insert("agenda_item_count_missing".to_string());
+    }
+    if agenda_summary
+        .get("ambiguous")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
+        warnings.insert("agenda_item_count_ambiguous".to_string());
+    }
+    if evidence_reference_count == 0 {
+        blockers.insert("evidence_reference_missing".to_string());
+    }
+    if second_call_counts
+        .get("observation_count")
+        .and_then(Value::as_u64)
+        .unwrap_or(0)
+        == 0
+    {
+        warnings.insert("second_call_present_missing".to_string());
+    }
+    if raw_content_marker_count > 0 {
+        warnings.insert("raw_content_marker_supplied_not_echoed".to_string());
+    }
+    if contact_marker_count > 0 {
+        warnings.insert("name_contact_email_or_phone_marker_supplied_not_echoed".to_string());
+    }
+    if secret_marker_count > 0 {
+        warnings.insert("secret_access_code_or_credential_marker_supplied_not_echoed".to_string());
+    }
+
+    Ok(json!({
+        "kind": "chancela_mcp_meeting_metadata_extraction_review_report",
+        "schema_version": 1,
+        "source": "local_mcp_deterministic_meeting_metadata_reviewer",
+        "offline": true,
+        "local_json_or_text_metadata_only": true,
+        "deterministic": true,
+        "aggregate_counts_only": true,
+        "human_verification_required": true,
+        "ai_provider_called": false,
+        "api_called": false,
+        "legal_validity_claimed": false,
+        "source_certification_claimed": false,
+        "workflow_completion_claimed": false,
+        "bridge_calls": false,
+        "api_calls": false,
+        "provider_calls": false,
+        "ai_provider_calls": false,
+        "legal_service_calls": false,
+        "http_sse_transport_added": false,
+        "raw_document_text_echoed": false,
+        "raw_document_bytes_echoed": false,
+        "names_contacts_emails_phones_echoed": false,
+        "secrets_access_codes_credentials_echoed": false,
+        "secrets_in_resource": false,
+        "claims": {
+            "legal_validity": false,
+            "source_certification": false,
+            "workflow_completion": false,
+            "ai_completion": false,
+            "provider": false,
+            "trust": false,
+            "external_validation": false,
+            "archive_certification": false,
+            "signature_qualification": false
+        },
+        "meeting_metadata_summary": {
+            "input_format": input_format,
+            "candidate_fields": candidate_fields,
+            "agenda_item_count": agenda_summary,
+            "second_call_present": second_call_counts,
+            "evidence_reference_present": {
+                "present": evidence_reference_count > 0,
+                "candidate_count": evidence_reference_count,
+                "values_echoed": false
+            },
+            "channel_classification_counts": channel_counts,
+            "safety_marker_counts": {
+                "raw_content_marker_count": raw_content_marker_count,
+                "name_contact_email_phone_marker_count": contact_marker_count,
+                "secret_access_code_credential_marker_count": secret_marker_count,
+                "raw_values_echoed": false
+            }
+        },
+        "blocking_review_findings": blockers.into_iter().collect::<Vec<_>>(),
+        "review_warnings": warnings.into_iter().collect::<Vec<_>>(),
+        "recognized_fields": {
+            "meeting_date": MEETING_METADATA_CANDIDATE_SPECS[0].key_names,
+            "meeting_time": MEETING_METADATA_CANDIDATE_SPECS[1].key_names,
+            "dispatch_date": MEETING_METADATA_CANDIDATE_SPECS[2].key_names,
+            "channel": MEETING_METADATA_CANDIDATE_SPECS[3].key_names,
+            "agenda_item_count": MEETING_AGENDA_ITEM_COUNT_KEYS,
+            "agenda_item_arrays": MEETING_AGENDA_ARRAY_KEYS,
+            "second_call_present": MEETING_SECOND_CALL_KEYS,
+            "evidence_reference_present": MEETING_EVIDENCE_REFERENCE_KEYS
+        },
+        "meeting_metadata_review_caveats": [
+            "This is a deterministic local aggregate report over caller-supplied JSON or text metadata only.",
+            "Recognized metadata values are not echoed; date, time, channel, agenda, second-call, and evidence observations are represented as counts or bounded buckets.",
+            "Missing and ambiguous metadata remains a blocker or warning for human review, not inferred truth.",
+            "Raw document text, names, contacts, emails, phone numbers, secrets, access codes, credentials, and uploaded bytes are not echoed.",
+            "Counts do not validate notice sufficiency, quorum, agenda authority, legal validity, source certification, workflow completion, or provider assurance."
+        ],
+        "operator_boundaries": [
+            "No bridge, API, AI-provider, legal-service, HTTP/SSE, registry, trust, archive, signature, or provider calls were made.",
+            "No legal validity, source certification, workflow completion, provider assurance, or trust status is claimed.",
+            "Human verification and normal platform evidence checks remain required."
+        ]
+    }))
+}
 
 fn document_archive_review_summary_report_payload(arguments: &Value) -> Result<Value, String> {
     let args = arguments
@@ -3744,6 +4225,268 @@ fn count_document_archive_no_claim_observations(
             }
         }
         _ => {}
+    }
+}
+
+fn meeting_document_metadata_value(value: &Value) -> Result<(Value, &'static str), String> {
+    match value {
+        Value::Object(_) => Ok((value.clone(), "json_object")),
+        Value::String(text) => match serde_json::from_str::<Value>(text) {
+            Ok(parsed) if parsed.is_object() => Ok((parsed, "json_string_object")),
+            Ok(_) => {
+                Err("meeting_document JSON text metadata must decode to an object".to_string())
+            }
+            Err(_) => Ok((Value::String(text.clone()), "text_metadata")),
+        },
+        _ => Err("meeting_document must be a JSON object or text metadata string".to_string()),
+    }
+}
+
+fn meeting_metadata_key_count(value: &Value, key_names: &[&str]) -> usize {
+    match value {
+        Value::String(text) => meeting_text_label_count(text, key_names),
+        _ => meeting_metadata_key_count_json(value, key_names),
+    }
+}
+
+fn meeting_metadata_key_count_json(value: &Value, key_names: &[&str]) -> usize {
+    match value {
+        Value::Object(map) => map
+            .iter()
+            .map(|(key, child)| {
+                usize::from(
+                    key_names.contains(&normalize_chronology_label(key).as_str())
+                        && is_present_chronology_marker_value(child),
+                ) + meeting_metadata_key_count_json(child, key_names)
+            })
+            .sum(),
+        Value::Array(values) => values
+            .iter()
+            .map(|child| meeting_metadata_key_count_json(child, key_names))
+            .sum(),
+        _ => 0,
+    }
+}
+
+fn meeting_marker_key_count(value: &Value, key_markers: &[&str]) -> usize {
+    match value {
+        Value::String(text) => meeting_text_marker_count(text, key_markers),
+        _ => meeting_marker_key_count_json(value, key_markers),
+    }
+}
+
+fn meeting_marker_key_count_json(value: &Value, key_markers: &[&str]) -> usize {
+    match value {
+        Value::Object(map) => map
+            .iter()
+            .map(|(key, child)| {
+                let normalized = normalize_chronology_label(key);
+                usize::from(
+                    key_markers.iter().any(|marker| normalized.contains(marker))
+                        && is_present_chronology_marker_value(child),
+                ) + meeting_marker_key_count_json(child, key_markers)
+            })
+            .sum(),
+        Value::Array(values) => values
+            .iter()
+            .map(|child| meeting_marker_key_count_json(child, key_markers))
+            .sum(),
+        _ => 0,
+    }
+}
+
+fn meeting_text_label_count(text: &str, key_names: &[&str]) -> usize {
+    let normalized_text = normalize_chronology_label(text);
+    key_names
+        .iter()
+        .filter(|key| normalized_text.contains(*key))
+        .count()
+}
+
+fn meeting_text_marker_count(text: &str, key_markers: &[&str]) -> usize {
+    let normalized_text = normalize_chronology_label(text);
+    let marker_count = key_markers
+        .iter()
+        .filter(|marker| normalized_text.contains(*marker))
+        .count();
+    let email_marker = usize::from(text.contains('@'));
+    let phone_marker = usize::from(text.chars().filter(|ch| ch.is_ascii_digit()).count() >= 7);
+    marker_count + email_marker + phone_marker
+}
+
+fn meeting_agenda_item_count_summary(value: &Value) -> Value {
+    let explicit_count_observations =
+        meeting_metadata_key_count(value, MEETING_AGENDA_ITEM_COUNT_KEYS);
+    let (agenda_array_count, agenda_item_total) = meeting_agenda_array_counts(value);
+    json!({
+        "agenda_item_count_present": explicit_count_observations > 0 || agenda_array_count > 0,
+        "explicit_count_observations": explicit_count_observations,
+        "agenda_array_observations": agenda_array_count,
+        "agenda_item_total_from_arrays": agenda_item_total,
+        "ambiguous": explicit_count_observations + agenda_array_count > 1,
+        "values_echoed": false
+    })
+}
+
+fn meeting_agenda_array_counts(value: &Value) -> (usize, usize) {
+    match value {
+        Value::Object(map) => map
+            .iter()
+            .fold((0usize, 0usize), |mut counts, (key, child)| {
+                let normalized = normalize_chronology_label(key);
+                if MEETING_AGENDA_ARRAY_KEYS.contains(&normalized.as_str()) {
+                    if let Value::Array(items) = child {
+                        counts.0 += 1;
+                        counts.1 += items.len();
+                    }
+                }
+                let child_counts = meeting_agenda_array_counts(child);
+                counts.0 += child_counts.0;
+                counts.1 += child_counts.1;
+                counts
+            }),
+        Value::Array(values) => values.iter().fold((0usize, 0usize), |mut counts, child| {
+            let child_counts = meeting_agenda_array_counts(child);
+            counts.0 += child_counts.0;
+            counts.1 += child_counts.1;
+            counts
+        }),
+        Value::String(text) => (
+            meeting_text_label_count(text, MEETING_AGENDA_ARRAY_KEYS),
+            0usize,
+        ),
+        _ => (0, 0),
+    }
+}
+
+fn meeting_boolean_marker_counts(value: &Value, key_names: &[&str], text_label: &str) -> Value {
+    let mut counts = initial_boolean_observation_counts();
+    collect_meeting_boolean_marker_counts(value, key_names, text_label, &mut counts);
+    let observation_count = counts.get("explicit_false").copied().unwrap_or(0)
+        + counts.get("truthy").copied().unwrap_or(0)
+        + counts.get("other_present").copied().unwrap_or(0);
+    json!({
+        "present": observation_count > 0,
+        "observation_count": observation_count,
+        "explicit_false": counts.get("explicit_false").copied().unwrap_or(0),
+        "truthy": counts.get("truthy").copied().unwrap_or(0),
+        "other_present": counts.get("other_present").copied().unwrap_or(0),
+        "values_echoed": false
+    })
+}
+
+fn collect_meeting_boolean_marker_counts(
+    value: &Value,
+    key_names: &[&str],
+    text_label: &str,
+    counts: &mut BTreeMap<String, usize>,
+) {
+    match value {
+        Value::Object(map) => {
+            for (key, child) in map {
+                if key_names.contains(&normalize_chronology_label(key).as_str()) {
+                    let bucket = match privacy_boolean_observation(child) {
+                        Some(false) => "explicit_false",
+                        Some(true) => "truthy",
+                        None => "other_present",
+                    };
+                    increment_count(counts, bucket.to_string());
+                }
+                collect_meeting_boolean_marker_counts(child, key_names, text_label, counts);
+            }
+        }
+        Value::Array(values) => {
+            for child in values {
+                collect_meeting_boolean_marker_counts(child, key_names, text_label, counts);
+            }
+        }
+        Value::String(text) if normalize_chronology_label(text).contains(text_label) => {
+            increment_count(counts, "other_present".to_string());
+        }
+        _ => {}
+    }
+}
+
+fn meeting_channel_classification_counts(value: &Value) -> BTreeMap<String, usize> {
+    let mut counts = MEETING_CHANNEL_LABELS
+        .iter()
+        .map(|label| ((*label).to_string(), 0usize))
+        .collect::<BTreeMap<_, _>>();
+    collect_meeting_channel_classification_counts(value, &mut counts);
+    if counts.values().sum::<usize>() == 0 {
+        increment_count(&mut counts, "missing".to_string());
+    }
+    counts
+}
+
+fn collect_meeting_channel_classification_counts(
+    value: &Value,
+    counts: &mut BTreeMap<String, usize>,
+) {
+    match value {
+        Value::Object(map) => {
+            for (key, child) in map {
+                if MEETING_METADATA_CANDIDATE_SPECS[3]
+                    .key_names
+                    .contains(&normalize_chronology_label(key).as_str())
+                {
+                    let label = child
+                        .as_str()
+                        .map(meeting_channel_label)
+                        .unwrap_or_else(|| "other".to_string());
+                    increment_count(counts, label);
+                    continue;
+                }
+                collect_meeting_channel_classification_counts(child, counts);
+            }
+        }
+        Value::Array(values) => {
+            for child in values {
+                collect_meeting_channel_classification_counts(child, counts);
+            }
+        }
+        Value::String(text) => {
+            let normalized = normalize_chronology_label(text);
+            if normalized.contains("hybrid") {
+                increment_count(counts, "hybrid".to_string());
+            } else if normalized.contains("remote")
+                || normalized.contains("online")
+                || normalized.contains("video")
+                || normalized.contains("teleconference")
+            {
+                increment_count(counts, "remote".to_string());
+            } else if normalized.contains("in_person")
+                || normalized.contains("presential")
+                || normalized.contains("onsite")
+            {
+                increment_count(counts, "in_person".to_string());
+            } else if normalized.contains("written") {
+                increment_count(counts, "written".to_string());
+            }
+        }
+        _ => {}
+    }
+}
+
+fn meeting_channel_label(value: &str) -> String {
+    let normalized = normalize_chronology_label(value);
+    if normalized.contains("hybrid") {
+        "hybrid".to_string()
+    } else if normalized.contains("remote")
+        || normalized.contains("online")
+        || normalized.contains("video")
+        || normalized.contains("teleconference")
+    {
+        "remote".to_string()
+    } else if normalized.contains("in_person")
+        || normalized.contains("presential")
+        || normalized.contains("onsite")
+    {
+        "in_person".to_string()
+    } else if normalized.contains("written") {
+        "written".to_string()
+    } else {
+        "other".to_string()
     }
 }
 
@@ -5193,7 +5936,7 @@ mod tests {
             .unwrap();
         let result = resp.result.unwrap();
         let resources = result["resources"].as_array().unwrap();
-        assert_eq!(resources.len(), 7);
+        assert_eq!(resources.len(), 8);
         let by_uri = |uri: &str| {
             resources
                 .iter()
@@ -5240,6 +5983,12 @@ mod tests {
         assert_eq!(document_archive["mimeType"], json!("application/json"));
         assert_eq!(
             document_archive["annotations"]["audience"],
+            json!(["user", "assistant"])
+        );
+        let meeting_metadata = by_uri(MCP_MEETING_METADATA_EXTRACTION_REVIEW_RESOURCE_URI);
+        assert_eq!(meeting_metadata["mimeType"], json!("application/json"));
+        assert_eq!(
+            meeting_metadata["annotations"]["audience"],
             json!(["user", "assistant"])
         );
         assert!(server.bridge_recorded().is_empty());
@@ -7446,6 +8195,371 @@ mod tests {
     }
 
     #[test]
+    fn resources_read_meeting_metadata_extraction_review_returns_static_guidance_without_http_or_secret()
+     {
+        let server = McpServer::from_config(&enabled_cfg(), MockTransport::new(200, "{}")).unwrap();
+        let resp = server
+            .handle(&req(
+                "resources/read",
+                78,
+                json!({ "uri": MCP_MEETING_METADATA_EXTRACTION_REVIEW_RESOURCE_URI }),
+            ))
+            .unwrap();
+        let result = resp.result.unwrap();
+        let contents = result["contents"].as_array().unwrap();
+        assert_eq!(contents.len(), 1);
+        assert_eq!(
+            contents[0]["uri"],
+            json!(MCP_MEETING_METADATA_EXTRACTION_REVIEW_RESOURCE_URI)
+        );
+        assert_eq!(contents[0]["mimeType"], json!("application/json"));
+        let text = contents[0]["text"].as_str().unwrap();
+        assert!(!text.contains("chk_ab12cd_secretsecret"));
+        assert!(!text.contains("secretsecret"));
+
+        let review: Value = serde_json::from_str(text).unwrap();
+        assert_eq!(
+            review["kind"],
+            json!("chancela_mcp_meeting_metadata_extraction_review")
+        );
+        assert_eq!(review["offline"], json!(true));
+        assert_eq!(review["static"], json!(true));
+        assert_eq!(review["local_json_or_text_metadata_only"], json!(true));
+        assert_eq!(review["arguments"], json!([]));
+        assert_eq!(
+            review["optional_arguments"][0]["name"],
+            json!("meeting_document")
+        );
+        assert_eq!(
+            review["expected_input_shape"]["resources_read_params"]["uri"],
+            json!(MCP_MEETING_METADATA_EXTRACTION_REVIEW_RESOURCE_URI)
+        );
+        assert_eq!(review["human_verification_required"], json!(true));
+        assert_eq!(review["ai_provider_called"], json!(false));
+        assert_eq!(review["api_called"], json!(false));
+        assert_eq!(review["legal_validity_claimed"], json!(false));
+        assert_eq!(review["source_certification_claimed"], json!(false));
+        assert_eq!(review["workflow_completion_claimed"], json!(false));
+        assert_eq!(review["bridge_calls"], json!(false));
+        assert_eq!(review["api_calls"], json!(false));
+        assert_eq!(review["provider_calls"], json!(false));
+        assert_eq!(review["ai_provider_calls"], json!(false));
+        assert_eq!(review["legal_service_calls"], json!(false));
+        assert_eq!(review["raw_document_text_echoed"], json!(false));
+        assert_eq!(review["raw_document_bytes_echoed"], json!(false));
+        assert_eq!(review["names_contacts_emails_phones_echoed"], json!(false));
+        assert_eq!(
+            review["secrets_access_codes_credentials_echoed"],
+            json!(false)
+        );
+        assert_eq!(review["secrets_in_resource"], json!(false));
+        assert_eq!(review["claims"]["legal_validity"], json!(false));
+        assert_eq!(review["claims"]["source_certification"], json!(false));
+        assert_eq!(review["claims"]["workflow_completion"], json!(false));
+
+        let categories = review["summary_categories"].as_array().unwrap();
+        let category_ids = categories
+            .iter()
+            .map(|category| category["id"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        for expected in [
+            "metadata_candidate_counts",
+            "agenda_and_call_markers",
+            "evidence_and_safety_markers",
+            "human_review_boundaries",
+        ] {
+            assert!(
+                category_ids.contains(&expected),
+                "resource should include category {expected:?}: {review}"
+            );
+        }
+        assert!(server.bridge_recorded().is_empty());
+    }
+
+    #[test]
+    fn resources_read_meeting_metadata_extraction_review_accepts_arguments_and_counts_without_echoing_raw_documents_contacts_or_access_codes()
+     {
+        let server = McpServer::from_config(&enabled_cfg(), MockTransport::new(200, "{}")).unwrap();
+        let meeting_document_a = json!({
+            "meeting_date": "2026-07-14",
+            "meeting_time": "10:30",
+            "dispatch_date": "2026-07-01",
+            "channel": "remote video call access code 999999",
+            "agenda_items": [
+                { "title": "Approve secret acquisition" },
+                { "title": "Discuss password rotation" }
+            ],
+            "second_call_present": true,
+            "evidence_reference": {
+                "source_record_id": "source-secret-123",
+                "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            },
+            "contacts": [
+                {
+                    "name": "Mariana Secret",
+                    "email": "secret@example.com",
+                    "phone": "+351 912 345 678"
+                }
+            ],
+            "access_code": "999999",
+            "credentials": "Bearer chk_ab12cd_secretsecret",
+            "raw_document_text": "RAW MINUTES BODY THAT MUST NOT ECHO"
+        });
+        let meeting_document_b = json!({
+            "raw_document_text": "RAW MINUTES BODY THAT MUST NOT ECHO",
+            "credentials": "Bearer chk_ab12cd_secretsecret",
+            "access_code": "999999",
+            "contacts": [
+                {
+                    "phone": "+351 912 345 678",
+                    "email": "secret@example.com",
+                    "name": "Mariana Secret"
+                }
+            ],
+            "evidence_reference": {
+                "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "source_record_id": "source-secret-123"
+            },
+            "second_call_present": true,
+            "agenda_items": [
+                { "title": "Approve secret acquisition" },
+                { "title": "Discuss password rotation" }
+            ],
+            "channel": "remote video call access code 999999",
+            "dispatch_date": "2026-07-01",
+            "meeting_time": "10:30",
+            "meeting_date": "2026-07-14"
+        });
+        let params_a = json!({
+            "uri": MCP_MEETING_METADATA_EXTRACTION_REVIEW_RESOURCE_URI,
+            "arguments": {
+                "meeting_document": meeting_document_a
+            }
+        });
+        let params_b = json!({
+            "arguments": {
+                "meeting_document": meeting_document_b
+            },
+            "uri": MCP_MEETING_METADATA_EXTRACTION_REVIEW_RESOURCE_URI
+        });
+
+        let response_a = server
+            .handle(&req("resources/read", 79, params_a))
+            .unwrap()
+            .result
+            .unwrap();
+        let response_b = server
+            .handle(&req("resources/read", 80, params_b))
+            .unwrap()
+            .result
+            .unwrap();
+        let text_a = response_a["contents"][0]["text"].as_str().unwrap();
+        let text_b = response_b["contents"][0]["text"].as_str().unwrap();
+        assert_eq!(
+            text_a, text_b,
+            "meeting review output must be deterministic"
+        );
+        for sensitive in [
+            "2026-07-14",
+            "10:30",
+            "2026-07-01",
+            "remote video call access code 999999",
+            "Approve secret acquisition",
+            "Discuss password rotation",
+            "source-secret-123",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "Mariana Secret",
+            "secret@example.com",
+            "+351 912 345 678",
+            "999999",
+            "chk_ab12cd_secretsecret",
+            "RAW MINUTES BODY THAT MUST NOT ECHO",
+        ] {
+            assert!(
+                !text_a.contains(sensitive),
+                "meeting report must not echo caller value {sensitive:?}: {text_a}"
+            );
+        }
+        assert!(!text_a.contains("\"legal_validity\": true"));
+        assert!(!text_a.contains("\"source_certification\": true"));
+        assert!(!text_a.contains("\"workflow_completion\": true"));
+        assert!(!text_a.contains("\"api_called\": true"));
+        assert!(!text_a.contains("\"ai_provider_called\": true"));
+
+        let report: Value = serde_json::from_str(text_a).unwrap();
+        assert_eq!(
+            report["kind"],
+            json!("chancela_mcp_meeting_metadata_extraction_review_report")
+        );
+        assert_eq!(
+            report["source"],
+            json!("local_mcp_deterministic_meeting_metadata_reviewer")
+        );
+        assert_eq!(report["offline"], json!(true));
+        assert_eq!(report["local_json_or_text_metadata_only"], json!(true));
+        assert_eq!(report["deterministic"], json!(true));
+        assert_eq!(report["aggregate_counts_only"], json!(true));
+        assert_eq!(report["human_verification_required"], json!(true));
+        assert_eq!(report["ai_provider_called"], json!(false));
+        assert_eq!(report["api_called"], json!(false));
+        assert_eq!(report["legal_validity_claimed"], json!(false));
+        assert_eq!(report["source_certification_claimed"], json!(false));
+        assert_eq!(report["workflow_completion_claimed"], json!(false));
+        assert_eq!(report["bridge_calls"], json!(false));
+        assert_eq!(report["api_calls"], json!(false));
+        assert_eq!(report["provider_calls"], json!(false));
+        assert_eq!(report["ai_provider_calls"], json!(false));
+        assert_eq!(report["legal_service_calls"], json!(false));
+        assert_eq!(report["raw_document_text_echoed"], json!(false));
+        assert_eq!(report["raw_document_bytes_echoed"], json!(false));
+        assert_eq!(report["names_contacts_emails_phones_echoed"], json!(false));
+        assert_eq!(
+            report["secrets_access_codes_credentials_echoed"],
+            json!(false)
+        );
+        assert_eq!(report["secrets_in_resource"], json!(false));
+        assert_eq!(report["claims"]["legal_validity"], json!(false));
+        assert_eq!(report["claims"]["source_certification"], json!(false));
+        assert_eq!(report["claims"]["workflow_completion"], json!(false));
+
+        let summary = &report["meeting_metadata_summary"];
+        assert_eq!(summary["input_format"], json!("json_object"));
+        assert_eq!(
+            summary["candidate_fields"]["meeting_date"]["candidate_count"],
+            json!(1)
+        );
+        assert_eq!(
+            summary["candidate_fields"]["meeting_time"]["candidate_count"],
+            json!(1)
+        );
+        assert_eq!(
+            summary["candidate_fields"]["dispatch_date"]["candidate_count"],
+            json!(1)
+        );
+        assert_eq!(
+            summary["candidate_fields"]["channel"]["candidate_count"],
+            json!(1)
+        );
+        assert_eq!(
+            summary["agenda_item_count"]["agenda_array_observations"],
+            json!(1)
+        );
+        assert_eq!(
+            summary["agenda_item_count"]["agenda_item_total_from_arrays"],
+            json!(2)
+        );
+        assert_eq!(
+            summary["second_call_present"]["observation_count"],
+            json!(1)
+        );
+        assert_eq!(summary["second_call_present"]["truthy"], json!(1));
+        assert_eq!(
+            summary["evidence_reference_present"]["present"],
+            json!(true)
+        );
+        assert_eq!(summary["channel_classification_counts"]["remote"], json!(1));
+        assert_eq!(
+            summary["safety_marker_counts"]["raw_content_marker_count"],
+            json!(1)
+        );
+        assert!(
+            summary["safety_marker_counts"]["name_contact_email_phone_marker_count"]
+                .as_u64()
+                .unwrap()
+                >= 1
+        );
+        assert!(
+            summary["safety_marker_counts"]["secret_access_code_credential_marker_count"]
+                .as_u64()
+                .unwrap()
+                >= 2
+        );
+        assert!(
+            report["blocking_review_findings"]
+                .as_array()
+                .unwrap()
+                .is_empty(),
+            "complete supplied metadata should not produce blockers: {report}"
+        );
+        assert!(report["review_warnings"].as_array().unwrap().iter().any(
+            |warning| warning == "secret_access_code_or_credential_marker_supplied_not_echoed"
+        ));
+        assert!(server.bridge_recorded().is_empty());
+    }
+
+    #[test]
+    fn resources_read_meeting_metadata_extraction_review_rejects_bad_arguments_and_extra_params() {
+        let server = McpServer::from_config(&enabled_cfg(), MockTransport::new(200, "{}")).unwrap();
+
+        let missing_meeting_document = server
+            .handle(&req(
+                "resources/read",
+                81,
+                json!({
+                    "uri": MCP_MEETING_METADATA_EXTRACTION_REVIEW_RESOURCE_URI,
+                    "arguments": {}
+                }),
+            ))
+            .unwrap();
+        let error = missing_meeting_document.error.unwrap();
+        assert_eq!(error.code, codes::INVALID_PARAMS);
+        assert!(error.message.contains("meeting_document must be supplied"));
+
+        let extra_argument = server
+            .handle(&req(
+                "resources/read",
+                82,
+                json!({
+                    "uri": MCP_MEETING_METADATA_EXTRACTION_REVIEW_RESOURCE_URI,
+                    "arguments": {
+                        "meeting_document": {},
+                        "raw_document_text": "must not be accepted"
+                    }
+                }),
+            ))
+            .unwrap();
+        let error = extra_argument.error.unwrap();
+        assert_eq!(error.code, codes::INVALID_PARAMS);
+        assert!(error.message.contains("accept only meeting_document"));
+
+        let non_object_or_string_document = server
+            .handle(&req(
+                "resources/read",
+                83,
+                json!({
+                    "uri": MCP_MEETING_METADATA_EXTRACTION_REVIEW_RESOURCE_URI,
+                    "arguments": {
+                        "meeting_document": []
+                    }
+                }),
+            ))
+            .unwrap();
+        let error = non_object_or_string_document.error.unwrap();
+        assert_eq!(error.code, codes::INVALID_PARAMS);
+        assert!(
+            error
+                .message
+                .contains("meeting_document must be a JSON object or text metadata string")
+        );
+
+        let extra_param = server
+            .handle(&req(
+                "resources/read",
+                84,
+                json!({
+                    "uri": MCP_MEETING_METADATA_EXTRACTION_REVIEW_RESOURCE_URI,
+                    "cursor": "ignored"
+                }),
+            ))
+            .unwrap();
+        let error = extra_param.error.unwrap();
+        assert_eq!(error.code, codes::INVALID_PARAMS);
+        assert!(error.message.contains("uri plus arguments"));
+
+        assert!(server.bridge_recorded().is_empty());
+    }
+
+    #[test]
     fn resources_read_privacy_control_review_summary_rejects_bad_arguments_and_extra_params() {
         let server = McpServer::from_config(&enabled_cfg(), MockTransport::new(200, "{}")).unwrap();
 
@@ -7686,7 +8800,8 @@ mod tests {
                 MCP_DRAFT_SIGNED_COMPARISON_REVIEW_RESOURCE_URI,
                 MCP_CHRONOLOGY_REVIEW_SUMMARY_RESOURCE_URI,
                 MCP_PRIVACY_CONTROL_REVIEW_SUMMARY_RESOURCE_URI,
-                MCP_DOCUMENT_ARCHIVE_REVIEW_SUMMARY_RESOURCE_URI
+                MCP_DOCUMENT_ARCHIVE_REVIEW_SUMMARY_RESOURCE_URI,
+                MCP_MEETING_METADATA_EXTRACTION_REVIEW_RESOURCE_URI
             ])
         );
         assert!(
@@ -7710,7 +8825,8 @@ mod tests {
                 MCP_DRAFT_SIGNED_COMPARISON_REVIEW_RESOURCE_URI,
                 MCP_CHRONOLOGY_REVIEW_SUMMARY_RESOURCE_URI,
                 MCP_PRIVACY_CONTROL_REVIEW_SUMMARY_RESOURCE_URI,
-                MCP_DOCUMENT_ARCHIVE_REVIEW_SUMMARY_RESOURCE_URI
+                MCP_DOCUMENT_ARCHIVE_REVIEW_SUMMARY_RESOURCE_URI,
+                MCP_MEETING_METADATA_EXTRACTION_REVIEW_RESOURCE_URI
             ])
         );
         assert_eq!(
