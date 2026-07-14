@@ -60,6 +60,7 @@ sealed-provenance lint, all-family standalone agenda-item templates,
 recovery/document/dashboard/notification
 UI, dashboard guest recent-events redaction, Ferramentas external-validator
 metadata UI, raw-report byte download API, imported-document review receipt UI,
+imported-document review dashboard reminder/deep-link routing,
 web shell accessibility/focus markers for the skip link to `#main-content`,
 route-change main landmark focus, route-crash `main#main-content`
 preservation, PageHeader h1 rendering, and modal focus-trap behavior,
@@ -532,6 +533,18 @@ imported-document review notification/export browser E2E marker plus the
 guardrail acknowledgement payload, ordered review-history rendering, and
 canonical act-document download assertions; Playwright execution remains in the
 browser jobs so this recent-landed lane stays focused.
+
+Imported-document review reminder markers pin the API dashboard reminder unit
+coverage for act-scoped imports still in `operator_review_required`,
+`ocr_review_required`, or `canonical_conversion_review_required`, dashboard and
+notification action routes to
+`/atas/{act_id}?imported_document_id={id}&focus=import-review#imported-documents`,
+act-page query parsing, and one-time ActDocumentPanel selection/focus of the
+existing imported-document review form. These markers are advisory routing and
+metadata-minimization coverage only: no raw imported bytes, filenames, digests,
+notes, imported-by details, OCR, conversion, PDF/A/PDF/UA generation,
+signed-import legal validation, review mutation from dashboard load, DGLAB,
+provider/trust, GDPR-erasure, or compliance-completion claim is pinned.
 
 Password-required auth markers pin the current security slice only: `POST
 /v1/users` requires a password, enforces policy after auth for non-bootstrap

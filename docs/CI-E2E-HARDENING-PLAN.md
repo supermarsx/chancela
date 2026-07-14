@@ -1,7 +1,7 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `cec169c`,
+and implementation snapshot `b5525e9`,
 including coverage notes for the bounded PAdES DSS validation-time, PDF/UA v10
 scoped table-header evidence, retention due-candidate explicit evidence states,
 bounded archive/no-action evidence UI, duplicate-review guard/status surfacing, and
@@ -31,6 +31,7 @@ condominium absent-owner communication auto-generation, and operator-supplied
 dispatch-evidence recording with dashboard reminder surfacing,
 document-bundle/archive generated dispatch-evidence metadata preservation,
 imported-document review receipt UI, trust catalog identifier-match explanations,
+imported-document review dashboard reminders and review-form deep-link focus routing,
 password-required account creation/session hardening,
 written-resolution evidence receipt local browser proof,
 route-stubbed richer entity chronology visualization over existing structured
@@ -1585,6 +1586,21 @@ settingsDefaults.test.ts contracts.test.ts`.
   authority, threshold verification, external delivery/email/ICS/CalDAV/webhook,
   workflow completion, attendance proof, compliance gate, or legal sufficiency
   claim is implemented.
+- Current imported-document review reminder checks: focused `cargo test -p
+  chancela-api --lib --locked imported_document_review_reminder` coverage pins
+  metadata-only dashboard reminder emission for act-scoped imports whose review
+  status is still `operator_review_required`, `ocr_review_required`, or
+  `canonical_conversion_review_required`, while skipping global/unattached and
+  terminally reviewed imports. Focused web tests in `DashboardPage.test.tsx`,
+  `notifications.test.ts`, `AtaEditorStructured.test.tsx`, and
+  `ActDocumentPanel.test.tsx` pin the dashboard/notification route to
+  `/atas/{act_id}?imported_document_id={id}&focus=import-review#imported-documents`,
+  act-page query parsing, and one-time selection/focus of the existing imported
+  review form. This remains advisory workflow routing only: no OCR, conversion,
+  PDF/A/PDF/UA generation, signed-import legal validation, dashboard review
+  mutation, raw imported bytes, filenames, digests, notes, imported-by details,
+  DGLAB/legal/provider/trust/GDPR completion, or compliance-completion claim is
+  implemented.
 - Current working-tree release workflow static-guard checks: `node
   scripts/check-release-trust.mjs self-test` pins the CI metadata lane
   release-trust self-test, SBOM package-linkage self-test, and package
@@ -1667,7 +1683,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   --workspace apps/web -- e2e/session.spec.ts e2e/first-launch-onboarding.spec.ts`.
   Treat the static/unit/focused markers as the pinned slice, not broad
   Playwright-browser-suite or browser-matrix proof; the browser suite is not exhaustive.
-- Current checkpoint metadata/static checks through `cec169c`
+- Current checkpoint metadata/static checks through `b5525e9`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and

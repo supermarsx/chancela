@@ -9201,6 +9201,46 @@ function assertCheckpointMap() {
     "imported document review no imported-bytes PDF export marker",
   );
   assertFileContains(
+    "crates/chancela-api/src/dashboard.rs",
+    "imported_document_review_reminder_surfaces_act_scoped_pending_imports_safely",
+    "API imported-document review reminder metadata-minimization coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/dashboard/DashboardPage.test.tsx",
+    "renders imported-document review reminders with localized deep-link routing",
+    "dashboard imported-document review reminder deep-link coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/notifications/notifications.test.ts",
+    "routes imported-document review reminders to the act review form",
+    "notification imported-document review reminder route coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/AtaEditorStructured.test.tsx",
+    "parses imported-document review deep links for the document panel",
+    "act page imported-document review query parsing coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/documents/ActDocumentPanel.test.tsx",
+    "selects and focuses imported-document review from the navigation target once",
+    "ActDocumentPanel imported-document review focus coverage",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "`b9394ca` keeps Workflows/UX/Documents **PARTIAL**",
+    "spec coverage imported-document review reminder checkpoint marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "Imported-document review reminder markers pin the API dashboard reminder unit",
+    "CI checkpoints imported-document review reminder marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Current imported-document review reminder checks",
+    "CI/E2E hardening plan imported-document review reminder marker",
+  );
+  assertFileContains(
     "apps/web/e2e/data-key-rotation-execution.spec.ts",
     "data key rotation preflight reveals guarded execution and submits only the replacement key",
     "data key rotation execution browser coverage",
@@ -9272,7 +9312,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `cec169c`",
+    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `b5525e9`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
@@ -9892,7 +9932,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `cec169c`",
+    "Current checkpoint metadata/static checks through `b5525e9`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -10347,7 +10387,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `cec169cf8c464ec642936158c1fb2e33f4d52e9d`",
+    "implementation snapshot `b5525e9628207116c583eeb1211e0154837ed592`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(

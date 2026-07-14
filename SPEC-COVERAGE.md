@@ -1,6 +1,6 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-14 from current implementation snapshot `cec169cf8c464ec642936158c1fb2e33f4d52e9d`,
+*Updated 2026-07-14 from current implementation snapshot `b5525e9628207116c583eeb1211e0154837ed592`,
 with committed evidence refreshes for the recently landed Signatures & Trust
 provider-credential, stored runtime credential resolution, stored PKCS#12,
 remote batch-initiation surfaces, and Docker/Compose runtime-hardening
@@ -119,7 +119,8 @@ semantic lint through the first-class `template_catalog_metadata_lint` command,
 local `POST /v1/signature/asic/inspect` ASiC inspection plus
 decompression-bound ASiC ZIP guardrails, and release workflow static assurance
 for the unsigned/local-only trust posture plus production package
-manifest-required validation, plus MCP workflow provenance review prompt/resource
+manifest-required validation, plus `b9394ca` imported-document review dashboard
+reminders and review-form deep-link focus routing, plus MCP workflow provenance review prompt/resource
 guidance and draft-vs-signed comparison review aid, dashboard guest
 recent-events redaction, generated-document by-id download routing,
 retention due-candidate prior bounded execution suppression, automatic
@@ -1768,6 +1769,25 @@ Implementation checkpoints covered here:
   pre-signing acts dated within the work-queue window that lack an attendance
   reference and either presence counts or structured attendees. The reminder is
   advisory workflow hygiene, not legal-calendar completeness or proof of attendance.
+- `b9394ca` keeps Workflows/UX/Documents **PARTIAL**: the dashboard now loads
+  imported-document metadata and emits `Pending`/`Advisory` reminders for
+  act-scoped imports still in `operator_review_required`,
+  `ocr_review_required`, or `canonical_conversion_review_required`. Dashboard
+  and notification actions deep-link to
+  `/atas/{act_id}?imported_document_id={id}&focus=import-review#imported-documents`,
+  and the act document panel selects the imported document and focuses the
+  existing review form. Reminder payloads expose only IDs, status category, and
+  act/book/entity context; they do not expose filenames, digests, notes,
+  imported-by/reviewer details, raw bytes, OCR text, or sensitive metadata, and
+  they do not run OCR, canonical conversion, PDF/A/PDF/UA generation,
+  signed-import validation, legal acceptance, or review mutation.
+- Current `b5525e9` keeps Workflows/UX/Documents/CI **PARTIAL**: this
+  checkpoint snapshot is anchored after the subsequent optional cache-layer
+  commit landed on top of `b9394ca`. The imported-document reminder slice above
+  remains the workflow behavior validated here; the cache layer is treated only
+  as the live implementation snapshot for checkpoint coherence, not as
+  production Redis/cache readiness, HA behavior, performance proof, or broader
+  architecture completion.
 - Current working-tree workflow reminder policy keeps Workflows/UX/CI
   **PARTIAL**: settings now include `workflow.reminders` with `enabled`,
   `dashboard_limit`, `due_soon_days`, `attendance_lookahead_days`, and source
