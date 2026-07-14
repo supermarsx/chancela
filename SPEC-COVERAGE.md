@@ -1,9 +1,9 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-14 from current implementation snapshot `3a42f02e09f1445e7639e13bf27fdcc0588d105d`,
+*Updated 2026-07-14 from current implementation snapshot `7f9930abb702f883dbdb73a043dae27279464697`,
 with committed evidence refreshes for the recently landed Signatures & Trust
 provider-credential, stored runtime credential resolution, stored PKCS#12,
-remote batch-initiation surfaces, and Docker/Compose runtime-hardening
+remote batch-initiation surfaces, remote provider readiness manifests, and Docker/Compose runtime-hardening
 checkpoint, delegation legal-basis enforcement, and compliance-panel internal
 legislacao corpus deep links for structured legal-basis rows, and sealed-act
 chronology projection for local sealed/archived acts with provenance,
@@ -172,7 +172,7 @@ blocker-delta evidence without a conformance claim, `b680b36` MCP meeting
 metadata extraction review over caller-supplied local JSON/text metadata only,
 and `b86adb3` deterministic local template law-reference audit coverage against
 the embedded corpus, followed by `3a42f02` bounded platform-log cleanup target
-coverage.
+coverage and `7f9930a` local-only remote provider readiness manifest coverage.
 Earlier coverage text remains prior snapshot context. All top-level spec areas remain **PARTIAL**.
 This is an implementation and test coverage snapshot, not a legal certification,
 not production CMD approval, not DRE verification promotion, not full PDF/UA
@@ -202,6 +202,25 @@ being useful. The matrix below records the current factual coverage and the rema
 blockers.
 
 Implementation checkpoints covered here:
+
+- Current `7f9930a` keeps Signatures & Trust/UX/CI **PARTIAL**:
+  `GET /v1/signature/providers` now returns a local-only `manifest` for CMD and
+  configured CSC/QTSP rows. The manifest reports readiness/configuration,
+  environment or sandbox posture, `production_blocked`, missing local
+  configuration field identifiers, authorization mode, capabilities for
+  ordinary single remote initiate/confirm and repeated per-document batch
+  initiation, and explicit false flags for provider-native batch and one-PIN/
+  OTP/SAD batch claims. It also returns explicit boundary flags showing that
+  listing performed no live provider check, no provider approval claim, no
+  legal-validity claim, no qualified-status determination, and no trust-list
+  validation at listing. The evidence basis is derived only from local
+  settings/env/protected credential metadata (plus injected transport metadata
+  in tests), never secret values. SigningPanel and RemoteBatchSigningPanel now
+  render the local readiness/batch-boundary copy while focused API and web unit
+  tests pin the manifest shape. This is provider-listing metadata and
+  route-stubbed/UI evidence only: no live CMD/CSC/QTSP/CC calls, no provider
+  approval, no provider-native batch, no TSL/trust-list validation at listing,
+  no legal/qualified signature claim, and no secret disclosure.
 
 - Current `3a42f02` keeps Data/Architecture/UX/CI **PARTIAL**: `POST
   /v1/data/cleanup` now accepts the `platform_logs` maintenance target under the
@@ -3797,6 +3816,9 @@ behavior, legal disposal, or legal-effect claims.
   stored-only PKCS#12 priority/failover and wrong-identity fail-safe markers,
   repeated remote batch-initiate API/client/SigningPanel/route-stubbed browser
   markers for per-document pending sessions without credential echo,
+  local-only remote provider readiness manifest markers for readiness,
+  environment, production-blocked/missing-config state, authorization mode,
+  capability/no-claim flags, and local settings/env/protected metadata evidence,
   multi-signature PAdES renewal-plan API tests, bounded retention execution, due-candidate archive/no-action evidence, and retention review-closure tests, Settings retention policy list/create/patch/dry-run/closure UI markers, explicit retention evidence-state markers, and non-destructive payload assertions, privacy breach/transfer review-receipt tests, TSL XML-DSig hardening tests including bounded same-document `URI="#id"` fragment markers and raw P-256 ECDSA-SHA256 `r||s` signature markers, trust/import/static hardening markers for unsafe TSL/TSA URL refusal, scoped test-only loopback, import fail-closed cache preservation, `/v1/books/import` body limits, security headers, and CC signing invalid-TSL refusal, MCP
   privacy DPIA template/guidance API, contract, Settings UI, no-echo, and no-claim markers,
   per-book raw-byte import preflight route/no-mutation/API tests and web preview-confirm stale-guard
@@ -4114,6 +4136,14 @@ behavior, legal disposal, or legal-effect claims.
   provider-native multi-document authorization, not single OTP/PIN/SAD
   authorizing multiple documents, not CMD multiple-sign, not CSC/QTSP
   multi-hash/SAD batch, and not SCAP/legal-capacity proof.
+- Remote provider readiness manifests are local provider-listing metadata only.
+  They are derived from local settings/env/protected credential metadata and
+  render readiness, environment, production-blocked/missing-config posture,
+  authorization mode, and capability/no-claim flags without secret values. They
+  do not call live CMD, CSC, QTSP, CC, SCAP, TSA, or TSL services; do not prove
+  provider approval, production readiness, provider-native batch semantics,
+  trust-list validation, legal validity, qualified status, or legal acceptance;
+  and do not disclose provider secrets.
 - Local B-LT/B-LTA labels, caller-supplied local DSS validation-time `/TU` attach,
   caller-supplied local archive timestamp append, and local LTV renewal plans
   report or mutate technical evidence observed in the file, including

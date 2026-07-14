@@ -3844,6 +3844,106 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-api/src/signature.rs",
+    "pub struct SignatureProviderManifest",
+    "API remote provider readiness manifest DTO marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/signature.rs",
+    "Local-only readiness/capability manifest. This is based on settings/env/protected-credential",
+    "API remote provider manifest local-only comment marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/signature.rs",
+    "pub production_blocked: bool",
+    "API remote provider manifest production-blocked marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/signature.rs",
+    "pub missing_local_config: Vec<&'static str>",
+    "API remote provider manifest missing-config marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/signature.rs",
+    "pub authorization_mode: Option<&'static str>",
+    "API remote provider manifest authorization-mode marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/signature.rs",
+    "provider_native_batch_claimed: false",
+    "API remote provider manifest no provider-native batch marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/signature.rs",
+    "single_otp_pin_sad_batch_claimed: false",
+    "API remote provider manifest no single authorization batch marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/signature.rs",
+    "trust_list_validation_performed_at_listing: false",
+    "API remote provider manifest no trust-list listing marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/remote_signing.rs",
+    'cmd["manifest"]["readiness"]["production_blocked"]',
+    "API remote provider manifest CMD readiness coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/remote_signing.rs",
+    'csc["manifest"]["readiness"]["authorization_mode"]',
+    "API remote provider manifest CSC authorization coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/remote_signing.rs",
+    'cmd["manifest"]["boundaries"]["live_provider_checked"]',
+    "API remote provider manifest live-provider false coverage",
+  );
+  assertFileContains(
+    "apps/web/src/api/types.ts",
+    "export interface SignatureProviderManifest",
+    "web remote provider manifest type marker",
+  );
+  assertFileContains(
+    "apps/web/src/api/types.ts",
+    "live provider, validate trust lists, determine qualified status, or assert legal validity",
+    "web remote provider manifest type no-claim marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/signing/SigningPanel.tsx",
+    "function ProviderManifestSummary",
+    "web SigningPanel provider manifest summary marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/signing/RemoteBatchSigningPanel.tsx",
+    "function RemoteBatchProviderManifest",
+    "web remote batch provider manifest summary marker",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/locales/en-GB.ts",
+    "Local readiness only: no live provider call, provider approval, legal validity, qualified-status, or Trusted List validation claim at listing.",
+    "web remote provider manifest no-claim copy marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Current `7f9930a` keeps Signatures & Trust/UX/CI **PARTIAL**",
+    "spec coverage remote provider readiness checkpoint marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "no live CMD/CSC/QTSP/CC calls, no provider\n  approval, no provider-native batch, no TSL/trust-list validation at listing",
+    "spec coverage remote provider readiness no-claim marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "`GET /v1/signature/providers` now includes a local-only readiness manifest",
+    "CI/E2E hardening remote provider readiness marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "The remote provider readiness manifest markers prove only local provider-listing\nmetadata",
+    "CI checkpoints remote provider readiness marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/signature.rs",
     "pub struct PendingInfo",
     "API pending signature info response marker",
   );
@@ -9761,12 +9861,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `3a42f02`",
+    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `7f9930a`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `3a42f02`",
+    "Focused Gate Snapshot Through `7f9930a`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -10391,7 +10491,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `3a42f02`",
+    "Current checkpoint metadata/static checks through `7f9930a`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -10881,13 +10981,13 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `3a42f02e09f1445e7639e13bf27fdcc0588d105d`",
+    "implementation snapshot `7f9930abb702f883dbdb73a043dae27279464697`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Current `3a42f02` keeps Data/Architecture/UX/CI **PARTIAL**",
-    "spec coverage platform-log cleanup checkpoint marker",
+    "Current `7f9930a` keeps Signatures & Trust/UX/CI **PARTIAL**",
+    "spec coverage remote provider readiness current checkpoint marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",

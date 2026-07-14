@@ -1,7 +1,7 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `3a42f02`,
+and implementation snapshot `7f9930a`,
 including coverage notes for the bounded PAdES DSS validation-time, PDF/UA v11
 blocker-delta and scoped table-header evidence, retention due-candidate explicit evidence states,
 bounded archive/no-action evidence UI, duplicate-review guard/status surfacing, and
@@ -16,6 +16,7 @@ retained-export cleanup preview-token/manifest-gated execution evidence,
 compliance legal-basis internal corpus deep links, first-class template catalog metadata lint,
 deterministic local template law-reference corpus audit coverage,
 bounded platform-log sidecar cleanup target coverage,
+remote signing provider readiness manifests,
 external-signing workflow-only envelope UI, workflow reminder policy, and
 structured platform-log forwarded-ingest/failure-audit slices, ROL-02 seeded
 role archetype explicitness, Postgres store runtime write/read marker coverage,
@@ -768,6 +769,17 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
   validation, SCAP/legal-capacity verification, provider-native remote batch,
   qualified-signature certification, act finalization, or legal-validity claim
   is made.
+- `GET /v1/signature/providers` now includes a local-only readiness manifest for
+  CMD and configured CSC/QTSP rows. Static/API/web coverage pins readiness,
+  environment/sandbox, `production_blocked`, missing local config,
+  authorization mode, ordinary single initiate/confirm and repeated
+  per-document initiation capabilities, false provider-native/single-auth batch
+  claims, false live-provider/provider-approval/legal/qualified/trust-list
+  listing claims, and evidence basis from local settings/env/protected
+  credential metadata only. This is provider-listing metadata and UI copy only:
+  no live CMD/CSC/QTSP/CC call, no provider approval, no provider-native batch,
+  no TSL/trust-list validation at listing, no legal or qualified-signature
+  claim, and no secret values.
 - Trust policy rejects unknown, withdrawn, stale, or invalid TSL states before
   signing.
 - TSA diagnostics use offline fixtures in CI and do not make live timestamp
@@ -840,11 +852,11 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `3a42f02`
+## Focused Gate Snapshot Through `7f9930a`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08` and checkpoint-promoted on 2026-07-14 for
-current implementation head `3a42f02`. This is not an exhaustive current
+current implementation head `7f9930a`. This is not an exhaustive current
 green-run claim; browser, Docker, desktop, package signing/notarization, image
 signing/attestation, and live-provider limits above still apply.
 
@@ -1827,7 +1839,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   full RBAC/delegation-policy completion, tenant authorization proof,
   legal-capacity verification, broad security certification, or spec
   completion.
-- Current checkpoint metadata/static checks through `3a42f02`
+- Current checkpoint metadata/static checks through `7f9930a`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and

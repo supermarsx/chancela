@@ -121,6 +121,13 @@ per-document errors, duplicate/over-cap no-pending-row guards, and no
 credential echo, with no provider-certified remote batch / provider-native
 multi-document authorization / single OTP/PIN/SAD / CMD multiple-sign /
 CSC/QTSP multi-hash/SAD / SCAP/legal-capacity claim,
+local-only remote provider readiness manifest markers for
+`GET /v1/signature/providers`, including readiness/configuration,
+environment/sandbox, `production_blocked`, missing local config, authorization
+mode, repeated per-document capability reporting, false provider-native/
+single-authorization batch claims, false live-provider/provider-approval/
+legal/qualified/trust-list listing claims, and evidence basis from local
+settings/env/protected credential metadata only with no secret values,
 pending-session provider identity bridge markers for additive
 `GET /v1/acts/{id}/signature` metadata (`provider_id`, `family`, and optional
 `activation_hint`) plus web reload adoption routing to the dedicated CMD
@@ -745,6 +752,15 @@ provider approval, SCAP/legal-capacity verification, act finalization, or legal
 validity. The focused route-stubbed browser proof for that slice is in
 `apps/web/e2e/remote-signing-pending-session.spec.ts` and asserts
 per-document pending rows without credential echo.
+The remote provider readiness manifest markers prove only local provider-listing
+metadata on `GET /v1/signature/providers`: readiness/configuration,
+environment/sandbox, `production_blocked`, missing local config, authorization
+mode, capability/no-claim flags, and evidence basis from local
+settings/env/protected credential metadata. They do not call live CMD, CSC,
+QTSP, CC, SCAP, TSA, or TSL services; do not prove provider approval,
+production readiness, provider-native batch semantics, trust-list validation,
+legal validity, qualified status, or legal acceptance; and do not disclose
+provider secrets.
 The pending-session provider identity bridge markers prove only that additive
 pending-session metadata can route an already-open CMD or CSC/QTSP session
 after reload to the matching confirm endpoint; they do not prove production
