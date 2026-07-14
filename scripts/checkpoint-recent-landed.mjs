@@ -2159,7 +2159,7 @@ function assertCheckpointMap() {
   assertFileContains(
     "crates/chancela-doc/src/tests.rs",
     "accessibility_bounded_local_pdf_diagnostics_are_emitted_without_pdfua_claim",
-    "PDF accessibility v9 local diagnostics no-claim coverage",
+    "PDF accessibility v10 local diagnostics no-claim coverage",
   );
   assertFileContains(
     "crates/chancela-doc/src/tests.rs",
@@ -2178,8 +2178,23 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-doc/src/tests.rs",
-    '\\"version\\":9',
-    "PDF accessibility report JSON v9 coverage",
+    '\\"version\\":10',
+    "PDF accessibility report JSON v10 coverage",
+  );
+  assertFileContains(
+    "crates/chancela-doc/src/tests.rs",
+    '\\"row_header_cells_have_scope_row\\":true',
+    "PDF accessibility JSON row-header scope marker",
+  );
+  assertFileContains(
+    "crates/chancela-doc/src/tests.rs",
+    '\\"column_header_cells_have_scope_column\\":true',
+    "PDF accessibility JSON column-header scope marker",
+  );
+  assertFileContains(
+    "crates/chancela-doc/src/tests.rs",
+    '\\"table_rows_missing_header_count\\":0',
+    "PDF accessibility JSON missing table-header row marker",
   );
   assertFileContains(
     "crates/chancela-doc/src/tests.rs",
@@ -2222,9 +2237,19 @@ function assertCheckpointMap() {
     "PDF accessibility bounded topology self-check coverage",
   );
   assertFileContains(
+    "crates/chancela-doc/src/tests.rs",
+    "accessibility_selfcheck_rejects_invalid_table_header_scope",
+    "PDF accessibility table-header scope self-check coverage",
+  );
+  assertFileContains(
     "crates/chancela-doc/src/selfcheck.rs",
     "verify_local_structure_topology",
     "PDF accessibility bounded topology self-check marker",
+  );
+  assertFileContains(
+    "crates/chancela-doc/src/selfcheck.rs",
+    "verify_table_cell_attributes",
+    "PDF accessibility table-header scope verifier marker",
   );
   assertFileContains(
     "crates/chancela-doc/src/tests.rs",
@@ -2293,8 +2318,13 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-doc/src/layout.rs",
-    'StructureRole::TableHeaderCell => "TH"',
+    'StructureRole::TableHeaderCell(_) => "TH"',
     "PDF table header cell structure role marker",
+  );
+  assertFileContains(
+    "crates/chancela-doc/src/layout.rs",
+    "pub enum TableHeaderScope",
+    "PDF scoped table header role marker",
   );
   assertFileContains(
     "crates/chancela-doc/src/layout.rs",
@@ -8850,8 +8880,8 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "accessibility report JSON version 9, structure-tree diagnostics",
-    "CI/E2E hardening plan PDF accessibility v9 structure-tree marker",
+    "accessibility report JSON version 10, scoped row/column table-header",
+    "CI/E2E hardening plan PDF accessibility v10 table-header marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -9415,7 +9445,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `114c8be`",
+    "Current checkpoint metadata/static checks through `6929fd9`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -9855,7 +9885,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `114c8be056805454461a777ae7a95a1d82d4e5d9`",
+    "implementation snapshot `6929fd94bc527e07086b2213ee8f240dc29f15f6`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -11205,8 +11235,8 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "PDF accessibility report JSON\n  version 9 now includes bounded structure-tree diagnostics",
-    "spec coverage PDF accessibility report v9 structure-tree marker",
+    "PDF accessibility report JSON\n  version 10 now includes scoped row/column table-header counts",
+    "spec coverage PDF accessibility report v10 table-header marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",

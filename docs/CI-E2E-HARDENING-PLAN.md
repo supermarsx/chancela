@@ -1,9 +1,9 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-13 from the current CI configuration and head `564821f`,
-including coverage notes for the bounded PAdES DSS validation-time, PDF/UA v6
-structural-depth, retention due-candidate explicit evidence states, bounded
-archive/no-action evidence UI, duplicate-review guard/status surfacing, and
+including coverage notes for the bounded PAdES DSS validation-time, PDF/UA v10
+scoped table-header evidence, retention due-candidate explicit evidence states,
+bounded archive/no-action evidence UI, duplicate-review guard/status surfacing, and
 prior bounded execution suppression with active/suppressed candidate counts plus
 retention execution review closure,
 recovery-drill custody
@@ -909,10 +909,11 @@ settingsDefaults.test.ts contracts.test.ts`.
   TSA hash behavior, and labelled `Registos TSA` result grouping without making
   live trust-network calls.
 - Current working-tree PDF accessibility checks: focused document tests pin
-  accessibility report JSON version 9, structure-tree diagnostics, explicit
-  role-map target entries, marked-content coverage counts, bounded local
-  topology facts, and marked-artifact target/operator evidence for
-  writer-owned decorative rule artifacts emitted as PDF artifacts. The default
+  accessibility report JSON version 10, scoped row/column table-header
+  evidence, structure-tree diagnostics, explicit role-map target entries,
+  marked-content coverage counts, bounded local topology facts, and
+  marked-artifact target/operator evidence for writer-owned decorative rule
+  artifacts emitted as PDF artifacts. The default
   fixture no longer reports
   `no_alt_text_model` for only writer-owned decorative artifacts, page breaks
   stay excluded through
@@ -926,7 +927,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   certification.
 - Current working-tree PDF accessibility evidence projection checks: focused
   API/archive tests project the deterministic `chancela-doc` accessibility
-  report JSON v9 into document bundle validation reports and archive package
+  report JSON v10 into document bundle validation reports and archive package
   `evidence/pdf-accessibility/{document_id}.json` sidecars. Act-owned documents
   are derived from the persisted render model; book-level or unsupported model
   cases remain explicit `pdf_accessibility_report_unavailable` sidecars. The
@@ -1536,7 +1537,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   --workspace apps/web -- e2e/session.spec.ts e2e/first-launch-onboarding.spec.ts`.
   Treat the static/unit/focused markers as the pinned slice, not broad
   Playwright-browser-suite or browser-matrix proof; the browser suite is not exhaustive.
-- Current checkpoint metadata/static checks through `114c8be`
+- Current checkpoint metadata/static checks through `6929fd9`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
@@ -1583,8 +1584,9 @@ settingsDefaults.test.ts contracts.test.ts`.
   concurrent duplicate guard, queued review status/id/time UI surfacing, and
   false destructive/full-erasure markers, plus PAdES DSS caller validation-time, malformed-time refusal, VRI
   `/TU`, document-timestamp local renewal planning, and monitor-state markers,
-  plus PDF accessibility JSON version 9, structural-depth evidence,
-  structure-tree diagnostics, explicit role-map target entries,
+  plus PDF accessibility JSON version 10, scoped table-header evidence,
+  structural-depth evidence, structure-tree diagnostics, explicit role-map
+  target entries,
   marked-content coverage counts, writer-owned marked-artifact accounting,
   bounded topology self-check,
   `LimitedTaggedStructure`, no-PDF/UA/no-`pdfuaid` markers, plus all-family
