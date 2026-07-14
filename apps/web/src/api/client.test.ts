@@ -674,7 +674,7 @@ describe('api client', () => {
     );
   });
 
-  it('routes generated-document discovery, PDF download, and dispatch evidence bodies', async () => {
+  it('routes generated-document discovery, generation, PDF download, and dispatch evidence bodies', async () => {
     const generated = [
       {
         id: 'generated doc',
@@ -697,6 +697,16 @@ describe('api client', () => {
         },
       },
     ];
+    const generatedCertidao = {
+      id: 'generated/certidão',
+      act_id: 'act 1/2',
+      template_id: 'condominio-certidao-deliberacoes/v1',
+      pdf_digest: 'b'.repeat(64),
+      profile: 'application/pdf; profile=PDF/A-2u',
+      created_at: '2026-07-12T10:00:00Z',
+      download: '/v1/documents/generated/generated%2Fcertid%C3%A3o',
+      dispatch_evidence_status: null,
+    };
     const evidence = {
       document_id: 'generated doc',
       act_id: 'act 1',
@@ -736,6 +746,7 @@ describe('api client', () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(jsonResponse(generated))
+      .mockResolvedValueOnce(jsonResponse(generatedCertidao, 201))
       .mockResolvedValueOnce(
         new Response(new Blob(['%PDF-generated'], { type: 'application/pdf' }), {
           status: 200,
@@ -747,6 +758,7 @@ describe('api client', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     await api.listGeneratedDocuments('act 1');
+    await api.generateActDocument('act 1/2', 'condominio-certidão deliberações/v1');
     await api.fetchGeneratedDocumentPdf('generated doc');
     await api.getGeneratedDocumentDispatchEvidence('generated doc');
     await api.recordGeneratedDocumentDispatchEvidence('generated doc', {
@@ -761,15 +773,20 @@ describe('api client', () => {
     });
 
     expect(fetchMock.mock.calls[0][0]).toBe('/v1/acts/act%201/documents/generated');
-    expect(fetchMock.mock.calls[1][0]).toBe('/v1/documents/generated/generated%20doc');
-    expect(fetchMock.mock.calls[2][0]).toBe(
-      '/v1/documents/generated/generated%20doc/dispatch-evidence',
+    expect(fetchMock.mock.calls[1][0]).toBe(
+      '/v1/acts/act%201%2F2/document/generate?template_id=condominio-certid%C3%A3o+delibera%C3%A7%C3%B5es%2Fv1',
     );
+    expect(fetchMock.mock.calls[1][1].method).toBe('POST');
+    expect(fetchMock.mock.calls[1][1].body).toBeUndefined();
+    expect(fetchMock.mock.calls[2][0]).toBe('/v1/documents/generated/generated%20doc');
     expect(fetchMock.mock.calls[3][0]).toBe(
       '/v1/documents/generated/generated%20doc/dispatch-evidence',
     );
-    expect(fetchMock.mock.calls[3][1].method).toBe('POST');
-    expect(JSON.parse(fetchMock.mock.calls[3][1].body)).toEqual({
+    expect(fetchMock.mock.calls[4][0]).toBe(
+      '/v1/documents/generated/generated%20doc/dispatch-evidence',
+    );
+    expect(fetchMock.mock.calls[4][1].method).toBe('POST');
+    expect(JSON.parse(fetchMock.mock.calls[4][1].body)).toEqual({
       actor: 'web-operator',
       dispatched_at: '2026-07-11T10:30:00Z',
       channel: 'RegisteredLetter',

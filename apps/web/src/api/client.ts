@@ -657,6 +657,12 @@ export const api = {
   getActDocumentBundle: (id: string) => get<DocumentBundle>(`/v1/acts/${id}/document/bundle`),
   listGeneratedDocuments: (actId: string) =>
     get<GeneratedDocumentView[]>(`/v1/acts/${encodeURIComponent(actId)}/documents/generated`),
+  generateActDocument: (actId: string, templateId: string) =>
+    post<GeneratedDocumentView>(
+      `/v1/acts/${encodeURIComponent(actId)}/document/generate${query({
+        template_id: templateId,
+      })}`,
+    ),
   listTemplates: (params: { family?: EntityFamily; stage?: LifecycleStage } = {}) =>
     get<TemplateSummary[]>(`/v1/templates${query(params)}`),
   // The persisted PDF/A bytes (`GET /v1/acts/{id}/document`, `application/pdf`). Fetched

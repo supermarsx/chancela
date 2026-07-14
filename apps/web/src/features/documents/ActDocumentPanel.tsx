@@ -24,6 +24,7 @@ import type {
   DocumentImportValidationFinding,
   DocumentImportValidationReport,
   EntityFamily,
+  LifecycleStage,
   GeneratedDocumentDispatchEvidenceList,
   GeneratedDocumentDispatchEvidenceRecord,
   GeneratedDocumentDispatchEvidenceRequest,
@@ -48,10 +49,12 @@ import {
   useDownloadActDocument,
   useDownloadActDocumentOffice,
   useDownloadActDocumentWorkingCopy,
+  useGenerateActDocument,
   useGeneratedDocumentDispatchEvidence,
   useGeneratedDocuments,
   useRecordGeneratedDocumentDispatchEvidence,
   useReviewImportedDocument,
+  useTemplates,
   keys,
 } from '../../api/hooks';
 import { GateButton, scopeBook } from '../session/permissions';
@@ -255,6 +258,10 @@ function dispatchChannelLabel(channel: string | null | undefined, t: TFunction):
     default:
       return channel;
   }
+}
+
+function lifecycleStageLabel(stage: LifecycleStage, t: TFunction) {
+  return t(`enum.lifecycleStage.${stage}` as Parameters<TFunction>[0]);
 }
 
 function localDateTimeInputValue(date = new Date()): string {
@@ -1879,6 +1886,7 @@ export function ActDocumentPanel({
   const [selectedGeneratedDocumentId, setSelectedGeneratedDocumentId] = useState<string | null>(
     null,
   );
+  const [selectedPostActTemplateId, setSelectedPostActTemplateId] = useState('');
   const [dispatchEvidenceAt, setDispatchEvidenceAt] = useState(localDateTimeInputValue);
   const [dispatchEvidenceChannel, setDispatchEvidenceChannel] = useState<DispatchChannel | ''>('');
   const [dispatchReference, setDispatchReference] = useState('');
@@ -1892,6 +1900,8 @@ export function ActDocumentPanel({
   const preview = useActDocumentPreview(act.id, open);
   const bundle = useActDocumentBundle(act.id, sealed);
   const generatedDocuments = useGeneratedDocuments(act.id, sealed);
+  const certidaoTemplates = useTemplates(family, 'Certidao', sealed && !!family);
+  const extratoTemplates = useTemplates(family, 'Extrato', sealed && !!family);
   const download = useDownloadActDocument(act.id);
   const workingCopyMarkdownDownload = useDownloadActDocumentWorkingCopy(act.id);
   const workingCopyTextDownload = useDownloadActDocumentWorkingCopy(act.id, 'txt');
@@ -1900,6 +1910,7 @@ export function ActDocumentPanel({
   const workingCopyOdtDownload = useDownloadActDocumentWorkingCopy(act.id, 'odt');
   const officeDownload = useDownloadActDocumentOffice(act.id);
   const reviewImportedDocument = useReviewImportedDocument(act.id);
+  const generateActDocument = useGenerateActDocument(act.id);
   const recordGeneratedDispatchEvidence = useRecordGeneratedDocumentDispatchEvidence();
   const importedDocuments = useQuery({
     queryKey: keys.importedDocuments(act.id),
@@ -1933,12 +1944,19 @@ export function ActDocumentPanel({
   const importedDocumentTargetId = target?.importedDocumentId?.trim() || null;
   const importedDocumentFocusTarget = target?.focus === 'import-review' ? 'import-review' : null;
   const importList = importedDocuments.data ?? [];
-  const generatedCommunications = (generatedDocuments.data ?? []).filter(
-    (document) => document.template_id === ABSENT_OWNER_COMMUNICATION_TEMPLATE_ID,
-  );
+  const generatedDocumentList = generatedDocuments.data ?? [];
+  const postActTemplates = [...(certidaoTemplates.data ?? []), ...(extratoTemplates.data ?? [])];
+  const postActTemplateOptions = postActTemplates.map((template) => ({
+    value: template.id,
+    label: `${lifecycleStageLabel(template.stage, t)} - ${template.id}`,
+  }));
   const selectedGeneratedDocument =
-    generatedCommunications.find((document) => document.id === selectedGeneratedDocumentId) ?? null;
-  const generatedEvidence = useGeneratedDocumentDispatchEvidence(selectedGeneratedDocument?.id);
+    generatedDocumentList.find((document) => document.id === selectedGeneratedDocumentId) ?? null;
+  const selectedGeneratedDocumentSupportsDispatch =
+    selectedGeneratedDocument?.template_id === ABSENT_OWNER_COMMUNICATION_TEMPLATE_ID;
+  const generatedEvidence = useGeneratedDocumentDispatchEvidence(
+    selectedGeneratedDocumentSupportsDispatch ? selectedGeneratedDocument?.id : null,
+  );
   const generatedDispatchStatus =
     generatedEvidence.data?.dispatch_evidence_status ??
     selectedGeneratedDocument?.dispatch_evidence_status ??
@@ -1962,17 +1980,27 @@ export function ActDocumentPanel({
   }, [selectedImportReviewId, selectedImportReviewStatus, selectedImportReviewNote]);
 
   useEffect(() => {
-    if (!sealed || generatedCommunications.length === 0) {
+    if (!sealed || generatedDocumentList.length === 0) {
       setSelectedGeneratedDocumentId(null);
       return;
     }
     if (
       selectedGeneratedDocumentId == null ||
-      !generatedCommunications.some((document) => document.id === selectedGeneratedDocumentId)
+      !generatedDocumentList.some((document) => document.id === selectedGeneratedDocumentId)
     ) {
-      setSelectedGeneratedDocumentId(generatedCommunications[0].id);
+      setSelectedGeneratedDocumentId(generatedDocumentList[0].id);
     }
-  }, [sealed, generatedCommunications, selectedGeneratedDocumentId]);
+  }, [sealed, generatedDocumentList, selectedGeneratedDocumentId]);
+
+  useEffect(() => {
+    if (!sealed || postActTemplateOptions.length === 0) {
+      setSelectedPostActTemplateId('');
+      return;
+    }
+    if (!postActTemplateOptions.some((option) => option.value === selectedPostActTemplateId)) {
+      setSelectedPostActTemplateId(postActTemplateOptions[0].value);
+    }
+  }, [sealed, postActTemplateOptions, selectedPostActTemplateId]);
 
   useEffect(() => {
     if (!sealed || generatedDocuments.isLoading || !generatedDocumentTargetId) return;
@@ -1980,7 +2008,7 @@ export function ActDocumentPanel({
     const targetKey = `${act.id}:${generatedDocumentTargetId}:${generatedDocumentFocusTarget ?? ''}`;
     if (handledGeneratedTargetRef.current === targetKey) return;
 
-    const target = generatedCommunications.find(
+    const target = generatedDocumentList.find(
       (document) => document.id === generatedDocumentTargetId,
     );
     if (!target) return;
@@ -2007,7 +2035,7 @@ export function ActDocumentPanel({
     act.id,
     sealed,
     generatedDocuments.isLoading,
-    generatedCommunications,
+    generatedDocumentList,
     generatedDocumentTargetId,
     generatedDocumentFocusTarget,
   ]);
@@ -2252,8 +2280,19 @@ export function ActDocumentPanel({
     );
   }
 
+  function onGeneratePostActDocument() {
+    if (!selectedPostActTemplateId) return;
+    generateActDocument.mutate(selectedPostActTemplateId, {
+      onSuccess: (document) => {
+        setSelectedGeneratedDocumentId(document.id);
+        toast.success(`Documento gerado: ${document.template_id}`);
+      },
+      onError: (error) => toast.error(error),
+    });
+  }
+
   function onRecordGeneratedDispatchEvidence() {
-    if (!selectedGeneratedDocument) return;
+    if (!selectedGeneratedDocument || !selectedGeneratedDocumentSupportsDispatch) return;
     const body: GeneratedDocumentDispatchEvidenceRequest = {
       actor: 'web-operator',
       dispatched_at: localDateTimeToRfc3339(dispatchEvidenceAt),
@@ -2393,6 +2432,50 @@ export function ActDocumentPanel({
 
         {sealed ? (
           <section className="stack--tight" aria-label={t('documents.generated.sectionAria')}>
+            {family ? (
+              <div className="stack--tight">
+                <div className="section-head">
+                  <div className="stack--tight">
+                    <p className="card__label">Minutas pós-ato</p>
+                    <p className="field__hint">
+                      Gere certidões e extratos a partir da ata selada, sem substituir o PDF/A
+                      canónico.
+                    </p>
+                  </div>
+                </div>
+                {certidaoTemplates.isLoading || extratoTemplates.isLoading ? (
+                  <Skeleton height="2.4rem" />
+                ) : certidaoTemplates.error || extratoTemplates.error ? (
+                  <ErrorNote error={certidaoTemplates.error ?? extratoTemplates.error} />
+                ) : postActTemplateOptions.length === 0 ? (
+                  <p className="muted">{t('documents.template.none')}</p>
+                ) : (
+                  <div className="row-wrap">
+                    <Field label={t('templates.card.id')} htmlFor="post-act-template">
+                      <Select
+                        id="post-act-template"
+                        value={selectedPostActTemplateId}
+                        options={postActTemplateOptions}
+                        disabled={generateActDocument.isPending}
+                        onChange={(event) => setSelectedPostActTemplateId(event.target.value)}
+                      />
+                    </Field>
+                    <GateButton
+                      perm="document.generate"
+                      scope={reviewScope}
+                      type="button"
+                      variant="secondary"
+                      icon={<Icon.FileText />}
+                      disabled={!selectedPostActTemplateId || generateActDocument.isPending}
+                      onClick={onGeneratePostActDocument}
+                    >
+                      {generateActDocument.isPending ? 'A gerar...' : 'Gerar documento'}
+                    </GateButton>
+                  </div>
+                )}
+              </div>
+            ) : null}
+
             <div className="section-head">
               <div className="stack--tight">
                 <p className="card__label">{t('documents.generated.title')}</p>
@@ -2405,13 +2488,13 @@ export function ActDocumentPanel({
               <Skeleton height="5.5rem" />
             ) : generatedDocuments.error ? (
               <ErrorNote error={generatedDocuments.error} />
-            ) : generatedCommunications.length === 0 ? (
+            ) : generatedDocumentList.length === 0 ? (
               <EmptyState title={t('documents.generated.empty.title')}>
                 <p>{t('documents.generated.empty.body')}</p>
               </EmptyState>
             ) : (
               <ul className="plain-list" aria-label={t('documents.generated.listAria')}>
-                {generatedCommunications.map((document) => {
+                {generatedDocumentList.map((document) => {
                   const selected = selectedGeneratedDocument?.id === document.id;
                   const status =
                     selected && generatedDispatchStatus
@@ -2494,41 +2577,45 @@ export function ActDocumentPanel({
 
             {selectedGeneratedDocument ? (
               <div className="stack--tight">
-                <GeneratedDispatchStatusSummary status={generatedDispatchStatus} t={t} />
-                {generatedEvidence.isLoading ? (
-                  <Skeleton height="5rem" />
-                ) : generatedEvidence.error ? (
-                  <ErrorNote error={generatedEvidence.error} />
-                ) : (
-                  <GeneratedDispatchEvidenceRows
-                    evidence={generatedEvidence.data}
-                    importList={importList}
-                    onSelectImport={setSelectedImportId}
-                    t={t}
-                  />
-                )}
-                <GeneratedDispatchEvidenceForm
-                  status={generatedDispatchStatus}
-                  importList={importList}
-                  dispatchedAt={dispatchEvidenceAt}
-                  channel={dispatchEvidenceChannel}
-                  reference={dispatchReference}
-                  evidenceReference={dispatchEvidenceReference}
-                  importedDocumentId={dispatchImportedDocumentId}
-                  recipients={dispatchRecipients}
-                  operatorNote={dispatchOperatorNote}
-                  isPending={recordGeneratedDispatchEvidence.isPending}
-                  error={recordGeneratedDispatchEvidence.error}
-                  scope={reviewScope}
-                  onDispatchedAtChange={setDispatchEvidenceAt}
-                  onChannelChange={setDispatchEvidenceChannel}
-                  onReferenceChange={setDispatchReference}
-                  onEvidenceReferenceChange={setDispatchEvidenceReference}
-                  onImportedDocumentIdChange={setDispatchImportedDocumentId}
-                  onRecipientsChange={setDispatchRecipients}
-                  onOperatorNoteChange={setDispatchOperatorNote}
-                  onSubmit={onRecordGeneratedDispatchEvidence}
-                />
+                {selectedGeneratedDocumentSupportsDispatch ? (
+                  <>
+                    <GeneratedDispatchStatusSummary status={generatedDispatchStatus} t={t} />
+                    {generatedEvidence.isLoading ? (
+                      <Skeleton height="5rem" />
+                    ) : generatedEvidence.error ? (
+                      <ErrorNote error={generatedEvidence.error} />
+                    ) : (
+                      <GeneratedDispatchEvidenceRows
+                        evidence={generatedEvidence.data}
+                        importList={importList}
+                        onSelectImport={setSelectedImportId}
+                        t={t}
+                      />
+                    )}
+                    <GeneratedDispatchEvidenceForm
+                      status={generatedDispatchStatus}
+                      importList={importList}
+                      dispatchedAt={dispatchEvidenceAt}
+                      channel={dispatchEvidenceChannel}
+                      reference={dispatchReference}
+                      evidenceReference={dispatchEvidenceReference}
+                      importedDocumentId={dispatchImportedDocumentId}
+                      recipients={dispatchRecipients}
+                      operatorNote={dispatchOperatorNote}
+                      isPending={recordGeneratedDispatchEvidence.isPending}
+                      error={recordGeneratedDispatchEvidence.error}
+                      scope={reviewScope}
+                      onDispatchedAtChange={setDispatchEvidenceAt}
+                      onChannelChange={setDispatchEvidenceChannel}
+                      onReferenceChange={setDispatchReference}
+                      onEvidenceReferenceChange={setDispatchEvidenceReference}
+                      onImportedDocumentIdChange={setDispatchImportedDocumentId}
+                      onRecipientsChange={setDispatchRecipients}
+                      onOperatorNoteChange={setDispatchOperatorNote}
+                      onSubmit={onRecordGeneratedDispatchEvidence}
+                    />
+                  </>
+                ) : null}
               </div>
             ) : null}
           </section>

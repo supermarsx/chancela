@@ -19,6 +19,7 @@ import type {
   GeneratedDocumentDispatchEvidenceList,
   GeneratedDocumentView,
   ImportedDocumentView,
+  TemplateSummary,
 } from '../../api/types';
 
 const baseAct: ActView = {
@@ -315,6 +316,50 @@ const absentOwnerCommunication: GeneratedDocumentView = {
     missing_recipients: ['Fração C'],
     note: 'operator-recorded evidence only',
   },
+};
+
+const certidaoTemplate: TemplateSummary = {
+  id: 'condominio-certidao-deliberacoes/v1',
+  family: 'Condominium',
+  stage: 'Certidao',
+  channels: ['Physical'],
+  signature_policy: 'QualifiedPreferred',
+  rule_pack_id: 'condominio',
+  law_references: [],
+  locale: 'pt-PT',
+};
+
+const extratoTemplate: TemplateSummary = {
+  id: 'condominio-extrato-deliberacoes/v1',
+  family: 'Condominium',
+  stage: 'Extrato',
+  channels: ['Physical'],
+  signature_policy: 'QualifiedPreferred',
+  rule_pack_id: 'condominio',
+  law_references: [],
+  locale: 'pt-PT',
+};
+
+const generatedCertidao: GeneratedDocumentView = {
+  id: 'generated-certidao-1',
+  act_id: 'act-1',
+  template_id: 'condominio-certidao-deliberacoes/v1',
+  pdf_digest: 'c'.repeat(64),
+  profile: 'application/pdf; profile=PDF/A-2u',
+  created_at: '2026-07-12T09:15:00Z',
+  download: '/v1/documents/generated/generated-certidao-1',
+  dispatch_evidence_status: null,
+};
+
+const generatedExtrato: GeneratedDocumentView = {
+  id: 'generated-extrato-1',
+  act_id: 'act-1',
+  template_id: 'condominio-extrato-deliberacoes/v1',
+  pdf_digest: 'd'.repeat(64),
+  profile: 'application/pdf; profile=PDF/A-2u',
+  created_at: '2026-07-12T09:20:00Z',
+  download: '/v1/documents/generated/generated-extrato-1',
+  dispatch_evidence_status: null,
 };
 
 const absentOwnerEvidence: GeneratedDocumentDispatchEvidenceList = {
@@ -1276,6 +1321,124 @@ describe('ActDocumentPanel — generated absent-owner communications', () => {
       ),
     ).toBeTruthy();
     expect(screen.queryByText('Aviso legal válido')).toBeNull();
+  });
+
+  it('shows post-act templates, generates an extract, downloads it, and keeps dispatch evidence scoped', async () => {
+    const calls: { url: string; method?: string }[] = [];
+    let generatedDocs = [absentOwnerCommunication, generatedCertidao];
+
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      calls.push({ url, method: init?.method });
+      if (url.includes('/document/bundle')) return json(bundle);
+      if (url.includes('/v1/templates') && url.includes('stage=Certidao')) {
+        return json([certidaoTemplate]);
+      }
+      if (url.includes('/v1/templates') && url.includes('stage=Extrato')) {
+        return json([extratoTemplate]);
+      }
+      if (url.includes('/v1/acts/act-1/document/generate')) {
+        generatedDocs = [absentOwnerCommunication, generatedCertidao, generatedExtrato];
+        return json(generatedExtrato, 201);
+      }
+      if (url.includes('/v1/acts/act-1/documents/generated')) return json(generatedDocs);
+      if (url.includes('/v1/documents/generated/generated-extrato-1')) {
+        return Promise.resolve(
+          new Response(new Blob(['%PDF-extrato'], { type: 'application/pdf' }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/pdf' },
+          }),
+        );
+      }
+      if (
+        url.includes('/v1/documents/generated/generated-absent-1/dispatch-evidence') &&
+        init?.method !== 'POST'
+      ) {
+        return json(absentOwnerEvidence);
+      }
+      if (url.includes('/v1/documents/imported')) return json([]);
+      return Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    const createUrl = vi.fn((object: Blob | MediaSource) => {
+      void object;
+      return 'blob:generated-extrato';
+    });
+    const revokeUrl = vi.fn();
+    vi.stubGlobal('URL', { ...URL, createObjectURL: createUrl, revokeObjectURL: revokeUrl });
+    const clickedDownloads: string[] = [];
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      clickedDownloads.push(this.download);
+    });
+
+    renderWithProviders(<ActDocumentPanel act={sealed} family="Condominium" />);
+
+    expect(await screen.findByText('Minutas pós-ato')).toBeTruthy();
+    expect(
+      await screen.findByRole('option', { name: /Certidão - condominio-certidao/ }),
+    ).toBeTruthy();
+    expect(screen.getByRole('option', { name: /Extrato - condominio-extrato/ })).toBeTruthy();
+
+    const list = await screen.findByRole('list', { name: 'Comunicações geradas' });
+    const certidaoItem = within(list)
+      .getAllByRole('listitem')
+      .find((item) => item.textContent?.includes('condominio-certidao-deliberacoes/v1'));
+    expect(certidaoItem).toBeTruthy();
+    fireEvent.click(
+      within(certidaoItem as HTMLElement).getByRole('button', { name: 'Ver evidência' }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole('form', { name: 'Registar evidência da comunicação gerada' }))
+        .toBeNull(),
+    );
+    expect(
+      calls.some((call) => call.url.includes('generated-certidao-1/dispatch-evidence')),
+    ).toBe(false);
+
+    fireEvent.change(screen.getByLabelText('Modelo'), {
+      target: { value: 'condominio-extrato-deliberacoes/v1' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Gerar documento' }));
+
+    await waitFor(() =>
+      expect(
+        calls.some(
+          (call) =>
+            call.method === 'POST' &&
+            call.url ===
+              '/v1/acts/act-1/document/generate?template_id=condominio-extrato-deliberacoes%2Fv1',
+        ),
+      ).toBe(true),
+    );
+    const extratoItem = await waitFor(() =>
+      within(list)
+        .getAllByRole('listitem')
+        .find((item) => item.textContent?.includes('condominio-extrato-deliberacoes/v1')),
+    );
+    expect(extratoItem).toBeTruthy();
+    await waitFor(() => expect(extratoItem?.getAttribute('aria-current')).toBe('true'));
+    expect(screen.queryByRole('form', { name: 'Registar evidência da comunicação gerada' })).toBe(
+      null,
+    );
+
+    fireEvent.click(
+      within(extratoItem as HTMLElement).getByRole('button', { name: 'Descarregar comunicação' }),
+    );
+    await waitFor(() =>
+      expect(calls.some((call) => call.url === '/v1/documents/generated/generated-extrato-1')).toBe(
+        true,
+      ),
+    );
+    expect(createUrl).toHaveBeenCalled();
+    expect(clickedDownloads).toEqual([
+      'ata-1-generated-condominio-extrato-deliberacoes-v1-generated-extrato-1.pdf',
+    ]);
+    expect(revokeUrl).toHaveBeenCalledWith('blob:generated-extrato');
+    expect(
+      calls.some((call) => call.url.includes('generated-extrato-1/dispatch-evidence')),
+    ).toBe(false);
   });
 
   it('selects and focuses dispatch evidence from the generated-document navigation target once', async () => {

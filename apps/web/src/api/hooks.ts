@@ -50,6 +50,7 @@ import type {
   FollowUpView,
   GeneratedDocumentDispatchEvidenceRequest,
   GeneratedDocumentDispatchEvidenceRecord,
+  GeneratedDocumentView,
   ImportedDocumentReviewBody,
   ImportedDocumentView,
   ImportFromRegistryBody,
@@ -903,6 +904,21 @@ export function useGeneratedDocuments(actId: string, enabled = true) {
   });
 }
 
+export function useGenerateActDocument(actId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (templateId: string) => api.generateActDocument(actId, templateId),
+    onSuccess: (document) => {
+      qc.setQueryData<GeneratedDocumentView[]>(keys.generatedDocuments(actId), (current = []) => [
+        document,
+        ...current.filter((item) => item.id !== document.id),
+      ]);
+      void qc.invalidateQueries({ queryKey: keys.generatedDocuments(actId) });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
 export function useGeneratedDocumentDispatchEvidence(documentId: string | null | undefined) {
   return useQuery({
     queryKey: keys.generatedDocumentDispatchEvidence(documentId ?? ''),
@@ -987,10 +1003,11 @@ export function useReviewImportedDocument(actId?: string) {
  * v1 (the seal auto-picks) — the picker just surfaces which model applies. Kept fresh for
  * a minute; the catalog is embedded, static data.
  */
-export function useTemplates(family?: EntityFamily, stage?: LifecycleStage) {
+export function useTemplates(family?: EntityFamily, stage?: LifecycleStage, enabled = true) {
   return useQuery({
     queryKey: keys.templates(family, stage),
     queryFn: () => api.listTemplates({ family, stage }),
+    enabled,
     staleTime: 60_000,
   });
 }
