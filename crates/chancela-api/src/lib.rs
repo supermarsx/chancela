@@ -900,14 +900,12 @@ impl AppState {
                 e,
             ));
         }
-        // wp16 P1: the durable append committed — signal followers so they apply it near-real-time
-        // (plan §2.2). Best-effort by design: a missed NOTIFY (leader crash between commit and signal,
-        // no listener) is still caught by every follower's seq-poll backstop, so a failure here must
-        // never fail the write. No-op on SQLite (single-node, no followers).
+        // wp16 P1: the durable append committed — signal followers so the covered feed can advance
+        // near-real-time (plan §2.2). Best-effort by design: a missed NOTIFY (leader crash between
+        // commit and signal, no listener) is retried by the seq-poll backstop once Postgres can be
+        // queried, so a failure here must never fail the write. No-op on SQLite (single-node).
         if let Err(e) = store.cluster_notify_append((len as i64) - 1) {
-            eprintln!(
-                "cluster: NOTIFY on append failed ({e}); followers will catch up via seq-poll"
-            );
+            eprintln!("cluster: NOTIFY on append failed ({e}); followers will retry via seq-poll");
         }
         Ok(())
     }
@@ -2111,9 +2109,9 @@ struct HealthResponse {
     integrity: &'static str,
     /// Whether the instance is in degraded read-only mode (mirrors `integrity == "broken"`).
     degraded: bool,
-    /// wp16 P1 — cluster role + replica lag (durable `MAX(seq)` vs this node's applied `seq`), present
-    /// only on an electing (Postgres) cluster node. Lets callers / load balancers see follower
-    /// staleness (bounded-lag eventual consistency, plan §2.4); absent on single-node deployments.
+    /// wp16 P1 — cluster role + covered-feed lag, present only on an electing (Postgres) cluster
+    /// node. The nested payload names its narrow read-model scope; it is not an all-sidecar
+    /// read-freshness or production HA certificate. Absent on single-node deployments.
     #[serde(skip_serializing_if = "Option::is_none")]
     cluster: Option<cluster_feed::ClusterReplicaLag>,
 }

@@ -1,4 +1,4 @@
-//! **wp16 Phase 1 — follower change-feed: stay-fresh reads with a fail-closed delta apply.**
+//! **wp16 Phase 1 — follower change-feed: covered read-model refresh with fail-closed delta apply.**
 //!
 //! This is the read-path half of wp16 (P0 landed leader election + step-down + failover handoff in
 //! [`crate::cluster`]). A FOLLOWER (a non-leader Postgres node) must observe the leader's appends and
@@ -306,7 +306,7 @@ impl AppState {
                     crate::refresh_degraded(self, &ledger).await;
                 }
                 eprintln!(
-                    "cluster feed: applied {} event(s); follower caught up to seq {}",
+                    "cluster feed: applied {} event(s); covered feed advanced to seq {}",
                     delta.len(),
                     new_len.saturating_sub(1)
                 );
@@ -524,7 +524,7 @@ async fn feed_loop(state: AppState, poll: std::time::Duration, dsn: Option<Strin
 /// with its **own** synchronous connection (never the store's writer / pool). Each notification wakes
 /// a reconcile; a bounded timeout returns periodically so a dropped connection is detected and
 /// re-established (and a reconcile re-primed after every reconnect). Purely a latency optimization —
-/// the seq-poll backstop guarantees convergence even if this thread never runs.
+/// the seq-poll backstop continues retrying even if this thread never runs.
 #[cfg(feature = "postgres")]
 fn listen_thread(dsn: String, tx: tokio::sync::mpsc::Sender<()>) {
     use postgres::fallible_iterator::FallibleIterator;
@@ -648,6 +648,29 @@ mod tests {
     }
 
     #[test]
+    fn delta_candidate_can_be_discarded_if_aggregate_refresh_fails() {
+        let full = chain_of(5);
+        let visible = follower_at(&full, 2);
+        let old_head = visible.head();
+
+        // Reconcile applies to a candidate ledger first. If the aggregate snapshot cannot be loaded,
+        // the candidate is dropped and the visible state stays behind for the next poll/full reload.
+        let mut candidate = visible.clone();
+        let outcome = apply_delta(&mut candidate, &full[2..]);
+        assert!(matches!(outcome, DeltaOutcome::Applied { new_len: 5, .. }));
+        assert_eq!(candidate.len(), 5);
+        assert_eq!(candidate.verify(), Ok(5));
+
+        assert_eq!(visible.len(), 2, "visible ledger did not advance");
+        assert_eq!(
+            visible.head(),
+            old_head,
+            "visible lag cannot report caught up"
+        );
+        assert_eq!(visible.verify(), Ok(2));
+    }
+
+    #[test]
     fn apply_delta_rejects_a_gap_and_leaves_the_ledger_untouched() {
         let full = chain_of(5);
         let mut follower = follower_at(&full, 2);
@@ -726,6 +749,40 @@ mod tests {
         assert_eq!(compute_lag(None, None), 0);
         // A follower is never reported as "ahead" of the durable chain it replicates.
         assert_eq!(compute_lag(Some(2), Some(5)), 0);
+    }
+
+    #[test]
+    fn cluster_health_status_names_its_narrow_read_model_scope() {
+        let status = ClusterReplicaLag {
+            role: "follower",
+            read_model_scope: CLUSTER_READ_MODEL_SCOPE,
+            applied_seq: Some(9),
+            durable_max_seq: Some(9),
+            lag_available: true,
+            lag: Some(0),
+        };
+        let json = serde_json::to_value(status).expect("serializes");
+        assert_eq!(
+            json["read_model_scope"],
+            "ledger_core_aggregates_signed_documents"
+        );
+        assert_eq!(json["lag_available"], true);
+        assert_eq!(json["lag"], 0);
+    }
+
+    #[test]
+    fn cluster_health_status_can_report_unknown_lag() {
+        let status = ClusterReplicaLag {
+            role: "follower",
+            read_model_scope: CLUSTER_READ_MODEL_SCOPE,
+            applied_seq: Some(3),
+            durable_max_seq: None,
+            lag_available: false,
+            lag: None,
+        };
+        let json = serde_json::to_value(status).expect("serializes");
+        assert_eq!(json["lag_available"], false);
+        assert_eq!(json["lag"], serde_json::Value::Null);
     }
 
     #[test]
