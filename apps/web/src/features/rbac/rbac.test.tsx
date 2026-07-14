@@ -446,6 +446,8 @@ describe('RoleAssignmentManager — scoped assignment + last-Owner 409', () => {
 
 describe('DelegacoesSection — grant a held permission, revoke it', () => {
   it('grants a role-held non-meta permission (POST /v1/delegations)', async () => {
+    const startsAtInput = '2026-01-01T09:30';
+    const expectedStartsAt = new Date(startsAtInput).toISOString();
     const { fn, calls } = mockFetch([
       { method: 'GET', match: '/v1/delegations', body: [] },
       { method: 'GET', match: '/v1/permissions', body: CATALOG },
@@ -478,6 +480,8 @@ describe('DelegacoesSection — grant a held permission, revoke it', () => {
           permission: 'entity.read',
           scope: { kind: 'global' },
           granted_at: '2026-07-08T00:00:00Z',
+          starts_at: expectedStartsAt,
+          legal_basis: 'Ata interna R-72',
           revoked: false,
         },
       },
@@ -501,6 +505,12 @@ describe('DelegacoesSection — grant a held permission, revoke it', () => {
       expect(options).not.toContain('role.manage');
     });
 
+    fireEvent.change(screen.getByLabelText('Início (opcional)'), {
+      target: { value: startsAtInput },
+    });
+    fireEvent.change(screen.getByLabelText('Base/evidência local'), {
+      target: { value: '  Ata interna R-72  ' },
+    });
     fireEvent.click(screen.getByRole('button', { name: 'Conceder' }));
     await waitFor(() => {
       const post = calls.find((c) => c.method === 'POST' && c.url.includes('/v1/delegations'));
@@ -509,8 +519,75 @@ describe('DelegacoesSection — grant a held permission, revoke it', () => {
         to: 'u2',
         permission: 'entity.read',
         scope: { kind: 'global' },
+        starts_at: expectedStartsAt,
+        legal_basis: 'Ata interna R-72',
       });
     });
+    vi.unstubAllGlobals();
+  });
+
+  it('lists starts_at and legal basis, with a missing legacy marker', async () => {
+    const { fn } = mockFetch([
+      {
+        method: 'GET',
+        match: '/v1/delegations',
+        body: [
+          {
+            id: 'd1',
+            from: 'me',
+            to: 'u2',
+            permission: 'entity.read',
+            scope: { kind: 'global' },
+            granted_at: '2026-07-08T00:00:00Z',
+            starts_at: '2026-07-08T00:00:00Z',
+            legal_basis: 'Ata interna R-72',
+            revoked: false,
+          },
+          {
+            id: 'd2',
+            from: 'me',
+            to: 'u2',
+            permission: 'book.open',
+            scope: { kind: 'global' },
+            granted_at: '2026-07-07T00:00:00Z',
+            starts_at: '1970-01-01T00:00:00Z',
+            revoked: false,
+          },
+        ],
+      },
+      { method: 'GET', match: '/v1/permissions', body: CATALOG },
+      {
+        method: 'GET',
+        match: '/v1/users',
+        body: [
+          {
+            id: 'u2',
+            username: 'joao.silva',
+            display_name: 'João Silva',
+            active: true,
+            has_secret: true,
+            has_attestation_key: false,
+            has_recovery_phrase: false,
+            created_at: '2026-01-01',
+          },
+        ],
+      },
+      { method: 'GET', match: '/v1/session', body: { user: { id: 'me' }, permissions: [] } },
+    ]);
+    vi.stubGlobal('fetch', fn);
+
+    renderRbac(
+      <DelegacoesSection />,
+      value(() => true, [grant('entity.read', 'role'), grant('book.open', 'role')]),
+    );
+
+    const currentRow = (await screen.findByText('entity.read')).closest('tr')!;
+    expect(within(currentRow).getByText('2026-07-08T00:00:00Z')).toBeTruthy();
+    expect(within(currentRow).getByText('Ata interna R-72')).toBeTruthy();
+
+    const legacyRow = (await screen.findByText('book.open')).closest('tr')!;
+    expect(within(legacyRow).getByText('1970-01-01T00:00:00Z')).toBeTruthy();
+    expect(within(legacyRow).getByText('Em falta (legado)')).toBeTruthy();
     vi.unstubAllGlobals();
   });
 
@@ -527,6 +604,8 @@ describe('DelegacoesSection — grant a held permission, revoke it', () => {
             permission: 'entity.read',
             scope: { kind: 'global' },
             granted_at: '2026-07-08T00:00:00Z',
+            starts_at: '2026-07-08T00:00:00Z',
+            legal_basis: 'Ata interna R-72',
             revoked: false,
           },
         ],

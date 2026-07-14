@@ -3012,8 +3012,10 @@ export interface RoleAssignmentInput {
 /**
  * A delegation rendered for the web (`GET`/`POST /v1/delegations`, t64-E4). `from`/`to` are
  * user ids; `permission` is a dotted verb id; `scope` the tagged union. `revoked` is the
- * derived active/inactive flag; `expires_at`/`revoked_at`/`revoked_by` are present only when
- * set. An expired or revoked delegation contributes nothing (the server re-checks).
+ * derived active/inactive flag; `starts_at` is the RFC-3339 start timestamp; `legal_basis` is
+ * operator-supplied local evidence/rationale and may be absent on legacy records;
+ * `expires_at`/`revoked_at`/`revoked_by` are present only when set. An expired, not-yet-started, or
+ * revoked delegation contributes nothing (the server re-checks).
  */
 export interface DelegationView {
   id: string;
@@ -3022,7 +3024,9 @@ export interface DelegationView {
   permission: string;
   scope: PermissionScope;
   granted_at: string;
+  starts_at: string;
   expires_at?: string;
+  legal_basis?: string;
   revoked: boolean;
   revoked_at?: string;
   revoked_by?: string;
@@ -3030,15 +3034,19 @@ export interface DelegationView {
 
 /**
  * Body of `POST /v1/delegations` (t64-E4). `to` is the grantee user id; `permission` a dotted
- * verb id the grantor holds VIA A ROLE at `scope` (meta verbs are non-delegable); `expires_at`
- * is an optional RFC-3339 timestamp (omit ⇒ until-revoked). The server 403s a permission the
- * grantor does not hold via a role, and 422s a malformed `expires_at`.
+ * verb id the grantor holds VIA A ROLE at `scope` (meta verbs are non-delegable); `starts_at` and
+ * `expires_at` are optional RFC-3339 timestamps (omit `starts_at` ⇒ grant time; omit `expires_at`
+ * ⇒ until-revoked); `legal_basis` is required operator-supplied local evidence/rationale. The
+ * server 403s a permission the grantor does not hold via a role, and 422s malformed timestamps or
+ * a missing/blank/overlong `legal_basis`.
  */
 export interface GrantDelegationBody {
   to: string;
   permission: string;
   scope: PermissionScope;
+  starts_at?: string;
   expires_at?: string;
+  legal_basis: string;
 }
 
 // --- API keys (§ integration API-key lifecycle) ---------------------------------

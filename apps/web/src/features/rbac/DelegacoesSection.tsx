@@ -13,8 +13,8 @@
  *  - **Revoke** — allowed to the grantor OR a `delegation.revoke` holder; a non-grantor
  *    without the verb sees the control disabled-with-explanation.
  *
- * Active vs expired/revoked is shown per row (an expired or revoked delegation contributes
- * nothing — the server re-checks; this is honest display only). Reused by t62.
+ * Not-yet-started vs active vs expired/revoked is shown per row (anything not currently active
+ * contributes nothing — the server re-checks; this is honest display only). Reused by t62.
  */
 import { useMemo, useState } from 'react';
 import {
@@ -39,18 +39,23 @@ import {
   Select,
   SkeletonTable,
   Table,
+  TextArea,
   useToast,
 } from '../../ui';
 import { GateButton, usePermissions, useCan } from '../session/permissions';
 import type { DelegationView, PermissionScope } from '../../api/types';
 import { ScopePicker, useScopeLabel } from './ScopePicker';
 
-type DelegStatus = 'active' | 'expired' | 'revoked';
+const MAX_DELEGATION_LEGAL_BASIS_CHARS = 1024;
 
-/** Derive a delegation's status: revoked wins, then an elapsed expiry, else active. */
+type DelegStatus = 'pending' | 'active' | 'expired' | 'revoked';
+
+/** Derive a delegation's status: revoked wins, then elapsed expiry, future start, else active. */
 function statusOf(d: DelegationView, now: number): DelegStatus {
   if (d.revoked) return 'revoked';
   if (d.expires_at && Date.parse(d.expires_at) <= now) return 'expired';
+  const startsAt = Date.parse(d.starts_at);
+  if (!Number.isNaN(startsAt) && startsAt > now) return 'pending';
   return 'active';
 }
 
@@ -68,7 +73,9 @@ function GrantForm({ onClose }: { onClose: () => void }) {
   const [to, setTo] = useState('');
   const [permission, setPermission] = useState('');
   const [scope, setScope] = useState<PermissionScope>({ kind: 'global' });
+  const [startsAt, setStartsAt] = useState('');
   const [expiry, setExpiry] = useState('');
+  const [legalBasis, setLegalBasis] = useState('');
 
   // The non-meta permissions the current user holds VIA A ROLE — the only delegable set
   // (mirrors `can_delegate`; the server re-checks hold-via-role at the chosen scope).
@@ -91,15 +98,31 @@ function GrantForm({ onClose }: { onClose: () => void }) {
   const effectiveTo = to || granteeOptions[0]?.value || '';
   const effectivePerm = permission || delegable[0] || '';
   const scopeOk = scope.kind === 'global' || scope.id !== '';
+  const trimmedLegalBasis = legalBasis.trim();
+  const legalBasisOk =
+    trimmedLegalBasis.length > 0 && trimmedLegalBasis.length <= MAX_DELEGATION_LEGAL_BASIS_CHARS;
   const canSubmit =
-    !!effectiveTo && !!effectivePerm && scopeOk && !grant.isPending && delegable.length > 0;
+    !!effectiveTo &&
+    !!effectivePerm &&
+    scopeOk &&
+    legalBasisOk &&
+    !grant.isPending &&
+    delegable.length > 0;
 
   function submit() {
     if (!canSubmit) return;
     // datetime-local (local wall-clock) → an RFC-3339 instant the server parses; omit if unset.
+    const starts_at = startsAt ? new Date(startsAt).toISOString() : undefined;
     const expires_at = expiry ? new Date(expiry).toISOString() : undefined;
     grant.mutate(
-      { to: effectiveTo, permission: effectivePerm, scope, expires_at },
+      {
+        to: effectiveTo,
+        permission: effectivePerm,
+        scope,
+        starts_at,
+        expires_at,
+        legal_basis: trimmedLegalBasis,
+      },
       {
         onSuccess: () => {
           toast.success(t('rbac.toast.delegated'));
@@ -155,6 +178,19 @@ function GrantForm({ onClose }: { onClose: () => void }) {
         <ScopePicker value={scope} onChange={setScope} idPrefix="rbac-deleg-scope" />
 
         <Field
+          label={t('rbac.deleg.startsAt.label')}
+          htmlFor="rbac-deleg-starts-at"
+          hint={t('rbac.deleg.startsAt.hint')}
+        >
+          <Input
+            id="rbac-deleg-starts-at"
+            type="datetime-local"
+            value={startsAt}
+            onChange={(e) => setStartsAt(e.target.value)}
+          />
+        </Field>
+
+        <Field
           label={t('rbac.deleg.expiry.label')}
           htmlFor="rbac-deleg-expiry"
           hint={t('rbac.deleg.expiry.hint')}
@@ -164,6 +200,21 @@ function GrantForm({ onClose }: { onClose: () => void }) {
             type="datetime-local"
             value={expiry}
             onChange={(e) => setExpiry(e.target.value)}
+          />
+        </Field>
+
+        <Field
+          label={t('rbac.deleg.legalBasis.label')}
+          htmlFor="rbac-deleg-legal-basis"
+          hint={t('rbac.deleg.legalBasis.hint')}
+        >
+          <TextArea
+            id="rbac-deleg-legal-basis"
+            rows={3}
+            maxLength={MAX_DELEGATION_LEGAL_BASIS_CHARS}
+            required
+            value={legalBasis}
+            onChange={(e) => setLegalBasis(e.target.value)}
           />
         </Field>
 
@@ -217,11 +268,14 @@ function DelegationRow({ d, now }: { d: DelegationView; now: number }) {
   const statusBadge =
     status === 'active' ? (
       <Badge tone="ok">{t('rbac.deleg.status.active')}</Badge>
+    ) : status === 'pending' ? (
+      <Badge tone="neutral">{t('rbac.deleg.status.pending')}</Badge>
     ) : status === 'expired' ? (
       <Badge tone="neutral">{t('rbac.deleg.status.expired')}</Badge>
     ) : (
       <Badge tone="warn">{t('rbac.deleg.status.revoked')}</Badge>
     );
+  const basis = d.legal_basis?.trim();
 
   return (
     <tr>
@@ -234,6 +288,16 @@ function DelegationRow({ d, now }: { d: DelegationView; now: number }) {
         <Badge tone="neutral">{scopeLabel(d.scope)}</Badge>
       </td>
       <td>{statusBadge}</td>
+      <td>
+        {d.starts_at ? (
+          <time className="mono" dateTime={d.starts_at}>
+            {d.starts_at}
+          </time>
+        ) : (
+          <span className="muted">{t('rbac.deleg.startsAt.missing')}</span>
+        )}
+      </td>
+      <td>{basis ? basis : <span className="muted">{t('rbac.deleg.legalBasis.missing')}</span>}</td>
       <td>
         {d.expires_at ? d.expires_at : <span className="muted">{t('rbac.deleg.noExpiry')}</span>}
       </td>
@@ -276,7 +340,7 @@ export function DelegacoesSection() {
   // A single "now" per render so every row's expiry compares against the same instant.
   const now = Date.now();
 
-  if (delegations.isLoading) return <SkeletonTable rows={4} cols={7} />;
+  if (delegations.isLoading) return <SkeletonTable rows={4} cols={9} />;
   if (delegations.error) return <ErrorNote error={delegations.error} />;
 
   const list = delegations.data ?? [];
@@ -314,6 +378,8 @@ export function DelegacoesSection() {
                   <th>{t('rbac.deleg.table.to')}</th>
                   <th>{t('rbac.deleg.table.scope')}</th>
                   <th>{t('rbac.deleg.table.status')}</th>
+                  <th>{t('rbac.deleg.table.startsAt')}</th>
+                  <th>{t('rbac.deleg.table.legalBasis')}</th>
                   <th>{t('rbac.deleg.table.expiry')}</th>
                   <th>{t('rbac.deleg.table.action')}</th>
                 </tr>

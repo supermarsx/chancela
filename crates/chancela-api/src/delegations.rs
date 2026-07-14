@@ -34,6 +34,7 @@ use crate::session::ScopeView;
 use crate::users::UserId;
 
 pub const DELEGATIONS_FILE: &str = "delegations.json";
+pub const MAX_DELEGATION_LEGAL_BASIS_CHARS: usize = 1024;
 
 /// Opaque identifier of a stored delegation. Transparent UUID on the wire.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -157,6 +158,8 @@ fn tmp_path(path: &Path) -> PathBuf {
 /// Body of `POST /v1/delegations` — delegate one permission to a grantee, optionally scoped and
 /// optionally expiring. `permission` deserialises from its dotted id; a meta verb / unknown verb /
 /// out-of-authority verb is refused by [`grant_delegation`] (`403`) or at deserialisation (`422`).
+/// New grants must carry a non-empty operator-supplied local evidence/rationale string in
+/// `legal_basis`; legacy stored records that predate this field still load with `None`.
 #[derive(Deserialize)]
 pub struct GrantDelegation {
     pub to: Uuid,
@@ -168,7 +171,8 @@ pub struct GrantDelegation {
     /// RFC 3339 expiry; absent ⇒ until revoked.
     #[serde(default)]
     pub expires_at: Option<String>,
-    /// Optional evidence/rationale for the grant.
+    /// Required evidence/rationale for new grants. Kept optional at the DTO boundary so missing
+    /// requests receive a controlled 422 instead of a serde extraction error.
     #[serde(default)]
     pub legal_basis: Option<String>,
 }
@@ -277,6 +281,7 @@ pub async fn grant_delegation(
         return Err(ApiError::NotFound);
     }
 
+    let legal_basis = normalize_grant_legal_basis(req.legal_basis)?;
     let granted_at_time = OffsetDateTime::now_utc();
     let starts_at =
         parse_optional_rfc3339(req.starts_at.as_deref(), "starts_at")?.unwrap_or(granted_at_time);
@@ -289,7 +294,7 @@ pub async fn grant_delegation(
         scope,
     )
     .starting_at(starts_at)
-    .with_legal_basis(req.legal_basis);
+    .with_legal_basis(Some(legal_basis));
     if let Some(exp) = expires_at {
         inner = inner.expiring_at(exp);
     }
@@ -377,6 +382,27 @@ fn parse_optional_rfc3339(
             })
         })
         .transpose()
+}
+
+fn normalize_grant_legal_basis(value: Option<String>) -> Result<String, ApiError> {
+    let Some(raw) = value else {
+        return Err(ApiError::Unprocessable(
+            "legal_basis is required for new delegations".to_owned(),
+        ));
+    };
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err(ApiError::Unprocessable(
+            "legal_basis must not be empty".to_owned(),
+        ));
+    }
+    let len = trimmed.chars().count();
+    if len > MAX_DELEGATION_LEGAL_BASIS_CHARS {
+        return Err(ApiError::Unprocessable(format!(
+            "legal_basis must be at most {MAX_DELEGATION_LEGAL_BASIS_CHARS} characters"
+        )));
+    }
+    Ok(trimmed.to_owned())
 }
 
 #[cfg(test)]
@@ -501,5 +527,24 @@ mod tests {
         std::fs::write(&path, b"{ this is not json").unwrap();
         assert!(load_delegations(&path).is_none());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn new_grant_legal_basis_is_required_trimmed_and_bounded() {
+        let err = normalize_grant_legal_basis(None).expect_err("missing basis");
+        assert!(matches!(err, ApiError::Unprocessable(message) if message.contains("required")));
+
+        let err = normalize_grant_legal_basis(Some(" \t\n ".to_owned())).expect_err("blank basis");
+        assert!(
+            matches!(err, ApiError::Unprocessable(message) if message.contains("must not be empty"))
+        );
+
+        let too_long = "x".repeat(MAX_DELEGATION_LEGAL_BASIS_CHARS + 1);
+        let err = normalize_grant_legal_basis(Some(too_long)).expect_err("overlong basis");
+        assert!(matches!(err, ApiError::Unprocessable(message) if message.contains("at most")));
+
+        let ok = normalize_grant_legal_basis(Some("  board minute R-17  ".to_owned()))
+            .expect("trimmed legal basis");
+        assert_eq!(ok, "board minute R-17");
     }
 }

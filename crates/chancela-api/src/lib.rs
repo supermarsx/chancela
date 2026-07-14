@@ -15599,7 +15599,12 @@ mod tests {
             with_session(
                 post_json(
                     "/v1/delegations",
-                    json!({ "to": grantee.to_string(), "permission": "act.advance", "scope": { "kind": "global" } }),
+                    json!({
+                        "to": grantee.to_string(),
+                        "permission": "act.advance",
+                        "scope": { "kind": "global" },
+                        "legal_basis": "operator-recorded board minute R-64"
+                    }),
                 ),
                 &tok,
             ),
@@ -15630,7 +15635,12 @@ mod tests {
             with_session(
                 post_json(
                     "/v1/delegations",
-                    json!({ "to": grantee.to_string(), "permission": "role.manage", "scope": { "kind": "global" } }),
+                    json!({
+                        "to": grantee.to_string(),
+                        "permission": "role.manage",
+                        "scope": { "kind": "global" },
+                        "legal_basis": "operator-recorded board minute R-64"
+                    }),
                 ),
                 &tok,
             ),
@@ -15671,7 +15681,12 @@ mod tests {
             with_session(
                 post_json(
                     "/v1/delegations",
-                    json!({ "to": dora.to_string(), "permission": "act.advance", "scope": { "kind": "global" } }),
+                    json!({
+                        "to": dora.to_string(),
+                        "permission": "act.advance",
+                        "scope": { "kind": "global" },
+                        "legal_basis": "operator-recorded board minute R-65"
+                    }),
                 ),
                 &c_tok,
             ),
@@ -15688,7 +15703,13 @@ mod tests {
             with_session(
                 post_json(
                     "/v1/delegations",
-                    json!({ "to": grantee.to_string(), "permission": "act.read", "scope": { "kind": "global" }, "expires_at": past }),
+                    json!({
+                        "to": grantee.to_string(),
+                        "permission": "act.read",
+                        "scope": { "kind": "global" },
+                        "expires_at": past,
+                        "legal_basis": "operator-recorded expiry test evidence"
+                    }),
                 ),
                 &tok,
             ),
@@ -15727,6 +15748,78 @@ mod tests {
                 .expect("perms")
                 .iter()
                 .any(|p| p["permission"] == "act.advance")
+        );
+    }
+
+    #[tokio::test]
+    async fn e4_delegation_requires_bounded_legal_basis_for_new_grants() {
+        use chancela_authz::{OWNER_ROLE_ID, RoleAssignment, Scope};
+
+        let state = fresh_state().await;
+        let owner = seed_user(
+            &state,
+            "owner.a",
+            vec![RoleAssignment::new(OWNER_ROLE_ID, Scope::Global)],
+        )
+        .await;
+        let tok = seed_session(&state, &owner.to_string()).await;
+        let grantee = seed_user(&state, "amelia.marques", vec![]).await;
+
+        let valid_base = || {
+            json!({
+                "to": grantee.to_string(),
+                "permission": "act.read",
+                "scope": { "kind": "global" }
+            })
+        };
+
+        let (status, missing) = send_raw(
+            state.clone(),
+            with_session(post_json("/v1/delegations", valid_base()), &tok),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(
+            missing["error"]
+                .as_str()
+                .expect("error")
+                .contains("legal_basis")
+        );
+
+        let mut blank = valid_base();
+        blank["legal_basis"] = json!(" \t\n ");
+        let (status, blank_body) = send_raw(
+            state.clone(),
+            with_session(post_json("/v1/delegations", blank), &tok),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(
+            blank_body["error"]
+                .as_str()
+                .expect("error")
+                .contains("must not be empty")
+        );
+
+        let mut overlong = valid_base();
+        overlong["legal_basis"] =
+            json!("x".repeat(crate::delegations::MAX_DELEGATION_LEGAL_BASIS_CHARS + 1));
+        let (status, overlong_body) = send_raw(
+            state.clone(),
+            with_session(post_json("/v1/delegations", overlong), &tok),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(
+            overlong_body["error"]
+                .as_str()
+                .expect("error")
+                .contains("at most")
+        );
+
+        assert!(
+            state.delegations.read().await.is_empty(),
+            "rejected grants must not create delegation records"
         );
     }
 

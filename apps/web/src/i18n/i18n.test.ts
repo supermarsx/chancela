@@ -59,6 +59,15 @@ describe('catalog completeness matrix', () => {
     expect(enUS['dashboard.workQueue.status.pending']).toBe('Pending');
   });
 
+  it('keeps delegation legal-basis copy local-evidence only', () => {
+    expect(ptPT['rbac.deleg.legalBasis.label']).toBe('Base/evidência local');
+    expect(ptPT['rbac.deleg.legalBasis.hint']).toContain('não certifica suficiência legal');
+    expect(ptPT['rbac.deleg.legalBasis.missing']).toBe('Em falta (legado)');
+    expect(enUS['rbac.deleg.legalBasis.label']).toBe('Local basis/evidence');
+    expect(enUS['rbac.deleg.legalBasis.hint']).toContain('does not certify legal sufficiency');
+    expect(enUS['rbac.deleg.legalBasis.missing']).toBe('Missing (legacy)');
+  });
+
   it('keeps PDF validator copy localized in the English catalog', () => {
     expect(enUS['tools.section.pdfValidator']).toBe('PDF validator');
     expect(enUS['pdfValidator.file.label']).toBe('Signed PDF');
