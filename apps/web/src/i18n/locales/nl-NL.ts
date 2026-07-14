@@ -2506,6 +2506,44 @@ export const nlNL: Catalog = {
   'signing.ccBatch.result.table.evidence': 'Bewijs',
   'signing.ccBatch.result.signed': 'Ondertekend',
   'signing.ccBatch.result.error': 'Error',
+  'signing.remoteBatch.aria': 'Remote start per document',
+  'signing.remoteBatch.title': 'Remote sessies per document',
+  'signing.remoteBatch.badge': 'Activering per document',
+  'signing.remoteBatch.description':
+    'Opent een aparte remote sessie voor elke geselecteerde akte; elke sessie wordt afzonderlijk bevestigd.',
+  'signing.remoteBatch.boundary.title': 'Eén activering per document',
+  'signing.remoteBatch.boundary.body':
+    'Deze flow start alleen onafhankelijke remote sessies. Elke akte blijft in behandeling met een eigen sessie, activeringshint en vervaltijd.',
+  'signing.remoteBatch.provider.label': 'Remote aanbieder',
+  'signing.remoteBatch.provider.hint':
+    'Kies een geconfigureerde aanbieder om de wachtende sessies te openen.',
+  'signing.remoteBatch.provider.none': 'Geen geconfigureerde remote aanbieders',
+  'signing.remoteBatch.userRef.label': 'Gebruikersreferentie voor remote sessies',
+  'signing.remoteBatch.userRef.hint':
+    'CMD-mobiel nummer of accountreferentie bij de geselecteerde aanbieder.',
+  'signing.remoteBatch.credential.label': 'Ondertekeningscredential voor remote sessies',
+  'signing.remoteBatch.credential.hint':
+    'Optioneel en tijdelijk. Alleen gebruikt om deze sessies te starten; wordt nooit opgeslagen.',
+  'signing.remoteBatch.selection.needMore':
+    'Selecteer minstens twee akten, een aanbieder en de gebruikersreferentie.',
+  'signing.remoteBatch.submit': 'Remote sessies starten',
+  'signing.remoteBatch.submit.pending': 'Sessies starten…',
+  'signing.remoteBatch.reset': 'Sessies wissen',
+  'signing.remoteBatch.result.authMode': 'Activeringsmodus',
+  'signing.remoteBatch.authMode.perDocumentActivation': 'Activering per document',
+  'signing.remoteBatch.result.pendingCount': 'In behandeling',
+  'signing.remoteBatch.result.initiateEvents': 'Starts verzonden',
+  'signing.remoteBatch.result.boundary':
+    'Elke wachtende rij is een onafhankelijke sessie voor normale bevestiging op de eigen akte.',
+  'signing.remoteBatch.result.table.session': 'Sessie',
+  'signing.remoteBatch.result.table.provider': 'Aanbieder',
+  'signing.remoteBatch.result.table.activation': 'Activering',
+  'signing.remoteBatch.result.table.expires': 'Vervalt',
+  'signing.remoteBatch.result.pending': 'In behandeling',
+  'signing.remoteBatch.result.error': 'Error',
+  'signing.remoteBatch.result.confirmNormally': 'Bevestig in de normale flow van deze akte.',
+  'signing.remoteBatch.result.noSecret':
+    'Het antwoord toont geen credentials, codes of activeringen.',
   'signing.signed.qualifiedLabelCsc':
     'Gekwalificeerde elektronische handtekening (gekwalificeerd certificaat van een vertrouwensdienstverlener).',
   'signing.signed.localPkcs12Title': 'Notulen ondertekend met lokaal softwarecertificaat',
@@ -2825,6 +2863,7 @@ export const nlNL: Catalog = {
   'toast.signing.otpSent': 'Sms-code verzonden.',
   'toast.signing.signed': 'Notulen ondertekend.',
   'toast.signing.ccBatchSigned': 'CC-ondertekeningsbatch voltooid.',
+  'toast.signing.remoteBatchInitiated': 'Remote sessies gestart.',
   'toast.signing.officialImported': 'Ondertekende PDF geïmporteerd als technisch bewijs.',
   'toast.signing.downloaded': 'Ondertekende PDF gedownload.',
 

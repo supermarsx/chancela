@@ -2502,6 +2502,44 @@ export const svFI: Catalog = {
   'signing.ccBatch.result.table.evidence': 'Bevis',
   'signing.ccBatch.result.signed': 'Signerad',
   'signing.ccBatch.result.error': 'Fel',
+  'signing.remoteBatch.aria': 'Fjärrinitiering per dokument',
+  'signing.remoteBatch.title': 'Fjärrsessioner per dokument',
+  'signing.remoteBatch.badge': 'Aktivering per dokument',
+  'signing.remoteBatch.description':
+    'Öppnar en separat fjärrsession för varje valt protokoll; varje session bekräftas individuellt.',
+  'signing.remoteBatch.boundary.title': 'En aktivering per dokument',
+  'signing.remoteBatch.boundary.body':
+    'Det här flödet initierar bara oberoende fjärrsessioner. Varje protokoll blir väntande med egen session, aktiveringstips och giltighetstid.',
+  'signing.remoteBatch.provider.label': 'Fjärrleverantör',
+  'signing.remoteBatch.provider.hint':
+    'Välj en konfigurerad leverantör för att öppna de väntande sessionerna.',
+  'signing.remoteBatch.provider.none': 'Inga konfigurerade fjärrleverantörer',
+  'signing.remoteBatch.userRef.label': 'Användarreferens för fjärrsessioner',
+  'signing.remoteBatch.userRef.hint':
+    'CMD-mobilnummer eller kontoreferens hos den valda leverantören.',
+  'signing.remoteBatch.credential.label': 'Signeringsuppgift för fjärrsessioner',
+  'signing.remoteBatch.credential.hint':
+    'Valfri och tillfällig. Används bara för att initiera dessa sessioner; sparas aldrig.',
+  'signing.remoteBatch.selection.needMore':
+    'Välj minst två protokoll, en leverantör och användarreferensen.',
+  'signing.remoteBatch.submit': 'Initiera fjärrsessioner',
+  'signing.remoteBatch.submit.pending': 'Initierar sessioner…',
+  'signing.remoteBatch.reset': 'Rensa sessioner',
+  'signing.remoteBatch.result.authMode': 'Aktiveringsläge',
+  'signing.remoteBatch.authMode.perDocumentActivation': 'Aktivering per dokument',
+  'signing.remoteBatch.result.pendingCount': 'Väntande',
+  'signing.remoteBatch.result.initiateEvents': 'Initieringar skickade',
+  'signing.remoteBatch.result.boundary':
+    'Varje väntande rad är en oberoende session för normal bekräftelse i sitt eget protokoll.',
+  'signing.remoteBatch.result.table.session': 'Session',
+  'signing.remoteBatch.result.table.provider': 'Leverantör',
+  'signing.remoteBatch.result.table.activation': 'Aktivering',
+  'signing.remoteBatch.result.table.expires': 'Giltig till',
+  'signing.remoteBatch.result.pending': 'Väntande',
+  'signing.remoteBatch.result.error': 'Fel',
+  'signing.remoteBatch.result.confirmNormally': 'Bekräfta i det normala flödet för detta protokoll.',
+  'signing.remoteBatch.result.noSecret':
+    'Svaret visar inga inloggningsuppgifter, koder eller aktiveringar.',
   'signing.signed.qualifiedLabelCsc':
     'Kvalificerad elektronisk underskrift (kvalificerat certifikat från en betrodd tjänsteleverantör).',
   'signing.signed.localPkcs12Title': 'Protokoll signerat med lokalt programvarucertifikat',
@@ -2819,6 +2857,7 @@ export const svFI: Catalog = {
   'toast.signing.otpSent': 'SMS-kod skickad.',
   'toast.signing.signed': 'Protokoll signerat.',
   'toast.signing.ccBatchSigned': 'CC-signeringsbatch slutförd.',
+  'toast.signing.remoteBatchInitiated': 'Fjärrsessioner initierade.',
   'toast.signing.officialImported': 'Signerad PDF importerad som teknisk evidens.',
   'toast.signing.downloaded': 'Signerad PDF nedladdad.',
 

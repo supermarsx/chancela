@@ -5260,6 +5260,63 @@ export interface RemoteConfirmResult extends CmdConfirmResult {
   provider_id: string;
 }
 
+// --- Repeated remote-session batch initiate ------------------------------------
+//
+// `POST /v1/signature/remote/{provider}/batch-initiate` opens one independent
+// pending remote signing session per valid act. This is not a provider-native multi-document
+// authorization seam: each pending row returns its own `session_id`, activation hint and expiry,
+// and must be confirmed through the normal single-document remote confirm endpoint. The
+// credential is a transient request input only and is never echoed by these response types.
+
+/** Upper bound the server accepts for a repeated remote-session initiate batch. */
+export const MAX_REMOTE_BATCH_ACTS = 200;
+
+/** The remote batch seam always reports one activation per document. */
+export type RemoteBatchAuthMode = 'per_document_activation';
+
+/** One requested act either has a pending session or a redacted per-document error. */
+export type RemoteBatchInitiateResultStatus = 'pending' | 'error';
+
+/**
+ * `POST /v1/signature/remote/{provider}/batch-initiate` body. `user_ref` is the non-secret
+ * account reference at the provider; `credential` is transient and must not be persisted.
+ */
+export interface RemoteBatchInitiateBody {
+  act_ids: string[];
+  user_ref: string;
+  credential?: string;
+  capacity?: string;
+  actor?: string;
+  /** Optional visible-seal appearance; baked independently into each prepared PAdES revision. */
+  seal?: SealAppearanceBody;
+}
+
+/** One per-act outcome from repeated remote-session initiate. Pending rows carry no secret. */
+export interface RemoteBatchInitiateResult {
+  act_id: string;
+  status: RemoteBatchInitiateResultStatus;
+  session_id?: string;
+  provider_id?: string;
+  family?: string;
+  pending_status?: 'activation_pending';
+  activation_hint?: string;
+  expires_at?: string;
+  error?: string;
+}
+
+/** Summary and ordered per-act results for repeated remote-session initiate. */
+export interface RemoteBatchInitiateResponse {
+  provider_id: string;
+  family: string;
+  evidentiary_level: string;
+  auth_mode: RemoteBatchAuthMode;
+  requested: number;
+  pending: number;
+  failed: number;
+  initiate_events: number;
+  results: RemoteBatchInitiateResult[];
+}
+
 // --- External signer invitation tracking ---------------------------------------
 
 export type ExternalSignerInviteStatus =

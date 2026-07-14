@@ -4,7 +4,7 @@
  * (410) restart, and a clean wrong-OTP (422) retry. Secrets (PIN/OTP) stay in transient form state.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { SigningPanel } from './SigningPanel';
 import { renderWithProviders } from '../../test/utils';
 import { StaticPermissionsProvider, permissionsValue } from '../session/permissions';
@@ -1722,6 +1722,258 @@ describe('SigningPanel — CSC QTSP providers', () => {
     fireEvent.click(mc);
     // The gated control does not advance to the CSC credentials step.
     expect(screen.queryByLabelText('Referência do utilizador')).toBeNull();
+  });
+});
+
+describe('SigningPanel — remote batch initiation', () => {
+  function remoteBatchResponse(providerId: string, sessionId: string) {
+    return {
+      provider_id: providerId,
+      family: 'QualifiedCertificate',
+      evidentiary_level: 'Qualified',
+      auth_mode: 'per_document_activation',
+      requested: 2,
+      pending: 2,
+      failed: 0,
+      initiate_events: 2,
+      results: [
+        {
+          act_id: 'act-1',
+          status: 'pending',
+          session_id: sessionId,
+          provider_id: providerId,
+          family: 'QualifiedCertificate',
+          pending_status: 'activation_pending',
+          activation_hint: `ativação ${providerId}`,
+          expires_at: '2026-07-14T10:05:00Z',
+        },
+        {
+          act_id: 'act-2',
+          status: 'pending',
+          session_id: `${sessionId}-2`,
+          provider_id: providerId,
+          family: 'QualifiedCertificate',
+          pending_status: 'activation_pending',
+          activation_hint: `ativação ${providerId}`,
+          expires_at: '2026-07-14T10:05:00Z',
+        },
+      ],
+    };
+  }
+
+  it('submits per-document remote initiate payloads and renders redacted pending/error rows', async () => {
+    let requestBody: Record<string, unknown> | null = null;
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      const method = init?.method ?? 'GET';
+      if (url.endsWith('/signature/providers')) {
+        return json([provider('multicert', 'Multicert', 'QualifiedCertificate', true)]);
+      }
+      if (url.endsWith('/signature') && method === 'GET') return json(unsignedStatus);
+      if (url.endsWith('/v1/signature/remote/multicert/batch-initiate')) {
+        requestBody = JSON.parse(String(init?.body));
+        return json({
+          provider_id: 'multicert',
+          family: 'QualifiedCertificate',
+          evidentiary_level: 'Qualified',
+          auth_mode: 'per_document_activation',
+          requested: 2,
+          pending: 1,
+          failed: 1,
+          initiate_events: 1,
+          results: [
+            {
+              act_id: 'act-1',
+              status: 'pending',
+              session_id: 'sess-remote-1',
+              provider_id: 'multicert',
+              family: 'QualifiedCertificate',
+              pending_status: 'activation_pending',
+              activation_hint: 'código enviado para a primeira ata',
+              expires_at: '2026-07-14T10:05:00Z',
+            },
+            {
+              act_id: 'act-2',
+              status: 'error',
+              error: 'ato já assinado',
+            },
+          ],
+        });
+      }
+      return emptyInviteList(url, method) ?? Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(<SigningPanel act={sealedAct} entityName="Encosto Estratégico Lda" />);
+
+    const region = await screen.findByLabelText('Início remoto por documento');
+    const batch = within(region);
+    expect(batch.getByText('Uma ativação por documento')).toBeTruthy();
+
+    fireEvent.change(batch.getByLabelText('ID do ato'), { target: { value: 'act-2' } });
+    fireEvent.click(batch.getByRole('button', { name: 'Adicionar' }));
+    fireEvent.change(batch.getByLabelText('Referência do utilizador para sessões remotas'), {
+      target: { value: ' amelia.marques ' },
+    });
+    fireEvent.change(batch.getByLabelText('Credencial para sessões remotas'), {
+      target: { value: 'transient-secret' },
+    });
+    fireEvent.change(batch.getByLabelText('Qualidade/capacidade declarada'), {
+      target: { value: ' Presidente da Mesa ' },
+    });
+    fireEvent.change(batch.getByLabelText('Ator'), { target: { value: ' operator-1 ' } });
+    fireEvent.click(batch.getByRole('button', { name: 'Iniciar sessões remotas' }));
+
+    await waitFor(() =>
+      expect(requestBody).toEqual({
+        act_ids: ['act-1', 'act-2'],
+        user_ref: 'amelia.marques',
+        credential: 'transient-secret',
+        capacity: 'Presidente da Mesa',
+        actor: 'operator-1',
+      }),
+    );
+    await waitFor(() =>
+      expect((batch.getByLabelText('Credencial para sessões remotas') as HTMLInputElement).value)
+        .toBe(''),
+    );
+
+    expect(batch.getAllByText('Ativação por documento').length).toBeGreaterThan(0);
+    expect(batch.getByText('sess-remote-1')).toBeTruthy();
+    expect(batch.getByText('multicert')).toBeTruthy();
+    expect(batch.getByText('código enviado para a primeira ata')).toBeTruthy();
+    expect(batch.getByText('ato já assinado')).toBeTruthy();
+    expect(batch.getByText('Confirmar no fluxo normal deste ato.')).toBeTruthy();
+    expect(batch.getByText('A resposta não mostra credenciais, códigos ou ativações.')).toBeTruthy();
+    expect(region.textContent).not.toContain('transient-secret');
+  });
+
+  it('clears provider-bound credentials and stale remote batch results on provider switch', async () => {
+    let multicertRequest: Record<string, unknown> | null = null;
+    let digitalsignRequest: Record<string, unknown> | null = null;
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      const method = init?.method ?? 'GET';
+      if (url.endsWith('/signature/providers')) {
+        return json([
+          provider('multicert', 'Multicert', 'QualifiedCertificate', true),
+          provider('digitalsign', 'DigitalSign', 'QualifiedCertificate', true),
+        ]);
+      }
+      if (url.endsWith('/signature') && method === 'GET') return json(unsignedStatus);
+      if (url.endsWith('/v1/signature/remote/multicert/batch-initiate')) {
+        multicertRequest = JSON.parse(String(init?.body));
+        return json(remoteBatchResponse('multicert', 'sess-multicert'));
+      }
+      if (url.endsWith('/v1/signature/remote/digitalsign/batch-initiate')) {
+        digitalsignRequest = JSON.parse(String(init?.body));
+        return json(remoteBatchResponse('digitalsign', 'sess-digitalsign'));
+      }
+      return emptyInviteList(url, method) ?? Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(<SigningPanel act={sealedAct} entityName="Encosto Estratégico Lda" />);
+
+    const region = await screen.findByLabelText('Início remoto por documento');
+    const batch = within(region);
+    fireEvent.change(batch.getByLabelText('ID do ato'), { target: { value: 'act-2' } });
+    fireEvent.click(batch.getByRole('button', { name: 'Adicionar' }));
+    fireEvent.change(batch.getByLabelText('Referência do utilizador para sessões remotas'), {
+      target: { value: 'amelia.marques' },
+    });
+    fireEvent.change(batch.getByLabelText('Credencial para sessões remotas'), {
+      target: { value: 'first-secret' },
+    });
+    fireEvent.click(batch.getByRole('button', { name: 'Iniciar sessões remotas' }));
+
+    await waitFor(() =>
+      expect(multicertRequest).toMatchObject({
+        act_ids: ['act-1', 'act-2'],
+        user_ref: 'amelia.marques',
+        credential: 'first-secret',
+      }),
+    );
+    expect(await batch.findByText('sess-multicert')).toBeTruthy();
+
+    fireEvent.change(batch.getByLabelText('Prestador remoto'), {
+      target: { value: 'digitalsign' },
+    });
+
+    await waitFor(() => expect(batch.queryByText('sess-multicert')).toBeNull());
+    expect((batch.getByLabelText('Credencial para sessões remotas') as HTMLInputElement).value).toBe(
+      '',
+    );
+
+    fireEvent.change(batch.getByLabelText('Prestador remoto'), {
+      target: { value: 'multicert' },
+    });
+    fireEvent.change(batch.getByLabelText('Credencial para sessões remotas'), {
+      target: { value: 'old-provider-secret' },
+    });
+    fireEvent.change(batch.getByLabelText('Prestador remoto'), {
+      target: { value: 'digitalsign' },
+    });
+    expect((batch.getByLabelText('Credencial para sessões remotas') as HTMLInputElement).value).toBe(
+      '',
+    );
+    fireEvent.click(batch.getByRole('button', { name: 'Iniciar sessões remotas' }));
+
+    await waitFor(() =>
+      expect(digitalsignRequest).toEqual({
+        act_ids: ['act-1', 'act-2'],
+        user_ref: 'amelia.marques',
+      }),
+    );
+    expect(JSON.stringify(digitalsignRequest)).not.toContain('old-provider-secret');
+  });
+
+  it('clears stale remote batch results when request fields or act selection change', async () => {
+    let submitCount = 0;
+    const requestBodies: Record<string, unknown>[] = [];
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      const method = init?.method ?? 'GET';
+      if (url.endsWith('/signature/providers')) {
+        return json([provider('multicert', 'Multicert', 'QualifiedCertificate', true)]);
+      }
+      if (url.endsWith('/signature') && method === 'GET') return json(unsignedStatus);
+      if (url.endsWith('/v1/signature/remote/multicert/batch-initiate')) {
+        submitCount += 1;
+        requestBodies.push(JSON.parse(String(init?.body)));
+        return json(remoteBatchResponse('multicert', `sess-request-${submitCount}`));
+      }
+      return emptyInviteList(url, method) ?? Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(<SigningPanel act={sealedAct} entityName="Encosto Estratégico Lda" />);
+
+    const region = await screen.findByLabelText('Início remoto por documento');
+    const batch = within(region);
+    fireEvent.change(batch.getByLabelText('ID do ato'), { target: { value: 'act-2' } });
+    fireEvent.click(batch.getByRole('button', { name: 'Adicionar' }));
+    fireEvent.change(batch.getByLabelText('Referência do utilizador para sessões remotas'), {
+      target: { value: 'amelia.marques' },
+    });
+    fireEvent.click(batch.getByRole('button', { name: 'Iniciar sessões remotas' }));
+
+    expect(await batch.findByText('sess-request-1')).toBeTruthy();
+    fireEvent.change(batch.getByLabelText('Referência do utilizador para sessões remotas'), {
+      target: { value: 'bruno.dias' },
+    });
+    await waitFor(() => expect(batch.queryByText('sess-request-1')).toBeNull());
+
+    fireEvent.click(batch.getByRole('button', { name: 'Iniciar sessões remotas' }));
+    expect(await batch.findByText('sess-request-2')).toBeTruthy();
+    fireEvent.click(batch.getByLabelText('Selecionar ato act-2'));
+    await waitFor(() => expect(batch.queryByText('sess-request-2')).toBeNull());
+
+    fireEvent.click(batch.getByLabelText('Selecionar ato act-2'));
+    fireEvent.click(batch.getByRole('button', { name: 'Iniciar sessões remotas' }));
+    expect(await batch.findByText('sess-request-3')).toBeTruthy();
+    fireEvent.click(batch.getByRole('button', { name: 'Remover ato' }));
+    await waitFor(() => expect(batch.queryByText('sess-request-3')).toBeNull());
+
+    expect(requestBodies).toHaveLength(3);
+    expect(requestBodies[1]).toMatchObject({ user_ref: 'bruno.dias' });
   });
 });
 

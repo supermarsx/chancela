@@ -2539,6 +2539,44 @@ export const ptPT = {
   'signing.ccBatch.result.table.evidence': 'Evidência',
   'signing.ccBatch.result.signed': 'Assinado',
   'signing.ccBatch.result.error': 'Erro',
+  'signing.remoteBatch.aria': 'Início remoto por documento',
+  'signing.remoteBatch.title': 'Sessões remotas por documento',
+  'signing.remoteBatch.badge': 'Ativação por documento',
+  'signing.remoteBatch.description':
+    'Abre uma sessão remota separada para cada ato selecionado; cada sessão será confirmada individualmente.',
+  'signing.remoteBatch.boundary.title': 'Uma ativação por documento',
+  'signing.remoteBatch.boundary.body':
+    'Este fluxo apenas inicia sessões remotas independentes. Cada ato fica pendente com a sua própria sessão, pista de ativação e validade.',
+  'signing.remoteBatch.provider.label': 'Prestador remoto',
+  'signing.remoteBatch.provider.hint':
+    'Escolha um prestador configurado para abrir as sessões pendentes.',
+  'signing.remoteBatch.provider.none': 'Sem prestadores remotos configurados',
+  'signing.remoteBatch.userRef.label': 'Referência do utilizador para sessões remotas',
+  'signing.remoteBatch.userRef.hint':
+    'Telemóvel CMD ou referência de conta no prestador selecionado.',
+  'signing.remoteBatch.credential.label': 'Credencial para sessões remotas',
+  'signing.remoteBatch.credential.hint':
+    'Opcional e transitória. Usada apenas para iniciar estas sessões; nunca é guardada.',
+  'signing.remoteBatch.selection.needMore':
+    'Selecione pelo menos dois atos, um prestador e a referência do utilizador.',
+  'signing.remoteBatch.submit': 'Iniciar sessões remotas',
+  'signing.remoteBatch.submit.pending': 'A iniciar sessões…',
+  'signing.remoteBatch.reset': 'Limpar sessões',
+  'signing.remoteBatch.result.authMode': 'Modo de ativação',
+  'signing.remoteBatch.authMode.perDocumentActivation': 'Ativação por documento',
+  'signing.remoteBatch.result.pendingCount': 'Pendentes',
+  'signing.remoteBatch.result.initiateEvents': 'Inícios enviados',
+  'signing.remoteBatch.result.boundary':
+    'Cada linha pendente é uma sessão independente para confirmação normal no respetivo ato.',
+  'signing.remoteBatch.result.table.session': 'Sessão',
+  'signing.remoteBatch.result.table.provider': 'Prestador',
+  'signing.remoteBatch.result.table.activation': 'Ativação',
+  'signing.remoteBatch.result.table.expires': 'Validade',
+  'signing.remoteBatch.result.pending': 'Pendente',
+  'signing.remoteBatch.result.error': 'Erro',
+  'signing.remoteBatch.result.confirmNormally': 'Confirmar no fluxo normal deste ato.',
+  'signing.remoteBatch.result.noSecret':
+    'A resposta não mostra credenciais, códigos ou ativações.',
   'signing.seal.affordance.open': 'Posicionar selo visível',
   'signing.seal.affordance.hint':
     'Opcional. Sem selo visível, a assinatura mantém-se sem marca visível no documento.',
@@ -2935,6 +2973,7 @@ export const ptPT = {
   'toast.signing.otpSent': 'Código SMS enviado.',
   'toast.signing.signed': 'Ata assinada.',
   'toast.signing.ccBatchSigned': 'Lote de assinatura CC concluído.',
+  'toast.signing.remoteBatchInitiated': 'Sessões remotas iniciadas.',
   'toast.signing.officialImported': 'PDF assinado importado como evidência técnica.',
   'toast.signing.downloaded': 'PDF assinado descarregado.',
 

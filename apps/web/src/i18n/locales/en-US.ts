@@ -2494,6 +2494,43 @@ export const enUS: Catalog = {
   'signing.ccBatch.result.table.evidence': 'Evidence',
   'signing.ccBatch.result.signed': 'Signed',
   'signing.ccBatch.result.error': 'Error',
+  'signing.remoteBatch.aria': 'Per-document remote initiate',
+  'signing.remoteBatch.title': 'Per-document remote sessions',
+  'signing.remoteBatch.badge': 'Per-document activation',
+  'signing.remoteBatch.description':
+    'Opens a separate remote session for each selected act; each session is confirmed individually.',
+  'signing.remoteBatch.boundary.title': 'One activation per document',
+  'signing.remoteBatch.boundary.body':
+    'This flow only initiates independent remote sessions. Each act becomes pending with its own session, activation hint, and expiry.',
+  'signing.remoteBatch.provider.label': 'Remote provider',
+  'signing.remoteBatch.provider.hint': 'Choose a configured provider to open the pending sessions.',
+  'signing.remoteBatch.provider.none': 'No configured remote providers',
+  'signing.remoteBatch.userRef.label': 'Remote session user reference',
+  'signing.remoteBatch.userRef.hint':
+    'CMD mobile number or account reference at the selected provider.',
+  'signing.remoteBatch.credential.label': 'Remote session credential',
+  'signing.remoteBatch.credential.hint':
+    'Optional and transient. Used only to initiate these sessions; never stored.',
+  'signing.remoteBatch.selection.needMore':
+    'Select at least two acts, a provider, and the user reference.',
+  'signing.remoteBatch.submit': 'Initiate remote sessions',
+  'signing.remoteBatch.submit.pending': 'Initiating sessions…',
+  'signing.remoteBatch.reset': 'Clear sessions',
+  'signing.remoteBatch.result.authMode': 'Activation mode',
+  'signing.remoteBatch.authMode.perDocumentActivation': 'Per-document activation',
+  'signing.remoteBatch.result.pendingCount': 'Pending',
+  'signing.remoteBatch.result.initiateEvents': 'Initiates sent',
+  'signing.remoteBatch.result.boundary':
+    'Each pending row is an independent session for normal confirmation on its own act.',
+  'signing.remoteBatch.result.table.session': 'Session',
+  'signing.remoteBatch.result.table.provider': 'Provider',
+  'signing.remoteBatch.result.table.activation': 'Activation',
+  'signing.remoteBatch.result.table.expires': 'Expires',
+  'signing.remoteBatch.result.pending': 'Pending',
+  'signing.remoteBatch.result.error': 'Error',
+  'signing.remoteBatch.result.confirmNormally': "Confirm in this act's normal flow.",
+  'signing.remoteBatch.result.noSecret':
+    'The response does not show credentials, codes, or activations.',
   'signing.signed.qualifiedLabelCsc':
     'Qualified electronic signature (qualified certificate from a trust service provider).',
   'signing.signed.localPkcs12Title': 'Minutes signed with a local software certificate',
@@ -2810,6 +2847,7 @@ export const enUS: Catalog = {
   'toast.signing.otpSent': 'SMS code sent.',
   'toast.signing.signed': 'Minutes signed.',
   'toast.signing.ccBatchSigned': 'CC signing batch completed.',
+  'toast.signing.remoteBatchInitiated': 'Remote sessions initiated.',
   'toast.signing.officialImported': 'Signed PDF imported as technical evidence.',
   'toast.signing.downloaded': 'Signed PDF downloaded.',
 

@@ -2507,6 +2507,44 @@ export const itIT: Catalog = {
   'signing.ccBatch.result.table.evidence': 'Evidenza',
   'signing.ccBatch.result.signed': 'Firmato',
   'signing.ccBatch.result.error': 'Errore',
+  'signing.remoteBatch.aria': 'Avvio remoto per documento',
+  'signing.remoteBatch.title': 'Sessioni remote per documento',
+  'signing.remoteBatch.badge': 'Attivazione per documento',
+  'signing.remoteBatch.description':
+    'Apre una sessione remota separata per ogni verbale selezionato; ogni sessione viene confermata individualmente.',
+  'signing.remoteBatch.boundary.title': 'Una attivazione per documento',
+  'signing.remoteBatch.boundary.body':
+    'Questo flusso avvia solo sessioni remote indipendenti. Ogni verbale resta in sospeso con la propria sessione, suggerimento di attivazione e scadenza.',
+  'signing.remoteBatch.provider.label': 'Prestatore remoto',
+  'signing.remoteBatch.provider.hint':
+    'Scegli un prestatore configurato per aprire le sessioni in sospeso.',
+  'signing.remoteBatch.provider.none': 'Nessun prestatore remoto configurato',
+  'signing.remoteBatch.userRef.label': 'Riferimento utente per sessioni remote',
+  'signing.remoteBatch.userRef.hint':
+    'Numero mobile CMD o riferimento account presso il prestatore selezionato.',
+  'signing.remoteBatch.credential.label': 'Credenziale per sessioni remote',
+  'signing.remoteBatch.credential.hint':
+    'Opzionale e transitoria. Usata solo per avviare queste sessioni; non viene mai salvata.',
+  'signing.remoteBatch.selection.needMore':
+    'Seleziona almeno due verbali, un prestatore e il riferimento utente.',
+  'signing.remoteBatch.submit': 'Avvia sessioni remote',
+  'signing.remoteBatch.submit.pending': 'Avvio sessioni…',
+  'signing.remoteBatch.reset': 'Cancella sessioni',
+  'signing.remoteBatch.result.authMode': 'Modalità di attivazione',
+  'signing.remoteBatch.authMode.perDocumentActivation': 'Attivazione per documento',
+  'signing.remoteBatch.result.pendingCount': 'In sospeso',
+  'signing.remoteBatch.result.initiateEvents': 'Avvii inviati',
+  'signing.remoteBatch.result.boundary':
+    'Ogni riga in sospeso è una sessione indipendente da confermare nel normale flusso del proprio verbale.',
+  'signing.remoteBatch.result.table.session': 'Sessione',
+  'signing.remoteBatch.result.table.provider': 'Prestatore',
+  'signing.remoteBatch.result.table.activation': 'Attivazione',
+  'signing.remoteBatch.result.table.expires': 'Scadenza',
+  'signing.remoteBatch.result.pending': 'In sospeso',
+  'signing.remoteBatch.result.error': 'Errore',
+  'signing.remoteBatch.result.confirmNormally': 'Conferma nel normale flusso di questo verbale.',
+  'signing.remoteBatch.result.noSecret':
+    'La risposta non mostra credenziali, codici o attivazioni.',
   'signing.signed.qualifiedLabelCsc':
     'Firma elettronica qualificata (certificato qualificato di un prestatore di servizi fiduciari).',
   'signing.signed.localPkcs12Title': 'Verbale firmato con certificato software locale',
@@ -2826,6 +2864,7 @@ export const itIT: Catalog = {
   'toast.signing.otpSent': 'Codice SMS inviato.',
   'toast.signing.signed': 'Verbale firmato.',
   'toast.signing.ccBatchSigned': 'Blocco di firma CC completato.',
+  'toast.signing.remoteBatchInitiated': 'Sessioni remote avviate.',
   'toast.signing.officialImported': 'PDF firmato importato come evidenza tecnica.',
   'toast.signing.downloaded': 'PDF firmato scaricato.',
 

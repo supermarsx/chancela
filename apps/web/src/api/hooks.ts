@@ -37,6 +37,7 @@ import type {
   ScapAttributesBody,
   ScapSignBody,
   RemoteInitiateBody,
+  RemoteBatchInitiateBody,
   RemoteConfirmBody,
   CompleteFollowUpBody,
   CreateFollowUpBody,
@@ -1176,6 +1177,20 @@ export function useRemoteInitiateSignature(id: string) {
   return useMutation({
     mutationFn: ({ provider, body }: { provider: string; body: RemoteInitiateBody }) =>
       api.remoteInitiateSignature(id, provider, body),
+  });
+}
+
+/**
+ * Repeated remote-session batch initiate (`POST /v1/signature/remote/{provider}/batch-initiate`):
+ * one pending session per valid act, each later confirmed through the normal single-document
+ * remote confirm endpoint. Like the single initiate hook, this does not invalidate status queries
+ * on success; the caller keeps the ordered pending/error rows visible and clears the transient
+ * credential from local form state.
+ */
+export function useRemoteBatchInitiateSignature() {
+  return useMutation({
+    mutationFn: ({ provider, body }: { provider: string; body: RemoteBatchInitiateBody }) =>
+      api.remoteBatchInitiateSignature(provider, body),
   });
 }
 

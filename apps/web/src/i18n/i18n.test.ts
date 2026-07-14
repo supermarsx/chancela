@@ -214,6 +214,25 @@ describe('catalog completeness matrix', () => {
     }
   });
 
+  it('keeps remote batch copy scoped to per-document remote activation', () => {
+    expect(ptPT['signing.remoteBatch.userRef.label']).toBe(
+      'Referência do utilizador para sessões remotas',
+    );
+    expect(enUS['signing.remoteBatch.userRef.label']).toBe('Remote session user reference');
+    expect(ptPT['signing.remoteBatch.boundary.title']).toBe('Uma ativação por documento');
+    expect(enUS['signing.remoteBatch.boundary.title']).toBe('One activation per document');
+    expect(enUS['signing.remoteBatch.description']).toContain('separate remote session');
+    expect(enUS['signing.remoteBatch.result.confirmNormally']).toContain('normal flow');
+    expect(
+      [
+        ptPT['signing.remoteBatch.description'],
+        ptPT['signing.remoteBatch.boundary.body'],
+        enUS['signing.remoteBatch.description'],
+        enUS['signing.remoteBatch.boundary.body'],
+      ].join(' '),
+    ).not.toMatch(/provider-native|single OTP|one OTP|shared PIN|shared SAD/i);
+  });
+
   it('keeps external invite signed-PDF evidence copy localized outside source Portuguese', () => {
     const keys = [
       'externalInvite.tracking.title',

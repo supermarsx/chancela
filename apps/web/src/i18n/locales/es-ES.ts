@@ -2506,6 +2506,44 @@ export const esES: Catalog = {
   'signing.ccBatch.result.table.evidence': 'Evidencia',
   'signing.ccBatch.result.signed': 'Firmada',
   'signing.ccBatch.result.error': 'Error',
+  'signing.remoteBatch.aria': 'Inicio remoto por documento',
+  'signing.remoteBatch.title': 'Sesiones remotas por documento',
+  'signing.remoteBatch.badge': 'Activación por documento',
+  'signing.remoteBatch.description':
+    'Abre una sesión remota separada para cada acta seleccionada; cada sesión se confirma individualmente.',
+  'signing.remoteBatch.boundary.title': 'Una activación por documento',
+  'signing.remoteBatch.boundary.body':
+    'Este flujo solo inicia sesiones remotas independientes. Cada acta queda pendiente con su propia sesión, pista de activación y caducidad.',
+  'signing.remoteBatch.provider.label': 'Prestador remoto',
+  'signing.remoteBatch.provider.hint':
+    'Elige un prestador configurado para abrir las sesiones pendientes.',
+  'signing.remoteBatch.provider.none': 'Sin prestadores remotos configurados',
+  'signing.remoteBatch.userRef.label': 'Referencia de usuario para sesiones remotas',
+  'signing.remoteBatch.userRef.hint':
+    'Número móvil CMD o referencia de cuenta en el prestador seleccionado.',
+  'signing.remoteBatch.credential.label': 'Credencial para sesiones remotas',
+  'signing.remoteBatch.credential.hint':
+    'Opcional y transitoria. Se usa solo para iniciar estas sesiones; nunca se guarda.',
+  'signing.remoteBatch.selection.needMore':
+    'Selecciona al menos dos actas, un prestador y la referencia de usuario.',
+  'signing.remoteBatch.submit': 'Iniciar sesiones remotas',
+  'signing.remoteBatch.submit.pending': 'Iniciando sesiones…',
+  'signing.remoteBatch.reset': 'Limpiar sesiones',
+  'signing.remoteBatch.result.authMode': 'Modo de activación',
+  'signing.remoteBatch.authMode.perDocumentActivation': 'Activación por documento',
+  'signing.remoteBatch.result.pendingCount': 'Pendientes',
+  'signing.remoteBatch.result.initiateEvents': 'Inicios enviados',
+  'signing.remoteBatch.result.boundary':
+    'Cada fila pendiente es una sesión independiente para confirmación normal en su propia acta.',
+  'signing.remoteBatch.result.table.session': 'Sesión',
+  'signing.remoteBatch.result.table.provider': 'Prestador',
+  'signing.remoteBatch.result.table.activation': 'Activación',
+  'signing.remoteBatch.result.table.expires': 'Caduca',
+  'signing.remoteBatch.result.pending': 'Pendiente',
+  'signing.remoteBatch.result.error': 'Error',
+  'signing.remoteBatch.result.confirmNormally': 'Confirmar en el flujo normal de esta acta.',
+  'signing.remoteBatch.result.noSecret':
+    'La respuesta no muestra credenciales, códigos ni activaciones.',
   'signing.signed.qualifiedLabelCsc':
     'Firma electrónica cualificada (certificado cualificado de un prestador de servicios de confianza).',
   'signing.signed.localPkcs12Title': 'Acta firmada con certificado de software local',
@@ -2824,6 +2862,7 @@ export const esES: Catalog = {
   'toast.signing.otpSent': 'Código SMS enviado.',
   'toast.signing.signed': 'Acta firmada.',
   'toast.signing.ccBatchSigned': 'Lote de firma con TC completado.',
+  'toast.signing.remoteBatchInitiated': 'Sesiones remotas iniciadas.',
   'toast.signing.officialImported': 'PDF firmado importado como evidencia técnica.',
   'toast.signing.downloaded': 'PDF firmado descargado.',
 

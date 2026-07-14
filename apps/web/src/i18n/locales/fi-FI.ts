@@ -2499,6 +2499,44 @@ export const fiFI: Catalog = {
   'signing.ccBatch.result.table.evidence': 'Näyttö',
   'signing.ccBatch.result.signed': 'Allekirjoitettu',
   'signing.ccBatch.result.error': 'Virhe',
+  'signing.remoteBatch.aria': 'Etäaloitus asiakirjakohtaisesti',
+  'signing.remoteBatch.title': 'Asiakirjakohtaiset etäistunnot',
+  'signing.remoteBatch.badge': 'Asiakirjakohtainen aktivointi',
+  'signing.remoteBatch.description':
+    'Avaa erillisen etäistunnon kullekin valitulle pöytäkirjalle; jokainen istunto vahvistetaan erikseen.',
+  'signing.remoteBatch.boundary.title': 'Yksi aktivointi asiakirjaa kohti',
+  'signing.remoteBatch.boundary.body':
+    'Tämä työnkulku vain aloittaa itsenäiset etäistunnot. Jokainen pöytäkirja jää odottamaan omalla istunnolla, aktivointivihjeellä ja vanhenemisajalla.',
+  'signing.remoteBatch.provider.label': 'Etäpalveluntarjoaja',
+  'signing.remoteBatch.provider.hint':
+    'Valitse määritetty palveluntarjoaja odottavien istuntojen avaamiseksi.',
+  'signing.remoteBatch.provider.none': 'Ei määritettyjä etäpalveluntarjoajia',
+  'signing.remoteBatch.userRef.label': 'Etäistuntojen käyttäjäviite',
+  'signing.remoteBatch.userRef.hint':
+    'CMD-matkapuhelinnumero tai tiliviite valitulla palveluntarjoajalla.',
+  'signing.remoteBatch.credential.label': 'Etäistuntojen allekirjoitustunnus',
+  'signing.remoteBatch.credential.hint':
+    'Valinnainen ja väliaikainen. Käytetään vain näiden istuntojen aloittamiseen; ei koskaan tallenneta.',
+  'signing.remoteBatch.selection.needMore':
+    'Valitse vähintään kaksi pöytäkirjaa, palveluntarjoaja ja käyttäjäviite.',
+  'signing.remoteBatch.submit': 'Aloita etäistunnot',
+  'signing.remoteBatch.submit.pending': 'Aloitetaan istuntoja…',
+  'signing.remoteBatch.reset': 'Tyhjennä istunnot',
+  'signing.remoteBatch.result.authMode': 'Aktivointitila',
+  'signing.remoteBatch.authMode.perDocumentActivation': 'Asiakirjakohtainen aktivointi',
+  'signing.remoteBatch.result.pendingCount': 'Odottavat',
+  'signing.remoteBatch.result.initiateEvents': 'Aloitukset lähetetty',
+  'signing.remoteBatch.result.boundary':
+    'Jokainen odottava rivi on itsenäinen istunto normaalia vahvistusta varten omassa pöytäkirjassaan.',
+  'signing.remoteBatch.result.table.session': 'Istunto',
+  'signing.remoteBatch.result.table.provider': 'Palveluntarjoaja',
+  'signing.remoteBatch.result.table.activation': 'Aktivointi',
+  'signing.remoteBatch.result.table.expires': 'Vanhenee',
+  'signing.remoteBatch.result.pending': 'Odottaa',
+  'signing.remoteBatch.result.error': 'Virhe',
+  'signing.remoteBatch.result.confirmNormally': 'Vahvista tämän pöytäkirjan normaalissa työnkulussa.',
+  'signing.remoteBatch.result.noSecret':
+    'Vastaus ei näytä tunnuksia, koodeja tai aktivointeja.',
   'signing.signed.qualifiedLabelCsc':
     'Hyväksytty sähköinen allekirjoitus (luottamuspalvelun tarjoajan hyväksytty varmenne).',
   'signing.signed.localPkcs12Title':
@@ -2819,6 +2857,7 @@ export const fiFI: Catalog = {
   'toast.signing.otpSent': 'Tekstiviestikoodi lähetetty.',
   'toast.signing.signed': 'Pöytäkirja allekirjoitettu.',
   'toast.signing.ccBatchSigned': 'CC-allekirjoituserä valmis.',
+  'toast.signing.remoteBatchInitiated': 'Etäistunnot aloitettu.',
   'toast.signing.officialImported': 'Allekirjoitettu PDF tuotu teknisenä näyttönä.',
   'toast.signing.downloaded': 'Allekirjoitettu PDF ladattu.',
 

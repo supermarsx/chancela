@@ -1,22 +1,26 @@
 /**
- * Focused browser proof for pending remote-signing session resume routing.
+ * Focused browser proof for route-stubbed remote signing.
  *
  * The API is route-stubbed. These tests prove reload adoption chooses the matching confirm
- * endpoint for already-open CMD or CSC/QTSP sessions; they do not contact providers, trust
- * services, signing devices, SCAP, or live credential systems.
+ * endpoint for already-open CMD or CSC/QTSP sessions, and that repeated remote-session initiate
+ * opens per-document pending rows without echoing credentials. They do not contact providers,
+ * trust services, signing devices, SCAP, or live credential systems.
  */
 import { expect, test, type Page, type Route } from './fixtures';
 
 const ACT_ID = '7c2d8f40-3000-4000-8000-00000000f901';
+const SECOND_ACT_ID = '7c2d8f40-3000-4000-8000-00000000f905';
 const BOOK_ID = '7c2d8f40-3000-4000-8000-00000000f902';
 const ENTITY_ID = '7c2d8f40-3000-4000-8000-00000000f903';
 const USER_ID = '7c2d8f40-3000-4000-8000-00000000f904';
 const CSC_PROVIDER_ID = 'multicert-e2e';
 const FAKE_CMD_OTP = '999888';
 const FAKE_CSC_ACTIVATION = '445566';
+const REMOTE_BATCH_CREDENTIAL = 'remote-batch-secret';
 const SIGNED_DIGEST = 'c9'.repeat(32);
 
-type PendingCase = 'cmd' | 'csc';
+type ConfirmPendingCase = 'cmd' | 'csc';
+type PendingCase = ConfirmPendingCase | 'remote-batch';
 
 test('pending CSC/QTSP session resumes after reload and confirms through provider remote endpoint', async ({
   page,
@@ -90,9 +94,60 @@ test('legacy CMD pending session resumes after reload and confirms through CMD e
   await expectNoLiveTrustOrLegalClaim(page);
 });
 
+test('remote batch initiate opens per-document pending sessions without credential echo', async ({
+  page,
+}) => {
+  const audit = createAudit();
+  await routePendingSessionFixtures(page, 'remote-batch', audit);
+
+  await page.goto(`/atas/${ACT_ID}`);
+  const remoteBatch = page.getByLabel('Início remoto por documento');
+  await expect(remoteBatch).toBeVisible();
+  await expect(remoteBatch.getByText('Uma ativação por documento')).toBeVisible();
+
+  await remoteBatch.getByLabel('ID do ato').fill(SECOND_ACT_ID);
+  await remoteBatch.getByRole('button', { name: 'Adicionar' }).click();
+  await remoteBatch.getByLabel('Prestador remoto').selectOption(CSC_PROVIDER_ID);
+  await remoteBatch
+    .getByLabel('Referência do utilizador para sessões remotas')
+    .fill('amelia.marques');
+  await remoteBatch.getByLabel('Credencial para sessões remotas').fill(REMOTE_BATCH_CREDENTIAL);
+  await remoteBatch.getByLabel('Qualidade/capacidade declarada').fill('Presidente da Mesa');
+  await remoteBatch.getByLabel('Ator').fill('e2e-operator');
+
+  const batchResponse = waitForApiResponse(
+    page,
+    `/v1/signature/remote/${CSC_PROVIDER_ID}/batch-initiate`,
+    'POST',
+  );
+  await remoteBatch.getByRole('button', { name: 'Iniciar sessões remotas' }).click();
+  expect((await batchResponse).status()).toBe(200);
+
+  expect(audit.batchBodies).toEqual([
+    {
+      act_ids: [ACT_ID, SECOND_ACT_ID],
+      user_ref: 'amelia.marques',
+      credential: REMOTE_BATCH_CREDENTIAL,
+      capacity: 'Presidente da Mesa',
+      actor: 'e2e-operator',
+    },
+  ]);
+  expect(audit.endpointMismatches).toEqual([]);
+  expect(audit.unhandledCalls).toEqual([]);
+
+  await expect(remoteBatch.getByLabel('Credencial para sessões remotas')).toHaveValue('');
+  await expect(remoteBatch.getByText('sess-batch-current')).toBeVisible();
+  await expect(remoteBatch.getByText('código enviado para a ata atual')).toBeVisible();
+  await expect(remoteBatch.getByText('ato já assinado no servidor de teste')).toBeVisible();
+  await expect(remoteBatch.getByText('Confirmar no fluxo normal deste ato.')).toBeVisible();
+  await expect(remoteBatch).not.toContainText(REMOTE_BATCH_CREDENTIAL);
+  await expectNoLiveTrustOrLegalClaim(page);
+});
+
 function createAudit() {
   return {
     confirmBodies: [] as Array<{ endpoint: 'cmd' | 'remote'; body: Record<string, unknown> }>,
+    batchBodies: [] as Array<Record<string, unknown>>,
     endpointMismatches: [] as string[],
     unhandledCalls: [] as string[],
   };
@@ -202,7 +257,20 @@ async function routePendingSessionFixtures(
       // Keep this proof scoped to pending-session reload adoption/routing. The focused unit tests
       // cover signed-record rendering; this route-stubbed browser test must not promote the stub
       // response into a provider, qualified-status, finalization, or legal-readiness UI claim.
-      await fulfillJson(route, pendingStatusFixture(pendingCase));
+      await fulfillJson(
+        route,
+        pendingCase === 'remote-batch'
+          ? unsignedStatusFixture()
+          : pendingStatusFixture(pendingCase),
+      );
+      return;
+    }
+    if (
+      method === 'POST' &&
+      pathname === `/v1/signature/remote/${CSC_PROVIDER_ID}/batch-initiate`
+    ) {
+      audit.batchBodies.push(readJsonBody(request.postDataJSON()));
+      await fulfillJson(route, remoteBatchInitiateFixture());
       return;
     }
     if (method === 'POST' && pathname === `/v1/acts/${ACT_ID}/signature/cmd/confirm`) {
@@ -247,10 +315,23 @@ function isUnexpectedLiveSigningOrTrustPath(
 
   const cmdConfirm = `/v1/acts/${ACT_ID}/signature/cmd/confirm`;
   const remoteConfirm = `/v1/acts/${ACT_ID}/signature/remote/${CSC_PROVIDER_ID}/confirm`;
-  if (pendingCase === 'cmd') {
-    return pathname.includes('/signature/remote/') || (pathname.includes('/signature/cmd/') && pathname !== cmdConfirm);
+  const remoteBatchInitiate = `/v1/signature/remote/${CSC_PROVIDER_ID}/batch-initiate`;
+  if (pendingCase === 'remote-batch') {
+    return (
+      pathname.includes('/signature/cmd/') ||
+      (pathname.includes('/signature/remote/') && pathname !== remoteBatchInitiate)
+    );
   }
-  return pathname.includes('/signature/cmd/') || (pathname.includes('/signature/remote/') && pathname !== remoteConfirm);
+  if (pendingCase === 'cmd') {
+    return (
+      pathname.includes('/signature/remote/') ||
+      (pathname.includes('/signature/cmd/') && pathname !== cmdConfirm)
+    );
+  }
+  return (
+    pathname.includes('/signature/cmd/') ||
+    (pathname.includes('/signature/remote/') && pathname !== remoteConfirm)
+  );
 }
 
 async function expectNoLiveTrustOrLegalClaim(page: Page): Promise<void> {
@@ -572,7 +653,7 @@ function signatureProvidersFixture() {
   ];
 }
 
-function pendingStatusFixture(pendingCase: PendingCase) {
+function pendingStatusFixture(pendingCase: ConfirmPendingCase) {
   return {
     status: 'pending',
     finalization: 'finalizado',
@@ -596,7 +677,46 @@ function pendingStatusFixture(pendingCase: PendingCase) {
   };
 }
 
-function confirmResultFixture(pendingCase: PendingCase) {
+function unsignedStatusFixture() {
+  return {
+    status: 'unsigned',
+    finalization: 'finalizado',
+    require_qualified_for_seal: false,
+    evidence: evidenceFixture(),
+  };
+}
+
+function remoteBatchInitiateFixture() {
+  return {
+    provider_id: CSC_PROVIDER_ID,
+    family: 'QualifiedCertificate',
+    evidentiary_level: 'RouteStubbed',
+    auth_mode: 'per_document_activation',
+    requested: 2,
+    pending: 1,
+    failed: 1,
+    initiate_events: 1,
+    results: [
+      {
+        act_id: ACT_ID,
+        status: 'pending',
+        session_id: 'sess-batch-current',
+        provider_id: CSC_PROVIDER_ID,
+        family: 'QualifiedCertificate',
+        pending_status: 'activation_pending',
+        activation_hint: 'código enviado para a ata atual',
+        expires_at: '2026-07-12T12:10:00.000Z',
+      },
+      {
+        act_id: SECOND_ACT_ID,
+        status: 'error',
+        error: 'ato já assinado no servidor de teste',
+      },
+    ],
+  };
+}
+
+function confirmResultFixture(pendingCase: ConfirmPendingCase) {
   return {
     document_id: 'doc-pending-resume-e2e',
     act_id: ACT_ID,

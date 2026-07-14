@@ -167,6 +167,8 @@ import type {
   ExternalValidatorReportsResponse,
   ExternalValidatorReportUploadResponse,
   SignatureProviderView,
+  RemoteBatchInitiateBody,
+  RemoteBatchInitiateResponse,
   RemoteInitiateBody,
   RemoteInitiateResult,
   RemoteConfirmBody,
@@ -758,6 +760,11 @@ export const api = {
   remoteConfirmSignature: (id: string, provider: string, body: RemoteConfirmBody) =>
     post<RemoteConfirmResult>(
       `/v1/acts/${id}/signature/remote/${encodeURIComponent(provider)}/confirm`,
+      body,
+    ),
+  remoteBatchInitiateSignature: (provider: string, body: RemoteBatchInitiateBody) =>
+    post<RemoteBatchInitiateResponse>(
+      `/v1/signature/remote/${encodeURIComponent(provider)}/batch-initiate`,
       body,
     ),
   listExternalSigningEnvelopes: (id: string) =>

@@ -2500,6 +2500,44 @@ export const plPL: Catalog = {
   'signing.ccBatch.result.table.evidence': 'Dowód',
   'signing.ccBatch.result.signed': 'Podpisany',
   'signing.ccBatch.result.error': 'Błąd',
+  'signing.remoteBatch.aria': 'Zdalne rozpoczęcie na dokument',
+  'signing.remoteBatch.title': 'Zdalne sesje na dokument',
+  'signing.remoteBatch.badge': 'Aktywacja na dokument',
+  'signing.remoteBatch.description':
+    'Otwiera osobną sesję zdalną dla każdego wybranego protokołu; każda sesja jest potwierdzana osobno.',
+  'signing.remoteBatch.boundary.title': 'Jedna aktywacja na dokument',
+  'signing.remoteBatch.boundary.body':
+    'Ten przepływ tylko rozpoczyna niezależne sesje zdalne. Każdy protokół pozostaje oczekujący z własną sesją, wskazówką aktywacji i terminem ważności.',
+  'signing.remoteBatch.provider.label': 'Zdalny dostawca',
+  'signing.remoteBatch.provider.hint':
+    'Wybierz skonfigurowanego dostawcę, aby otworzyć oczekujące sesje.',
+  'signing.remoteBatch.provider.none': 'Brak skonfigurowanych zdalnych dostawców',
+  'signing.remoteBatch.userRef.label': 'Referencja użytkownika dla sesji zdalnych',
+  'signing.remoteBatch.userRef.hint':
+    'Numer komórkowy CMD albo referencja konta u wybranego dostawcy.',
+  'signing.remoteBatch.credential.label': 'Poświadczenie dla sesji zdalnych',
+  'signing.remoteBatch.credential.hint':
+    'Opcjonalne i tymczasowe. Używane tylko do rozpoczęcia tych sesji; nigdy nie jest zapisywane.',
+  'signing.remoteBatch.selection.needMore':
+    'Wybierz co najmniej dwa protokoły, dostawcę i referencję użytkownika.',
+  'signing.remoteBatch.submit': 'Rozpocznij sesje zdalne',
+  'signing.remoteBatch.submit.pending': 'Rozpoczynanie sesji…',
+  'signing.remoteBatch.reset': 'Wyczyść sesje',
+  'signing.remoteBatch.result.authMode': 'Tryb aktywacji',
+  'signing.remoteBatch.authMode.perDocumentActivation': 'Aktywacja na dokument',
+  'signing.remoteBatch.result.pendingCount': 'Oczekujące',
+  'signing.remoteBatch.result.initiateEvents': 'Rozpoczęcia wysłane',
+  'signing.remoteBatch.result.boundary':
+    'Każdy oczekujący wiersz to niezależna sesja do normalnego potwierdzenia we własnym protokole.',
+  'signing.remoteBatch.result.table.session': 'Sesja',
+  'signing.remoteBatch.result.table.provider': 'Dostawca',
+  'signing.remoteBatch.result.table.activation': 'Aktywacja',
+  'signing.remoteBatch.result.table.expires': 'Ważna do',
+  'signing.remoteBatch.result.pending': 'Oczekuje',
+  'signing.remoteBatch.result.error': 'Błąd',
+  'signing.remoteBatch.result.confirmNormally': 'Potwierdź w normalnym przepływie tego protokołu.',
+  'signing.remoteBatch.result.noSecret':
+    'Odpowiedź nie pokazuje poświadczeń, kodów ani aktywacji.',
   'signing.signed.qualifiedLabelCsc':
     'Kwalifikowany podpis elektroniczny (certyfikat kwalifikowany dostawcy usług zaufania).',
   'signing.signed.localPkcs12Title': 'Protokół podpisany lokalnym certyfikatem programowym',
@@ -2817,6 +2855,7 @@ export const plPL: Catalog = {
   'toast.signing.otpSent': 'Kod SMS wysłany.',
   'toast.signing.signed': 'Protokół podpisany.',
   'toast.signing.ccBatchSigned': 'Wsadowe podpisywanie Kartą obywatela zakończone.',
+  'toast.signing.remoteBatchInitiated': 'Sesje zdalne rozpoczęte.',
   'toast.signing.officialImported': 'Podpisany PDF zaimportowany jako dowód techniczny.',
   'toast.signing.downloaded': 'Podpisany PDF pobrany.',
 

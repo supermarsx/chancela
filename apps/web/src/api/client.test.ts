@@ -111,6 +111,74 @@ describe('api client', () => {
     expect(JSON.parse(init.body)).toMatchObject({ nipc: '500000000', kind: 'SociedadePorQuotas' });
   });
 
+  it('initiates remote signing sessions with the batch endpoint and exact request body', async () => {
+    const response = {
+      provider_id: 'multi/cert prod',
+      family: 'QualifiedCertificate',
+      evidentiary_level: 'Qualified',
+      auth_mode: 'per_document_activation',
+      requested: 2,
+      pending: 1,
+      failed: 1,
+      initiate_events: 1,
+      results: [
+        {
+          act_id: 'act-1',
+          status: 'pending',
+          session_id: 'sess-1',
+          provider_id: 'multi/cert prod',
+          family: 'QualifiedCertificate',
+          pending_status: 'activation_pending',
+          activation_hint: 'activation sent',
+          expires_at: '2026-07-14T10:05:00Z',
+        },
+        { act_id: 'act-2', status: 'error', error: 'document already signed' },
+      ],
+    };
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(response));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await api.remoteBatchInitiateSignature('multi/cert prod', {
+      act_ids: ['act-1', 'act-2'],
+      user_ref: 'amelia.marques',
+      credential: 'transient-secret',
+      capacity: 'Presidente da Mesa',
+      actor: 'operator-1',
+      seal: {
+        invisible: false,
+        page: 0,
+        x: 10,
+        y: 20,
+        w: 120,
+        h: 48,
+        template: { kind: 'name_date', name: 'Amélia Marques', date: '2026-07-14' },
+      },
+    });
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      '/v1/signature/remote/multi%2Fcert%20prod/batch-initiate',
+    );
+    expect(fetchMock.mock.calls[0][1].method).toBe('POST');
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      act_ids: ['act-1', 'act-2'],
+      user_ref: 'amelia.marques',
+      credential: 'transient-secret',
+      capacity: 'Presidente da Mesa',
+      actor: 'operator-1',
+      seal: {
+        invisible: false,
+        page: 0,
+        x: 10,
+        y: 20,
+        w: 120,
+        h: 48,
+        template: { kind: 'name_date', name: 'Amélia Marques', date: '2026-07-14' },
+      },
+    });
+    expect(JSON.stringify(result)).not.toContain('transient-secret');
+    expect(result.auth_mode).toBe('per_document_activation');
+  });
+
   it('builds a query string only from defined params', async () => {
     // Fresh Response per call: a body may only be read once.
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse([])));

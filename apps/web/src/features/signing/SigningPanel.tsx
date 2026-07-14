@@ -75,6 +75,7 @@ import type {
 import { OFFICIAL_SIGNATURE_IMPORT_GUARDRAIL_IDS } from '../../api/types';
 import { ApiError, api } from '../../api/client';
 import { BatchSigningPanel } from './BatchSigningPanel';
+import { RemoteBatchSigningPanel } from './RemoteBatchSigningPanel';
 import { ScapAttributePicker } from './ScapAttributePicker';
 import { SealDesigner } from './seal-designer';
 import { signatureFamilyLabels } from '../../api/labels';
@@ -3108,6 +3109,14 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
                       </ProviderChoice>
                     ),
                   )}
+                  {!providers.isLoading && !providers.error ? (
+                    <RemoteBatchSigningPanel
+                      currentAct={act}
+                      bookScope={bookScope}
+                      providers={providers.data ?? []}
+                      seal={seal}
+                    />
+                  ) : null}
                 </div>
                 {ccBlocked ? (
                   <InlineWarning tone="info" title={t('signing.cc.coLocation.title')}>

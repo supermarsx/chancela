@@ -2519,6 +2519,44 @@ export const deDE: Catalog = {
   'signing.ccBatch.result.table.evidence': 'Nachweis',
   'signing.ccBatch.result.signed': 'Signiert',
   'signing.ccBatch.result.error': 'Fehler',
+  'signing.remoteBatch.aria': 'Remote-Start je Dokument',
+  'signing.remoteBatch.title': 'Remote-Sitzungen je Dokument',
+  'signing.remoteBatch.badge': 'Aktivierung je Dokument',
+  'signing.remoteBatch.description':
+    'Öffnet für jedes ausgewählte Protokoll eine separate Remote-Sitzung; jede Sitzung wird einzeln bestätigt.',
+  'signing.remoteBatch.boundary.title': 'Eine Aktivierung je Dokument',
+  'signing.remoteBatch.boundary.body':
+    'Dieser Ablauf startet nur unabhängige Remote-Sitzungen. Jedes Protokoll bleibt mit eigener Sitzung, Aktivierungshinweis und Gültigkeit ausstehend.',
+  'signing.remoteBatch.provider.label': 'Remote-Anbieter',
+  'signing.remoteBatch.provider.hint':
+    'Wählen Sie einen konfigurierten Anbieter, um die ausstehenden Sitzungen zu öffnen.',
+  'signing.remoteBatch.provider.none': 'Keine konfigurierten Remote-Anbieter',
+  'signing.remoteBatch.userRef.label': 'Benutzerreferenz für Remote-Sitzungen',
+  'signing.remoteBatch.userRef.hint':
+    'CMD-Mobilnummer oder Kontoreferenz beim ausgewählten Anbieter.',
+  'signing.remoteBatch.credential.label': 'Zugangsdaten für Remote-Sitzungen',
+  'signing.remoteBatch.credential.hint':
+    'Optional und flüchtig. Wird nur zum Starten dieser Sitzungen verwendet; wird nie gespeichert.',
+  'signing.remoteBatch.selection.needMore':
+    'Wählen Sie mindestens zwei Protokolle, einen Anbieter und die Benutzerreferenz.',
+  'signing.remoteBatch.submit': 'Remote-Sitzungen starten',
+  'signing.remoteBatch.submit.pending': 'Sitzungen werden gestartet…',
+  'signing.remoteBatch.reset': 'Sitzungen leeren',
+  'signing.remoteBatch.result.authMode': 'Aktivierungsmodus',
+  'signing.remoteBatch.authMode.perDocumentActivation': 'Aktivierung je Dokument',
+  'signing.remoteBatch.result.pendingCount': 'Ausstehend',
+  'signing.remoteBatch.result.initiateEvents': 'Starts gesendet',
+  'signing.remoteBatch.result.boundary':
+    'Jede ausstehende Zeile ist eine unabhängige Sitzung zur normalen Bestätigung im jeweiligen Protokoll.',
+  'signing.remoteBatch.result.table.session': 'Sitzung',
+  'signing.remoteBatch.result.table.provider': 'Anbieter',
+  'signing.remoteBatch.result.table.activation': 'Aktivierung',
+  'signing.remoteBatch.result.table.expires': 'Gültig bis',
+  'signing.remoteBatch.result.pending': 'Ausstehend',
+  'signing.remoteBatch.result.error': 'Fehler',
+  'signing.remoteBatch.result.confirmNormally': 'Im normalen Ablauf dieses Protokolls bestätigen.',
+  'signing.remoteBatch.result.noSecret':
+    'Die Antwort zeigt keine Zugangsdaten, Codes oder Aktivierungen.',
   'signing.signed.qualifiedLabelCsc':
     'Qualifizierte elektronische Signatur (qualifiziertes Zertifikat eines Vertrauensdiensteanbieters).',
   'signing.signed.localPkcs12Title': 'Protokoll mit lokalem Softwarezertifikat signiert',
@@ -2839,6 +2877,7 @@ export const deDE: Catalog = {
   'toast.signing.otpSent': 'SMS-Code gesendet.',
   'toast.signing.signed': 'Protokoll signiert.',
   'toast.signing.ccBatchSigned': 'Stapelsignatur mit der Bürgerkarte abgeschlossen.',
+  'toast.signing.remoteBatchInitiated': 'Remote-Sitzungen gestartet.',
   'toast.signing.officialImported': 'Signiertes PDF als technischer Nachweis importiert.',
   'toast.signing.downloaded': 'Signiertes PDF heruntergeladen.',
 

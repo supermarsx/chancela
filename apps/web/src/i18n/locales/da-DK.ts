@@ -2501,6 +2501,44 @@ export const daDK: Catalog = {
   'signing.ccBatch.result.table.evidence': 'Dokumentation',
   'signing.ccBatch.result.signed': 'Signeret',
   'signing.ccBatch.result.error': 'Fejl',
+  'signing.remoteBatch.aria': 'Fjernstart pr. dokument',
+  'signing.remoteBatch.title': 'Fjernsessioner pr. dokument',
+  'signing.remoteBatch.badge': 'Aktivering pr. dokument',
+  'signing.remoteBatch.description':
+    'Åbner en separat fjernsession for hver valgt akt; hver session bekræftes individuelt.',
+  'signing.remoteBatch.boundary.title': 'Én aktivering pr. dokument',
+  'signing.remoteBatch.boundary.body':
+    'Dette flow starter kun uafhængige fjernsessioner. Hver akt bliver afventende med egen session, aktiveringshint og udløbstid.',
+  'signing.remoteBatch.provider.label': 'Fjernudbyder',
+  'signing.remoteBatch.provider.hint':
+    'Vælg en konfigureret udbyder for at åbne de afventende sessioner.',
+  'signing.remoteBatch.provider.none': 'Ingen konfigurerede fjernudbydere',
+  'signing.remoteBatch.userRef.label': 'Brugerreference til fjernsessioner',
+  'signing.remoteBatch.userRef.hint':
+    'CMD-mobilnummer eller kontoreference hos den valgte udbyder.',
+  'signing.remoteBatch.credential.label': 'Signeringslegitimation til fjernsessioner',
+  'signing.remoteBatch.credential.hint':
+    'Valgfri og midlertidig. Bruges kun til at starte disse sessioner; gemmes aldrig.',
+  'signing.remoteBatch.selection.needMore':
+    'Vælg mindst to akter, en udbyder og brugerreferencen.',
+  'signing.remoteBatch.submit': 'Start fjernsessioner',
+  'signing.remoteBatch.submit.pending': 'Starter sessioner…',
+  'signing.remoteBatch.reset': 'Ryd sessioner',
+  'signing.remoteBatch.result.authMode': 'Aktiveringstilstand',
+  'signing.remoteBatch.authMode.perDocumentActivation': 'Aktivering pr. dokument',
+  'signing.remoteBatch.result.pendingCount': 'Afventende',
+  'signing.remoteBatch.result.initiateEvents': 'Starter sendt',
+  'signing.remoteBatch.result.boundary':
+    'Hver afventende række er en uafhængig session til normal bekræftelse på sin egen akt.',
+  'signing.remoteBatch.result.table.session': 'Session',
+  'signing.remoteBatch.result.table.provider': 'Udbyder',
+  'signing.remoteBatch.result.table.activation': 'Aktivering',
+  'signing.remoteBatch.result.table.expires': 'Udløber',
+  'signing.remoteBatch.result.pending': 'Afventer',
+  'signing.remoteBatch.result.error': 'Fejl',
+  'signing.remoteBatch.result.confirmNormally': 'Bekræft i denne akts normale flow.',
+  'signing.remoteBatch.result.noSecret':
+    'Svaret viser ingen legitimationsoplysninger, koder eller aktiveringer.',
   'signing.signed.qualifiedLabelCsc':
     'Kvalificeret elektronisk signatur (kvalificeret certifikat fra en tillidstjenesteudbyder).',
   'signing.signed.localPkcs12Title': 'Protokol signeret med lokalt softwarecertifikat',
@@ -2818,6 +2856,7 @@ export const daDK: Catalog = {
   'toast.signing.otpSent': 'SMS-kode sendt.',
   'toast.signing.signed': 'Protokol signeret.',
   'toast.signing.ccBatchSigned': 'CC-signeringsbatch fuldført.',
+  'toast.signing.remoteBatchInitiated': 'Fjernsessioner startet.',
   'toast.signing.officialImported': 'Signeret PDF importeret som teknisk dokumentation.',
   'toast.signing.downloaded': 'Signeret PDF downloadet.',
 

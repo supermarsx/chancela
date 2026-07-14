@@ -2513,6 +2513,44 @@ export const frFR: Catalog = {
   'signing.ccBatch.result.table.evidence': 'Preuve',
   'signing.ccBatch.result.signed': 'Signés',
   'signing.ccBatch.result.error': 'Erreur',
+  'signing.remoteBatch.aria': 'Démarrage distant par document',
+  'signing.remoteBatch.title': 'Sessions distantes par document',
+  'signing.remoteBatch.badge': 'Activation par document',
+  'signing.remoteBatch.description':
+    'Ouvre une session distante séparée pour chaque acte sélectionné ; chaque session est confirmée individuellement.',
+  'signing.remoteBatch.boundary.title': 'Une activation par document',
+  'signing.remoteBatch.boundary.body':
+    'Ce flux lance seulement des sessions distantes indépendantes. Chaque acte reste en attente avec sa propre session, son indice d’activation et son expiration.',
+  'signing.remoteBatch.provider.label': 'Prestataire distant',
+  'signing.remoteBatch.provider.hint':
+    'Choisissez un prestataire configuré pour ouvrir les sessions en attente.',
+  'signing.remoteBatch.provider.none': 'Aucun prestataire distant configuré',
+  'signing.remoteBatch.userRef.label': 'Référence utilisateur pour sessions distantes',
+  'signing.remoteBatch.userRef.hint':
+    'Numéro mobile CMD ou référence de compte chez le prestataire choisi.',
+  'signing.remoteBatch.credential.label': 'Identifiant de signature pour sessions distantes',
+  'signing.remoteBatch.credential.hint':
+    'Facultatif et transitoire. Utilisé seulement pour lancer ces sessions ; jamais enregistré.',
+  'signing.remoteBatch.selection.needMore':
+    'Sélectionnez au moins deux actes, un prestataire et la référence utilisateur.',
+  'signing.remoteBatch.submit': 'Démarrer les sessions distantes',
+  'signing.remoteBatch.submit.pending': 'Démarrage des sessions…',
+  'signing.remoteBatch.reset': 'Effacer les sessions',
+  'signing.remoteBatch.result.authMode': 'Mode d’activation',
+  'signing.remoteBatch.authMode.perDocumentActivation': 'Activation par document',
+  'signing.remoteBatch.result.pendingCount': 'En attente',
+  'signing.remoteBatch.result.initiateEvents': 'Démarrages envoyés',
+  'signing.remoteBatch.result.boundary':
+    'Chaque ligne en attente est une session indépendante à confirmer normalement sur son propre acte.',
+  'signing.remoteBatch.result.table.session': 'Session',
+  'signing.remoteBatch.result.table.provider': 'Prestataire',
+  'signing.remoteBatch.result.table.activation': 'Activation',
+  'signing.remoteBatch.result.table.expires': 'Expiration',
+  'signing.remoteBatch.result.pending': 'En attente',
+  'signing.remoteBatch.result.error': 'Erreur',
+  'signing.remoteBatch.result.confirmNormally': 'Confirmer dans le flux normal de cet acte.',
+  'signing.remoteBatch.result.noSecret':
+    'La réponse n’affiche ni identifiants, ni codes, ni activations.',
   'signing.signed.qualifiedLabelCsc':
     "Signature électronique qualifiée (certificat qualifié d'un prestataire de services de confiance).",
   'signing.signed.localPkcs12Title': 'Procès-verbal signé avec un certificat logiciel local',
@@ -2834,6 +2872,7 @@ export const frFR: Catalog = {
   'toast.signing.otpSent': 'Code SMS envoyé.',
   'toast.signing.signed': 'Procès-verbal signé.',
   'toast.signing.ccBatchSigned': 'Lot de signature CC terminé.',
+  'toast.signing.remoteBatchInitiated': 'Sessions distantes démarrées.',
   'toast.signing.officialImported': 'PDF signé importé comme preuve technique.',
   'toast.signing.downloaded': 'PDF signé téléchargé.',
 
