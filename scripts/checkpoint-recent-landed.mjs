@@ -5079,6 +5079,66 @@ function assertCheckpointMap() {
     "API data status old SQLite logical placeholder rejection",
   );
   assertFileContains(
+    "contracts/data.status.json",
+    '"active_backend_family": "postgres"',
+    "data status contract active backend family fixture marker",
+  );
+  assertFileContains(
+    "contracts/data.status.json",
+    '"sidecar_storage_mode": "database"',
+    "data status contract sidecar storage mode fixture marker",
+  );
+  assertFileContains(
+    "contracts/data.status.json",
+    '"basis": "logical_payload"',
+    "data status contract backend-neutral logical payload marker",
+  );
+  assertFileContains(
+    "contracts/data.status.json",
+    '"basis": "sidecar_logical_payload"',
+    "data status contract DB-backed sidecar payload marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/data_status.rs",
+    "pub active_backend_family: Option<DurableBackendFamily>",
+    "API data status active backend family DTO marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/data_status.rs",
+    "pub sidecar_storage_mode: SidecarStorageMode",
+    "API data status sidecar storage mode DTO marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/data_status.rs",
+    "fn neutral_logical_usage",
+    "API data status backend-neutral logical usage helper",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/data_status.rs",
+    "async fn db_backed_sidecar_usage",
+    "API data status DB-backed sidecar telemetry helper",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/data_status.rs",
+    'kind: Some(UsageConcernKind::SidecarLogicalStore)',
+    "API data status DB-backed sidecar concern kind marker",
+  );
+  assertFileContains(
+    "apps/web/src/contracts/contracts.test.ts",
+    "fixture should include DB-backed provider credential telemetry",
+    "web contract data status DB-backed sidecar telemetry marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "data!.persistence.sidecar_storage_mode === 'database'",
+    "web data status DB-backed sidecar rendering gate marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "payload lógico sidecar",
+    "web data status sidecar logical payload label marker",
+  );
+  assertFileContains(
     "crates/chancela-templates/src/lib.rs",
     "catalog_metadata_validation_reports_stage_channel_and_authored_metadata_drift",
     "template stage/channel metadata drift coverage",
@@ -7433,7 +7493,7 @@ function assertCheckpointMap() {
   );
   assertFileContainsNormalized(
     "SPEC-COVERAGE.md",
-    "Current `4298f46` keeps Entity/UX/CI **PARTIAL**",
+    "Current `bac4337` keeps Entity/UX/CI **PARTIAL**",
     "spec coverage sealed-act chronology checkpoint marker",
   );
   assertFileContainsNormalized(
@@ -9587,12 +9647,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `4298f46`",
+    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `bac4337`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `4298f46`",
+    "Focused Gate Snapshot Through `bac4337`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -9942,7 +10002,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current working-tree data-status sidecar classification checks",
+    "Current `bac4337` data-status sidecar classification and backend-neutral\n  durability telemetry checks",
     "CI/E2E hardening plan data-status sidecar classification marker",
   );
   assertFileContains(
@@ -9954,6 +10014,16 @@ function assertCheckpointMap() {
     "docs/CI-E2E-HARDENING-PLAN.md",
     "`backup-recovery-drills.json` as\n  `backup_recovery_drills`",
     "CI/E2E hardening plan data-status backup recovery drills marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "active durable backend family,\n  sidecar-storage mode, durable-store-open permission status",
+    "CI/E2E hardening plan backend-neutral data-status telemetry marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "file-to-DB migration, backup/restore execution, production RPO/RTO proof,\n  destructive operation semantics, external service dependency",
+    "CI/E2E hardening plan backend-neutral data-status no-claim marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -10207,7 +10277,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `4298f46`",
+    "Current checkpoint metadata/static checks through `bac4337`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -10672,7 +10742,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `4298f46ff1c0b424b8bf14c58f729da7f3544a51`",
+    "implementation snapshot `bac43375fe38b57f1b7ca9400a6e175d1b0b9c7e`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -11269,6 +11339,21 @@ function assertCheckpointMap() {
     "SPEC-COVERAGE.md",
     "storage telemetry classification only; it does not add deletion, retention\n  execution",
     "spec coverage data-status telemetry-only caveat marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Current `bac4337` keeps Data/Architecture/UX/CI **PARTIAL**: `/v1/data/status`\n  now reports the active durable backend family",
+    "spec coverage backend-neutral data-status checkpoint marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "DB-backed sidecar logical rows/labels for\n  users, roles, delegations, settings, and provider credentials",
+    "spec coverage DB-backed sidecar data-status marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "does not migrate file\n  sidecars into the database, execute backup or restore workflows, certify\n  production RPO/RTO, perform deletion or any other destructive operation, or\n  depend on an external service",
+    "spec coverage backend-neutral data-status no-claim marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",

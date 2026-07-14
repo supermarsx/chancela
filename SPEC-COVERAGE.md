@@ -1,6 +1,6 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-14 from current implementation snapshot `4298f46ff1c0b424b8bf14c58f729da7f3544a51`,
+*Updated 2026-07-14 from current implementation snapshot `bac43375fe38b57f1b7ca9400a6e175d1b0b9c7e`,
 with committed evidence refreshes for the recently landed Signatures & Trust
 provider-credential, stored runtime credential resolution, stored PKCS#12,
 remote batch-initiation surfaces, and Docker/Compose runtime-hardening
@@ -114,7 +114,8 @@ templates, and CSC fusão/cisão/liquidação structural-change Ata templates, p
 platform-log forwarding through `POST /v1/platform/logs/forwarded` with
 sanitized denied/rejected/suppressed failure audits, plus
 data-status filesystem classification for `platform-logs.json` and
-`backup-recovery-drills.json`, a read-only local DGLAB interchange manifest API
+`backup-recovery-drills.json`, backend-neutral `/v1/data/status`
+durability/sidecar telemetry, a read-only local DGLAB interchange manifest API
 endpoint and BookDetail JSON download action, richer Ata editor AI
 statement-source provenance rendering, and local
 retained-export cleanup dry-run planning plus post-act template sealed-provenance
@@ -212,7 +213,7 @@ Implementation checkpoints covered here:
   does not fetch external law, verify legal text, promote DRE-sourced entries,
   replace legal review, or upgrade compliance/legal status.
 
-- Current `4298f46` keeps Entity/UX/CI **PARTIAL**: `GET
+- Current `bac4337` keeps Entity/UX/CI **PARTIAL**: `GET
   /v1/entities/{id}/chronology` now projects local sealed or archived acts for
   the entity into a `sealed_act_projection` with event/source provenance,
   typed local nodes and edges, retification/correction edges, and false
@@ -546,6 +547,18 @@ Implementation checkpoints covered here:
   read-only local payload telemetry only; it does not add cleanup execution,
   deletion/retention semantics, custody/RPO proof, SQLCipher-at-rest proof,
   restore/swap behavior, GDPR erasure, or lifecycle certification.
+- Current `bac4337` keeps Data/Architecture/UX/CI **PARTIAL**: `/v1/data/status`
+  now reports the active durable backend family, the sidecar storage mode, a
+  durable-store-open permission check, backend-neutral logical payload rows and
+  largest-payload metadata, and DB-backed sidecar logical rows/labels for
+  users, roles, delegations, settings, and provider credentials when sidecars
+  are database-backed. The contract fixture, API status response, client types,
+  and Data Management UI keep the legacy SQLite-specific rows while adding
+  neutral `logical_payload` and `sidecar_logical_payload` telemetry. This is
+  read-only backend-neutral storage telemetry only; it does not migrate file
+  sidecars into the database, execute backup or restore workflows, certify
+  production RPO/RTO, perform deletion or any other destructive operation, or
+  depend on an external service.
 - Working tree keeps Data/Documents/UX/CI **PARTIAL**: `POST
   /v1/data/cleanup` export dry-runs now compute `would_delete_files`,
   `would_delete_directories`, and `would_delete_bytes` while keeping

@@ -144,16 +144,21 @@ advisory-lock/fail-closed cluster write gate and promotion handoff markers prove
 source/test coverage for the off-by-default backend runtime paths, API/server
 selector, app-level logical backup/restore/recovery paths, pre-append
 write-gate refusal, promotion handoff reloading/re-verification, and HTTP 503
-`NotLeader` mapping only. SQLite remains the default backend; Postgres
-selection is feature/config gated through `CHANCELA_DB_BACKEND=postgres` plus
+`NotLeader` mapping only. The `bac4337` data-status refresh reports the active
+durable backend family and sidecar storage mode, adds backend-neutral logical
+payload and DB-backed sidecar telemetry labels where sidecars are database-backed,
+and preserves SQLite-specific rows for compatibility. SQLite remains the
+default backend; Postgres selection is feature/config gated through
+`CHANCELA_DB_BACKEND=postgres` plus
 exactly one `DATABASE_URL` or `DATABASE_URL_FILE` source; default CI still does
 not run against a live Postgres database, and live PG election/failover tests
 remain ignored unless `DATABASE_URL` points at a throwaway database. They do
-not prove production Postgres readiness, live DB validation, migration
-completeness, production HA readiness, consensus correctness, split-brain
-impossibility, live failover certification, cloud deployment readiness,
-TLS/remote PG readiness, multi-node operational certification,
-backup-policy/RPO/RTO certification, legal/DR certification, or external sync
+not prove file-to-DB sidecar migration, backup/restore execution, production
+Postgres readiness, live DB validation, migration completeness, production HA
+readiness, consensus correctness, split-brain impossibility, live failover
+certification, cloud deployment readiness, TLS/remote PG readiness, multi-node
+operational certification, backup-policy/RPO/RTO certification, destructive
+operation safety, legal/DR certification, external service dependency, or external sync
 readiness.
 
 It intentionally reuses existing test surfaces:

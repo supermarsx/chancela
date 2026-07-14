@@ -1,7 +1,7 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `4298f46`,
+and implementation snapshot `bac4337`,
 including coverage notes for the bounded PAdES DSS validation-time, PDF/UA v10
 scoped table-header evidence, retention due-candidate explicit evidence states,
 bounded archive/no-action evidence UI, duplicate-review guard/status surfacing, and
@@ -22,7 +22,8 @@ local advisory-lock cluster write gating and fail-closed promotion handoff marke
 SQLite-default feature/config-gated backend selection, DPIA template/guidance
 checkpoint coverage,
 plus data-status
-sidecar classification, read-only local DGLAB interchange manifest API
+sidecar classification and backend-neutral durability/sidecar telemetry,
+read-only local DGLAB interchange manifest API
 scaffolding and BookDetail JSON download,
 local sync/handoff preflight readiness reporting over existing evidence only,
 archive filter reset icon-only clear-control coverage,
@@ -804,11 +805,11 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `4298f46`
+## Focused Gate Snapshot Through `bac4337`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08` and checkpoint-promoted on 2026-07-14 for
-current implementation head `4298f46`. This is not an exhaustive current
+current implementation head `bac4337`. This is not an exhaustive current
 green-run claim; browser, Docker, desktop, package signing/notarization, image
 signing/attestation, and live-provider limits above still apply.
 
@@ -1046,13 +1047,19 @@ settingsDefaults.test.ts contracts.test.ts`.
   `DataUsageConcern.kind`, contract tolerance, `sqlite_logical_table` fixture
   rows, `data-status-sqlite-table-list` / row DOM and CSS markers, plus
   prettier/eslint and scoped `git diff --check`.
-- Current working-tree data-status sidecar classification checks: focused API
+- Current `bac4337` data-status sidecar classification and backend-neutral
+  durability telemetry checks: focused API
   markers pin `data_status_concern_classification_covers_known_roots` and
   `/v1/data/status` filesystem concerns for `platform-logs.json` as
   `platform_logs` and `backup-recovery-drills.json` as
-  `backup_recovery_drills`. These checks preserve durable permission/status
-  behavior and classify sidecar usage only; they do not add deletion, retention
-  execution, legal custody proof, or data-lifecycle certification.
+  `backup_recovery_drills`, plus active durable backend family,
+  sidecar-storage mode, durable-store-open permission status,
+  backend-neutral logical payload rows, and DB-backed sidecar logical
+  rows/labels where sidecars are database-backed. These checks preserve durable
+  permission/status behavior and classify sidecar usage only; they do not add
+  file-to-DB migration, backup/restore execution, production RPO/RTO proof,
+  destructive operation semantics, external service dependency, legal custody
+  proof, or data-lifecycle certification.
 - Recent keyed PAdES VRI `/TU` checks through `76fc229`: worker validations
   passed `cargo fmt`, `cargo test -p chancela-pades`,
   `cargo test -p chancela-api pdf_signature`,
@@ -1747,7 +1754,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   --workspace apps/web -- e2e/session.spec.ts e2e/first-launch-onboarding.spec.ts`.
   Treat the static/unit/focused markers as the pinned slice, not broad
   Playwright-browser-suite or browser-matrix proof; the browser suite is not exhaustive.
-- Current checkpoint metadata/static checks through `4298f46`
+- Current checkpoint metadata/static checks through `bac4337`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
