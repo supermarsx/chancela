@@ -2323,7 +2323,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Current working-tree PDF accessibility evidence projection keeps Documents",
+    "Current `62e6655` PDF accessibility evidence projection keeps Documents",
     "spec coverage PDF accessibility projection partial marker",
   );
   assertFileContains(
@@ -9330,7 +9330,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `14d0f0c`",
+    "Current checkpoint metadata/static checks through `62e6655`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -9760,7 +9760,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `14d0f0cbabf01605117ebe9ae9d0b4ca886b329d`",
+    "implementation snapshot `62e6655539430e7e1267ed9deb51c4b741b139c1`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
