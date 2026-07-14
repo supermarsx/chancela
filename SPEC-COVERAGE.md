@@ -1,6 +1,6 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-14 from current implementation snapshot `62e6655539430e7e1267ed9deb51c4b741b139c1`,
+*Updated 2026-07-14 from current implementation snapshot `3fcfda31bb17f67be911d46d1c2f7c907140b4f4`,
 with committed evidence refreshes for the recently landed Signatures & Trust
 provider-credential, stored runtime credential resolution, stored PKCS#12,
 remote batch-initiation surfaces, and Docker/Compose runtime-hardening
@@ -171,7 +171,7 @@ blockers.
 
 Implementation checkpoints covered here:
 
-- Current `62e6655` PDF accessibility evidence projection keeps Documents,
+- Current `3fcfda3` PDF accessibility evidence projection keeps Documents,
   Archive/Data, and CI **PARTIAL**: document bundle validation reports now
   embed the deterministic `chancela-doc` accessibility report JSON v9 plus
   machine-readable PDF/UA blockers, and archive packages include
