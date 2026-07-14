@@ -817,3 +817,417 @@ fn lower_hex(bytes: &[u8]) -> String {
     }
     s
 }
+
+// =================================================================================================
+// wp21 — per-book export / import / start-over + restore-preflight on the Postgres backend
+// =================================================================================================
+
+use chancela_core::{Act, Book, BookKind, Entity, EntityKind, MeetingChannel, Nipc};
+use chancela_store::recovery::{CollisionPolicy, ImportVerdict, StartOverScope};
+
+fn sample_entity() -> Entity {
+    Entity::new(
+        "Encosto Estrategico Lda",
+        Nipc::unvalidated("500002020"),
+        "Rua de Teste, Lisboa",
+        EntityKind::SociedadePorQuotas,
+    )
+}
+
+/// Seed a blank instance with one entity + one book carrying a valid book chain (`book.opened`
+/// genesis + one `act.sealed`), an act, and a generated document. Mirrors the SQLite recovery-test
+/// `seed`, so the per-book bundle it produces is byte-shaped identically across backends.
+fn seed_book(store: &Store, data_dir: &Path) -> (Ledger, Entity, Book, Act) {
+    let (mut ledger, _) = seed_blank_instance(store, data_dir);
+    let entity = sample_entity();
+    let book = Book::new(entity.id, BookKind::AssembleiaGeral);
+    let act = Act::draft(book.id, "Ata n.o 1", MeetingChannel::Physical);
+    let doc = sample_document(act.id, "book-seed");
+
+    let scope_entity = format!("entity:{}", entity.id);
+    let scope_book = format!("entity:{}/book:{}", entity.id, book.id);
+
+    let e0 = ledger
+        .append(
+            "amelia.marques",
+            &scope_entity,
+            "entity.created",
+            None,
+            b"e",
+        )
+        .clone();
+    store
+        .persist(|tx| {
+            tx.append_event(&e0)?;
+            tx.upsert_entity(&entity)
+        })
+        .unwrap();
+
+    let e1 = ledger
+        .append("amelia.marques", &scope_book, "book.opened", None, b"open")
+        .clone();
+    store
+        .persist(|tx| {
+            tx.append_event(&e1)?;
+            tx.upsert_book(&book)
+        })
+        .unwrap();
+
+    let e2 = ledger
+        .append("amelia.marques", &scope_book, "act.sealed", None, b"seal")
+        .clone();
+    store
+        .persist(|tx| {
+            tx.append_event(&e2)?;
+            tx.upsert_act(&act)?;
+            tx.upsert_document(&doc)
+        })
+        .unwrap();
+
+    (ledger, entity, book, act)
+}
+
+/// Read one member's bytes out of a zip archive.
+fn zip_member(archive_bytes: &[u8], name: &str) -> Option<Vec<u8>> {
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(archive_bytes)).ok()?;
+    let mut f = archive.by_name(name).ok()?;
+    let mut buf = Vec::new();
+    std::io::Read::read_to_end(&mut f, &mut buf).ok()?;
+    Some(buf)
+}
+
+/// Per-book export → import round-trip on Postgres: the logical bundle carries the book + entity +
+/// acts + the book-chain events; re-importing (after a factory blank clears the original) verifies
+/// clean, records the isolated import + retained bundle, and never merges the foreign chain onto the
+/// live spine.
+#[test]
+#[ignore = "requires a live PostgreSQL at DATABASE_URL"]
+fn per_book_export_import_roundtrips_on_postgres() {
+    let Some(database_url) = database_url() else {
+        eprintln!("skipping: DATABASE_URL not set");
+        return;
+    };
+    let store = Store::open_backend(StoreBackendSelection::Postgres { database_url })
+        .expect("open postgres backend");
+    let data_dir = unique_data_dir("perbook-roundtrip");
+    let (mut ledger, entity, book, act) = seed_book(&store, &data_dir);
+
+    // Export the book to a self-verifying bundle.
+    let export = store
+        .export_book(
+            &mut ledger,
+            book.id,
+            &data_dir,
+            "amelia.marques",
+            ts(1_800_000_000),
+        )
+        .expect("export book on postgres");
+    assert!(export.path.exists(), "bundle retained under exports/");
+    assert_eq!(export.manifest.book_id, book.id.to_string());
+    assert_eq!(export.manifest.entity_id, entity.id.to_string());
+    assert!(export.manifest.book_chain.verified, "book chain verified");
+    assert_eq!(
+        export.manifest.book_chain.length, 2,
+        "book.opened + act.sealed"
+    );
+    assert!(
+        ledger.events().iter().any(|e| e.kind == "ledger.exported"),
+        "a chained ledger.exported was appended"
+    );
+    // The bundle really carries the act + a coherent events.jsonl.
+    let events_jsonl = zip_member(&export.bytes, "events.jsonl").expect("events.jsonl present");
+    assert_eq!(
+        events_jsonl.iter().filter(|b| **b == b'\n').count(),
+        2,
+        "two book-chain events serialized"
+    );
+    assert!(
+        zip_member(&export.bytes, &format!("acts/{}.json", act.id)).is_some(),
+        "the act member is present"
+    );
+
+    // Factory-blank clears the live book, then re-import → Verified, isolated, no collision.
+    let mut dst_ledger = store.load().unwrap().ledger;
+    store
+        .reset(
+            &mut dst_ledger,
+            &data_dir,
+            ResetScope::BackendFactory,
+            false,
+            &[],
+            "amelia.marques",
+            ts(1_800_000_100),
+        )
+        .expect("factory blank before re-import");
+
+    let outcome = store
+        .import_book(
+            &mut dst_ledger,
+            &export.path,
+            CollisionPolicy::Refuse,
+            "amelia.marques",
+            ts(1_800_000_200),
+        )
+        .expect("import book on postgres");
+    assert!(
+        matches!(outcome.verdict, ImportVerdict::Verified),
+        "{outcome:?}"
+    );
+    assert_eq!(outcome.book_id, book.id.to_string());
+    assert!(!outcome.collided);
+    assert_eq!(
+        outcome.source_instance_id,
+        export.manifest.source_instance_id
+    );
+
+    // Isolated: the live spine holds only the chained ledger.imported, NOT the foreign book chain.
+    assert!(
+        dst_ledger
+            .events()
+            .iter()
+            .any(|e| e.kind == "ledger.imported"),
+        "ledger.imported recorded"
+    );
+    assert_eq!(
+        store.load().unwrap().books.len(),
+        0,
+        "the imported book is not merged into live books"
+    );
+
+    // The import registry + retained bundle are queryable and byte-exact.
+    let imported = store.imported_books().expect("imported_books feed");
+    assert_eq!(imported.len(), 1);
+    assert_eq!(imported[0].book_id, book.id.to_string());
+    assert!(matches!(imported[0].verdict, ImportVerdict::Verified));
+    let retained = store
+        .imported_bundle(&outcome.import_id)
+        .expect("imported_bundle")
+        .expect("bundle bytes retained");
+    assert_eq!(retained, export.bytes, "retained bundle is byte-identical");
+
+    let _ = std::fs::remove_dir_all(&data_dir);
+}
+
+/// A tampered bundle is quarantined (never trusted as Verified), and a colliding import under the
+/// default `Refuse` policy errors and leaves the DB untouched (atomic: no imported_books row, no
+/// ledger.imported event).
+#[test]
+#[ignore = "requires a live PostgreSQL at DATABASE_URL"]
+fn per_book_import_quarantines_tamper_and_refuses_collision_atomically_on_postgres() {
+    let Some(database_url) = database_url() else {
+        eprintln!("skipping: DATABASE_URL not set");
+        return;
+    };
+    let store = Store::open_backend(StoreBackendSelection::Postgres { database_url })
+        .expect("open postgres backend");
+    let data_dir = unique_data_dir("perbook-tamper");
+    let (mut ledger, _entity, book, _act) = seed_book(&store, &data_dir);
+    let export = store
+        .export_book(
+            &mut ledger,
+            book.id,
+            &data_dir,
+            "amelia.marques",
+            ts(1_800_000_000),
+        )
+        .expect("export book");
+
+    // --- Tamper: flip a byte inside the events.jsonl member so the book chain no longer verifies. ---
+    let bundle = std::fs::read(&export.path).unwrap();
+    let (manifest, mut members) = {
+        let mut m: Option<serde_json::Value> = None;
+        let mut map = std::collections::HashMap::new();
+        let mut zip = zip::ZipArchive::new(std::io::Cursor::new(&bundle)).unwrap();
+        for i in 0..zip.len() {
+            let mut f = zip.by_index(i).unwrap();
+            let name = f.name().to_owned();
+            let mut buf = Vec::new();
+            std::io::Read::read_to_end(&mut f, &mut buf).unwrap();
+            if name == "manifest.json" {
+                m = Some(serde_json::from_slice(&buf).unwrap());
+            } else {
+                map.insert(name, buf);
+            }
+        }
+        (m.unwrap(), map)
+    };
+    // Corrupt a member WITHOUT updating its manifest digest → member-digest mismatch → quarantined.
+    if let Some(ev) = members.get_mut("events.jsonl") {
+        if let Some(b) = ev.first_mut() {
+            *b ^= 0xFF;
+        }
+    }
+    let tampered_path = data_dir.join("tampered.zip");
+    {
+        let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let opts = zip::write::SimpleFileOptions::default();
+        zip.start_file("manifest.json", opts).unwrap();
+        std::io::Write::write_all(&mut zip, &serde_json::to_vec(&manifest).unwrap()).unwrap();
+        for (name, bytes) in &members {
+            zip.start_file(name.as_str(), opts).unwrap();
+            std::io::Write::write_all(&mut zip, bytes).unwrap();
+        }
+        std::fs::write(&tampered_path, zip.finish().unwrap().into_inner()).unwrap();
+    }
+    // manifest is left intact on purpose (only member bytes were flipped ⇒ a member-digest mismatch).
+
+    let mut dst_ledger = store.load().unwrap().ledger;
+    let tamper_outcome = store
+        .import_book(
+            &mut dst_ledger,
+            &tampered_path,
+            CollisionPolicy::QuarantineCopy,
+            "amelia.marques",
+            ts(1_800_000_300),
+        )
+        .expect("a tampered bundle is recorded, not errored");
+    assert!(
+        matches!(tamper_outcome.verdict, ImportVerdict::Quarantined { .. }),
+        "tampered bundle must quarantine, never Verified: {tamper_outcome:?}"
+    );
+
+    // --- Collision + Refuse: the book already exists (imported above), so Refuse errors atomically. ---
+    let before = store.imported_books().unwrap().len();
+    let ledger_len_before = store.load().unwrap().ledger.len();
+    let mut dst_ledger2 = store.load().unwrap().ledger;
+    let err = store
+        .import_book(
+            &mut dst_ledger2,
+            &export.path,
+            CollisionPolicy::Refuse,
+            "amelia.marques",
+            ts(1_800_000_400),
+        )
+        .expect_err("a colliding Refuse import must error");
+    assert!(matches!(err, StoreError::ImportCollision { .. }), "{err:?}");
+    assert_eq!(
+        store.imported_books().unwrap().len(),
+        before,
+        "no imported_books row was written on the refused collision"
+    );
+    assert_eq!(
+        store.load().unwrap().ledger.len(),
+        ledger_len_before,
+        "no ledger.imported event was written on the refused collision (atomic no-op)"
+    );
+
+    let _ = std::fs::remove_dir_all(&data_dir);
+}
+
+/// Per-book start-over on Postgres: archives the current book (chained `ledger.exported`), appends a
+/// chained `ledger.reinitialized`, and persists a fresh successor book shell — all in coherent PG
+/// transactions. The old book survives (append-only) and the successor exists in `Created` state.
+#[test]
+#[ignore = "requires a live PostgreSQL at DATABASE_URL"]
+fn per_book_start_over_stays_coherent_on_postgres() {
+    let Some(database_url) = database_url() else {
+        eprintln!("skipping: DATABASE_URL not set");
+        return;
+    };
+    let store = Store::open_backend(StoreBackendSelection::Postgres { database_url })
+        .expect("open postgres backend");
+    let data_dir = unique_data_dir("perbook-startover");
+    let (mut ledger, _entity, book, _act) = seed_book(&store, &data_dir);
+    let len_before = ledger.len();
+
+    let outcome = store
+        .start_over_book(
+            &mut ledger,
+            book.id,
+            "recomecar o livro",
+            "amelia.marques",
+            ts(1_800_000_000),
+            &data_dir,
+        )
+        .expect("start over book on postgres");
+    assert!(matches!(outcome.scope, StartOverScope::Book));
+    assert_eq!(outcome.old_book_id, Some(book.id.to_string()));
+    let new_book_id = outcome.new_book_id.expect("successor book id");
+    assert_ne!(new_book_id, book.id.to_string());
+
+    // The ledger grew a chained ledger.exported + ledger.reinitialized and still verifies.
+    assert!(ledger.events().iter().any(|e| e.kind == "ledger.exported"));
+    assert!(
+        ledger
+            .events()
+            .iter()
+            .any(|e| e.kind == "ledger.reinitialized")
+    );
+    assert!(ledger.len() >= len_before + 2, "export + reinit appended");
+
+    let loaded = store.load().unwrap();
+    assert!(
+        loaded.chain_status.is_ok(),
+        "post start-over chain verifies"
+    );
+    // Both the old book and the fresh successor shell are present.
+    assert!(
+        loaded.books.contains_key(&book.id),
+        "old book preserved (append-only)"
+    );
+    assert!(
+        loaded.books.keys().any(|k| k.to_string() == new_book_id),
+        "successor book shell persisted"
+    );
+
+    let _ = std::fs::remove_dir_all(&data_dir);
+}
+
+/// The Postgres restore-preflight is a full in-memory verify-before-trust of the logical bundle:
+/// it proves restorability (ok/ready) without touching the live database, and refuses a corrupted
+/// bundle with bounded errors — again leaving the live DB untouched.
+#[test]
+#[ignore = "requires a live PostgreSQL at DATABASE_URL"]
+fn restore_preflight_is_non_destructive_and_rejects_a_bad_bundle_on_postgres() {
+    let Some(database_url) = database_url() else {
+        eprintln!("skipping: DATABASE_URL not set");
+        return;
+    };
+    let store = Store::open_backend(StoreBackendSelection::Postgres { database_url })
+        .expect("open postgres backend");
+    let data_dir = unique_data_dir("preflight");
+    let (_ledger, _entity, _book, act) = seed_book(&store, &data_dir);
+
+    // A whole-store logical backup to preflight.
+    let manifest = store.backup(&data_dir, &[]).expect("logical backup");
+
+    // A distinguishing live row a destructive preflight would disturb.
+    let sentinel = sample_document(ActId(uuid::Uuid::new_v4()), "sentinel");
+    store.persist(|tx| tx.upsert_document(&sentinel)).unwrap();
+
+    // Good bundle → ok/ready, no temp-dir drill (in-memory verify), and the live sentinel survives.
+    let good = store
+        .restore_preflight(Path::new(&manifest.path), &data_dir, None)
+        .expect("preflight good bundle");
+    assert!(good.ok && good.ready, "good bundle is restorable: {good:?}");
+    assert!(good.ledger_verified, "ledger re-verified in memory");
+    assert!(
+        good.isolated_restore.is_none(),
+        "postgres preflight uses the in-memory verify, not a temp-file drill"
+    );
+    assert!(
+        store.document_by_id(&sentinel.id).unwrap().is_some(),
+        "live database untouched by the good-bundle preflight"
+    );
+    // The seeded act is still live too.
+    assert!(store.document_for_act(act.id).unwrap().is_some());
+
+    // Corrupt the bundle → preflight refuses with bounded errors, live DB still untouched.
+    let mut bytes = std::fs::read(&manifest.path).unwrap();
+    let mid = bytes.len() / 2;
+    bytes[mid] ^= 0xFF;
+    bytes[mid + 1] ^= 0xFF;
+    let corrupt_path = data_dir.join("corrupt-backup.zip");
+    std::fs::write(&corrupt_path, &bytes).unwrap();
+    let bad = store
+        .restore_preflight(&corrupt_path, &data_dir, None)
+        .expect("preflight bad bundle returns evidence, not an error");
+    assert!(!bad.ok && !bad.ready, "corrupt bundle is not restorable");
+    assert!(!bad.errors.is_empty(), "bounded errors surfaced");
+    assert!(
+        store.document_by_id(&sentinel.id).unwrap().is_some(),
+        "live database untouched by the bad-bundle preflight"
+    );
+
+    let _ = std::fs::remove_dir_all(&data_dir);
+}

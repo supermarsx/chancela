@@ -51,10 +51,23 @@
 //! domain-wipe / factory-blank / whole-instance start-over / re-anchor paths (the row-clearing runs
 //! through the backend-agnostic [`crate::Tx::execute_recovery_batch`]).
 //!
-//! Still deferred **by design** (fail closed with [`crate::StoreError::UnsupportedOnPostgres`]): the
-//! **per-book** portability paths — `export_book` / `import_book` / `imported_books` / per-book
-//! `start_over_book` — plus the SQLite-temp-file `restore_preflight` drill. These read/mutate through
-//! the SQLite-only `Tx::raw` / `Store::locked_conn` accessors and are not part of the wp15 scope.
+//! wp21 completes the operator surface: the **per-book** portability paths — `export_book`
+//! (logical per-book bundle: the book + entity + acts + book-chain events + documents, same
+//! `chancela-book-bundle/v1` contract as SQLite), `import_book` / `preflight_import_book_bytes`
+//! (verify-before-trust, then the retained bundle + verdict + chained `ledger.imported` written in
+//! one transaction via the backend-agnostic [`crate::Tx::insert_imported_book`]), `imported_books`,
+//! `imported_bundle`, and per-book `start_over_book` — now run on Postgres through the pooled reads
+//! and the portable `Tx` writer above rather than the SQLite-only `Tx::raw` / `Store::locked_conn`
+//! accessors. The `restore_preflight` drill also runs: because there is no SQLite `chancela.db` to
+//! materialize into a temp workspace, the Postgres preflight instead performs the full in-memory
+//! verify-before-trust of the logical bundle (manifest fixity + every per-table digest + a ledger
+//! hash-chain re-run) — the same non-destructive evidence, never touching the live database.
+//!
+//! Nothing operator-facing now fails closed with [`crate::StoreError::UnsupportedOnPostgres`]; the
+//! only remaining arms are the genuinely SQLite-only internals — direct `rusqlite::Connection`
+//! access ([`crate::Store::locked_conn`]) and the raw-SQL escape hatch ([`crate::Tx::raw`]) — which
+//! exist so the SQLite backend's bespoke `PRAGMA`/file paths compile; every portable operation is
+//! routed around them on Postgres.
 
 use std::sync::atomic::{AtomicBool, AtomicI64};
 use std::sync::{Arc, Mutex};
@@ -446,6 +459,93 @@ impl PostgresBackend {
             &[&id],
         )?;
         row.as_ref().map(row_to_document).transpose()
+    }
+
+    // ── wp21 per-book portability reads (export / import / start-over) ──────────────────────────
+    //
+    // The per-book bundle paths in [`crate::recovery`] read the same aggregate/isolation rows the
+    // SQLite backend reaches through `Store::locked_conn`. These pooled-read helpers give the
+    // recovery plane a portable Postgres equivalent so `export_book` / `import_book` /
+    // `imported_books` / `imported_bundle` / `start_over_book` no longer fail closed.
+
+    /// Read one book's raw row `json` by id (parsed by the recovery plane into a `Book`).
+    pub(crate) fn book_json(&self, id: &str) -> Result<Option<String>, StoreError> {
+        let mut client = self.read()?;
+        Ok(client
+            .query_opt("SELECT json FROM books WHERE id = $1", &[&id])?
+            .map(|row| row.get::<_, String>(0)))
+    }
+
+    /// Read one entity's raw row `json` by id (kept verbatim so the bundle stores exact PUBLIC bytes).
+    pub(crate) fn entity_json(&self, id: &str) -> Result<Option<String>, StoreError> {
+        let mut client = self.read()?;
+        Ok(client
+            .query_opt("SELECT json FROM entities WHERE id = $1", &[&id])?
+            .map(|row| row.get::<_, String>(0)))
+    }
+
+    /// Read all acts of a book as raw row `json`, ordered by id (deterministic bundle order).
+    pub(crate) fn acts_json_for_book(&self, book_id: &str) -> Result<Vec<String>, StoreError> {
+        let mut client = self.read()?;
+        let rows = client.query(
+            "SELECT json FROM acts WHERE book_id = $1 ORDER BY id",
+            &[&book_id],
+        )?;
+        Ok(rows.iter().map(|r| r.get::<_, String>(0)).collect())
+    }
+
+    /// Whether `book_id` already exists as a live book OR an imported book (collision detection).
+    pub(crate) fn book_exists_anywhere(&self, book_id: &str) -> Result<bool, StoreError> {
+        let mut client = self.read()?;
+        let live: i64 = client
+            .query_one("SELECT COUNT(*) FROM books WHERE id = $1", &[&book_id])?
+            .get(0);
+        let imported: i64 = client
+            .query_one(
+                "SELECT COUNT(*) FROM imported_books WHERE book_id = $1",
+                &[&book_id],
+            )?
+            .get(0);
+        Ok(live + imported > 0)
+    }
+
+    /// Read the isolated import namespace rows (newest first) for the per-book import feed. The
+    /// recovery plane reconstructs each verdict/timestamp; here we return only the raw column tuple.
+    pub(crate) fn imported_book_rows(
+        &self,
+    ) -> Result<Vec<crate::recovery::ImportedBookRow>, StoreError> {
+        let mut client = self.read()?;
+        let rows = client.query(
+            "SELECT import_id, entity_id, book_id, source_instance_id, bundle_digest, verdict, \
+             break_json, collided, imported_at FROM imported_books \
+             ORDER BY imported_at DESC, ctid DESC",
+            &[],
+        )?;
+        Ok(rows
+            .iter()
+            .map(|row| crate::recovery::ImportedBookRow {
+                import_id: row.get(0),
+                entity_id: row.get(1),
+                book_id: row.get(2),
+                source_instance_id: row.get(3),
+                bundle_digest: row.get(4),
+                verdict: row.get(5),
+                break_json: row.get(6),
+                collided: row.get(7),
+                imported_at: row.get(8),
+            })
+            .collect())
+    }
+
+    /// Fetch the retained, read-only `.zip` bytes of one import, or `None` if the id is unknown.
+    pub(crate) fn imported_bundle(&self, import_id: &str) -> Result<Option<Vec<u8>>, StoreError> {
+        let mut client = self.read()?;
+        Ok(client
+            .query_opt(
+                "SELECT bundle_bytes FROM imported_books WHERE import_id = $1",
+                &[&import_id],
+            )?
+            .map(|row| row.get::<_, Vec<u8>>(0)))
     }
 
     pub(crate) fn generated_document_dispatch_evidence(

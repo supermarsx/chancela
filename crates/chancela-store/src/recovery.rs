@@ -747,24 +747,18 @@ impl Store {
             )
             .clone();
         let persisted = self.persist(|tx| {
-            tx.raw()?.execute(
-                "INSERT INTO imported_books \
-                 (import_id, entity_id, book_id, source_instance_id, bundle_digest, verdict, \
-                  break_json, collided, imported_at, bundle_bytes) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-                params![
-                    import_id,
-                    entity_id,
-                    book_id,
-                    source_instance_id,
-                    bundle_digest,
-                    verdict_str,
-                    break_json,
-                    collided as i64,
-                    imported_at,
-                    bundle_bytes,
-                ],
-            )?;
+            tx.insert_imported_book(&ImportedBookInsert {
+                import_id: &import_id,
+                entity_id: &entity_id,
+                book_id: &book_id,
+                source_instance_id: &source_instance_id,
+                bundle_digest: &bundle_digest,
+                verdict: verdict_str,
+                break_json: break_json.as_deref(),
+                collided,
+                imported_at: &imported_at,
+                bundle_bytes: &bundle_bytes,
+            })?;
             tx.append_event(&ev)?;
             Ok(())
         });
@@ -787,49 +781,53 @@ impl Store {
     /// List the isolated import namespace (verified + quarantined), newest first — the api's import
     /// feed. Read-only; the bundle bytes are fetched separately via [`Store::imported_bundle`].
     pub fn imported_books(&self) -> Result<Vec<ImportRecord>, StoreError> {
+        let mut out = Vec::new();
+        for row in self.imported_book_rows()? {
+            let verdict =
+                reconstruct_verdict(&row.verdict, row.break_json.as_deref(), &row.book_id)?;
+            out.push(ImportRecord {
+                import_id: row.import_id,
+                entity_id: row.entity_id,
+                book_id: row.book_id,
+                source_instance_id: row.source_instance_id,
+                bundle_digest: row.bundle_digest,
+                verdict,
+                collided: row.collided != 0,
+                imported_at: OffsetDateTime::parse(&row.imported_at, &Rfc3339)
+                    .unwrap_or(OffsetDateTime::UNIX_EPOCH),
+            });
+        }
+        Ok(out)
+    }
+
+    /// Read the raw `imported_books` column rows (newest first) on either backend. Kept private so
+    /// [`Store::imported_books`] owns the verdict/timestamp reconstruction once.
+    fn imported_book_rows(&self) -> Result<Vec<ImportedBookRow>, StoreError> {
+        #[cfg(feature = "postgres")]
+        if let crate::Backend::Postgres(backend) = &self.backend {
+            return backend.imported_book_rows();
+        }
         let guard = self.locked_conn()?;
         let mut stmt = guard.prepare(
             "SELECT import_id, entity_id, book_id, source_instance_id, bundle_digest, verdict, \
              break_json, collided, imported_at FROM imported_books ORDER BY imported_at DESC, rowid DESC",
         )?;
         let rows = stmt.query_map([], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
-                row.get::<_, String>(3)?,
-                row.get::<_, String>(4)?,
-                row.get::<_, String>(5)?,
-                row.get::<_, Option<String>>(6)?,
-                row.get::<_, i64>(7)?,
-                row.get::<_, String>(8)?,
-            ))
+            Ok(ImportedBookRow {
+                import_id: row.get(0)?,
+                entity_id: row.get(1)?,
+                book_id: row.get(2)?,
+                source_instance_id: row.get(3)?,
+                bundle_digest: row.get(4)?,
+                verdict: row.get(5)?,
+                break_json: row.get(6)?,
+                collided: row.get(7)?,
+                imported_at: row.get(8)?,
+            })
         })?;
         let mut out = Vec::new();
         for row in rows {
-            let (
-                import_id,
-                entity_id,
-                book_id,
-                source,
-                digest,
-                verdict_str,
-                break_json,
-                collided,
-                at,
-            ) = row?;
-            let verdict = reconstruct_verdict(&verdict_str, break_json.as_deref(), &book_id)?;
-            out.push(ImportRecord {
-                import_id,
-                entity_id,
-                book_id,
-                source_instance_id: source,
-                bundle_digest: digest,
-                verdict,
-                collided: collided != 0,
-                imported_at: OffsetDateTime::parse(&at, &Rfc3339)
-                    .unwrap_or(OffsetDateTime::UNIX_EPOCH),
-            });
+            out.push(row?);
         }
         Ok(out)
     }
@@ -837,6 +835,10 @@ impl Store {
     /// Fetch the retained, read-only `.zip` bytes of one import (for inspection / re-export /
     /// compare), or `None` if the import id is unknown.
     pub fn imported_bundle(&self, import_id: &str) -> Result<Option<Vec<u8>>, StoreError> {
+        #[cfg(feature = "postgres")]
+        if let crate::Backend::Postgres(backend) = &self.backend {
+            return backend.imported_bundle(import_id);
+        }
         let guard = self.locked_conn()?;
         let mut stmt =
             guard.prepare("SELECT bundle_bytes FROM imported_books WHERE import_id = ?1")?;
@@ -888,6 +890,22 @@ impl Store {
             }
             archive_bytes
         };
+
+        // The Postgres backend has no SQLite `chancela.db` to materialize into a temp workspace, so
+        // its preflight proves restorability by a full **in-memory** verify-before-trust of the same
+        // logical bundle the restore consumes: manifest self-digest, every per-table fixity digest,
+        // and the ledger hash-chain re-run from the exported `events` (which must re-verify `Ok` and
+        // match the manifest head/length). That is the entire non-destructive evidence a restore
+        // relies on, and it never touches the live database (nor a scratch schema). See the module
+        // docs on why a Postgres bundle is logical rows, not an opaque DB file.
+        #[cfg(feature = "postgres")]
+        if let crate::Backend::Postgres(_) = &self.backend {
+            return Ok(pg_restore_preflight_outcome(
+                archive,
+                encrypted,
+                &archive_bytes,
+            ));
+        }
 
         match verify_restore_preflight_zip(archive, data_dir, encrypted, &archive_bytes) {
             Ok(outcome) => Ok(outcome),
@@ -1662,8 +1680,15 @@ impl Store {
         Ok(ev)
     }
 
-    /// Read one book aggregate by id.
+    /// Read one book aggregate by id (portable across the SQLite and Postgres backends).
     fn book_by_id(&self, id: BookId) -> Result<Option<Book>, StoreError> {
+        #[cfg(feature = "postgres")]
+        if let crate::Backend::Postgres(backend) = &self.backend {
+            return backend
+                .book_json(&id.to_string())?
+                .map(|j| serde_json::from_str(&j).map_err(StoreError::from))
+                .transpose();
+        }
         let guard = self.locked_conn()?;
         let mut stmt = guard.prepare("SELECT json FROM books WHERE id = ?1")?;
         stmt.query_row(params![id.to_string()], |row| row.get::<_, String>(0))
@@ -1674,6 +1699,10 @@ impl Store {
 
     /// Read one entity's raw row json by id (kept as-is so the bundle stores the exact PUBLIC bytes).
     fn entity_json(&self, id: String) -> Result<Option<String>, StoreError> {
+        #[cfg(feature = "postgres")]
+        if let crate::Backend::Postgres(backend) = &self.backend {
+            return backend.entity_json(&id);
+        }
         let guard = self.locked_conn()?;
         let mut stmt = guard.prepare("SELECT json FROM entities WHERE id = ?1")?;
         Ok(stmt
@@ -1683,6 +1712,15 @@ impl Store {
 
     /// Read all acts of a book, ordered by id (deterministic bundle order).
     fn acts_for_book(&self, book_id: BookId) -> Result<Vec<Act>, StoreError> {
+        #[cfg(feature = "postgres")]
+        if let crate::Backend::Postgres(backend) = &self.backend {
+            let mut acts = Vec::new();
+            for j in backend.acts_json_for_book(&book_id.to_string())? {
+                acts.push(serde_json::from_str::<Act>(&j)?);
+            }
+            acts.sort_by_key(|a| a.id.to_string());
+            return Ok(acts);
+        }
         let guard = self.locked_conn()?;
         let mut stmt = guard.prepare("SELECT json FROM acts WHERE book_id = ?1 ORDER BY id")?;
         let rows = stmt.query_map(params![book_id.to_string()], |row| row.get::<_, String>(0))?;
@@ -1771,6 +1809,10 @@ impl Store {
 
     /// Whether `book_id` already exists as a live book OR an imported book (collision detection).
     fn book_exists_anywhere(&self, book_id: &str) -> Result<bool, StoreError> {
+        #[cfg(feature = "postgres")]
+        if let crate::Backend::Postgres(backend) = &self.backend {
+            return backend.book_exists_anywhere(book_id);
+        }
         let guard = self.locked_conn()?;
         let live: i64 = guard.query_row(
             "SELECT COUNT(*) FROM books WHERE id = ?1",
@@ -1790,6 +1832,36 @@ impl Store {
 struct BuiltBundle {
     manifest: BundleManifest,
     bytes: Vec<u8>,
+}
+
+/// One raw `imported_books` row, backend-agnostic (the SQLite and Postgres reads both build this,
+/// and [`Store::imported_books`] reconstructs the `verdict`/`imported_at` from it). `collided` is the
+/// stored `INTEGER`/`BIGINT` flag (0/1). Not part of the public API.
+pub(crate) struct ImportedBookRow {
+    pub import_id: String,
+    pub entity_id: String,
+    pub book_id: String,
+    pub source_instance_id: String,
+    pub bundle_digest: String,
+    pub verdict: String,
+    pub break_json: Option<String>,
+    pub collided: i64,
+    pub imported_at: String,
+}
+
+/// The column values for one `imported_books` insert, passed by reference so the transactional
+/// writer can bind them on either backend without a giant argument list. Not part of the public API.
+pub(crate) struct ImportedBookInsert<'a> {
+    pub import_id: &'a str,
+    pub entity_id: &'a str,
+    pub book_id: &'a str,
+    pub source_instance_id: &'a str,
+    pub bundle_digest: &'a str,
+    pub verdict: &'a str,
+    pub break_json: Option<&'a str>,
+    pub collided: bool,
+    pub imported_at: &'a str,
+    pub bundle_bytes: &'a [u8],
 }
 
 struct DocumentMemberOwner {
@@ -2319,6 +2391,79 @@ fn restore_preflight_failure(
         findings: Vec::new(),
         errors: vec![message.to_owned()],
         next_step: "fix the archive material or choose another backup before restoring".to_owned(),
+    }
+}
+
+/// Build the [`RestorePreflightOutcome`] for the Postgres backend from a full in-memory
+/// verify-before-trust of the logical bundle (wp21). Non-destructive: nothing is written and the
+/// live database is never touched. A `BadBackup` verdict becomes a bounded failure outcome; any
+/// other error type is unexpected here (verify is pure) and is surfaced as a failure finding.
+#[cfg(feature = "postgres")]
+fn pg_restore_preflight_outcome(
+    archive: &Path,
+    encrypted: bool,
+    archive_bytes: &[u8],
+) -> RestorePreflightOutcome {
+    let verified = match crate::pg_backup::verify_pg_backup_bundle(archive_bytes) {
+        Ok(v) => v,
+        Err(StoreError::BadBackup(msg)) => {
+            return restore_preflight_failure(archive, Some(encrypted), &msg);
+        }
+        Err(e) => {
+            return restore_preflight_failure(
+                archive,
+                Some(encrypted),
+                &restore_preflight_error_message(e),
+            );
+        }
+    };
+
+    let m = &verified.manifest;
+    let table_bytes: u64 = m.tables.iter().map(|t| t.bytes).sum();
+    let sidecar_bytes: u64 = m.sidecars.iter().map(|s| s.bytes).sum();
+    let evidence = RestorePreflightManifestEvidence {
+        path: "manifest.json".to_owned(),
+        schema: crate::pg_backup::PG_BACKUP_FORMAT.to_owned(),
+        version: 1,
+        app_version: m.app_version.clone(),
+        store_schema_version: m.store_schema_version,
+        ledger_length: m.ledger_length,
+        ledger_verified: m.ledger_verified,
+        member_count: m.tables.len() + m.sidecars.len(),
+        sidecar_member_count: m.sidecars.len(),
+        // The logical table dump (which carries `meta` + `events` + every aggregate table) IS the
+        // Postgres analogue of the SQLite `chancela.db` member; verify confirmed all required tables
+        // are present, so the durable-state member is present.
+        db_member_present: true,
+        total_member_bytes: table_bytes + sidecar_bytes,
+    };
+
+    let findings = vec![
+        "archive structure is readable".to_owned(),
+        "manifest.json parsed".to_owned(),
+        format!(
+            "{} logical table member(s) + {} sidecar(s) verified",
+            m.tables.len(),
+            m.sidecars.len()
+        ),
+        format!(
+            "bundle ledger re-verified in memory ({} event(s)) — live database untouched",
+            m.ledger_length
+        ),
+    ];
+
+    RestorePreflightOutcome {
+        ok: true,
+        ready: true,
+        encrypted: Some(encrypted),
+        archive: archive.to_path_buf(),
+        manifest: Some(evidence),
+        ledger_verified: true,
+        // No temp-file restore drill on Postgres: the isolated evidence is the in-memory verify above.
+        isolated_restore: None,
+        findings,
+        errors: Vec::new(),
+        next_step: "restore can proceed".to_owned(),
     }
 }
 

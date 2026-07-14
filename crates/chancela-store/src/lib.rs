@@ -3443,6 +3443,63 @@ impl Tx<'_> {
         Ok(())
     }
 
+    /// Insert one isolated `imported_books` row inside the enclosing transaction (wp21). Portable
+    /// across the SQLite and Postgres backends so [`Store::import_book`] persists the retained bundle
+    /// and its verify-before-trust verdict atomically with the chained `ledger.imported` event, rather
+    /// than through the SQLite-only [`Tx::raw`] escape hatch. The `import_id` primary key is a fresh
+    /// uuid, so a plain `INSERT` is correct: a collision would be a programming error, not a retry.
+    pub(crate) fn insert_imported_book(
+        &self,
+        row: &crate::recovery::ImportedBookInsert<'_>,
+    ) -> Result<(), StoreError> {
+        match &self.kind {
+            TxKind::Sqlite(_) => {
+                self.raw()?.execute(
+                    "INSERT INTO imported_books \
+                     (import_id, entity_id, book_id, source_instance_id, bundle_digest, verdict, \
+                      break_json, collided, imported_at, bundle_bytes) \
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                    params![
+                        row.import_id,
+                        row.entity_id,
+                        row.book_id,
+                        row.source_instance_id,
+                        row.bundle_digest,
+                        row.verdict,
+                        row.break_json,
+                        row.collided as i64,
+                        row.imported_at,
+                        row.bundle_bytes,
+                    ],
+                )?;
+            }
+            #[cfg(feature = "postgres")]
+            TxKind::Postgres(cell) => {
+                let collided = row.collided as i64;
+                let bundle_bytes: &[u8] = row.bundle_bytes;
+                cell.borrow_mut().execute(
+                    "INSERT INTO imported_books \
+                     (import_id, entity_id, book_id, source_instance_id, bundle_digest, verdict, \
+                      break_json, collided, imported_at, bundle_bytes) \
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
+                    &[
+                        &row.import_id,
+                        &row.entity_id,
+                        &row.book_id,
+                        &row.source_instance_id,
+                        &row.bundle_digest,
+                        &row.verdict,
+                        &row.break_json,
+                        &collided,
+                        &row.imported_at,
+                        &bundle_bytes,
+                    ],
+                )?;
+            }
+        }
+        Ok(())
+    }
+
     /// Insert metadata-only dispatch evidence for a generated document, returning the canonical row.
     ///
     /// The `(document_id, idempotency_key)` primary key enforces exact-retry idempotency. A duplicate
