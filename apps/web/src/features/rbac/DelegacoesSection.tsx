@@ -34,6 +34,7 @@ import {
   ErrorNote,
   Field,
   Icon,
+  IconButton,
   InlineWarning,
   Input,
   Select,
@@ -42,7 +43,7 @@ import {
   TextArea,
   useToast,
 } from '../../ui';
-import { GateButton, usePermissions, useCan } from '../session/permissions';
+import { GateButton, GateIconButton, usePermissions, useCan } from '../session/permissions';
 import type { DelegationView, PermissionScope } from '../../api/types';
 import { ScopePicker, useScopeLabel } from './ScopePicker';
 
@@ -306,27 +307,22 @@ function DelegationRow({ d, now }: { d: DelegationView; now: number }) {
           <span className="muted">—</span>
         ) : isGrantor ? (
           // The grantor may always revoke their own grant (server allows the grantor bypass).
-          <Button
-            type="button"
-            variant="ghost"
+          <IconButton
             icon={<Icon.Trash />}
+            label={t('rbac.deleg.revoke')}
             disabled={revoke.isPending}
             onClick={doRevoke}
-          >
-            {t('rbac.deleg.revoke')}
-          </Button>
+          />
         ) : (
           // Otherwise it needs `delegation.revoke` at the delegation's scope.
-          <GateButton
+          <GateIconButton
             perm="delegation.revoke"
             scope={d.scope}
-            variant="ghost"
             icon={<Icon.Trash />}
+            label={t('rbac.deleg.revoke')}
             disabled={revoke.isPending || !can('delegation.revoke', d.scope)}
             onClick={doRevoke}
-          >
-            {t('rbac.deleg.revoke')}
-          </GateButton>
+          />
         )}
       </td>
     </tr>

@@ -35,7 +35,7 @@ import {
   Table,
   useToast,
 } from '../../ui';
-import { GateButton } from '../session/permissions';
+import { GateButton, GateIconButton } from '../session/permissions';
 import type { PermissionScope, RoleAssignmentView, UserView } from '../../api/types';
 import { ScopePicker, useScopeLabel } from './ScopePicker';
 
@@ -172,16 +172,14 @@ export function RoleAssignmentManager({ user }: { user: UserView }) {
                   <Badge tone="neutral">{scopeLabel(a.scope)}</Badge>
                 </td>
                 <td className="users-actions">
-                  <GateButton
+                  <GateIconButton
                     perm="role.assign"
                     scope={a.scope}
-                    variant="ghost"
                     icon={<Icon.Trash />}
+                    label={t('rbac.assign.remove')}
                     disabled={busy}
                     onClick={() => remove(a)}
-                  >
-                    {t('rbac.assign.remove')}
-                  </GateButton>
+                  />
                 </td>
               </tr>
             ))}

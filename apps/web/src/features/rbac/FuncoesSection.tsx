@@ -41,7 +41,7 @@ import {
   Table,
   useToast,
 } from '../../ui';
-import { GateButton, useCan } from '../session/permissions';
+import { GateButton, GateIconButton, useCan } from '../session/permissions';
 import type { PermissionInfo, RoleView, SeededRoleReconciliationView } from '../../api/types';
 import { PermissionMatrix } from './PermissionMatrix';
 
@@ -273,32 +273,28 @@ function RoleRow({ role, onEdit }: { role: RoleView; onEdit: (role: RoleView) =>
           </span>
         ) : (
           <span className="row-wrap">
-            <GateButton
+            <GateIconButton
               perm="role.manage"
               variant="secondary"
               icon={<Icon.Pencil />}
+              label={t('rbac.roles.edit')}
               onClick={() => onEdit(role)}
-            >
-              {t('rbac.roles.edit')}
-            </GateButton>
-            <GateButton
+            />
+            <GateIconButton
               perm="role.manage"
-              variant="ghost"
               icon={<Icon.Trash />}
+              label={t('rbac.roles.delete')}
               onClick={() => setConfirming(true)}
-            >
-              {t('rbac.roles.delete')}
-            </GateButton>
+            />
             {hasSeededDrift ? (
-              <GateButton
+              <GateIconButton
                 perm="role.manage"
                 variant="secondary"
                 icon={<Icon.Refresh />}
+                label="Rever defaults"
                 disabled={reconciliationProposal.isPending || reconcile.isPending}
                 onClick={reviewReconciliation}
-              >
-                Rever defaults
-              </GateButton>
+              />
             ) : null}
           </span>
         )}
