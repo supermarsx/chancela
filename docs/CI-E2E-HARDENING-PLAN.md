@@ -1,7 +1,7 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `ffe8043`,
+and implementation snapshot `2c5eaf3`,
 including coverage notes for the bounded PAdES DSS validation-time, PDF/UA v10
 scoped table-header evidence, retention due-candidate explicit evidence states,
 bounded archive/no-action evidence UI, duplicate-review guard/status surfacing, and
@@ -12,7 +12,8 @@ receipt and optional-key contract tolerance, paper-book OCR conversion-dossier U
 local OCR/canonical rehearsal report, and reviewed conversion execution artifact evidence,
 dashboard backup recovery freshness advisory surfacing,
 CSC quota/delegation/revocation and standalone agenda-item template parity,
-retained-export cleanup dry-run planning, first-class template catalog metadata lint,
+retained-export cleanup preview-token/manifest-gated execution evidence,
+compliance legal-basis internal corpus deep links, first-class template catalog metadata lint,
 external-signing workflow-only envelope UI, workflow reminder policy, and
 structured platform-log forwarded-ingest/failure-audit slices, ROL-02 seeded
 role archetype explicitness, Postgres store runtime write/read marker coverage,
@@ -802,10 +803,11 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `3e72e08`
+## Focused Gate Snapshot Through `2c5eaf3`
 
 Historical focused checks from the active director loop, refreshed on
-2026-07-10 for current head `3e72e08`. This is not an exhaustive current
+2026-07-10 for head `3e72e08` and checkpoint-promoted on 2026-07-14 for
+current implementation head `2c5eaf3`. This is not an exhaustive current
 green-run claim; browser, Docker, desktop, package signing/notarization, image
 signing/attestation, and live-provider limits above still apply.
 
@@ -1734,7 +1736,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   --workspace apps/web -- e2e/session.spec.ts e2e/first-launch-onboarding.spec.ts`.
   Treat the static/unit/focused markers as the pinned slice, not broad
   Playwright-browser-suite or browser-matrix proof; the browser suite is not exhaustive.
-- Current checkpoint metadata/static checks through `ffe8043`
+- Current checkpoint metadata/static checks through `2c5eaf3`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
@@ -1746,7 +1748,9 @@ settingsDefaults.test.ts contracts.test.ts`.
   clarified platform operations UI, user/signatory email capture, and compact
   Data Management cleanup controls, retained-export dry-run planning with
   `would_delete_*`/zero-`deleted_*` counters and preview-only no-files-removed
-  Settings payload markers, plus SettingsPage/i18n trust-source
+  Settings payload markers, retained-export preview-token/manifest-gated
+  execution markers with `deleted_*` result counters and no deletion outside the
+  bounded server-selected manifest, plus SettingsPage/i18n trust-source
   provider markers, trust-accepted-hash/Registos TSA grouping, decorative
   page-break accounting, export-save cancellation, dashboard desktop-six
   density, SQLite logical table payload markers, browser dynamic-import gate
@@ -1798,7 +1802,9 @@ settingsDefaults.test.ts contracts.test.ts`.
   markers, SQLite-default feature/config-gated backend selector markers, and
   no-production-readiness/HA-readiness caveats,
   delegation legal-basis requirement, trimmed storage, legacy missing-basis
-  display, and no legal/HR/SCAP/access-policy certification caveats,
+  display, compliance-panel `legal_basis` internal Legislação corpus deep links,
+  and no legal/HR/SCAP/access-policy certification or legal-verification
+  upgrade caveats,
   plus metadata-only
   paper-book OCR conversion-dossier route/store/redaction/idempotency, reviewed
   conversion execution artifact store/API/contract markers, and BookDetail UI

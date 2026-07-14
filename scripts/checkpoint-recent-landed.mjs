@@ -1244,6 +1244,26 @@ function assertCheckpointMap() {
     "written-resolution review-depth compliance panel i18n key marker",
   );
   assertFileContains(
+    "apps/web/src/features/acts/CompliancePanel.tsx",
+    "function corpusHref(sourceId: string, article: string | null): string",
+    "compliance panel legal-basis corpus href marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/CompliancePanel.tsx",
+    "refs.push(...parseSourceValue(record[key], { corpusDeepLink: key === 'legal_basis' }));",
+    "compliance panel legal-basis corpus deep-link routing marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/CompliancePanel.test.tsx",
+    "links structured legal_basis metadata with source and article to the corpus tool",
+    "compliance panel legal-basis source+article corpus link coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/CompliancePanel.test.tsx",
+    "links structured legal_basis metadata with source only to the corpus tool",
+    "compliance panel legal-basis source-only corpus link coverage",
+  );
+  assertFileContains(
     "apps/web/src/i18n/locales/pt-PT.ts",
     "'compliance.writtenResolution.review.label':\n    'Revisão local da evidência da deliberação por escrito'",
     "written-resolution review-depth source-locale label marker",
@@ -9512,12 +9532,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `ffe8043`",
+    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `2c5eaf3`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `3e72e08`",
+    "Focused Gate Snapshot Through `2c5eaf3`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -10132,7 +10152,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `ffe8043`",
+    "Current checkpoint metadata/static checks through `2c5eaf3`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -10587,7 +10607,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `ffe8043f39ab5639b9503ae164ff528abd3aebaf`",
+    "implementation snapshot `2c5eaf3d432341cb5075abea6739ffe97bc50e68`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -10752,7 +10772,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "delegation legal-basis requirement, trimmed storage, legacy missing-basis\n  display, and no legal/HR/SCAP/access-policy certification caveats",
+    "delegation legal-basis requirement, trimmed storage, legacy missing-basis\n  display, compliance-panel `legal_basis` internal Legislação corpus deep links,\n  and no legal/HR/SCAP/access-policy certification or legal-verification\n  upgrade caveats",
     "CI/E2E hardening plan delegation legal-basis checkpoint marker",
   );
   assertFileContains(

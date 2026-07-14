@@ -53,7 +53,8 @@ bounded archive/no-action evidence UI, plus active/suppressed candidate counts
 and suppression-summary copy for safe bounded evidence omissions, retention
 review-closure route/client/contract/Settings/browser markers with separate
 closure fields and false mutation flags,
-retained-export cleanup preview-token/manifest gating, forwarded platform-log sanitized
+retained-export cleanup preview-token/manifest gating, compliance legal-basis
+internal Legislação corpus deep links, forwarded platform-log sanitized
 accepted/denied/rejected/suppressed audit markers, the first-class
 `template_catalog_metadata_lint` command for post-act template
 sealed-provenance lint, all-family standalone agenda-item templates,
@@ -344,7 +345,7 @@ It intentionally reuses existing test surfaces:
   legal sufficiency, written-consent/quorum/identity proof, external validation,
   legal-validity or authority certification, act finalization, signing, seal, or
   archive completion.
-- API retained-export cleanup dry-run:
+- API retained-export cleanup preview-token/manifest execution:
   `cargo test -p chancela-api --locked data_cleanup_`
 - API data key operations:
   `cargo test -p chancela-api --test data_key_ops --locked`
