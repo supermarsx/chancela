@@ -6,6 +6,7 @@
  * advanced, so it stays in step with edits.
  */
 import type { MouseEvent } from 'react';
+import { Link } from 'react-router-dom';
 import type { ComplianceReport } from '../../api/types';
 import { entityFamilyLabels, severityLabels } from '../../api/labels';
 import { openExternal } from '../../desktop/openExternal';
@@ -17,6 +18,7 @@ type MetadataRecord = Record<string, unknown>;
 interface SourceReference {
   label: string;
   href: string | null;
+  linkKind: 'external' | 'internal' | null;
   verification: 'Verified' | 'Pending' | null;
 }
 
@@ -86,6 +88,12 @@ function httpHref(value: string): string | null {
   }
 }
 
+function corpusHref(sourceId: string, article: string | null): string {
+  const params = new URLSearchParams({ tool: 'legislacao', diploma: sourceId });
+  if (article) params.set('artigo', article);
+  return `/ferramentas?${params.toString()}`;
+}
+
 function firstString(record: MetadataRecord, keys: readonly string[]): string | null {
   for (const key of keys) {
     const value = asNonEmptyString(record[key]);
@@ -103,9 +111,15 @@ function stringParts(record: MetadataRecord, keys: readonly string[]): string[] 
   return out;
 }
 
-function parseSourceRecord(record: MetadataRecord): SourceReference | null {
+function parseSourceRecord(
+  record: MetadataRecord,
+  options: { corpusDeepLink?: boolean } = {},
+): SourceReference | null {
   const urlText = firstString(record, URL_KEYS);
   const href = urlText ? httpHref(urlText) : null;
+  const sourceId = options.corpusDeepLink ? asNonEmptyString(record.source_id) : null;
+  const article = sourceId ? asNonEmptyString(record.article) : null;
+  const internalHref = sourceId ? corpusHref(sourceId, article) : null;
   const structuredLabel = stringParts(record, AUTHORITY_KEYS)
     .concat(stringParts(record, ARTICLE_KEYS))
     .join(', ');
@@ -125,21 +139,28 @@ function parseSourceRecord(record: MetadataRecord): SourceReference | null {
   const unsafeUrl = urlText && !href && !visible.includes(urlText) ? ` (${urlText})` : '';
   return {
     label: `${visible}${pendingSuffix}${unsafeUrl}`,
-    href,
+    href: internalHref ?? href,
+    linkKind: internalHref ? 'internal' : href ? 'external' : null,
     verification: pending ? 'Pending' : verified ? 'Verified' : null,
   };
 }
 
-function parseSourceValue(value: unknown): SourceReference[] {
+function parseSourceValue(
+  value: unknown,
+  options: { corpusDeepLink?: boolean } = {},
+): SourceReference[] {
   const text = asNonEmptyString(value);
-  if (text) return [{ label: text, href: httpHref(text), verification: null }];
+  if (text) {
+    const href = httpHref(text);
+    return [{ label: text, href, linkKind: href ? 'external' : null, verification: null }];
+  }
 
-  if (Array.isArray(value)) return value.flatMap(parseSourceValue);
+  if (Array.isArray(value)) return value.flatMap((item) => parseSourceValue(item, options));
 
   const record = asRecord(value);
   if (!record) return [];
 
-  const parsed = parseSourceRecord(record);
+  const parsed = parseSourceRecord(record, options);
   return parsed ? [parsed] : [];
 }
 
@@ -152,7 +173,7 @@ function sourceReferences(value: unknown): SourceReference[] {
   if (direct) refs.push(direct);
 
   for (const key of SOURCE_CONTAINER_KEYS) {
-    refs.push(...parseSourceValue(record[key]));
+    refs.push(...parseSourceValue(record[key], { corpusDeepLink: key === 'legal_basis' }));
   }
 
   const seen = new Set<string>();
@@ -177,22 +198,34 @@ function SourceReferences({ references }: { references: SourceReference[] }) {
         return (
           <span key={`${href ?? ''}-${ref.label}-${i}`} className="source-reference">
             {href ? (
-              <a
-                className="mono truncate"
-                href={href}
-                target="_blank"
-                rel="noreferrer noopener"
-                title={ref.label}
-                aria-label={`${t('common.open')}: ${ref.label}`}
-                style={{ maxWidth: 'min(100%, 28rem)' }}
-                onClick={(e: MouseEvent<HTMLAnchorElement>) => {
-                  if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-                  e.preventDefault();
-                  void openExternal(href);
-                }}
-              >
-                {ref.label}
-              </a>
+              ref.linkKind === 'internal' ? (
+                <Link
+                  className="mono truncate"
+                  to={href}
+                  title={ref.label}
+                  aria-label={`${t('common.open')}: ${ref.label}`}
+                  style={{ maxWidth: 'min(100%, 28rem)' }}
+                >
+                  {ref.label}
+                </Link>
+              ) : (
+                <a
+                  className="mono truncate"
+                  href={href}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  title={ref.label}
+                  aria-label={`${t('common.open')}: ${ref.label}`}
+                  style={{ maxWidth: 'min(100%, 28rem)' }}
+                  onClick={(e: MouseEvent<HTMLAnchorElement>) => {
+                    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+                    e.preventDefault();
+                    void openExternal(href);
+                  }}
+                >
+                  {ref.label}
+                </a>
+              )
             ) : (
               <span
                 className="mono truncate"
