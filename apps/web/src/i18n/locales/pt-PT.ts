@@ -348,6 +348,18 @@ export const ptPT = {
   'dashboard.workQueue.date.invalid': 'Data inválida',
   'dashboard.workQueue.date.value': 'Data {date}',
   'dashboard.workQueue.source': 'Fonte {rule} / {profile}',
+  'dashboard.profileCalendar.meta.supportedPendingSourceReview':
+    'Calendário do perfil: regra local consultiva disponível; fonte por rever',
+  'dashboard.profileCalendar.meta.unsupportedPendingSourceReview':
+    'Calendário do perfil: sem regra local consultiva; fonte por rever',
+  'dashboard.profileCalendar.meta.pendingSourceReview':
+    'Calendário do perfil: estado local consultivo; fonte por rever',
+  'dashboard.profileCalendar.meta.supportedAdvisory':
+    'Calendário do perfil: regra local consultiva disponível',
+  'dashboard.profileCalendar.meta.unsupportedAdvisory':
+    'Calendário do perfil: sem regra local consultiva',
+  'dashboard.profileCalendar.meta.unknownAdvisory':
+    'Calendário do perfil: estado local consultivo por confirmar',
   'dashboard.workQueue.integrity.badge': 'Integridade',
   'dashboard.workQueue.integrity.title': 'Verificar cadeia do registo',
   'dashboard.workQueue.integrity.detail':

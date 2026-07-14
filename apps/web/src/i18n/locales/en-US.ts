@@ -340,6 +340,18 @@ export const enUS: Catalog = {
   'dashboard.workQueue.date.invalid': 'Invalid date',
   'dashboard.workQueue.date.value': 'Date {date}',
   'dashboard.workQueue.source': 'Source {rule} / {profile}',
+  'dashboard.profileCalendar.meta.supportedPendingSourceReview':
+    'Profile calendar: local advisory rule available; source review pending',
+  'dashboard.profileCalendar.meta.unsupportedPendingSourceReview':
+    'Profile calendar: no local advisory rule; source review pending',
+  'dashboard.profileCalendar.meta.pendingSourceReview':
+    'Profile calendar: local advisory status; source review pending',
+  'dashboard.profileCalendar.meta.supportedAdvisory':
+    'Profile calendar: local advisory rule available',
+  'dashboard.profileCalendar.meta.unsupportedAdvisory':
+    'Profile calendar: no local advisory rule',
+  'dashboard.profileCalendar.meta.unknownAdvisory':
+    'Profile calendar: local advisory status to confirm',
   'dashboard.workQueue.integrity.badge': 'Integrity',
   'dashboard.workQueue.integrity.title': 'Check ledger chain',
   'dashboard.workQueue.integrity.detail':

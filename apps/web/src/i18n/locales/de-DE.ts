@@ -341,6 +341,18 @@ export const deDE: Catalog = {
   'dashboard.workQueue.date.invalid': 'Ungültiges Datum',
   'dashboard.workQueue.date.value': 'Datum {date}',
   'dashboard.workQueue.source': 'Quelle {rule} / {profile}',
+  'dashboard.profileCalendar.meta.supportedPendingSourceReview':
+    'Profilkalender: lokale Hinweisregel vorhanden; Quellenprüfung ausstehend',
+  'dashboard.profileCalendar.meta.unsupportedPendingSourceReview':
+    'Profilkalender: keine lokale Hinweisregel; Quellenprüfung ausstehend',
+  'dashboard.profileCalendar.meta.pendingSourceReview':
+    'Profilkalender: lokaler Hinweisstatus; Quellenprüfung ausstehend',
+  'dashboard.profileCalendar.meta.supportedAdvisory':
+    'Profilkalender: lokale Hinweisregel vorhanden',
+  'dashboard.profileCalendar.meta.unsupportedAdvisory':
+    'Profilkalender: keine lokale Hinweisregel',
+  'dashboard.profileCalendar.meta.unknownAdvisory':
+    'Profilkalender: lokaler Hinweisstatus zu bestätigen',
   'dashboard.workQueue.integrity.badge': 'Integrität',
   'dashboard.workQueue.integrity.title': 'Registerkette prüfen',
   'dashboard.workQueue.integrity.detail':

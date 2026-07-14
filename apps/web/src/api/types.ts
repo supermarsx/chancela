@@ -2009,6 +2009,51 @@ export interface DashboardI18n {
 export type DashboardReminderSeverity = 'Advisory' | 'Info' | 'Warning';
 export type DashboardReminderStatus = 'Upcoming' | 'DueSoon' | 'Overdue' | 'Pending';
 
+export interface DashboardProfileCalendarNoClaimFlags {
+  local_advisory_only: boolean;
+  legal_deadline_authority_claimed: boolean;
+  legal_calendar_authority_claimed: boolean;
+  legal_compliance_claimed: boolean;
+  compliance_status_claimed: boolean;
+  workflow_completion_claimed: boolean;
+  external_delivery_claimed: boolean;
+  external_calendar_sync_claimed: boolean;
+  webhook_delivery_claimed: boolean;
+  legal_review_claimed: boolean;
+  dre_verification_claimed: boolean;
+  provider_effect_claimed: boolean;
+  certification_claimed: boolean;
+}
+
+export interface DashboardProfileCalendarDueRule {
+  kind: string;
+  months_after_fiscal_year_end: number | null;
+  default_fiscal_year_end: string | null;
+  unsupported_reason: string | null;
+}
+
+export interface DashboardProfileCalendarEvaluation {
+  local_due_date_rule_configured: boolean;
+  local_due_date_calculated: boolean;
+  legal_deadline_calculated: boolean;
+  fiscal_year_end: string | null;
+  due_year: number | null;
+  due_basis: string | null;
+  unsupported_reason: string | null;
+}
+
+export interface DashboardProfileCalendarPlan {
+  preset_id: string;
+  preset_label: string;
+  rule_kind: string;
+  support_status: string;
+  review_status: string;
+  source_status: string;
+  due_rule: DashboardProfileCalendarDueRule;
+  evaluation: DashboardProfileCalendarEvaluation;
+  no_claims: DashboardProfileCalendarNoClaimFlags;
+}
+
 export interface DashboardReminder {
   due_date: string;
   severity: DashboardReminderSeverity;
@@ -2019,6 +2064,7 @@ export interface DashboardReminder {
   source_rule: string;
   source_profile: string;
   params?: Record<string, string>;
+  profile_calendar_plan?: DashboardProfileCalendarPlan;
   law_refs?: DashboardLawReference[];
   action?: DashboardAction | null;
   recommended_next_steps?: string[];

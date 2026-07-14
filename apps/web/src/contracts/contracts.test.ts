@@ -98,6 +98,10 @@ import {
   type DashboardI18n,
   type DashboardLawReference,
   type DashboardOpenBook,
+  type DashboardProfileCalendarDueRule,
+  type DashboardProfileCalendarEvaluation,
+  type DashboardProfileCalendarNoClaimFlags,
+  type DashboardProfileCalendarPlan,
   type DashboardReminder,
   type DashboardTargetLinks,
   type DataManagementSettings,
@@ -3545,7 +3549,7 @@ describe('contract fixtures parse through the real client', () => {
           source_profile: true,
         },
         label,
-        ['params', 'law_refs', 'action', 'recommended_next_steps', 'i18n'],
+        ['params', 'profile_calendar_plan', 'law_refs', 'action', 'recommended_next_steps', 'i18n'],
       );
       if (reminder.due_date !== '') {
         assertIsoDate(reminder.due_date, `${label}.due_date`);
@@ -3599,6 +3603,75 @@ describe('contract fixtures parse through the real client', () => {
           expect(typeof value, `${label}.params.${key} should be string`).toBe('string');
         }
       }
+      if (reminder.profile_calendar_plan !== undefined) {
+        const plan = assertExactKeys<DashboardProfileCalendarPlan>(
+          reminder.profile_calendar_plan,
+          {
+            preset_id: true,
+            preset_label: true,
+            rule_kind: true,
+            support_status: true,
+            review_status: true,
+            source_status: true,
+            due_rule: true,
+            evaluation: true,
+            no_claims: true,
+          },
+          `${label}.profile_calendar_plan`,
+        );
+        expect(plan.preset_id, `${label}.profile_calendar_plan.preset_id`).toBe(
+          reminder.source_rule,
+        );
+        expect(plan.support_status).toMatch(/^(supported|unsupported)$/);
+        expect(plan.review_status).toBe('pending_source_review');
+        expect(plan.source_status).toBe('pending_unverified');
+        assertExactKeys<DashboardProfileCalendarDueRule>(
+          plan.due_rule,
+          {
+            kind: true,
+            months_after_fiscal_year_end: true,
+            default_fiscal_year_end: true,
+            unsupported_reason: true,
+          },
+          `${label}.profile_calendar_plan.due_rule`,
+        );
+        assertExactKeys<DashboardProfileCalendarEvaluation>(
+          plan.evaluation,
+          {
+            local_due_date_rule_configured: true,
+            local_due_date_calculated: true,
+            legal_deadline_calculated: true,
+            fiscal_year_end: true,
+            due_year: true,
+            due_basis: true,
+            unsupported_reason: true,
+          },
+          `${label}.profile_calendar_plan.evaluation`,
+        );
+        const noClaims = assertExactKeys<DashboardProfileCalendarNoClaimFlags>(
+          plan.no_claims,
+          {
+            local_advisory_only: true,
+            legal_deadline_authority_claimed: true,
+            legal_calendar_authority_claimed: true,
+            legal_compliance_claimed: true,
+            compliance_status_claimed: true,
+            workflow_completion_claimed: true,
+            external_delivery_claimed: true,
+            external_calendar_sync_claimed: true,
+            webhook_delivery_claimed: true,
+            legal_review_claimed: true,
+            dre_verification_claimed: true,
+            provider_effect_claimed: true,
+            certification_claimed: true,
+          },
+          `${label}.profile_calendar_plan.no_claims`,
+        );
+        expect(noClaims.local_advisory_only).toBe(true);
+        for (const [claim, value] of Object.entries(noClaims)) {
+          if (claim !== 'local_advisory_only') expect(value, claim).toBe(false);
+        }
+      }
       if (reminder.i18n !== null && reminder.i18n !== undefined) {
         const reminderI18n = assertExactKeys<DashboardI18n>(
           reminder.i18n,
@@ -3628,18 +3701,29 @@ describe('contract fixtures parse through the real client', () => {
           reminder.params?.preset_id === 'csc-art376-annual' &&
           reminder.params?.local_due_date_rule_configured === 'true' &&
           reminder.params?.local_due_date_calculated === 'true' &&
-          reminder.params?.legal_deadline_calculated === 'true' &&
+          reminder.params?.legal_deadline_calculated === 'false' &&
+          reminder.params?.rule_kind === 'commercial_company_annual_general_meeting' &&
+          reminder.params?.review_status === 'pending_source_review' &&
+          reminder.params?.source_status === 'pending_unverified' &&
           reminder.params?.months_after_fiscal_year_end === '3' &&
           reminder.params?.fiscal_year_end === '12-31' &&
           reminder.params?.due_year === '2026' &&
           reminder.params?.due_basis === 'default_fiscal_year_end_missing_recorded_value' &&
           reminder.params?.local_advisory_only === 'true' &&
+          reminder.params?.legal_deadline_authority_claimed === 'false' &&
           reminder.params?.legal_calendar_authority_claimed === 'false' &&
+          reminder.params?.legal_compliance_claimed === 'false' &&
           reminder.params?.external_delivery_claimed === 'false' &&
           reminder.params?.external_calendar_sync_claimed === 'false' &&
           reminder.params?.webhook_delivery_claimed === 'false' &&
           reminder.params?.workflow_completion_claimed === 'false' &&
-          reminder.params?.compliance_status_claimed === 'false',
+          reminder.params?.compliance_status_claimed === 'false' &&
+          reminder.profile_calendar_plan?.rule_kind ===
+            'commercial_company_annual_general_meeting' &&
+          reminder.profile_calendar_plan?.support_status === 'supported' &&
+          reminder.profile_calendar_plan?.evaluation.local_due_date_calculated === true &&
+          reminder.profile_calendar_plan?.evaluation.legal_deadline_calculated === false &&
+          reminder.profile_calendar_plan?.no_claims.legal_deadline_authority_claimed === false,
       ),
       'Dashboard.reminders should include supported profile-calendar local coverage metadata',
     ).toBe(true);
@@ -3654,7 +3738,12 @@ describe('contract fixtures parse through the real client', () => {
           reminder.params?.local_due_date_rule_configured === 'false' &&
           reminder.params?.local_due_date_calculated === 'false' &&
           reminder.params?.legal_deadline_calculated === 'false' &&
+          reminder.params?.rule_kind === 'condominium_annual_assembly' &&
+          reminder.params?.review_status === 'pending_source_review' &&
+          reminder.params?.source_status === 'pending_unverified' &&
+          reminder.params?.legal_deadline_authority_claimed === 'false' &&
           reminder.params?.legal_calendar_authority_claimed === 'false' &&
+          reminder.params?.legal_compliance_claimed === 'false' &&
           reminder.params?.external_delivery_claimed === 'false' &&
           reminder.params?.external_calendar_sync_claimed === 'false' &&
           reminder.params?.webhook_delivery_claimed === 'false' &&
@@ -3663,6 +3752,11 @@ describe('contract fixtures parse through the real client', () => {
           reminder.params?.unsupported_reason === 'missing_local_due_date_rule' &&
           reminder.params?.due_year === undefined &&
           reminder.params?.due_basis === undefined &&
+          reminder.profile_calendar_plan?.rule_kind === 'condominium_annual_assembly' &&
+          reminder.profile_calendar_plan?.support_status === 'unsupported' &&
+          reminder.profile_calendar_plan?.due_rule.kind === 'not_encoded' &&
+          reminder.profile_calendar_plan?.evaluation.unsupported_reason ===
+            'missing_local_due_date_rule' &&
           reminder.reason.includes('does not calculate a legal deadline'),
       ),
       'Dashboard.reminders should include a pending no-due-date unsupported profile-calendar advisory',

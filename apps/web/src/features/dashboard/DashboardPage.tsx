@@ -267,6 +267,27 @@ function dedupeReminders(reminders: DashboardReminder[]): DashboardReminder[] {
   });
 }
 
+function profileCalendarPlanMeta(reminder: DashboardReminder, t: TFunction): string | null {
+  const plan = reminder.profile_calendar_plan;
+  if (!plan) return null;
+  const support = plan.support_status.trim().toLowerCase();
+  const review = plan.review_status.trim().toLowerCase();
+
+  if (review === 'pending_source_review') {
+    if (support === 'supported') {
+      return t('dashboard.profileCalendar.meta.supportedPendingSourceReview');
+    }
+    if (support === 'unsupported') {
+      return t('dashboard.profileCalendar.meta.unsupportedPendingSourceReview');
+    }
+    return t('dashboard.profileCalendar.meta.pendingSourceReview');
+  }
+
+  if (support === 'supported') return t('dashboard.profileCalendar.meta.supportedAdvisory');
+  if (support === 'unsupported') return t('dashboard.profileCalendar.meta.unsupportedAdvisory');
+  return t('dashboard.profileCalendar.meta.unknownAdvisory');
+}
+
 function messageKey(value: string | null | undefined): MessageKey | undefined {
   return value?.trim() ? (value.trim() as MessageKey) : undefined;
 }
@@ -485,6 +506,7 @@ function buildWorkQueue({
     };
     const titleKey = messageKey(reminder.i18n?.title_key);
     const bodyKey = messageKey(reminder.i18n?.body_key);
+    const planMeta = profileCalendarPlanMeta(reminder, t);
 
     items.push({
       id: `reminder:${entityId}:${sourceRule}:${sourceProfile}:${dueDate}:${reminder.status}`,
@@ -497,6 +519,7 @@ function buildWorkQueue({
       meta: [
         reminderDateMeta(reminder.due_date, t),
         t('dashboard.workQueue.source', { rule: sourceRule, profile: sourceProfile }),
+        ...(planMeta ? [planMeta] : []),
       ],
       href: routeFromReminder(reminder),
     });
@@ -852,6 +875,7 @@ function ReminderDatesSummary({ reminders }: { reminders: DashboardReminder[] })
                 reminder.entity_name.trim() || t('dashboard.workQueue.entity.unnamed');
               const href = routeFromReminder(reminder);
               const dateLabel = reminderDateLabel(reminder.due_date, t);
+              const planMeta = profileCalendarPlanMeta(reminder, t);
               return (
                 <li
                   className="dashboard-list__item"
@@ -878,6 +902,7 @@ function ReminderDatesSummary({ reminders }: { reminders: DashboardReminder[] })
                           reminder.source_profile || t('dashboard.workQueue.profile.missing'),
                       })}
                     </span>
+                    {planMeta ? <span>{planMeta}</span> : null}
                   </div>
                 </li>
               );

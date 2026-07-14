@@ -59,7 +59,15 @@ pub use external_signing::{
     ExternalSigningError, ExternalSigningOrderPolicy,
 };
 pub use profile::{
-    CalendarPreset, EntityProfile, ProfilePack, SignaturePolicyHint, profile_for, rule_pack_for,
+    CalendarPreset, DEFAULT_PROFILE_CALENDAR_FISCAL_YEAR_END, EntityProfile, FiscalYearEnd,
+    ProfileCalendarDueBasis, ProfileCalendarDueRule, ProfileCalendarEvaluationContext,
+    ProfileCalendarLawReference, ProfileCalendarNoClaimFlags, ProfileCalendarPlan,
+    ProfileCalendarReviewStatus, ProfileCalendarRuleEvaluation, ProfileCalendarRuleKind,
+    ProfileCalendarRuleSupportStatus, ProfileCalendarScheduledRule, ProfileCalendarSourceStatus,
+    ProfileCalendarSuppressedRule, ProfileCalendarSuppressionReason,
+    ProfileCalendarUnsupportedReason, ProfileCalendarUnsupportedRule, ProfilePack,
+    SignaturePolicyHint, evaluate_profile_calendar_rule, profile_calendar_due_date_for_year,
+    profile_calendar_plan_for, profile_for, rule_pack_for, supports_profile_calendar_plan,
 };
 pub use rules::{
     AssociacaoRulePack, ComplianceIssue, CondominioRulePack, CooperativaRulePack, CscArt63RulePack,

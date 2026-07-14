@@ -340,6 +340,18 @@ export const frFR: Catalog = {
   'dashboard.workQueue.date.invalid': 'Date invalide',
   'dashboard.workQueue.date.value': 'Date {date}',
   'dashboard.workQueue.source': 'Source {rule} / {profile}',
+  'dashboard.profileCalendar.meta.supportedPendingSourceReview':
+    'Calendrier du profil : règle consultative locale disponible ; source à vérifier',
+  'dashboard.profileCalendar.meta.unsupportedPendingSourceReview':
+    'Calendrier du profil : aucune règle consultative locale ; source à vérifier',
+  'dashboard.profileCalendar.meta.pendingSourceReview':
+    'Calendrier du profil : statut consultatif local ; source à vérifier',
+  'dashboard.profileCalendar.meta.supportedAdvisory':
+    'Calendrier du profil : règle consultative locale disponible',
+  'dashboard.profileCalendar.meta.unsupportedAdvisory':
+    'Calendrier du profil : aucune règle consultative locale',
+  'dashboard.profileCalendar.meta.unknownAdvisory':
+    'Calendrier du profil : statut consultatif local à confirmer',
   'dashboard.workQueue.integrity.badge': 'Intégrité',
   'dashboard.workQueue.integrity.title': 'Vérifier la chaîne du registre',
   'dashboard.workQueue.integrity.detail':

@@ -337,6 +337,18 @@ export const nlNL: Catalog = {
   'dashboard.workQueue.date.invalid': 'Ongeldige datum',
   'dashboard.workQueue.date.value': 'Datum {date}',
   'dashboard.workQueue.source': 'Bron {rule} / {profile}',
+  'dashboard.profileCalendar.meta.supportedPendingSourceReview':
+    'Profielagenda: lokale adviesregel beschikbaar; broncontrole in afwachting',
+  'dashboard.profileCalendar.meta.unsupportedPendingSourceReview':
+    'Profielagenda: geen lokale adviesregel; broncontrole in afwachting',
+  'dashboard.profileCalendar.meta.pendingSourceReview':
+    'Profielagenda: lokale adviesstatus; broncontrole in afwachting',
+  'dashboard.profileCalendar.meta.supportedAdvisory':
+    'Profielagenda: lokale adviesregel beschikbaar',
+  'dashboard.profileCalendar.meta.unsupportedAdvisory':
+    'Profielagenda: geen lokale adviesregel',
+  'dashboard.profileCalendar.meta.unknownAdvisory':
+    'Profielagenda: lokale adviesstatus te bevestigen',
   'dashboard.workQueue.integrity.badge': 'Integriteit',
   'dashboard.workQueue.integrity.title': 'Controleer de grootboekketen',
   'dashboard.workQueue.integrity.detail':

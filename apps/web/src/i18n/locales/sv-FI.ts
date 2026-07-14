@@ -342,6 +342,18 @@ export const svFI: Catalog = {
   'dashboard.workQueue.date.invalid': 'Ogiltigt datum',
   'dashboard.workQueue.date.value': 'Datum {date}',
   'dashboard.workQueue.source': 'Källa {rule} / {profile}',
+  'dashboard.profileCalendar.meta.supportedPendingSourceReview':
+    'Profilkalender: lokal rådgivande regel finns; källgranskning väntar',
+  'dashboard.profileCalendar.meta.unsupportedPendingSourceReview':
+    'Profilkalender: ingen lokal rådgivande regel; källgranskning väntar',
+  'dashboard.profileCalendar.meta.pendingSourceReview':
+    'Profilkalender: lokal rådgivande status; källgranskning väntar',
+  'dashboard.profileCalendar.meta.supportedAdvisory':
+    'Profilkalender: lokal rådgivande regel finns',
+  'dashboard.profileCalendar.meta.unsupportedAdvisory':
+    'Profilkalender: ingen lokal rådgivande regel',
+  'dashboard.profileCalendar.meta.unknownAdvisory':
+    'Profilkalender: lokal rådgivande status att bekräfta',
   'dashboard.workQueue.integrity.badge': 'Integritet',
   'dashboard.workQueue.integrity.title': 'Kontrollera registerkedjan',
   'dashboard.workQueue.integrity.detail':

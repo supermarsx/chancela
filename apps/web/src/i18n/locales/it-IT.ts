@@ -340,6 +340,18 @@ export const itIT: Catalog = {
   'dashboard.workQueue.date.invalid': 'Data non valida',
   'dashboard.workQueue.date.value': 'Data {date}',
   'dashboard.workQueue.source': 'Fonte {rule} / {profile}',
+  'dashboard.profileCalendar.meta.supportedPendingSourceReview':
+    'Calendario del profilo: regola locale consultiva disponibile; fonte da rivedere',
+  'dashboard.profileCalendar.meta.unsupportedPendingSourceReview':
+    'Calendario del profilo: nessuna regola locale consultiva; fonte da rivedere',
+  'dashboard.profileCalendar.meta.pendingSourceReview':
+    'Calendario del profilo: stato locale consultivo; fonte da rivedere',
+  'dashboard.profileCalendar.meta.supportedAdvisory':
+    'Calendario del profilo: regola locale consultiva disponibile',
+  'dashboard.profileCalendar.meta.unsupportedAdvisory':
+    'Calendario del profilo: nessuna regola locale consultiva',
+  'dashboard.profileCalendar.meta.unknownAdvisory':
+    'Calendario del profilo: stato locale consultivo da confermare',
   'dashboard.workQueue.integrity.badge': 'Integrità',
   'dashboard.workQueue.integrity.title': 'Verificare la catena del registro',
   'dashboard.workQueue.integrity.detail':

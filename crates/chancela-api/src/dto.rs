@@ -2704,11 +2704,69 @@ pub struct DashboardReminder {
     pub source_profile: String,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub params: BTreeMap<String, String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile_calendar_plan: Option<DashboardProfileCalendarPlan>,
     pub law_refs: Vec<DashboardLawReference>,
     pub action: Option<DashboardAction>,
     pub recommended_next_steps: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub i18n: Option<DashboardI18n>,
+}
+
+/// Typed local advisory profile-calendar metadata attached to profile-calendar reminders.
+///
+/// This is a local plan surface only. It does not assert legal-calendar authority, legal
+/// compliance, source completeness, external delivery/sync, provider effects, or certification.
+#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+pub struct DashboardProfileCalendarPlan {
+    pub preset_id: String,
+    pub preset_label: String,
+    pub rule_kind: String,
+    pub support_status: String,
+    pub review_status: String,
+    pub source_status: String,
+    pub due_rule: DashboardProfileCalendarDueRule,
+    pub evaluation: DashboardProfileCalendarEvaluation,
+    pub no_claims: DashboardProfileCalendarNoClaimFlags,
+}
+
+/// The local due-rule shape for a profile-calendar reminder.
+#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+pub struct DashboardProfileCalendarDueRule {
+    pub kind: String,
+    pub months_after_fiscal_year_end: Option<u8>,
+    pub default_fiscal_year_end: Option<String>,
+    pub unsupported_reason: Option<String>,
+}
+
+/// The local evaluation result rendered on the reminder.
+#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+pub struct DashboardProfileCalendarEvaluation {
+    pub local_due_date_rule_configured: bool,
+    pub local_due_date_calculated: bool,
+    pub legal_deadline_calculated: bool,
+    pub fiscal_year_end: Option<String>,
+    pub due_year: Option<i32>,
+    pub due_basis: Option<String>,
+    pub unsupported_reason: Option<String>,
+}
+
+/// Explicit no-claim flags for profile-calendar output.
+#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+pub struct DashboardProfileCalendarNoClaimFlags {
+    pub local_advisory_only: bool,
+    pub legal_deadline_authority_claimed: bool,
+    pub legal_calendar_authority_claimed: bool,
+    pub legal_compliance_claimed: bool,
+    pub compliance_status_claimed: bool,
+    pub workflow_completion_claimed: bool,
+    pub external_delivery_claimed: bool,
+    pub external_calendar_sync_claimed: bool,
+    pub webhook_delivery_claimed: bool,
+    pub legal_review_claimed: bool,
+    pub dre_verification_claimed: bool,
+    pub provider_effect_claimed: bool,
+    pub certification_claimed: bool,
 }
 
 // --- Registry views + report (§2.7) ------------------------------------------------------

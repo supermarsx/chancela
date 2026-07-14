@@ -340,6 +340,18 @@ export const plPL: Catalog = {
   'dashboard.workQueue.date.invalid': 'Nieprawidłowa data',
   'dashboard.workQueue.date.value': 'Data {date}',
   'dashboard.workQueue.source': 'Źródło {rule} / {profile}',
+  'dashboard.profileCalendar.meta.supportedPendingSourceReview':
+    'Kalendarz profilu: dostępna lokalna reguła doradcza; przegląd źródła oczekuje',
+  'dashboard.profileCalendar.meta.unsupportedPendingSourceReview':
+    'Kalendarz profilu: brak lokalnej reguły doradczej; przegląd źródła oczekuje',
+  'dashboard.profileCalendar.meta.pendingSourceReview':
+    'Kalendarz profilu: lokalny status doradczy; przegląd źródła oczekuje',
+  'dashboard.profileCalendar.meta.supportedAdvisory':
+    'Kalendarz profilu: dostępna lokalna reguła doradcza',
+  'dashboard.profileCalendar.meta.unsupportedAdvisory':
+    'Kalendarz profilu: brak lokalnej reguły doradczej',
+  'dashboard.profileCalendar.meta.unknownAdvisory':
+    'Kalendarz profilu: lokalny status doradczy do potwierdzenia',
   'dashboard.workQueue.integrity.badge': 'Integralność',
   'dashboard.workQueue.integrity.title': 'Sprawdź łańcuch rejestru',
   'dashboard.workQueue.integrity.detail':

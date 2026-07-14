@@ -97,6 +97,74 @@ function reminderFor(
   };
 }
 
+function profileCalendarPlan(
+  supportStatus: 'supported' | 'unsupported' = 'supported',
+): NonNullable<DashboardReminder['profile_calendar_plan']> {
+  return {
+    preset_id: supportStatus === 'supported' ? 'csc-art376-annual' : 'condominio-annual',
+    preset_label:
+      supportStatus === 'supported'
+        ? 'Assembleia geral anual (CSC art. 376.º)'
+        : 'Assembleia ordinária anual de condóminos (DL 268/94)',
+    rule_kind:
+      supportStatus === 'supported'
+        ? 'commercial_company_annual_general_meeting'
+        : 'condominium_annual_assembly',
+    support_status: supportStatus,
+    review_status: 'pending_source_review',
+    source_status: 'pending_unverified',
+    due_rule:
+      supportStatus === 'supported'
+        ? {
+            kind: 'fiscal_year_end_offset',
+            months_after_fiscal_year_end: 3,
+            default_fiscal_year_end: '12-31',
+            unsupported_reason: null,
+          }
+        : {
+            kind: 'not_encoded',
+            months_after_fiscal_year_end: null,
+            default_fiscal_year_end: null,
+            unsupported_reason: 'missing_local_due_date_rule',
+          },
+    evaluation:
+      supportStatus === 'supported'
+        ? {
+            local_due_date_rule_configured: true,
+            local_due_date_calculated: true,
+            legal_deadline_calculated: false,
+            fiscal_year_end: '12-31',
+            due_year: 2026,
+            due_basis: 'default_fiscal_year_end_missing_recorded_value',
+            unsupported_reason: null,
+          }
+        : {
+            local_due_date_rule_configured: false,
+            local_due_date_calculated: false,
+            legal_deadline_calculated: false,
+            fiscal_year_end: null,
+            due_year: null,
+            due_basis: null,
+            unsupported_reason: 'missing_local_due_date_rule',
+          },
+    no_claims: {
+      local_advisory_only: true,
+      legal_deadline_authority_claimed: false,
+      legal_calendar_authority_claimed: false,
+      legal_compliance_claimed: false,
+      compliance_status_claimed: false,
+      workflow_completion_claimed: false,
+      external_delivery_claimed: false,
+      external_calendar_sync_claimed: false,
+      webhook_delivery_claimed: false,
+      legal_review_claimed: false,
+      dre_verification_claimed: false,
+      provider_effect_claimed: false,
+      certification_claimed: false,
+    },
+  };
+}
+
 function renderDashboard() {
   return renderWithProviders(<DashboardPage />);
 }
@@ -450,11 +518,12 @@ describe('DashboardPage', () => {
           severity: 'Advisory',
           status: 'Overdue',
           reason:
-            'The commercial-company calendar preset "Assembleia geral anual (CSC art. 376.º)" points to an annual item by 2026-03-31 (using the default Dec 31 fiscal-year end because no fiscal_year_end is recorded). No sealed or archived Assembleia Geral act dated 2026 is recorded for this entity. Chancela cannot yet prove this annual calendar purpose, so this is advisory.',
+            'The commercial-company calendar preset "Assembleia geral anual (CSC art. 376.º)" produces a local advisory date of 2026-03-31 (using the default Dec 31 fiscal-year end because no fiscal_year_end is recorded). No sealed or archived Assembleia Geral act dated 2026 is recorded for this entity. Chancela does not claim a legal deadline, legal calendar authority, or legal compliance from this local plan.',
           entity_id: 'entity-1',
           entity_name: 'Encosto Estratégico, S.A.',
           source_rule: 'csc-art376-annual',
           source_profile: 'csc-commercial',
+          profile_calendar_plan: profileCalendarPlan('supported'),
         },
       ],
       recent_events: [1].map((seq) => eventFor(seq)),
@@ -468,8 +537,16 @@ describe('DashboardPage', () => {
     expect(within(queue).getByText('Atrasado')).toBeTruthy();
     expect(within(queue).getByRole('link', { name: 'Encosto Estratégico, S.A.' })).toBeTruthy();
     expect(within(queue).getByText('Data 2026-03-31')).toBeTruthy();
-    expect(within(queue).getByText(/cannot yet prove this annual calendar purpose/)).toBeTruthy();
+    expect(within(queue).getByText(/does not claim a legal deadline/)).toBeTruthy();
     expect(within(queue).getByText('Fonte csc-art376-annual / csc-commercial')).toBeTruthy();
+    expect(
+      within(queue).getByText(
+        'Calendário do perfil: regra local consultiva disponível; fonte por rever',
+      ),
+    ).toBeTruthy();
+    const queueText = queue.textContent ?? '';
+    expect(queueText).not.toContain('Profile calendar supported / pending_source_review');
+    expect(queueText).not.toContain('pending_source_review');
     await openDashboardTab('Últimos eventos');
     expect(await screen.findByText('kind-1')).toBeTruthy();
     expect(screen.getAllByRole('row')).toHaveLength(2);
@@ -495,6 +572,7 @@ describe('DashboardPage', () => {
             local_due_date_rule_configured: 'false',
             legal_deadline_calculated: 'false',
           },
+          profile_calendar_plan: profileCalendarPlan('unsupported'),
           law_refs: [],
           action: {
             kind: 'open_entity',
@@ -525,6 +603,12 @@ describe('DashboardPage', () => {
     ).toBeTruthy();
     expect(within(item).getByText(/does not calculate a legal deadline/)).toBeTruthy();
     expect(within(item).getByText('Fonte condominio-annual / condominio-dl268')).toBeTruthy();
+    expect(
+      within(item).getByText('Calendário do perfil: sem regra local consultiva; fonte por rever'),
+    ).toBeTruthy();
+    const itemText = item.textContent ?? '';
+    expect(itemText).not.toContain('Profile calendar unsupported / pending_source_review');
+    expect(itemText).not.toContain('pending_source_review');
   });
 
   it('renders open act follow-ups as localized act-routed reminders', async () => {

@@ -338,6 +338,18 @@ export const daDK: Catalog = {
   'dashboard.workQueue.date.invalid': 'Ugyldig dato',
   'dashboard.workQueue.date.value': 'Dato {date}',
   'dashboard.workQueue.source': 'Kilde {rule} / {profile}',
+  'dashboard.profileCalendar.meta.supportedPendingSourceReview':
+    'Profilkalender: lokal rådgivende regel tilgængelig; kildegennemgang afventer',
+  'dashboard.profileCalendar.meta.unsupportedPendingSourceReview':
+    'Profilkalender: ingen lokal rådgivende regel; kildegennemgang afventer',
+  'dashboard.profileCalendar.meta.pendingSourceReview':
+    'Profilkalender: lokal rådgivende status; kildegennemgang afventer',
+  'dashboard.profileCalendar.meta.supportedAdvisory':
+    'Profilkalender: lokal rådgivende regel tilgængelig',
+  'dashboard.profileCalendar.meta.unsupportedAdvisory':
+    'Profilkalender: ingen lokal rådgivende regel',
+  'dashboard.profileCalendar.meta.unknownAdvisory':
+    'Profilkalender: lokal rådgivende status skal bekræftes',
   'dashboard.workQueue.integrity.badge': 'Integritet',
   'dashboard.workQueue.integrity.title': 'Kontrollér registerkæden',
   'dashboard.workQueue.integrity.detail':

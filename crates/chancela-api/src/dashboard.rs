@@ -7,7 +7,11 @@ use axum::extract::State;
 use chancela_authz::{Permission, Scope};
 use chancela_core::{
     Act, ActId, ActState, Book, BookId, BookKind, BookState, CalendarPreset, Entity, EntityFamily,
-    EntityId, EntityKind, EntityProfile, Severity, profile_for, rule_pack_for,
+    EntityId, EntityKind, ProfileCalendarDueRule, ProfileCalendarEvaluationContext,
+    ProfileCalendarNoClaimFlags, ProfileCalendarPlan, ProfileCalendarRuleEvaluation,
+    ProfileCalendarScheduledRule, ProfileCalendarUnsupportedRule, Severity,
+    evaluate_profile_calendar_rule, profile_calendar_plan_for, profile_for, rule_pack_for,
+    supports_profile_calendar_plan,
 };
 use chancela_law::LawCatalog;
 use chancela_registry::RegistryExtract;
@@ -23,8 +27,10 @@ use crate::authz::require_permission;
 use crate::dto::{
     DashboardActStateCounts, DashboardAction, DashboardAlert, DashboardAlertTarget,
     DashboardCurrentWork, DashboardI18n, DashboardLawReference, DashboardOpenBook,
-    DashboardReminder, DashboardResponse, DashboardTargetLinks, LedgerEventView, compute_expired,
-    format_date, read_redaction_for_actor,
+    DashboardProfileCalendarDueRule, DashboardProfileCalendarEvaluation,
+    DashboardProfileCalendarNoClaimFlags, DashboardProfileCalendarPlan, DashboardReminder,
+    DashboardResponse, DashboardTargetLinks, LedgerEventView, compute_expired, format_date,
+    read_redaction_for_actor,
 };
 use crate::error::ApiError;
 use crate::privacy::{
@@ -1038,6 +1044,15 @@ fn should_prompt_manager_remuneration(
     })
 }
 
+fn is_sa_or_lda_like(kind: EntityKind) -> bool {
+    matches!(
+        kind,
+        EntityKind::SociedadeAnonima
+            | EntityKind::SociedadePorQuotas
+            | EntityKind::SociedadeUnipessoalPorQuotas
+    )
+}
+
 fn act_mentions_remuneration(act: &Act) -> bool {
     let haystack = fold_ascii(&format!("{} {}", act.title, act.deliberations));
     haystack.contains("remuneracao") || haystack.contains("nao remuneracao")
@@ -1361,6 +1376,7 @@ fn act_attendance_reminder(
                 (due_date.to_julian_day() - today.to_julian_day()).to_string(),
             ),
         ]),
+        profile_calendar_plan: None,
         law_refs: act_attendance_law_refs(entity.family),
         action: Some(dashboard_action(
             "open_act_attendance",
@@ -1540,6 +1556,7 @@ fn absent_owner_dispatch_evidence_dashboard_reminder(
             ("missing_recipients", missing_recipients),
             ("evidence_row_count", evidence_row_count.to_string()),
         ]),
+        profile_calendar_plan: None,
         law_refs: Vec::new(),
         action: Some(dashboard_action(
             "open_absent_owner_dispatch_evidence",
@@ -1701,6 +1718,7 @@ fn privacy_review_reminder_from_summary(
             ("external_delivery_configured", "false".to_owned()),
             ("legal_completion_claimed", "false".to_owned()),
         ]),
+        profile_calendar_plan: None,
         law_refs: Vec::new(),
         action: Some(dashboard_action(
             "open_privacy_review",
@@ -1811,6 +1829,7 @@ fn follow_up_reminder(
                     .unwrap_or_default(),
             ),
         ]),
+        profile_calendar_plan: None,
         law_refs: Vec::new(),
         action: Some(dashboard_action(
             "open_act_follow_up",
@@ -1834,15 +1853,14 @@ fn annual_general_meeting_reminders(
     entity: &Entity,
     context: &ProfileCalendarReminderContext<'_>,
 ) -> Vec<DashboardReminder> {
-    if !entity.is_consistent() || !supports_profile_calendar_reminders(entity) {
+    if !entity.is_consistent() || !supports_profile_calendar_plan(entity.kind) {
         return Vec::new();
     }
 
-    let profile = profile_for(entity.kind);
-    profile
-        .calendar_presets
+    let plan = profile_calendar_plan_for(entity.kind);
+    plan.rules
         .iter()
-        .filter_map(|preset| profile_calendar_reminder(entity, &profile, preset, context))
+        .filter_map(|preset| profile_calendar_reminder(entity, &plan, preset, context))
         .collect()
 }
 
@@ -1856,104 +1874,91 @@ struct ProfileCalendarReminderContext<'a> {
 
 fn profile_calendar_reminder(
     entity: &Entity,
-    profile: &EntityProfile,
+    plan: &ProfileCalendarPlan,
     preset: &CalendarPreset,
     context: &ProfileCalendarReminderContext<'_>,
 ) -> Option<DashboardReminder> {
-    let Some(months_after_fiscal_year_end) = preset.months_after_fiscal_year_end else {
-        return Some(unsupported_profile_calendar_advisory(
-            entity, profile, preset,
-        ));
-    };
-
-    let parsed_fiscal_year_end = parse_fiscal_year_end(entity.fiscal_year_end.as_deref());
-    let fiscal_year_end = parsed_fiscal_year_end.unwrap_or(DEFAULT_FISCAL_YEAR_END);
-    if is_in_first_fiscal_year(context.registry_extract, fiscal_year_end, context.today) {
-        return None;
-    }
-    let due_date = annual_due_date_for_year(
-        context.today.year(),
-        fiscal_year_end,
-        months_after_fiscal_year_end,
-    );
-    if is_before_first_applicable_annual_due(
-        context.registry_extract,
-        fiscal_year_end,
-        months_after_fiscal_year_end,
-        due_date,
-    ) {
-        return None;
-    }
-    if has_recent_calendar_signal(entity, context.books, context.acts, due_date.year()) {
-        return None;
-    }
-
-    let (fiscal_year_note, due_basis) = match (
-        entity.fiscal_year_end.as_deref(),
-        parsed_fiscal_year_end.is_some(),
-    ) {
-        (Some(_), true) => (
-            "using the entity's recorded fiscal_year_end",
-            "recorded_fiscal_year_end",
-        ),
-        (Some(_), false) => (
-            "using the default Dec 31 fiscal-year end because the recorded fiscal_year_end could not be read",
-            "default_fiscal_year_end_unreadable_recorded_value",
-        ),
-        (None, _) => (
-            "using the default Dec 31 fiscal-year end because no fiscal_year_end is recorded",
-            "default_fiscal_year_end_missing_recorded_value",
-        ),
-    };
-    let params = supported_profile_calendar_params(
+    let evaluation = evaluate_profile_calendar_rule(
         preset,
-        months_after_fiscal_year_end,
-        fiscal_year_end,
-        due_date,
-        due_basis,
+        ProfileCalendarEvaluationContext {
+            today: context.today,
+            recorded_fiscal_year_end: entity.fiscal_year_end.as_deref(),
+            constitution_date: registry_constitution_date(context.registry_extract),
+        },
     );
-    Some(DashboardReminder {
+
+    match evaluation {
+        ProfileCalendarRuleEvaluation::Scheduled(scheduled) => {
+            if has_recent_calendar_signal(
+                entity,
+                context.books,
+                context.acts,
+                scheduled.due_date.year(),
+            ) {
+                return None;
+            }
+            Some(supported_profile_calendar_advisory(
+                entity, plan, preset, scheduled, context,
+            ))
+        }
+        ProfileCalendarRuleEvaluation::Unsupported(unsupported) => Some(
+            unsupported_profile_calendar_advisory(entity, plan, preset, unsupported),
+        ),
+        ProfileCalendarRuleEvaluation::Suppressed(_) => None,
+    }
+}
+
+fn supported_profile_calendar_advisory(
+    entity: &Entity,
+    plan: &ProfileCalendarPlan,
+    preset: &CalendarPreset,
+    scheduled: ProfileCalendarScheduledRule,
+    context: &ProfileCalendarReminderContext<'_>,
+) -> DashboardReminder {
+    let due_date = scheduled.due_date;
+    let params = supported_profile_calendar_params(preset, scheduled);
+    DashboardReminder {
         due_date: format_date(due_date),
         severity: "Advisory".to_owned(),
         status: reminder_status(context.today, due_date, context.due_soon_days).to_owned(),
         reason: format!(
-            "The {} calendar preset \"{}\" points to an annual item by {} \
-             ({fiscal_year_note}). \
+            "The {} calendar preset \"{}\" produces a local advisory date of {} \
+             ({}). \
              No sealed or archived {} act dated {} is recorded for this entity. \
-             Chancela cannot yet prove this annual calendar purpose, so this is advisory.",
-            family_calendar_label(profile.family),
+             Chancela does not claim a legal deadline, legal calendar authority, or legal \
+             compliance from this local plan.",
+            family_calendar_label(plan.family),
             preset.label,
             format_date(due_date),
-            calendar_signal_label(profile.family),
+            scheduled.due_basis.reason_fragment(),
+            calendar_signal_label(plan.family),
             due_date.year()
         ),
         entity_id: entity.id.to_string(),
         entity_name: entity.name.clone(),
         source_rule: preset.id.to_owned(),
-        source_profile: profile.template_family.to_owned(),
+        source_profile: plan.template_family.to_owned(),
         params,
-        law_refs: calendar_law_refs(profile.family, preset.id),
+        profile_calendar_plan: Some(supported_profile_calendar_plan_view(preset, scheduled)),
+        law_refs: calendar_law_refs(preset),
         action: Some(dashboard_action(
             "open_entity",
             "notifications.reminder.annual.action",
             Some(format!("/v1/entities/{}", entity.id)),
             Some(format!("/entidades/{}", entity.id)),
         )),
-        recommended_next_steps: calendar_next_steps(profile.family),
+        recommended_next_steps: calendar_next_steps(plan.family),
         i18n: None,
-    })
+    }
 }
 
 fn unsupported_profile_calendar_advisory(
     entity: &Entity,
-    profile: &EntityProfile,
+    plan: &ProfileCalendarPlan,
     preset: &CalendarPreset,
+    unsupported: ProfileCalendarUnsupportedRule,
 ) -> DashboardReminder {
-    let mut params = unsupported_profile_calendar_params(preset);
-    params.insert(
-        "unsupported_reason".to_owned(),
-        "missing_local_due_date_rule".to_owned(),
-    );
+    let params = unsupported_profile_calendar_params(preset, unsupported);
 
     DashboardReminder {
         due_date: String::new(),
@@ -1964,14 +1969,15 @@ fn unsupported_profile_calendar_advisory(
              due-date rule or fiscal-year offset is configured/encoded for it. Chancela does \
              not calculate a legal deadline for this preset; this advisory only makes the \
              unsupported preset visible.",
-            family_calendar_label(profile.family),
+            family_calendar_label(plan.family),
             preset.label
         ),
         entity_id: entity.id.to_string(),
         entity_name: entity.name.clone(),
         source_rule: preset.id.to_owned(),
-        source_profile: profile.template_family.to_owned(),
+        source_profile: plan.template_family.to_owned(),
         params,
+        profile_calendar_plan: Some(unsupported_profile_calendar_plan_view(preset, unsupported)),
         law_refs: Vec::new(),
         action: Some(dashboard_action(
             "open_entity",
@@ -1990,32 +1996,39 @@ fn unsupported_profile_calendar_advisory(
 
 fn supported_profile_calendar_params(
     preset: &CalendarPreset,
-    months_after_fiscal_year_end: u8,
-    fiscal_year_end: FiscalYearEnd,
-    due_date: Date,
-    due_basis: &str,
+    scheduled: ProfileCalendarScheduledRule,
 ) -> BTreeMap<String, String> {
-    let mut params = profile_calendar_preset_params(preset, "supported", true, true, true);
+    let mut params = profile_calendar_preset_params(preset, true, true, false);
     params.insert(
         "months_after_fiscal_year_end".to_owned(),
-        months_after_fiscal_year_end.to_string(),
+        scheduled.months_after_fiscal_year_end.to_string(),
     );
     params.insert(
         "fiscal_year_end".to_owned(),
-        format_fiscal_year_end(fiscal_year_end),
+        scheduled.fiscal_year_end.format_mm_dd(),
     );
-    params.insert("due_year".to_owned(), due_date.year().to_string());
-    params.insert("due_basis".to_owned(), due_basis.to_owned());
+    params.insert("due_year".to_owned(), scheduled.due_date.year().to_string());
+    params.insert(
+        "due_basis".to_owned(),
+        scheduled.due_basis.as_str().to_owned(),
+    );
     params
 }
 
-fn unsupported_profile_calendar_params(preset: &CalendarPreset) -> BTreeMap<String, String> {
-    profile_calendar_preset_params(preset, "unsupported", false, false, false)
+fn unsupported_profile_calendar_params(
+    preset: &CalendarPreset,
+    unsupported: ProfileCalendarUnsupportedRule,
+) -> BTreeMap<String, String> {
+    let mut params = profile_calendar_preset_params(preset, false, false, false);
+    params.insert(
+        "unsupported_reason".to_owned(),
+        unsupported.reason.as_str().to_owned(),
+    );
+    params
 }
 
 fn profile_calendar_preset_params(
     preset: &CalendarPreset,
-    support_status: &str,
     local_due_date_rule_configured: bool,
     local_due_date_calculated: bool,
     legal_deadline_calculated: bool,
@@ -2023,10 +2036,19 @@ fn profile_calendar_preset_params(
     let mut params = BTreeMap::new();
     params.insert(
         "calendar_preset_support".to_owned(),
-        support_status.to_owned(),
+        preset.support_status.as_str().to_owned(),
     );
     params.insert("preset_id".to_owned(), preset.id.to_owned());
     params.insert("preset_label".to_owned(), preset.label.to_owned());
+    params.insert("rule_kind".to_owned(), preset.rule_kind.as_str().to_owned());
+    params.insert(
+        "review_status".to_owned(),
+        preset.review_status.as_str().to_owned(),
+    );
+    params.insert(
+        "source_status".to_owned(),
+        preset.source_status.as_str().to_owned(),
+    );
     params.insert(
         "local_due_date_rule_configured".to_owned(),
         local_due_date_rule_configured.to_string(),
@@ -2039,29 +2061,175 @@ fn profile_calendar_preset_params(
         "legal_deadline_calculated".to_owned(),
         legal_deadline_calculated.to_string(),
     );
-    params.insert("local_advisory_only".to_owned(), "true".to_owned());
-    params.insert(
-        "legal_calendar_authority_claimed".to_owned(),
-        "false".to_owned(),
-    );
-    params.insert("external_delivery_claimed".to_owned(), "false".to_owned());
-    params.insert(
-        "external_calendar_sync_claimed".to_owned(),
-        "false".to_owned(),
-    );
-    params.insert("webhook_delivery_claimed".to_owned(), "false".to_owned());
-    params.insert("workflow_completion_claimed".to_owned(), "false".to_owned());
-    params.insert("compliance_status_claimed".to_owned(), "false".to_owned());
+    insert_profile_calendar_no_claim_params(&mut params, preset.no_claims);
     params
 }
 
-fn calendar_law_refs(family: EntityFamily, preset_id: &str) -> Vec<DashboardLawReference> {
-    match (family, preset_id) {
-        (EntityFamily::CommercialCompany, "csc-art376-annual") => law_refs(&[("csc", "376")]),
-        (EntityFamily::Association, "assoc-annual") => law_refs(&[("cc", "173")]),
-        (EntityFamily::Cooperative, "cooperativa-annual") => law_refs(&[("cod-cooperativo", "33")]),
-        _ => Vec::new(),
+fn insert_profile_calendar_no_claim_params(
+    params: &mut BTreeMap<String, String>,
+    no_claims: ProfileCalendarNoClaimFlags,
+) {
+    params.insert(
+        "local_advisory_only".to_owned(),
+        no_claims.local_advisory_only.to_string(),
+    );
+    params.insert(
+        "legal_deadline_authority_claimed".to_owned(),
+        no_claims.legal_deadline_authority_claimed.to_string(),
+    );
+    params.insert(
+        "legal_calendar_authority_claimed".to_owned(),
+        no_claims.legal_calendar_authority_claimed.to_string(),
+    );
+    params.insert(
+        "legal_compliance_claimed".to_owned(),
+        no_claims.legal_compliance_claimed.to_string(),
+    );
+    params.insert(
+        "compliance_status_claimed".to_owned(),
+        no_claims.compliance_status_claimed.to_string(),
+    );
+    params.insert(
+        "workflow_completion_claimed".to_owned(),
+        no_claims.workflow_completion_claimed.to_string(),
+    );
+    params.insert(
+        "external_delivery_claimed".to_owned(),
+        no_claims.external_delivery_claimed.to_string(),
+    );
+    params.insert(
+        "external_calendar_sync_claimed".to_owned(),
+        no_claims.external_calendar_sync_claimed.to_string(),
+    );
+    params.insert(
+        "webhook_delivery_claimed".to_owned(),
+        no_claims.webhook_delivery_claimed.to_string(),
+    );
+    params.insert(
+        "legal_review_claimed".to_owned(),
+        no_claims.legal_review_claimed.to_string(),
+    );
+    params.insert(
+        "dre_verification_claimed".to_owned(),
+        no_claims.dre_verification_claimed.to_string(),
+    );
+    params.insert(
+        "provider_effect_claimed".to_owned(),
+        no_claims.provider_effect_claimed.to_string(),
+    );
+    params.insert(
+        "certification_claimed".to_owned(),
+        no_claims.certification_claimed.to_string(),
+    );
+}
+
+fn supported_profile_calendar_plan_view(
+    preset: &CalendarPreset,
+    scheduled: ProfileCalendarScheduledRule,
+) -> DashboardProfileCalendarPlan {
+    profile_calendar_plan_view(
+        preset,
+        DashboardProfileCalendarEvaluation {
+            local_due_date_rule_configured: true,
+            local_due_date_calculated: true,
+            legal_deadline_calculated: false,
+            fiscal_year_end: Some(scheduled.fiscal_year_end.format_mm_dd()),
+            due_year: Some(scheduled.due_date.year()),
+            due_basis: Some(scheduled.due_basis.as_str().to_owned()),
+            unsupported_reason: None,
+        },
+    )
+}
+
+fn unsupported_profile_calendar_plan_view(
+    preset: &CalendarPreset,
+    unsupported: ProfileCalendarUnsupportedRule,
+) -> DashboardProfileCalendarPlan {
+    profile_calendar_plan_view(
+        preset,
+        DashboardProfileCalendarEvaluation {
+            local_due_date_rule_configured: false,
+            local_due_date_calculated: false,
+            legal_deadline_calculated: false,
+            fiscal_year_end: None,
+            due_year: None,
+            due_basis: None,
+            unsupported_reason: Some(unsupported.reason.as_str().to_owned()),
+        },
+    )
+}
+
+fn profile_calendar_plan_view(
+    preset: &CalendarPreset,
+    evaluation: DashboardProfileCalendarEvaluation,
+) -> DashboardProfileCalendarPlan {
+    DashboardProfileCalendarPlan {
+        preset_id: preset.id.to_owned(),
+        preset_label: preset.label.to_owned(),
+        rule_kind: preset.rule_kind.as_str().to_owned(),
+        support_status: preset.support_status.as_str().to_owned(),
+        review_status: preset.review_status.as_str().to_owned(),
+        source_status: preset.source_status.as_str().to_owned(),
+        due_rule: profile_calendar_due_rule_view(preset),
+        evaluation,
+        no_claims: dashboard_profile_calendar_no_claims(preset.no_claims),
     }
+}
+
+fn profile_calendar_due_rule_view(preset: &CalendarPreset) -> DashboardProfileCalendarDueRule {
+    match preset.due_rule {
+        ProfileCalendarDueRule::FiscalYearEndOffset {
+            months_after_fiscal_year_end,
+            default_fiscal_year_end,
+        } => DashboardProfileCalendarDueRule {
+            kind: preset.due_rule.kind().to_owned(),
+            months_after_fiscal_year_end: Some(months_after_fiscal_year_end),
+            default_fiscal_year_end: Some(default_fiscal_year_end.format_mm_dd()),
+            unsupported_reason: None,
+        },
+        ProfileCalendarDueRule::NotEncoded { reason } => DashboardProfileCalendarDueRule {
+            kind: preset.due_rule.kind().to_owned(),
+            months_after_fiscal_year_end: None,
+            default_fiscal_year_end: None,
+            unsupported_reason: Some(reason.as_str().to_owned()),
+        },
+    }
+}
+
+fn dashboard_profile_calendar_no_claims(
+    no_claims: ProfileCalendarNoClaimFlags,
+) -> DashboardProfileCalendarNoClaimFlags {
+    DashboardProfileCalendarNoClaimFlags {
+        local_advisory_only: no_claims.local_advisory_only,
+        legal_deadline_authority_claimed: no_claims.legal_deadline_authority_claimed,
+        legal_calendar_authority_claimed: no_claims.legal_calendar_authority_claimed,
+        legal_compliance_claimed: no_claims.legal_compliance_claimed,
+        compliance_status_claimed: no_claims.compliance_status_claimed,
+        workflow_completion_claimed: no_claims.workflow_completion_claimed,
+        external_delivery_claimed: no_claims.external_delivery_claimed,
+        external_calendar_sync_claimed: no_claims.external_calendar_sync_claimed,
+        webhook_delivery_claimed: no_claims.webhook_delivery_claimed,
+        legal_review_claimed: no_claims.legal_review_claimed,
+        dre_verification_claimed: no_claims.dre_verification_claimed,
+        provider_effect_claimed: no_claims.provider_effect_claimed,
+        certification_claimed: no_claims.certification_claimed,
+    }
+}
+
+fn calendar_law_refs(preset: &CalendarPreset) -> Vec<DashboardLawReference> {
+    preset
+        .law_refs
+        .iter()
+        .map(|law_ref| DashboardLawReference {
+            diploma_id: law_ref.diploma_id.to_owned(),
+            article: law_ref.article.to_owned(),
+            label: law_ref.label.to_owned(),
+            heading: String::new(),
+            verification: law_ref.source_status.dashboard_verification().to_owned(),
+            source_url: None,
+            source_complete: false,
+        })
+        .collect()
 }
 
 fn calendar_next_steps(family: EntityFamily) -> Vec<String> {
@@ -2085,19 +2253,6 @@ fn calendar_next_steps(family: EntityFamily) -> Vec<String> {
     }
 }
 
-fn supports_profile_calendar_reminders(entity: &Entity) -> bool {
-    !matches!(entity.family, EntityFamily::CommercialCompany) || is_sa_or_lda_like(entity.kind)
-}
-
-fn is_sa_or_lda_like(kind: EntityKind) -> bool {
-    matches!(
-        kind,
-        EntityKind::SociedadeAnonima
-            | EntityKind::SociedadePorQuotas
-            | EntityKind::SociedadeUnipessoalPorQuotas
-    )
-}
-
 fn family_calendar_label(family: EntityFamily) -> &'static str {
     match family {
         EntityFamily::CommercialCompany => "commercial-company",
@@ -2118,139 +2273,9 @@ fn calendar_signal_label(family: EntityFamily) -> &'static str {
     }
 }
 
-const DEFAULT_FISCAL_YEAR_END: FiscalYearEnd = FiscalYearEnd { month: 12, day: 31 };
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct FiscalYearEnd {
-    month: u8,
-    day: u8,
-}
-
-fn parse_fiscal_year_end(value: Option<&str>) -> Option<FiscalYearEnd> {
-    let value = value?;
-    let (month, day) = value.split_once('-')?;
-    let month = month.parse::<u8>().ok()?;
-    let day = day.parse::<u8>().ok()?;
-    let month = Month::try_from(month).ok()?;
-    Date::from_calendar_date(2000, month, day).ok()?;
-    Some(FiscalYearEnd {
-        month: month as u8,
-        day,
-    })
-}
-
-fn annual_due_date_for_year(
-    due_year: i32,
-    fiscal_year_end: FiscalYearEnd,
-    months_after_fiscal_year_end: u8,
-) -> Date {
-    for fiscal_year in [due_year, due_year - 1] {
-        let due_date = add_months_clamped(
-            fiscal_year_end_date(fiscal_year, fiscal_year_end),
-            months_after_fiscal_year_end,
-        );
-        if due_date.year() == due_year {
-            return due_date;
-        }
-    }
-    add_months_clamped(
-        fiscal_year_end_date(due_year, fiscal_year_end),
-        months_after_fiscal_year_end,
-    )
-}
-
-fn is_before_first_applicable_annual_due(
-    registry_extract: Option<&RegistryExtract>,
-    fiscal_year_end: FiscalYearEnd,
-    months_after_fiscal_year_end: u8,
-    due_date: Date,
-) -> bool {
-    let Some(constitution_date) = registry_constitution_date(registry_extract) else {
-        // Conservative fallback: without a registry constitution/incorporation date, keep the
-        // annual dashboard reminder rather than guessing that the company is still first-year.
-        return false;
-    };
-    due_date
-        < first_applicable_annual_due_date(
-            constitution_date,
-            fiscal_year_end,
-            months_after_fiscal_year_end,
-        )
-}
-
-fn is_in_first_fiscal_year(
-    registry_extract: Option<&RegistryExtract>,
-    fiscal_year_end: FiscalYearEnd,
-    today: Date,
-) -> bool {
-    let Some(constitution_date) = registry_constitution_date(registry_extract) else {
-        return false;
-    };
-    today <= first_fiscal_year_end(constitution_date, fiscal_year_end)
-}
-
 fn registry_constitution_date(registry_extract: Option<&RegistryExtract>) -> Option<Date> {
     let constitution_date = registry_extract?.effective_data_constituicao()?;
     parse_dashboard_date(&constitution_date)
-}
-
-fn first_applicable_annual_due_date(
-    constitution_date: Date,
-    fiscal_year_end: FiscalYearEnd,
-    months_after_fiscal_year_end: u8,
-) -> Date {
-    add_months_clamped(
-        first_fiscal_year_end(constitution_date, fiscal_year_end),
-        months_after_fiscal_year_end,
-    )
-}
-
-fn first_fiscal_year_end(constitution_date: Date, fiscal_year_end: FiscalYearEnd) -> Date {
-    let constitution_year_end = fiscal_year_end_date(constitution_date.year(), fiscal_year_end);
-    if constitution_year_end >= constitution_date {
-        constitution_year_end
-    } else {
-        fiscal_year_end_date(constitution_date.year() + 1, fiscal_year_end)
-    }
-}
-
-fn fiscal_year_end_date(year: i32, fiscal_year_end: FiscalYearEnd) -> Date {
-    let month = Month::try_from(fiscal_year_end.month).expect("validated fiscal year end month");
-    let day = fiscal_year_end
-        .day
-        .min(days_in_month(year, fiscal_year_end.month));
-    Date::from_calendar_date(year, month, day).expect("clamped fiscal year end date is valid")
-}
-
-fn format_fiscal_year_end(fiscal_year_end: FiscalYearEnd) -> String {
-    format!("{:02}-{:02}", fiscal_year_end.month, fiscal_year_end.day)
-}
-
-fn add_months_clamped(date: Date, months: u8) -> Date {
-    let zero_based_month = date.month() as i32 - 1 + i32::from(months);
-    let year = date.year() + zero_based_month.div_euclid(12);
-    let month = zero_based_month.rem_euclid(12) as u8 + 1;
-    let day = date.day().min(days_in_month(year, month));
-    Date::from_calendar_date(
-        year,
-        Month::try_from(month).expect("computed month is valid"),
-        day,
-    )
-    .expect("clamped due date is valid")
-}
-
-fn days_in_month(year: i32, month: u8) -> u8 {
-    match month {
-        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
-        4 | 6 | 9 | 11 => 30,
-        2 if is_leap_year(year) => 29,
-        2 => 28,
-        _ => unreachable!("month has already been validated"),
-    }
-}
-
-fn is_leap_year(year: i32) -> bool {
-    (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
 }
 
 fn reminder_status(today: Date, due_date: Date, due_soon_days: u16) -> &'static str {
@@ -3325,11 +3350,7 @@ mod tests {
         assert_eq!(reminder.entity_name, entity.name);
         assert_eq!(reminder.source_rule, "csc-art376-annual");
         assert_eq!(reminder.source_profile, "csc-commercial");
-        assert!(
-            reminder
-                .reason
-                .contains("cannot yet prove this annual calendar purpose")
-        );
+        assert!(reminder.reason.contains("does not claim a legal deadline"));
         assert!(
             reminder
                 .reason
@@ -3410,7 +3431,19 @@ mod tests {
                 .params
                 .get("legal_deadline_calculated")
                 .map(String::as_str),
-            Some("true")
+            Some("false")
+        );
+        assert_eq!(
+            reminder.params.get("rule_kind").map(String::as_str),
+            Some("commercial_company_annual_general_meeting")
+        );
+        assert_eq!(
+            reminder.params.get("review_status").map(String::as_str),
+            Some("pending_source_review")
+        );
+        assert_eq!(
+            reminder.params.get("source_status").map(String::as_str),
+            Some("pending_unverified")
         );
         assert_eq!(
             reminder
@@ -3420,12 +3453,18 @@ mod tests {
             Some("true")
         );
         for key in [
+            "legal_deadline_authority_claimed",
             "legal_calendar_authority_claimed",
+            "legal_compliance_claimed",
             "external_delivery_claimed",
             "external_calendar_sync_claimed",
             "webhook_delivery_claimed",
             "workflow_completion_claimed",
             "compliance_status_claimed",
+            "legal_review_claimed",
+            "dre_verification_claimed",
+            "provider_effect_claimed",
+            "certification_claimed",
         ] {
             assert_eq!(
                 reminder.params.get(key).map(String::as_str),
@@ -3433,6 +3472,37 @@ mod tests {
                 "{key} must remain false for profile-calendar reminders"
             );
         }
+        assert_eq!(reminder.law_refs.len(), 1);
+        assert_eq!(reminder.law_refs[0].verification, "Pending");
+        assert_eq!(reminder.law_refs[0].source_url, None);
+        assert!(!reminder.law_refs[0].source_complete);
+
+        let plan = reminder
+            .profile_calendar_plan
+            .as_ref()
+            .expect("profile calendar reminder should expose typed plan");
+        assert_eq!(plan.rule_kind, "commercial_company_annual_general_meeting");
+        assert_eq!(plan.support_status, "supported");
+        assert_eq!(plan.review_status, "pending_source_review");
+        assert_eq!(plan.source_status, "pending_unverified");
+        assert_eq!(plan.due_rule.kind, "fiscal_year_end_offset");
+        assert_eq!(plan.due_rule.months_after_fiscal_year_end, Some(3));
+        assert_eq!(
+            plan.due_rule.default_fiscal_year_end.as_deref(),
+            Some("12-31")
+        );
+        assert_eq!(plan.evaluation.local_due_date_rule_configured, true);
+        assert_eq!(plan.evaluation.local_due_date_calculated, true);
+        assert_eq!(plan.evaluation.legal_deadline_calculated, false);
+        assert_eq!(plan.evaluation.fiscal_year_end.as_deref(), Some("08-31"));
+        assert_eq!(plan.evaluation.due_year, Some(2026));
+        assert_eq!(
+            plan.evaluation.due_basis.as_deref(),
+            Some("recorded_fiscal_year_end")
+        );
+        assert!(plan.no_claims.local_advisory_only);
+        assert!(!plan.no_claims.legal_deadline_authority_claimed);
+        assert!(!plan.no_claims.legal_compliance_claimed);
     }
 
     #[test]
@@ -4141,6 +4211,18 @@ mod tests {
                 .map(String::as_str),
             Some("missing_local_due_date_rule")
         );
+        assert_eq!(
+            reminder.params.get("rule_kind").map(String::as_str),
+            Some("condominium_annual_assembly")
+        );
+        assert_eq!(
+            reminder.params.get("review_status").map(String::as_str),
+            Some("pending_source_review")
+        );
+        assert_eq!(
+            reminder.params.get("source_status").map(String::as_str),
+            Some("pending_unverified")
+        );
         assert!(
             !reminder.params.contains_key("due_year"),
             "unsupported presets must not invent a due year"
@@ -4150,12 +4232,18 @@ mod tests {
             "unsupported presets must not invent a due basis"
         );
         for key in [
+            "legal_deadline_authority_claimed",
             "legal_calendar_authority_claimed",
+            "legal_compliance_claimed",
             "external_delivery_claimed",
             "external_calendar_sync_claimed",
             "webhook_delivery_claimed",
             "workflow_completion_claimed",
             "compliance_status_claimed",
+            "legal_review_claimed",
+            "dre_verification_claimed",
+            "provider_effect_claimed",
+            "certification_claimed",
         ] {
             assert_eq!(
                 reminder.params.get(key).map(String::as_str),
@@ -4163,6 +4251,27 @@ mod tests {
                 "{key} must remain false for unsupported profile-calendar reminders"
             );
         }
+        let plan = reminder
+            .profile_calendar_plan
+            .as_ref()
+            .expect("unsupported profile calendar reminder should expose typed plan");
+        assert_eq!(plan.rule_kind, "condominium_annual_assembly");
+        assert_eq!(plan.support_status, "unsupported");
+        assert_eq!(plan.review_status, "pending_source_review");
+        assert_eq!(plan.source_status, "pending_unverified");
+        assert_eq!(plan.due_rule.kind, "not_encoded");
+        assert_eq!(
+            plan.due_rule.unsupported_reason.as_deref(),
+            Some("missing_local_due_date_rule")
+        );
+        assert_eq!(plan.evaluation.local_due_date_rule_configured, false);
+        assert_eq!(plan.evaluation.local_due_date_calculated, false);
+        assert_eq!(plan.evaluation.legal_deadline_calculated, false);
+        assert_eq!(
+            plan.evaluation.unsupported_reason.as_deref(),
+            Some("missing_local_due_date_rule")
+        );
+        assert!(!plan.no_claims.external_delivery_claimed);
         assert!(
             reminder
                 .reason
@@ -4201,16 +4310,35 @@ mod tests {
     }
 
     #[test]
-    fn leap_day_fiscal_year_end_is_clamped_deterministically() {
-        let fiscal_year_end = FiscalYearEnd { month: 2, day: 29 };
+    fn profile_calendar_leap_day_fiscal_year_end_is_clamped_through_dashboard() {
+        let mut entity = entity_of(EntityKind::SociedadePorQuotas);
+        entity.fiscal_year_end = Some("02-29".to_owned());
+        let mut entities = HashMap::new();
+        entities.insert(entity.id, entity);
 
+        let reminders = dashboard_reminders(
+            &entities,
+            &HashMap::new(),
+            &HashMap::new(),
+            &HashMap::new(),
+            date!(2025 - 01 - 15),
+        );
+
+        assert_eq!(reminders.len(), 1);
+        assert_eq!(reminders[0].due_date, "2025-05-28");
         assert_eq!(
-            format_date(annual_due_date_for_year(2024, fiscal_year_end, 3)),
-            "2024-05-29"
+            reminders[0]
+                .params
+                .get("fiscal_year_end")
+                .map(String::as_str),
+            Some("02-29")
         );
         assert_eq!(
-            format_date(annual_due_date_for_year(2025, fiscal_year_end, 3)),
-            "2025-05-28"
+            reminders[0]
+                .profile_calendar_plan
+                .as_ref()
+                .and_then(|plan| plan.evaluation.fiscal_year_end.as_deref()),
+            Some("02-29")
         );
     }
 

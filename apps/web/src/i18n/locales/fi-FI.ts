@@ -339,6 +339,18 @@ export const fiFI: Catalog = {
   'dashboard.workQueue.date.invalid': 'Virheellinen päivämäärä',
   'dashboard.workQueue.date.value': 'Päivämäärä {date}',
   'dashboard.workQueue.source': 'Lähde {rule} / {profile}',
+  'dashboard.profileCalendar.meta.supportedPendingSourceReview':
+    'Profiilikalenteri: paikallinen neuvova sääntö saatavilla; lähteen tarkistus odottaa',
+  'dashboard.profileCalendar.meta.unsupportedPendingSourceReview':
+    'Profiilikalenteri: ei paikallista neuvovaa sääntöä; lähteen tarkistus odottaa',
+  'dashboard.profileCalendar.meta.pendingSourceReview':
+    'Profiilikalenteri: paikallinen neuvova tila; lähteen tarkistus odottaa',
+  'dashboard.profileCalendar.meta.supportedAdvisory':
+    'Profiilikalenteri: paikallinen neuvova sääntö saatavilla',
+  'dashboard.profileCalendar.meta.unsupportedAdvisory':
+    'Profiilikalenteri: ei paikallista neuvovaa sääntöä',
+  'dashboard.profileCalendar.meta.unknownAdvisory':
+    'Profiilikalenteri: paikallinen neuvova tila vahvistettava',
   'dashboard.workQueue.integrity.badge': 'Eheys',
   'dashboard.workQueue.integrity.title': 'Tarkista lokiketju',
   'dashboard.workQueue.integrity.detail':
