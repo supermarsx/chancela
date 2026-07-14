@@ -2840,6 +2840,20 @@ body {
   code *,
   kbd,
   samp,
+  /* The main content region: every name, path, digest, id, NIPC and reference code an
+     operator reads or copies lives under `.app` (or the standalone external-signature
+     surface). Re-enable text selection across it wholesale; the chrome block below then
+     carves genuine UI (buttons, nav, labels, action bars) back out to non-selectable, so
+     values are selectable everywhere without opting each component in one at a time. */
+  .app,
+  .app *,
+  .external-signature-page,
+  .external-signature-page *,
+  /* Truncate output (names/paths): a non-`mono` Truncate renders only `.truncate`, so it
+     needs an explicit entry to stay selectable even outside `.app`. The abbreviated text is
+     fully selectable, and the full value remains on the `title` tooltip / copy control. */
+  .truncate,
+  .truncate *,
   .mono,
   .mono *,
   .table-wrap,
@@ -9472,4 +9486,61 @@ input[type='radio']:disabled {
 }
 .rbac-matrix__perm input {
   flex: none;
+}
+
+/* ==========================================================================
+ * Backup verification surfaces (wp17): restore pre-validation + recovery drill.
+ * Lead with a plain-language verdict; keep the dense technical evidence tucked
+ * inside a collapsible <details> so the operator sees the result first.
+ * ========================================================================== */
+.recovery-verdict,
+.preflight-verdict {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.recovery-verdict__eyebrow {
+  margin: 0;
+  font-size: 0.66rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.recovery-verdict__why,
+.preflight-verdict__why {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 1.02rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.preflight-verdict__next {
+  margin: 0;
+  line-height: 1.4;
+}
+
+.recovery-evidence,
+.preflight-evidence {
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 0.6rem 0.8rem;
+  background: var(--surface-muted, transparent);
+}
+
+.recovery-evidence > summary,
+.preflight-evidence > summary {
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.recovery-evidence[open] > summary,
+.preflight-evidence[open] > summary {
+  margin-bottom: 0.7rem;
 }
