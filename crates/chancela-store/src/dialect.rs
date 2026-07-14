@@ -79,19 +79,40 @@ pub fn rewrite_placeholders(sql: &str) -> String {
 /// EXISTS` / `CREATE UNIQUE INDEX IF NOT EXISTS` are valid Postgres (≥ 9.5) and pass through
 /// unchanged.
 ///
-/// Note (deferred): `imported_document_review_history.id` is a SQLite `INTEGER PRIMARY KEY`
-/// (rowid autoincrement). This rewrite maps it to `BIGINT PRIMARY KEY`, which is valid DDL but is
-/// **not** auto-incrementing — the review-history write path is currently unsupported on the
-/// Postgres backend (it returns [`crate::StoreError::UnsupportedOnPostgres`]); when that path is
-/// ported it must switch this column to `BIGINT GENERATED ALWAYS AS IDENTITY`. The ledger
-/// `events.seq` is intentionally left `BIGINT PRIMARY KEY` (application-assigned, never a DB
-/// sequence — §4).
+/// `imported_document_review_history.id` is the one SQLite `INTEGER PRIMARY KEY` surrogate that
+/// must keep rowid-autoincrement behavior on Postgres, so that table's `id` becomes
+/// `BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY`. The ledger `events.seq` is intentionally left
+/// `BIGINT PRIMARY KEY` (application-assigned, never a DB sequence — §4).
 #[must_use]
 pub fn sqlite_ddl_to_pg(ddl: &str) -> String {
-    ddl.replace(" STRICT", "")
+    let pg = ddl
+        .replace(" STRICT", "")
         .replace("BLOB", "BYTEA")
         .replace("INTEGER", "BIGINT")
-        .replace("REAL", "DOUBLE PRECISION")
+        .replace("REAL", "DOUBLE PRECISION");
+    // Only the append-only review-history table has an auto-incrementing surrogate `id`; it is the
+    // sole `BIGINT PRIMARY KEY` in that table, so promoting it to IDENTITY is unambiguous. Every
+    // other table keys off a natural TEXT id (or the application-assigned `events.seq`), so none of
+    // them is touched. This makes an omitted-`id` INSERT get a server-assigned value on Postgres,
+    // mirroring SQLite's rowid autoincrement.
+    if pg.contains("CREATE TABLE IF NOT EXISTS imported_document_review_history") {
+        pg.replacen(
+            "BIGINT PRIMARY KEY",
+            "BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY",
+            1,
+        )
+    } else {
+        pg
+    }
+}
+
+/// Translate the SQLite `Store::ledger_events_page` predicate SQL (built by
+/// `ledger_events_page_sql`) into its PostgreSQL form: the only SQLite-ism is the `instr()` scope
+/// substring test, which becomes Postgres `strpos()` (both return the 1-based match position or 0),
+/// after which the `?` placeholders are renumbered to `$N`.
+#[must_use]
+pub fn ledger_page_sql_to_pg(sql: &str) -> String {
+    rewrite_placeholders(&sql.replace("instr(scope, ", "strpos(scope, "))
 }
 
 #[cfg(test)]
@@ -161,6 +182,58 @@ CREATE TABLE IF NOT EXISTS events (
     fn create_index_passes_through_unchanged() {
         let idx = "CREATE INDEX IF NOT EXISTS idx_events_scope ON events (scope);";
         assert_eq!(sqlite_ddl_to_pg(idx), idx);
+    }
+
+    #[test]
+    fn review_history_id_becomes_identity() {
+        let pg = sqlite_ddl_to_pg(crate::schema::CREATE_IMPORTED_DOCUMENT_REVIEW_HISTORY);
+        assert!(
+            pg.contains("BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY"),
+            "review-history id must be an IDENTITY column: {pg}"
+        );
+        // Exactly one column is promoted (the surrogate id), never a second.
+        assert_eq!(
+            pg.matches("GENERATED ALWAYS AS IDENTITY").count(),
+            1,
+            "{pg}"
+        );
+    }
+
+    #[test]
+    fn events_seq_is_not_promoted_to_identity() {
+        // The ledger sequence is application-assigned and must stay a plain PRIMARY KEY.
+        let pg = sqlite_ddl_to_pg(crate::schema::CREATE_EVENTS);
+        assert!(pg.contains("seq            BIGINT PRIMARY KEY"), "{pg}");
+        assert!(
+            !pg.contains("IDENTITY"),
+            "events.seq must not be IDENTITY: {pg}"
+        );
+    }
+
+    #[test]
+    fn imported_documents_fresh_ddl_includes_guardrail_acknowledgements() {
+        let sqlite = crate::schema::CREATE_IMPORTED_DOCUMENTS;
+        assert!(
+            sqlite.contains("operator_acknowledged_guardrail_ids_json TEXT NOT NULL DEFAULT '[]'"),
+            "fresh SQLite imported_documents DDL must include review guardrail acknowledgements: {sqlite}"
+        );
+        let pg = sqlite_ddl_to_pg(sqlite);
+        assert!(
+            pg.contains("operator_acknowledged_guardrail_ids_json TEXT NOT NULL DEFAULT '[]'"),
+            "fresh Postgres imported_documents DDL must include review guardrail acknowledgements: {pg}"
+        );
+    }
+
+    #[test]
+    fn ledger_page_sql_maps_instr_and_placeholders() {
+        let sqlite = "SELECT seq FROM events WHERE seq < ? AND instr(scope, ?) > 0 \
+                      ORDER BY seq DESC LIMIT ?";
+        let pg = ledger_page_sql_to_pg(sqlite);
+        assert_eq!(
+            pg,
+            "SELECT seq FROM events WHERE seq < $1 AND strpos(scope, $2) > 0 \
+             ORDER BY seq DESC LIMIT $3"
+        );
     }
 
     #[test]

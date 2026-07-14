@@ -305,6 +305,8 @@ pub const CREATE_PENDING_CMD_SESSIONS_ACT_IDX: &str =
 ///   non-canonical evidence row.
 /// - `operator_reviewed_at` / `operator_reviewed_by` / `operator_review_note` — optional review
 ///   metadata. These fields do not imply OCR, conversion, or legal acceptance.
+/// - `operator_acknowledged_guardrail_ids_json` — JSON list of acknowledged guardrail ids for the
+///   latest operator review decision.
 /// - `bytes` — the retained uploaded document bytes.
 pub const CREATE_IMPORTED_DOCUMENTS: &str = "\
 CREATE TABLE IF NOT EXISTS imported_documents (
@@ -321,6 +323,7 @@ CREATE TABLE IF NOT EXISTS imported_documents (
     operator_reviewed_at  TEXT,
     operator_reviewed_by  TEXT,
     operator_review_note  TEXT,
+    operator_acknowledged_guardrail_ids_json TEXT NOT NULL DEFAULT '[]',
     bytes                 BLOB NOT NULL
 ) STRICT;";
 

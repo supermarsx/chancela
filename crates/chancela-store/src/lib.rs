@@ -203,8 +203,8 @@ impl From<AppendError> for StoreError {
 /// A handle to the durable store. Cheap to clone (shares one connection via `Arc`) and lives in
 /// `chancela_api::AppState`.
 ///
-/// The single connection runs in WAL mode; a connection pool is a later optimization behind this
-/// same seam (t30.md §2 "Async/blocking note").
+/// The default SQLite arm uses one WAL-mode connection; the optional Postgres arm uses its own
+/// pool/writer shape behind the same facade.
 ///
 /// The concrete storage engine lives behind the internal [`Backend`] enum (wp14 Phase 0). The
 /// public `Store` / [`Tx`] API is a byte-identical facade over it: every method delegates to the
@@ -220,10 +220,9 @@ pub struct Store {
 
 /// The storage backend behind the public [`Store`] facade (wp14 Phase 0 seam).
 ///
-/// This is an internal enum, not part of the frozen §3.1 API surface. It currently has a single
-/// [`Backend::Sqlite`] arm — the extraction is purely structural so that Phase 1 can add a
-/// `Postgres` arm alongside it without touching the facade. All SQLite-specific SQL/DDL/connection
-/// handling stays inside the Sqlite arm; the dialect is *not* abstracted yet (that is Phase 1's job).
+/// This is an internal enum, not part of the frozen §3.1 API surface. All SQLite-specific
+/// SQL/DDL/connection handling stays inside the SQLite arm, while Postgres-specific connection and
+/// projection code stays behind the off-by-default feature-gated arm.
 #[derive(Debug, Clone)]
 pub(crate) enum Backend {
     /// The embedded SQLite / SQLCipher backend — the default, and the only backend compiled into
@@ -1745,6 +1744,10 @@ impl Store {
     /// provenance (`BundleManifest.source_instance_id`) and the import feed both read it. A restored
     /// backup keeps the *source* instance's id (the stamp is only minted when absent).
     pub fn instance_id(&self) -> Result<String, StoreError> {
+        #[cfg(feature = "postgres")]
+        if let Backend::Postgres(backend) = &self.backend {
+            return backend.instance_id();
+        }
         let guard = self.locked_conn()?;
         read_instance_id(&guard)
     }
@@ -1945,6 +1948,10 @@ impl Store {
         &self,
         query: &LedgerEventPageQuery,
     ) -> Result<LedgerEventPage, StoreError> {
+        #[cfg(feature = "postgres")]
+        if let Backend::Postgres(backend) = &self.backend {
+            return backend.ledger_events_page(query);
+        }
         let limit = query.limit.max(1);
         let target = limit.saturating_add(1);
         let filters = NormalizedLedgerEventPageFilters::from_query(query);
@@ -2012,6 +2019,10 @@ impl Store {
     /// 404-until-sealed). If an act was regenerated more than once, the most recently created row
     /// wins (ordered by `created_at`, then the physical `rowid` as a stable tie-break).
     pub fn document_for_act(&self, act_id: ActId) -> Result<Option<StoredDocument>, StoreError> {
+        #[cfg(feature = "postgres")]
+        if let Backend::Postgres(backend) = &self.backend {
+            return backend.document_for_act(act_id);
+        }
         let guard = self.locked_conn()?;
         let mut stmt = guard.prepare(
             "SELECT id, act_id, template_id, pdf_digest, profile, created_at, pdf_bytes \
@@ -2026,6 +2037,10 @@ impl Store {
     /// original sealed Ata as the canonical signing/download target even after later certidão or
     /// extrato rows are generated for the same act.
     pub fn documents_for_act(&self, act_id: ActId) -> Result<Vec<StoredDocument>, StoreError> {
+        #[cfg(feature = "postgres")]
+        if let Backend::Postgres(backend) = &self.backend {
+            return backend.documents_for_act(act_id);
+        }
         let guard = self.locked_conn()?;
         let mut stmt = guard.prepare(
             "SELECT id, act_id, template_id, pdf_digest, profile, created_at, pdf_bytes \
@@ -2041,6 +2056,10 @@ impl Store {
 
     /// Fetch a document by its own id (bytes + metadata), or `None` if unknown.
     pub fn document_by_id(&self, id: &str) -> Result<Option<StoredDocument>, StoreError> {
+        #[cfg(feature = "postgres")]
+        if let Backend::Postgres(backend) = &self.backend {
+            return backend.document_by_id(id);
+        }
         let guard = self.locked_conn()?;
         let mut stmt = guard.prepare(
             "SELECT id, act_id, template_id, pdf_digest, profile, created_at, pdf_bytes \
@@ -2056,6 +2075,10 @@ impl Store {
         &self,
         document_id: &str,
     ) -> Result<Vec<StoredGeneratedDocumentDispatchEvidence>, StoreError> {
+        #[cfg(feature = "postgres")]
+        if let Backend::Postgres(backend) = &self.backend {
+            return backend.generated_document_dispatch_evidence(document_id);
+        }
         let guard = self.locked_conn()?;
         let mut stmt = guard.prepare(
             "SELECT document_id, idempotency_key, act_id, template_id, actor, dispatched_at, \
@@ -2078,6 +2101,11 @@ impl Store {
         document_id: &str,
         idempotency_key: &str,
     ) -> Result<Option<StoredGeneratedDocumentDispatchEvidence>, StoreError> {
+        #[cfg(feature = "postgres")]
+        if let Backend::Postgres(backend) = &self.backend {
+            return backend
+                .generated_document_dispatch_evidence_by_key(document_id, idempotency_key);
+        }
         let guard = self.locked_conn()?;
         let mut stmt = guard.prepare(
             "SELECT document_id, idempotency_key, act_id, template_id, actor, dispatched_at, \
@@ -2100,6 +2128,10 @@ impl Store {
         &self,
         act_id: Option<ActId>,
     ) -> Result<Vec<StoredImportedDocumentMeta>, StoreError> {
+        #[cfg(feature = "postgres")]
+        if let Backend::Postgres(backend) = &self.backend {
+            return backend.imported_documents(act_id);
+        }
         let guard = self.locked_conn()?;
         let mut out = Vec::new();
         if let Some(act_id) = act_id {
@@ -2138,6 +2170,10 @@ impl Store {
         &self,
         id: &str,
     ) -> Result<Option<StoredImportedDocument>, StoreError> {
+        #[cfg(feature = "postgres")]
+        if let Backend::Postgres(backend) = &self.backend {
+            return backend.imported_document(id);
+        }
         let guard = self.locked_conn()?;
         let mut stmt = guard.prepare(
             "SELECT id, act_id, filename, declared_content_type, detected_content_type, sha256, \
@@ -2156,6 +2192,10 @@ impl Store {
         &self,
         imported_document_id: &str,
     ) -> Result<Vec<StoredImportedDocumentReviewHistoryEntry>, StoreError> {
+        #[cfg(feature = "postgres")]
+        if let Backend::Postgres(backend) = &self.backend {
+            return backend.imported_document_review_history(imported_document_id);
+        }
         let guard = self.locked_conn()?;
         let mut stmt = guard.prepare(
             "SELECT id, imported_document_id, review_status, reviewed_at, reviewed_by, \
@@ -2179,6 +2219,10 @@ impl Store {
         &self,
         import_id: &str,
     ) -> Result<Option<StoredPaperBookImport>, StoreError> {
+        #[cfg(feature = "postgres")]
+        if let Backend::Postgres(backend) = &self.backend {
+            return backend.paper_book_import(import_id);
+        }
         let guard = self.locked_conn()?;
         let mut stmt = guard.prepare(
             "SELECT import_id, entity_ref, entity_name, entity_nipc, book_ref, date_from, date_to, \
@@ -2197,6 +2241,10 @@ impl Store {
         &self,
         book_ref: Option<&str>,
     ) -> Result<Vec<StoredPaperBookImportMeta>, StoreError> {
+        #[cfg(feature = "postgres")]
+        if let Backend::Postgres(backend) = &self.backend {
+            return backend.paper_book_imports(book_ref);
+        }
         let guard = self.locked_conn()?;
         let mut out = Vec::new();
         if let Some(book_ref) = book_ref {
@@ -2234,6 +2282,10 @@ impl Store {
         import_id: &str,
         status: StoredPaperBookOcrStatus,
     ) -> Result<bool, StoreError> {
+        #[cfg(feature = "postgres")]
+        if let Backend::Postgres(backend) = &self.backend {
+            return backend.update_paper_book_import_ocr_status(import_id, status);
+        }
         let guard = self.locked_conn()?;
         let changed = guard.execute(
             "UPDATE paper_book_imports SET ocr_status = ?1 WHERE import_id = ?2",
@@ -2247,6 +2299,10 @@ impl Store {
         &self,
         draft_id: &str,
     ) -> Result<Option<StoredPaperBookOcrDraft>, StoreError> {
+        #[cfg(feature = "postgres")]
+        if let Backend::Postgres(backend) = &self.backend {
+            return backend.paper_book_ocr_draft(draft_id);
+        }
         let guard = self.locked_conn()?;
         let mut stmt = guard.prepare(
             "SELECT draft_id, import_id, extracted_text, text_digest, page_spans_json, confidence, \
@@ -2263,6 +2319,10 @@ impl Store {
         &self,
         import_id: &str,
     ) -> Result<Vec<StoredPaperBookOcrDraft>, StoreError> {
+        #[cfg(feature = "postgres")]
+        if let Backend::Postgres(backend) = &self.backend {
+            return backend.paper_book_ocr_drafts(import_id);
+        }
         let guard = self.locked_conn()?;
         let mut stmt = guard.prepare(
             "SELECT draft_id, import_id, extracted_text, text_digest, page_spans_json, confidence, \
@@ -2284,6 +2344,10 @@ impl Store {
         import_id: &str,
         draft_id: &str,
     ) -> Result<Option<StoredPaperBookOcrConversionDossier>, StoreError> {
+        #[cfg(feature = "postgres")]
+        if let Backend::Postgres(backend) = &self.backend {
+            return backend.paper_book_ocr_conversion_dossier_for_draft(import_id, draft_id);
+        }
         let guard = self.locked_conn()?;
         let mut stmt = guard.prepare(
             "SELECT dossier_id, import_id, draft_id, source_text_digest, \
@@ -2304,6 +2368,10 @@ impl Store {
         &self,
         import_id: &str,
     ) -> Result<Vec<StoredPaperBookOcrConversionDossier>, StoreError> {
+        #[cfg(feature = "postgres")]
+        if let Backend::Postgres(backend) = &self.backend {
+            return backend.paper_book_ocr_conversion_dossiers(import_id);
+        }
         let guard = self.locked_conn()?;
         let mut stmt = guard.prepare(
             "SELECT dossier_id, import_id, draft_id, source_text_digest, \
@@ -2327,6 +2395,14 @@ impl Store {
         draft_id: &str,
         target_act_id: &str,
     ) -> Result<Option<StoredPaperBookOcrConversionExecutionArtifact>, StoreError> {
+        #[cfg(feature = "postgres")]
+        if let Backend::Postgres(backend) = &self.backend {
+            return backend.paper_book_ocr_conversion_execution_artifact(
+                import_id,
+                draft_id,
+                target_act_id,
+            );
+        }
         let guard = self.locked_conn()?;
         let mut stmt = guard.prepare(
             "SELECT artifact_id, import_id, draft_id, dossier_id, source_text_digest, \
@@ -2354,6 +2430,11 @@ impl Store {
         import_id: &str,
         draft_id: &str,
     ) -> Result<Vec<StoredPaperBookOcrConversionExecutionArtifact>, StoreError> {
+        #[cfg(feature = "postgres")]
+        if let Backend::Postgres(backend) = &self.backend {
+            return backend
+                .paper_book_ocr_conversion_execution_artifacts_for_draft(import_id, draft_id);
+        }
         let guard = self.locked_conn()?;
         let mut stmt = guard.prepare(
             "SELECT artifact_id, import_id, draft_id, dossier_id, source_text_digest, \
@@ -2380,6 +2461,10 @@ impl Store {
 
     /// List follow-ups for an act, open items first, then oldest-created first.
     pub fn follow_ups_for_act(&self, act_id: ActId) -> Result<Vec<StoredFollowUp>, StoreError> {
+        #[cfg(feature = "postgres")]
+        if let Backend::Postgres(backend) = &self.backend {
+            return backend.follow_ups_for_act(act_id);
+        }
         let guard = self.locked_conn()?;
         let mut stmt = guard.prepare(
             "SELECT id, act_id, agenda_number, deliberation_index, title, detail, due_date, \
@@ -2397,6 +2482,10 @@ impl Store {
 
     /// Fetch one follow-up by id, or `None` if unknown.
     pub fn follow_up(&self, id: &str) -> Result<Option<StoredFollowUp>, StoreError> {
+        #[cfg(feature = "postgres")]
+        if let Backend::Postgres(backend) = &self.backend {
+            return backend.follow_up(id);
+        }
         let guard = self.locked_conn()?;
         let mut stmt = guard.prepare(
             "SELECT id, act_id, agenda_number, deliberation_index, title, detail, due_date, \
@@ -2414,6 +2503,10 @@ impl Store {
         &self,
         act_id: ActId,
     ) -> Result<Option<StoredSignedDocument>, StoreError> {
+        #[cfg(feature = "postgres")]
+        if let Backend::Postgres(backend) = &self.backend {
+            return backend.signed_document_for_act(act_id);
+        }
         let guard = self.locked_conn()?;
         let mut stmt = guard.prepare(
             "SELECT act_id, document_id, signed_pdf_digest, signature_family, evidentiary_level, \
@@ -2430,6 +2523,10 @@ impl Store {
     /// Load every SIGNED PDF variant (metadata + bytes), keyed by act id — used to rehydrate the
     /// in-memory read model on boot.
     pub fn all_signed_documents(&self) -> Result<HashMap<ActId, StoredSignedDocument>, StoreError> {
+        #[cfg(feature = "postgres")]
+        if let Backend::Postgres(backend) = &self.backend {
+            return backend.all_signed_documents();
+        }
         let guard = self.locked_conn()?;
         let mut stmt = guard.prepare(
             "SELECT act_id, document_id, signed_pdf_digest, signature_family, evidentiary_level, \
@@ -2453,6 +2550,10 @@ impl Store {
         &self,
         session_id: &str,
     ) -> Result<Option<PendingCmdSession>, StoreError> {
+        #[cfg(feature = "postgres")]
+        if let Backend::Postgres(backend) = &self.backend {
+            return backend.pending_cmd_session(session_id);
+        }
         let guard = self.locked_conn()?;
         let mut stmt = guard.prepare(
             "SELECT session_id, act_id, actor, status, masked_phone, doc_name, session_json, \
@@ -2469,6 +2570,10 @@ impl Store {
     pub fn all_pending_cmd_sessions(
         &self,
     ) -> Result<HashMap<String, PendingCmdSession>, StoreError> {
+        #[cfg(feature = "postgres")]
+        if let Backend::Postgres(backend) = &self.backend {
+            return backend.all_pending_cmd_sessions();
+        }
         let guard = self.locked_conn()?;
         let mut stmt = guard.prepare(
             "SELECT session_id, act_id, actor, status, masked_phone, doc_name, session_json, \
@@ -2677,9 +2782,8 @@ pub struct Tx<'conn> {
 
 /// Backend-specific transaction handle behind the public [`Tx`] facade (wp14 Phase 0 seam).
 ///
-/// Internal enum, not part of the §3.1 API. Phase 0 has only the `Sqlite` arm holding today's
-/// rusqlite transaction verbatim; Phase 1 will add a `Postgres` arm alongside it, and each `Tx`
-/// method (already exactly one SQL statement) will match on this to pick its dialect.
+/// Internal enum, not part of the §3.1 API. Each `Tx` method matches on this to pick the backend
+/// dialect while preserving the public synchronous transaction facade.
 pub(crate) enum TxKind<'conn> {
     /// The open rusqlite transaction (default backend).
     Sqlite(rusqlite::Transaction<'conn>),
@@ -2953,28 +3057,64 @@ impl Tx<'_> {
             .format(&Rfc3339)
             .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned());
         let recipients_json = serde_json::to_string(&evidence.recipients)?;
-        let changed = self.raw()?.execute(
-            "INSERT OR IGNORE INTO generated_document_dispatch_evidence \
-             (document_id, idempotency_key, act_id, template_id, actor, dispatched_at, channel, \
-              reference, evidence_reference, imported_document_id, recipients_json, operator_note, \
-              recorded_at) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
-            params![
-                evidence.document_id.as_str(),
-                evidence.idempotency_key.as_str(),
-                evidence.act_id.to_string(),
-                evidence.template_id.as_str(),
-                evidence.actor.as_str(),
-                dispatched_at.as_str(),
-                evidence.channel.as_deref(),
-                evidence.reference.as_deref(),
-                evidence.evidence_reference.as_deref(),
-                evidence.imported_document_id.as_deref(),
-                recipients_json.as_str(),
-                evidence.operator_note.as_deref(),
-                recorded_at.as_str(),
-            ],
-        )?;
+        let changed = match &self.kind {
+            TxKind::Sqlite(_) => self.raw()?.execute(
+                "INSERT OR IGNORE INTO generated_document_dispatch_evidence \
+                 (document_id, idempotency_key, act_id, template_id, actor, dispatched_at, channel, \
+                  reference, evidence_reference, imported_document_id, recipients_json, \
+                  operator_note, recorded_at) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+                params![
+                    evidence.document_id.as_str(),
+                    evidence.idempotency_key.as_str(),
+                    evidence.act_id.to_string(),
+                    evidence.template_id.as_str(),
+                    evidence.actor.as_str(),
+                    dispatched_at.as_str(),
+                    evidence.channel.as_deref(),
+                    evidence.reference.as_deref(),
+                    evidence.evidence_reference.as_deref(),
+                    evidence.imported_document_id.as_deref(),
+                    recipients_json.as_str(),
+                    evidence.operator_note.as_deref(),
+                    recorded_at.as_str(),
+                ],
+            )?,
+            #[cfg(feature = "postgres")]
+            TxKind::Postgres(cell) => {
+                // `INSERT OR IGNORE` → `ON CONFLICT DO NOTHING`: a duplicate `(document_id,
+                // idempotency_key)` is not an error; the existing row is retained and read back below.
+                let act_id = evidence.act_id.to_string();
+                let channel = evidence.channel.as_deref();
+                let reference = evidence.reference.as_deref();
+                let evidence_reference = evidence.evidence_reference.as_deref();
+                let imported_document_id = evidence.imported_document_id.as_deref();
+                let operator_note = evidence.operator_note.as_deref();
+                cell.borrow_mut().execute(
+                    "INSERT INTO generated_document_dispatch_evidence \
+                     (document_id, idempotency_key, act_id, template_id, actor, dispatched_at, \
+                      channel, reference, evidence_reference, imported_document_id, \
+                      recipients_json, operator_note, recorded_at) \
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) \
+                     ON CONFLICT (document_id, idempotency_key) DO NOTHING",
+                    &[
+                        &evidence.document_id,
+                        &evidence.idempotency_key,
+                        &act_id,
+                        &evidence.template_id,
+                        &evidence.actor,
+                        &dispatched_at,
+                        &channel,
+                        &reference,
+                        &evidence_reference,
+                        &imported_document_id,
+                        &recipients_json,
+                        &operator_note,
+                        &recorded_at,
+                    ],
+                )? as usize
+            }
+        };
         let stored = self
             .generated_document_dispatch_evidence_by_key(
                 &evidence.document_id,
@@ -2999,19 +3139,33 @@ impl Tx<'_> {
         document_id: &str,
         idempotency_key: &str,
     ) -> Result<Option<StoredGeneratedDocumentDispatchEvidence>, StoreError> {
-        let mut stmt = self.raw()?.prepare(
-            "SELECT document_id, idempotency_key, act_id, template_id, actor, dispatched_at, \
-             channel, reference, evidence_reference, imported_document_id, recipients_json, \
-             operator_note, recorded_at \
+        const SQL: &str = "SELECT document_id, idempotency_key, act_id, template_id, actor, \
+             dispatched_at, channel, reference, evidence_reference, imported_document_id, \
+             recipients_json, operator_note, recorded_at \
              FROM generated_document_dispatch_evidence \
-             WHERE document_id = ?1 AND idempotency_key = ?2",
-        )?;
-        stmt.query_row(
-            params![document_id, idempotency_key],
-            row_to_generated_dispatch_evidence,
-        )
-        .optional()?
-        .transpose()
+             WHERE document_id = ?1 AND idempotency_key = ?2";
+        match &self.kind {
+            TxKind::Sqlite(_) => {
+                let raw = self.raw()?;
+                let mut stmt = raw.prepare(SQL)?;
+                stmt.query_row(
+                    params![document_id, idempotency_key],
+                    row_to_generated_dispatch_evidence,
+                )
+                .optional()?
+                .transpose()
+            }
+            #[cfg(feature = "postgres")]
+            TxKind::Postgres(cell) => {
+                let row = cell.borrow_mut().query_opt(
+                    &crate::dialect::rewrite_placeholders(SQL),
+                    &[&document_id, &idempotency_key],
+                )?;
+                row.as_ref()
+                    .map(crate::pg::row_to_generated_dispatch_evidence)
+                    .transpose()
+            }
+        }
     }
 
     /// Upsert a validated, non-canonical imported document (`imported_documents`, schema v5).
@@ -3030,33 +3184,87 @@ impl Tx<'_> {
                 "imported document size does not fit sqlite INTEGER",
             ))
         })?;
-        self.raw()?.execute(
-            "INSERT OR REPLACE INTO imported_documents \
-             (id, act_id, filename, declared_content_type, detected_content_type, sha256, \
-              size_bytes, imported_at, imported_by, operator_review_status, \
-              operator_reviewed_at, operator_reviewed_by, operator_review_note, \
-              operator_acknowledged_guardrail_ids_json, bytes) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
-            params![
-                doc.meta.id,
-                doc.meta.act_id.as_ref().map(ToString::to_string),
-                doc.meta.filename,
-                doc.meta.declared_content_type,
-                doc.meta.detected_content_type,
-                doc.meta.sha256,
-                size_bytes,
-                imported_at,
-                doc.meta.imported_by,
-                doc.meta.operator_review_status.as_str(),
-                doc.meta.operator_reviewed_at.map(|t| t
-                    .format(&Rfc3339)
-                    .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned())),
-                doc.meta.operator_reviewed_by,
-                doc.meta.operator_review_note,
-                serde_json::to_string(&doc.meta.operator_acknowledged_guardrail_ids)?,
-                doc.bytes,
-            ],
-        )?;
+        let act_id = doc.meta.act_id.as_ref().map(ToString::to_string);
+        let reviewed_at = doc.meta.operator_reviewed_at.map(|t| {
+            t.format(&Rfc3339)
+                .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned())
+        });
+        let review_status = doc.meta.operator_review_status.as_str();
+        let guardrails_json = serde_json::to_string(&doc.meta.operator_acknowledged_guardrail_ids)?;
+        match &self.kind {
+            TxKind::Sqlite(_) => {
+                self.raw()?.execute(
+                    "INSERT OR REPLACE INTO imported_documents \
+                     (id, act_id, filename, declared_content_type, detected_content_type, sha256, \
+                      size_bytes, imported_at, imported_by, operator_review_status, \
+                      operator_reviewed_at, operator_reviewed_by, operator_review_note, \
+                      operator_acknowledged_guardrail_ids_json, bytes) \
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+                    params![
+                        doc.meta.id,
+                        act_id,
+                        doc.meta.filename,
+                        doc.meta.declared_content_type,
+                        doc.meta.detected_content_type,
+                        doc.meta.sha256,
+                        size_bytes,
+                        imported_at,
+                        doc.meta.imported_by,
+                        review_status,
+                        reviewed_at,
+                        doc.meta.operator_reviewed_by,
+                        doc.meta.operator_review_note,
+                        guardrails_json,
+                        doc.bytes,
+                    ],
+                )?;
+            }
+            #[cfg(feature = "postgres")]
+            TxKind::Postgres(cell) => {
+                let filename = doc.meta.filename.as_deref();
+                let declared_content_type = doc.meta.declared_content_type.as_deref();
+                let reviewed_by = doc.meta.operator_reviewed_by.as_deref();
+                let review_note = doc.meta.operator_review_note.as_deref();
+                let bytes: &[u8] = &doc.bytes;
+                cell.borrow_mut().execute(
+                    "INSERT INTO imported_documents \
+                     (id, act_id, filename, declared_content_type, detected_content_type, sha256, \
+                      size_bytes, imported_at, imported_by, operator_review_status, \
+                      operator_reviewed_at, operator_reviewed_by, operator_review_note, \
+                      operator_acknowledged_guardrail_ids_json, bytes) \
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) \
+                     ON CONFLICT (id) DO UPDATE SET act_id = EXCLUDED.act_id, \
+                     filename = EXCLUDED.filename, \
+                     declared_content_type = EXCLUDED.declared_content_type, \
+                     detected_content_type = EXCLUDED.detected_content_type, \
+                     sha256 = EXCLUDED.sha256, size_bytes = EXCLUDED.size_bytes, \
+                     imported_at = EXCLUDED.imported_at, imported_by = EXCLUDED.imported_by, \
+                     operator_review_status = EXCLUDED.operator_review_status, \
+                     operator_reviewed_at = EXCLUDED.operator_reviewed_at, \
+                     operator_reviewed_by = EXCLUDED.operator_reviewed_by, \
+                     operator_review_note = EXCLUDED.operator_review_note, \
+                     operator_acknowledged_guardrail_ids_json = \
+                     EXCLUDED.operator_acknowledged_guardrail_ids_json, bytes = EXCLUDED.bytes",
+                    &[
+                        &doc.meta.id,
+                        &act_id,
+                        &filename,
+                        &declared_content_type,
+                        &doc.meta.detected_content_type,
+                        &doc.meta.sha256,
+                        &size_bytes,
+                        &imported_at,
+                        &doc.meta.imported_by,
+                        &review_status,
+                        &reviewed_at,
+                        &reviewed_by,
+                        &review_note,
+                        &guardrails_json,
+                        &bytes,
+                    ],
+                )?;
+            }
+        }
         Ok(())
     }
 
@@ -3076,37 +3284,77 @@ impl Tx<'_> {
                 .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned())
         });
         let acknowledged_guardrail_ids_json = serde_json::to_string(acknowledged_guardrail_ids)?;
-        let changed = self.raw()?.execute(
-            "UPDATE imported_documents SET operator_review_status = ?1, \
-             operator_reviewed_at = ?2, operator_reviewed_by = ?3, operator_review_note = ?4, \
-             operator_acknowledged_guardrail_ids_json = ?5 \
-             WHERE id = ?6",
-            params![
-                status.as_str(),
-                reviewed_at,
-                reviewed_by,
-                review_note,
-                acknowledged_guardrail_ids_json,
-                id,
-            ],
-        )?;
+        let status_str = status.as_str();
+        let changed = match &self.kind {
+            TxKind::Sqlite(_) => self.raw()?.execute(
+                "UPDATE imported_documents SET operator_review_status = ?1, \
+                 operator_reviewed_at = ?2, operator_reviewed_by = ?3, operator_review_note = ?4, \
+                 operator_acknowledged_guardrail_ids_json = ?5 \
+                 WHERE id = ?6",
+                params![
+                    status_str,
+                    reviewed_at,
+                    reviewed_by,
+                    review_note,
+                    acknowledged_guardrail_ids_json,
+                    id,
+                ],
+            )?,
+            #[cfg(feature = "postgres")]
+            TxKind::Postgres(cell) => cell.borrow_mut().execute(
+                "UPDATE imported_documents SET operator_review_status = $1, \
+                 operator_reviewed_at = $2, operator_reviewed_by = $3, operator_review_note = $4, \
+                 operator_acknowledged_guardrail_ids_json = $5 WHERE id = $6",
+                &[
+                    &status_str,
+                    &reviewed_at,
+                    &reviewed_by,
+                    &review_note,
+                    &acknowledged_guardrail_ids_json,
+                    &id,
+                ],
+            )? as usize,
+        };
         if changed == 0 {
             return Err(StoreError::NotFound(format!("imported document {id}")));
         }
-        self.raw()?.execute(
-            "INSERT INTO imported_document_review_history \
-             (imported_document_id, review_status, reviewed_at, reviewed_by, review_note, \
-              acknowledged_guardrail_ids_json) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![
-                id,
-                status.as_str(),
-                reviewed_at,
-                reviewed_by,
-                review_note,
-                acknowledged_guardrail_ids_json,
-            ],
-        )?;
+        match &self.kind {
+            TxKind::Sqlite(_) => {
+                self.raw()?.execute(
+                    "INSERT INTO imported_document_review_history \
+                     (imported_document_id, review_status, reviewed_at, reviewed_by, review_note, \
+                      acknowledged_guardrail_ids_json) \
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    params![
+                        id,
+                        status_str,
+                        reviewed_at,
+                        reviewed_by,
+                        review_note,
+                        acknowledged_guardrail_ids_json,
+                    ],
+                )?;
+            }
+            #[cfg(feature = "postgres")]
+            TxKind::Postgres(cell) => {
+                // `id` is omitted: the Postgres `GENERATED ALWAYS AS IDENTITY` column serves it,
+                // mirroring SQLite's rowid autoincrement for this append-only history table.
+                cell.borrow_mut().execute(
+                    "INSERT INTO imported_document_review_history \
+                     (imported_document_id, review_status, reviewed_at, reviewed_by, review_note, \
+                      acknowledged_guardrail_ids_json) \
+                     VALUES ($1, $2, $3, $4, $5, $6)",
+                    &[
+                        &id,
+                        &status_str,
+                        &reviewed_at,
+                        &reviewed_by,
+                        &review_note,
+                        &acknowledged_guardrail_ids_json,
+                    ],
+                )?;
+            }
+        }
         Ok(())
     }
 
@@ -3137,37 +3385,97 @@ impl Tx<'_> {
             import.meta.original_number_to,
             "paper-book import original_number_to",
         )?;
-        self.raw()?.execute(
-            "INSERT OR REPLACE INTO paper_book_imports \
-             (import_id, entity_ref, entity_name, entity_nipc, book_ref, date_from, date_to, \
-              page_count, page_from, page_to, original_number_from, original_number_to, sha256, \
-              size_bytes, content_type, source_filename, notes, imported_at, imported_by, \
-              ocr_status, bytes) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)",
-            params![
-                import.meta.import_id,
-                import.meta.entity_ref,
-                import.meta.entity_name,
-                import.meta.entity_nipc,
-                import.meta.book_ref,
-                format_date(import.meta.date_from),
-                format_date(import.meta.date_to),
-                i64::from(import.meta.page_count),
-                i64::from(import.meta.page_from),
-                i64::from(import.meta.page_to),
-                original_number_from,
-                original_number_to,
-                import.meta.sha256,
-                size_bytes,
-                import.meta.content_type,
-                import.meta.source_filename,
-                import.meta.notes,
-                imported_at,
-                import.meta.imported_by,
-                import.meta.ocr_status.as_str(),
-                import.bytes,
-            ],
-        )?;
+        let date_from = format_date(import.meta.date_from);
+        let date_to = format_date(import.meta.date_to);
+        let page_count = i64::from(import.meta.page_count);
+        let page_from = i64::from(import.meta.page_from);
+        let page_to = i64::from(import.meta.page_to);
+        let ocr_status = import.meta.ocr_status.as_str();
+        match &self.kind {
+            TxKind::Sqlite(_) => {
+                self.raw()?.execute(
+                    "INSERT OR REPLACE INTO paper_book_imports \
+                     (import_id, entity_ref, entity_name, entity_nipc, book_ref, date_from, \
+                      date_to, page_count, page_from, page_to, original_number_from, \
+                      original_number_to, sha256, size_bytes, content_type, source_filename, \
+                      notes, imported_at, imported_by, ocr_status, bytes) \
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, \
+                             ?16, ?17, ?18, ?19, ?20, ?21)",
+                    params![
+                        import.meta.import_id,
+                        import.meta.entity_ref,
+                        import.meta.entity_name,
+                        import.meta.entity_nipc,
+                        import.meta.book_ref,
+                        date_from,
+                        date_to,
+                        page_count,
+                        page_from,
+                        page_to,
+                        original_number_from,
+                        original_number_to,
+                        import.meta.sha256,
+                        size_bytes,
+                        import.meta.content_type,
+                        import.meta.source_filename,
+                        import.meta.notes,
+                        imported_at,
+                        import.meta.imported_by,
+                        ocr_status,
+                        import.bytes,
+                    ],
+                )?;
+            }
+            #[cfg(feature = "postgres")]
+            TxKind::Postgres(cell) => {
+                let source_filename = import.meta.source_filename.as_deref();
+                let notes = import.meta.notes.as_deref();
+                let bytes: &[u8] = &import.bytes;
+                cell.borrow_mut().execute(
+                    "INSERT INTO paper_book_imports \
+                     (import_id, entity_ref, entity_name, entity_nipc, book_ref, date_from, \
+                      date_to, page_count, page_from, page_to, original_number_from, \
+                      original_number_to, sha256, size_bytes, content_type, source_filename, \
+                      notes, imported_at, imported_by, ocr_status, bytes) \
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, \
+                             $16, $17, $18, $19, $20, $21) \
+                     ON CONFLICT (import_id) DO UPDATE SET entity_ref = EXCLUDED.entity_ref, \
+                     entity_name = EXCLUDED.entity_name, entity_nipc = EXCLUDED.entity_nipc, \
+                     book_ref = EXCLUDED.book_ref, date_from = EXCLUDED.date_from, \
+                     date_to = EXCLUDED.date_to, page_count = EXCLUDED.page_count, \
+                     page_from = EXCLUDED.page_from, page_to = EXCLUDED.page_to, \
+                     original_number_from = EXCLUDED.original_number_from, \
+                     original_number_to = EXCLUDED.original_number_to, sha256 = EXCLUDED.sha256, \
+                     size_bytes = EXCLUDED.size_bytes, content_type = EXCLUDED.content_type, \
+                     source_filename = EXCLUDED.source_filename, notes = EXCLUDED.notes, \
+                     imported_at = EXCLUDED.imported_at, imported_by = EXCLUDED.imported_by, \
+                     ocr_status = EXCLUDED.ocr_status, bytes = EXCLUDED.bytes",
+                    &[
+                        &import.meta.import_id,
+                        &import.meta.entity_ref,
+                        &import.meta.entity_name,
+                        &import.meta.entity_nipc,
+                        &import.meta.book_ref,
+                        &date_from,
+                        &date_to,
+                        &page_count,
+                        &page_from,
+                        &page_to,
+                        &original_number_from,
+                        &original_number_to,
+                        &import.meta.sha256,
+                        &size_bytes,
+                        &import.meta.content_type,
+                        &source_filename,
+                        &notes,
+                        &imported_at,
+                        &import.meta.imported_by,
+                        &ocr_status,
+                        &bytes,
+                    ],
+                )?;
+            }
+        }
         Ok(())
     }
 
@@ -3178,10 +3486,18 @@ impl Tx<'_> {
         import_id: &str,
         status: StoredPaperBookOcrStatus,
     ) -> Result<(), StoreError> {
-        let changed = self.raw()?.execute(
-            "UPDATE paper_book_imports SET ocr_status = ?1 WHERE import_id = ?2",
-            params![status.as_str(), import_id],
-        )?;
+        let status_str = status.as_str();
+        let changed = match &self.kind {
+            TxKind::Sqlite(_) => self.raw()?.execute(
+                "UPDATE paper_book_imports SET ocr_status = ?1 WHERE import_id = ?2",
+                params![status_str, import_id],
+            )?,
+            #[cfg(feature = "postgres")]
+            TxKind::Postgres(cell) => cell.borrow_mut().execute(
+                "UPDATE paper_book_imports SET ocr_status = $1 WHERE import_id = $2",
+                &[&status_str, &import_id],
+            )? as usize,
+        };
         if changed == 0 {
             return Err(StoreError::NotFound(format!(
                 "paper-book import {import_id}"
@@ -3205,30 +3521,76 @@ impl Tx<'_> {
                 .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned())
         });
         let page_spans_json = serde_json::to_string(&draft.page_spans)?;
-        self.raw()?.execute(
-            "INSERT OR REPLACE INTO paper_book_ocr_drafts \
-             (draft_id, import_id, extracted_text, text_digest, page_spans_json, confidence, \
-              engine_name, engine_version, created_at, created_by, review_status, reviewed_at, \
-              reviewed_by, review_note, superseded_by) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
-            params![
-                draft.draft_id,
-                draft.import_id,
-                draft.extracted_text,
-                draft.text_digest,
-                page_spans_json,
-                draft.confidence,
-                draft.engine_name,
-                draft.engine_version,
-                created_at,
-                draft.created_by,
-                draft.review_status.as_str(),
-                reviewed_at,
-                draft.reviewed_by,
-                draft.review_note,
-                draft.superseded_by,
-            ],
-        )?;
+        let review_status = draft.review_status.as_str();
+        match &self.kind {
+            TxKind::Sqlite(_) => {
+                self.raw()?.execute(
+                    "INSERT OR REPLACE INTO paper_book_ocr_drafts \
+                     (draft_id, import_id, extracted_text, text_digest, page_spans_json, \
+                      confidence, engine_name, engine_version, created_at, created_by, \
+                      review_status, reviewed_at, reviewed_by, review_note, superseded_by) \
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+                    params![
+                        draft.draft_id,
+                        draft.import_id,
+                        draft.extracted_text,
+                        draft.text_digest,
+                        page_spans_json,
+                        draft.confidence,
+                        draft.engine_name,
+                        draft.engine_version,
+                        created_at,
+                        draft.created_by,
+                        review_status,
+                        reviewed_at,
+                        draft.reviewed_by,
+                        draft.review_note,
+                        draft.superseded_by,
+                    ],
+                )?;
+            }
+            #[cfg(feature = "postgres")]
+            TxKind::Postgres(cell) => {
+                let extracted_text = draft.extracted_text.as_deref();
+                let text_digest = draft.text_digest.as_deref();
+                let engine_version = draft.engine_version.as_deref();
+                let reviewed_by = draft.reviewed_by.as_deref();
+                let review_note = draft.review_note.as_deref();
+                let superseded_by = draft.superseded_by.as_deref();
+                cell.borrow_mut().execute(
+                    "INSERT INTO paper_book_ocr_drafts \
+                     (draft_id, import_id, extracted_text, text_digest, page_spans_json, \
+                      confidence, engine_name, engine_version, created_at, created_by, \
+                      review_status, reviewed_at, reviewed_by, review_note, superseded_by) \
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) \
+                     ON CONFLICT (draft_id) DO UPDATE SET import_id = EXCLUDED.import_id, \
+                     extracted_text = EXCLUDED.extracted_text, text_digest = EXCLUDED.text_digest, \
+                     page_spans_json = EXCLUDED.page_spans_json, confidence = EXCLUDED.confidence, \
+                     engine_name = EXCLUDED.engine_name, engine_version = EXCLUDED.engine_version, \
+                     created_at = EXCLUDED.created_at, created_by = EXCLUDED.created_by, \
+                     review_status = EXCLUDED.review_status, reviewed_at = EXCLUDED.reviewed_at, \
+                     reviewed_by = EXCLUDED.reviewed_by, review_note = EXCLUDED.review_note, \
+                     superseded_by = EXCLUDED.superseded_by",
+                    &[
+                        &draft.draft_id,
+                        &draft.import_id,
+                        &extracted_text,
+                        &text_digest,
+                        &page_spans_json,
+                        &draft.confidence,
+                        &draft.engine_name,
+                        &engine_version,
+                        &created_at,
+                        &draft.created_by,
+                        &review_status,
+                        &reviewed_at,
+                        &reviewed_by,
+                        &review_note,
+                        &superseded_by,
+                    ],
+                )?;
+            }
+        }
         Ok(())
     }
 
@@ -3256,44 +3618,85 @@ impl Tx<'_> {
             .created_at
             .format(&Rfc3339)
             .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned());
-        let changed = self.raw()?.execute(
-            "INSERT OR IGNORE INTO paper_book_ocr_conversion_dossiers \
-             (dossier_id, import_id, draft_id, source_text_digest, source_page_spans_json, \
-              source_review_status, source_reviewed_at, source_reviewed_by, created_at, \
-              created_by) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-            params![
-                dossier.dossier_id.as_str(),
-                dossier.import_id.as_str(),
-                dossier.draft_id.as_str(),
-                dossier.source_text_digest.as_deref(),
-                source_page_spans_json.as_str(),
-                dossier.source_review_status.as_str(),
-                source_reviewed_at.as_deref(),
-                dossier.source_reviewed_by.as_deref(),
-                created_at.as_str(),
-                dossier.created_by.as_str(),
-            ],
-        )?;
-        let mut stmt = self.raw()?.prepare(
-            "SELECT dossier_id, import_id, draft_id, source_text_digest, \
+        let source_review_status = dossier.source_review_status.as_str();
+        const READBACK_SQL: &str = "SELECT dossier_id, import_id, draft_id, source_text_digest, \
              source_page_spans_json, source_review_status, source_reviewed_at, \
              source_reviewed_by, created_at, created_by \
-             FROM paper_book_ocr_conversion_dossiers WHERE import_id = ?1 AND draft_id = ?2",
-        )?;
-        let stored = stmt
-            .query_row(
-                params![dossier.import_id.as_str(), dossier.draft_id.as_str()],
-                row_to_paper_book_ocr_conversion_dossier,
-            )
-            .optional()?
-            .transpose()?
-            .ok_or_else(|| {
-                StoreError::Io(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "paper-book OCR conversion dossier insert was ignored but no canonical import/draft row exists",
-                ))
-            })?;
+             FROM paper_book_ocr_conversion_dossiers WHERE import_id = ?1 AND draft_id = ?2";
+        let changed = match &self.kind {
+            TxKind::Sqlite(_) => self.raw()?.execute(
+                "INSERT OR IGNORE INTO paper_book_ocr_conversion_dossiers \
+                 (dossier_id, import_id, draft_id, source_text_digest, source_page_spans_json, \
+                  source_review_status, source_reviewed_at, source_reviewed_by, created_at, \
+                  created_by) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                params![
+                    dossier.dossier_id.as_str(),
+                    dossier.import_id.as_str(),
+                    dossier.draft_id.as_str(),
+                    dossier.source_text_digest.as_deref(),
+                    source_page_spans_json.as_str(),
+                    source_review_status,
+                    source_reviewed_at.as_deref(),
+                    dossier.source_reviewed_by.as_deref(),
+                    created_at.as_str(),
+                    dossier.created_by.as_str(),
+                ],
+            )?,
+            #[cfg(feature = "postgres")]
+            TxKind::Postgres(cell) => {
+                let source_text_digest = dossier.source_text_digest.as_deref();
+                let source_reviewed_at = source_reviewed_at.as_deref();
+                let source_reviewed_by = dossier.source_reviewed_by.as_deref();
+                cell.borrow_mut().execute(
+                    "INSERT INTO paper_book_ocr_conversion_dossiers \
+                     (dossier_id, import_id, draft_id, source_text_digest, source_page_spans_json, \
+                      source_review_status, source_reviewed_at, source_reviewed_by, created_at, \
+                      created_by) \
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) ON CONFLICT DO NOTHING",
+                    &[
+                        &dossier.dossier_id,
+                        &dossier.import_id,
+                        &dossier.draft_id,
+                        &source_text_digest,
+                        &source_page_spans_json,
+                        &source_review_status,
+                        &source_reviewed_at,
+                        &source_reviewed_by,
+                        &created_at,
+                        &dossier.created_by,
+                    ],
+                )? as usize
+            }
+        };
+        let stored = match &self.kind {
+            TxKind::Sqlite(_) => {
+                let raw = self.raw()?;
+                let mut stmt = raw.prepare(READBACK_SQL)?;
+                stmt.query_row(
+                    params![dossier.import_id.as_str(), dossier.draft_id.as_str()],
+                    row_to_paper_book_ocr_conversion_dossier,
+                )
+                .optional()?
+                .transpose()?
+            }
+            #[cfg(feature = "postgres")]
+            TxKind::Postgres(cell) => cell
+                .borrow_mut()
+                .query_opt(
+                    &crate::dialect::rewrite_placeholders(READBACK_SQL),
+                    &[&dossier.import_id, &dossier.draft_id],
+                )?
+                .as_ref()
+                .map(crate::pg::row_to_paper_book_ocr_conversion_dossier)
+                .transpose()?,
+        };
+        let stored = stored.ok_or_else(|| {
+            StoreError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "paper-book OCR conversion dossier insert was ignored but no canonical import/draft row exists",
+            ))
+        })?;
         if changed > 0 {
             Ok(PaperBookOcrConversionDossierUpsert::Inserted(stored))
         } else {
@@ -3320,52 +3723,9 @@ impl Tx<'_> {
             .created_at
             .format(&Rfc3339)
             .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned());
-        let changed = self.raw()?.execute(
-            "INSERT OR IGNORE INTO paper_book_ocr_conversion_execution_artifacts \
-             (artifact_id, import_id, draft_id, dossier_id, source_text_digest, \
-              source_page_spans_json, source_review_status, source_reviewed_at, \
-              source_reviewed_by, target_act_id, target_act_state, mutable_draft_act_created, \
-              created_at, created_by, canonical_conversion_claimed, canonical_minutes_claimed, \
-              canonical_act_created, canonical_document_created, signed_document_created, \
-              archive_package_created, pdfa_created, pdfua_created, signature_created, \
-              seal_created, archive_certification_claimed, legal_validity_claimed, \
-              source_extracted_text_in_artifact, source_extracted_text_in_ledger_event) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, \
-                     ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28)",
-            params![
-                artifact.artifact_id.as_str(),
-                artifact.import_id.as_str(),
-                artifact.draft_id.as_str(),
-                artifact.dossier_id.as_deref(),
-                artifact.source_text_digest.as_deref(),
-                source_page_spans_json.as_str(),
-                artifact.source_review_status.as_str(),
-                source_reviewed_at.as_deref(),
-                artifact.source_reviewed_by.as_deref(),
-                artifact.target_act_id.as_str(),
-                artifact.target_act_state.as_str(),
-                artifact.mutable_draft_act_created,
-                created_at.as_str(),
-                artifact.created_by.as_str(),
-                artifact.canonical_conversion_claimed,
-                artifact.canonical_minutes_claimed,
-                artifact.canonical_act_created,
-                artifact.canonical_document_created,
-                artifact.signed_document_created,
-                artifact.archive_package_created,
-                artifact.pdfa_created,
-                artifact.pdfua_created,
-                artifact.signature_created,
-                artifact.seal_created,
-                artifact.archive_certification_claimed,
-                artifact.legal_validity_claimed,
-                artifact.source_extracted_text_in_artifact,
-                artifact.source_extracted_text_in_ledger_event,
-            ],
-        )?;
-        let mut stmt = self.raw()?.prepare(
-            "SELECT artifact_id, import_id, draft_id, dossier_id, source_text_digest, \
-             source_page_spans_json, source_review_status, source_reviewed_at, \
+        let source_review_status = artifact.source_review_status.as_str();
+        const READBACK_SQL: &str = "SELECT artifact_id, import_id, draft_id, dossier_id, \
+             source_text_digest, source_page_spans_json, source_review_status, source_reviewed_at, \
              source_reviewed_by, target_act_id, target_act_state, mutable_draft_act_created, \
              created_at, created_by, canonical_conversion_claimed, canonical_minutes_claimed, \
              canonical_act_created, canonical_document_created, signed_document_created, \
@@ -3373,25 +3733,161 @@ impl Tx<'_> {
              seal_created, archive_certification_claimed, legal_validity_claimed, \
              source_extracted_text_in_artifact, source_extracted_text_in_ledger_event \
              FROM paper_book_ocr_conversion_execution_artifacts \
-             WHERE import_id = ?1 AND draft_id = ?2 AND target_act_id = ?3",
-        )?;
-        let stored = stmt
-            .query_row(
+             WHERE import_id = ?1 AND draft_id = ?2 AND target_act_id = ?3";
+        let changed = match &self.kind {
+            TxKind::Sqlite(_) => self.raw()?.execute(
+                "INSERT OR IGNORE INTO paper_book_ocr_conversion_execution_artifacts \
+                 (artifact_id, import_id, draft_id, dossier_id, source_text_digest, \
+                  source_page_spans_json, source_review_status, source_reviewed_at, \
+                  source_reviewed_by, target_act_id, target_act_state, mutable_draft_act_created, \
+                  created_at, created_by, canonical_conversion_claimed, canonical_minutes_claimed, \
+                  canonical_act_created, canonical_document_created, signed_document_created, \
+                  archive_package_created, pdfa_created, pdfua_created, signature_created, \
+                  seal_created, archive_certification_claimed, legal_validity_claimed, \
+                  source_extracted_text_in_artifact, source_extracted_text_in_ledger_event) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, \
+                         ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28)",
                 params![
+                    artifact.artifact_id.as_str(),
                     artifact.import_id.as_str(),
                     artifact.draft_id.as_str(),
-                    artifact.target_act_id.as_str()
+                    artifact.dossier_id.as_deref(),
+                    artifact.source_text_digest.as_deref(),
+                    source_page_spans_json.as_str(),
+                    source_review_status,
+                    source_reviewed_at.as_deref(),
+                    artifact.source_reviewed_by.as_deref(),
+                    artifact.target_act_id.as_str(),
+                    artifact.target_act_state.as_str(),
+                    artifact.mutable_draft_act_created,
+                    created_at.as_str(),
+                    artifact.created_by.as_str(),
+                    artifact.canonical_conversion_claimed,
+                    artifact.canonical_minutes_claimed,
+                    artifact.canonical_act_created,
+                    artifact.canonical_document_created,
+                    artifact.signed_document_created,
+                    artifact.archive_package_created,
+                    artifact.pdfa_created,
+                    artifact.pdfua_created,
+                    artifact.signature_created,
+                    artifact.seal_created,
+                    artifact.archive_certification_claimed,
+                    artifact.legal_validity_claimed,
+                    artifact.source_extracted_text_in_artifact,
+                    artifact.source_extracted_text_in_ledger_event,
                 ],
-                row_to_paper_book_ocr_conversion_execution_artifact,
-            )
-            .optional()?
-            .transpose()?
-            .ok_or_else(|| {
-                StoreError::Io(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "paper-book OCR conversion execution artifact insert was ignored but no canonical import/draft/act row exists",
-                ))
-            })?;
+            )?,
+            #[cfg(feature = "postgres")]
+            TxKind::Postgres(cell) => {
+                // The SQLite `INTEGER` boolean-flag columns map to Postgres `BIGINT`, so the Rust
+                // `bool` flags are bound as `i64` 0/1 (and read back the same way) — matching how
+                // rusqlite stores `bool`. `INSERT OR IGNORE` → `ON CONFLICT DO NOTHING`.
+                let dossier_id = artifact.dossier_id.as_deref();
+                let source_text_digest = artifact.source_text_digest.as_deref();
+                let source_reviewed_at = source_reviewed_at.as_deref();
+                let source_reviewed_by = artifact.source_reviewed_by.as_deref();
+                let mutable_draft_act_created = i64::from(artifact.mutable_draft_act_created);
+                let canonical_conversion_claimed = i64::from(artifact.canonical_conversion_claimed);
+                let canonical_minutes_claimed = i64::from(artifact.canonical_minutes_claimed);
+                let canonical_act_created = i64::from(artifact.canonical_act_created);
+                let canonical_document_created = i64::from(artifact.canonical_document_created);
+                let signed_document_created = i64::from(artifact.signed_document_created);
+                let archive_package_created = i64::from(artifact.archive_package_created);
+                let pdfa_created = i64::from(artifact.pdfa_created);
+                let pdfua_created = i64::from(artifact.pdfua_created);
+                let signature_created = i64::from(artifact.signature_created);
+                let seal_created = i64::from(artifact.seal_created);
+                let archive_certification_claimed =
+                    i64::from(artifact.archive_certification_claimed);
+                let legal_validity_claimed = i64::from(artifact.legal_validity_claimed);
+                let source_extracted_text_in_artifact =
+                    i64::from(artifact.source_extracted_text_in_artifact);
+                let source_extracted_text_in_ledger_event =
+                    i64::from(artifact.source_extracted_text_in_ledger_event);
+                cell.borrow_mut().execute(
+                    "INSERT INTO paper_book_ocr_conversion_execution_artifacts \
+                     (artifact_id, import_id, draft_id, dossier_id, source_text_digest, \
+                      source_page_spans_json, source_review_status, source_reviewed_at, \
+                      source_reviewed_by, target_act_id, target_act_state, \
+                      mutable_draft_act_created, created_at, created_by, \
+                      canonical_conversion_claimed, canonical_minutes_claimed, \
+                      canonical_act_created, canonical_document_created, signed_document_created, \
+                      archive_package_created, pdfa_created, pdfua_created, signature_created, \
+                      seal_created, archive_certification_claimed, legal_validity_claimed, \
+                      source_extracted_text_in_artifact, source_extracted_text_in_ledger_event) \
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, \
+                             $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28) \
+                     ON CONFLICT DO NOTHING",
+                    &[
+                        &artifact.artifact_id,
+                        &artifact.import_id,
+                        &artifact.draft_id,
+                        &dossier_id,
+                        &source_text_digest,
+                        &source_page_spans_json,
+                        &source_review_status,
+                        &source_reviewed_at,
+                        &source_reviewed_by,
+                        &artifact.target_act_id,
+                        &artifact.target_act_state,
+                        &mutable_draft_act_created,
+                        &created_at,
+                        &artifact.created_by,
+                        &canonical_conversion_claimed,
+                        &canonical_minutes_claimed,
+                        &canonical_act_created,
+                        &canonical_document_created,
+                        &signed_document_created,
+                        &archive_package_created,
+                        &pdfa_created,
+                        &pdfua_created,
+                        &signature_created,
+                        &seal_created,
+                        &archive_certification_claimed,
+                        &legal_validity_claimed,
+                        &source_extracted_text_in_artifact,
+                        &source_extracted_text_in_ledger_event,
+                    ],
+                )? as usize
+            }
+        };
+        let stored = match &self.kind {
+            TxKind::Sqlite(_) => {
+                let raw = self.raw()?;
+                let mut stmt = raw.prepare(READBACK_SQL)?;
+                stmt.query_row(
+                    params![
+                        artifact.import_id.as_str(),
+                        artifact.draft_id.as_str(),
+                        artifact.target_act_id.as_str()
+                    ],
+                    row_to_paper_book_ocr_conversion_execution_artifact,
+                )
+                .optional()?
+                .transpose()?
+            }
+            #[cfg(feature = "postgres")]
+            TxKind::Postgres(cell) => cell
+                .borrow_mut()
+                .query_opt(
+                    &crate::dialect::rewrite_placeholders(READBACK_SQL),
+                    &[
+                        &artifact.import_id,
+                        &artifact.draft_id,
+                        &artifact.target_act_id,
+                    ],
+                )?
+                .as_ref()
+                .map(crate::pg::row_to_paper_book_ocr_conversion_execution_artifact)
+                .transpose()?,
+        };
+        let stored = stored.ok_or_else(|| {
+            StoreError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "paper-book OCR conversion execution artifact insert was ignored but no canonical import/draft/act row exists",
+            ))
+        })?;
         if changed > 0 {
             Ok(PaperBookOcrConversionExecutionArtifactUpsert::Inserted(
                 stored,
@@ -3410,33 +3906,59 @@ impl Tx<'_> {
         draft_id: &str,
         dossier_id: &str,
     ) -> Result<Vec<StoredPaperBookOcrConversionExecutionArtifact>, StoreError> {
-        self.raw()?.execute(
-            "UPDATE paper_book_ocr_conversion_execution_artifacts \
-             SET dossier_id = ?3 \
-             WHERE import_id = ?1 AND draft_id = ?2 AND (dossier_id IS NULL OR dossier_id = ?3)",
-            params![import_id, draft_id, dossier_id],
-        )?;
-        let mut stmt = self.raw()?.prepare(
-            "SELECT artifact_id, import_id, draft_id, dossier_id, source_text_digest, \
-             source_page_spans_json, source_review_status, source_reviewed_at, \
-             source_reviewed_by, target_act_id, target_act_state, mutable_draft_act_created, \
-             created_at, created_by, canonical_conversion_claimed, canonical_minutes_claimed, \
-             canonical_act_created, canonical_document_created, signed_document_created, \
-             archive_package_created, pdfa_created, pdfua_created, signature_created, \
-             seal_created, archive_certification_claimed, legal_validity_claimed, \
-             source_extracted_text_in_artifact, source_extracted_text_in_ledger_event \
-             FROM paper_book_ocr_conversion_execution_artifacts \
-             WHERE import_id = ?1 AND draft_id = ?2 ORDER BY created_at DESC, rowid DESC",
-        )?;
-        let rows = stmt.query_map(
-            params![import_id, draft_id],
-            row_to_paper_book_ocr_conversion_execution_artifact,
-        )?;
-        let mut out = Vec::new();
-        for row in rows {
-            out.push(row??);
+        match &self.kind {
+            TxKind::Sqlite(_) => {
+                self.raw()?.execute(
+                    "UPDATE paper_book_ocr_conversion_execution_artifacts SET dossier_id = ?3 \
+                     WHERE import_id = ?1 AND draft_id = ?2 \
+                     AND (dossier_id IS NULL OR dossier_id = ?3)",
+                    params![import_id, draft_id, dossier_id],
+                )?;
+                let raw = self.raw()?;
+                let mut stmt = raw.prepare(
+                    "SELECT artifact_id, import_id, draft_id, dossier_id, source_text_digest, \
+                     source_page_spans_json, source_review_status, source_reviewed_at, \
+                     source_reviewed_by, target_act_id, target_act_state, \
+                     mutable_draft_act_created, created_at, created_by, \
+                     canonical_conversion_claimed, canonical_minutes_claimed, \
+                     canonical_act_created, canonical_document_created, signed_document_created, \
+                     archive_package_created, pdfa_created, pdfua_created, signature_created, \
+                     seal_created, archive_certification_claimed, legal_validity_claimed, \
+                     source_extracted_text_in_artifact, source_extracted_text_in_ledger_event \
+                     FROM paper_book_ocr_conversion_execution_artifacts \
+                     WHERE import_id = ?1 AND draft_id = ?2 ORDER BY created_at DESC, rowid DESC",
+                )?;
+                let rows = stmt.query_map(
+                    params![import_id, draft_id],
+                    row_to_paper_book_ocr_conversion_execution_artifact,
+                )?;
+                let mut out = Vec::new();
+                for row in rows {
+                    out.push(row??);
+                }
+                Ok(out)
+            }
+            #[cfg(feature = "postgres")]
+            TxKind::Postgres(cell) => {
+                cell.borrow_mut().execute(
+                    "UPDATE paper_book_ocr_conversion_execution_artifacts SET dossier_id = $3 \
+                     WHERE import_id = $1 AND draft_id = $2 \
+                     AND (dossier_id IS NULL OR dossier_id = $3)",
+                    &[&import_id, &draft_id, &dossier_id],
+                )?;
+                let rows = cell.borrow_mut().query(
+                    &format!(
+                        "SELECT {} FROM paper_book_ocr_conversion_execution_artifacts \
+                         WHERE import_id = $1 AND draft_id = $2 ORDER BY created_at DESC, ctid DESC",
+                        crate::pg::ARTIFACT_COLUMNS
+                    ),
+                    &[&import_id, &draft_id],
+                )?;
+                rows.iter()
+                    .map(crate::pg::row_to_paper_book_ocr_conversion_execution_artifact)
+                    .collect()
+            }
         }
-        Ok(out)
     }
 
     /// Update the review status and reviewer metadata for a non-authoritative OCR draft result.
@@ -3453,18 +3975,34 @@ impl Tx<'_> {
             t.format(&Rfc3339)
                 .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned())
         });
-        let changed = self.raw()?.execute(
-            "UPDATE paper_book_ocr_drafts SET review_status = ?1, reviewed_at = ?2, \
-             reviewed_by = ?3, review_note = ?4, superseded_by = ?5 WHERE draft_id = ?6",
-            params![
-                status.as_str(),
-                reviewed_at,
-                reviewed_by,
-                review_note,
-                superseded_by,
-                draft_id,
-            ],
-        )?;
+        let status_str = status.as_str();
+        let changed = match &self.kind {
+            TxKind::Sqlite(_) => self.raw()?.execute(
+                "UPDATE paper_book_ocr_drafts SET review_status = ?1, reviewed_at = ?2, \
+                 reviewed_by = ?3, review_note = ?4, superseded_by = ?5 WHERE draft_id = ?6",
+                params![
+                    status_str,
+                    reviewed_at,
+                    reviewed_by,
+                    review_note,
+                    superseded_by,
+                    draft_id,
+                ],
+            )?,
+            #[cfg(feature = "postgres")]
+            TxKind::Postgres(cell) => cell.borrow_mut().execute(
+                "UPDATE paper_book_ocr_drafts SET review_status = $1, reviewed_at = $2, \
+                 reviewed_by = $3, review_note = $4, superseded_by = $5 WHERE draft_id = $6",
+                &[
+                    &status_str,
+                    &reviewed_at,
+                    &reviewed_by,
+                    &review_note,
+                    &superseded_by,
+                    &draft_id,
+                ],
+            )? as usize,
+        };
         if changed == 0 {
             return Err(StoreError::NotFound(format!(
                 "paper-book OCR draft {draft_id}"
@@ -3484,28 +4022,76 @@ impl Tx<'_> {
             t.format(&Rfc3339)
                 .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned())
         });
-        self.raw()?.execute(
-            "INSERT OR REPLACE INTO follow_ups \
-             (id, act_id, agenda_number, deliberation_index, title, detail, due_date, assignee, \
-              assignee_display, status, created_at, created_by, completed_at, completed_by) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
-            params![
-                follow_up.id,
-                follow_up.act_id.to_string(),
-                follow_up.agenda_number.map(i64::from),
-                follow_up.deliberation_index.map(i64::from),
-                follow_up.title,
-                follow_up.detail,
-                follow_up.due_date.map(format_date),
-                follow_up.assignee,
-                follow_up.assignee_display,
-                follow_up.status.as_str(),
-                created_at,
-                follow_up.created_by,
-                completed_at,
-                follow_up.completed_by,
-            ],
-        )?;
+        let act_id = follow_up.act_id.to_string();
+        let agenda_number = follow_up.agenda_number.map(i64::from);
+        let deliberation_index = follow_up.deliberation_index.map(i64::from);
+        let due_date = follow_up.due_date.map(format_date);
+        let status = follow_up.status.as_str();
+        match &self.kind {
+            TxKind::Sqlite(_) => {
+                self.raw()?.execute(
+                    "INSERT OR REPLACE INTO follow_ups \
+                     (id, act_id, agenda_number, deliberation_index, title, detail, due_date, \
+                      assignee, assignee_display, status, created_at, created_by, completed_at, \
+                      completed_by) \
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+                    params![
+                        follow_up.id,
+                        act_id,
+                        agenda_number,
+                        deliberation_index,
+                        follow_up.title,
+                        follow_up.detail,
+                        due_date,
+                        follow_up.assignee,
+                        follow_up.assignee_display,
+                        status,
+                        created_at,
+                        follow_up.created_by,
+                        completed_at,
+                        follow_up.completed_by,
+                    ],
+                )?;
+            }
+            #[cfg(feature = "postgres")]
+            TxKind::Postgres(cell) => {
+                let detail = follow_up.detail.as_deref();
+                let assignee = follow_up.assignee.as_deref();
+                let assignee_display = follow_up.assignee_display.as_deref();
+                let completed_by = follow_up.completed_by.as_deref();
+                cell.borrow_mut().execute(
+                    "INSERT INTO follow_ups \
+                     (id, act_id, agenda_number, deliberation_index, title, detail, due_date, \
+                      assignee, assignee_display, status, created_at, created_by, completed_at, \
+                      completed_by) \
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) \
+                     ON CONFLICT (id) DO UPDATE SET act_id = EXCLUDED.act_id, \
+                     agenda_number = EXCLUDED.agenda_number, \
+                     deliberation_index = EXCLUDED.deliberation_index, title = EXCLUDED.title, \
+                     detail = EXCLUDED.detail, due_date = EXCLUDED.due_date, \
+                     assignee = EXCLUDED.assignee, assignee_display = EXCLUDED.assignee_display, \
+                     status = EXCLUDED.status, created_at = EXCLUDED.created_at, \
+                     created_by = EXCLUDED.created_by, completed_at = EXCLUDED.completed_at, \
+                     completed_by = EXCLUDED.completed_by",
+                    &[
+                        &follow_up.id,
+                        &act_id,
+                        &agenda_number,
+                        &deliberation_index,
+                        &follow_up.title,
+                        &detail,
+                        &due_date,
+                        &assignee,
+                        &assignee_display,
+                        &status,
+                        &created_at,
+                        &follow_up.created_by,
+                        &completed_at,
+                        &completed_by,
+                    ],
+                )?;
+            }
+        }
         Ok(())
     }
 
@@ -3523,30 +4109,81 @@ impl Tx<'_> {
             .signed_at
             .format(&Rfc3339)
             .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned());
-        self.raw()?.execute(
-            "INSERT OR REPLACE INTO signed_documents \
-             (act_id, document_id, signed_pdf_digest, signature_family, evidentiary_level, \
-              trusted_list_status, signer_cert_subject, signing_time, signed_at, signer_cert_der, \
-              timestamp_token_der, timestamp_trust_report_json, signer_capacity_evidence_json, \
-              signed_pdf_bytes) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
-            params![
-                doc.act_id.to_string(),
-                doc.document_id,
-                doc.signed_pdf_digest,
-                doc.signature_family,
-                doc.evidentiary_level,
-                doc.trusted_list_status,
-                doc.signer_cert_subject,
-                signing_time,
-                signed_at,
-                doc.signer_cert_der,
-                doc.timestamp_token_der,
-                doc.timestamp_trust_report_json,
-                doc.signer_capacity_evidence_json,
-                doc.signed_pdf_bytes,
-            ],
-        )?;
+        let act_id = doc.act_id.to_string();
+        match &self.kind {
+            TxKind::Sqlite(_) => {
+                self.raw()?.execute(
+                    "INSERT OR REPLACE INTO signed_documents \
+                     (act_id, document_id, signed_pdf_digest, signature_family, evidentiary_level, \
+                      trusted_list_status, signer_cert_subject, signing_time, signed_at, \
+                      signer_cert_der, timestamp_token_der, timestamp_trust_report_json, \
+                      signer_capacity_evidence_json, signed_pdf_bytes) \
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+                    params![
+                        act_id,
+                        doc.document_id,
+                        doc.signed_pdf_digest,
+                        doc.signature_family,
+                        doc.evidentiary_level,
+                        doc.trusted_list_status,
+                        doc.signer_cert_subject,
+                        signing_time,
+                        signed_at,
+                        doc.signer_cert_der,
+                        doc.timestamp_token_der,
+                        doc.timestamp_trust_report_json,
+                        doc.signer_capacity_evidence_json,
+                        doc.signed_pdf_bytes,
+                    ],
+                )?;
+            }
+            #[cfg(feature = "postgres")]
+            TxKind::Postgres(cell) => {
+                let trusted_list_status = doc.trusted_list_status.as_deref();
+                let signer_cert_subject = doc.signer_cert_subject.as_deref();
+                let timestamp_trust_report_json = doc.timestamp_trust_report_json.as_deref();
+                let signer_capacity_evidence_json = doc.signer_capacity_evidence_json.as_deref();
+                let signer_cert_der: &[u8] = &doc.signer_cert_der;
+                let timestamp_token_der = doc.timestamp_token_der.as_deref();
+                let signed_pdf_bytes: &[u8] = &doc.signed_pdf_bytes;
+                cell.borrow_mut().execute(
+                    "INSERT INTO signed_documents \
+                     (act_id, document_id, signed_pdf_digest, signature_family, evidentiary_level, \
+                      trusted_list_status, signer_cert_subject, signing_time, signed_at, \
+                      signer_cert_der, timestamp_token_der, timestamp_trust_report_json, \
+                      signer_capacity_evidence_json, signed_pdf_bytes) \
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) \
+                     ON CONFLICT (act_id) DO UPDATE SET document_id = EXCLUDED.document_id, \
+                     signed_pdf_digest = EXCLUDED.signed_pdf_digest, \
+                     signature_family = EXCLUDED.signature_family, \
+                     evidentiary_level = EXCLUDED.evidentiary_level, \
+                     trusted_list_status = EXCLUDED.trusted_list_status, \
+                     signer_cert_subject = EXCLUDED.signer_cert_subject, \
+                     signing_time = EXCLUDED.signing_time, signed_at = EXCLUDED.signed_at, \
+                     signer_cert_der = EXCLUDED.signer_cert_der, \
+                     timestamp_token_der = EXCLUDED.timestamp_token_der, \
+                     timestamp_trust_report_json = EXCLUDED.timestamp_trust_report_json, \
+                     signer_capacity_evidence_json = EXCLUDED.signer_capacity_evidence_json, \
+                     signed_pdf_bytes = EXCLUDED.signed_pdf_bytes",
+                    &[
+                        &act_id,
+                        &doc.document_id,
+                        &doc.signed_pdf_digest,
+                        &doc.signature_family,
+                        &doc.evidentiary_level,
+                        &trusted_list_status,
+                        &signer_cert_subject,
+                        &signing_time,
+                        &signed_at,
+                        &signer_cert_der,
+                        &timestamp_token_der,
+                        &timestamp_trust_report_json,
+                        &signer_capacity_evidence_json,
+                        &signed_pdf_bytes,
+                    ],
+                )?;
+            }
+        }
         Ok(())
     }
 
@@ -3565,35 +4202,81 @@ impl Tx<'_> {
             .expires_at
             .format(&Rfc3339)
             .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned());
-        self.raw()?.execute(
-            "INSERT OR REPLACE INTO pending_cmd_sessions \
-             (session_id, act_id, actor, status, masked_phone, doc_name, session_json, \
-              prepared_json, created_at, expires_at, signer_capacity_evidence_json) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
-            params![
-                session.session_id,
-                session.act_id.to_string(),
-                session.actor,
-                session.status,
-                session.masked_phone,
-                session.doc_name,
-                session.session_json,
-                session.prepared_json,
-                created_at,
-                expires_at,
-                session.signer_capacity_evidence_json,
-            ],
-        )?;
+        let act_id = session.act_id.to_string();
+        match &self.kind {
+            TxKind::Sqlite(_) => {
+                self.raw()?.execute(
+                    "INSERT OR REPLACE INTO pending_cmd_sessions \
+                     (session_id, act_id, actor, status, masked_phone, doc_name, session_json, \
+                      prepared_json, created_at, expires_at, signer_capacity_evidence_json) \
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                    params![
+                        session.session_id,
+                        act_id,
+                        session.actor,
+                        session.status,
+                        session.masked_phone,
+                        session.doc_name,
+                        session.session_json,
+                        session.prepared_json,
+                        created_at,
+                        expires_at,
+                        session.signer_capacity_evidence_json,
+                    ],
+                )?;
+            }
+            #[cfg(feature = "postgres")]
+            TxKind::Postgres(cell) => {
+                let signer_capacity_evidence_json =
+                    session.signer_capacity_evidence_json.as_deref();
+                cell.borrow_mut().execute(
+                    "INSERT INTO pending_cmd_sessions \
+                     (session_id, act_id, actor, status, masked_phone, doc_name, session_json, \
+                      prepared_json, created_at, expires_at, signer_capacity_evidence_json) \
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) \
+                     ON CONFLICT (session_id) DO UPDATE SET act_id = EXCLUDED.act_id, \
+                     actor = EXCLUDED.actor, status = EXCLUDED.status, \
+                     masked_phone = EXCLUDED.masked_phone, doc_name = EXCLUDED.doc_name, \
+                     session_json = EXCLUDED.session_json, prepared_json = EXCLUDED.prepared_json, \
+                     created_at = EXCLUDED.created_at, expires_at = EXCLUDED.expires_at, \
+                     signer_capacity_evidence_json = EXCLUDED.signer_capacity_evidence_json",
+                    &[
+                        &session.session_id,
+                        &act_id,
+                        &session.actor,
+                        &session.status,
+                        &session.masked_phone,
+                        &session.doc_name,
+                        &session.session_json,
+                        &session.prepared_json,
+                        &created_at,
+                        &expires_at,
+                        &signer_capacity_evidence_json,
+                    ],
+                )?;
+            }
+        }
         Ok(())
     }
 
     /// Delete a pending CMD signing session by id (single-use: consumed on a successful confirm, or
     /// cancelled/expired). A no-op if it is already gone.
     pub fn delete_pending_cmd_session(&self, session_id: &str) -> Result<(), StoreError> {
-        self.raw()?.execute(
-            "DELETE FROM pending_cmd_sessions WHERE session_id = ?1",
-            params![session_id],
-        )?;
+        match &self.kind {
+            TxKind::Sqlite(_) => {
+                self.raw()?.execute(
+                    "DELETE FROM pending_cmd_sessions WHERE session_id = ?1",
+                    params![session_id],
+                )?;
+            }
+            #[cfg(feature = "postgres")]
+            TxKind::Postgres(cell) => {
+                cell.borrow_mut().execute(
+                    "DELETE FROM pending_cmd_sessions WHERE session_id = $1",
+                    &[&session_id],
+                )?;
+            }
+        }
         Ok(())
     }
 }
