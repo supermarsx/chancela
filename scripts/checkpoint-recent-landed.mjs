@@ -3663,7 +3663,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Current `fb31d06` Signatures & Trust credential/batch checkpoint keeps",
+    "Current `011123c` Signatures & Trust credential/batch checkpoint keeps",
     "spec coverage credential/batch checkpoint marker",
   );
   assertFileContains(
@@ -9285,7 +9285,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `fb31d06`",
+    "Current checkpoint metadata/static checks through `011123c`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -9715,7 +9715,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `fb31d06caf167241c255158fc965a403adb2f398`",
+    "implementation snapshot `011123cfb7a9b564f2cf467a482f276d84900f57`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(

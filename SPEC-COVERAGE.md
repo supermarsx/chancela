@@ -1,9 +1,10 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-14 from current implementation snapshot `fb31d06caf167241c255158fc965a403adb2f398`,
-with working-tree evidence refreshes for the recently landed Signatures & Trust
-provider-credential, stored runtime credential resolution, stored PKCS#12, and
-remote batch-initiation surfaces, while preserving the prior committed
+*Updated 2026-07-14 from current implementation snapshot `011123cfb7a9b564f2cf467a482f276d84900f57`,
+with committed evidence refreshes for the recently landed Signatures & Trust
+provider-credential, stored runtime credential resolution, stored PKCS#12,
+remote batch-initiation surfaces, and Docker/Compose runtime-hardening
+checkpoint, while preserving the prior committed
 `7fcf5ef5f1c2fbd5b9eb26d6aac5c1240144a365` manual-signature
 original-reference sealing path and web accessibility/focus guard evidence and the prior
 `869e02f897f54730df86db739193f86c372e0e19` coverage context,
@@ -170,7 +171,7 @@ blockers.
 
 Implementation checkpoints covered here:
 
-- Current `fb31d06` Signatures & Trust credential/batch checkpoint keeps
+- Current `011123c` Signatures & Trust credential/batch checkpoint keeps
   Signatures/Trust, Data, UX, and CI **PARTIAL**: provider credentials now have
   entry-bound encrypted sidecar storage with priority-ordered entries,
   per-entry AEAD authentication, write-only create/update APIs, sanitized audit

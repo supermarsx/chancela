@@ -4,8 +4,9 @@
 
 `npm run check:spec-coverage` parses `SPEC-COVERAGE.md` and fails if the
 top-level spec table no longer covers all 11 spec documents, uses an unknown
-status, loses the implementation snapshot marker, or drops the required blocker
-and "Do Not Overstate" boundary sections. Use
+status, loses the implementation snapshot marker, lets snapshot/checkpoint
+markers drift from current HEAD, or drops the required blocker and "Do Not
+Overstate" boundary sections. Use
 `node scripts/check-spec-coverage.mjs --json` when a machine-readable summary is
 needed for release notes or an operator review packet.
 

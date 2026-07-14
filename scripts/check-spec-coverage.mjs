@@ -1,10 +1,14 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const coveragePath = join(repoRoot, "SPEC-COVERAGE.md");
+const ciCheckpointsPath = join(repoRoot, "docs", "CI-CHECKPOINTS.md");
+const hardeningPlanPath = join(repoRoot, "docs", "CI-E2E-HARDENING-PLAN.md");
+const recentLandedPath = join(repoRoot, "scripts", "checkpoint-recent-landed.mjs");
 const jsonOutput = process.argv.includes("--json");
 
 const expectedSpecs = [
@@ -23,8 +27,19 @@ const expectedSpecs = [
 const allowedStatuses = new Set(["PARTIAL", "BLOCKED", "COMPLETE"]);
 
 const body = readFileSync(coveragePath, "utf8");
+const ciCheckpoints = readFileSync(ciCheckpointsPath, "utf8");
+const hardeningPlan = readFileSync(hardeningPlanPath, "utf8");
+const recentLanded = readFileSync(recentLandedPath, "utf8");
+const currentHead = gitRevParse("HEAD");
+const currentHeadShort = currentHead.slice(0, 7);
 const snapshotCommit = extractSnapshotCommit(body);
 const rows = parseSpecRows(body);
+
+assert.equal(
+  snapshotCommit,
+  currentHead,
+  `implementation snapshot ${snapshotCommit} does not match current HEAD ${currentHead}`,
+);
 
 assert.equal(
   rows.length,
@@ -62,6 +77,7 @@ assertRequiredSection("## Remaining Blockers");
 assertRequiredSection("### Local product work");
 assertRequiredSection("### External / provider / legal blockers");
 assertRequiredSection("## Do Not Overstate");
+assertSnapshotCoherence();
 
 if (rows.every((row) => row.status === "PARTIAL")) {
   assert.ok(
@@ -128,4 +144,64 @@ function assertRequiredSection(section) {
     body.includes(section),
     `missing required coverage section ${section}`,
   );
+}
+
+function assertSnapshotCoherence() {
+  assertIncludes(
+    body,
+    `Current \`${currentHeadShort}\``,
+    "SPEC-COVERAGE.md current checkpoint short marker",
+  );
+  assertIncludes(
+    hardeningPlan,
+    `Current checkpoint metadata/static checks through \`${currentHeadShort}\``,
+    "CI/E2E hardening plan current checkpoint marker",
+  );
+  assertIncludes(
+    recentLanded,
+    `implementation snapshot \`${currentHead}\``,
+    "recent-landed static map spec snapshot marker",
+  );
+  assertIncludes(
+    recentLanded,
+    `Current checkpoint metadata/static checks through \`${currentHeadShort}\``,
+    "recent-landed static map hardening-plan checkpoint marker",
+  );
+  assertIncludes(
+    ciCheckpoints,
+    "markers drift from current HEAD",
+    "CI checkpoints spec coverage drift-check description",
+  );
+}
+
+function assertIncludes(markdown, needle, label) {
+  assert.ok(
+    markdown.includes(needle),
+    `${label} missing expected marker ${needle}`,
+  );
+}
+
+function gitRevParse(revision) {
+  const result = spawnSync("git", ["rev-parse", revision], {
+    cwd: repoRoot,
+    encoding: "utf8",
+  });
+
+  if (result.error) {
+    throw result.error;
+  }
+
+  assert.equal(
+    result.status,
+    0,
+    `git rev-parse ${revision} failed: ${result.stderr.trim()}`,
+  );
+
+  const commit = result.stdout.trim();
+  assert.match(
+    commit,
+    /^[0-9a-f]{40}$/u,
+    `git rev-parse ${revision} returned invalid commit ${commit}`,
+  );
+  return commit;
 }
