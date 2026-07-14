@@ -251,6 +251,11 @@ export const deDE: Catalog = {
   'notifications.reminder.absentOwnerDispatch.body':
     '{act_title} hat eine generierte Mitteilung an abwesende Eigentümer, aber der Versandnachweis des Operators ist {dispatch_evidence_status}. Fehlende Empfänger: {missing_recipients}. Diese Erinnerung ist nur ein Hinweis.',
   'notifications.reminder.absentOwnerDispatch.action': 'Akt öffnen',
+  'notifications.reminder.importedDocumentReview.title':
+    'Prüfung importierten Dokuments ausstehend: {act_title}',
+  'notifications.reminder.importedDocumentReview.body':
+    '{act_title} für {entity_name} enthält das importierte Dokument {imported_document_id}, das noch in {operator_review_status} steht. Öffnen Sie das bestehende Prüfformular; diese Erinnerung ist nur ein Hinweis.',
+  'notifications.reminder.importedDocumentReview.action': 'Importiertes Dokument prüfen',
   'notifications.reminder.followUp.title': '{follow_up_title}',
   'notifications.reminder.followUp.body': '{entity_name} - {act_title}: {follow_up_detail}',
   'notifications.reminder.followUp.bodyNoDetail': '{entity_name} - {act_title}',

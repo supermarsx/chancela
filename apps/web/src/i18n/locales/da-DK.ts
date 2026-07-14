@@ -246,6 +246,11 @@ export const daDK: Catalog = {
   'notifications.reminder.absentOwnerDispatch.body':
     '{act_title} har en genereret meddelelse til fraværende ejere, men operatørens afsendelsesbevis er {dispatch_evidence_status}. Manglende modtagere: {missing_recipients}. Påmindelsen er kun rådgivende.',
   'notifications.reminder.absentOwnerDispatch.action': 'Åbn protokol',
+  'notifications.reminder.importedDocumentReview.title':
+    'Gennemgang af importeret dokument afventer: {act_title}',
+  'notifications.reminder.importedDocumentReview.body':
+    '{act_title} for {entity_name} har importeret dokument {imported_document_id} stadig i {operator_review_status}. Åbn den eksisterende gennemgangsformular; denne påmindelse er kun vejledende.',
+  'notifications.reminder.importedDocumentReview.action': 'Gennemgå importeret dokument',
   'notifications.reminder.followUp.title': '{follow_up_title}',
   'notifications.reminder.followUp.body': '{entity_name} – {act_title}: {follow_up_detail}',
   'notifications.reminder.followUp.bodyNoDetail': '{entity_name} – {act_title}',

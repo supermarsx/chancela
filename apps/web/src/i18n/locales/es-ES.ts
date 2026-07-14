@@ -249,6 +249,11 @@ export const esES: Catalog = {
   'notifications.reminder.absentOwnerDispatch.body':
     '{act_title} tiene una comunicación generada para propietarios ausentes, pero la evidencia de envío del operador está {dispatch_evidence_status}. Destinatarios faltantes: {missing_recipients}. El recordatorio es solo consultivo.',
   'notifications.reminder.absentOwnerDispatch.action': 'Abrir acta',
+  'notifications.reminder.importedDocumentReview.title':
+    'Revisión de documento importado pendiente: {act_title}',
+  'notifications.reminder.importedDocumentReview.body':
+    '{act_title} de {entity_name} tiene el documento importado {imported_document_id} todavía en {operator_review_status}. Abra el formulario de revisión existente; este recordatorio es solo consultivo.',
+  'notifications.reminder.importedDocumentReview.action': 'Revisar documento importado',
   'notifications.reminder.followUp.title': '{follow_up_title}',
   'notifications.reminder.followUp.body': '{entity_name} - {act_title}: {follow_up_detail}',
   'notifications.reminder.followUp.bodyNoDetail': '{entity_name} - {act_title}',

@@ -129,13 +129,22 @@ export function actDocumentPanelTargetFromLocation(
   const params = new URLSearchParams(search);
   const generatedDocumentId =
     params.get('generated_document_id')?.trim() || params.get('generatedDocument')?.trim() || null;
+  const importedDocumentId =
+    params.get('imported_document_id')?.trim() || params.get('importedDocument')?.trim() || null;
+  const focusParam = params.get('focus')?.trim();
   const focus =
-    params.get('focus')?.trim() === 'dispatch-evidence' || hash === '#generated-dispatch-evidence'
+    focusParam === 'dispatch-evidence' || hash === '#generated-dispatch-evidence'
       ? 'dispatch-evidence'
-      : null;
+      : focusParam === 'import-review' || hash === '#imported-documents'
+        ? 'import-review'
+        : null;
 
-  if (!generatedDocumentId && !focus) return undefined;
-  return { generatedDocumentId, focus };
+  if (!generatedDocumentId && !importedDocumentId && !focus) return undefined;
+  return {
+    ...(generatedDocumentId ? { generatedDocumentId } : {}),
+    ...(importedDocumentId ? { importedDocumentId } : {}),
+    ...(focus ? { focus } : {}),
+  };
 }
 
 interface DraftConvening {
@@ -217,7 +226,10 @@ function writtenResolutionReviewStatusOptions(
 ): { value: WrittenResolutionReviewStatus; label: string }[] {
   return [
     { value: 'reviewed', label: t('acts.writtenResolution.reviewStatusOption.reviewed') },
-    { value: 'needs_follow_up', label: t('acts.writtenResolution.reviewStatusOption.needsFollowUp') },
+    {
+      value: 'needs_follow_up',
+      label: t('acts.writtenResolution.reviewStatusOption.needsFollowUp'),
+    },
   ];
 }
 
@@ -1153,10 +1165,7 @@ function WrittenResolutionReceiptEditor({
               />
             </Field>
           </div>
-          <Field
-            label={t('acts.writtenResolution.field.reviewStatus')}
-            htmlFor="wr-receipt-status"
-          >
+          <Field label={t('acts.writtenResolution.field.reviewStatus')} htmlFor="wr-receipt-status">
             <Select
               id="wr-receipt-status"
               value={receiptDraft.status}
@@ -1221,10 +1230,9 @@ function WrittenResolutionReceiptEditor({
             {t('acts.writtenResolution.guardrail')}
           </label>
           <p className="mono">
-            consent_proof_claimed=false; quorum_proof_claimed=false;
-            identity_proof_claimed=false; legal_sufficiency_claimed=false;
-            external_validation_claimed=false; automatic_approval_claimed=false;
-            authority_certified_claimed=false
+            consent_proof_claimed=false; quorum_proof_claimed=false; identity_proof_claimed=false;
+            legal_sufficiency_claimed=false; external_validation_claimed=false;
+            automatic_approval_claimed=false; authority_certified_claimed=false
           </p>
           <GateButton
             perm="act.edit"
@@ -1485,8 +1493,7 @@ function AiHumanReviewPanel({
   const missingProvenanceRows = statementSources.filter(aiSourceFieldMissing).length;
   const pendingOrUnverifiedRows = statementSources.filter(
     (source) =>
-      source.human_verified !== true ||
-      source.human_verification_status !== 'accepted_by_human',
+      source.human_verified !== true || source.human_verification_status !== 'accepted_by_human',
   ).length;
   const claimFlaggedRows = statementSources.filter(
     (source) =>

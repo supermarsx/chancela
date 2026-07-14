@@ -248,6 +248,11 @@ export const fiFI: Catalog = {
   'notifications.reminder.absentOwnerDispatch.body':
     '{act_title} sisältää luodun poissaolevien omistajien viestin, mutta käyttäjän lähetysnäyttö on {dispatch_evidence_status}. Puuttuvat vastaanottajat: {missing_recipients}. Muistutus on vain neuvoa-antava.',
   'notifications.reminder.absentOwnerDispatch.action': 'Avaa pöytäkirja',
+  'notifications.reminder.importedDocumentReview.title':
+    'Tuodun asiakirjan tarkistus odottaa: {act_title}',
+  'notifications.reminder.importedDocumentReview.body':
+    '{act_title} yhteisölle {entity_name} sisältää tuodun asiakirjan {imported_document_id}, jonka tila on edelleen {operator_review_status}. Avaa nykyinen tarkistuslomake; tämä muistutus on vain neuvoa-antava.',
+  'notifications.reminder.importedDocumentReview.action': 'Tarkista tuotu asiakirja',
   'notifications.reminder.followUp.title': '{follow_up_title}',
   'notifications.reminder.followUp.body': '{entity_name} - {act_title}: {follow_up_detail}',
   'notifications.reminder.followUp.bodyNoDetail': '{entity_name} - {act_title}',

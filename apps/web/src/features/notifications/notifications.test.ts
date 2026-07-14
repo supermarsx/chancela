@@ -480,6 +480,51 @@ describe('buildDashboardNotifications', () => {
     });
   });
 
+  it('routes imported-document review reminders to the act review form', () => {
+    const items = buildDashboardNotifications(
+      dashboard({
+        reminders: [
+          reminder({
+            due_date: '',
+            status: 'Pending',
+            reason: 'Raw backend imported-review fallback.',
+            source_rule: 'imported-document-review-required',
+            source_profile: 'imported-document-review:import-1',
+            params: {
+              act_id: 'act-import-1',
+              act_title: 'Ata com documento importado',
+              entity_name: 'Acme, S.A.',
+              imported_document_id: 'import-1',
+              operator_review_status: 'operator_review_required',
+            },
+            action: {
+              kind: 'open_imported_document_review',
+              label_key: 'notifications.reminder.importedDocumentReview.action',
+              api_href: '/v1/documents/imported/import-1',
+              route: '/atas/act-import-1',
+            },
+            i18n: {
+              title_key: 'notifications.reminder.importedDocumentReview.title',
+              body_key: 'notifications.reminder.importedDocumentReview.body',
+              action_key: 'notifications.reminder.importedDocumentReview.action',
+            },
+          }),
+        ],
+      }),
+      t,
+    );
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      kind: 'reminder',
+      action: {
+        href: '/atas/act-import-1?imported_document_id=import-1&focus=import-review#imported-documents',
+        label: 'Rever documento importado',
+      },
+    });
+    expect(items[0]?.detail).not.toContain('Raw backend');
+  });
+
   it('prioritizes actionable alerts and reminders in the popup over recent operations', () => {
     const items = buildDashboardNotifications(
       dashboard({

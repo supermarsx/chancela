@@ -80,7 +80,8 @@ import './documents.css';
 
 export interface ActDocumentPanelTarget {
   generatedDocumentId?: string | null;
-  focus?: 'dispatch-evidence' | null;
+  importedDocumentId?: string | null;
+  focus?: 'dispatch-evidence' | 'import-review' | null;
 }
 
 /** A 422/404 from the document endpoints is the "family has no template" signal. */
@@ -897,11 +898,7 @@ function ImportedDocumentReviewDepthSummary({
   const historyCount = document.review_history?.length ?? 0;
 
   return (
-    <div
-      className="stack--tight"
-      role="group"
-      aria-label={t('documents.import.depth.aria')}
-    >
+    <div className="stack--tight" role="group" aria-label={t('documents.import.depth.aria')}>
       <p className="card__label">{t('documents.import.depth.title')}</p>
       <dl className="deflist deflist--tight">
         <div>
@@ -1556,8 +1553,7 @@ function ImportedDocumentDetails({
   const importedBy = metadataText(document.imported_by);
   const legalNotice = metadataText(document.legal_notice) ?? t('documents.import.notice');
   const reviewNotice =
-    metadataText(document.operator_review_notice) ??
-    t('documents.import.review.noticeFallback');
+    metadataText(document.operator_review_notice) ?? t('documents.import.review.noticeFallback');
   const reviewedAt = metadataText(document.operator_reviewed_at);
   const reviewedBy = metadataText(document.operator_reviewed_by);
   const reviewNote = metadataText(document.operator_review_note);
@@ -1831,9 +1827,7 @@ function ImportedDocumentReviewForm({
         icon={<Icon.Pencil />}
         disabled={isPending || !acknowledged}
       >
-        {isPending
-          ? t('documents.import.review.saving')
-          : t('documents.import.review.save')}
+        {isPending ? t('documents.import.review.saving') : t('documents.import.review.save')}
       </GateButton>
     </form>
   );
@@ -1870,6 +1864,7 @@ export function ActDocumentPanel({
   const toast = useToast();
   const queryClient = useQueryClient();
   const handledGeneratedTargetRef = useRef<string | null>(null);
+  const handledImportedTargetRef = useRef<string | null>(null);
   const [open, setOpen] = useState(false);
   const [selectedImportId, setSelectedImportId] = useState<string | null>(null);
   const [importError, setImportError] = useState<unknown>(null);
@@ -1935,6 +1930,8 @@ export function ActDocumentPanel({
   const generatedDocumentTargetId = target?.generatedDocumentId?.trim() || null;
   const generatedDocumentFocusTarget =
     target?.focus === 'dispatch-evidence' ? 'dispatch-evidence' : null;
+  const importedDocumentTargetId = target?.importedDocumentId?.trim() || null;
+  const importedDocumentFocusTarget = target?.focus === 'import-review' ? 'import-review' : null;
   const importList = importedDocuments.data ?? [];
   const generatedCommunications = (generatedDocuments.data ?? []).filter(
     (document) => document.template_id === ABSENT_OWNER_COMMUNICATION_TEMPLATE_ID,
@@ -2013,6 +2010,48 @@ export function ActDocumentPanel({
     generatedCommunications,
     generatedDocumentTargetId,
     generatedDocumentFocusTarget,
+  ]);
+
+  useEffect(() => {
+    if (importedDocuments.isLoading) return;
+    if (!importedDocumentTargetId && importedDocumentFocusTarget !== 'import-review') return;
+
+    const targetKey = `${act.id}:${importedDocumentTargetId ?? ''}:${
+      importedDocumentFocusTarget ?? ''
+    }`;
+    if (handledImportedTargetRef.current === targetKey) return;
+
+    const target = importedDocumentTargetId
+      ? importList.find((document) => document.id === importedDocumentTargetId)
+      : null;
+    if (importedDocumentTargetId && !target) return;
+
+    if (target) {
+      setSelectedImportId(target.id);
+    }
+
+    const focusTarget = () => {
+      const control = target
+        ? document.getElementById(`import-review-${slug(target.id)}-status`)
+        : null;
+      const fallback = document.getElementById('imported-documents');
+      const node = control ?? fallback;
+      node?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      node?.focus({ preventScroll: true });
+    };
+
+    if (typeof window.requestAnimationFrame === 'function') {
+      window.requestAnimationFrame(focusTarget);
+    } else {
+      window.setTimeout(focusTarget, 0);
+    }
+    handledImportedTargetRef.current = targetKey;
+  }, [
+    act.id,
+    importList,
+    importedDocumentFocusTarget,
+    importedDocumentTargetId,
+    importedDocuments.isLoading,
   ]);
 
   useEffect(() => {
@@ -2495,7 +2534,12 @@ export function ActDocumentPanel({
           </section>
         ) : null}
 
-        <section className="stack--tight" aria-label={t('documents.import.sectionAria')}>
+        <section
+          className="stack--tight"
+          id="imported-documents"
+          tabIndex={-1}
+          aria-label={t('documents.import.sectionAria')}
+        >
           <div className="section-head">
             <div className="stack--tight">
               <p className="card__label">{t('documents.import.title')}</p>

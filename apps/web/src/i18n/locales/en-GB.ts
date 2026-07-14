@@ -246,6 +246,11 @@ export const enGB: Catalog = {
   'notifications.reminder.absentOwnerDispatch.body':
     '{act_title} has a generated absent-owner communication, but operator dispatch evidence is {dispatch_evidence_status}. Missing recipients: {missing_recipients}. This reminder is advisory only.',
   'notifications.reminder.absentOwnerDispatch.action': 'Open act',
+  'notifications.reminder.importedDocumentReview.title':
+    'Imported document review pending: {act_title}',
+  'notifications.reminder.importedDocumentReview.body':
+    '{act_title} for {entity_name} has imported document {imported_document_id} still in {operator_review_status}. Open the existing review form; this reminder is advisory only.',
+  'notifications.reminder.importedDocumentReview.action': 'Review imported document',
   'notifications.reminder.followUp.title': '{follow_up_title}',
   'notifications.reminder.followUp.body': '{entity_name} - {act_title}: {follow_up_detail}',
   'notifications.reminder.followUp.bodyNoDetail': '{entity_name} - {act_title}',

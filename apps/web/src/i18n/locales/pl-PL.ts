@@ -248,6 +248,11 @@ export const plPL: Catalog = {
   'notifications.reminder.absentOwnerDispatch.body':
     '{act_title} ma wygenerowaną komunikację do nieobecnych właścicieli, ale dowód wysyłki operatora ma stan {dispatch_evidence_status}. Brakujący odbiorcy: {missing_recipients}. Przypomnienie ma charakter wyłącznie doradczy.',
   'notifications.reminder.absentOwnerDispatch.action': 'Otwórz akt',
+  'notifications.reminder.importedDocumentReview.title':
+    'Przegląd importowanego dokumentu oczekuje: {act_title}',
+  'notifications.reminder.importedDocumentReview.body':
+    '{act_title} dla {entity_name} ma importowany dokument {imported_document_id} nadal w stanie {operator_review_status}. Otwórz istniejący formularz przeglądu; to przypomnienie ma wyłącznie charakter doradczy.',
+  'notifications.reminder.importedDocumentReview.action': 'Przejrzyj importowany dokument',
   'notifications.reminder.followUp.title': '{follow_up_title}',
   'notifications.reminder.followUp.body': '{entity_name} - {act_title}: {follow_up_detail}',
   'notifications.reminder.followUp.bodyNoDetail': '{entity_name} - {act_title}',

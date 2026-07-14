@@ -323,6 +323,18 @@ function generatedDispatchDocumentIdFromApi(path: string | null | undefined): st
   }
 }
 
+function importedDocumentIdFromApi(path: string | null | undefined): string | undefined {
+  const route = path?.trim();
+  if (!route) return undefined;
+  const match = /^\/v1\/documents\/imported\/([^/?#]+)(?:[?#/]|$)/.exec(route);
+  if (!match) return undefined;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return match[1];
+  }
+}
+
 function generatedDispatchEvidenceRoute(
   actRoute: string | undefined,
   documentId: string | undefined,
@@ -333,6 +345,19 @@ function generatedDispatchEvidenceRoute(
   url.searchParams.set('generated_document_id', trimmedDocumentId);
   url.searchParams.set('focus', 'dispatch-evidence');
   url.hash = 'generated-dispatch-evidence';
+  return `${url.pathname}${url.search}${url.hash}`;
+}
+
+function importedDocumentReviewRoute(
+  actRoute: string | undefined,
+  importedDocumentId: string | undefined,
+): string | undefined {
+  const trimmedImportedDocumentId = importedDocumentId?.trim();
+  if (!actRoute || !trimmedImportedDocumentId) return undefined;
+  const url = new URL(actRoute, 'http://chancela.local');
+  url.searchParams.set('imported_document_id', trimmedImportedDocumentId);
+  url.searchParams.set('focus', 'import-review');
+  url.hash = 'imported-documents';
   return `${url.pathname}${url.search}${url.hash}`;
 }
 
@@ -353,6 +378,17 @@ function routeFromAlert(alert: DashboardAlert): string | undefined {
 }
 
 function routeFromReminder(reminder: DashboardReminder): string | undefined {
+  if (reminder.action?.kind === 'open_imported_document_review') {
+    const actRoute =
+      frontendRouteFromApi(reminder.action.route) ??
+      (reminder.params?.act_id?.trim() ? `/atas/${reminder.params.act_id.trim()}` : undefined);
+    const importedDocumentId =
+      reminder.params?.imported_document_id?.trim() ??
+      importedDocumentIdFromApi(reminder.action.api_href);
+    const route = importedDocumentReviewRoute(actRoute, importedDocumentId);
+    if (route) return route;
+  }
+
   if (reminder.action?.kind === 'open_absent_owner_dispatch_evidence') {
     const actRoute =
       frontendRouteFromApi(reminder.action.route) ??

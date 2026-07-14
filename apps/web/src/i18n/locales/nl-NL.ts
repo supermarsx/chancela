@@ -247,6 +247,11 @@ export const nlNL: Catalog = {
   'notifications.reminder.absentOwnerDispatch.body':
     '{act_title} heeft een gegenereerde mededeling voor afwezige eigenaars, maar het verzendbewijs van de operator is {dispatch_evidence_status}. Ontbrekende ontvangers: {missing_recipients}. Deze herinnering is alleen adviserend.',
   'notifications.reminder.absentOwnerDispatch.action': 'Open akte',
+  'notifications.reminder.importedDocumentReview.title':
+    'Review van geïmporteerd document in behandeling: {act_title}',
+  'notifications.reminder.importedDocumentReview.body':
+    '{act_title} voor {entity_name} heeft geïmporteerd document {imported_document_id} nog in {operator_review_status}. Open het bestaande reviewformulier; deze herinnering is alleen adviserend.',
+  'notifications.reminder.importedDocumentReview.action': 'Geïmporteerd document reviewen',
   'notifications.reminder.followUp.title': '{follow_up_title}',
   'notifications.reminder.followUp.body': '{entity_name} - {act_title}: {follow_up_detail}',
   'notifications.reminder.followUp.bodyNoDetail': '{entity_name} - {act_title}',

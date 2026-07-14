@@ -17,6 +17,7 @@ use chancela_law::LawCatalog;
 use chancela_registry::RegistryExtract;
 use chancela_store::{
     StoredDocument, StoredFollowUp, StoredFollowUpStatus, StoredGeneratedDocumentDispatchEvidence,
+    StoredImportedDocumentMeta, StoredImportedDocumentReviewStatus,
 };
 use time::format_description::well_known::Rfc3339;
 use time::{Date, Month, OffsetDateTime};
@@ -67,6 +68,7 @@ pub async fn dashboard(
     let transfer_controls = state.transfer_controls.read().await;
     let generated_dispatch_evidence =
         load_generated_dispatch_evidence_snapshots(&state, &acts).await?;
+    let imported_documents = load_imported_document_metadata(&state).await?;
     let ledger = state.ledger.read().await;
 
     let books_open = books
@@ -105,7 +107,10 @@ pub async fn dashboard(
         }
     }
 
-    let (ledger_valid, ledger_length) = match ledger.verify() {
+    // wp14 Phase 4: serve the O(n) chain-verify verdict from the in-process memo (keyed by the
+    // ledger head + length), so this hot path is O(1) over an unchanged chain. Transparent memo of
+    // `ledger.verify()`; identical semantics.
+    let (ledger_valid, ledger_length) = match state.verify_cache.verdict(&ledger) {
         Ok(len) => (true, len),
         Err(_) => (false, ledger.len() as u64),
     };
@@ -135,6 +140,7 @@ pub async fn dashboard(
             acts: &acts,
             follow_ups: &follow_ups,
             generated_dispatch_evidence: &generated_dispatch_evidence,
+            imported_documents: &imported_documents,
             registry_extracts: &registry_extracts,
             breach_playbooks: &breach_playbooks,
             transfer_controls: &transfer_controls,
@@ -209,6 +215,17 @@ async fn load_generated_dispatch_evidence_snapshots(
             evidence: Vec::new(),
         })
         .collect())
+}
+
+async fn load_imported_document_metadata(
+    state: &AppState,
+) -> Result<Vec<StoredImportedDocumentMeta>, ApiError> {
+    if let Some(store) = &state.store {
+        return store
+            .imported_documents(None)
+            .map_err(|e| ApiError::Internal(format!("imported document store read failed: {e}")));
+    }
+    Ok(Vec::new())
 }
 
 fn dashboard_current_work(
@@ -1154,6 +1171,7 @@ fn dashboard_reminders_with_follow_ups(
             acts,
             follow_ups,
             generated_dispatch_evidence: &[],
+            imported_documents: &[],
             registry_extracts,
             breach_playbooks: &HashMap::new(),
             transfer_controls: &HashMap::new(),
@@ -1171,6 +1189,7 @@ struct ReminderInputs<'a> {
     acts: &'a HashMap<ActId, Act>,
     follow_ups: &'a HashMap<String, StoredFollowUp>,
     generated_dispatch_evidence: &'a [GeneratedDispatchEvidenceSnapshot],
+    imported_documents: &'a [StoredImportedDocumentMeta],
     registry_extracts: &'a HashMap<EntityId, RegistryExtract>,
     breach_playbooks: &'a HashMap<BreachPlaybookId, BreachPlaybookRecord>,
     transfer_controls: &'a HashMap<TransferControlId, TransferControlRecord>,
@@ -1187,6 +1206,7 @@ fn dashboard_reminders_with_generated_dispatch_evidence(
         acts,
         follow_ups,
         generated_dispatch_evidence,
+        imported_documents,
         registry_extracts,
         breach_playbooks,
         transfer_controls,
@@ -1221,6 +1241,12 @@ fn dashboard_reminders_with_generated_dispatch_evidence(
         books,
         acts,
         generated_dispatch_evidence,
+    ));
+    reminders.extend(imported_document_review_reminders(
+        entities,
+        books,
+        acts,
+        imported_documents,
     ));
     if policy.sources.privacy_control_reviews {
         reminders.extend(privacy_control_review_reminders(
@@ -1432,6 +1458,90 @@ fn act_attendance_law_refs(family: EntityFamily) -> Vec<DashboardLawReference> {
     match family {
         EntityFamily::CommercialCompany => law_refs(&[("csc", "63")]),
         _ => Vec::new(),
+    }
+}
+
+fn imported_document_review_reminders(
+    entities: &HashMap<EntityId, Entity>,
+    books: &HashMap<BookId, Book>,
+    acts: &HashMap<ActId, Act>,
+    imported_documents: &[StoredImportedDocumentMeta],
+) -> Vec<DashboardReminder> {
+    imported_documents
+        .iter()
+        .filter(|document| {
+            imported_document_status_requires_review(document.operator_review_status)
+        })
+        .filter_map(|document| {
+            let act_id = document.act_id?;
+            let act = acts.get(&act_id)?;
+            let book = books.get(&act.book_id)?;
+            let entity = entities.get(&book.entity_id)?;
+            Some(imported_document_review_reminder(
+                entity, book, act, document,
+            ))
+        })
+        .collect()
+}
+
+fn imported_document_status_requires_review(status: StoredImportedDocumentReviewStatus) -> bool {
+    matches!(
+        status,
+        StoredImportedDocumentReviewStatus::OperatorReviewRequired
+            | StoredImportedDocumentReviewStatus::OcrReviewRequired
+            | StoredImportedDocumentReviewStatus::CanonicalConversionReviewRequired
+    )
+}
+
+fn imported_document_review_reminder(
+    entity: &Entity,
+    book: &Book,
+    act: &Act,
+    document: &StoredImportedDocumentMeta,
+) -> DashboardReminder {
+    let review_status = document.operator_review_status.as_str().to_owned();
+    DashboardReminder {
+        due_date: String::new(),
+        severity: "Advisory".to_owned(),
+        status: "Pending".to_owned(),
+        reason: format!(
+            "Imported document {} for act \"{}\" still requires operator review ({review_status}).",
+            document.id, act.title
+        ),
+        entity_id: entity.id.to_string(),
+        entity_name: entity.name.clone(),
+        source_rule: "imported-document-review-required".to_owned(),
+        source_profile: format!("imported-document-review:{}", document.id),
+        params: dashboard_alert_params([
+            ("act_id", act.id.to_string()),
+            ("act_title", act.title.clone()),
+            ("book_id", book.id.to_string()),
+            ("entity_id", entity.id.to_string()),
+            ("entity_name", entity.name.clone()),
+            ("imported_document_id", document.id.clone()),
+            ("operator_review_status", review_status.clone()),
+        ]),
+        profile_calendar_plan: None,
+        law_refs: Vec::new(),
+        action: Some(dashboard_action(
+            "open_imported_document_review",
+            "notifications.reminder.importedDocumentReview.action",
+            Some(format!("/v1/documents/imported/{}", document.id)),
+            Some(format!(
+                "/atas/{}?imported_document_id={}&focus=import-review#imported-documents",
+                act.id, document.id
+            )),
+        )),
+        recommended_next_steps: vec![
+            "Open the act imported-document panel.".to_owned(),
+            "Use the existing imported-document review form to record an operator workflow decision."
+                .to_owned(),
+        ],
+        i18n: Some(alert_i18n(
+            "notifications.reminder.importedDocumentReview.title",
+            "notifications.reminder.importedDocumentReview.body",
+            Some("notifications.reminder.importedDocumentReview.action"),
+        )),
     }
 }
 
@@ -2461,6 +2571,29 @@ mod tests {
         )
     }
 
+    fn imported_document_meta(
+        id: &str,
+        act_id: Option<ActId>,
+        status: StoredImportedDocumentReviewStatus,
+    ) -> StoredImportedDocumentMeta {
+        StoredImportedDocumentMeta {
+            id: id.to_owned(),
+            act_id,
+            filename: Some("sensitive-source-name.pdf".to_owned()),
+            declared_content_type: Some("application/pdf".to_owned()),
+            detected_content_type: "application/pdf".to_owned(),
+            sha256: "secret-digest-that-must-not-surface".to_owned(),
+            size_bytes: 2048,
+            imported_at: OffsetDateTime::UNIX_EPOCH,
+            imported_by: "sensitive.importer".to_owned(),
+            operator_review_status: status,
+            operator_reviewed_at: None,
+            operator_reviewed_by: Some("sensitive.reviewer".to_owned()),
+            operator_review_note: Some("sensitive operator note".to_owned()),
+            operator_acknowledged_guardrail_ids: Vec::new(),
+        }
+    }
+
     fn source_rules(reminders: &[DashboardReminder]) -> Vec<String> {
         reminders
             .iter()
@@ -2570,6 +2703,7 @@ mod tests {
                 acts: &acts,
                 follow_ups: &HashMap::new(),
                 generated_dispatch_evidence: &generated_dispatch_evidence,
+                imported_documents: &[],
                 registry_extracts: &HashMap::new(),
                 breach_playbooks: &HashMap::new(),
                 transfer_controls: &HashMap::new(),
@@ -2686,6 +2820,7 @@ mod tests {
                 acts: &HashMap::new(),
                 follow_ups: &HashMap::new(),
                 generated_dispatch_evidence: &[],
+                imported_documents: &[],
                 registry_extracts: &HashMap::new(),
                 breach_playbooks: &breach_playbooks,
                 transfer_controls: &transfer_controls,
@@ -2732,6 +2867,7 @@ mod tests {
                 acts: &HashMap::new(),
                 follow_ups: &HashMap::new(),
                 generated_dispatch_evidence: &[],
+                imported_documents: &[],
                 registry_extracts: &HashMap::new(),
                 breach_playbooks: &breach_playbooks,
                 transfer_controls: &transfer_controls,
@@ -3279,6 +3415,128 @@ mod tests {
         assert!(has_source_rule(&rules, "csc-art376-annual"));
         assert!(has_source_rule(&rules, "act-follow-up"));
         assert!(!has_source_rule(&rules, "act-attendance-missing"));
+    }
+
+    #[test]
+    fn imported_document_review_reminder_surfaces_act_scoped_pending_imports_safely() {
+        let fixture = reminder_fixture();
+        let act = fixture.acts.values().next().expect("fixture act");
+        let imports = vec![
+            imported_document_meta(
+                "11111111-1111-4111-8111-111111111111",
+                Some(act.id),
+                StoredImportedDocumentReviewStatus::OperatorReviewRequired,
+            ),
+            imported_document_meta(
+                "22222222-2222-4222-8222-222222222222",
+                Some(act.id),
+                StoredImportedDocumentReviewStatus::OcrReviewRequired,
+            ),
+            imported_document_meta(
+                "33333333-3333-4333-8333-333333333333",
+                Some(act.id),
+                StoredImportedDocumentReviewStatus::CanonicalConversionReviewRequired,
+            ),
+            imported_document_meta(
+                "44444444-4444-4444-8444-444444444444",
+                None,
+                StoredImportedDocumentReviewStatus::OperatorReviewRequired,
+            ),
+            imported_document_meta(
+                "55555555-5555-4555-8555-555555555555",
+                Some(act.id),
+                StoredImportedDocumentReviewStatus::ReviewedNonCanonicalOriginalOnly,
+            ),
+        ];
+
+        let reminders = imported_document_review_reminders(
+            &fixture.entities,
+            &fixture.books,
+            &fixture.acts,
+            &imports,
+        );
+
+        assert_eq!(reminders.len(), 3);
+        assert_eq!(
+            reminders
+                .iter()
+                .map(|reminder| reminder.params["operator_review_status"].as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "operator_review_required",
+                "ocr_review_required",
+                "canonical_conversion_review_required"
+            ]
+        );
+
+        for reminder in reminders {
+            let imported_document_id = reminder.params["imported_document_id"].as_str();
+            let expected_route = format!(
+                "/atas/{}?imported_document_id={imported_document_id}&focus=import-review#imported-documents",
+                act.id
+            );
+            assert_eq!(reminder.due_date, "");
+            assert_eq!(reminder.severity, "Advisory");
+            assert_eq!(reminder.status, "Pending");
+            assert_eq!(reminder.source_rule, "imported-document-review-required");
+            assert_eq!(
+                reminder.source_profile,
+                format!("imported-document-review:{imported_document_id}")
+            );
+            assert_eq!(reminder.params.get("act_id"), Some(&act.id.to_string()));
+            assert_eq!(
+                reminder.action.as_ref().map(|action| action.kind.as_str()),
+                Some("open_imported_document_review")
+            );
+            assert_eq!(
+                reminder
+                    .action
+                    .as_ref()
+                    .and_then(|action| action.route.as_deref()),
+                Some(expected_route.as_str())
+            );
+            assert_eq!(
+                reminder.i18n.as_ref().map(|i18n| i18n.title_key.as_str()),
+                Some("notifications.reminder.importedDocumentReview.title")
+            );
+
+            for forbidden in [
+                "sensitive-source-name.pdf",
+                "secret-digest-that-must-not-surface",
+                "sensitive.importer",
+                "sensitive.reviewer",
+                "sensitive operator note",
+            ] {
+                assert!(
+                    !reminder.reason.contains(forbidden),
+                    "reason leaked {forbidden}"
+                );
+                assert!(
+                    !reminder
+                        .params
+                        .values()
+                        .any(|value| value.contains(forbidden)),
+                    "params leaked {forbidden}"
+                );
+                assert!(
+                    !reminder
+                        .recommended_next_steps
+                        .iter()
+                        .any(|value| value.contains(forbidden)),
+                    "next steps leaked {forbidden}"
+                );
+            }
+            for forbidden_key in [
+                "filename",
+                "sha256",
+                "digest",
+                "imported_by",
+                "operator_review_note",
+                "operator_reviewed_by",
+            ] {
+                assert!(!reminder.params.contains_key(forbidden_key));
+            }
+        }
     }
 
     #[test]
@@ -3872,6 +4130,7 @@ mod tests {
                 acts: &fixture.acts,
                 follow_ups: &fixture.follow_ups,
                 generated_dispatch_evidence: &generated_dispatch_evidence,
+                imported_documents: &[],
                 registry_extracts: &fixture.registry_extracts,
                 breach_playbooks: &HashMap::new(),
                 transfer_controls: &HashMap::new(),

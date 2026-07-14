@@ -255,6 +255,11 @@ export const ptPT = {
   'notifications.reminder.absentOwnerDispatch.body':
     '{act_title} tem comunicação a condóminos ausentes gerada, mas a evidência de expedição está {dispatch_evidence_status}. Destinatários em falta: {missing_recipients}. O lembrete é apenas consultivo.',
   'notifications.reminder.absentOwnerDispatch.action': 'Abrir ata',
+  'notifications.reminder.importedDocumentReview.title':
+    'Revisão de documento importado pendente: {act_title}',
+  'notifications.reminder.importedDocumentReview.body':
+    '{act_title} de {entity_name} tem o documento importado {imported_document_id} ainda em {operator_review_status}. Abra a revisão existente; o lembrete é apenas consultivo.',
+  'notifications.reminder.importedDocumentReview.action': 'Rever documento importado',
   'notifications.reminder.followUp.title': '{follow_up_title}',
   'notifications.reminder.followUp.body': '{entity_name} - {act_title}: {follow_up_detail}',
   'notifications.reminder.followUp.bodyNoDetail': '{entity_name} - {act_title}',

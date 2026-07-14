@@ -251,6 +251,11 @@ export const frFR: Catalog = {
   'notifications.reminder.absentOwnerDispatch.body':
     '{act_title} comporte une communication générée pour les copropriétaires absents, mais la preuve d’envoi opérateur est {dispatch_evidence_status}. Destinataires manquants : {missing_recipients}. Le rappel est seulement consultatif.',
   'notifications.reminder.absentOwnerDispatch.action': 'Ouvrir le procès-verbal',
+  'notifications.reminder.importedDocumentReview.title':
+    'Revue du document importé en attente : {act_title}',
+  'notifications.reminder.importedDocumentReview.body':
+    '{act_title} pour {entity_name} contient le document importé {imported_document_id} encore en {operator_review_status}. Ouvrez le formulaire de revue existant ; ce rappel est uniquement consultatif.',
+  'notifications.reminder.importedDocumentReview.action': 'Revoir le document importé',
   'notifications.reminder.followUp.title': '{follow_up_title}',
   'notifications.reminder.followUp.body': '{entity_name} - {act_title}: {follow_up_detail}',
   'notifications.reminder.followUp.bodyNoDetail': '{entity_name} - {act_title}',

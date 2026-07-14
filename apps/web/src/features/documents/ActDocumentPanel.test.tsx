@@ -851,7 +851,9 @@ describe('ActDocumentPanel — download only post-seal', () => {
     expect(within(evidence).queryByText(/PDF\/UA conforme/i)).toBeNull();
     expect(within(evidence).queryByText(/Certificação DGLAB confirmada/i)).toBeNull();
     expect(within(evidence).queryByText(/Validade legal confirmada/i)).toBeNull();
-    expect(within(evidence).queryByText('evidence/pdf-accessibility/{document_id}.json')).toBeNull();
+    expect(
+      within(evidence).queryByText('evidence/pdf-accessibility/{document_id}.json'),
+    ).toBeNull();
     expect(within(evidence).queryByRole('link')).toBeNull();
   });
 
@@ -1332,6 +1334,54 @@ describe('ActDocumentPanel — generated absent-owner communications', () => {
     );
     await waitFor(() => expect(firstItem?.getAttribute('aria-current')).toBe('true'));
     expect(targetedItem?.getAttribute('aria-current')).toBeNull();
+  });
+
+  it('selects and focuses imported-document review from the navigation target once', async () => {
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: scrollIntoView,
+    });
+
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.includes('/document/bundle')) return json(bundle);
+      if (url.includes('/v1/acts/act-1/documents/generated')) {
+        return json([absentOwnerCommunication]);
+      }
+      if (url.includes('/v1/documents/imported/import-1')) {
+        return json(importedDocumentPendingReview);
+      }
+      if (url.includes('/v1/documents/imported')) return json([importedDocumentPendingReview]);
+      if (url.includes('/v1/documents/generated/') && url.includes('/dispatch-evidence')) {
+        return json(absentOwnerEvidence);
+      }
+      return Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(
+      <ActDocumentPanel
+        act={sealed}
+        family="Condominium"
+        target={{ importedDocumentId: 'import-1', focus: 'import-review' }}
+      />,
+    );
+
+    const list = await screen.findByRole('list', { name: 'Documentos importados' });
+    const importedItem = within(list)
+      .getAllByRole('listitem')
+      .find((item) => item.textContent?.includes('supporting-evidence.pdf'));
+    expect(importedItem).toBeTruthy();
+    await waitFor(() => expect(importedItem?.getAttribute('aria-current')).toBe('true'));
+
+    const status = await screen.findByLabelText('Estado de revisão');
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(document.activeElement).toBe(status));
+
+    fireEvent.click(
+      within(importedItem as HTMLElement).getByRole('button', { name: 'Ver metadados' }),
+    );
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledTimes(1));
   });
 
   it('selects and focuses a generated-document navigation target that appears after refetch', async () => {
@@ -1935,10 +1985,14 @@ describe('ActDocumentPanel — imported evidence documents', () => {
     expect(await screen.findAllByText('2026-07-10T09:30:00Z')).toHaveLength(3);
     expect(await screen.findAllByText('amelia.operator')).toHaveLength(3);
     expect(within(history).getByText('Histórico técnico de revisão')).toBeTruthy();
-    expect(within(history).getByText('Triagem inicial mantida como evidência não canónica.')).toBeTruthy();
+    expect(
+      within(history).getByText('Triagem inicial mantida como evidência não canónica.'),
+    ).toBeTruthy();
     expect(within(history).getByText('Conferido contra o original preservado.')).toBeTruthy();
     expect(within(history).getAllByText(/Histórico de revisão metadata-only/i)).toHaveLength(2);
-    expect(within(history).getAllByText(/sem OCR, conversão, substituição de PDF\/A/i)).toHaveLength(2);
+    expect(
+      within(history).getAllByText(/sem OCR, conversão, substituição de PDF\/A/i),
+    ).toHaveLength(2);
     expect(within(history).getAllByText(/certificação ou aceitação legal/i)).toHaveLength(2);
     expect(within(history).queryByText(/certificado/i)).toBeNull();
     await waitFor(() =>
@@ -2120,9 +2174,7 @@ describe('ActDocumentPanel — imported evidence documents', () => {
     expect(within(validation).getByText('Pré-flight local de conversão canónica')).toBeTruthy();
     expect(within(validation).getByText('metadata_only_legacy_doc_preflight')).toBeTruthy();
     expect(within(validation).getByText('operator_conversion_review_required')).toBeTruthy();
-    expect(
-      within(validation).getByText('no_canonical_conversion_workflow_executed'),
-    ).toBeTruthy();
+    expect(within(validation).getByText('no_canonical_conversion_workflow_executed')).toBeTruthy();
     expect(within(validation).getByText('validation_candidate_bytes_not_persisted')).toBeTruthy();
     expect(within(validation).getByText('Validação de assinatura')).toBeTruthy();
     expect(within(validation).getByText('Fornecedor externo contactado')).toBeTruthy();

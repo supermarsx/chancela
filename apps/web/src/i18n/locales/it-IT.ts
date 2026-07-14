@@ -251,6 +251,11 @@ export const itIT: Catalog = {
   'notifications.reminder.absentOwnerDispatch.body':
     '{act_title} ha una comunicazione generata per proprietari assenti, ma la prova di invio dell’operatore è {dispatch_evidence_status}. Destinatari mancanti: {missing_recipients}. Il promemoria è solo consultivo.',
   'notifications.reminder.absentOwnerDispatch.action': 'Apri verbale',
+  'notifications.reminder.importedDocumentReview.title':
+    'Revisione del documento importato in sospeso: {act_title}',
+  'notifications.reminder.importedDocumentReview.body':
+    '{act_title} per {entity_name} ha il documento importato {imported_document_id} ancora in {operator_review_status}. Apri il modulo di revisione esistente; questo promemoria è solo consultivo.',
+  'notifications.reminder.importedDocumentReview.action': 'Rivedi documento importato',
   'notifications.reminder.followUp.title': '{follow_up_title}',
   'notifications.reminder.followUp.body': '{entity_name} - {act_title}: {follow_up_detail}',
   'notifications.reminder.followUp.bodyNoDetail': '{entity_name} - {act_title}',

@@ -251,6 +251,11 @@ export const svFI: Catalog = {
   'notifications.reminder.absentOwnerDispatch.body':
     '{act_title} har ett genererat meddelande till frånvarande ägare, men operatörens avsändningsbevis är {dispatch_evidence_status}. Saknade mottagare: {missing_recipients}. Påminnelsen är endast rådgivande.',
   'notifications.reminder.absentOwnerDispatch.action': 'Öppna akten',
+  'notifications.reminder.importedDocumentReview.title':
+    'Granskning av importerat dokument väntar: {act_title}',
+  'notifications.reminder.importedDocumentReview.body':
+    '{act_title} för {entity_name} har importerat dokument {imported_document_id} fortfarande i {operator_review_status}. Öppna det befintliga granskningsformuläret; påminnelsen är endast rådgivande.',
+  'notifications.reminder.importedDocumentReview.action': 'Granska importerat dokument',
   'notifications.reminder.followUp.title': '{follow_up_title}',
   'notifications.reminder.followUp.body': '{entity_name} - {act_title}: {follow_up_detail}',
   'notifications.reminder.followUp.bodyNoDetail': '{entity_name} - {act_title}',

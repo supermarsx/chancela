@@ -794,6 +794,70 @@ describe('DashboardPage', () => {
     ).toBeTruthy();
   });
 
+  it('renders imported-document review reminders with localized deep-link routing', async () => {
+    const dashboard: Dashboard = {
+      ...baseDashboard,
+      reminders: [
+        {
+          due_date: '',
+          severity: 'Advisory',
+          status: 'Pending',
+          reason: 'Raw backend imported-review fallback.',
+          entity_id: 'entity-1',
+          entity_name: 'Acme, S.A.',
+          source_rule: 'imported-document-review-required',
+          source_profile: 'imported-document-review:import-1',
+          params: {
+            act_id: 'act-import-1',
+            act_title: 'Ata com documento importado',
+            book_id: 'book-1',
+            entity_id: 'entity-1',
+            entity_name: 'Acme, S.A.',
+            imported_document_id: 'import-1',
+            operator_review_status: 'operator_review_required',
+          },
+          action: {
+            kind: 'open_imported_document_review',
+            label_key: 'notifications.reminder.importedDocumentReview.action',
+            api_href: '/v1/documents/imported/import-1',
+            route: '/atas/act-import-1',
+          },
+          i18n: {
+            title_key: 'notifications.reminder.importedDocumentReview.title',
+            body_key: 'notifications.reminder.importedDocumentReview.body',
+            action_key: 'notifications.reminder.importedDocumentReview.action',
+          },
+        },
+      ],
+    };
+
+    vi.stubGlobal('fetch', fetchTable([{ match: '/v1/dashboard', body: dashboard }]));
+    renderDashboard();
+    await openDashboardTab('Fila de trabalho');
+
+    const queue = await screen.findByRole('list', { name: 'Fila de trabalho do painel' });
+    const item = within(queue).getByRole('listitem');
+    const link = within(item).getByRole('link', {
+      name: 'Revisão de documento importado pendente: Ata com documento importado',
+    });
+    expect(link.getAttribute('href')).toBe(
+      '/atas/act-import-1?imported_document_id=import-1&focus=import-review#imported-documents',
+    );
+    expect(within(item).getByText('Pendente')).toBeTruthy();
+    expect(
+      within(item).getByText(
+        'Ata com documento importado de Acme, S.A. tem o documento importado import-1 ainda em operator_review_required. Abra a revisão existente; o lembrete é apenas consultivo.',
+      ),
+    ).toBeTruthy();
+    expect(within(item).queryByText('Raw backend imported-review fallback.')).toBeNull();
+    expect(within(item).getByText('Sem data')).toBeTruthy();
+    expect(
+      within(item).getByText(
+        'Fonte imported-document-review-required / imported-document-review:import-1',
+      ),
+    ).toBeTruthy();
+  });
+
   it('renders privacy control review reminders with settings routing and source markers', async () => {
     const dashboard: Dashboard = {
       ...baseDashboard,

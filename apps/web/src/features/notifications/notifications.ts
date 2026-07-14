@@ -122,6 +122,11 @@ const REMINDER_COPY: Record<string, ReminderCopy> = {
     body: 'notifications.reminder.act.attendance.body',
     action: 'notifications.reminder.act.attendance.action',
   },
+  'imported-document-review-required': {
+    title: 'notifications.reminder.importedDocumentReview.title',
+    body: 'notifications.reminder.importedDocumentReview.body',
+    action: 'notifications.reminder.importedDocumentReview.action',
+  },
 };
 
 function parseDate(value: string): number | null {
@@ -242,6 +247,18 @@ function generatedDispatchDocumentIdFromApi(path: string | null | undefined): st
   }
 }
 
+function importedDocumentIdFromApi(path: string | null | undefined): string | undefined {
+  const route = path?.trim();
+  if (!route) return undefined;
+  const match = /^\/v1\/documents\/imported\/([^/?#]+)(?:[?#/]|$)/.exec(route);
+  if (!match) return undefined;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return match[1];
+  }
+}
+
 function paramText(params: TParams | undefined, key: string): string | undefined {
   const value = params?.[key];
   const text = value == null ? undefined : String(value).trim();
@@ -258,6 +275,19 @@ function generatedDispatchEvidenceRoute(
   url.searchParams.set('generated_document_id', trimmedDocumentId);
   url.searchParams.set('focus', 'dispatch-evidence');
   url.hash = 'generated-dispatch-evidence';
+  return `${url.pathname}${url.search}${url.hash}`;
+}
+
+function importedDocumentReviewRoute(
+  actRoute: string | undefined,
+  importedDocumentId: string | undefined,
+): string | undefined {
+  const trimmedImportedDocumentId = importedDocumentId?.trim();
+  if (!actRoute || !trimmedImportedDocumentId) return undefined;
+  const url = new URL(actRoute, 'http://chancela.local');
+  url.searchParams.set('imported_document_id', trimmedImportedDocumentId);
+  url.searchParams.set('focus', 'import-review');
+  url.hash = 'imported-documents';
   return `${url.pathname}${url.search}${url.hash}`;
 }
 
@@ -286,13 +316,19 @@ function actionFromMetadata(
 ): NotificationAction | undefined {
   if (!action) return undefined;
   const href =
-    action.kind === 'open_absent_owner_dispatch_evidence'
-      ? generatedDispatchEvidenceRoute(
+    action.kind === 'open_imported_document_review'
+      ? importedDocumentReviewRoute(
           frontendRouteFromApi(action.route) ??
             (paramText(params, 'act_id') ? `/atas/${paramText(params, 'act_id')}` : undefined),
-          paramText(params, 'document_id') ?? generatedDispatchDocumentIdFromApi(action.api_href),
+          paramText(params, 'imported_document_id') ?? importedDocumentIdFromApi(action.api_href),
         )
-      : (frontendRouteFromApi(action.route) ?? frontendRouteFromApi(action.api_href));
+      : action.kind === 'open_absent_owner_dispatch_evidence'
+        ? generatedDispatchEvidenceRoute(
+            frontendRouteFromApi(action.route) ??
+              (paramText(params, 'act_id') ? `/atas/${paramText(params, 'act_id')}` : undefined),
+            paramText(params, 'document_id') ?? generatedDispatchDocumentIdFromApi(action.api_href),
+          )
+        : (frontendRouteFromApi(action.route) ?? frontendRouteFromApi(action.api_href));
   const labelKey = messageKey(action.label_key);
   if (!href || !labelKey) return undefined;
   return { href, label: t(labelKey, params) };

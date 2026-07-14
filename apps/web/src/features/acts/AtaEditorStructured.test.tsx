@@ -107,8 +107,7 @@ function stateful(
       const body = init?.body ? (JSON.parse(init.body as string) as Record<string, unknown>) : {};
       seals.push(body);
       const manualReference = body.manual_signature_original_reference as
-        | NonNullable<ActView['seal_metadata']>['manual_signature_original_reference']
-        | undefined;
+        NonNullable<ActView['seal_metadata']>['manual_signature_original_reference'] | undefined;
       act = {
         ...act,
         state: 'Sealed',
@@ -120,9 +119,7 @@ function stateful(
           version: 'v2',
           family: 'CommercialCompany',
           profile: 'SociedadeAnonima',
-          ...(manualReference
-            ? { manual_signature_original_reference: manualReference }
-            : {}),
+          ...(manualReference ? { manual_signature_original_reference: manualReference } : {}),
         },
       };
       return json({
@@ -202,6 +199,18 @@ describe('AtaEditorPage — mesa presidente unblocks the seal', () => {
     ).toEqual({
       generatedDocumentId: 'generated-absent-1',
       focus: 'dispatch-evidence',
+    });
+  });
+
+  it('parses imported-document review deep links for the document panel', () => {
+    expect(
+      actDocumentPanelTargetFromLocation(
+        '?imported_document_id=import-1&focus=import-review',
+        '#imported-documents',
+      ),
+    ).toEqual({
+      importedDocumentId: 'import-1',
+      focus: 'import-review',
     });
   });
 
