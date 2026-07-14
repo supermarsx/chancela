@@ -9711,12 +9711,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `b680b36`",
+    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `b86adb3`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `b680b36`",
+    "Focused Gate Snapshot Through `b86adb3`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -10341,7 +10341,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `b680b36`",
+    "Current checkpoint metadata/static checks through `b86adb3`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -10831,7 +10831,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `b680b3601fb2dcfaed03bb269e29c87802b9a4c1`",
+    "implementation snapshot `b86adb3c9a6b3913792600e3c5c27e54f675e471`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -12388,6 +12388,71 @@ function assertCheckpointMap() {
     "SPEC-COVERAGE.md",
     "existing asset wording is\n  unchanged",
     "spec coverage post-act template no-wording-change marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/law_reference_coverage.rs",
+    "law_reference_coverage_audits_template_references_against_local_corpus",
+    "API template law-reference local corpus audit coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/law_reference_coverage.rs",
+    "pending corpus/template references must not be treated as resolved authority",
+    "API template law-reference pending unresolved marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/law_reference_coverage.rs",
+    "legal threshold value pending",
+    "API template law-reference threshold pending blocker marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/law_reference_coverage.rs",
+    "threshold.value.is_none()",
+    "API legal threshold value-none preservation marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/law_reference_coverage.rs",
+    "Pending => \"Pending\"",
+    "API law-reference corpus Pending status preservation marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/law_reference_coverage.rs",
+    "Verified => \"Verified\"",
+    "API law-reference corpus Verified status preservation marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Current `b86adb3` keeps Legal/Compliance, Template Catalog, and CI\n  **PARTIAL**",
+    "spec coverage legal reference audit checkpoint marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "makes no network, DRE, EUR-Lex, registry, provider, legal-service, or\n  authority calls",
+    "spec coverage legal reference audit no-network/provider marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "does not add a\n  threshold value; does not upgrade Pending corpus/template references to\n  Verified",
+    "spec coverage legal reference audit no-threshold/no-upgrade marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "Template law-reference corpus audit:",
+    "CI checkpoints legal reference audit lane marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "does not upgrade Pending to Verified, does not complete\n  threshold values",
+    "CI checkpoints legal reference audit no-upgrade marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Current local legal-reference corpus audit checks",
+    "CI/E2E hardening plan legal reference audit lane marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "no Pending-to-Verified promotion; no\n  threshold value completion",
+    "CI/E2E hardening plan legal reference audit no-upgrade marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",

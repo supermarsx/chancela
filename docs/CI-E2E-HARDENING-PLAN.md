@@ -1,7 +1,7 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `b680b36`,
+and implementation snapshot `b86adb3`,
 including coverage notes for the bounded PAdES DSS validation-time, PDF/UA v11
 blocker-delta and scoped table-header evidence, retention due-candidate explicit evidence states,
 bounded archive/no-action evidence UI, duplicate-review guard/status surfacing, and
@@ -14,6 +14,7 @@ dashboard backup recovery freshness advisory surfacing,
 CSC quota/delegation/revocation and standalone agenda-item template parity,
 retained-export cleanup preview-token/manifest-gated execution evidence,
 compliance legal-basis internal corpus deep links, first-class template catalog metadata lint,
+deterministic local template law-reference corpus audit coverage,
 external-signing workflow-only envelope UI, workflow reminder policy, and
 structured platform-log forwarded-ingest/failure-audit slices, ROL-02 seeded
 role archetype explicitness, Postgres store runtime write/read marker coverage,
@@ -829,11 +830,11 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `b680b36`
+## Focused Gate Snapshot Through `b86adb3`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08` and checkpoint-promoted on 2026-07-14 for
-current implementation head `b680b36`. This is not an exhaustive current
+current implementation head `b86adb3`. This is not an exhaustive current
 green-run claim; browser, Docker, desktop, package signing/notarization, image
 signing/attestation, and live-provider limits above still apply.
 
@@ -1144,6 +1145,19 @@ settingsDefaults.test.ts contracts.test.ts`.
   only; no asset wording changes, DRE verification, Verified law references,
   verified thresholds, channel permissibility, registry/provider integration,
   signing correctness, or legal-effect claims are implemented.
+- Current local legal-reference corpus audit checks: focused
+  `cargo test -p chancela-api --test law_reference_coverage --locked` coverage
+  builds a deterministic local audit report from the embedded template registry
+  and embedded law corpus. It pins template `law_references` source IDs against
+  local corpus diplomas, single-article references resolving to corpus articles
+  or explicit blockers, corpus Verified/Pending status preservation, Pending
+  corpus/template references staying unresolved, threshold-backed references
+  staying blocked as `legal threshold value pending`, and `LEGAL_THRESHOLDS`
+  entries remaining `value: None` with only pending rendered markers. This is a
+  local static/corpus audit only: no network, DRE, EUR-Lex, registry, provider,
+  legal-service, or authority calls; no Pending-to-Verified promotion; no
+  threshold value completion; and no legal review, legal validity, template
+  sufficiency, cited-law correctness, or threshold correctness claim.
 - Recent compliance tooling checks through `3e72e08`: focused markers pin
   structured book termo signatories with email and legacy string compatibility,
   the Settings retention execution review queue and `/v1/privacy/retention-executions`
@@ -1803,7 +1817,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   full RBAC/delegation-policy completion, tenant authorization proof,
   legal-capacity verification, broad security certification, or spec
   completion.
-- Current checkpoint metadata/static checks through `b680b36`
+- Current checkpoint metadata/static checks through `b86adb3`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
@@ -1873,6 +1887,11 @@ settingsDefaults.test.ts contracts.test.ts`.
   display, compliance-panel `legal_basis` internal Legislação corpus deep links,
   and no legal/HR/SCAP/access-policy certification or legal-verification
   upgrade caveats,
+  deterministic local template law-reference corpus audit markers for embedded
+  registry/corpus coverage, Verified/Pending preservation, unresolved Pending
+  references, legal-threshold blockers, no network/provider/legal-service
+  calls, no DRE/EUR-Lex verification claim, no threshold value completion, and
+  no Pending-to-Verified upgrade,
   plus metadata-only
   paper-book OCR conversion-dossier route/store/redaction/idempotency, reviewed
   conversion execution artifact store/API/contract markers, and BookDetail UI

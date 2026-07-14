@@ -474,6 +474,17 @@ It intentionally reuses existing test surfaces:
   does not claim legal/template sufficiency, verified thresholds, channel
   permissibility, exhaustive law mapping, DRE/source authority, provider or
   registry integration, signing correctness, or legal effect.
+- Template law-reference corpus audit:
+  `cargo test -p chancela-api --test law_reference_coverage --locked` builds a
+  deterministic local report from the embedded template registry and embedded
+  law corpus. It pins local corpus diploma coverage, single-article resolution
+  or explicit blockers, corpus Verified/Pending preservation, Pending references
+  staying unresolved, and threshold-backed references staying blocked by
+  `legal threshold value pending` with `LEGAL_THRESHOLDS` values still `None`.
+  It makes no network, DRE, EUR-Lex, registry, provider, legal-service, or
+  authority call, does not upgrade Pending to Verified, does not complete
+  threshold values, and does not claim legal review, legal validity, template
+  sufficiency, cited-law correctness, or threshold correctness.
 - Web client/contract/books/dashboard/document/entity/Ferramentas/notification/recovery/settings/signing/templates/i18n/subnav
   matrix:
   `npm run test --workspace apps/web -- src/api/client.test.ts src/contracts/contracts.test.ts src/features/books/books.test.tsx src/features/dashboard/DashboardPage.test.tsx src/features/documents/ActDocumentPanel.test.tsx src/features/entities/entities.test.tsx src/features/ferramentas/ferramentas.test.tsx src/features/ferramentas/trust.test.tsx src/features/notifications/NotificationBell.test.tsx src/features/notifications/NotificationsPage.test.tsx src/features/recovery/GestaoDadosSection.test.tsx src/features/settings/SettingsPage.test.tsx src/features/signing/SigningPanel.test.tsx src/features/templates/TemplatesCatalogPage.test.tsx src/i18n/i18n.test.ts src/ui/SubNav.test.tsx`
