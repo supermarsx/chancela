@@ -9462,7 +9462,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `6d0c3ec`",
+    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `0a83517`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
@@ -10082,7 +10082,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `6d0c3ec`",
+    "Current checkpoint metadata/static checks through `0a83517`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -10537,7 +10537,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `6d0c3ecbe043934d0af85095c8994e2906339e5e`",
+    "implementation snapshot `0a83517b09797558f32974a9f7bed48dc6746a98`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -10612,7 +10612,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Current `cec169c` keeps Data/Architecture/CI **PARTIAL**",
+    "Current `0a83517` keeps Data/Architecture/CI **PARTIAL**",
     "spec coverage Postgres store checkpoint marker",
   );
   assertFileContains(
@@ -10622,12 +10622,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "SQLite remains default, Postgres selection is feature/config gated",
+    "SQLite remains the default, Postgres selection\n  is feature/config gated",
     "spec coverage database backend default/gated caveat marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "not production Postgres readiness, live DB\n  validation, migration completeness, HA/cloud deployment, certification",
+    "not production Postgres readiness, live\n  DB validation, migration completeness, HA/cloud deployment, TLS readiness",
     "spec coverage Postgres no-production-readiness caveat marker",
   );
   assertFileContains(
@@ -10687,7 +10687,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current working-tree Postgres store runtime checks and backend-selection\n  markers",
+    "Current `0a83517` Postgres store runtime, backend-selection, and logical\n  recovery checks",
     "CI/E2E hardening plan Postgres store/backend-selection checks marker",
   );
   assertFileContains(
@@ -10697,7 +10697,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Postgres store runtime source/test markers, SQLite-default feature/config-gated\n  backend selector markers",
+    "Postgres store runtime/logical recovery source/test markers,\n  SQLite-default feature/config-gated backend selector markers",
     "CI/E2E hardening plan database backend selector checkpoint marker",
   );
   assertFileContains(
@@ -10707,7 +10707,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "The Postgres store and backend-selection markers prove source/test coverage for\nthe off-by-default backend runtime paths and API/server selector only",
+    "The Postgres store, backend-selection, and logical recovery markers prove\nsource/test coverage for the off-by-default backend runtime paths, API/server\nselector, and app-level logical backup/restore/recovery paths only",
     "CI checkpoints Postgres/backend selector bounded marker",
   );
   assertFileContains(
@@ -10787,13 +10787,63 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-store/src/pg.rs",
-    "Deferred **by design** (fail closed with [`crate::StoreError::UnsupportedOnPostgres`]",
+    "The operator paths that were SQLite-file-shaped are now covered by a **portable logical**",
+    "store Postgres logical backup/restore support source marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/src/pg_backup.rs",
+    "pub const PG_BACKUP_FORMAT: &str = \"chancela-pg-logical-backup/v1\";",
+    "store Postgres logical backup format marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/src/pg_backup.rs",
+    "pub(crate) fn verify_pg_backup_bundle",
+    "store Postgres logical backup verify-before-trust marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/src/pg_backup.rs",
+    "pub(crate) fn logical_restore(&self, verified: &VerifiedPgBackup)",
+    "store Postgres logical restore marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/src/lib.rs",
+    "return self.pg_backup(backend, data_dir, sidecars);",
+    "store Postgres backup facade dispatch marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/src/lib.rs",
+    "pub(crate) fn execute_recovery_batch(&self, sql: &str)",
+    "store backend-agnostic recovery batch marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/src/pg.rs",
+    "Still deferred **by design** (fail closed with [`crate::StoreError::UnsupportedOnPostgres`]): the",
     "store Postgres unsupported paths source marker",
   );
   assertFileContains(
     "crates/chancela-store/tests/postgres_backend.rs",
     "runtime_reads_and_writes_roundtrip_on_postgres",
     "store Postgres runtime ignored test marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/tests/postgres_backend.rs",
+    "logical_backup_restore_roundtrips_on_postgres",
+    "store Postgres logical backup restore ignored test marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/tests/postgres_backend.rs",
+    "wipe_start_over_and_factory_reset_stay_coherent_on_postgres",
+    "store Postgres recovery/start-over ignored test marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/tests/postgres_backend.rs",
+    "restore_rejects_a_corrupt_bundle_and_leaves_the_database_unchanged",
+    "store Postgres corrupt restore refusal ignored test marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/tests/postgres_backend.rs",
+    "postgres_restore_rejects_a_sqlite_bundle",
+    "store Postgres sqlite bundle refusal ignored test marker",
   );
   assertFileContains(
     "crates/chancela-store/tests/postgres_backend.rs",
