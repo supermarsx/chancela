@@ -1216,6 +1216,22 @@ settingsDefaults.test.ts contracts.test.ts`.
   DPIA filing/completion, no disposal, no deletion, no redaction, no
   anonymization, no erasure, no legal-hold or retention-policy mutation, no
   provider/legal-service assurance, and no AI or MCP completion claim.
+- Current working-tree DPIA template/guidance checks: focused
+  `cargo test -p chancela-api --test privacy --locked dpia` coverage pins
+  `GET /v1/privacy/dpia-template` as a static local/offline guidance artifact
+  with structured processing-description, necessity/proportionality, risk,
+  safeguards, consultation/escalation, evidence-boundary, no-claim, and
+  operator-action fields. Web contract and Settings tests pin
+  `contracts/privacy.dpia-template.json`, `api.getDpiaTemplate()`, the
+  Settings > Privacidade `Modelo DPIA local` panel, and no-echo/no-mutation
+  behavior. This is distinct from `GET|POST|PATCH /v1/privacy/dpias`: no raw
+  register contents, names, recipients, subject identifiers, notes,
+  subprocessors, legal bases, personal data, or secrets are echoed. It does not
+  add CNPD/EDPB or other authority filing/approval, legal review acceptance,
+  DPIA completion/certification, external delivery/validation, compliance
+  certification, transfer approval/execution, notification, external calls,
+  register mutation, automated legal decision, or risk-scoring authority, and
+  it keeps the spec matrix at `PARTIAL=11`.
 - Current working-tree MCP document/archive review summary checks: focused
   `cargo test -p chancela-mcp --locked document_archive_review_summary` coverage
   pins the read-only `chancela://mcp/document-archive-review-summary` resource,

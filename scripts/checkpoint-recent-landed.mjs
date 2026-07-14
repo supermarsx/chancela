@@ -4734,6 +4734,86 @@ function assertCheckpointMap() {
     "settings DPIA receipt no-authority-filing UI marker",
   );
   assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "/v1/privacy/dpia-template",
+    "API DPIA template guidance route marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/privacy.rs",
+    "pub struct DpiaTemplateView",
+    "API DPIA template DTO marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/privacy.rs",
+    "automated_risk_scoring_performed: false",
+    "API DPIA template no automated risk-scoring marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/privacy.rs",
+    "raw_register_contents_included: false",
+    "API DPIA template no register echo marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/privacy.rs",
+    "dpia_template_is_static_guidance_only_with_no_echo_or_claims",
+    "API DPIA template static no-echo/no-claim coverage",
+  );
+  assertFileContains(
+    "contracts/privacy.dpia-template.json",
+    '"template_id": "privacy-dpia-guidance/v1"',
+    "DPIA template contract fixture marker",
+  );
+  assertFileContains(
+    "contracts/privacy.dpia-template.json",
+    '"register_mutation_performed": false',
+    "DPIA template fixture no register mutation marker",
+  );
+  assertFileContains(
+    "apps/web/src/contracts/contracts.test.ts",
+    "assertDpiaTemplate(template, 'DpiaTemplateView')",
+    "web DPIA template contract assertion marker",
+  );
+  assertFileContains(
+    "apps/web/src/api/types.ts",
+    "export interface DpiaTemplateView",
+    "web DPIA template type marker",
+  );
+  assertFileContains(
+    "apps/web/src/api/client.ts",
+    "getDpiaTemplate",
+    "web DPIA template client marker",
+  );
+  assertFileContains(
+    "apps/web/src/api/hooks.ts",
+    "usePrivacyDpiaTemplate",
+    "web DPIA template hook marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/PrivacyComplianceSection.tsx",
+    "Modelo DPIA local",
+    "Settings DPIA template guidance panel marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/SettingsPage.test.tsx",
+    "renders the static DPIA guidance pack without echoing live register values",
+    "Settings DPIA template no-echo UI coverage",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Privacy DPIA template/guidance pack",
+    "spec coverage DPIA template guidance marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Current working-tree DPIA template/guidance checks",
+    "CI/E2E hardening DPIA template guidance marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "DPIA template/guidance pack",
+    "CI checkpoints DPIA template guidance marker",
+  );
+  assertFileContains(
     "crates/chancela-api/src/privacy.rs",
     "pub struct PrivacyAdvisoryReviewSummary",
     "privacy advisory review summary DTO marker",

@@ -2615,6 +2615,17 @@ behavior, legal disposal, or legal-effect claims.
   without mutation. This is evidence that an operator reviewed or drilled a DPIA
   locally, not authority filing, legal acceptance/certification, external delivery,
   DPIA completion, or compliance certification.
+- **Privacy DPIA template/guidance pack:** `GET /v1/privacy/dpia-template`
+  exposes a static local/offline DPIA guidance pack with structured sections,
+  prompts, checklist fields, operator actions, and explicit false no-claim flags.
+  The API, contract fixture, and Settings privacy panel keep it separate from
+  the live DPIA register: no raw register contents, names, recipients, subject
+  identifiers, notes, subprocessors, legal bases, personal data, or secrets are
+  echoed. This is non-executing template material only; it does not file with
+  CNPD/EDPB or any authority, obtain approval, accept legal review, complete or
+  certify a DPIA, deliver externally, certify compliance, approve/execute
+  transfers, notify anyone, mutate registers, call external services, or produce
+  automated legal decisions or risk-scoring authority.
 - **Multi-signature local PAdES renewal-plan reporting:** arbitrary-PDF signature
   validation and act signature status now expose a `multi_signature_local_renewal_plan`
   object with signature count, per-signature DSS/VRI coverage, VRI key hash, local
@@ -3145,6 +3156,14 @@ behavior, legal disposal, or legal-effect claims.
   advisory review status while preserving false authority/legal/external/completion/certification
   flags. The settings privacy tab adds search/filtering plus create/edit/status/risk controls and
   only loads the registers for operators with the matching permissions.
+- **DPIA template/guidance pack:** `GET /v1/privacy/dpia-template` returns a static,
+  structured, local/offline guidance artifact with sections for processing description,
+  necessity/proportionality, risk prompts, safeguards, consultation/escalation, evidence
+  boundaries, operator actions, and false no-claim flags. Focused API, contract, and Settings UI
+  tests assert shape, no-echo behavior, no register mutation, no external calls, no authority/legal
+  approval/completion/certification, no transfer/notification execution, and no automated
+  legal-decision or risk-scoring authority claim. This is not the live DPIA register output and
+  does not make LEG-11 complete beyond the tested local template/guidance slice.
 - **Breach playbook and transfer-control registers:** `GET|POST|PATCH
   /v1/privacy/breach-playbooks` and `GET|POST|PATCH /v1/privacy/transfer-controls` maintain
   bounded privacy-control registers with JSON sidecar durability, strict risk/status validation,
@@ -3542,6 +3561,7 @@ behavior, legal disposal, or legal-effect claims.
   repeated remote batch-initiate API/client/SigningPanel/route-stubbed browser
   markers for per-document pending sessions without credential echo,
   multi-signature PAdES renewal-plan API tests, bounded retention execution, due-candidate archive/no-action evidence, and retention review-closure tests, Settings retention policy list/create/patch/dry-run/closure UI markers, explicit retention evidence-state markers, and non-destructive payload assertions, privacy breach/transfer review-receipt tests, TSL XML-DSig hardening tests including bounded same-document `URI="#id"` fragment markers and raw P-256 ECDSA-SHA256 `r||s` signature markers, trust/import/static hardening markers for unsafe TSL/TSA URL refusal, scoped test-only loopback, import fail-closed cache preservation, `/v1/books/import` body limits, security headers, and CC signing invalid-TSL refusal, MCP
+  privacy DPIA template/guidance API, contract, Settings UI, no-echo, and no-claim markers,
   per-book raw-byte import preflight route/no-mutation/API tests and web preview-confirm stale-guard
   markers, resource/prompt tests, API dashboard reminder policy/default/source-toggle/window/year-boundary
   tests, route-stubbed privacy control review reminder browser proof plus
@@ -4018,10 +4038,12 @@ behavior, legal disposal, or legal-effect claims.
   metadata, and reports local blocker-reduction facts rather than conformance,
   validator evidence, signed-PDF accessibility certification, legal sufficiency,
   external-validator certification, or legal/reader acceptance.
-- Privacy DPIA, breach-playbook, and transfer-control registers plus review receipts are operator
-  tracking/control evidence; they do not execute incident response, perform authority/data-subject
-  notification or DPIA authority filing, approve or execute transfers, accept/certify legal review,
-  complete DPIAs, deliver externally, or certify GDPR compliance.
+- Privacy DPIA, breach-playbook, and transfer-control registers plus review receipts and the static
+  DPIA template/guidance pack are operator tracking/control evidence; they do not execute incident
+  response, perform authority/data-subject notification or DPIA authority filing, approve or execute
+  transfers, accept/certify legal review, complete DPIAs, deliver externally, mutate registers from
+  the template, call external services, produce automated legal decisions/risk-scoring authority, or
+  certify GDPR compliance.
 - Data cleanup is bounded storage maintenance for crash reports and retained exports. Retained-export
   dry-run, minimum-age, and keep-latest options are policy controls for that cleanup target only; the
   dry-run surface reports `would_delete_*` planning counters, a server-bound `preview_token`, and zero

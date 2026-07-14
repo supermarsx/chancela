@@ -308,6 +308,19 @@ It intentionally reuses existing test surfaces:
   they do not notify authorities or data subjects, approve or execute
   transfers, file or complete DPIAs, complete legal approval, deliver
   provider/calendar/email/webhooks, or certify privacy compliance.
+- DPIA template/guidance pack:
+  `cargo test -p chancela-api --test privacy --locked dpia` plus
+  `apps/web/src/contracts/contracts.test.ts` and
+  `apps/web/src/features/settings/SettingsPage.test.tsx` pin
+  `GET /v1/privacy/dpia-template`, `contracts/privacy.dpia-template.json`,
+  `api.getDpiaTemplate()`, the Settings > Privacidade `Modelo DPIA local`
+  panel, structured template sections/checklists/operator actions, false
+  no-claim flags, and no live register/sensitive echo. This is static
+  local/offline guidance only: no mutation route, external call, authority/CNPD/
+  EDPB filing or approval, legal review acceptance, DPIA completion,
+  certification, external delivery, compliance certification, transfer
+  approval/execution, notification, automated legal decision, or risk-scoring
+  authority claim. The spec matrix remains `PARTIAL=11`.
 - Written-resolution evidence receipt browser proof:
   `npm run test:browser --workspace apps/web -- e2e/written-resolution-evidence.spec.ts`
   pins a route-stubbed WrittenResolution act editor path for filling a local
