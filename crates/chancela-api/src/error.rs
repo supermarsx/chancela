@@ -186,6 +186,10 @@ impl ApiError {
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let status = self.status();
+        // wp16 P2: a cluster write-unavailable (`503`, not-leader / failover) advertises a short
+        // `Retry-After` so clients/LBs back off and retry once a leader is (re-)elected. Computed
+        // before `self` is matched/moved below.
+        let retry_after = matches!(self, ApiError::Unavailable(_));
         // t41 M6: log internal/upstream errors server-side with full detail, return a generic
         // message to the client so internal state never leaks through the wire.
         let message = match &self {
@@ -237,7 +241,16 @@ impl IntoResponse for ApiError {
                 }),
             )
                 .into_response(),
-            _ => (status, Json(ErrorBody { error: message })).into_response(),
+            _ => {
+                let mut response = (status, Json(ErrorBody { error: message })).into_response();
+                if retry_after {
+                    response.headers_mut().insert(
+                        axum::http::header::RETRY_AFTER,
+                        axum::http::HeaderValue::from_static("1"),
+                    );
+                }
+                response
+            }
         }
     }
 }

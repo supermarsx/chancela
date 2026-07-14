@@ -103,6 +103,9 @@ mod cluster;
 // wp16 P1: follower change-feed (LISTEN/NOTIFY + seq-poll) with fail-closed incremental delta apply.
 // Compiled in every build; the DB-touching feed is Postgres-gated, the pure delta core is always on.
 mod cluster_feed;
+// wp16 P2: write routing on a follower — 307 redirect to the leader (default) or opt-in reverse proxy.
+// Compiled in every build; inert on the single-node SQLite / in-memory build (always its own leader).
+mod cluster_route;
 #[allow(dead_code)]
 mod credential_resolve;
 mod dashboard;
@@ -1876,6 +1879,15 @@ pub fn router(state: AppState) -> Router {
         // broken, leaving reads + the recovery/reset/export/quarantine-import endpoints open. Layered
         // BELOW `security_headers` (added after) so a 503 still carries the security headers.
         .layer(middleware::from_fn_with_state(state.clone(), degraded_gate))
+        // wp16 P2 write routing: a mutating request that lands on a cluster FOLLOWER is 307-redirected
+        // (default) or reverse-proxied (opt-in) to the current leader; leader-unknown → 503+Retry-After.
+        // Layered above `degraded_gate` so a follower routes to the leader before the local read-only
+        // gate, and BELOW `security_headers` (added after) so the 307/503 still carries them. Inert on
+        // the single-node SQLite / in-memory build (no election → always its own leader).
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            cluster_route::write_redirect_gate,
+        ))
         // Security response headers (t41 M2).
         .layer(middleware::from_fn(security_headers))
         .with_state(state);

@@ -116,6 +116,10 @@ pub(crate) struct PostgresBackend {
     /// This node's stable identity, recorded in `cluster_leader` on promotion (env
     /// `CHANCELA_NODE_ADDRESS`, else a per-process uuid).
     pub(crate) node_id: Arc<str>,
+    /// wp16 P2 — this node's externally-reachable base URL (env `CHANCELA_ADVERTISED_URL`, else
+    /// empty). Heartbeated into `cluster_leader.advertised_addr` while this node is leader so
+    /// followers can `307`-redirect writes here. Never client-derived (no open-redirect vector).
+    pub(crate) advertised_addr: Arc<str>,
     /// The `leader_epoch` this node claimed on its last promotion (`-1` until it has ever led). Used
     /// as the defence-in-depth fence (§4.3): a write / heartbeat that no longer owns the current
     /// durable epoch fails closed.
@@ -161,6 +165,7 @@ impl PostgresBackend {
         let mut writer = Client::connect(database_url, NoTls)?;
         let mode = crate::pg_cluster::resolve_election_mode();
         let node_id: Arc<str> = Arc::from(crate::pg_cluster::resolve_node_id());
+        let advertised_addr: Arc<str> = Arc::from(crate::pg_cluster::resolve_advertised_url());
         let is_leader = crate::pg_cluster::acquire_writer_lock(&mut writer, mode)?;
         let mut epoch: i64 = -1;
         if is_leader {
@@ -175,6 +180,7 @@ impl PostgresBackend {
             epoch = crate::pg_cluster::ensure_cluster_table_and_bump_epoch(
                 &mut writer,
                 node_id.as_ref(),
+                advertised_addr.as_ref(),
             )?;
         }
 
@@ -184,6 +190,7 @@ impl PostgresBackend {
             leader: Arc::new(AtomicBool::new(is_leader)),
             writes_enabled: Arc::new(AtomicBool::new(is_leader)),
             node_id,
+            advertised_addr,
             my_epoch: Arc::new(AtomicI64::new(epoch)),
             dsn: Arc::from(database_url),
         })

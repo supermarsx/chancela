@@ -1841,6 +1841,26 @@ impl Store {
         }
     }
 
+    /// wp16 P2 — the current leader's externally-reachable advertised base URL for the follower
+    /// write-redirect (plan §3.2), or `None` when no *fresh* leader address is recorded (brief
+    /// failover / mid-handoff window, or the leader has no `CHANCELA_ADVERTISED_URL`). The API turns
+    /// `Some(url)` into a `307` `Location` and `None` into `503 + Retry-After` (never a broken
+    /// redirect). `stale_after_secs` bounds how old the leader heartbeat may be. SQLite is single-node
+    /// (always its own leader; a follower redirect never arises) → `None`.
+    pub fn cluster_leader_address(
+        &self,
+        stale_after_secs: i64,
+    ) -> Result<Option<String>, StoreError> {
+        match &self.backend {
+            Backend::Sqlite(_) => {
+                let _ = stale_after_secs;
+                Ok(None)
+            }
+            #[cfg(feature = "postgres")]
+            Backend::Postgres(backend) => backend.leader_address(stale_after_secs),
+        }
+    }
+
     /// wp16 P1 — the ordered ledger tail `seq > after_seq` for the follower change-feed's incremental
     /// delta apply (plan §2.2/§2.3). SQLite is single-node (never a follower), so it has no change
     /// feed and returns an empty delta.

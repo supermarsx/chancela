@@ -43,22 +43,36 @@ use crate::pg::{PostgresBackend, WRITER_ADVISORY_LOCK_KEY};
 pub(crate) const NODE_ROLE_ENV: &str = "CHANCELA_NODE_ROLE";
 /// Environment variable naming this node's stable identity (recorded in `cluster_leader`).
 pub(crate) const NODE_ADDRESS_ENV: &str = "CHANCELA_NODE_ADDRESS";
+/// wp16 P2 — environment variable naming this node's externally-reachable base URL. When this node
+/// is the leader it heartbeats this into `cluster_leader.advertised_addr`; followers read it as the
+/// `307` write-redirect target (plan §3.2). Distinct from [`NODE_ADDRESS_ENV`] (opaque identity):
+/// this must be a real `http(s)://host[:port]` origin a client / LB can reach.
+pub(crate) const ADVERTISED_URL_ENV: &str = "CHANCELA_ADVERTISED_URL";
 
 /// The single-row leader-directory + epoch-fence table. `id` is pinned to `1` so there is exactly
-/// one row; `epoch` is the monotonic `leader_epoch`.
+/// one row; `epoch` is the monotonic `leader_epoch`. wp16 P2 adds `advertised_addr` — the leader's
+/// externally-reachable base URL, used by followers as the write-redirect target.
 pub(crate) const CLUSTER_LEADER_DDL: &str = "CREATE TABLE IF NOT EXISTS cluster_leader (\
      id INTEGER PRIMARY KEY, \
      epoch BIGINT NOT NULL DEFAULT 0, \
      node_id TEXT NOT NULL, \
+     advertised_addr TEXT, \
      last_heartbeat TIMESTAMPTZ NOT NULL DEFAULT now(), \
      CONSTRAINT cluster_leader_singleton CHECK (id = 1))";
 
-/// Bump the epoch (or seed it) for the promoting leader, returning the epoch this node now owns.
-/// Runs while the caller holds the advisory lock, so the read-modify-write is race-free cluster-wide.
-pub(crate) const BUMP_EPOCH_SQL: &str = "INSERT INTO cluster_leader (id, epoch, node_id, last_heartbeat) \
-     VALUES (1, 1, $1, now()) \
+/// wp16 P2 — idempotent additive guard so a P0 `cluster_leader` table (created before this column
+/// existed) gains `advertised_addr` on the next leader boot/promotion. Mirrors the store's other
+/// `ADD COLUMN IF NOT EXISTS` migration guards.
+pub(crate) const ADD_ADVERTISED_ADDR_COLUMN: &str =
+    "ALTER TABLE cluster_leader ADD COLUMN IF NOT EXISTS advertised_addr TEXT";
+
+/// Bump the epoch (or seed it) for the promoting leader, recording its advertised address, returning
+/// the epoch this node now owns. Runs while the caller holds the advisory lock, so the
+/// read-modify-write is race-free cluster-wide. `$1` = node_id, `$2` = advertised address.
+pub(crate) const BUMP_EPOCH_SQL: &str = "INSERT INTO cluster_leader (id, epoch, node_id, advertised_addr, last_heartbeat) \
+     VALUES (1, 1, $1, $2, now()) \
      ON CONFLICT (id) DO UPDATE SET \
-        epoch = cluster_leader.epoch + 1, node_id = $1, last_heartbeat = now() \
+        epoch = cluster_leader.epoch + 1, node_id = $1, advertised_addr = $2, last_heartbeat = now() \
      RETURNING epoch";
 
 /// Does *this backend session* still physically hold the writer advisory lock? A single-`bigint`
@@ -115,6 +129,17 @@ pub(crate) fn resolve_node_id() -> String {
         .unwrap_or_else(|| format!("node-{}", uuid::Uuid::new_v4()))
 }
 
+/// wp16 P2 — resolve this node's externally-reachable advertised base URL from
+/// [`ADVERTISED_URL_ENV`], trimmed. Empty / unset yields an empty string (stored as such; followers
+/// then treat "no fresh address" as leader-unknown and reply `503` rather than a broken redirect).
+/// The value is never derived from any client input, so it can never be an open-redirect vector.
+pub(crate) fn resolve_advertised_url() -> String {
+    std::env::var(ADVERTISED_URL_ENV)
+        .ok()
+        .map(|s| s.trim().to_owned())
+        .unwrap_or_default()
+}
+
 /// Attempt to take the writer advisory lock on `writer` (a pinned follower never contends). Returns
 /// `true` iff this session is now the leader. Uses `pg_try_advisory_lock` (non-blocking) so a loser
 /// comes up as a follower instead of hanging.
@@ -134,14 +159,18 @@ pub(crate) fn acquire_writer_lock(
     Ok(acquired)
 }
 
-/// Ensure the `cluster_leader` table exists and atomically bump (or seed) the epoch for `node_id`,
-/// returning the epoch this node now owns. MUST be called while holding the advisory lock.
+/// Ensure the `cluster_leader` table exists (with the wp16 P2 `advertised_addr` column) and
+/// atomically bump (or seed) the epoch for `node_id`, recording `advertised_addr`, returning the
+/// epoch this node now owns. MUST be called while holding the advisory lock.
 pub(crate) fn ensure_cluster_table_and_bump_epoch(
     writer: &mut Client,
     node_id: &str,
+    advertised_addr: &str,
 ) -> Result<i64, StoreError> {
     writer.batch_execute(CLUSTER_LEADER_DDL)?;
-    let row = writer.query_one(BUMP_EPOCH_SQL, &[&node_id])?;
+    // Additive guard: a P0 table predating `advertised_addr` gains it here (idempotent).
+    writer.batch_execute(ADD_ADVERTISED_ADDR_COLUMN)?;
+    let row = writer.query_one(BUMP_EPOCH_SQL, &[&node_id, &advertised_addr])?;
     Ok(row.get::<_, i64>(0))
 }
 
@@ -218,12 +247,15 @@ impl PostgresBackend {
         }
         let my_epoch = self.leader_epoch();
         let node_id: &str = &self.node_id;
+        // wp16 P2: re-stamp the advertised address on every heartbeat so the leader-directory row
+        // that followers redirect to always reflects the live leader's reachable URL.
+        let advertised: &str = &self.advertised_addr;
         let updated = {
             let mut writer = self.writer();
             writer.execute(
-                "UPDATE cluster_leader SET last_heartbeat = now() \
+                "UPDATE cluster_leader SET last_heartbeat = now(), advertised_addr = $3 \
                  WHERE id = 1 AND epoch = $1 AND node_id = $2",
-                &[&my_epoch, &node_id],
+                &[&my_epoch, &node_id, &advertised],
             )
         };
         match updated {
@@ -248,6 +280,7 @@ impl PostgresBackend {
             return Ok(true);
         }
         let node_id = self.node_id.clone();
+        let advertised = self.advertised_addr.clone();
         let epoch = {
             let mut writer = self.writer();
             let acquired: bool = writer
@@ -259,7 +292,7 @@ impl PostgresBackend {
             if !acquired {
                 return Ok(false);
             }
-            ensure_cluster_table_and_bump_epoch(&mut writer, &node_id)?
+            ensure_cluster_table_and_bump_epoch(&mut writer, &node_id, &advertised)?
         };
         // Publish the epoch before the leader flag so any reader that sees `leader == true` also sees
         // the fresh epoch (Release/Acquire pairing). Writes stay disabled until the API handoff
@@ -276,6 +309,31 @@ impl PostgresBackend {
         let mut client = self.checkout()?;
         let row = client.query_one("SELECT MAX(seq) FROM events", &[])?;
         Ok(row.get::<_, Option<i64>>(0))
+    }
+
+    /// **wp16 P2 — the current leader's advertised base URL (plan §3.2), for the follower
+    /// write-redirect.** Returns the `cluster_leader.advertised_addr` **only** when the row is FRESH
+    /// (heartbeat within `stale_after_secs`) and the address is non-empty; a stale, missing, or empty
+    /// address yields `None` so the API replies `503 + Retry-After` during a failover / mid-handoff
+    /// window rather than redirecting to a dead or unknown target. Read on a pooled connection (never
+    /// the writer session). The value came from the leader's own env, never from any client input.
+    pub(crate) fn leader_address(
+        &self,
+        stale_after_secs: i64,
+    ) -> Result<Option<String>, StoreError> {
+        let mut client = self.checkout()?;
+        // `make_interval(secs => ..)` takes double precision; clamp to a positive lower bound so a
+        // misconfigured `0`/negative window can never make every fresh leader look stale.
+        let secs = stale_after_secs.max(1) as f64;
+        let row = client.query_opt(
+            "SELECT advertised_addr FROM cluster_leader \
+             WHERE id = 1 AND last_heartbeat > now() - make_interval(secs => $1)",
+            &[&secs],
+        )?;
+        Ok(row
+            .and_then(|r| r.get::<_, Option<String>>(0))
+            .map(|s| s.trim().to_owned())
+            .filter(|s| !s.is_empty()))
     }
 }
 
@@ -350,6 +408,25 @@ mod tests {
         assert!(CLUSTER_LEADER_DDL.contains("CHECK (id = 1)"));
         assert!(BUMP_EPOCH_SQL.contains("epoch = cluster_leader.epoch + 1"));
         assert!(BUMP_EPOCH_SQL.contains("RETURNING epoch"));
+    }
+
+    #[test]
+    fn cluster_leader_carries_the_advertised_address() {
+        // wp16 P2: the leader directory row + bump both record the advertised address, and a P0
+        // table gains the column via the additive guard.
+        assert!(CLUSTER_LEADER_DDL.contains("advertised_addr TEXT"));
+        assert!(ADD_ADVERTISED_ADDR_COLUMN.contains("ADD COLUMN IF NOT EXISTS advertised_addr"));
+        assert!(BUMP_EPOCH_SQL.contains("advertised_addr"));
+        // Bind order: node_id ($1) then advertised_addr ($2).
+        assert!(BUMP_EPOCH_SQL.contains("VALUES (1, 1, $1, $2, now())"));
+    }
+
+    #[test]
+    fn advertised_url_resolves_empty_when_unset() {
+        // No env mutation (parallel-test-safe): the unset default is an empty string, which the
+        // follower redirect treats as "leader address unknown" → 503, never a broken redirect.
+        // (This process does not set CHANCELA_ADVERTISED_URL.)
+        assert_eq!(resolve_advertised_url(), String::new());
     }
 
     #[test]
@@ -463,5 +540,61 @@ mod tests {
             "a fresh leader's epoch strictly exceeds the prior epoch"
         );
         drop(b);
+    }
+
+    /// wp16 P2 — leader-address heartbeat round-trip + staleness. Seeds the leader's advertised
+    /// address into `cluster_leader` (env-free, via the writer session so no unsafe `set_var`), then
+    /// proves [`PostgresBackend::leader_address`] returns it while FRESH and `None` once the heartbeat
+    /// ages past the staleness window (so the API replies `503 + Retry-After`, never a stale redirect).
+    /// Also confirms a real [`PostgresBackend::heartbeat`] refreshes `last_heartbeat` so the address
+    /// stays discoverable.
+    #[test]
+    #[ignore = "requires a live Postgres (set DATABASE_URL)"]
+    fn leader_address_round_trips_and_expires_when_stale() {
+        let Some(url) = test_url() else { return };
+        let leader = PostgresBackend::open(&url).expect("opens as leader");
+        assert!(leader.is_leader());
+
+        // Seed a known advertised address with a fresh heartbeat (independent of any env config).
+        {
+            let mut c = leader.checkout().expect("read conn");
+            c.execute(
+                "UPDATE cluster_leader SET advertised_addr = $1, last_heartbeat = now() WHERE id = 1",
+                &[&"https://leader.test:9443"],
+            )
+            .expect("seed advertised address");
+        }
+        assert_eq!(
+            leader.leader_address(10).expect("read leader address"),
+            Some("https://leader.test:9443".to_owned()),
+            "a fresh leader row exposes its advertised address"
+        );
+
+        // Age the heartbeat beyond the staleness window → the address is treated as unknown.
+        {
+            let mut c = leader.checkout().expect("read conn");
+            c.execute(
+                "UPDATE cluster_leader SET last_heartbeat = now() - make_interval(secs => 3600) \
+                 WHERE id = 1",
+                &[],
+            )
+            .expect("age heartbeat");
+        }
+        assert_eq!(
+            leader.leader_address(10).expect("read leader address"),
+            None,
+            "a stale leader row is leader-unknown (API 503), never a broken redirect target"
+        );
+
+        // A real heartbeat refreshes `last_heartbeat`, so the address is discoverable again. This
+        // node's advertised env is unset here, so the heartbeat writes an empty address → still None,
+        // proving the heartbeat path stamps the column (and empty is correctly filtered out).
+        leader.heartbeat().expect("heartbeat succeeds while leader");
+        assert_eq!(
+            leader.leader_address(10).expect("read leader address"),
+            None,
+            "an empty advertised address (no CHANCELA_ADVERTISED_URL) is filtered to leader-unknown"
+        );
+        drop(leader);
     }
 }
