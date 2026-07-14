@@ -184,8 +184,8 @@ test operating checklist for driving Chancela toward release confidence.
   no process lifecycle control, no stdout/stderr tailing/capture, no production
   supervisor/SIEM/HA/observability guarantee, no generalized observability sink,
   no log retention/deletion semantics, and no legal/compliance claim.
-- The current template slice expands the embedded catalog to 101 JSON assets
-  (101 total / 41 CSC) with standalone representation/proxy instruments,
+- The current template slice expands the embedded catalog to 104 JSON assets
+  (104 total / 44 CSC) with standalone representation/proxy instruments,
   `ponto-ordem-trabalhos/v1` Convocatoria standalone agenda-item templates, and
   book-transport continuation terms for all supported families, including the
   company carta de representacao boundary, plus
@@ -193,7 +193,10 @@ test operating checklist for driving Chancela toward release confidence.
   sibling CSC quota Ata channels, rule-pack, signature-policy hint, and majority
   threshold marker, plus `csc-ata-delegacao-poderes/v1` and
   `csc-ata-revogacao-poderes/v1` as proposed-resolution text only with no new
-  threshold marker. It also normalizes notice-template rendering of
+  threshold marker, plus `csc-ata-fusao/v1`, `csc-ata-cisao/v1`, and
+  `csc-ata-liquidacao/v1` as local CSC structural-change Ata templates for the
+  merger, demerger, and liquidation-step minutes named by spec/11. It also
+  normalizes notice-template rendering of
   TPL-20 dispatch proof fields from `convening.recipients` across all supported
   families and pins all-family attendance-list rendering of structured attendee
   and proxy evidence, including CSC capital and condominium permilagem markers.
@@ -202,12 +205,13 @@ test operating checklist for driving Chancela toward release confidence.
   catalog consistency checks only, not legal review of template wording,
   verified thresholds, law references, channel permissibility, quota legal
   sufficiency, delegation/revocation legal sufficiency or authority verification,
-  dispatch or attendance sufficiency, agenda-item legal sufficiency, exhaustive
-  law mapping, DRE/source authority, registry submission, signing correctness,
-  external registry/provider behavior, or book-transport legal effect. The quota
-  template law references remain Pending/non-authoritative; no DRE verification,
-  legally verified threshold value, external registry/provider, signing-process,
-  or new law-source claim is added.
+  structural-change legal sufficiency or authority verification, dispatch or
+  attendance sufficiency, agenda-item legal sufficiency, exhaustive law mapping,
+  DRE/source authority, registry submission, signing correctness, external
+  registry/provider behavior, or book-transport legal effect. The quota and
+  structural-change template law references remain Pending/non-authoritative; no
+  DRE verification, legally verified threshold value, external registry/provider,
+  signing-process, or new law-source claim is added.
   Current post-act semantic lint also requires `Certidao`/`Extrato` authored
   `BlockSpec` template references to sealed-act `ata_number` and
   `payload_digest`; this is runnable embedded-catalog metadata consistency lint
@@ -994,16 +998,19 @@ settingsDefaults.test.ts contracts.test.ts`.
   `catalog_includes_agenda_item_template_for_every_supported_family`, the five
   `ponto-ordem-trabalhos/v1` Convocatoria assets for CSC, condominium,
   association, foundation, and cooperative families, channel-neutral metadata,
-  rule-pack/signature-policy hints, and the 101 total / 41 CSC catalog census.
+  rule-pack/signature-policy hints, and the 104 total / 44 CSC catalog census.
   The same lane still pins `csc-ata-divisao-quotas/v1` and
   `csc-ata-unificacao-quotas/v1` quota parity plus the unresolved
   `csc.deliberacao.maioria_qualificada` majority threshold marker, and
   `csc-ata-delegacao-poderes/v1` / `csc-ata-revogacao-poderes/v1` proposed
-  resolution text without adding threshold markers. These are local catalog
-  parity/rendering checks only; law references remain Pending/non-authoritative
-  with no DRE verification, guessed threshold, authority verification,
-  registry submission, external registry/provider integration, signing-process
-  claim, legal sufficiency, or new law-source claim.
+  resolution text without adding threshold markers. It also pins
+  `csc-ata-fusao/v1`, `csc-ata-cisao/v1`, and `csc-ata-liquidacao/v1` as local
+  CSC structural-change Ata templates with Pending rule-pack and majority
+  threshold law-reference anchors. These are local catalog parity/rendering
+  checks only; law references remain Pending/non-authoritative with no DRE
+  verification, guessed threshold, authority verification, registry submission,
+  external registry/provider integration, signing-process claim, legal
+  sufficiency, structural-change legal sufficiency, or new law-source claim.
 - Current working-tree post-act template semantic-lint checks: focused
   `cargo test -p chancela-templates --locked` coverage plus
   `cargo run -p chancela-templates --bin template_catalog_metadata_lint --locked`
@@ -1527,7 +1534,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   --workspace apps/web -- e2e/session.spec.ts e2e/first-launch-onboarding.spec.ts`.
   Treat the static/unit/focused markers as the pinned slice, not broad
   Playwright-browser-suite or browser-matrix proof; the browser suite is not exhaustive.
-- Current checkpoint metadata/static checks through `3fcfda3`
+- Current checkpoint metadata/static checks through `2ae54ae`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
@@ -1582,6 +1589,8 @@ settingsDefaults.test.ts contracts.test.ts`.
   agenda-item template IDs/counts/rendering markers,
   CSC quota template IDs/Pending-law-reference markers, CSC
   delegation/revocation template IDs/rendering/no-new-threshold markers, and
+  CSC structural-change template IDs/Pending-law-reference/local-rendering
+  markers, and
   post-act `Certidao`/`Extrato` sealed-provenance semantic lint markers,
   plus metadata-only
   paper-book OCR conversion-dossier route/store/redaction/idempotency, reviewed

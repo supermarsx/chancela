@@ -4843,13 +4843,13 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-templates/src/lib.rs",
-    "reg.specs().len(),\n            101",
-    "template catalog 101-asset census marker",
+    "reg.specs().len(),\n            104",
+    "template catalog 104-asset census marker",
   );
   assertFileContains(
     "crates/chancela-templates/src/lib.rs",
-    "per_family(EntityFamily::CommercialCompany), 41",
-    "template catalog 41 CSC census marker",
+    "per_family(EntityFamily::CommercialCompany), 44",
+    "template catalog 44 CSC census marker",
   );
   assertFileContains(
     "crates/chancela-templates/src/lib.rs",
@@ -4900,6 +4900,31 @@ function assertCheckpointMap() {
     "crates/chancela-templates/src/lib.rs",
     "should not introduce unresolved threshold text",
     "template catalog CSC delegation/revocation no-new-threshold coverage",
+  );
+  assertFileContains(
+    "crates/chancela-templates/src/lib.rs",
+    "csc_structural_change_templates_keep_pending_law_refs_and_render_local_text",
+    "template catalog CSC structural-change coverage",
+  );
+  assertFileContains(
+    "crates/chancela-templates/assets/csc-ata-fusao.json",
+    '"id": "csc-ata-fusao/v1"',
+    "commercial company merger template asset",
+  );
+  assertFileContains(
+    "crates/chancela-templates/assets/csc-ata-cisao.json",
+    '"id": "csc-ata-cisao/v1"',
+    "commercial company demerger template asset",
+  );
+  assertFileContains(
+    "crates/chancela-templates/assets/csc-ata-liquidacao.json",
+    '"id": "csc-ata-liquidacao/v1"',
+    "commercial company liquidation-step template asset",
+  );
+  assertFileContains(
+    "crates/chancela-templates/assets/csc-ata-fusao.json",
+    'threshold(\\"csc.deliberacao.maioria_qualificada\\")',
+    "commercial company merger Pending majority threshold marker",
   );
   assertFileContains(
     "crates/chancela-templates/assets/csc-procuracao-representacao.json",
@@ -9330,7 +9355,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `3fcfda3`",
+    "Current checkpoint metadata/static checks through `2ae54ae`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -9365,13 +9390,18 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "101 total / 41 CSC",
+    "104 total / 44 CSC",
     "CI/E2E hardening plan template catalog count marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
     "`csc-ata-delegacao-poderes/v1` / `csc-ata-revogacao-poderes/v1` proposed",
     "CI/E2E hardening plan CSC delegation/revocation marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "`csc-ata-fusao/v1`, `csc-ata-cisao/v1`, and `csc-ata-liquidacao/v1`",
+    "CI/E2E hardening plan CSC structural-change marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -9760,7 +9790,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `3fcfda31bb17f67be911d46d1c2f7c907140b4f4`",
+    "implementation snapshot `2ae54ae4bc8a9918ca13e93dad416d4bcca30082`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -10705,8 +10735,8 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "loads 101 JSON template assets",
-    "spec coverage template 101-asset marker",
+    "loads 104 JSON template assets",
+    "spec coverage template 104-asset marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
@@ -10730,12 +10760,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "asset wording is unchanged",
+    "existing asset wording is\n  unchanged",
     "spec coverage post-act template no-wording-change marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "101 total / 41 CSC",
+    "104 total / 44 CSC",
     "spec coverage template CSC count marker",
   );
   assertFileContains(
@@ -10757,6 +10787,26 @@ function assertCheckpointMap() {
     "SPEC-COVERAGE.md",
     "csc-ata-revogacao-poderes/v1",
     "spec coverage CSC revocation powers template marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "csc-ata-fusao/v1",
+    "spec coverage CSC merger template marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "csc-ata-cisao/v1",
+    "spec coverage CSC demerger template marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "csc-ata-liquidacao/v1",
+    "spec coverage CSC liquidation-step template marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "structural-change templates render local fusão/cisão/liquidação Ata wording",
+    "spec coverage CSC structural-change local-rendering marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
