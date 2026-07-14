@@ -116,7 +116,7 @@ async fn ledger_archive_document_is_pdf_filterable_structured_and_read_only() {
     assert_eq!(export["export_kind"], "audit_interchange");
     assert_eq!(export["canonical_preserved_evidence"], false);
     assert_eq!(export["canonical_evidence_format"], "pdfa");
-    assert_eq!(export["order"], "seq_desc");
+    assert_eq!(export["order"], "desc");
     assert_eq!(export["event_count"], 2);
     let events = export["events"].as_array().expect("JSON export events");
     assert_eq!(events.len(), 2);
