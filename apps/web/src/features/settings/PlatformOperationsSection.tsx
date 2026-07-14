@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { useControlPlatformService, usePlatformServices } from '../../api/hooks';
 import {
   PLATFORM_LOG_LEVELS,
@@ -23,12 +23,20 @@ import {
   Card,
   ErrorNote,
   Field,
+  FieldHelp,
   Icon,
   InlineWarning,
   Loading,
   Select,
+  SubNav,
   useToast,
 } from '../../ui';
+
+/** The Operations surface splits into two logically-grouped sub-sub-tabs, each reached
+ *  through the shared `<SubNav>` (the same segmented idiom the parent settings page uses):
+ *  "Serviços" holds the desired-state service controls + operations audit; "Registos"
+ *  holds the log-level configuration and the structured API log tail/viewer. */
+type OperationsTab = 'servicos' | 'registos';
 
 const LOG_BASE_FIELDS = ['global', 'app', 'api', 'mcp'] as const;
 const LOG_OVERRIDE_IDS: readonly PlatformServiceId[] = ['app', 'api', 'mcp_stdio'];
@@ -218,7 +226,10 @@ function ActionCapabilities({ service }: { service: PlatformServiceStatus }) {
   if (service.controllable_actions.length === 0) return null;
   return (
     <div className="platform-control-support">
-      <p className="card__label">{t('settings.platform.action')}</p>
+      <p className="card__label">
+        {t('settings.platform.action')}{' '}
+        <FieldHelp text={t('settings.platform.help.outcomes')} />
+      </p>
       <ul>
         {service.controllable_actions.map((capability) => (
           <li key={capability.action}>
@@ -333,16 +344,23 @@ function ServiceRow({
           </div>
         ) : null}
 
-        <ActionCapabilities service={service} />
-
-        <div className="platform-limitations">
-          <p className="card__label">{t('settings.platform.limitations')}</p>
-          <ul>
-            {service.limitations.map((item) => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
-        </div>
+        {/* Progressive disclosure: the dense per-service control matrix and backend
+            limitations are collapsed by default so the row leads with status + the
+            meaningful actions, and the honest-limitation evidence stays one click away. */}
+        <details className="platform-service-row__details">
+          <summary>{t('settings.platform.serviceDetails')}</summary>
+          <div className="stack--tight">
+            <ActionCapabilities service={service} />
+            <div className="platform-limitations">
+              <p className="card__label">{t('settings.platform.limitations')}</p>
+              <ul>
+                {service.limitations.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </details>
       </div>
 
       <aside className="platform-service-row__aside">
@@ -361,7 +379,10 @@ function LoggingEffectiveSummary({ logging }: { logging: PlatformLoggingSettings
       role="group"
       aria-label={t('settings.platform.effectiveLog')}
     >
-      <p className="card__label">{t('settings.platform.effectiveLog')}</p>
+      <p className="card__label">
+        {t('settings.platform.effectiveLog')}{' '}
+        <FieldHelp text={t('settings.platform.help.effective')} />
+      </p>
       <div className="platform-logging-effective__grid">
         {PLATFORM_SERVICE_IDS.map((serviceId) => {
           const effective = effectiveLogLevel(logging, serviceId);
@@ -418,17 +439,22 @@ export function PlatformOperationsSection({
   audit,
   canManage,
   onChange,
+  logsPanel,
 }: {
   value: PlatformSettings;
   audit: PlatformAuditEvent[];
   canManage: boolean;
   onChange: (value: PlatformSettings) => void;
+  /** The structured API log tail/viewer, hosted by the settings page and rendered inside
+   *  the "Registos" sub-sub-tab so the log-level config and the log evidence sit together. */
+  logsPanel?: ReactNode;
 }) {
   const t = useT();
   const toast = useToast();
   const services = usePlatformServices();
   const levels = useMemo(() => logLevelOptions(t), [t]);
   const overrides = useMemo(() => overrideOptions(t), [t]);
+  const [tab, setTab] = useState<OperationsTab>('servicos');
 
   const setLogging = (logging: PlatformLoggingSettings) => onChange({ ...value, logging });
   const setBaseLevel = (field: (typeof LOG_BASE_FIELDS)[number], level: PlatformLogLevel) =>
@@ -440,80 +466,123 @@ export function PlatformOperationsSection({
     setLogging({ ...value.logging, service_overrides });
   };
 
+  const tabDescription =
+    tab === 'servicos'
+      ? t('settings.platform.tab.services.desc')
+      : t('settings.platform.tab.logs.desc');
+
   return (
     <div className="stack">
-      <Card title={t('settings.platform.cardTitle')}>
-        <div className="form">
-          <p className="field__hint">{t('settings.platform.intro')}</p>
-          <AiMcpAssurancePanel />
-          {services.isLoading ? <Loading label={t('settings.platform.loading')} /> : null}
-          {services.error ? <ErrorNote error={services.error} /> : null}
-          {services.data && services.data.services.length === 0 ? (
-            <InlineWarning tone="info" title={t('settings.platform.empty.title')}>
-              {t('settings.platform.empty.body')}
-            </InlineWarning>
-          ) : null}
-          {services.data ? (
-            <div className="platform-service-list">
-              {services.data.services.map((service) => (
-                <ServiceRow
-                  key={service.id}
-                  service={service}
-                  canManage={canManage}
-                  onControlError={(error) => toast.error(error)}
-                />
-              ))}
-            </div>
-          ) : null}
-        </div>
-      </Card>
+      <SubNav
+        items={[
+          {
+            id: 'servicos',
+            label: t('settings.platform.tab.services'),
+            icon: <Icon.Power />,
+          },
+          {
+            id: 'registos',
+            label: t('settings.platform.tab.logs'),
+            icon: <Icon.Layers />,
+          },
+        ]}
+        active={tab}
+        onSelect={setTab}
+        ariaLabel={t('settings.platform.subnav.aria')}
+      />
+      <p className="field__hint">{tabDescription}</p>
 
-      <Card title={t('settings.platform.logging.cardTitle')}>
-        <div className="form">
-          <p className="field__hint">{t('settings.platform.logging.hint')}</p>
-          <div className="platform-logging-grid">
-            {LOG_BASE_FIELDS.map((field) => (
-              <Field
-                key={field}
-                label={t(`settings.platform.logging.${field}` as MessageKey)}
-                htmlFor={`platform-log-${field}`}
-              >
-                <Select
-                  id={`platform-log-${field}`}
-                  value={value.logging[field]}
-                  options={levels}
-                  onChange={(e) => setBaseLevel(field, e.target.value as PlatformLogLevel)}
-                />
-              </Field>
-            ))}
-          </div>
-          <LoggingEffectiveSummary logging={value.logging} />
-          <div className="stack--tight">
-            <p className="card__label">{t('settings.platform.logging.overrides')}</p>
-            <p className="field__hint">{t('settings.platform.logging.overridesHint')}</p>
-            <div className="platform-logging-grid">
-              {LOG_OVERRIDE_IDS.map((serviceId) => (
-                <Field
-                  key={serviceId}
-                  label={t(`settings.platform.logging.override.${serviceId}` as MessageKey)}
-                  htmlFor={`platform-log-override-${serviceId}`}
-                >
-                  <Select
-                    id={`platform-log-override-${serviceId}`}
-                    value={value.logging.service_overrides[serviceId] ?? ''}
-                    options={overrides}
-                    onChange={(e) =>
-                      setOverride(serviceId, e.target.value as PlatformLogLevel | '')
-                    }
-                  />
-                </Field>
-              ))}
-            </div>
-          </div>
-        </div>
-      </Card>
+      <div className="route-transition stack" key={tab}>
+        {tab === 'servicos' ? (
+          <>
+            <Card title={t('settings.platform.cardTitle')}>
+              <div className="form">
+                <p className="field__hint">
+                  {t('settings.platform.intro')}{' '}
+                  <FieldHelp text={t('settings.platform.help.services')} />
+                </p>
+                <AiMcpAssurancePanel />
+                {services.isLoading ? <Loading label={t('settings.platform.loading')} /> : null}
+                {services.error ? <ErrorNote error={services.error} /> : null}
+                {services.data && services.data.services.length === 0 ? (
+                  <InlineWarning tone="info" title={t('settings.platform.empty.title')}>
+                    {t('settings.platform.empty.body')}
+                  </InlineWarning>
+                ) : null}
+                {services.data ? (
+                  <div className="platform-service-list">
+                    {services.data.services.map((service) => (
+                      <ServiceRow
+                        key={service.id}
+                        service={service}
+                        canManage={canManage}
+                        onControlError={(error) => toast.error(error)}
+                      />
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            </Card>
 
-      <AuditTail audit={audit} />
+            <AuditTail audit={audit} />
+          </>
+        ) : (
+          <>
+            <Card title={t('settings.platform.logging.cardTitle')}>
+              <div className="form">
+                <p className="field__hint">{t('settings.platform.logging.hint')}</p>
+                <div className="platform-logging-grid">
+                  {LOG_BASE_FIELDS.map((field) => (
+                    <Field
+                      key={field}
+                      label={t(`settings.platform.logging.${field}` as MessageKey)}
+                      htmlFor={`platform-log-${field}`}
+                      help={
+                        field === 'global' ? t('settings.platform.help.logLevels') : undefined
+                      }
+                    >
+                      <Select
+                        id={`platform-log-${field}`}
+                        value={value.logging[field]}
+                        options={levels}
+                        onChange={(e) => setBaseLevel(field, e.target.value as PlatformLogLevel)}
+                      />
+                    </Field>
+                  ))}
+                </div>
+                <LoggingEffectiveSummary logging={value.logging} />
+                <div className="stack--tight">
+                  <p className="card__label">
+                    {t('settings.platform.logging.overrides')}{' '}
+                    <FieldHelp text={t('settings.platform.help.overrides')} />
+                  </p>
+                  <p className="field__hint">{t('settings.platform.logging.overridesHint')}</p>
+                  <div className="platform-logging-grid">
+                    {LOG_OVERRIDE_IDS.map((serviceId) => (
+                      <Field
+                        key={serviceId}
+                        label={t(`settings.platform.logging.override.${serviceId}` as MessageKey)}
+                        htmlFor={`platform-log-override-${serviceId}`}
+                      >
+                        <Select
+                          id={`platform-log-override-${serviceId}`}
+                          value={value.logging.service_overrides[serviceId] ?? ''}
+                          options={overrides}
+                          onChange={(e) =>
+                            setOverride(serviceId, e.target.value as PlatformLogLevel | '')
+                          }
+                        />
+                      </Field>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </Card>
+
+            {logsPanel}
+          </>
+        )}
+      </div>
     </div>
   );
 }

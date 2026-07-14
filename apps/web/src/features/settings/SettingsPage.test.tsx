@@ -2752,6 +2752,8 @@ describe('SettingsPage', () => {
 
     renderWithProviders(<SettingsPage />, ['/configuracoes?sec=operacoes']);
 
+    fireEvent.click(await screen.findByRole('button', { name: 'Registos' }));
+
     const summary = await screen.findByRole('group', { name: 'Log efetivo' });
     expect(within(summary).getAllByText('Off')).toHaveLength(3);
     expect(within(summary).getByText('Aplicação')).toBeTruthy();
@@ -2790,6 +2792,8 @@ describe('SettingsPage', () => {
 
     renderWithProviders(<SettingsPage />, ['/configuracoes?sec=operacoes']);
 
+    fireEvent.click(await screen.findByRole('button', { name: 'Registos' }));
+
     expect(await screen.findByText('Cauda estruturada de logs da API')).toBeTruthy();
     expect(await screen.findByText('Platform service status read')).toBeTruthy();
     expect(screen.getByText(/in-memory API-owned structured log ring/)).toBeTruthy();
@@ -2816,6 +2820,8 @@ describe('SettingsPage', () => {
     vi.stubGlobal('fetch', fn);
 
     renderWithProviders(<SettingsPage />, ['/configuracoes?sec=operacoes']);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Registos' }));
 
     expect(await screen.findByText('Platform service status read')).toBeTruthy();
 
@@ -2858,6 +2864,8 @@ describe('SettingsPage', () => {
 
     renderWithProviders(<SettingsPage />, ['/configuracoes?sec=operacoes']);
 
+    fireEvent.click(await screen.findByRole('button', { name: 'Registos' }));
+
     expect(await screen.findByText('Sem logs da plataforma')).toBeTruthy();
     expect(screen.getByText('Ring only; no historical process logs are retained.')).toBeTruthy();
     expect(screen.getAllByText('0').length).toBeGreaterThan(0);
@@ -2882,6 +2890,8 @@ describe('SettingsPage', () => {
     vi.stubGlobal('fetch', fn);
 
     renderWithProviders(<SettingsPage />, ['/configuracoes?sec=operacoes']);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Registos' }));
 
     expect(await screen.findByText('App shell observed platform state')).toBeTruthy();
     expect(screen.getAllByText('Aplicação').length).toBeGreaterThan(0);
@@ -2920,6 +2930,8 @@ describe('SettingsPage', () => {
     vi.stubGlobal('fetch', fn);
 
     renderWithProviders(<SettingsPage />, ['/configuracoes?sec=operacoes']);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Registos' }));
 
     const globalLog = (await screen.findByLabelText('Global')) as HTMLSelectElement;
     fireEvent.change(globalLog, { target: { value: 'debug' } });

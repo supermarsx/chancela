@@ -2006,15 +2006,13 @@ export function SettingsPage() {
 
           {/* Operações -------------------------------------------------------------- */}
           {section === 'operacoes' ? (
-            <div className="stack">
-              <PlatformOperationsSection
-                value={draft.platform}
-                audit={committed.platform.audit}
-                canManage={canManageSettings}
-                onChange={setPlatform}
-              />
-              <PlatformLogTailPanel />
-            </div>
+            <PlatformOperationsSection
+              value={draft.platform}
+              audit={committed.platform.audit}
+              canManage={canManageSettings}
+              onChange={setPlatform}
+              logsPanel={<PlatformLogTailPanel />}
+            />
           ) : null}
 
           {/* Utilizadores ------------------------------------------------------------ */}
