@@ -122,7 +122,11 @@ async fn create_user(state: &AppState, owner: &str, username: &str, display: &st
         ),
     )
     .await;
-    assert_eq!(status, StatusCode::CREATED, "create user {username}: {user}");
+    assert_eq!(
+        status,
+        StatusCode::CREATED,
+        "create user {username}: {user}"
+    );
     user["id"].as_str().expect("user id").to_owned()
 }
 
@@ -153,7 +157,11 @@ async fn assert_ledger_healthy(state: &AppState, owner: &str, ctx: &str) {
     );
 
     let (status, integrity) = send(state, get_req("/v1/ledger/integrity", owner)).await;
-    assert_eq!(status, StatusCode::OK, "[{ctx}] integrity status: {integrity}");
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "[{ctx}] integrity status: {integrity}"
+    );
     assert_eq!(
         integrity["healthy"], true,
         "[{ctx}] chain must be healthy after RBAC mutation: {integrity}"
@@ -217,7 +225,11 @@ async fn rbac_mutations_via_api_keep_the_ledger_verify_healthy() {
         ),
     )
     .await;
-    assert_eq!(status, StatusCode::CREATED, "grant delegation: {delegation}");
+    assert_eq!(
+        status,
+        StatusCode::CREATED,
+        "grant delegation: {delegation}"
+    );
     let delegation_id = delegation["id"].as_str().expect("delegation id").to_owned();
     assert_ledger_healthy(&state, &owner, "after delegation.granted").await;
 
@@ -258,7 +270,10 @@ async fn rbac_mutations_via_api_keep_the_ledger_verify_healthy() {
             "RBAC mutations must not mint a book-action chain; found {}",
             status.chain
         );
-        assert!(status.verified, "the application chain verifies: {status:?}");
+        assert!(
+            status.verified,
+            "the application chain verifies: {status:?}"
+        );
     }
     assert!(
         ledger.verify_chain(&ChainId::Application).is_ok(),

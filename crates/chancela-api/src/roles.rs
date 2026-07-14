@@ -565,6 +565,13 @@ async fn persist_users(state: &AppState) -> Result<(), ApiError> {
 
 /// Append a chained `role.*` audit event (honest actor, never any secret material). Mirrors the
 /// standard append + write-through + attest discipline.
+///
+/// `scope_id` **must be a keyword-shaped application scope** (e.g. `user:{uuid}` / `role:{uuid}`),
+/// never a *bare* UUID. A bare UUID is classified by the ledger as a `company:{uuid}` book-action
+/// chain whose genesis event kind is required to be `entity.created` (WFL-11); a `role.*` event as
+/// that chain's genesis would fail `Ledger::verify()` after the mutation. A keyword scope lands the
+/// event on the shared `application` audit chain (which fixes no genesis kind), keeping the ledger
+/// verify()-healthy after every RBAC change (wp19-fix).
 async fn record_role_event<T: Serialize>(
     state: &AppState,
     scope_id: &str,
@@ -697,7 +704,7 @@ pub async fn apply_seeded_role_reconciliation(
     };
     record_role_event(
         &state,
-        &view.role_id,
+        &format!("role:{}", view.role_id),
         "role.seeded_drift_reconciled",
         "admin explicitly applied seeded role drift reconciliation",
         &payload,
@@ -740,7 +747,7 @@ pub async fn create_role(
     let view = RoleView::from(&role);
     record_role_event(
         &state,
-        &view.id,
+        &format!("role:{}", view.id),
         "role.created",
         "custom role created",
         &view,
@@ -809,7 +816,7 @@ pub async fn patch_role(
     let view = RoleView::from(&updated);
     record_role_event(
         &state,
-        &view.id,
+        &format!("role:{}", view.id),
         "role.updated",
         "custom role updated",
         &view,
@@ -849,7 +856,7 @@ pub async fn delete_role(
     let view = RoleView::from(&removed);
     record_role_event(
         &state,
-        &view.id,
+        &format!("role:{}", view.id),
         "role.deleted",
         "custom role deleted",
         &view,
@@ -904,7 +911,7 @@ pub async fn assign_role(
     };
     record_role_event(
         &state,
-        &target_uid.to_string(),
+        &format!("user:{target_uid}"),
         "role.assigned",
         "role assigned to user",
         &payload,
@@ -971,7 +978,7 @@ pub async fn unassign_role(
     };
     record_role_event(
         &state,
-        &target_uid.to_string(),
+        &format!("user:{target_uid}"),
         "role.unassigned",
         "role removed from user",
         &payload,

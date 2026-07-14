@@ -15405,7 +15405,10 @@ mod tests {
             "only the explicit state-changing apply is audited"
         );
         let event = reconcile_events[0];
-        assert_eq!(event["scope"], json!(role_id));
+        // wp19-fix: role.* audit events are scoped `role:{uuid}` (a keyword application-chain
+        // scope), never a bare UUID (which the ledger would misread as a `company:` chain whose
+        // genesis must be `entity.created`, breaking verify() after the mutation).
+        assert_eq!(event["scope"], json!(format!("role:{role_id}")));
         assert_eq!(
             event["justification"],
             json!("admin explicitly applied seeded role drift reconciliation")

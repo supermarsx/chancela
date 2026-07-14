@@ -216,6 +216,12 @@ impl From<&StoredDelegation> for DelegationView {
 }
 
 /// Append a chained `delegation.*` audit event (honest actor, no secret material).
+///
+/// The event is scoped `delegation:{uuid}`, a keyword-shaped application scope, so it lands on the
+/// shared `application` audit chain. It must **not** be a *bare* UUID: the ledger classifies a bare
+/// UUID as a `company:{uuid}` book-action chain whose genesis kind must be `entity.created`
+/// (WFL-11), so a `delegation.*` event opening such a chain would fail `Ledger::verify()` after the
+/// mutation. The `application` chain fixes no genesis kind, keeping verify() healthy (wp19-fix).
 async fn record_delegation_event(
     state: &AppState,
     view: &DelegationView,
@@ -226,8 +232,9 @@ async fn record_delegation_event(
 ) -> Result<(), ApiError> {
     let bytes = serde_json::to_vec(view)?;
     let actor_name = actor.resolve("api");
+    let scope = format!("delegation:{}", view.id);
     let mut ledger = state.ledger.write().await;
-    ledger.append(&actor_name, &view.id, kind, Some(justification), &bytes);
+    ledger.append(&actor_name, &scope, kind, Some(justification), &bytes);
     state.persist_write_through(&mut ledger, 1, |_tx| Ok(()))?;
     state.attest_latest(attestor, &ledger).await;
     Ok(())
