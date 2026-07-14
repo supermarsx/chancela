@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const coveragePath = join(repoRoot, "SPEC-COVERAGE.md");
+const aiProvenancePath = join(repoRoot, "docs", "AI-PROVENANCE.md");
 const ciCheckpointsPath = join(repoRoot, "docs", "CI-CHECKPOINTS.md");
 const hardeningPlanPath = join(repoRoot, "docs", "CI-E2E-HARDENING-PLAN.md");
 const recentLandedPath = join(repoRoot, "scripts", "checkpoint-recent-landed.mjs");
@@ -27,6 +28,7 @@ const expectedSpecs = [
 const allowedStatuses = new Set(["PARTIAL", "BLOCKED", "COMPLETE"]);
 const checkpointPaths = new Set([
   "SPEC-COVERAGE.md",
+  "docs/AI-PROVENANCE.md",
   "docs/ARCHITECTURE.md",
   "docs/CI-CHECKPOINTS.md",
   "docs/CI-E2E-HARDENING-PLAN.md",
@@ -35,6 +37,7 @@ const checkpointPaths = new Set([
 ]);
 
 const body = readFileSync(coveragePath, "utf8");
+const aiProvenance = readFileSync(aiProvenancePath, "utf8");
 const ciCheckpoints = readFileSync(ciCheckpointsPath, "utf8");
 const hardeningPlan = readFileSync(hardeningPlanPath, "utf8");
 const recentLanded = readFileSync(recentLandedPath, "utf8");
@@ -176,6 +179,31 @@ function assertSnapshotCoherence() {
     ciCheckpoints,
     "markers drift from the declared implementation snapshot",
     "CI checkpoints spec coverage drift-check description",
+  );
+  assertIncludes(
+    aiProvenance,
+    "## MCP local review resources",
+    "AI provenance MCP local review section",
+  );
+  assertIncludes(
+    aiProvenance,
+    "`chancela://mcp/meeting-metadata-extraction-review` follows the same boundary.",
+    "AI provenance MCP meeting metadata review marker",
+  );
+  assertIncludes(
+    aiProvenance,
+    "requires human verification and does not echo raw document text",
+    "AI provenance MCP no-echo boundary marker",
+  );
+  assertIncludes(
+    aiProvenance,
+    "These resources do not fetch providers, call the API",
+    "AI provenance MCP no-call boundary marker",
+  );
+  assertIncludes(
+    aiProvenance,
+    "or claim PDF/UA conformance, DGLAB certification, legal validity",
+    "AI provenance MCP no-claim boundary marker",
   );
 }
 
