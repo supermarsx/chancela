@@ -74,8 +74,9 @@ pub const SETTINGS_SINGLETON_ID: &str = "settings";
 
 /// wp16 P1 — the Postgres `LISTEN/NOTIFY` channel the leader signals a durable ledger append on and
 /// that followers listen on for near-real-time change-feed wakes (plan §2.2). The payload is the new
-/// durable `MAX(seq)`; delivery is best-effort, so a follower's seq-poll backstop is what guarantees
-/// convergence. Exposed so the API-layer follower change-feed uses the identical channel name.
+/// durable `MAX(seq)`; delivery is best-effort, so a follower's seq-poll backstop keeps retrying
+/// after missed notifications. Exposed so the API-layer follower change-feed uses the identical
+/// channel name.
 pub const CLUSTER_CHANGE_CHANNEL: &str = "chancela_ledger";
 
 /// Prefix identifying an encrypted whole-instance backup envelope.
@@ -1633,6 +1634,29 @@ pub struct PendingCmdSession {
     pub expires_at: OffsetDateTime,
 }
 
+/// One stored provider-credential record row (`provider_credentials`, schema v16; wp16 P3b),
+/// returned by [`Store::read_credential_records`] and written by [`Tx::put_credential_record`].
+///
+/// This is the store's opaque mirror of one entry in the `provider-credentials.enc.json` sidecar's
+/// `records` list. `record_blob` is the **OPAQUE** serialized `EncryptedCredentialRecord`: it holds
+/// only AEAD ciphertext envelopes (never a plaintext secret), and the store never encrypts, decrypts,
+/// or parses it — the XChaCha20-Poly1305 / AAD envelope stays entirely in `chancela-api`'s
+/// secretstore, only its storage moves here. `key_version` / `updated_at` are the non-secret metadata
+/// columns the status/rotation surfaces read without touching key material.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredCredentialRecord {
+    /// The `CredentialMode` wire string (e.g. `cmd` / `csc` / `scap` / `pkcs12`); half the primary key.
+    pub mode: String,
+    /// The provider id (empty for the single-instance CMD/SCAP modes); the other half of the key.
+    pub provider_id: String,
+    /// The key version the record was last written under (non-secret rotation marker).
+    pub key_version: i64,
+    /// RFC 3339 last-update timestamp (non-secret metadata).
+    pub updated_at: String,
+    /// The opaque serialized `EncryptedCredentialRecord` bytes — AEAD ciphertext only, never plaintext.
+    pub record_blob: Vec<u8>,
+}
+
 impl Store {
     /// Open (creating if absent) `<data_dir>/chancela.db`, set `journal_mode=WAL` and
     /// `foreign_keys=ON`, run the idempotent [`schema::ALL`] migration, and record/read
@@ -1852,9 +1876,9 @@ impl Store {
     }
 
     /// wp16 P1 — the leader's change signal: `NOTIFY chancela_ledger, '<max_seq>'` after a durable
-    /// append commits (plan §2.2). Best-effort by design — a missed notification is caught by the
-    /// follower's seq-poll backstop — so callers may ignore the result. No-op on SQLite (single-node,
-    /// no followers to wake).
+    /// append commits (plan §2.2). Best-effort by design — a missed notification is retried by the
+    /// follower's seq-poll backstop once Postgres can be queried — so callers may ignore the result.
+    /// No-op on SQLite (single-node, no followers to wake).
     pub fn cluster_notify_append(&self, max_seq: i64) -> Result<(), StoreError> {
         match &self.backend {
             Backend::Sqlite(_) => {
@@ -2812,6 +2836,98 @@ impl Store {
         for row in rows {
             let session = row??;
             out.insert(session.session_id.clone(), session);
+        }
+        Ok(out)
+    }
+
+    // ── wp16 P3b — non-ledger sidecar stores (users / roles / delegations / settings / credentials) ──
+    //
+    // These read the shared-store mirror of the JSON file sidecars (plan §8.2). They are ADDITIVE:
+    // `chancela-api` still loads from the per-node files today; a later coordinated phase switches the
+    // loaders to these methods so a multi-node cluster reads consistent state. The `(id, json)` rows
+    // are document-in-relational — the store never interprets `json` — exactly like the domain
+    // aggregates. Rows are returned ordered by `id` for deterministic, stable enumeration.
+
+    /// Load every stored user directory row as `(id, json)`, ordered by id. Mirrors the `users.json`
+    /// array; the API deserializes each `json` back into its `User` value. Empty when unpopulated.
+    pub fn users(&self) -> Result<Vec<(String, String)>, StoreError> {
+        self.document_rows("users")
+    }
+
+    /// Load every stored role-catalog row as `(id, json)`, ordered by id. Mirrors the `roles.json`
+    /// array. Empty when unpopulated.
+    pub fn roles(&self) -> Result<Vec<(String, String)>, StoreError> {
+        self.document_rows("roles")
+    }
+
+    /// Load every stored delegation row as `(id, json)`, ordered by id. Mirrors the `delegations.json`
+    /// array (active **and** revoked). Empty when unpopulated.
+    pub fn delegations(&self) -> Result<Vec<(String, String)>, StoreError> {
+        self.document_rows("delegations")
+    }
+
+    /// Shared reader for the `(id, json)` document-in-relational sidecar tables (users/roles/
+    /// delegations). `table` is a fixed internal identifier (never user input), so interpolating it
+    /// into the query is safe. Ordered by id for a deterministic enumeration.
+    fn document_rows(&self, table: &str) -> Result<Vec<(String, String)>, StoreError> {
+        #[cfg(feature = "postgres")]
+        if let Backend::Postgres(backend) = &self.backend {
+            return backend.document_rows(table);
+        }
+        let guard = self.locked_conn()?;
+        let mut stmt = guard.prepare(&format!("SELECT id, json FROM {table} ORDER BY id ASC"))?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
+        }
+        Ok(out)
+    }
+
+    /// Read the single stored settings document as its serialized `json`, or `None` when the store has
+    /// never persisted one. Mirrors `settings.json`; the API deserializes it into its `Settings` value.
+    pub fn settings(&self) -> Result<Option<String>, StoreError> {
+        #[cfg(feature = "postgres")]
+        if let Backend::Postgres(backend) = &self.backend {
+            return backend.settings();
+        }
+        let guard = self.locked_conn()?;
+        let mut stmt = guard.prepare("SELECT json FROM settings WHERE id = ?1")?;
+        stmt.query_row(params![SETTINGS_SINGLETON_ID], |row| {
+            row.get::<_, String>(0)
+        })
+        .optional()
+        .map_err(StoreError::from)
+    }
+
+    /// Read every stored provider-credential record ([`StoredCredentialRecord`]), ordered by
+    /// `(mode, provider_id)`. Mirrors the `provider-credentials.enc.json` `records` list. Each
+    /// `record_blob` is returned verbatim (opaque AEAD ciphertext — the store never decrypts it);
+    /// the API's secretstore unwraps it. Empty when unpopulated.
+    pub fn read_credential_records(&self) -> Result<Vec<StoredCredentialRecord>, StoreError> {
+        #[cfg(feature = "postgres")]
+        if let Backend::Postgres(backend) = &self.backend {
+            return backend.read_credential_records();
+        }
+        let guard = self.locked_conn()?;
+        let mut stmt = guard.prepare(
+            "SELECT mode, provider_id, key_version, updated_at, record_blob \
+             FROM provider_credentials ORDER BY mode ASC, provider_id ASC",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(StoredCredentialRecord {
+                mode: row.get(0)?,
+                provider_id: row.get(1)?,
+                key_version: row.get(2)?,
+                updated_at: row.get(3)?,
+                record_blob: row.get(4)?,
+            })
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
         }
         Ok(out)
     }
@@ -4342,6 +4458,174 @@ impl Tx<'_> {
                         &completed_at,
                         &completed_by,
                     ],
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    // ── wp16 P3b — non-ledger sidecar writers (users / roles / delegations / settings / credentials) ──
+    //
+    // Document-in-relational `(id, json)` upsert/delete for the JSON file sidecars moved into the
+    // shared store (plan §8.2). ADDITIVE: no existing signature changes. The store never interprets
+    // `json`; the API serializes its own `User` / role / `StoredDelegation` / `Settings` value into it.
+
+    /// Upsert one user directory row (`users`, `(id, json)`), idempotent on the id. The `json` is the
+    /// API's serialized `User` value (opaque to the store). Mirrors a `users.json` array element.
+    pub fn upsert_user(&self, id: &str, json: &str) -> Result<(), StoreError> {
+        self.upsert_document_row("users", id, json)
+    }
+
+    /// Remove one user directory row by id (mirrors a user dropped from `users.json`). A no-op when
+    /// the id is unknown.
+    pub fn delete_user(&self, id: &str) -> Result<(), StoreError> {
+        self.delete_document_row("users", id)
+    }
+
+    /// Upsert one role-catalog row (`roles`, `(id, json)`), idempotent on the id. Mirrors a
+    /// `roles.json` array element.
+    pub fn upsert_role(&self, id: &str, json: &str) -> Result<(), StoreError> {
+        self.upsert_document_row("roles", id, json)
+    }
+
+    /// Remove one role row by id (mirrors a role dropped from `roles.json`). A no-op when unknown.
+    pub fn delete_role(&self, id: &str) -> Result<(), StoreError> {
+        self.delete_document_row("roles", id)
+    }
+
+    /// Upsert one delegation row (`delegations`, `(id, json)`), idempotent on the id. Mirrors a
+    /// `delegations.json` array element (active **or** revoked).
+    pub fn upsert_delegation(&self, id: &str, json: &str) -> Result<(), StoreError> {
+        self.upsert_document_row("delegations", id, json)
+    }
+
+    /// Remove one delegation row by id (mirrors a delegation dropped from `delegations.json`). A
+    /// no-op when unknown.
+    pub fn delete_delegation(&self, id: &str) -> Result<(), StoreError> {
+        self.delete_document_row("delegations", id)
+    }
+
+    /// Shared document-in-relational upsert for the `(id, json)` sidecar tables. `table` is a fixed
+    /// internal identifier (never user input), so interpolating it is safe.
+    fn upsert_document_row(&self, table: &str, id: &str, json: &str) -> Result<(), StoreError> {
+        match &self.kind {
+            TxKind::Sqlite(_) => {
+                self.raw()?.execute(
+                    &format!("INSERT OR REPLACE INTO {table} (id, json) VALUES (?1, ?2)"),
+                    params![id, json],
+                )?;
+            }
+            #[cfg(feature = "postgres")]
+            TxKind::Postgres(cell) => {
+                cell.borrow_mut().execute(
+                    &format!(
+                        "INSERT INTO {table} (id, json) VALUES ($1, $2) \
+                         ON CONFLICT (id) DO UPDATE SET json = EXCLUDED.json"
+                    ),
+                    &[&id, &json],
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Shared delete for the `(id, json)` sidecar tables. `table` is a fixed internal identifier.
+    fn delete_document_row(&self, table: &str, id: &str) -> Result<(), StoreError> {
+        match &self.kind {
+            TxKind::Sqlite(_) => {
+                self.raw()?
+                    .execute(&format!("DELETE FROM {table} WHERE id = ?1"), params![id])?;
+            }
+            #[cfg(feature = "postgres")]
+            TxKind::Postgres(cell) => {
+                cell.borrow_mut()
+                    .execute(&format!("DELETE FROM {table} WHERE id = $1"), &[&id])?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Upsert the single settings document (`settings`, keyed by [`SETTINGS_SINGLETON_ID`]). The
+    /// `json` is the API's serialized `Settings` value (opaque to the store). Mirrors `settings.json`.
+    pub fn put_settings(&self, json: &str) -> Result<(), StoreError> {
+        match &self.kind {
+            TxKind::Sqlite(_) => {
+                self.raw()?.execute(
+                    "INSERT OR REPLACE INTO settings (id, json) VALUES (?1, ?2)",
+                    params![SETTINGS_SINGLETON_ID, json],
+                )?;
+            }
+            #[cfg(feature = "postgres")]
+            TxKind::Postgres(cell) => {
+                cell.borrow_mut().execute(
+                    "INSERT INTO settings (id, json) VALUES ($1, $2) \
+                     ON CONFLICT (id) DO UPDATE SET json = EXCLUDED.json",
+                    &[&SETTINGS_SINGLETON_ID, &json],
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Upsert one provider-credential record (`provider_credentials`, keyed by `(mode, provider_id)`).
+    ///
+    /// `record_blob` is stored **verbatim** as opaque bytes — it is the API's serialized
+    /// `EncryptedCredentialRecord` holding only AEAD ciphertext envelopes (never a plaintext secret).
+    /// The store neither encrypts, decrypts, nor parses it; the crypto envelope stays in the API's
+    /// secretstore and only its storage moves here. `key_version` / `updated_at` are non-secret
+    /// metadata. Mirrors one entry of the `provider-credentials.enc.json` `records` list.
+    pub fn put_credential_record(
+        &self,
+        mode: &str,
+        provider_id: &str,
+        key_version: i64,
+        updated_at: &str,
+        record_blob: &[u8],
+    ) -> Result<(), StoreError> {
+        match &self.kind {
+            TxKind::Sqlite(_) => {
+                self.raw()?.execute(
+                    "INSERT OR REPLACE INTO provider_credentials \
+                     (mode, provider_id, key_version, updated_at, record_blob) \
+                     VALUES (?1, ?2, ?3, ?4, ?5)",
+                    params![mode, provider_id, key_version, updated_at, record_blob],
+                )?;
+            }
+            #[cfg(feature = "postgres")]
+            TxKind::Postgres(cell) => {
+                cell.borrow_mut().execute(
+                    "INSERT INTO provider_credentials \
+                     (mode, provider_id, key_version, updated_at, record_blob) \
+                     VALUES ($1, $2, $3, $4, $5) \
+                     ON CONFLICT (mode, provider_id) DO UPDATE SET \
+                     key_version = EXCLUDED.key_version, updated_at = EXCLUDED.updated_at, \
+                     record_blob = EXCLUDED.record_blob",
+                    &[&mode, &provider_id, &key_version, &updated_at, &record_blob],
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Remove one provider-credential record by `(mode, provider_id)` (mirrors a record cleared from
+    /// `provider-credentials.enc.json`). A no-op when the record is absent.
+    pub fn delete_credential_record(
+        &self,
+        mode: &str,
+        provider_id: &str,
+    ) -> Result<(), StoreError> {
+        match &self.kind {
+            TxKind::Sqlite(_) => {
+                self.raw()?.execute(
+                    "DELETE FROM provider_credentials WHERE mode = ?1 AND provider_id = ?2",
+                    params![mode, provider_id],
+                )?;
+            }
+            #[cfg(feature = "postgres")]
+            TxKind::Postgres(cell) => {
+                cell.borrow_mut().execute(
+                    "DELETE FROM provider_credentials WHERE mode = $1 AND provider_id = $2",
+                    &[&mode, &provider_id],
                 )?;
             }
         }

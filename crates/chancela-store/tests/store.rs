@@ -21,10 +21,10 @@ use chancela_registry::{RegistryExtract, RegistryProvenance};
 use chancela_store::{
     GeneratedDocumentDispatchEvidenceUpsert, LedgerEventPageQuery, LedgerEventUpperBound,
     PaperBookOcrConversionDossierUpsert, PaperBookOcrConversionExecutionArtifactUpsert, Store,
-    StoreError, StoreKeyRotationStatus, StoreOpenOptions, StoredDocument, StoredFollowUp,
-    StoredFollowUpStatus, StoredGeneratedDocumentDispatchEvidence, StoredImportedDocument,
-    StoredImportedDocumentMeta, StoredImportedDocumentReviewStatus, StoredPaperBookImport,
-    StoredPaperBookImportMeta, StoredPaperBookOcrConversionDossier,
+    StoreError, StoreKeyRotationStatus, StoreOpenOptions, StoredCredentialRecord, StoredDocument,
+    StoredFollowUp, StoredFollowUpStatus, StoredGeneratedDocumentDispatchEvidence,
+    StoredImportedDocument, StoredImportedDocumentMeta, StoredImportedDocumentReviewStatus,
+    StoredPaperBookImport, StoredPaperBookImportMeta, StoredPaperBookOcrConversionDossier,
     StoredPaperBookOcrConversionExecutionArtifact, StoredPaperBookOcrDraft,
     StoredPaperBookOcrPageSpan, StoredPaperBookOcrReviewStatus, StoredPaperBookOcrStatus,
 };
@@ -1540,9 +1540,10 @@ fn schema_version_is_current() {
     // operator review metadata landed as schema v11; paper-book OCR conversion dossiers landed as
     // schema v12; generated-document dispatch evidence landed as schema v13; paper-book OCR
     // conversion execution artifacts landed as schema v14; imported-document review history landed
-    // as schema v15.
+    // as schema v15; the non-ledger sidecar stores (users/roles/delegations/settings/
+    // provider_credentials — wp16 P3b) landed as schema v16.
     // A fresh DB is stamped with the current version.
-    assert_eq!(chancela_store::schema::SCHEMA_VERSION, 15);
+    assert_eq!(chancela_store::schema::SCHEMA_VERSION, 16);
     let dir = TempDir::new();
     Store::open(dir.path()).expect("open fresh");
     let raw = rusqlite::Connection::open(dir.path().join("chancela.db")).unwrap();
@@ -3009,4 +3010,225 @@ fn pending_cmd_session_round_trips_persists_and_deletes() {
         .unwrap();
     assert!(store.pending_cmd_session("sess-1").unwrap().is_none());
     assert!(store.all_pending_cmd_sessions().unwrap().is_empty());
+}
+
+// --- wp16 P3b: non-ledger sidecar stores (users / roles / delegations / settings / credentials) ---
+
+#[test]
+fn sidecar_document_stores_round_trip_update_and_order() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+
+    // Empty stores read as empty.
+    assert!(store.users().unwrap().is_empty());
+    assert!(store.roles().unwrap().is_empty());
+    assert!(store.delegations().unwrap().is_empty());
+
+    // Upsert three of each, deliberately out of id order to prove the read orders by id.
+    store
+        .persist(|tx| {
+            tx.upsert_user("u-charlie", r#"{"username":"amelia.marques"}"#)?;
+            tx.upsert_user("u-alfa", r#"{"username":"first"}"#)?;
+            tx.upsert_user("u-bravo", r#"{"username":"second"}"#)?;
+            tx.upsert_role("r-viewer", r#"{"perm":"read"}"#)?;
+            tx.upsert_role("r-admin", r#"{"perm":"all"}"#)?;
+            tx.upsert_delegation("d-2", r#"{"state":"revoked"}"#)?;
+            tx.upsert_delegation("d-1", r#"{"state":"active"}"#)?;
+            Ok(())
+        })
+        .expect("persist sidecars");
+
+    // Ordering is deterministic by id.
+    let users = store.users().unwrap();
+    assert_eq!(
+        users,
+        vec![
+            ("u-alfa".to_owned(), r#"{"username":"first"}"#.to_owned()),
+            ("u-bravo".to_owned(), r#"{"username":"second"}"#.to_owned()),
+            (
+                "u-charlie".to_owned(),
+                r#"{"username":"amelia.marques"}"#.to_owned()
+            ),
+        ]
+    );
+    assert_eq!(
+        store.roles().unwrap(),
+        vec![
+            ("r-admin".to_owned(), r#"{"perm":"all"}"#.to_owned()),
+            ("r-viewer".to_owned(), r#"{"perm":"read"}"#.to_owned()),
+        ]
+    );
+    assert_eq!(
+        store.delegations().unwrap(),
+        vec![
+            ("d-1".to_owned(), r#"{"state":"active"}"#.to_owned()),
+            ("d-2".to_owned(), r#"{"state":"revoked"}"#.to_owned()),
+        ]
+    );
+
+    // Upsert is idempotent on id: a second write replaces the json, never duplicates the row.
+    store
+        .persist(|tx| tx.upsert_user("u-alfa", r#"{"username":"updated"}"#))
+        .expect("update user");
+    let users = store.users().unwrap();
+    assert_eq!(users.len(), 3);
+    assert_eq!(users[0].1, r#"{"username":"updated"}"#);
+
+    // Delete drops exactly one row; deleting an unknown id is a no-op.
+    store
+        .persist(|tx| {
+            tx.delete_user("u-bravo")?;
+            tx.delete_user("u-does-not-exist")?;
+            tx.delete_role("r-viewer")?;
+            tx.delete_delegation("d-2")?;
+            Ok(())
+        })
+        .expect("delete sidecars");
+    assert_eq!(
+        store
+            .users()
+            .unwrap()
+            .iter()
+            .map(|(id, _)| id.clone())
+            .collect::<Vec<_>>(),
+        vec!["u-alfa".to_owned(), "u-charlie".to_owned()]
+    );
+    assert_eq!(store.roles().unwrap().len(), 1);
+    assert_eq!(store.delegations().unwrap().len(), 1);
+
+    // The rows survive a reopen (durable, not in-memory).
+    drop(store);
+    let reopened = Store::open(dir.path()).expect("reopen");
+    assert_eq!(reopened.users().unwrap().len(), 2);
+    assert_eq!(reopened.roles().unwrap().len(), 1);
+    assert_eq!(reopened.delegations().unwrap().len(), 1);
+}
+
+#[test]
+fn settings_singleton_document_round_trips_and_updates() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+
+    // No settings persisted yet.
+    assert!(store.settings().unwrap().is_none());
+
+    store
+        .persist(|tx| {
+            tx.put_settings(r#"{"schema_version":16,"office":"Encosto Estrategico Lda"}"#)
+        })
+        .expect("put settings");
+    assert_eq!(
+        store.settings().unwrap().as_deref(),
+        Some(r#"{"schema_version":16,"office":"Encosto Estrategico Lda"}"#)
+    );
+
+    // Put is a singleton upsert: a second write replaces the one document, never adds a second row.
+    store
+        .persist(|tx| tx.put_settings(r#"{"schema_version":16,"office":"changed"}"#))
+        .expect("update settings");
+    assert_eq!(
+        store.settings().unwrap().as_deref(),
+        Some(r#"{"schema_version":16,"office":"changed"}"#)
+    );
+
+    // Durable across reopen.
+    drop(store);
+    let reopened = Store::open(dir.path()).expect("reopen");
+    assert_eq!(
+        reopened.settings().unwrap().as_deref(),
+        Some(r#"{"schema_version":16,"office":"changed"}"#)
+    );
+}
+
+#[test]
+fn credential_records_preserve_opaque_bytes_and_order() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+
+    assert!(store.read_credential_records().unwrap().is_empty());
+
+    // A deliberately non-UTF8 opaque blob (0xFF/0xFE/0x00 are invalid UTF-8) to prove the store
+    // preserves the ciphertext bytes exactly and never treats the record as text.
+    let non_utf8: Vec<u8> = vec![0x00, 0xFF, 0xFE, 0x10, b'{', 0x80, 0x81, b'}'];
+    let csc_blob: Vec<u8> = b"encosto-estrategico-ciphertext".to_vec();
+
+    store
+        .persist(|tx| {
+            // Insert out of (mode, provider_id) order to prove the read orders them.
+            tx.put_credential_record("scap", "", 3, "2026-07-14T10:00:00Z", &non_utf8)?;
+            tx.put_credential_record(
+                "csc",
+                "encosto-estrategico",
+                1,
+                "2026-07-14T09:00:00Z",
+                &csc_blob,
+            )?;
+            tx.put_credential_record("cmd", "", 2, "2026-07-14T08:00:00Z", b"cmd-ct")?;
+            Ok(())
+        })
+        .expect("put credential records");
+
+    let records = store.read_credential_records().unwrap();
+    assert_eq!(
+        records
+            .iter()
+            .map(|r| (r.mode.clone(), r.provider_id.clone()))
+            .collect::<Vec<_>>(),
+        vec![
+            ("cmd".to_owned(), String::new()),
+            ("csc".to_owned(), "encosto-estrategico".to_owned()),
+            ("scap".to_owned(), String::new()),
+        ]
+    );
+
+    // The SCAP record's opaque, non-UTF8 blob and its metadata round-trip byte-for-byte.
+    let scap = records.iter().find(|r| r.mode == "scap").unwrap();
+    assert_eq!(
+        scap,
+        &StoredCredentialRecord {
+            mode: "scap".to_owned(),
+            provider_id: String::new(),
+            key_version: 3,
+            updated_at: "2026-07-14T10:00:00Z".to_owned(),
+            record_blob: non_utf8.clone(),
+        }
+    );
+
+    // Upsert is idempotent on (mode, provider_id): a rotation replaces the blob + key_version in place.
+    let rotated: Vec<u8> = vec![0x01, 0x02, 0x03, 0xFF];
+    store
+        .persist(|tx| tx.put_credential_record("scap", "", 4, "2026-07-14T11:00:00Z", &rotated))
+        .expect("rotate scap");
+    let records = store.read_credential_records().unwrap();
+    assert_eq!(records.len(), 3, "rotation must not add a row");
+    let scap = records.iter().find(|r| r.mode == "scap").unwrap();
+    assert_eq!(scap.key_version, 4);
+    assert_eq!(scap.record_blob, rotated);
+
+    // Delete removes exactly the addressed record; an unknown key is a no-op.
+    store
+        .persist(|tx| {
+            tx.delete_credential_record("scap", "")?;
+            tx.delete_credential_record("csc", "no-such-provider")?;
+            Ok(())
+        })
+        .expect("delete credential record");
+    let records = store.read_credential_records().unwrap();
+    assert_eq!(
+        records.iter().map(|r| r.mode.clone()).collect::<Vec<_>>(),
+        vec!["cmd".to_owned(), "csc".to_owned()]
+    );
+
+    // Durable across reopen: the csc ciphertext survives verbatim.
+    drop(store);
+    let reopened = Store::open(dir.path()).expect("reopen");
+    let csc = reopened
+        .read_credential_records()
+        .unwrap()
+        .into_iter()
+        .find(|r| r.mode == "csc")
+        .unwrap();
+    assert_eq!(csc.record_blob, csc_blob);
+    assert_eq!(csc.provider_id, "encosto-estrategico");
+    assert_eq!(csc.key_version, 1);
 }

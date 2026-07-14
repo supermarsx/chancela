@@ -225,6 +225,34 @@ CREATE TABLE IF NOT EXISTS events (
     }
 
     #[test]
+    fn sidecar_store_tables_are_in_schema_and_translate() {
+        // wp16 P3b — the five non-ledger sidecar tables must be part of the shared DDL so both the
+        // SQLite path and the Postgres-derived path create them.
+        let joined = crate::schema::ALL.join("\n");
+        for table in [
+            "CREATE TABLE IF NOT EXISTS users",
+            "CREATE TABLE IF NOT EXISTS roles",
+            "CREATE TABLE IF NOT EXISTS delegations",
+            "CREATE TABLE IF NOT EXISTS settings",
+            "CREATE TABLE IF NOT EXISTS provider_credentials",
+        ] {
+            assert!(joined.contains(table), "missing sidecar table DDL: {table}");
+        }
+
+        // The credential table's opaque blob + integer metadata must map cleanly, and its composite
+        // primary key must survive the rewrite.
+        let pg = sqlite_ddl_to_pg(crate::schema::CREATE_PROVIDER_CREDENTIALS);
+        assert!(pg.contains("record_blob BYTEA NOT NULL"), "{pg}");
+        assert!(pg.contains("key_version BIGINT NOT NULL"), "{pg}");
+        assert!(pg.contains("PRIMARY KEY (mode, provider_id)"), "{pg}");
+        assert!(!pg.contains("STRICT"), "{pg}");
+        assert!(
+            !pg.contains("IDENTITY"),
+            "credential table has no surrogate id: {pg}"
+        );
+    }
+
+    #[test]
     fn ledger_page_sql_maps_instr_and_placeholders() {
         let sqlite = "SELECT seq FROM events WHERE seq < ? AND instr(scope, ?) > 0 \
                       ORDER BY seq DESC LIMIT ?";

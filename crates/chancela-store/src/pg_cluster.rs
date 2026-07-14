@@ -341,7 +341,7 @@ mod tests {
         let reconstructed = (classid << 32) | objid;
         assert_eq!(reconstructed, key);
         // Our fixed key is positive as an i64 (high bit clear), so the bigint math never sign-flips.
-        assert!(WRITER_ADVISORY_LOCK_KEY > 0);
+        const _: () = assert!(WRITER_ADVISORY_LOCK_KEY > 0);
     }
 
     #[test]
@@ -433,9 +433,8 @@ mod tests {
         let follower = PostgresBackend::open(&url).expect("opens as follower");
         assert!(!follower.is_leader());
         // Follower cannot promote while the leader still holds the lock.
-        assert_eq!(
-            follower.try_promote().expect("try_promote runs"),
-            false,
+        assert!(
+            !follower.try_promote().expect("try_promote runs"),
             "a follower must not promote while the leader lives"
         );
         // Leader dies → its session drops → the advisory lock auto-releases.

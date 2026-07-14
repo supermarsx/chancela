@@ -61,7 +61,16 @@
 ///   act created from that OCR. They carry explicit no-claim flags and never store raw OCR text.
 /// - **v15** — adds `imported_document_review_history`: append-only imported-document review
 ///   decisions so the review workflow is auditable beyond the latest metadata projection.
-pub const SCHEMA_VERSION: i64 = 15;
+/// - **v16** — adds the non-ledger sidecar stores so a multi-node cluster keeps them consistent
+///   across nodes instead of as per-node JSON files (wp16 P3b, plan §8.2): `users`, `roles`,
+///   `delegations` (document-in-relational `(id, json)` rows mirroring `users.json` / `roles.json` /
+///   `delegations.json`), `settings` (a single settings document mirroring `settings.json`), and
+///   `provider_credentials` (the encrypted `provider-credentials.enc.json` records as opaque
+///   ciphertext blobs + non-secret metadata). Forward-only, additive: existing databases gain the
+///   tables via [`ALL`] and advance their stamp on next open. This phase only makes the store
+///   *capable* of holding them; the file-based loaders in `chancela-api` are switched in a later,
+///   coordinated phase.
+pub const SCHEMA_VERSION: i64 = 16;
 
 /// `meta` — small key/value table for the `schema_version` stamp and the app version.
 pub const CREATE_META: &str = "\
@@ -555,6 +564,64 @@ pub const CREATE_FOLLOW_UPS_ACT_IDX: &str =
 pub const CREATE_FOLLOW_UPS_STATUS_IDX: &str =
     "CREATE INDEX IF NOT EXISTS idx_follow_ups_status ON follow_ups (status);";
 
+/// `users` — the user directory sidecar moved into the shared store (schema v16, wp16 P3b).
+///
+/// Document-in-relational like the four domain aggregates: `(id, json)` where `json` is the API's
+/// serialized `User` value (opaque to the store). This mirrors the on-disk `users.json` array so a
+/// later api-wiring phase can load/persist the directory from the shared database, keeping every
+/// cluster node consistent instead of reading a per-node file. The store never interprets `json`.
+pub const CREATE_USERS: &str = "\
+CREATE TABLE IF NOT EXISTS users (
+    id   TEXT PRIMARY KEY,
+    json TEXT NOT NULL
+) STRICT;";
+
+/// `roles` — the role-catalog sidecar (`roles.json`) moved into the shared store (schema v16, wp16
+/// P3b). One `(id, json)` row per role definition; `json` is the API's serialized role value.
+pub const CREATE_ROLES: &str = "\
+CREATE TABLE IF NOT EXISTS roles (
+    id   TEXT PRIMARY KEY,
+    json TEXT NOT NULL
+) STRICT;";
+
+/// `delegations` — the scoped-delegation sidecar (`delegations.json`) moved into the shared store
+/// (schema v16, wp16 P3b). One `(id, json)` row per delegation (active **or** revoked — the file
+/// retains both); `json` is the API's serialized `StoredDelegation`.
+pub const CREATE_DELEGATIONS: &str = "\
+CREATE TABLE IF NOT EXISTS delegations (
+    id   TEXT PRIMARY KEY,
+    json TEXT NOT NULL
+) STRICT;";
+
+/// `settings` — the single settings document (`settings.json`) moved into the shared store (schema
+/// v16, wp16 P3b). A single-row table keyed by a fixed singleton id ([`crate::SETTINGS_SINGLETON_ID`]);
+/// `json` is the API's serialized `Settings` document (opaque to the store).
+pub const CREATE_SETTINGS: &str = "\
+CREATE TABLE IF NOT EXISTS settings (
+    id   TEXT PRIMARY KEY,
+    json TEXT NOT NULL
+) STRICT;";
+
+/// `provider_credentials` — the encrypted provider-credential sidecar
+/// (`provider-credentials.enc.json`) moved into the shared store (schema v16, wp16 P3b).
+///
+/// One row per `(mode, provider_id)` record, mirroring the sidecar file's `records` list.
+/// `record_blob` is the **OPAQUE** serialized `EncryptedCredentialRecord`: it already holds only
+/// AEAD ciphertext envelopes (never a plaintext secret), and the store treats it as opaque bytes
+/// (`BLOB`). The XChaCha20-Poly1305 / AAD crypto envelope stays entirely in `chancela-api`'s
+/// secretstore — only its **storage** moves from a file to this DB row; the store neither encrypts,
+/// decrypts, nor parses it. The non-secret `key_version` / `updated_at` metadata is broken out into
+/// typed columns for the status/rotation surfaces, exactly as the sidecar record carries them.
+pub const CREATE_PROVIDER_CREDENTIALS: &str = "\
+CREATE TABLE IF NOT EXISTS provider_credentials (
+    mode        TEXT NOT NULL,
+    provider_id TEXT NOT NULL,
+    key_version INTEGER NOT NULL,
+    updated_at  TEXT NOT NULL,
+    record_blob BLOB NOT NULL,
+    PRIMARY KEY (mode, provider_id)
+) STRICT;";
+
 /// Every DDL statement, in dependency order, for [`crate::Store::open`] to execute on boot.
 pub const ALL: &[&str] = &[
     CREATE_META,
@@ -596,4 +663,9 @@ pub const ALL: &[&str] = &[
     CREATE_FOLLOW_UPS,
     CREATE_FOLLOW_UPS_ACT_IDX,
     CREATE_FOLLOW_UPS_STATUS_IDX,
+    CREATE_USERS,
+    CREATE_ROLES,
+    CREATE_DELEGATIONS,
+    CREATE_SETTINGS,
+    CREATE_PROVIDER_CREDENTIALS,
 ];

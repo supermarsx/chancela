@@ -69,12 +69,13 @@ use rusqlite::types::Value;
 
 use crate::{
     LedgerEventPage, LedgerEventPageQuery, LoadedState, PendingCmdSession, RawEventRow, StoreError,
-    StoredDocument, StoredFollowUp, StoredFollowUpStatus, StoredGeneratedDocumentDispatchEvidence,
-    StoredImportedDocument, StoredImportedDocumentMeta, StoredImportedDocumentReviewHistoryEntry,
-    StoredImportedDocumentReviewStatus, StoredPaperBookImport, StoredPaperBookImportMeta,
-    StoredPaperBookOcrConversionDossier, StoredPaperBookOcrConversionExecutionArtifact,
-    StoredPaperBookOcrDraft, StoredPaperBookOcrReviewStatus, StoredPaperBookOcrStatus,
-    StoredSignedDocument, int_to_u32, parse_date, parse_rfc3339, parse_uuid_newtype,
+    StoredCredentialRecord, StoredDocument, StoredFollowUp, StoredFollowUpStatus,
+    StoredGeneratedDocumentDispatchEvidence, StoredImportedDocument, StoredImportedDocumentMeta,
+    StoredImportedDocumentReviewHistoryEntry, StoredImportedDocumentReviewStatus,
+    StoredPaperBookImport, StoredPaperBookImportMeta, StoredPaperBookOcrConversionDossier,
+    StoredPaperBookOcrConversionExecutionArtifact, StoredPaperBookOcrDraft,
+    StoredPaperBookOcrReviewStatus, StoredPaperBookOcrStatus, StoredSignedDocument, int_to_u32,
+    parse_date, parse_rfc3339, parse_uuid_newtype,
 };
 
 /// Fixed key for the process-wide writer advisory lock (§4). An arbitrary, stable 64-bit constant
@@ -306,8 +307,9 @@ impl PostgresBackend {
 
     /// wp16 P1 — the leader's transactional-ish change signal (plan §2.2). After a durable append
     /// commits, the leader issues `NOTIFY chancela_ledger, '<max_seq>'` on the writer session so
-    /// followers wake immediately; a missed notification is still caught by the follower's seq-poll
-    /// backstop, so this is best-effort by design. `max_seq` is a plain integer (no injection risk).
+    /// followers wake immediately; a missed notification is retried by the follower's seq-poll
+    /// backstop once Postgres can be queried, so this is best-effort by design. `max_seq` is a plain
+    /// integer (no injection risk).
     pub(crate) fn notify_append(&self, max_seq: i64) -> Result<(), StoreError> {
         let mut writer = self.writer();
         writer.batch_execute(&notify_append_sql(max_seq))?;
@@ -720,6 +722,50 @@ impl PostgresBackend {
             &[&id],
         )?;
         row.as_ref().map(row_to_follow_up).transpose()
+    }
+
+    // ── wp16 P3b — non-ledger sidecar reads (users / roles / delegations / settings / credentials) ──
+
+    pub(crate) fn document_rows(&self, table: &str) -> Result<Vec<(String, String)>, StoreError> {
+        // `table` is a fixed internal identifier (users/roles/delegations), never user input.
+        let mut client = self.read()?;
+        let rows = client.query(
+            &format!("SELECT id, json FROM {table} ORDER BY id ASC"),
+            &[],
+        )?;
+        rows.iter()
+            .map(|row| Ok((row.get::<_, String>(0), row.get::<_, String>(1))))
+            .collect()
+    }
+
+    pub(crate) fn settings(&self) -> Result<Option<String>, StoreError> {
+        let mut client = self.read()?;
+        let row = client.query_opt(
+            "SELECT json FROM settings WHERE id = $1",
+            &[&crate::SETTINGS_SINGLETON_ID],
+        )?;
+        Ok(row.map(|row| row.get::<_, String>(0)))
+    }
+
+    pub(crate) fn read_credential_records(
+        &self,
+    ) -> Result<Vec<StoredCredentialRecord>, StoreError> {
+        let mut client = self.read()?;
+        let rows = client.query(
+            "SELECT mode, provider_id, key_version, updated_at, record_blob \
+             FROM provider_credentials ORDER BY mode ASC, provider_id ASC",
+            &[],
+        )?;
+        Ok(rows
+            .iter()
+            .map(|row| StoredCredentialRecord {
+                mode: row.get(0),
+                provider_id: row.get(1),
+                key_version: row.get(2),
+                updated_at: row.get(3),
+                record_blob: row.get(4),
+            })
+            .collect())
     }
 
     pub(crate) fn signed_document_for_act(
