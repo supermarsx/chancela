@@ -751,17 +751,27 @@ function SyncHandoffPreflightReportCard({
   locale: string;
   t: TFunction;
 }) {
-  const blockerCount = report.blockers.length + report.missing_evidence.length;
-  const tone = report.readiness.local_handoff_review_ready
-    ? 'info'
-    : blockerCount > 0
-      ? 'warn'
-      : 'info';
-  const readinessTone = report.readiness.local_handoff_review_ready
-    ? 'ok'
-    : blockerCount > 0
-      ? 'warn'
-      : 'neutral';
+  const ready = report.readiness.local_handoff_review_ready;
+  const blocked = report.blockers.length > 0;
+  // Verdict-first: lead with a plain-language result; a warn/error frame flags "not ready".
+  const tone = ready ? 'info' : blocked ? 'error' : 'warn';
+  const badgeTone = ready ? 'ok' : 'warn';
+  const verdictSymbol = ready ? '✓' : blocked ? '✗' : '?';
+  const verdictTitle = ready
+    ? 'data.status.syncHandoff.verdictTitleReady'
+    : blocked
+      ? 'data.status.syncHandoff.verdictTitleBlocked'
+      : 'data.status.syncHandoff.verdictTitleMissing';
+  const verdictWhy = ready
+    ? 'data.status.syncHandoff.verdictWhyReady'
+    : blocked
+      ? 'data.status.syncHandoff.verdictWhyBlocked'
+      : 'data.status.syncHandoff.verdictWhyMissing';
+  const readinessTone = ready ? 'ok' : blocked ? 'warn' : 'neutral';
+  const hasActionable =
+    report.blockers.length > 0 ||
+    report.missing_evidence.length > 0 ||
+    report.operator_actions.length > 0;
   const latestCandidate = report.backup.backup_directory.latest_candidate_file;
   const latestDrill = report.backup.latest_recovery_drill;
   const noClaimRows = [
@@ -778,139 +788,160 @@ function SyncHandoffPreflightReportCard({
   ] as const;
 
   return (
-    <InlineWarning tone={tone} title="Pré-validação local de handoff">
-      <dl className="deflist data-status-summary">
-        <div>
-          <dt>Estado</dt>
-          <dd>
-            <Badge tone={readinessTone}>{report.readiness.status}</Badge>
-          </dd>
+    <InlineWarning tone={tone} title={t(verdictTitle)}>
+      <div className="stack--tight">
+        <div className="recovery-verdict">
+          <p className="recovery-verdict__eyebrow">{t('data.status.syncHandoff.eyebrow')}</p>
+          <p className="recovery-verdict__why">
+            <Badge tone={badgeTone}>{verdictSymbol}</Badge> {t(verdictWhy)}
+          </p>
+          <p className="field__hint">{t('data.status.syncHandoff.nonMutating')}</p>
         </div>
-        <div>
-          <dt>Gerado em</dt>
-          <dd>{formatTimestamp(report.generated_at, locale)}</dd>
-        </div>
-        <div>
-          <dt>Candidatos não validados</dt>
-          <dd>
-            {new Intl.NumberFormat(locale).format(
-              report.backup.backup_directory.untrusted_candidate_file_count,
-            )}{' '}
-            /{' '}
-            <span className="mono">
-              {formatBytes(report.backup.backup_directory.total_candidate_bytes, locale)}
-            </span>
-          </dd>
-        </div>
-        <div>
-          <dt>Candidato não validado mais recente</dt>
-          <dd className="mono">
-            {latestCandidate
-              ? `${latestCandidate.file_name} (${formatBytes(latestCandidate.bytes, locale)})`
-              : '—'}
-          </dd>
-        </div>
-        <div>
-          <dt>Evidência verificada</dt>
-          <dd>
-            <Badge tone={report.backup.verified_recovery_drill_evidence ? 'ok' : 'warn'}>
-              {report.backup.verified_recovery_drill_evidence ? 'verified' : 'missing'}
-            </Badge>
-          </dd>
-        </div>
-        <div>
-          <dt>Ensaios de recuperação</dt>
-          <dd>
-            {new Intl.NumberFormat(locale).format(report.backup.recovery_drill_receipt_count)}
-          </dd>
-        </div>
-        <div>
-          <dt>Último ensaio</dt>
-          <dd>
-            {latestDrill ? (
-              <Badge tone={latestDrill.verified_manifest_and_isolated_snapshot ? 'ok' : 'warn'}>
-                {latestDrill.verified_manifest_and_isolated_snapshot ? 'verified' : 'missing'}
-              </Badge>
-            ) : (
-              '—'
-            )}
-          </dd>
-        </div>
-        <div>
-          <dt>Livros</dt>
-          <dd>
-            {new Intl.NumberFormat(locale).format(report.book_bundles.book_count)} total /{' '}
-            {new Intl.NumberFormat(locale).format(report.book_bundles.closed_book_count)} fechados
-          </dd>
-        </div>
-        <div>
-          <dt>Atos preserváveis</dt>
-          <dd>
-            {new Intl.NumberFormat(locale).format(
-              report.archive_dglab.sealed_or_archived_act_count,
-            )}
-          </dd>
-        </div>
-        <div>
-          <dt>Documentos preservados</dt>
-          <dd>
-            {new Intl.NumberFormat(locale).format(report.archive_dglab.preserved_document_count)}
-          </dd>
-        </div>
-        <div>
-          <dt>Pré-validação de importação</dt>
-          <dd>
-            <Badge tone={report.book_bundles.import_preflight_read_only ? 'ok' : 'warn'}>
-              {report.book_bundles.import_preflight_read_only ? 'read-only' : 'mutating'}
-            </Badge>
-          </dd>
-        </div>
-        <div className="deflist__wide">
-          <dt>Sem alegações</dt>
-          <dd>
-            <ul className="plain-list">
-              {noClaimRows.map(([label, claimed]) => (
-                <li key={label}>
-                  {label}:{' '}
-                  <Badge tone={!claimed ? 'ok' : 'warn'}>
-                    {!claimed ? t('common.yes') : t('common.no')}
+
+        {hasActionable ? (
+          <div className="stack--tight">
+            {report.blockers.length > 0 ? (
+              <div>
+                <h5>{t('data.status.syncHandoff.blockers')}</h5>
+                <ul className="plain-list">
+                  {report.blockers.map((blocker) => (
+                    <li key={blocker}>{blocker}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            {report.missing_evidence.length > 0 ? (
+              <div>
+                <h5>{t('data.status.syncHandoff.missingEvidence')}</h5>
+                <ul className="plain-list">
+                  {report.missing_evidence.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            {report.operator_actions.length > 0 ? (
+              <div>
+                <h5>{t('data.status.syncHandoff.operatorActions')}</h5>
+                <ul className="plain-list">
+                  {report.operator_actions.map((action) => (
+                    <li key={action}>{action}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        <details className="recovery-evidence">
+          <summary>{t('data.status.syncHandoff.evidenceToggle')}</summary>
+          <dl className="deflist data-status-summary">
+            <div>
+              <dt>Estado</dt>
+              <dd>
+                <Badge tone={readinessTone}>{report.readiness.status}</Badge>
+              </dd>
+            </div>
+            <div>
+              <dt>Gerado em</dt>
+              <dd>{formatTimestamp(report.generated_at, locale)}</dd>
+            </div>
+            <div>
+              <dt>Candidatos não validados</dt>
+              <dd>
+                {new Intl.NumberFormat(locale).format(
+                  report.backup.backup_directory.untrusted_candidate_file_count,
+                )}{' '}
+                /{' '}
+                <span className="mono">
+                  {formatBytes(report.backup.backup_directory.total_candidate_bytes, locale)}
+                </span>
+              </dd>
+            </div>
+            <div>
+              <dt>Candidato não validado mais recente</dt>
+              <dd className="mono">
+                {latestCandidate
+                  ? `${latestCandidate.file_name} (${formatBytes(latestCandidate.bytes, locale)})`
+                  : '—'}
+              </dd>
+            </div>
+            <div>
+              <dt>Evidência verificada</dt>
+              <dd>
+                <Badge tone={report.backup.verified_recovery_drill_evidence ? 'ok' : 'warn'}>
+                  {report.backup.verified_recovery_drill_evidence ? 'verified' : 'missing'}
+                </Badge>
+              </dd>
+            </div>
+            <div>
+              <dt>Ensaios de recuperação</dt>
+              <dd>
+                {new Intl.NumberFormat(locale).format(report.backup.recovery_drill_receipt_count)}
+              </dd>
+            </div>
+            <div>
+              <dt>Último ensaio</dt>
+              <dd>
+                {latestDrill ? (
+                  <Badge tone={latestDrill.verified_manifest_and_isolated_snapshot ? 'ok' : 'warn'}>
+                    {latestDrill.verified_manifest_and_isolated_snapshot ? 'verified' : 'missing'}
                   </Badge>
-                </li>
-              ))}
-            </ul>
-          </dd>
-        </div>
-      </dl>
-      {report.blockers.length > 0 ? (
-        <div>
-          <h5>Bloqueios</h5>
-          <ul className="plain-list">
-            {report.blockers.map((blocker) => (
-              <li key={blocker}>{blocker}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-      {report.missing_evidence.length > 0 ? (
-        <div>
-          <h5>Evidência em falta</h5>
-          <ul className="plain-list">
-            {report.missing_evidence.map((item) => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-      {report.operator_actions.length > 0 ? (
-        <div>
-          <h5>Ações do operador</h5>
-          <ul className="plain-list">
-            {report.operator_actions.map((action) => (
-              <li key={action}>{action}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
+                ) : (
+                  '—'
+                )}
+              </dd>
+            </div>
+            <div>
+              <dt>Livros</dt>
+              <dd>
+                {new Intl.NumberFormat(locale).format(report.book_bundles.book_count)} total /{' '}
+                {new Intl.NumberFormat(locale).format(report.book_bundles.closed_book_count)}{' '}
+                fechados
+              </dd>
+            </div>
+            <div>
+              <dt>Atos preserváveis</dt>
+              <dd>
+                {new Intl.NumberFormat(locale).format(
+                  report.archive_dglab.sealed_or_archived_act_count,
+                )}
+              </dd>
+            </div>
+            <div>
+              <dt>Documentos preservados</dt>
+              <dd>
+                {new Intl.NumberFormat(locale).format(
+                  report.archive_dglab.preserved_document_count,
+                )}
+              </dd>
+            </div>
+            <div>
+              <dt>Pré-validação de importação</dt>
+              <dd>
+                <Badge tone={report.book_bundles.import_preflight_read_only ? 'ok' : 'warn'}>
+                  {report.book_bundles.import_preflight_read_only ? 'read-only' : 'mutating'}
+                </Badge>
+              </dd>
+            </div>
+            <div className="deflist__wide">
+              <dt>Sem alegações</dt>
+              <dd>
+                <ul className="plain-list">
+                  {noClaimRows.map(([label, claimed]) => (
+                    <li key={label}>
+                      {label}:{' '}
+                      <Badge tone={!claimed ? 'ok' : 'warn'}>
+                        {!claimed ? t('common.yes') : t('common.no')}
+                      </Badge>
+                    </li>
+                  ))}
+                </ul>
+              </dd>
+            </div>
+          </dl>
+        </details>
+      </div>
     </InlineWarning>
   );
 }

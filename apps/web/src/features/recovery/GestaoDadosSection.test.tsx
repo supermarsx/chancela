@@ -431,6 +431,19 @@ describe('GestaoDadosSection', () => {
     expect((await screen.findAllByText('Pré-validação local de handoff')).length).toBeGreaterThan(
       0,
     );
+    // Verdict-first: a plain-language result leads; the dense evidence is disclosed on demand.
+    expect(screen.getByText('Evidência local insuficiente para rever o handoff')).toBeTruthy();
+    expect(
+      screen.getByText(
+        'Falta evidência local verificada para rever o handoff — reúna o que falta antes de prosseguir.',
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        'Isto é apenas uma pré-validação local (simulação): não executa a sincronização, o handoff nem qualquer alteração de dados.',
+      ),
+    ).toBeTruthy();
+    expect(screen.getAllByText('Evidência técnica').length).toBeGreaterThan(0);
     expect(screen.getByText('missing_local_evidence')).toBeTruthy();
     expect(screen.getByText('Candidatos não validados')).toBeTruthy();
     expect(screen.getByText('chancela-backup-test.zip (1 KB)')).toBeTruthy();
@@ -1262,7 +1275,8 @@ describe('GestaoDadosSection', () => {
         'A pré-validação e o restauro isolado tiveram sucesso, sem qualquer restauro ao vivo.',
       ),
     ).toBeTruthy();
-    expect(screen.getByText('Evidência técnica')).toBeTruthy();
+    // Both verdict surfaces (recovery drill + sync-handoff preflight) share the toggle label.
+    expect(screen.getAllByText('Evidência técnica').length).toBeGreaterThan(0);
     expect(screen.queryByText(archive)).toBeNull();
     expect(screen.getByText('chancela-backup-drill.cbackup')).toBeTruthy();
     expect(screen.getByText('chancela-backup-manifest/v1')).toBeTruthy();
