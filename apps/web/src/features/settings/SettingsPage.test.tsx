@@ -2361,6 +2361,10 @@ function closedRetentionReviewRecord(
   };
 }
 
+async function openPrivacySubTab(name: 'Registos' | 'Retenção' | 'Orientação') {
+  fireEvent.click(await screen.findByRole('button', { name }));
+}
+
 function retentionNoActionCandidate(overrides: Record<string, unknown> = {}) {
   return {
     ...cloneJson(RETENTION_DUE_CANDIDATES_REPORT.candidates[0]),
@@ -3274,6 +3278,7 @@ describe('SettingsPage', () => {
     vi.stubGlobal('fetch', fn);
 
     renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+    await openPrivacySubTab('Orientação');
 
     const panel = (await screen.findByText('Modelo DPIA local')).closest('section');
     expect(panel).toBeTruthy();
@@ -3606,6 +3611,7 @@ describe('SettingsPage', () => {
     vi.stubGlobal('fetch', fn);
 
     renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+    await openPrivacySubTab('Retenção');
 
     const legalHoldStatusPanel = (
       await screen.findByText('Estado local de legal hold e descarte')
@@ -3644,6 +3650,7 @@ describe('SettingsPage', () => {
     vi.stubGlobal('fetch', fn);
 
     renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+    await openPrivacySubTab('Retenção');
 
     const candidatesPanel = (await screen.findByText('Candidatos de retenção vencidos')).closest(
       'section',
@@ -3707,6 +3714,7 @@ describe('SettingsPage', () => {
     vi.stubGlobal('fetch', fn);
 
     renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+    await openPrivacySubTab('Retenção');
 
     const candidatesPanel = (await screen.findByText('Candidatos de retenção vencidos')).closest(
       'section',
@@ -3813,6 +3821,7 @@ describe('SettingsPage', () => {
     vi.stubGlobal('fetch', fn);
 
     renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+    await openPrivacySubTab('Retenção');
 
     const candidatesPanel = (await screen.findByText('Candidatos de retenção vencidos')).closest(
       'section',
@@ -3841,6 +3850,7 @@ describe('SettingsPage', () => {
     vi.stubGlobal('fetch', fn);
 
     renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+    await openPrivacySubTab('Retenção');
 
     const candidatesPanel = (await screen.findByText('Candidatos de retenção vencidos')).closest(
       'section',
@@ -3957,6 +3967,7 @@ describe('SettingsPage', () => {
     vi.stubGlobal('fetch', fn);
 
     renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+    await openPrivacySubTab('Retenção');
 
     const executionQueue = (await screen.findByText('Fila de revisão de execução')).closest(
       'section',
@@ -4032,6 +4043,7 @@ describe('SettingsPage', () => {
     vi.stubGlobal('fetch', fn);
 
     renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+    await openPrivacySubTab('Retenção');
 
     const executionQueue = (await screen.findByText('Fila de revisão de execução')).closest(
       'section',
@@ -4092,6 +4104,7 @@ describe('SettingsPage', () => {
     vi.stubGlobal('fetch', fn);
 
     renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+    await openPrivacySubTab('Retenção');
 
     const candidatesPanel = (await screen.findByText('Candidatos de retenção vencidos')).closest(
       'section',
@@ -4156,6 +4169,7 @@ describe('SettingsPage', () => {
     vi.stubGlobal('fetch', fn);
 
     renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+    await openPrivacySubTab('Retenção');
 
     const candidatesPanel = (await screen.findByText('Candidatos de retenção vencidos')).closest(
       'section',
@@ -4372,6 +4386,7 @@ describe('SettingsPage', () => {
     vi.stubGlobal('fetch', fn);
 
     renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+    await openPrivacySubTab('Retenção');
 
     const candidatesPanel = (await screen.findByText('Candidatos de retenção vencidos')).closest(
       'section',
@@ -4464,6 +4479,7 @@ describe('SettingsPage', () => {
     vi.stubGlobal('fetch', fn);
 
     renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+    await openPrivacySubTab('Retenção');
 
     const candidatesPanel = (await screen.findByText('Candidatos de retenção vencidos')).closest(
       'section',
@@ -4660,6 +4676,7 @@ describe('SettingsPage', () => {
     vi.stubGlobal('fetch', fn);
 
     renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+    await openPrivacySubTab('Retenção');
 
     const candidatesPanel = (await screen.findByText('Candidatos de retenção vencidos')).closest(
       'section',
@@ -4735,6 +4752,7 @@ describe('SettingsPage', () => {
     vi.stubGlobal('fetch', fn);
 
     renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+    await openPrivacySubTab('Retenção');
 
     const candidatesPanel = (await screen.findByText('Candidatos de retenção vencidos')).closest(
       'section',
@@ -4829,10 +4847,12 @@ describe('SettingsPage', () => {
     vi.stubGlobal('fetch', fn);
 
     renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+    await openPrivacySubTab('Retenção');
 
     await screen.findByText('Candidatos de retenção vencidos');
     cleanup();
     renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+    await openPrivacySubTab('Retenção');
     await screen.findByText('Candidatos de retenção vencidos');
 
     await waitFor(() =>
@@ -4860,6 +4880,7 @@ describe('SettingsPage', () => {
     vi.stubGlobal('fetch', fn);
 
     renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+    await openPrivacySubTab('Retenção');
 
     const candidatesPanel = (await screen.findByText('Candidatos de retenção vencidos')).closest(
       'section',
@@ -4891,6 +4912,7 @@ describe('SettingsPage', () => {
     vi.stubGlobal('fetch', fn);
 
     renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+    await openPrivacySubTab('Retenção');
 
     const retentionPanel = (await screen.findByText('Políticas de retenção')).closest('section');
     expect(retentionPanel).toBeTruthy();

@@ -2021,6 +2021,7 @@ export const plPL: Catalog = {
   "settings.privacy.execution.recordReview": "Record operational review",
   "settings.privacy.execution.recordingReview": "Recording review",
   "settings.privacy.execution.reviewRecorded": "Operational review recorded",
+  "settings.privacy.execution.status.all": "Wszystkie stany wykonania",
   "settings.privacy.execution.status.awaitingReview": "Awaiting review",
   "settings.privacy.execution.status.blocked": "Blocked",
   "settings.privacy.execution.status.executed": "Executed",

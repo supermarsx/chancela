@@ -2025,6 +2025,7 @@ export const nlNL: Catalog = {
   "settings.privacy.execution.recordReview": "Record operational review",
   "settings.privacy.execution.recordingReview": "Recording review",
   "settings.privacy.execution.reviewRecorded": "Operational review recorded",
+  "settings.privacy.execution.status.all": "Alle uitvoeringsstatussen",
   "settings.privacy.execution.status.awaitingReview": "Awaiting review",
   "settings.privacy.execution.status.blocked": "Blocked",
   "settings.privacy.execution.status.executed": "Executed",

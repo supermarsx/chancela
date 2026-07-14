@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from 'react';
+import { useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import {
   useCreatePrivacyBreachPlaybook,
   useCreatePrivacyDpia,
@@ -77,11 +77,13 @@ import {
   EmptyState,
   ErrorNote,
   Field,
+  FieldHelp,
   Icon,
   InlineWarning,
   Input,
   Select,
   SkeletonTable,
+  SubNav,
   Table,
   TextArea,
   useToast,
@@ -215,27 +217,39 @@ const EMPTY_RETENTION_DRY_RUN_FORM: RetentionDryRunFormState = {
   recordId: '',
 };
 
-const STATUS_LABELS: Record<PrivacyRecordStatus, string> = {
-  draft: 'Rascunho',
-  active: 'Ativo',
-  under_review: 'Em revisão',
-  retired: 'Retirado',
+const STATUS_LABEL_KEYS: Record<PrivacyRecordStatus, MessageKey> = {
+  draft: 'settings.privacy.status.draft',
+  active: 'settings.privacy.status.active',
+  under_review: 'settings.privacy.status.underReview',
+  retired: 'settings.privacy.status.retired',
 };
 
-const RISK_LABELS: Record<PrivacyRiskLevel, string> = {
-  low: 'Baixo',
-  medium: 'Médio',
-  high: 'Elevado',
-  critical: 'Crítico',
+const RISK_LABEL_KEYS: Record<PrivacyRiskLevel, MessageKey> = {
+  low: 'settings.privacy.risk.low',
+  medium: 'settings.privacy.risk.medium',
+  high: 'settings.privacy.risk.high',
+  critical: 'settings.privacy.risk.critical',
 };
 
-const ADVISORY_REVIEW_LABELS: Record<PrivacyAdvisoryReviewStatus, string> = {
-  no_receipt: 'Sem recibo local',
-  current: 'Revisão atual',
-  due_soon: 'Revisão breve',
-  overdue: 'Revisão vencida',
-  under_review: 'Em revisão local',
+const ADVISORY_REVIEW_LABEL_KEYS: Record<PrivacyAdvisoryReviewStatus, MessageKey> = {
+  no_receipt: 'settings.privacy.advisory.noReceipt',
+  current: 'settings.privacy.advisory.current',
+  due_soon: 'settings.privacy.advisory.dueSoon',
+  overdue: 'settings.privacy.advisory.overdue',
+  under_review: 'settings.privacy.advisory.underReview',
 };
+
+function statusLabel(t: TFunction, status: PrivacyRecordStatus): string {
+  return t(STATUS_LABEL_KEYS[status]);
+}
+
+function riskLabel(t: TFunction, risk: PrivacyRiskLevel): string {
+  return t(RISK_LABEL_KEYS[risk]);
+}
+
+function advisoryReviewLabel(t: TFunction, status: PrivacyAdvisoryReviewStatus): string {
+  return t(ADVISORY_REVIEW_LABEL_KEYS[status]);
+}
 
 const RETENTION_STATUS_LABEL_KEYS: Record<RetentionPolicyStatus, MessageKey> = {
   draft: 'settings.privacy.retention.status.draft',
@@ -253,10 +267,10 @@ const RETENTION_DISPOSAL_LABEL_KEYS: Record<RetentionDisposalAction, MessageKey>
   no_action: 'settings.privacy.retention.disposal.no_action',
 };
 
-const RETENTION_EXECUTION_STATUS_LABELS: Record<RetentionExecutionStatus, string> = {
-  awaiting_review: 'A aguardar revisão',
-  blocked: 'Bloqueado',
-  executed: 'Executado',
+const RETENTION_EXECUTION_STATUS_LABEL_KEYS: Record<RetentionExecutionStatus, MessageKey> = {
+  awaiting_review: 'settings.privacy.execution.status.awaitingReview',
+  blocked: 'settings.privacy.execution.status.blocked',
+  executed: 'settings.privacy.execution.status.executed',
 };
 
 const RETENTION_BOUNDED_EVIDENCE_SUPPRESSED_STATES: ReadonlySet<RetentionEvidenceState> = new Set([
@@ -273,30 +287,34 @@ const RETENTION_REVIEW_CLOSURE_FALSE_FLAGS = {
   retention_policy_mutated: false,
 } as const;
 
-const statusOptions = [
-  { value: 'all', label: 'Todos os estados' },
-  ...PRIVACY_RECORD_STATUSES.map((status) => ({ value: status, label: STATUS_LABELS[status] })),
-];
+function statusFilterOptions(t: TFunction) {
+  return [
+    { value: 'all', label: t('settings.privacy.status.all') },
+    ...PRIVACY_RECORD_STATUSES.map((status) => ({ value: status, label: statusLabel(t, status) })),
+  ];
+}
 
-const riskOptions = [
-  { value: 'all', label: 'Todos os riscos' },
-  ...PRIVACY_RISK_LEVELS.map((risk) => ({ value: risk, label: RISK_LABELS[risk] })),
-];
+function riskFilterOptions(t: TFunction) {
+  return [
+    { value: 'all', label: t('settings.privacy.risk.all') },
+    ...PRIVACY_RISK_LEVELS.map((risk) => ({ value: risk, label: riskLabel(t, risk) })),
+  ];
+}
 
-const statusSelectOptions = PRIVACY_RECORD_STATUSES.map((status) => ({
-  value: status,
-  label: STATUS_LABELS[status],
-}));
+function statusSelectOptionsFor(t: TFunction) {
+  return PRIVACY_RECORD_STATUSES.map((status) => ({ value: status, label: statusLabel(t, status) }));
+}
 
-const riskSelectOptions = PRIVACY_RISK_LEVELS.map((risk) => ({
-  value: risk,
-  label: RISK_LABELS[risk],
-}));
+function riskSelectOptionsFor(t: TFunction) {
+  return PRIVACY_RISK_LEVELS.map((risk) => ({ value: risk, label: riskLabel(t, risk) }));
+}
 
-const breachEvidenceOptions: { value: BreachEvidenceKind; label: string }[] = [
-  { value: 'review', label: 'Revisão' },
-  { value: 'drill', label: 'Exercício' },
-];
+function breachEvidenceOptionsFor(t: TFunction): { value: BreachEvidenceKind; label: string }[] {
+  return [
+    { value: 'review', label: t('settings.privacy.evidence.kind.review') },
+    { value: 'drill', label: t('settings.privacy.evidence.kind.drill') },
+  ];
+}
 
 function retentionStatusLabel(t: TFunction, status: RetentionPolicyStatus): string {
   return t(RETENTION_STATUS_LABEL_KEYS[status]);
@@ -306,8 +324,8 @@ function retentionDisposalLabel(t: TFunction, action: RetentionDisposalAction): 
   return t(RETENTION_DISPOSAL_LABEL_KEYS[action]);
 }
 
-function retentionExecutionStatusLabel(status: RetentionExecutionStatus): string {
-  return RETENTION_EXECUTION_STATUS_LABELS[status];
+function retentionExecutionStatusLabel(t: TFunction, status: RetentionExecutionStatus): string {
+  return t(RETENTION_EXECUTION_STATUS_LABEL_KEYS[status]);
 }
 
 function retentionReviewClosureDecisionForOutcome(
@@ -792,26 +810,27 @@ function advisoryReviewTone(
   return 'neutral';
 }
 
-function advisoryReviewDetail(review: PrivacyAdvisoryReviewSummary): string {
-  if (review.status === 'no_receipt') return 'Sem recibo de revisão/exercício local.';
-  if (review.status === 'under_review') return 'Estado local em revisão, sem conclusão legal.';
+function advisoryReviewDetail(t: TFunction, review: PrivacyAdvisoryReviewSummary): string {
+  if (review.status === 'no_receipt') return t('settings.privacy.advisory.detail.noReceipt');
+  if (review.status === 'under_review') return t('settings.privacy.advisory.detail.underReview');
   const due = review.next_review_due_at
-    ? `Próxima revisão local: ${review.next_review_due_at}.`
+    ? t('settings.privacy.advisory.detail.nextReview', { date: review.next_review_due_at })
     : '';
   const last = review.last_reviewed_at ?? review.last_drill_at;
-  const lastText = last ? `Última evidência: ${formatDateTime(last)}.` : '';
-  return [due, lastText, 'Sem notificação, aprovação, execução ou certificação.']
-    .filter(Boolean)
-    .join(' ');
+  const lastText = last
+    ? t('settings.privacy.advisory.detail.lastEvidence', { date: formatDateTime(last) })
+    : '';
+  return [due, lastText, t('settings.privacy.advisory.detail.noClaims')].filter(Boolean).join(' ');
 }
 
 function AdvisoryReviewBadge({ review }: { review: PrivacyAdvisoryReviewSummary }) {
+  const t = useT();
   return (
     <div className="stack--tight">
       <Badge tone={advisoryReviewTone(review.status)}>
-        {ADVISORY_REVIEW_LABELS[review.status]}
+        {advisoryReviewLabel(t, review.status)}
       </Badge>
-      <span className="muted">{advisoryReviewDetail(review)}</span>
+      <span className="muted">{advisoryReviewDetail(t, review)}</span>
     </div>
   );
 }
@@ -825,48 +844,55 @@ function DpiaTemplateGuidancePanel({
   loading: boolean;
   error: unknown;
 }) {
+  const t = useT();
   const noClaims = template
     ? (Object.entries(template.no_claims) as [keyof DpiaTemplateNoClaims, false][])
     : [];
 
   return (
-    <Card title="Modelo DPIA local">
+    <Card
+      title={
+        <span className="row-wrap">
+          {t('settings.privacy.guidance.title')}
+          <FieldHelp text={t('settings.privacy.help.guidance')} />
+        </span>
+      }
+    >
       <div className="stack">
-        <p className="field__hint">
-          Pacote local/offline de campos, perguntas e verificações para DPIA; não lê nem apresenta
-          registos de DPIA, processadores, titulares, destinatários, notas, bases legais ou segredos.
-        </p>
+        <p className="field__hint">{t('settings.privacy.guidance.lede')}</p>
         {loading ? (
           <SkeletonTable cols={3} />
         ) : error ? (
           <ErrorNote error={error} />
         ) : !template ? (
-          <EmptyState title="Modelo indisponível">
-            <p>O pacote DPIA local não foi devolvido pela API.</p>
+          <EmptyState title={t('settings.privacy.guidance.empty.title')}>
+            <p>{t('settings.privacy.guidance.empty.body')}</p>
           </EmptyState>
         ) : (
           <>
             <dl className="deflist">
               <div>
-                <dt>Identificador</dt>
+                <dt>{t('settings.privacy.guidance.dl.id')}</dt>
                 <dd>{template.template_id}</dd>
               </div>
               <div>
-                <dt>Âmbito</dt>
+                <dt>{t('settings.privacy.guidance.dl.scope')}</dt>
                 <dd>{template.scope}</dd>
               </div>
               <div>
-                <dt>Execução</dt>
-                <dd>local_offline_guidance_only: {String(template.local_offline_guidance_only)}</dd>
+                <dt>{t('settings.privacy.guidance.dl.execution')}</dt>
+                <dd className="mono">
+                  local_offline_guidance_only: {String(template.local_offline_guidance_only)}
+                </dd>
               </div>
             </dl>
 
             <Table
               head={
                 <tr>
-                  <th>Secção</th>
-                  <th>Perguntas</th>
-                  <th>Campos/checklist</th>
+                  <th>{t('settings.privacy.guidance.column.section')}</th>
+                  <th>{t('settings.privacy.guidance.column.prompts')}</th>
+                  <th>{t('settings.privacy.guidance.column.checklist')}</th>
                 </tr>
               }
             >
@@ -888,7 +914,10 @@ function DpiaTemplateGuidancePanel({
                     <ul>
                       {section.checklist.map((item) => (
                         <li key={item.id}>
-                          {item.label} · {item.field_type} · required: {String(item.required)}
+                          {item.label} · <span className="mono">{item.field_type}</span> ·{' '}
+                          {t('settings.privacy.guidance.required', {
+                            value: String(item.required),
+                          })}
                         </li>
                       ))}
                     </ul>
@@ -897,19 +926,19 @@ function DpiaTemplateGuidancePanel({
               ))}
             </Table>
 
-            <div className="stack--tight">
-              <strong>Flags sem alegação</strong>
+            <details className="privacy-disclosure">
+              <summary>{t('settings.privacy.guidance.noClaims')}</summary>
               <div className="tag-row">
                 {noClaims.map(([key, value]) => (
-                  <span key={key}>
+                  <span key={key} className="mono">
                     {key}: <Badge tone="neutral">{String(value)}</Badge>
                   </span>
                 ))}
               </div>
-            </div>
+            </details>
 
             <div className="stack--tight">
-              <strong>Ações do operador</strong>
+              <strong>{t('settings.privacy.guidance.operatorActions')}</strong>
               <ul>
                 {template.operator_actions.map((action) => (
                   <li key={action}>{action}</li>
@@ -947,16 +976,16 @@ function latestReceipt<T extends { recorded_at: string }>(receipts: T[]): T | un
   return [...receipts].sort((a, b) => b.recorded_at.localeCompare(a.recorded_at))[0];
 }
 
-function renderUnknownEvidence(value: unknown): string {
-  if (value === null || value === undefined) return 'Sem detalhe';
+function renderUnknownEvidence(t: TFunction, value: unknown): string {
+  if (value === null || value === undefined) return t('settings.privacy.evidence.noDetail');
   if (typeof value === 'string') return value;
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
-  if (Array.isArray(value)) return value.map(renderUnknownEvidence).join(', ');
+  if (Array.isArray(value)) return value.map((item) => renderUnknownEvidence(t, item)).join(', ');
   if (typeof value === 'object') {
     const entries = Object.entries(value as Record<string, unknown>)
       .filter(([, item]) => item !== null && item !== undefined && item !== '')
-      .map(([key, item]) => `${key}: ${renderUnknownEvidence(item)}`);
-    return entries.length > 0 ? entries.join(' · ') : 'Sem detalhe';
+      .map(([key, item]) => `${key}: ${renderUnknownEvidence(t, item)}`);
+    return entries.length > 0 ? entries.join(' · ') : t('settings.privacy.evidence.noDetail');
   }
   return String(value);
 }
@@ -1026,36 +1055,40 @@ function RetentionLegalHoldDisposalStatusPanel({
   const t = useT();
   const summary = retentionLegalHoldDisposalStatusSummary(report, records);
   return (
-    <Card title={t('settings.privacy.legalHold.title')}>
+    <Card
+      title={
+        <span className="row-wrap">
+          {t('settings.privacy.legalHold.title')}
+          <FieldHelp text={t('settings.privacy.help.legalHold')} />
+        </span>
+      }
+    >
       <div className="stack">
         <InlineWarning tone="info" title={t('settings.privacy.legalHold.evidence.title')}>
           {t('settings.privacy.legalHold.evidence.body')}
         </InlineWarning>
         <dl className="deflist">
           <div>
-            <dt>Candidatos bloqueados por legal hold</dt>
+            <dt>{t('settings.privacy.legalHold.dl.candidates')}</dt>
             <dd>{summary.dueCandidateLegalHoldBlockers}</dd>
           </div>
           <div>
-            <dt>Registos de execução bloqueados por legal hold</dt>
+            <dt>{t('settings.privacy.legalHold.dl.executions')}</dt>
             <dd>{summary.executionLegalHoldBlocks}</dd>
           </div>
           <div>
-            <dt>Revisões bloqueadas ainda abertas</dt>
+            <dt>{t('settings.privacy.legalHold.dl.openReviews')}</dt>
             <dd>{summary.openBlockedReviews}</dd>
           </div>
           <div>
-            <dt>Flags de limite</dt>
-            <dd>
+            <dt>{t('settings.privacy.legalHold.dl.flags')}</dt>
+            <dd className="mono">
               destructive_disposal_completed: false · disposal_approved: false ·
               legal_compliance_claimed: false
             </dd>
           </div>
         </dl>
-        <p className="field__hint">
-          A origem destes números é a varredura GET de candidatos vencidos e a fila de execução de
-          retenção já persistida; este painel não faz chamadas de mutação.
-        </p>
+        <p className="field__hint">{t('settings.privacy.legalHold.source')}</p>
       </div>
     </Card>
   );
@@ -1100,7 +1133,11 @@ function RegisterForm({
         if (canSubmit) onSubmit();
       }}
     >
-      <Field label={primaryLabel} htmlFor={`${idPrefix}-primary`}>
+      <Field
+        label={primaryLabel}
+        htmlFor={`${idPrefix}-primary`}
+        help={kind === 'processor' ? t('settings.privacy.help.processor') : t('settings.privacy.help.dpia')}
+      >
         <Input
           id={`${idPrefix}-primary`}
           value={form.primary}
@@ -1109,7 +1146,11 @@ function RegisterForm({
         />
       </Field>
 
-      <Field label={t('settings.privacy.register.field.purpose')} htmlFor={`${idPrefix}-purpose`}>
+      <Field
+        label={t('settings.privacy.register.field.purpose')}
+        htmlFor={`${idPrefix}-purpose`}
+        help={t('settings.privacy.help.purpose')}
+      >
         <TextArea
           id={`${idPrefix}-purpose`}
           value={form.purpose}
@@ -1121,6 +1162,7 @@ function RegisterForm({
       <Field
         label={t('settings.privacy.register.field.legalBasis')}
         htmlFor={`${idPrefix}-legal-basis`}
+        help={t('settings.privacy.help.legalBasis')}
       >
         <Input
           id={`${idPrefix}-legal-basis`}
@@ -1157,20 +1199,28 @@ function RegisterForm({
       </Field>
 
       <div className="api-key-rate-grid">
-        <Field label={t('settings.privacy.field.risk')} htmlFor={`${idPrefix}-risk`}>
+        <Field
+          label={t('settings.privacy.field.risk')}
+          htmlFor={`${idPrefix}-risk`}
+          help={t('settings.privacy.help.risk')}
+        >
           <Select
             id={`${idPrefix}-risk`}
             value={form.riskLevel}
             onChange={(e) => setForm({ ...form, riskLevel: e.target.value as PrivacyRiskLevel })}
-            options={riskSelectOptions}
+            options={riskSelectOptionsFor(t)}
           />
         </Field>
-        <Field label={t('settings.privacy.field.status')} htmlFor={`${idPrefix}-status`}>
+        <Field
+          label={t('settings.privacy.field.status')}
+          htmlFor={`${idPrefix}-status`}
+          help={t('settings.privacy.help.status')}
+        >
           <Select
             id={`${idPrefix}-status`}
             value={form.status}
             onChange={(e) => setForm({ ...form, status: e.target.value as PrivacyRecordStatus })}
-            options={statusSelectOptions}
+            options={statusSelectOptionsFor(t)}
           />
         </Field>
       </div>
@@ -1191,7 +1241,7 @@ function RegisterForm({
                 onChange={(e) =>
                   setForm({ ...form, evidenceType: e.target.value as DpiaEvidenceKind })
                 }
-                options={breachEvidenceOptions}
+                options={breachEvidenceOptionsFor(t)}
               />
             </Field>
             <Field
@@ -1229,6 +1279,7 @@ function RegisterPanel({
   kind,
   title,
   lede,
+  help,
   records,
   loading,
   error,
@@ -1239,6 +1290,7 @@ function RegisterPanel({
   kind: RegisterKind;
   title: string;
   lede: string;
+  help: string;
   records: RegisterRecord[];
   loading: boolean;
   error: unknown;
@@ -1293,7 +1345,7 @@ function RegisterPanel({
   async function patchOne(id: string, body: PrivacyPatchBody) {
     try {
       await onPatch(id, body);
-      toast.success('Registo de privacidade atualizado.');
+      toast.success(t('settings.privacy.toast.updated'));
     } catch (e) {
       toast.error(e);
     }
@@ -1319,7 +1371,12 @@ function RegisterPanel({
       ) : null}
 
       <Card
-        title={title}
+        title={
+          <span className="row-wrap">
+            {title}
+            <FieldHelp text={help} />
+          </span>
+        }
         actions={
           <Button type="button" variant="primary" icon={<Icon.Plus />} onClick={startCreate}>
             {t('settings.privacy.action.new')}
@@ -1343,7 +1400,7 @@ function RegisterPanel({
                 id={`privacy-${kind}-status-filter`}
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                options={statusOptions}
+                options={statusFilterOptions(t)}
               />
             </Field>
             <Field label={t('settings.privacy.field.risk')} htmlFor={`privacy-${kind}-risk-filter`}>
@@ -1351,7 +1408,7 @@ function RegisterPanel({
                 id={`privacy-${kind}-risk-filter`}
                 value={riskFilter}
                 onChange={(e) => setRiskFilter(e.target.value)}
-                options={riskOptions}
+                options={riskFilterOptions(t)}
               />
             </Field>
           </div>
@@ -1372,15 +1429,19 @@ function RegisterPanel({
             <Table
               head={
                 <tr>
-                  <th>{kind === 'processor' ? 'Processador' : 'DPIA'}</th>
-                  <th>Finalidade</th>
-                  <th>Categorias</th>
-                  <th>Subprocessadores</th>
-                  {kind === 'dpia' ? <th>Evidência</th> : null}
-                  <th>Risco</th>
-                  <th>Estado</th>
-                  <th>Atualizado</th>
-                  <th>Ação</th>
+                  <th>
+                    {kind === 'processor'
+                      ? t('settings.privacy.register.column.processor')
+                      : t('settings.privacy.register.column.dpia')}
+                  </th>
+                  <th>{t('settings.privacy.register.column.purpose')}</th>
+                  <th>{t('settings.privacy.register.column.categories')}</th>
+                  <th>{t('settings.privacy.register.column.subprocessors')}</th>
+                  {kind === 'dpia' ? <th>{t('settings.privacy.column.evidence')}</th> : null}
+                  <th>{t('settings.privacy.field.risk')}</th>
+                  <th>{t('settings.privacy.field.status')}</th>
+                  <th>{t('settings.privacy.register.column.updated')}</th>
+                  <th>{t('settings.privacy.table.action')}</th>
                 </tr>
               }
             >
@@ -1400,23 +1461,28 @@ function RegisterPanel({
                       <td>
                         {dpiaReceipt ? (
                           <>
-                            {dpiaReceipt.evidence_type === 'drill' ? 'Exercício' : 'Revisão'} por{' '}
-                            {dpiaReceipt.recorded_by}
+                            {t('settings.privacy.evidence.receiptBy', {
+                              kind:
+                                dpiaReceipt.evidence_type === 'drill'
+                                  ? t('settings.privacy.evidence.kind.drill')
+                                  : t('settings.privacy.evidence.kind.review'),
+                              actor: dpiaReceipt.recorded_by,
+                            })}
                             <br />
                             <span className="muted">
-                              {formatDateTime(dpiaReceipt.recorded_at)} · Sem submissão à autoridade
-                              · Sem certificação de conformidade
+                              {formatDateTime(dpiaReceipt.recorded_at)} ·{' '}
+                              {t('settings.privacy.evidence.dpiaReceiptNote')}
                             </span>
                           </>
                         ) : (
-                          <span className="muted">Sem recibo</span>
+                          <span className="muted">{t('settings.privacy.evidence.none')}</span>
                         )}
                       </td>
                     ) : null}
                     <td>
                       <span className="row-wrap">
                         <Badge tone={riskTone(record.risk_level)}>
-                          {RISK_LABELS[record.risk_level]}
+                          {riskLabel(t, record.risk_level)}
                         </Badge>
                         <Select
                           aria-label={t('settings.privacy.register.aria.risk', { name: label })}
@@ -1427,14 +1493,14 @@ function RegisterPanel({
                               risk_level: e.target.value as PrivacyRiskLevel,
                             })
                           }
-                          options={riskSelectOptions}
+                          options={riskSelectOptionsFor(t)}
                         />
                       </span>
                     </td>
                     <td>
                       <span className={dpiaRecord ? 'stack--tight' : 'row-wrap'}>
                         <Badge tone={statusTone(record.status)}>
-                          {STATUS_LABELS[record.status]}
+                          {statusLabel(t, record.status)}
                         </Badge>
                         {dpiaRecord ? (
                           <AdvisoryReviewBadge review={dpiaRecord.advisory_review} />
@@ -1448,7 +1514,7 @@ function RegisterPanel({
                               status: e.target.value as PrivacyRecordStatus,
                             })
                           }
-                          options={statusSelectOptions}
+                          options={statusSelectOptionsFor(t)}
                         />
                       </span>
                     </td>
@@ -1591,7 +1657,7 @@ function BreachPlaybookForm({
             id={`${idPrefix}-risk`}
             value={form.riskLevel}
             onChange={(e) => setForm({ ...form, riskLevel: e.target.value as PrivacyRiskLevel })}
-            options={riskSelectOptions}
+            options={riskSelectOptionsFor(t)}
           />
         </Field>
         <Field label={t('settings.privacy.field.status')} htmlFor={`${idPrefix}-status`}>
@@ -1599,7 +1665,7 @@ function BreachPlaybookForm({
             id={`${idPrefix}-status`}
             value={form.status}
             onChange={(e) => setForm({ ...form, status: e.target.value as PrivacyRecordStatus })}
-            options={statusSelectOptions}
+            options={statusSelectOptionsFor(t)}
           />
         </Field>
       </div>
@@ -1625,7 +1691,7 @@ function BreachPlaybookForm({
             onChange={(e) =>
               setForm({ ...form, evidenceType: e.target.value as BreachEvidenceKind })
             }
-            options={breachEvidenceOptions}
+            options={breachEvidenceOptionsFor(t)}
           />
         </Field>
         <Field
@@ -1722,7 +1788,12 @@ function BreachPlaybookPanel({
         </Card>
       ) : null}
       <Card
-        title={t('settings.privacy.breach.title')}
+        title={
+          <span className="row-wrap">
+            {t('settings.privacy.breach.title')}
+            <FieldHelp text={t('settings.privacy.help.breach')} />
+          </span>
+        }
         actions={
           <Button
             type="button"
@@ -1753,7 +1824,7 @@ function BreachPlaybookPanel({
                 id="privacy-breach-status"
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                options={statusOptions}
+                options={statusFilterOptions(t)}
               />
             </Field>
             <Field label={t('settings.privacy.field.risk')} htmlFor="privacy-breach-risk">
@@ -1761,7 +1832,7 @@ function BreachPlaybookPanel({
                 id="privacy-breach-risk"
                 value={riskFilter}
                 onChange={(e) => setRiskFilter(e.target.value)}
-                options={riskOptions}
+                options={riskFilterOptions(t)}
               />
             </Field>
           </div>
@@ -1785,7 +1856,7 @@ function BreachPlaybookPanel({
                   <th>{t('settings.privacy.breach.column.scope')}</th>
                   <th>{t('settings.privacy.breach.column.detection')}</th>
                   <th>{t('settings.privacy.breach.column.containment')}</th>
-                  <th>Evidência</th>
+                  <th>{t('settings.privacy.column.evidence')}</th>
                   <th>{t('settings.privacy.field.risk')}</th>
                   <th>{t('settings.privacy.field.status')}</th>
                   <th>{t('settings.privacy.table.action')}</th>
@@ -1803,27 +1874,32 @@ function BreachPlaybookPanel({
                     <td>
                       {receipt ? (
                         <>
-                          {receipt.evidence_type === 'drill' ? 'Exercício' : 'Revisão'} por{' '}
-                          {receipt.recorded_by}
+                          {t('settings.privacy.evidence.receiptBy', {
+                            kind:
+                              receipt.evidence_type === 'drill'
+                                ? t('settings.privacy.evidence.kind.drill')
+                                : t('settings.privacy.evidence.kind.review'),
+                            actor: receipt.recorded_by,
+                          })}
                           <br />
                           <span className="muted">
-                            {formatDateTime(receipt.recorded_at)} · Sem notificação à autoridade ·
-                            Sem notificação aos titulares
+                            {formatDateTime(receipt.recorded_at)} ·{' '}
+                            {t('settings.privacy.evidence.breachReceiptNote')}
                           </span>
                         </>
                       ) : (
-                        <span className="muted">Sem recibo</span>
+                        <span className="muted">{t('settings.privacy.evidence.none')}</span>
                       )}
                     </td>
                     <td>
                       <Badge tone={riskTone(record.risk_level)}>
-                        {RISK_LABELS[record.risk_level]}
+                        {riskLabel(t, record.risk_level)}
                       </Badge>
                     </td>
                     <td>
                       <div className="stack--tight">
                         <Badge tone={statusTone(record.status)}>
-                          {STATUS_LABELS[record.status]}
+                          {statusLabel(t, record.status)}
                         </Badge>
                         <AdvisoryReviewBadge review={record.advisory_review} />
                       </div>
@@ -1978,7 +2054,7 @@ function TransferControlForm({
             id={`${idPrefix}-risk`}
             value={form.riskLevel}
             onChange={(e) => setForm({ ...form, riskLevel: e.target.value as PrivacyRiskLevel })}
-            options={riskSelectOptions}
+            options={riskSelectOptionsFor(t)}
           />
         </Field>
         <Field label={t('settings.privacy.field.status')} htmlFor={`${idPrefix}-status`}>
@@ -1986,7 +2062,7 @@ function TransferControlForm({
             id={`${idPrefix}-status`}
             value={form.status}
             onChange={(e) => setForm({ ...form, status: e.target.value as PrivacyRecordStatus })}
-            options={statusSelectOptions}
+            options={statusSelectOptionsFor(t)}
           />
         </Field>
       </div>
@@ -2094,7 +2170,12 @@ function TransferControlPanel({
         </Card>
       ) : null}
       <Card
-        title={t('settings.privacy.transfer.title')}
+        title={
+          <span className="row-wrap">
+            {t('settings.privacy.transfer.title')}
+            <FieldHelp text={t('settings.privacy.help.transfer')} />
+          </span>
+        }
         actions={
           <Button
             type="button"
@@ -2125,7 +2206,7 @@ function TransferControlPanel({
                 id="privacy-transfer-status"
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                options={statusOptions}
+                options={statusFilterOptions(t)}
               />
             </Field>
             <Field label={t('settings.privacy.field.risk')} htmlFor="privacy-transfer-risk">
@@ -2133,7 +2214,7 @@ function TransferControlPanel({
                 id="privacy-transfer-risk"
                 value={riskFilter}
                 onChange={(e) => setRiskFilter(e.target.value)}
-                options={riskOptions}
+                options={riskFilterOptions(t)}
               />
             </Field>
           </div>
@@ -2158,7 +2239,7 @@ function TransferControlPanel({
                   <th>{t('settings.privacy.transfer.column.mechanism')}</th>
                   <th>{t('settings.privacy.transfer.column.categories')}</th>
                   <th>{t('settings.privacy.transfer.column.safeguards')}</th>
-                  <th>Evidência</th>
+                  <th>{t('settings.privacy.column.evidence')}</th>
                   <th>{t('settings.privacy.field.risk')}</th>
                   <th>{t('settings.privacy.field.status')}</th>
                   <th>{t('settings.privacy.table.action')}</th>
@@ -2181,26 +2262,29 @@ function TransferControlPanel({
                     <td>
                       {receipt ? (
                         <>
-                          Revisão por {receipt.recorded_by}
+                          {t('settings.privacy.evidence.receiptBy', {
+                            kind: t('settings.privacy.evidence.kind.review'),
+                            actor: receipt.recorded_by,
+                          })}
                           <br />
                           <span className="muted">
-                            {formatDateTime(receipt.recorded_at)} · Sem aprovação · Sem execução de
-                            transferência
+                            {formatDateTime(receipt.recorded_at)} ·{' '}
+                            {t('settings.privacy.evidence.transferReceiptNote')}
                           </span>
                         </>
                       ) : (
-                        <span className="muted">Sem recibo</span>
+                        <span className="muted">{t('settings.privacy.evidence.none')}</span>
                       )}
                     </td>
                     <td>
                       <Badge tone={riskTone(record.risk_level)}>
-                        {RISK_LABELS[record.risk_level]}
+                        {riskLabel(t, record.risk_level)}
                       </Badge>
                     </td>
                     <td>
                       <div className="stack--tight">
                         <Badge tone={statusTone(record.status)}>
-                          {STATUS_LABELS[record.status]}
+                          {statusLabel(t, record.status)}
                         </Badge>
                         <AdvisoryReviewBadge review={record.advisory_review} />
                       </div>
@@ -2405,7 +2489,14 @@ function RetentionDryRunPanel({
   const canSubmit = form.scope.trim().length > 0 && form.category.trim().length > 0 && !running;
 
   return (
-    <Card title={t('settings.privacy.retention.dryRun.title')}>
+    <Card
+      title={
+        <span className="row-wrap">
+          {t('settings.privacy.retention.dryRun.title')}
+          <FieldHelp text={t('settings.privacy.help.dryRun')} />
+        </span>
+      }
+    >
       <form
         className="form"
         onSubmit={(e: FormEvent) => {
@@ -2553,26 +2644,40 @@ function RetentionDueCandidatesPanel({
   const suppressedByBoundedEvidenceCount = report?.suppressed_by_bounded_evidence_count ?? 0;
 
   return (
-    <Card title={t('settings.privacy.dueCandidates.title')}>
+    <Card
+      title={
+        <span className="row-wrap">
+          {t('settings.privacy.dueCandidates.title')}
+          <FieldHelp text={t('settings.privacy.help.dueCandidates')} />
+        </span>
+      }
+    >
       <div className="stack">
-        <p className="field__hint">
-          Varredura GET somente leitura para revisão de evidência. Esta secção não apaga, não
-          anonimiza e não conclui cumprimento legal.
-        </p>
+        <p className="field__hint">{t('settings.privacy.dueCandidates.lede')}</p>
         {report ? (
           <p className="muted">
-            Gerado em {formatDateTime(report.generated_at)} · {report.scope} / {report.category} ·{' '}
-            {report.candidate_count} candidato(s) ativo(s) · {suppressedByBoundedEvidenceCount}{' '}
-            suprimido(s) por evidência delimitada ·{' '}
-            {report.candidates_with_resolution_count} candidato(s) com disposição local ·{' '}
-            {resolutionRecords.length} registo(s) de disposição
+            {t('settings.privacy.dueCandidates.summary', {
+              generated: formatDateTime(report.generated_at),
+              scope: report.scope,
+              category: report.category,
+              active: report.candidate_count,
+              suppressed: suppressedByBoundedEvidenceCount,
+              withResolution: report.candidates_with_resolution_count,
+              resolutions: resolutionRecords.length,
+            })}
           </p>
         ) : null}
         {report && report.suppressed_candidate_count > 0 ? (
           <p className="muted">
-            Candidatos suprimidos por evidência delimitada não são listados na tabela e não recebem
-            botões de ação; reveja a evidência na fila/histórico de execução.
-            {report.suppression_summary ? <> Resumo: {report.suppression_summary.note}</> : null}
+            {t('settings.privacy.dueCandidates.suppressedNote')}
+            {report.suppression_summary ? (
+              <>
+                {' '}
+                {t('settings.privacy.dueCandidates.suppressedSummary', {
+                  note: report.suppression_summary.note,
+                })}
+              </>
+            ) : null}
           </p>
         ) : null}
         {loading ? (
@@ -2580,20 +2685,20 @@ function RetentionDueCandidatesPanel({
         ) : error ? (
           <ErrorNote error={error} />
         ) : candidates.length === 0 ? (
-          <EmptyState title="Sem candidatos vencidos">
-            <p>Não há candidatos vencidos da varredura somente leitura.</p>
+          <EmptyState title={t('settings.privacy.dueCandidates.empty.title')}>
+            <p>{t('settings.privacy.dueCandidates.empty.body')}</p>
           </EmptyState>
         ) : (
           <Table
             head={
               <tr>
-                <th>Livro e registo</th>
-                <th>Política</th>
-                <th>Vencimento e estado</th>
-                <th>Bloqueios e aprovações</th>
-                <th>Achados</th>
-                <th>Flags sem execução</th>
-                <th>Pedido de revisão</th>
+                <th>{t('settings.privacy.dueCandidates.column.record')}</th>
+                <th>{t('settings.privacy.dueCandidates.column.policy')}</th>
+                <th>{t('settings.privacy.dueCandidates.column.due')}</th>
+                <th>{t('settings.privacy.dueCandidates.column.blockers')}</th>
+                <th>{t('settings.privacy.dueCandidates.column.findings')}</th>
+                <th>{t('settings.privacy.dueCandidates.column.flags')}</th>
+                <th>{t('settings.privacy.dueCandidates.column.review')}</th>
               </tr>
             }
           >
@@ -2614,8 +2719,12 @@ function RetentionDueCandidatesPanel({
                   <td>
                     <div className="stack--tight">
                       <span className="mono">{candidate.record_id}</span>
-                      <span>Livro: {candidate.book_id}</span>
-                      <span className="muted">Entidade: {candidate.entity_id}</span>
+                      <span>
+                        {t('settings.privacy.dueCandidates.book')}: {candidate.book_id}
+                      </span>
+                      <span className="muted">
+                        {t('settings.privacy.dueCandidates.entity')}: {candidate.entity_id}
+                      </span>
                       <span className="muted">
                         {candidate.scope} / {candidate.category}
                       </span>
@@ -2633,8 +2742,13 @@ function RetentionDueCandidatesPanel({
                   </td>
                   <td>
                     <div className="stack--tight">
-                      <span>Fecho: {candidate.closing_date}</span>
-                      <span>Vencimento: {candidate.due_date ?? 'Sem data calculada'}</span>
+                      <span>
+                        {t('settings.privacy.dueCandidates.closing')}: {candidate.closing_date}
+                      </span>
+                      <span>
+                        {t('settings.privacy.dueCandidates.due')}:{' '}
+                        {candidate.due_date ?? t('settings.privacy.dueCandidates.noDueDate')}
+                      </span>
                       <Badge tone={candidate.overdue ? 'warn' : 'neutral'}>
                         overdue: {String(candidate.overdue)}
                       </Badge>
@@ -2643,48 +2757,63 @@ function RetentionDueCandidatesPanel({
                       </span>
                       <span className="muted">{candidate.next_step}</span>
                       <span className="muted">
-                        Estado de evidência: {candidate.candidate_evidence_state}
+                        {t('settings.privacy.dueCandidates.evidenceState')}:{' '}
+                        {candidate.candidate_evidence_state}
                       </span>
                       <span className="muted">
-                        Próximo passo de evidência: {candidate.evidence_next_step}
+                        {t('settings.privacy.dueCandidates.evidenceNextStep')}:{' '}
+                        {candidate.evidence_next_step}
                       </span>
                       {priorExecution ? (
                         <>
-                          <Badge tone="ok">Evidência delimitada registada</Badge>
+                          <Badge tone="ok">
+                            {t('settings.privacy.dueCandidates.boundedRecorded')}
+                          </Badge>
                           <span>
                             {priorExecution.execution_status} · {priorExecution.outcome}
                           </span>
                           <span className="muted">
-                            Evidência anterior: {priorExecution.evidence_state}
+                            {t('settings.privacy.dueCandidates.priorEvidence')}:{' '}
+                            {priorExecution.evidence_state}
                           </span>
                           <span className="muted">
-                            Execução {priorExecution.execution_id} · pedido em{' '}
-                            {formatDateTime(priorExecution.requested_at)}
+                            {t('settings.privacy.dueCandidates.executionRequested', {
+                              id: priorExecution.execution_id,
+                              date: formatDateTime(priorExecution.requested_at),
+                            })}
                           </span>
                           {priorExecution.executed_at ? (
                             <span className="muted">
-                              Executado em {formatDateTime(priorExecution.executed_at)}
+                              {t('settings.privacy.dueCandidates.executedAt', {
+                                date: formatDateTime(priorExecution.executed_at),
+                              })}
                             </span>
                           ) : null}
                           <span className="muted">{priorExecution.next_step}</span>
                           <span className="muted">
-                            Próximo passo de evidência anterior: {priorExecution.evidence_next_step}
+                            {t('settings.privacy.dueCandidates.priorEvidenceNextStep')}:{' '}
+                            {priorExecution.evidence_next_step}
                           </span>
                         </>
                       ) : null}
                       {latestResolution ? (
                         <>
-                          <Badge tone="accent">Disposição local registada</Badge>
+                          <Badge tone="accent">
+                            {t('settings.privacy.dueCandidates.localDispositionRecorded')}
+                          </Badge>
                           <span>
                             {latestResolution.disposition} · {latestResolution.id}
                           </span>
                           <span className="muted">
-                            Registado por {latestResolution.recorded_by} em{' '}
-                            {formatDateTime(latestResolution.recorded_at)}
+                            {t('settings.privacy.dueCandidates.recordedByOn', {
+                              actor: latestResolution.recorded_by,
+                              date: formatDateTime(latestResolution.recorded_at),
+                            })}
                           </span>
                           <span className="muted">
-                            Evidências: {latestResolution.evidence_count} · flags operacionais:
-                            false
+                            {t('settings.privacy.dueCandidates.evidenceCountFlags', {
+                              count: latestResolution.evidence_count,
+                            })}
                           </span>
                           <span className="muted">{latestResolution.next_step}</span>
                         </>
@@ -2693,29 +2822,33 @@ function RetentionDueCandidatesPanel({
                   </td>
                   <td>
                     <div className="stack--tight">
-                      <strong>Legal hold</strong>
+                      <strong>{t('settings.privacy.dueCandidates.legalHold')}</strong>
                       {candidate.legal_hold_blockers.length > 0 ? (
                         candidate.legal_hold_blockers.map((blocker, index) => (
                           <span key={`${candidate.candidate_id}-hold-${index}`}>
-                            {renderUnknownEvidence(blocker)}
+                            {renderUnknownEvidence(t, blocker)}
                           </span>
                         ))
                       ) : (
-                        <span className="muted">Sem bloqueios de legal hold</span>
+                        <span className="muted">
+                          {t('settings.privacy.dueCandidates.noLegalHold')}
+                        </span>
                       )}
-                      <strong>Aprovações requeridas</strong>
+                      <strong>{t('settings.privacy.dueCandidates.requiredApprovals')}</strong>
                       {candidate.required_approvals.length > 0 ? (
                         candidate.required_approvals.map((approval, index) => (
                           <span key={`${candidate.candidate_id}-approval-${index}`}>
-                            {renderUnknownEvidence(approval)}
+                            {renderUnknownEvidence(t, approval)}
                           </span>
                         ))
                       ) : (
-                        <span className="muted">Sem aprovações requeridas</span>
+                        <span className="muted">
+                          {t('settings.privacy.dueCandidates.noApprovals')}
+                        </span>
                       )}
                       {candidate.blockers.map((blocker, index) => (
                         <span key={`${candidate.candidate_id}-blocker-${index}`}>
-                          {renderUnknownEvidence(blocker)}
+                          {renderUnknownEvidence(t, blocker)}
                         </span>
                       ))}
                     </div>
@@ -2729,12 +2862,14 @@ function RetentionDueCandidatesPanel({
                           </span>
                         ))
                       ) : (
-                        <span className="muted">Sem achados de período não suportado</span>
+                        <span className="muted">
+                          {t('settings.privacy.dueCandidates.noFindings')}
+                        </span>
                       )}
                     </div>
                   </td>
                   <td>
-                    <div className="stack--tight">
+                    <div className="stack--tight mono">
                       <span>destructive_action: {String(candidate.destructive_action)}</span>
                       <span>would_execute: {String(candidate.would_execute)}</span>
                       <span>
@@ -2761,10 +2896,10 @@ function RetentionDueCandidatesPanel({
                       ) : null}
                       <span className="muted">
                         {canRecordNoActionEvidence
-                          ? 'Apenas registo delimitado de evidência sem ação.'
+                          ? t('settings.privacy.dueCandidates.onlyNoActionEvidence')
                           : canRecordArchiveEvidence
-                            ? 'Apenas registo delimitado de evidência de arquivo.'
-                            : 'Apenas revisão de evidência.'}
+                            ? t('settings.privacy.dueCandidates.onlyArchiveEvidence')
+                            : t('settings.privacy.dueCandidates.onlyReviewEvidence')}
                       </span>
                     </div>
                   </td>
@@ -2772,7 +2907,9 @@ function RetentionDueCandidatesPanel({
                     <div className="stack--tight">
                       {latestResolution ? (
                         <>
-                          <Badge tone="accent">Disposição local existente</Badge>
+                          <Badge tone="accent">
+                            {t('settings.privacy.dueCandidates.localDispositionExists')}
+                          </Badge>
                         </>
                       ) : (
                         <Button
@@ -2783,14 +2920,18 @@ function RetentionDueCandidatesPanel({
                           onClick={() => void onRecordResolution(candidate)}
                         >
                           {resolvingCandidateId === candidate.candidate_id
-                            ? 'A registar disposição local'
-                            : 'Registar disposição local'}
+                            ? t('settings.privacy.dueCandidates.recordingDisposition')
+                            : t('settings.privacy.dueCandidates.recordDisposition')}
                         </Button>
                       )}
                       {priorExecution ? (
-                        <Badge tone="ok">Evidência delimitada existente</Badge>
+                        <Badge tone="ok">
+                          {t('settings.privacy.dueCandidates.boundedEvidenceExists')}
+                        </Badge>
                       ) : queuedReview ? (
-                        <Badge tone="warn">Revisão já na fila</Badge>
+                        <Badge tone="warn">
+                          {t('settings.privacy.dueCandidates.reviewQueued')}
+                        </Badge>
                       ) : canRecordNoActionEvidence ? (
                         <Button
                           type="button"
@@ -2800,8 +2941,8 @@ function RetentionDueCandidatesPanel({
                           onClick={() => void onRequestReview(candidate, 'execute_supported')}
                         >
                           {requestingReviewCandidateId === candidate.candidate_id
-                            ? 'A registar evidência sem ação'
-                            : 'Registar evidência sem ação'}
+                            ? t('settings.privacy.dueCandidates.recordingNoAction')
+                            : t('settings.privacy.dueCandidates.recordNoAction')}
                         </Button>
                       ) : canRecordArchiveEvidence ? (
                         <Button
@@ -2812,8 +2953,8 @@ function RetentionDueCandidatesPanel({
                           onClick={() => void onRequestReview(candidate, 'execute_supported')}
                         >
                           {requestingReviewCandidateId === candidate.candidate_id
-                            ? 'A registar evidência de arquivo'
-                            : 'Registar evidência de arquivo'}
+                            ? t('settings.privacy.dueCandidates.recordingArchive')
+                            : t('settings.privacy.dueCandidates.recordArchive')}
                         </Button>
                       ) : (
                         <Button
@@ -2824,8 +2965,8 @@ function RetentionDueCandidatesPanel({
                           onClick={() => void onRequestReview(candidate, 'review_only')}
                         >
                           {requestingReviewCandidateId === candidate.candidate_id
-                            ? 'A registar revisão'
-                            : 'Pedir revisão de evidência'}
+                            ? t('settings.privacy.dueCandidates.recordingReview')
+                            : t('settings.privacy.dueCandidates.requestReview')}
                         </Button>
                       )}
                       {priorExecution ? (
@@ -2834,7 +2975,7 @@ function RetentionDueCandidatesPanel({
                             {priorExecution.execution_status} · {priorExecution.execution_id}
                           </span>
                           <span className="muted">
-                            Não é criado pedido duplicado; a varredura é somente leitura.
+                            {t('settings.privacy.dueCandidates.noDuplicate')}
                           </span>
                         </>
                       ) : queuedReview ? (
@@ -2843,28 +2984,30 @@ function RetentionDueCandidatesPanel({
                             {queuedReview.execution_status} · {queuedReview.id}
                           </span>
                           <span className="muted">
-                            Pedido em {formatDateTime(queuedReview.requested_at)}
+                            {t('settings.privacy.dueCandidates.requestedAt', {
+                              date: formatDateTime(queuedReview.requested_at),
+                            })}
                           </span>
                           <span className="muted">
-                            Estado de evidência na fila: {queuedReview.evidence_state}
+                            {t('settings.privacy.dueCandidates.queueEvidenceState')}:{' '}
+                            {queuedReview.evidence_state}
                           </span>
                           <span className="muted">
-                            Próximo passo na fila: {queuedReview.evidence_next_step}
+                            {t('settings.privacy.dueCandidates.queueNextStep')}:{' '}
+                            {queuedReview.evidence_next_step}
                           </span>
                         </>
                       ) : canRecordNoActionEvidence ? (
                         <span className="muted">
-                          Regista apenas evidência delimitada de no-action; não aprova nem executa
-                          descarte.
+                          {t('settings.privacy.dueCandidates.noActionHint')}
                         </span>
                       ) : canRecordArchiveEvidence ? (
                         <span className="muted">
-                          Regista apenas evidência delimitada de arquivo; não aprova nem executa
-                          descarte.
+                          {t('settings.privacy.dueCandidates.archiveHint')}
                         </span>
                       ) : (
                         <span className="muted">
-                          Regista um pedido review_only; não aprova nem executa descarte.
+                          {t('settings.privacy.dueCandidates.reviewHint')}
                         </span>
                       )}
                     </div>
@@ -2906,14 +3049,14 @@ function RetentionExecutionReviewQueue({
   }, [records, search, statusFilter]);
   const statusOptions = RETENTION_EXECUTION_STATUSES.map((status) => ({
     value: status,
-    label: retentionExecutionStatusLabel(status),
+    label: retentionExecutionStatusLabel(t, status),
   }));
 
   async function closeOperationalReview(record: RetentionExecutionRecord) {
     setClosingId(record.id);
     try {
       await closeReview.mutateAsync({ id: record.id, body: retentionReviewClosureBody(record) });
-      toast.success('Revisão operacional registada.');
+      toast.success(t('settings.privacy.execution.toast.reviewed'));
     } catch (e) {
       toast.error(e);
     } finally {
@@ -2922,11 +3065,16 @@ function RetentionExecutionReviewQueue({
   }
 
   return (
-    <Card title={t('settings.privacy.execution.title')}>
+    <Card
+      title={
+        <span className="row-wrap">
+          {t('settings.privacy.execution.title')}
+          <FieldHelp text={t('settings.privacy.help.execution')} />
+        </span>
+      }
+    >
       <div className="stack">
-        <p className="field__hint">
-          Registos persistidos de execução de retenção para revisão operacional.
-        </p>
+        <p className="field__hint">{t('settings.privacy.execution.lede')}</p>
         <div className="filter">
           <Field
             label={t('settings.privacy.filter.search')}
@@ -2949,7 +3097,10 @@ function RetentionExecutionReviewQueue({
               onChange={(e) =>
                 onStatusFilterChange(e.target.value as RetentionExecutionStatus | 'all')
               }
-              options={[{ value: 'all', label: 'Todos os estados' }, ...statusOptions]}
+              options={[
+                { value: 'all', label: t('settings.privacy.execution.status.all') },
+                ...statusOptions,
+              ]}
             />
           </Field>
         </div>
@@ -2958,8 +3109,8 @@ function RetentionExecutionReviewQueue({
         ) : error ? (
           <ErrorNote error={error} />
         ) : records.length === 0 ? (
-          <EmptyState title="Sem registos de execução">
-            <p>A fila de revisão ainda não tem pedidos persistidos.</p>
+          <EmptyState title={t('settings.privacy.execution.empty.title')}>
+            <p>{t('settings.privacy.execution.empty.body')}</p>
           </EmptyState>
         ) : filtered.length === 0 ? (
           <EmptyState title={t('settings.privacy.emptyResults.title')}>
@@ -2969,12 +3120,12 @@ function RetentionExecutionReviewQueue({
           <Table
             head={
               <tr>
-                <th>Pedido</th>
-                <th>Estado</th>
-                <th>Política</th>
-                <th>Bloqueios e aprovações</th>
-                <th>Próximo passo</th>
-                <th>Revisão operacional</th>
+                <th>{t('settings.privacy.execution.column.request')}</th>
+                <th>{t('settings.privacy.field.status')}</th>
+                <th>{t('settings.privacy.retention.column.policy')}</th>
+                <th>{t('settings.privacy.execution.column.blockers')}</th>
+                <th>{t('settings.privacy.execution.column.nextStep')}</th>
+                <th>{t('settings.privacy.execution.column.review')}</th>
               </tr>
             }
           >
@@ -2994,7 +3145,7 @@ function RetentionExecutionReviewQueue({
                 <td>
                   <div className="stack--tight">
                     <Badge tone={retentionExecutionStatusTone(record.execution_status)}>
-                      {retentionExecutionStatusLabel(record.execution_status)}
+                      {retentionExecutionStatusLabel(t, record.execution_status)}
                     </Badge>
                     <span className="muted">{record.outcome}</span>
                     <span className="muted">{record.operator_review_decision}</span>
@@ -3002,10 +3153,16 @@ function RetentionExecutionReviewQueue({
                 </td>
                 <td>
                   <div className="stack--tight">
-                    <span>{record.requested_policy.name ?? 'Política não encontrada'}</span>
-                    <span className="muted">{record.requested_policy.id ?? 'Sem política'}</span>
+                    <span>
+                      {record.requested_policy.name ??
+                        t('settings.privacy.execution.policyNotFound')}
+                    </span>
                     <span className="muted">
-                      {record.requested_policy.schedule_id ?? 'Sem calendário'}
+                      {record.requested_policy.id ?? t('settings.privacy.execution.noPolicy')}
+                    </span>
+                    <span className="muted">
+                      {record.requested_policy.schedule_id ??
+                        t('settings.privacy.execution.noSchedule')}
                       {record.requested_policy.retention_period
                         ? ` · ${record.requested_policy.retention_period}`
                         : ''}
@@ -3026,7 +3183,7 @@ function RetentionExecutionReviewQueue({
                         </span>
                       ))
                     ) : (
-                      <span className="muted">Sem bloqueios</span>
+                      <span className="muted">{t('settings.privacy.execution.noBlockers')}</span>
                     )}
                     {record.legal_hold_blockers.map((blocker) => (
                       <span key={`${record.id}-hold-${blocker.policy_id}`}>
@@ -3049,14 +3206,17 @@ function RetentionExecutionReviewQueue({
                 <td>
                   <div className="stack--tight">
                     <span>{record.workflow.next_step}</span>
-                    <span className="muted">Estado de evidência: {record.evidence_state}</span>
                     <span className="muted">
-                      Próximo passo de evidência: {record.evidence_next_step}
+                      {t('settings.privacy.dueCandidates.evidenceState')}: {record.evidence_state}
+                    </span>
+                    <span className="muted">
+                      {t('settings.privacy.dueCandidates.evidenceNextStep')}:{' '}
+                      {record.evidence_next_step}
                     </span>
                     {record.operator_notes ? (
                       <span className="muted">{record.operator_notes}</span>
                     ) : null}
-                    <span className="muted">
+                    <span className="muted mono">
                       targets_acted: {record.execution_result.targets_acted.length} ·
                       destructive_disposal_completed:{' '}
                       {String(record.execution_result.destructive_disposal_completed)} ·
@@ -3069,10 +3229,16 @@ function RetentionExecutionReviewQueue({
                   {record.decision_state === 'review_closed' ? (
                     <div className="stack--tight">
                       <span>
-                        Revisão operacional registada
-                        {record.review_closed_by ? ` por ${record.review_closed_by}` : ''}
+                        {t('settings.privacy.execution.reviewRecorded')}
+                        {record.review_closed_by
+                          ? ` ${t('settings.privacy.execution.byActor', {
+                              actor: record.review_closed_by,
+                            })}`
+                          : ''}
                         {record.review_closed_at
-                          ? ` em ${formatDateTime(record.review_closed_at)}`
+                          ? ` ${t('settings.privacy.execution.onDate', {
+                              date: formatDateTime(record.review_closed_at),
+                            })}`
                           : ''}
                         .
                       </span>
@@ -3097,8 +3263,8 @@ function RetentionExecutionReviewQueue({
                       onClick={() => void closeOperationalReview(record)}
                     >
                       {closingId === record.id
-                        ? 'A registar revisão'
-                        : 'Registar revisão operacional'}
+                        ? t('settings.privacy.execution.recordingReview')
+                        : t('settings.privacy.execution.recordReview')}
                     </Button>
                   )}
                 </td>
@@ -3218,7 +3384,12 @@ function RetentionPolicyPanel({
         </Card>
       ) : null}
       <Card
-        title={t('settings.privacy.retention.title')}
+        title={
+          <span className="row-wrap">
+            {t('settings.privacy.retention.title')}
+            <FieldHelp text={t('settings.privacy.help.retention')} />
+          </span>
+        }
         actions={
           <Button
             type="button"
@@ -3361,10 +3532,19 @@ function RetentionPolicyPanel({
   );
 }
 
+type PrivacySubTab = 'registers' | 'retention' | 'guidance';
+
+const PRIVACY_SUBTABS: { id: PrivacySubTab; labelKey: MessageKey; icon: ReactNode }[] = [
+  { id: 'registers', labelKey: 'settings.privacy.subtab.registers.label', icon: <Icon.FileText /> },
+  { id: 'retention', labelKey: 'settings.privacy.subtab.retention.label', icon: <Icon.Archive /> },
+  { id: 'guidance', labelKey: 'settings.privacy.subtab.guidance.label', icon: <Icon.Info /> },
+];
+
 export function PrivacyComplianceSection() {
   const t = useT();
   const can = useCan();
   const canManage = can('user.manage') || can('settings.manage');
+  const [subTab, setSubTab] = useState<PrivacySubTab>('registers');
   const [retentionExecutionStatusFilter, setRetentionExecutionStatusFilter] = useState<
     RetentionExecutionStatus | 'all'
   >('all');
@@ -3433,14 +3613,14 @@ export function PrivacyComplianceSection() {
         report.execution_record
           ? executionMode === 'execute_supported'
             ? isArchiveEvidenceRequest
-              ? 'Evidência delimitada de arquivo registada.'
-              : 'Evidência delimitada sem ação registada.'
-            : 'Pedido de revisão de evidência registado.'
+              ? t('settings.privacy.toast.archiveEvidenceRecorded')
+              : t('settings.privacy.toast.noActionEvidenceRecorded')
+            : t('settings.privacy.toast.reviewRequestRecorded')
           : executionMode === 'execute_supported'
             ? isArchiveEvidenceRequest
-              ? 'Pedido de evidência de arquivo enviado; sem registo devolvido.'
-              : 'Pedido de evidência sem ação enviado; sem registo devolvido.'
-            : 'Pedido de revisão enviado; sem registo de execução devolvido.',
+              ? t('settings.privacy.toast.archiveEvidenceSent')
+              : t('settings.privacy.toast.noActionEvidenceSent')
+            : t('settings.privacy.toast.reviewRequestSent'),
       );
     } catch (e) {
       toast.error(e);
@@ -3456,7 +3636,7 @@ export function PrivacyComplianceSection() {
         candidateId: candidate.candidate_id,
         body: retentionCandidateResolutionBody(candidate),
       });
-      toast.success('Disposição local de evidência registada.');
+      toast.success(t('settings.privacy.toast.dispositionRecorded'));
     } catch (e) {
       toast.error(e);
     } finally {
@@ -3478,82 +3658,111 @@ export function PrivacyComplianceSection() {
         {t('settings.privacy.notice.body')}
       </InlineWarning>
 
-      <DpiaTemplateGuidancePanel
-        template={dpiaTemplate.data ?? null}
-        loading={dpiaTemplate.isLoading}
-        error={dpiaTemplate.error}
+      <SubNav
+        items={PRIVACY_SUBTABS.map((s) => ({ id: s.id, label: t(s.labelKey), icon: s.icon }))}
+        active={subTab}
+        onSelect={setSubTab}
+        ariaLabel={t('settings.privacy.subnav.aria')}
       />
 
-      <RegisterPanel
-        kind="processor"
-        title="Processadores GDPR"
-        lede="Registo dos processadores, subprocessadores e categorias de dados tratados por terceiros."
-        records={processors.data ?? []}
-        loading={processors.isLoading}
-        error={processors.error}
-        saving={createProcessor.isPending || patchProcessor.isPending}
-        onCreate={(body) => createProcessor.mutateAsync(body as CreateProcessorRecordBody)}
-        onPatch={(id, body) =>
-          patchProcessor.mutateAsync({ id, body: body as PatchProcessorRecordBody })
-        }
-      />
+      <div className="route-transition stack" key={subTab}>
+        {subTab === 'registers' ? (
+          <div className="stack">
+            <p className="field__hint">{t('settings.privacy.subtab.registers.desc')}</p>
 
-      <RegisterPanel
-        kind="dpia"
-        title="DPIAs"
-        lede="Avaliações de impacto com finalidade, base legal, categorias de dados e risco atual."
-        records={dpias.data ?? []}
-        loading={dpias.isLoading}
-        error={dpias.error}
-        saving={createDpia.isPending || patchDpia.isPending}
-        onCreate={(body) => createDpia.mutateAsync(body as CreateDpiaRecordBody)}
-        onPatch={(id, body) => patchDpia.mutateAsync({ id, body: body as PatchDpiaRecordBody })}
-      />
+            <RegisterPanel
+              kind="processor"
+              title={t('settings.privacy.register.processor.title')}
+              lede={t('settings.privacy.register.processor.lede')}
+              help={t('settings.privacy.help.processor')}
+              records={processors.data ?? []}
+              loading={processors.isLoading}
+              error={processors.error}
+              saving={createProcessor.isPending || patchProcessor.isPending}
+              onCreate={(body) => createProcessor.mutateAsync(body as CreateProcessorRecordBody)}
+              onPatch={(id, body) =>
+                patchProcessor.mutateAsync({ id, body: body as PatchProcessorRecordBody })
+              }
+            />
 
-      <BreachPlaybookPanel
-        records={breachPlaybooks.data ?? []}
-        loading={breachPlaybooks.isLoading}
-        error={breachPlaybooks.error}
-        saving={createBreachPlaybook.isPending || patchBreachPlaybook.isPending}
-        onCreate={(body) => createBreachPlaybook.mutateAsync(body)}
-        onPatch={(id, body) => patchBreachPlaybook.mutateAsync({ id, body })}
-      />
+            <RegisterPanel
+              kind="dpia"
+              title={t('settings.privacy.register.dpia.title')}
+              lede={t('settings.privacy.register.dpia.lede')}
+              help={t('settings.privacy.help.dpia')}
+              records={dpias.data ?? []}
+              loading={dpias.isLoading}
+              error={dpias.error}
+              saving={createDpia.isPending || patchDpia.isPending}
+              onCreate={(body) => createDpia.mutateAsync(body as CreateDpiaRecordBody)}
+              onPatch={(id, body) => patchDpia.mutateAsync({ id, body: body as PatchDpiaRecordBody })}
+            />
 
-      <TransferControlPanel
-        records={transferControls.data ?? []}
-        loading={transferControls.isLoading}
-        error={transferControls.error}
-        saving={createTransferControl.isPending || patchTransferControl.isPending}
-        onCreate={(body) => createTransferControl.mutateAsync(body)}
-        onPatch={(id, body) => patchTransferControl.mutateAsync({ id, body })}
-      />
+            <BreachPlaybookPanel
+              records={breachPlaybooks.data ?? []}
+              loading={breachPlaybooks.isLoading}
+              error={breachPlaybooks.error}
+              saving={createBreachPlaybook.isPending || patchBreachPlaybook.isPending}
+              onCreate={(body) => createBreachPlaybook.mutateAsync(body)}
+              onPatch={(id, body) => patchBreachPlaybook.mutateAsync({ id, body })}
+            />
 
-      <RetentionPolicyPanel
-        records={retentionPolicies.data ?? []}
-        loading={retentionPolicies.isLoading}
-        error={retentionPolicies.error}
-        saving={createRetentionPolicy.isPending || patchRetentionPolicy.isPending}
-        runningDryRun={dryRunRetentionPolicy.isPending}
-        dryRunReport={dryRunRetentionPolicy.data ?? null}
-        dueCandidatesReport={retentionDueCandidates.data ?? null}
-        dueCandidatesLoading={retentionDueCandidates.isLoading}
-        dueCandidatesError={retentionDueCandidates.error}
-        candidateResolutionRecords={retentionCandidateResolutions.data ?? []}
-        candidateResolutionPending={recordRetentionCandidateResolution.isPending}
-        resolvingCandidateId={retentionResolutionCandidateId}
-        reviewRequestPending={dryRunRetentionPolicy.isPending}
-        requestingReviewCandidateId={retentionReviewCandidateId}
-        executionRecords={retentionExecutions.data ?? []}
-        executionLoading={retentionExecutions.isLoading}
-        executionError={retentionExecutions.error}
-        executionStatusFilter={retentionExecutionStatusFilter}
-        onCreate={(body) => createRetentionPolicy.mutateAsync(body)}
-        onPatch={(id, body) => patchRetentionPolicy.mutateAsync({ id, body })}
-        onDryRun={dryRunRetention}
-        onRecordResolution={recordRetentionResolution}
-        onRequestReview={requestRetentionReview}
-        onExecutionStatusFilterChange={setRetentionExecutionStatusFilter}
-      />
+            <TransferControlPanel
+              records={transferControls.data ?? []}
+              loading={transferControls.isLoading}
+              error={transferControls.error}
+              saving={createTransferControl.isPending || patchTransferControl.isPending}
+              onCreate={(body) => createTransferControl.mutateAsync(body)}
+              onPatch={(id, body) => patchTransferControl.mutateAsync({ id, body })}
+            />
+          </div>
+        ) : null}
+
+        {subTab === 'retention' ? (
+          <div className="stack">
+            <p className="field__hint">{t('settings.privacy.subtab.retention.desc')}</p>
+
+            <RetentionPolicyPanel
+              records={retentionPolicies.data ?? []}
+              loading={retentionPolicies.isLoading}
+              error={retentionPolicies.error}
+              saving={createRetentionPolicy.isPending || patchRetentionPolicy.isPending}
+              runningDryRun={dryRunRetentionPolicy.isPending}
+              dryRunReport={dryRunRetentionPolicy.data ?? null}
+              dueCandidatesReport={retentionDueCandidates.data ?? null}
+              dueCandidatesLoading={retentionDueCandidates.isLoading}
+              dueCandidatesError={retentionDueCandidates.error}
+              candidateResolutionRecords={retentionCandidateResolutions.data ?? []}
+              candidateResolutionPending={recordRetentionCandidateResolution.isPending}
+              resolvingCandidateId={retentionResolutionCandidateId}
+              reviewRequestPending={dryRunRetentionPolicy.isPending}
+              requestingReviewCandidateId={retentionReviewCandidateId}
+              executionRecords={retentionExecutions.data ?? []}
+              executionLoading={retentionExecutions.isLoading}
+              executionError={retentionExecutions.error}
+              executionStatusFilter={retentionExecutionStatusFilter}
+              onCreate={(body) => createRetentionPolicy.mutateAsync(body)}
+              onPatch={(id, body) => patchRetentionPolicy.mutateAsync({ id, body })}
+              onDryRun={dryRunRetention}
+              onRecordResolution={recordRetentionResolution}
+              onRequestReview={requestRetentionReview}
+              onExecutionStatusFilterChange={setRetentionExecutionStatusFilter}
+            />
+          </div>
+        ) : null}
+
+        {subTab === 'guidance' ? (
+          <div className="stack">
+            <p className="field__hint">{t('settings.privacy.subtab.guidance.desc')}</p>
+
+            <DpiaTemplateGuidancePanel
+              template={dpiaTemplate.data ?? null}
+              loading={dpiaTemplate.isLoading}
+              error={dpiaTemplate.error}
+            />
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
