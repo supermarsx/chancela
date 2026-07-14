@@ -175,9 +175,10 @@ Implementation checkpoints covered here:
 
 - Current `d981694` keeps Signatures/Documents/UX/CI **PARTIAL**: the web
   signing panel now renders a compact post-signed technical/local metadata
-  comparison using already-loaded Act, signature-status, and document-bundle
-  validation-report metadata. Focused tests cover signed match, signed
-  mismatch, missing signed metadata, no-overclaim copy, and i18n key coverage.
+  comparison using existing Act/signature-status data and metadata-only
+  document-bundle validation-report endpoint data. Focused tests cover signed
+  match, signed mismatch, missing signed metadata, no-overclaim copy, and i18n
+  key coverage.
   The panel does not fetch or parse raw PDFs, recompute digests, validate trust,
   mutate archives, record reviewer notes, or make legal validity, source,
   provider, or external-validation claims.
