@@ -1,8 +1,8 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-15 from current implementation snapshot `4c80e7884e85402e7a5928776d77c9da35c2bf48`,
-with committed evidence refreshes for the recently landed data key-rotation
-receipt history and the earlier Signatures & Trust
+*Updated 2026-07-15 from current implementation snapshot `fe08c70eb8ec863de536861fca464657c9787a5a`,
+with committed evidence refreshes for the recently landed key-custody readiness
+UI/contract surfacing, data key-rotation receipt history, and the earlier Signatures & Trust
 provider-credential, stored runtime credential resolution, stored PKCS#12,
 remote batch-initiation surfaces, remote provider readiness manifests, and Docker/Compose runtime-hardening
 checkpoint, delegation legal-basis enforcement, and compliance-panel internal
@@ -11,8 +11,8 @@ chronology projection for local sealed/archived acts with provenance,
 retification edges, and false no-claim flags, while preserving the prior committed
 `5911fe0` AI provenance review-packet helper/copy evidence, `9ddced8`
 Postgres per-book portability plus restore-preflight evidence, `566273c`
-release-trust package tarball binding evidence, and `4c80e78`
-data key-rotation receipt history evidence,
+release-trust package tarball binding evidence, and `fe08c70`
+key-custody readiness UI/contract evidence,
 `7fcf5ef5f1c2fbd5b9eb26d6aac5c1240144a365` manual-signature
 original-reference sealing path and web accessibility/focus guard evidence and the prior
 `869e02f897f54730df86db739193f86c372e0e19` coverage context,
@@ -207,6 +207,24 @@ being useful. The matrix below records the current factual coverage and the rema
 blockers.
 
 Implementation checkpoints covered here:
+
+- Current `fe08c70` keeps Data/Architecture/UX/CI **PARTIAL**: the Data
+  Management "Chaves e reposicao" surface now renders the existing
+  `persistence.database_encryption` readiness object and the web contract
+  fixture pins its key custody shape. The UI/contract markers cover only
+  secret-free status from the backend: SQLCipher build availability, whether the
+  opened store is keyed/SQLCipher-backed, key source class, fail-closed
+  `hardware_derived_fallback` status, database header format, key-ops plan,
+  key configuration class, plaintext migration pending/blocked booleans, and
+  migration-plan summary/steps. The panel also lists readiness gaps for missing
+  SQLCipher, absent/empty key source, direct plaintext migration refusal, and
+  unavailable hardware fallback without rendering keys, hashes/fingerprints,
+  raw persisted database paths, or env secrets. This is web/API/contract
+  surfacing of existing status only: it does not execute migration or rekey,
+  prove live production SQLCipher encryption at rest, prove host decryptability,
+  complete plaintext migration, complete production key custody/runbooks,
+  complete hardware-derived key defaults, certify legal disposal, claim GDPR
+  lifecycle completion, or make Data/Architecture/UX/CI complete.
 
 - Current `4c80e78` keeps Data/Architecture/UX/CI **PARTIAL**: successful
   guarded SQLCipher rekey execution now persists a bounded
@@ -4275,15 +4293,22 @@ behavior, legal disposal, or legal-effect claims.
   apply only; it is not tenant, sync, ZK, archive, retention, or compliance
   completion evidence.
 - Database key-ops status/preflight is a secret-free configuration/build/header classification and
-  startup guard with web/API/CLI/store key-env/preflight/rekey evidence. The API/web execution path
+  startup guard with web/API/CLI/store key-env/preflight/rekey evidence, and the
+  Data Management UI now surfaces the existing `persistence.database_encryption`
+  readiness object: SQLCipher build availability, keyed-store state, key-source
+  class, fail-closed hardware fallback status, database format, key-ops plan,
+  key-config class, plaintext migration pending/blocked flags, and
+  migration-plan summary/steps. The API/web execution path
   is limited to an already-open keyed SQLCipher store, refuses plaintext stores,
   and persists bounded success receipts only after accepted guarded SQLCipher
-  rekey. Those receipts do not persist current/replacement keys, key
-  fingerprints, raw database paths, or secret material. It does not prove live
+  rekey. Those receipts and readiness panels do not persist or render
+  current/replacement keys, key fingerprints/hashes, env secrets, raw persisted
+  database paths, or secret material. It does not execute migration, prove live
   production SQLCipher encryption, host decryptability, plaintext migration,
   production secret rotation runbooks, completed at-rest encryption
   certification, conversion of plaintext SQLite stores into encrypted stores,
-  legal disposal, or GDPR lifecycle completion.
+  hardware-derived default completion, legal disposal, or GDPR lifecycle
+  completion.
 - The database key migration plan is operator guidance attached to key-ops status; it does not run
   backup/export-restore, verify a live encrypted restore, provide production operator rotation
   flows, or retire plaintext data.

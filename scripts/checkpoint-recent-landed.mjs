@@ -9710,6 +9710,91 @@ function assertCheckpointMap() {
     "API data status key-source preflight coverage",
   );
   assertFileContains(
+    "apps/web/src/api/types.ts",
+    "export interface DataDatabaseEncryptionStatus",
+    "web data status database encryption contract type marker",
+  );
+  assertFileContains(
+    "apps/web/src/api/types.ts",
+    "plaintext_migration_blocked: boolean;",
+    "web data status plaintext migration blocked contract marker",
+  );
+  assertFileContains(
+    "contracts/data.status.json",
+    '"database_encryption": {',
+    "data status fixture database encryption object marker",
+  );
+  assertFileContains(
+    "contracts/data.status.json",
+    '"key_source": "none"',
+    "data status fixture key-source none marker",
+  );
+  assertFileContains(
+    "contracts/data.status.json",
+    '"database_format": "plaintext_sqlite"',
+    "data status fixture plaintext format marker",
+  );
+  assertFileContains(
+    "contracts/data.status.json",
+    '"plaintext_migration_pending": true',
+    "data status fixture plaintext migration pending marker",
+  );
+  assertFileContains(
+    "contracts/data.status.json",
+    '"fail_closed_if_requested": true',
+    "data status fixture hardware fallback fail-closed marker",
+  );
+  assertFileContains(
+    "apps/web/src/contracts/contracts.test.ts",
+    "assertDataDatabaseEncryptionStatus",
+    "web contract database encryption assertion marker",
+  );
+  assertFileContains(
+    "apps/web/src/contracts/contracts.test.ts",
+    "expect(databaseEncryption.configured).toBe(persistence.database_encryption_configured)",
+    "web contract database encryption configured parity marker",
+  );
+  assertFileContains(
+    "apps/web/src/contracts/contracts.test.ts",
+    "expect(databaseEncryption.plaintext_migration_pending).toBe(true)",
+    "web contract plaintext migration pending fixture marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "Prontidão SQLCipher e custódia da chave",
+    "web data management key custody readiness title marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "Sinais locais do backend com segredos redigidos",
+    "web data management key custody secret-free boundary marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "Não certificam cifragem em repouso de\n          produção, migração plaintext concluída, runbook de custódia ou ciclo legal/GDPR",
+    "web data management key custody no-claim copy marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "Migração direta plaintext bloqueada",
+    "web data management plaintext blocked gap marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "renders SQLCipher and key-custody readiness gaps without key material or completion claims",
+    "web data management key custody readiness coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "expect(document.body.textContent).not.toContain('operator-key-secret')",
+    "web data management key custody no-secret assertion marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "expect(document.body.textContent).not.toContain('custódia de produção concluída')",
+    "web data management key custody no-production-completion assertion marker",
+  );
+  assertFileContains(
     "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
     "runs a secret-clearing data key rotation preflight and renders only returned evidence",
     "web data key rotation preflight coverage",
@@ -10026,12 +10111,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `4c80e78`",
+    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `fe08c70`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `4c80e78`",
+    "Focused Gate Snapshot Through `fe08c70`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -10666,8 +10751,28 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `4c80e78`",
+    "Current checkpoint metadata/static checks through `fe08c70`",
     "CI/E2E hardening plan current checkpoint checks marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Data Management now renders the existing\n  `persistence.database_encryption` readiness object",
+    "CI/E2E hardening plan key custody readiness marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "key-custody readiness UI/contract\n  markers for `persistence.database_encryption` SQLCipher availability",
+    "CI/E2E hardening plan key custody checkpoint marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "key-custody readiness UI/contract surfacing for\n`persistence.database_encryption`",
+    "CI checkpoints key custody readiness lane marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "Data key-custody readiness markers pin only secret-free\n`persistence.database_encryption` surfacing",
+    "CI checkpoints key custody secret-free marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -10686,7 +10791,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "current/replacement keys, key\nhashes/fingerprints, raw database paths",
+    "current/replacement keys, key hashes/fingerprints, raw\npersisted database paths",
     "CI checkpoints key-rotation no-secret/path marker",
   );
   assertFileContains(
@@ -11176,8 +11281,28 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `4c80e7884e85402e7a5928776d77c9da35c2bf48`",
+    "implementation snapshot `fe08c70eb8ec863de536861fca464657c9787a5a`",
     "spec coverage current implementation snapshot marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Current `fe08c70` keeps Data/Architecture/UX/CI **PARTIAL**",
+    "spec coverage key custody readiness current checkpoint marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Data Management \"Chaves e reposicao\" surface now renders the existing\n  `persistence.database_encryption` readiness object",
+    "spec coverage key custody readiness surface marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "SQLCipher build availability, whether the\n  opened store is keyed/SQLCipher-backed, key source class",
+    "spec coverage key custody signal marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "does not execute migration or rekey,\n  prove live production SQLCipher encryption at rest",
+    "spec coverage key custody no-claim marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",

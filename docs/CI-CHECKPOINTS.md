@@ -30,6 +30,8 @@ provider validity or authority approval.
 
 `npm run test:checkpoint:recent-landed` is a focused local and CI guard for
 recently landed work that crosses Rust API tests, data key preflight guards,
+key-custody readiness UI/contract surfacing for
+`persistence.database_encryption`,
 bounded data key-rotation receipt history for accepted guarded SQLCipher rekeys,
 guardrail acknowledgements, written-resolution evidence status binding and
 browser receipt proof, trust
@@ -691,15 +693,22 @@ false live-restore flags. They do not prove live restore execution, live DB
 swap, live sidecar staging, `ledger.restored` append, SQLCipher-at-rest proof,
 RPO/RTO, off-site custody, production backup policy, legal archive
 certification, or FULL coverage.
-Data key-rotation receipt markers pin only the successful guarded SQLCipher
-rekey receipt history: bounded `data-key-rotation-receipts.json` persistence,
-`/v1/data/status` projection, contract fixture shape, Data Management rendering,
-false no-claim flags, and forbidden/plaintext refusal paths that do not create
-success receipts. They do not persist or expose current/replacement keys, key
-hashes/fingerprints, raw database paths, env var secrets, or secret material,
-and they do not prove SQLCipher-at-rest production encryption, plaintext
-migration, legal disposal, GDPR lifecycle completion, or full key-rotation
-runbook completion.
+Data key-custody readiness markers pin only secret-free
+`persistence.database_encryption` surfacing in contracts and Data Management:
+SQLCipher build availability, keyed-store state, key source class, fail-closed
+hardware fallback status, database format, key-ops plan, key-config class,
+plaintext migration pending/blocked signals, migration-plan summary/steps, and
+readiness-gap copy. Data key-rotation receipt markers pin only the successful
+guarded SQLCipher rekey receipt history: bounded
+`data-key-rotation-receipts.json` persistence, `/v1/data/status` projection,
+contract fixture shape, Data Management rendering, false no-claim flags, and
+forbidden/plaintext refusal paths that do not create success receipts. They do
+not persist or expose current/replacement keys, key hashes/fingerprints, raw
+persisted database paths, env var secrets, or secret material, and they do not
+execute migration or rekey from the readiness panel, prove SQLCipher-at-rest
+production encryption, complete plaintext migration, complete production key
+custody/runbooks, complete hardware-derived defaults, prove legal disposal,
+certify GDPR lifecycle completion, or complete the full key-rotation runbook.
 They do not certify legal validity, legal retention schedules or approvals,
 retention deletion or anonymization/redaction execution, retention execution
 completion, destructive GDPR erasure, full erasure, template legal effect, DRE
