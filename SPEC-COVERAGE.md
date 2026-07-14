@@ -3246,10 +3246,18 @@ behavior, legal disposal, or legal-effect claims.
   Current audit caveats remain: browser E2E is not exhaustive, coverage thresholds outside the web
   unit-test lane are not broadly enforced, live signature/provider seams are compile-only, release
   packages are not signed or notarized, and Docker images are not signed or attested.
-- **Docker deployment profiles:** the Docker compose/deployment material now distinguishes local,
-  demo, and reverse-proxy/TLS-facing profile guidance with persistent data paths and smoke-script
-  hardening. These are deployment profiles and checks, not HA architecture, managed operations, or
-  signed/attested image publication.
+- **Docker deployment profiles:** the Docker compose material now uses the
+  actual `single-node` and `validation-worker` profiles. The Compose smoke path
+  starts the `single-node` server with the selected local image and inspects the
+  Compose-created container for read-only rootfs, `cap_drop: ALL`,
+  `no-new-privileges`, non-root user, `/tmp` tmpfs, and a persistent
+  `/var/lib/chancela` data mount before the `/health` durable-persistence
+  assertion. CI runs that `single-node` Compose runtime-hardening smoke after
+  loading `chancela-server:ci`, while `validation-worker` is config-validated
+  only. These are local Compose drift-resistance checks, not HA architecture,
+  a dedicated worker image, managed operations, registry publication, image
+  signing, attestation, notarization, vulnerability remediation, or production
+  deployment certification.
 - **Recent-landed checkpoint:** `npm run test:checkpoint:recent-landed` and the GitHub Actions
   `recent-landed` job pin the cross-cutting recent work: paper import API tests including
   canonical-conversion preflight markers, archive package and DocTimeStamp evidence tests, local
@@ -3798,7 +3806,10 @@ behavior, legal disposal, or legal-effect claims.
   substitutes for package signing, notarization, Docker signing, attestation, registry-publication
   verification, or reproducible-build proof; package artifact integrity checks and metadata guards
   are regression checks, not a release trust chain.
-- Docker deployment profiles are operational configuration examples, not HA, managed production
-  operations, image signing, or attestation.
+- Docker deployment profiles and the `single-node` Compose runtime-hardening
+  smoke are local operational drift-resistance checks, not HA, a dedicated
+  worker image, managed production operations, registry publication, image
+  signing, attestation, notarization, vulnerability remediation, or production
+  deployment certification.
 - `/api/v1` API keys are an implemented integration feature, but a bearer key is still an
   attenuated RBAC principal, not an interactive user session or step-up credential.

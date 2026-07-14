@@ -349,6 +349,13 @@ jobs:
         run: |
           echo "created=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
 
+      - name: Validate Docker Compose profiles
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose -f docker/docker-compose.yml --profile single-node config --quiet
+          docker compose -f docker/docker-compose.yml --profile validation-worker config --quiet
+
       - name: Build server image (no push)
         uses: docker/build-push-action@v6
         with:
@@ -427,6 +434,10 @@ jobs:
           if failed:
               raise SystemExit(f"health smoke failed {failed}: {health!r}")
           PY
+
+      - name: Smoke single-node Compose runtime hardening
+        shell: bash
+        run: bash scripts/docker-smoke.sh --compose-profile chancela-server:ci
 
       - name: Collect Docker image metadata
         shell: bash

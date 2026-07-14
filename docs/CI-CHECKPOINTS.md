@@ -671,10 +671,20 @@ paths. Release packaging then validates each generated
 `*-release-artifact.json` plus package manifest in explicit `unsigned-dev` mode,
 including a source SHA cross-check against
 `manifest.sourceProvenance.commitSha`. Docker CI validates
-`chancela-server-signing-status.json` in explicit `local-ci` mode. This is
-static workflow assurance only; switch those checks to `production` only when
-signing, notarization, registry publication, and attestation evidence are
-actually generated.
+the actual Compose profiles `single-node` and `validation-worker`, runs
+`bash scripts/docker-smoke.sh --compose-profile chancela-server:ci` after the
+local image load, and validates `chancela-server-signing-status.json` in
+explicit `local-ci` mode. The Compose smoke inspects the `single-node`
+Compose-created server container for read-only rootfs, `cap_drop: ALL`,
+`no-new-privileges`, non-root user, `/tmp` tmpfs, and persistent
+`/var/lib/chancela` data mount before the durable `/health` assertion;
+`validation-worker` remains config-validated only in this checkpoint. The
+release-trust metadata checks remain static workflow assurance only; switch
+those checks to `production` only when signing, notarization, registry
+publication, and attestation evidence are actually generated. The Compose
+smoke does not claim HA, a dedicated worker image, registry publication, image
+signing, attestation, notarization, vulnerability remediation, or production
+deployment certification.
 
 After `npm run package`, run `npm run test:package-integrity` to validate the
 generated `dist/chancela-*.tar.gz` archive and staged package directory. The

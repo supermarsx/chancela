@@ -77,8 +77,14 @@ test operating checklist for driving Chancela toward release confidence.
   `apps/web/vite.config.ts` (statements 90, branches 78, functions 83, lines
   90).
 - Docker server image build plus runtime smoke runs on pushes to `main` and
-  manual dispatches; the smoke starts the container with `CHANCELA_DATA_DIR`,
-  polls `/health`, and asserts durable persistence from the JSON body.
+  manual dispatches; the direct smoke starts the container with
+  `CHANCELA_DATA_DIR`, polls `/health`, and asserts durable persistence from
+  the JSON body. The Docker job also renders the actual Compose profiles
+  `single-node` and `validation-worker`, then runs the `single-node` Compose
+  runtime-hardening smoke against the locally loaded image. That smoke inspects
+  the Compose-created server container for read-only rootfs, `cap_drop: ALL`,
+  `no-new-privileges`, a non-root user, `/tmp` tmpfs, and a persistent
+  `/var/lib/chancela` mount before the same `/health` persistence assertion.
 - The Docker lane applies OCI image labels and uploads image inspect metadata,
   report-only Syft/Trivy artifacts, and an explicit JSON status saying the local
   CI image was not pushed, signed, or attested.
@@ -729,8 +735,8 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - Full browser e2e passes at least once on the release branch.
 - Web Vitest/V8 coverage thresholds pass in CI and in the local release loop;
   any coverage threshold waiver is explicit and release-scoped.
-- Docker image builds and passes the runtime `/health` persistence smoke from a
-  clean checkout.
+- Docker image builds and passes the direct runtime `/health` persistence smoke
+  plus the `single-node` Compose runtime-hardening smoke from a clean checkout.
 - Release metadata artifacts include a validated dependency SBOM, package
   manifest, and SHA-256 checksums.
 - Vulnerability scans have either passed in an enforced manual run or their

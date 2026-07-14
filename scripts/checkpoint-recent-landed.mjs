@@ -2832,6 +2832,41 @@ function assertCheckpointMap() {
     "CI checkpoints release-trust Docker local-ci marker",
   );
   assertFileContains(
+    "scripts/docker-smoke.sh",
+    "compose hardening smoke passed for",
+    "Docker smoke Bash Compose hardening marker",
+  );
+  assertFileContains(
+    "scripts/docker-smoke.sh",
+    "ReadonlyRootfs",
+    "Docker smoke Bash read-only rootfs inspect marker",
+  );
+  assertFileContains(
+    "scripts/docker-smoke.ps1",
+    "function Test-ComposeHardening",
+    "Docker smoke PowerShell Compose hardening function marker",
+  );
+  assertFileContains(
+    ".github/workflows/ci.yml",
+    "Smoke single-node Compose runtime hardening",
+    "CI Docker Compose hardening smoke step marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "Compose-created server container for read-only rootfs",
+    "CI checkpoints Compose runtime hardening marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "`single-node` Compose\n  runtime-hardening smoke",
+    "CI/E2E hardening plan Compose runtime smoke marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "actual `single-node` and `validation-worker` profiles",
+    "spec coverage Docker actual Compose profiles marker",
+  );
+  assertFileContains(
     "docs/CI-CHECKPOINTS.md",
     "package integrity, emits `releaseTrust.mode = unsigned-dev`",
     "CI checkpoints release workflow unsigned-dev marker",
@@ -2843,7 +2878,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "static workflow assurance only; switch those checks to `production` only when",
+    "release-trust metadata checks remain static workflow assurance only; switch",
     "CI checkpoints release workflow static-only boundary marker",
   );
   assertFileContains(

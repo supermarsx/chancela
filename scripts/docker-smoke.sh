@@ -1,11 +1,25 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+usage() {
+  cat <<'EOF'
+Usage: scripts/docker-smoke.sh [--compose-profile] [image]
+
+Runs the Docker health/persistence smoke against image.
+With --compose-profile, starts the single-node Compose profile and also
+inspects the Compose-created server container for the expected runtime
+hardening posture.
+EOF
+}
+
 image="${1:-chancela-server:local}"
 compose_profile=false
 if [ "${1:-}" = "--compose-profile" ]; then
   compose_profile=true
   image="${2:-chancela-server:local}"
+elif [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
+  usage
+  exit 0
 fi
 
 data_dir="$(mktemp -d)"
@@ -15,16 +29,86 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$script_dir/.." && pwd)"
 compose_file="$repo_root/docker/docker-compose.yml"
 
+assert_compose_hardening() {
+  local service="${1:?service required}"
+  local cid
+  cid="$(docker compose -f "$compose_file" -p "$project" ps -q "$service")"
+  if [ -z "$cid" ]; then
+    echo "compose service $service did not produce a container" >&2
+    exit 1
+  fi
+
+  DOCKER_INSPECT_JSON="$(docker inspect "$cid")" \
+  CHANCELA_SMOKE_SERVICE="$service" \
+  python3 - <<'PY'
+import json
+import os
+
+service = os.environ["CHANCELA_SMOKE_SERVICE"]
+inspect_data = json.loads(os.environ["DOCKER_INSPECT_JSON"])
+container = inspect_data[0]
+host = container.get("HostConfig") or {}
+config = container.get("Config") or {}
+mounts = container.get("Mounts") or []
+
+failures = []
+if host.get("ReadonlyRootfs") is not True:
+    failures.append("read-only rootfs")
+
+if "ALL" not in (host.get("CapDrop") or []):
+    failures.append("cap_drop ALL")
+
+if "no-new-privileges:true" not in (host.get("SecurityOpt") or []):
+    failures.append("no-new-privileges")
+
+user = str(config.get("User") or "").strip()
+user_parts = user.split(":") if user else []
+if not user_parts or user_parts[0] in {"0", "root"}:
+    failures.append("non-root user")
+elif len(user_parts) > 1 and user_parts[1] in {"0", "root"}:
+    failures.append("non-root group")
+
+tmpfs = host.get("Tmpfs") or {}
+if isinstance(tmpfs, dict):
+    has_tmpfs = "/tmp" in tmpfs
+else:
+    has_tmpfs = any(str(entry).split(":", 1)[0] == "/tmp" for entry in tmpfs)
+if not has_tmpfs:
+    failures.append("/tmp tmpfs")
+
+has_persistent_data = any(
+    mount.get("Destination") == "/var/lib/chancela"
+    and mount.get("Type") in {"volume", "bind"}
+    for mount in mounts
+)
+if not has_persistent_data:
+    failures.append("/var/lib/chancela persistent data mount")
+
+if failures:
+    raise SystemExit(
+        f"compose hardening smoke failed for {service}: missing {failures}"
+    )
+
+print(
+    "compose hardening smoke passed for "
+    f"{service}: read-only rootfs, cap_drop ALL, no-new-privileges, "
+    f"user {user}, /tmp tmpfs, /var/lib/chancela persistent mount"
+)
+PY
+}
+
 cleanup() {
   status=$?
-  if [ "$status" -ne 0 ] && [ -n "$container" ]; then
+  if [ "$status" -ne 0 ] && [ "$compose_profile" = true ]; then
+    docker compose -f "$compose_file" -p "$project" logs server || true
+  elif [ "$status" -ne 0 ] && [ -n "$container" ]; then
     docker logs "$container" || true
   fi
   if [ "$compose_profile" = true ]; then
     CHANCELA_SERVER_IMAGE="$image" CHANCELA_HOST_PORT=0 \
       docker compose -f "$compose_file" -p "$project" down -v --remove-orphans >/dev/null 2>&1 || true
   fi
-  if [ -n "$container" ]; then
+  if [ "$compose_profile" != true ] && [ -n "$container" ]; then
     docker rm -f "$container" >/dev/null 2>&1 || true
   fi
   rm -rf "$data_dir"
@@ -36,6 +120,8 @@ chmod 777 "$data_dir"
 if [ "$compose_profile" = true ]; then
   CHANCELA_SERVER_IMAGE="$image" CHANCELA_HOST_PORT=0 \
     docker compose -f "$compose_file" --profile single-node -p "$project" up -d --no-build server
+  container="$(docker compose -f "$compose_file" -p "$project" ps -q server)"
+  assert_compose_hardening server
   mapped="$(docker compose -f "$compose_file" -p "$project" port server 8080)"
 else
   container="$(docker run -d \
