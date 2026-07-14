@@ -289,6 +289,17 @@ const checks = [
     ],
   },
   {
+    name: "web ledger archive filter reset icon tests",
+    command: npmCommand([
+      "run",
+      "test",
+      "--workspace",
+      "apps/web",
+      "--",
+      "LedgerPage.test.tsx",
+    ]),
+  },
+  {
     name: "API privacy breach playbook evidence tests",
     command: [
       "cargo",
@@ -8780,6 +8791,26 @@ function assertCheckpointMap() {
     "ledger archive filter and clear-control coverage",
   );
   assertFileContains(
+    "apps/web/src/features/ledger/LedgerPage.tsx",
+    "icon={<Icon.FilterClear />}",
+    "ledger archive filter-clear icon implementation marker",
+  );
+  assertFileContains(
+    "apps/web/src/ui/icons.tsx",
+    "export function FilterClear",
+    "shared filter-clear icon marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/ledger/LedgerPage.test.tsx",
+    "expect(iconPaths).toContain('M4.5 5.5h15l-6 7v5l-3 1.5v-6.5z');",
+    "ledger archive filter-clear funnel icon coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/ledger/LedgerPage.test.tsx",
+    "expect(iconPaths).not.toContain('M6 6l12 12M18 6 6 18');",
+    "ledger archive filter-clear no-close-icon regression coverage",
+  );
+  assertFileContains(
     "apps/web/src/features/ledger/LedgerPage.test.tsx",
     "/v1/ledger/archive/document?format=txt&q=approved+digest&chain=book%3Abook-123456789&scope=act%3A88&limit=100&order=desc",
     "ledger archive filtered export request marker",
@@ -8885,6 +8916,21 @@ function assertCheckpointMap() {
     "spec coverage ledger archive no-overclaim marker",
   );
   assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Current `e8bcd19` keeps Data/Archive/UX/CI **PARTIAL**",
+    "spec coverage archive filter reset icon checkpoint marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "uses the shared `Icon.FilterClear` funnel/clear\n  glyph instead of the generic close icon",
+    "spec coverage archive filter reset icon semantics marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "archive UI clarity/accessibility regression coverage only",
+    "spec coverage archive filter reset no-overclaim marker",
+  );
+  assertFileContains(
     "docs/CI-CHECKPOINTS.md",
     "apps/web/e2e/ledger-archive-boundedness.spec.ts",
     "CI checkpoints ledger archive browser proof marker",
@@ -8903,6 +8949,16 @@ function assertCheckpointMap() {
     "docs/CI-E2E-HARDENING-PLAN.md",
     "no `before_seq`",
     "CI/E2E hardening ledger archive export no-cursor marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Current working-tree archive filter reset-icon checks",
+    "CI/E2E hardening archive filter reset icon checks marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "`Icon.FilterClear` funnel/clear SVG paths",
+    "CI/E2E hardening archive filter reset icon path marker",
   );
   assertFileContains(
     "apps/web/src/features/recovery/LivrosIntegridadeSection.test.tsx",
@@ -9176,7 +9232,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `c2cd027`",
+    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `e8bcd19`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
@@ -9786,7 +9842,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `c2cd027`",
+    "Current checkpoint metadata/static checks through `e8bcd19`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -10241,7 +10297,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `c2cd027b34175b0d709adf2abb8f30cc9c6b3547`",
+    "implementation snapshot `e8bcd19d20ff99ce395ff3de209faebb53f19d48`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(

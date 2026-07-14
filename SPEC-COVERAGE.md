@@ -1,6 +1,6 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-14 from current implementation snapshot `c2cd027b34175b0d709adf2abb8f30cc9c6b3547`,
+*Updated 2026-07-14 from current implementation snapshot `e8bcd19d20ff99ce395ff3de209faebb53f19d48`,
 with committed evidence refreshes for the recently landed Signatures & Trust
 provider-credential, stored runtime credential resolution, stored PKCS#12,
 remote batch-initiation surfaces, and Docker/Compose runtime-hardening
@@ -146,7 +146,9 @@ optional `suppression_summary`, `d1b6772` Settings suppression-summary
 rendering, `c3e450d` retention suppression checkpoint markers, and the
 retention review-closure slice through `869e02f` (`6724d07` API route,
 `d95a9f5` contract/client coverage, `c6e668d` Settings closure action, and
-`869e02f` route-mocked browser proof).
+`869e02f` route-mocked browser proof), followed by `148106c` read-only
+sync/handoff preflight reporting and `e8bcd19` archive filter reset icon
+semantics.
 Earlier coverage text remains prior snapshot context. All top-level spec areas remain **PARTIAL**.
 This is an implementation and test coverage snapshot, not a legal certification,
 not production CMD approval, not DRE verification promotion, not full PDF/UA
@@ -541,7 +543,7 @@ Implementation checkpoints covered here:
   evidence only, not PDF/UA conformance, external validator certification,
   signed-PDF accessibility certification, legal sufficiency, legal/reader
   acceptance, or complete accessibility delivery.
-- Working tree keeps Data/Architecture/UX/Workflows/CI **PARTIAL**: Data
+- Current `e8bcd19` keeps Data/Architecture/UX/Workflows/CI **PARTIAL**: Data
   Management now exposes a `data.backup`-gated hot-backup creation action backed
   by `POST /v1/backup`, posts no request body, disables itself when the instance
   is not using an open durable store, refreshes recovery/data status after
@@ -597,6 +599,16 @@ Implementation checkpoints covered here:
   append, production backup policy, RPO/RTO certification, disaster-recovery
   readiness, off-site custody proof, SQLCipher-at-rest proof, legal archive
   certification, FULL coverage, or new CAE provider/legal behavior.
+- Current `e8bcd19` keeps Data/Archive/UX/CI **PARTIAL**: the general Arquivo
+  filter reset control now uses the shared `Icon.FilterClear` funnel/clear
+  glyph instead of the generic close icon, while preserving the icon-only
+  accessible label, tooltip, disabled state, active-filter reset behavior, and
+  server-backed filter request serialization. Focused `LedgerPage` coverage pins
+  the expected SVG paths and rejects the old close-icon paths. This is archive
+  UI clarity/accessibility regression coverage only: it does not change ledger
+  query semantics, export format behavior, evidence preservation, archive
+  certification, legal acceptance, signature validation, ledger mutation, or
+  production custody claims.
 - Current `c2cd027` keeps Template Catalog/UX/CI **PARTIAL**: the embedded template
   catalog now loads 104 JSON template assets (104 total / 44 CSC), including
   standalone

@@ -1,7 +1,7 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `c2cd027`,
+and implementation snapshot `e8bcd19`,
 including coverage notes for the bounded PAdES DSS validation-time, PDF/UA v10
 scoped table-header evidence, retention due-candidate explicit evidence states,
 bounded archive/no-action evidence UI, duplicate-review guard/status surfacing, and
@@ -17,6 +17,7 @@ structured platform-log forwarded-ingest/failure-audit slices, plus data-status
 sidecar classification, read-only local DGLAB interchange manifest API
 scaffolding and BookDetail JSON download,
 local sync/handoff preflight readiness reporting over existing evidence only,
+archive filter reset icon-only clear-control coverage,
 raw-byte per-book import preflight operator preview,
 richer Ata editor AI statement-source provenance rendering, explicit external-validator raw
 report upload UI guardrails, the raw external-validator raw-report byte download
@@ -627,10 +628,10 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
   bare-array compatible.
 - Ledger archive list/export share server-backed chain, scope/search, kind,
   actor, date-range, and limit filters. The web UI keeps Livro-style filters,
-  an icon-only accessible clear-filters control, and export choices for
-  canonical PDF/A plus JSON/TXT/CSV/HTML audit/interchange formats. Only PDF/A
-  is the canonical preserved evidence export; the other formats are review or
-  interchange aids.
+  an icon-only accessible clear-filters control backed by the shared
+  `FilterClear` funnel/clear glyph, and export choices for canonical PDF/A plus
+  JSON/TXT/CSV/HTML audit/interchange formats. Only PDF/A is the canonical
+  preserved evidence export; the other formats are review or interchange aids.
 - Ledger archive paging coverage now spans 1000+ in-memory log events and
   SQL-backed persisted store pages after reopen/reload and memory clear via
   `Store::ledger_events_page`. Ledger archive export preserves active filters,
@@ -1517,6 +1518,16 @@ settingsDefaults.test.ts contracts.test.ts`.
   connector compatibility, legal validity, DGLAB/archive certification,
   signing/notarization/attestation, deployment readiness, or external-system
   readiness is implemented or proven.
+- Current working-tree archive filter reset-icon checks: focused
+  `npm run test --workspace apps/web -- LedgerPage.test.tsx` coverage pins the
+  Arquivo icon-only clear-filters button with tooltip/accessibility label, empty
+  text content, disabled state, `Icon.FilterClear` funnel/clear SVG paths, and
+  absence of the generic close-icon paths. `LedgerPage.tsx` now uses
+  `Icon.FilterClear`, and `icons.tsx` defines the shared single-stroke glyph.
+  This remains archive UI clarity/accessibility regression coverage only: no
+  ledger query semantics, export behavior, evidence preservation, archive
+  certification, legal acceptance, signature validation, ledger mutation, or
+  production custody claim is implemented or proven.
 - Current working-tree workflow reminder policy checks: focused `cargo test -p
   chancela-api --locked reminder_` coverage pins `workflow.reminders` defaults
   (enabled, dashboard limit 5, due-soon 45 days, attendance lookahead 45 days,
@@ -1610,7 +1621,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   --workspace apps/web -- e2e/session.spec.ts e2e/first-launch-onboarding.spec.ts`.
   Treat the static/unit/focused markers as the pinned slice, not broad
   Playwright-browser-suite or browser-matrix proof; the browser suite is not exhaustive.
-- Current checkpoint metadata/static checks through `c2cd027`
+- Current checkpoint metadata/static checks through `e8bcd19`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
@@ -1753,7 +1764,8 @@ settingsDefaults.test.ts contracts.test.ts`.
   shared list/export search (`q`), chain/scope filter, and limit normalization
   markers, numeric `next_cursor` typing, Livro-style filter and
   icon-only clear-control markers, and JSON/TXT/CSV/HTML export-format markers
-  with canonical-only PDF/A evidence boundaries, plus the route-stubbed
+  plus the dedicated `FilterClear` glyph/no-close-icon regression markers, with
+  canonical-only PDF/A evidence boundaries, plus the route-stubbed
   `apps/web/e2e/ledger-archive-boundedness.spec.ts` browser proof for bounded
   first-page rendering, cursor request serialization, filtered `limit=50`
   query serialization, archive-document export without `before_seq`, and no
