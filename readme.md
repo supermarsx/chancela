@@ -190,6 +190,56 @@ endpoint should report `persistent: true`, `ledger_verified: true`, and a numeri
 [`docker/`](docker/) for the hardening details (read-only rootfs, dropped capabilities,
 non-root user).
 
+### Postgres + Redis (self-hosted, scaled-ops)
+
+The default Docker path above is the single-node **SQLite/SQLCipher** edition and
+stays the simplest option. For operators who want a managed, networked,
+externally backed-up database, the `postgres` compose profile runs the server on
+**PostgreSQL** (durability backend) with an optional **Redis** cache-aside:
+
+```sh
+# Create the file-based docker secrets from the committed templates:
+cp docker/secrets/postgres_password.example docker/secrets/postgres_password
+cp docker/secrets/database_url.example      docker/secrets/database_url
+cp docker/secrets/credential_key.example    docker/secrets/credential_key
+# edit them, then:
+docker compose -f docker/docker-compose.yml --profile postgres up --build
+```
+
+**This is a durability upgrade, not scale-out.** Chancela holds authoritative
+domain state in memory and allocates the ledger `seq` in process, so **exactly
+one** app instance may write. The profile pins `deploy.replicas: 1`; never scale
+it. Postgres buys operator-familiar backups/monitoring and a networked DB — it
+does **not** provide HA, failover, or horizontal scale. It is **still a
+single-node deployment**.
+
+Honest caveats (details in [`docker/DEPLOYMENT-PROFILES.md`](docker/DEPLOYMENT-PROFILES.md)):
+
+- **At-rest encryption on Postgres** = encrypted data volume (LUKS / encrypted
+  cloud block storage) **plus TLS in transit**, which is *disk-level* — weaker
+  than SQLCipher's file-level ciphertext. `sslmode=verify-full` to Postgres is a
+  known follow-up (the intra-compose network is trusted; enable TLS for a remote
+  DB).
+- **Backup/restore uses PG-native tooling** (`pg_dump`/`pg_restore` or PITR). The
+  in-app `POST /v1/backup` endpoint is **Unsupported** on the Postgres backend.
+- **Performance**: the write-through store transaction becomes a network
+  round-trip on Postgres (vs a local file write on SQLite); it runs under
+  `spawn_blocking` so the tokio runtime is not blocked while the single ledger
+  write lock is held.
+
+Configuration (all secret-bearing vars support `*_FILE` docker-secret indirection
+and fail closed on ambiguity/emptiness):
+
+| Variable | Backend | Meaning |
+| --- | --- | --- |
+| `CHANCELA_DB_BACKEND` | both | `sqlite` (default) \| `postgres`. |
+| `DATABASE_URL` / `DATABASE_URL_FILE` | postgres | libpq connection string (include `sslmode=verify-full` for a remote DB). Delivered as the `database_url` secret. |
+| `CHANCELA_DB_KEY` / `CHANCELA_DB_KEY_FILE` | sqlite | SQLCipher passphrase (ignored on the Postgres backend). |
+| `CHANCELA_CREDENTIAL_KEY` / `CHANCELA_CREDENTIAL_KEY_FILE` | both | Provider-credential store root key. **Required on Postgres** (no SQLCipher `DerivedFromDbKey`). Delivered as the `credential_key` secret. |
+| `REDIS_URL` / `REDIS_URL_FILE` | both | Optional cache-aside; absent (or feature off) ⇒ no-op. |
+| `CHANCELA_CACHE` | both | `moka` enables the in-process ledger-verdict memo (no network). |
+| `CHANCELA_DATA_DIR` | both | Still required on Postgres — the credential sidecar and CAE/law/TSL caches live here. |
+
 ## Desktop edition
 
 `apps/desktop` is a **Tauri v2** shell. It is intentionally **excluded from the root cargo

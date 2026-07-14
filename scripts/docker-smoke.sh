@@ -3,14 +3,36 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: scripts/docker-smoke.sh [--compose-profile] [image]
+Usage: scripts/docker-smoke.sh [--compose-profile | --config-check] [image]
 
 Runs the Docker health/persistence smoke against image.
 With --compose-profile, starts the single-node Compose profile and also
 inspects the Compose-created server container for the expected runtime
 hardening posture.
+With --config-check, only validates that every Compose profile
+(single-node, validation-worker, postgres) renders a valid config via
+`docker compose config --quiet` — no image is built or started. This is the
+lightweight gate for the postgres profile (a full Postgres feature build is
+too heavy for the smoke; the CI docker lane covers the real build).
 EOF
 }
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$script_dir/.." && pwd)"
+compose_file="$repo_root/docker/docker-compose.yml"
+
+if [ "${1:-}" = "--config-check" ]; then
+  status=0
+  for profile in single-node validation-worker postgres; do
+    if docker compose -f "$compose_file" --profile "$profile" config --quiet; then
+      echo "compose config OK: --profile $profile"
+    else
+      echo "compose config FAILED: --profile $profile" >&2
+      status=1
+    fi
+  done
+  exit "$status"
+fi
 
 image="${1:-chancela-server:local}"
 compose_profile=false
@@ -25,9 +47,6 @@ fi
 data_dir="$(mktemp -d)"
 container=""
 project="chancela-smoke-$(date +%s)-$$"
-script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-repo_root="$(cd "$script_dir/.." && pwd)"
-compose_file="$repo_root/docker/docker-compose.yml"
 
 assert_compose_hardening() {
   local service="${1:?service required}"

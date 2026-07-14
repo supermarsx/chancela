@@ -52,6 +52,13 @@ services:
       timeout: 3s
       start_period: 5s
       retries: 3
+    # Bounded resources so a single-node deployment cannot exhaust the host.
+    # `deploy.resources.limits` is honoured by `docker compose up` (v2).
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1g
     restart: unless-stopped
 
   validation-worker:
@@ -86,8 +93,190 @@ services:
       timeout: 3s
       start_period: 5s
       retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512m
+    restart: unless-stopped
+
+  # -----------------------------------------------------------------------
+  # `postgres` profile — durability backend (PostgreSQL) + optional Redis
+  # cache, for the self-hosted scaled-ops edition.
+  #
+  #   docker compose -f docker/docker-compose.yml --profile postgres up --build
+  #
+  # HONEST SCOPE (see docker/DEPLOYMENT-PROFILES.md and wp14.md §0/§4): this is
+  # still a SINGLE-WRITER, single-node deployment. Postgres buys a managed,
+  # networked, externally-backed-up DB — NOT horizontal scale or HA. The app
+  # holds authoritative state in memory and allocates the ledger `seq` in
+  # process, so exactly ONE `chancela` instance may write. Never scale it.
+  # -----------------------------------------------------------------------
+  postgres:
+    profiles:
+      - postgres
+    image: postgres:16-alpine
+    # The official image drops privileges to the internal `postgres` user for
+    # the server process; keep no-new-privileges on top of that.
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      POSTGRES_DB: ${CHANCELA_PG_DB:-chancela}
+      POSTGRES_USER: ${CHANCELA_PG_USER:-chancela}
+      # Password delivered as a docker secret file (never inline). MUST match
+      # the password embedded in the `database_url` secret consumed by the app.
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+    volumes:
+      # Named volume for the data directory. Put this on ENCRYPTED storage
+      # (LUKS / cloud encrypted block storage) — see DEPLOYMENT-PROFILES.md:
+      # Postgres has no transparent whole-DB encryption, so at-rest protection
+      # is volume-level + TLS, NOT SQLCipher file-level ciphertext.
+      - chancela-pgdata:/var/lib/postgresql/data
+    # Not published to the host: the DB is reachable only on the compose
+    # network. For a remote PG, enable TLS (sslmode=verify-full) — a known
+    # follow-up; the intra-compose network is trusted.
+    expose:
+      - "5432"
+    healthcheck:
+      test:
+        ["CMD-SHELL", "pg_isready -U ${CHANCELA_PG_USER:-chancela} -d ${CHANCELA_PG_DB:-chancela}"]
+      interval: 10s
+      timeout: 5s
+      start_period: 15s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1g
+    restart: unless-stopped
+
+  redis:
+    profiles:
+      - postgres
+    image: redis:7-alpine
+    # Cache-aside boost. AOF persistence on a named volume so a restart keeps a
+    # warm cache; the app is fully correct with Redis down/absent (fail-open).
+    command:
+      [
+        "redis-server",
+        "--appendonly",
+        "yes",
+        "--maxmemory",
+        "256mb",
+        "--maxmemory-policy",
+        "allkeys-lru",
+      ]
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - chancela-redisdata:/data
+    expose:
+      - "6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      start_period: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 320m
+    restart: unless-stopped
+
+  chancela:
+    profiles:
+      - postgres
+    build:
+      # Context is the repo root so the Dockerfile can see the whole workspace.
+      context: ..
+      dockerfile: docker/Dockerfile.server
+      args:
+        # Compile the Postgres backend + optional Redis cache into the binary.
+        CARGO_FEATURES: "chancela-server/sqlcipher chancela-server/postgres chancela-server/redis"
+    image: ${CHANCELA_POSTGRES_IMAGE:-chancela-server:postgres}
+    # --- container hardening (ARC-41), identical posture to `server` ---
+    user: "65532:65532"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
+    environment:
+      CHANCELA_ADDR: 0.0.0.0:8080
+      # Writable data volume is STILL required on Postgres: the credential
+      # sidecar (provider-credentials.enc.json) plus CAE/law/TSL caches and the
+      # JSON sidecars live here (wp14.md §1.5).
+      CHANCELA_DATA_DIR: /var/lib/chancela
+      # Select the Postgres durability backend.
+      CHANCELA_DB_BACKEND: postgres
+      # libpq connection string (incl. the password) as a docker secret. It
+      # references the `postgres` service by name on the compose network.
+      DATABASE_URL_FILE: /run/secrets/database_url
+      # Optional in-process cache-aside win (ledger-verdict memo); no network.
+      CHANCELA_CACHE: moka
+      # Optional shared Redis cache-aside; inert if unreachable (fail-open).
+      REDIS_URL: redis://redis:6379
+      # REQUIRED on Postgres: the provider-credential store root key. Without
+      # SQLCipher there is no DerivedFromDbKey source, so the operator MUST
+      # supply this (wp14.md §3). Delivered as a docker secret.
+      CHANCELA_CREDENTIAL_KEY_FILE: /run/secrets/credential_key
+    secrets:
+      - database_url
+      - credential_key
+    ports:
+      - target: 8080
+        published: "${CHANCELA_HOST_PORT:-8080}"
+        host_ip: 127.0.0.1
+    volumes:
+      - chancela-app-data:/var/lib/chancela
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/usr/bin/busybox", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 3s
+      start_period: 10s
+      retries: 3
+    deploy:
+      # SINGLE WRITER — never raise this. Two instances against one Postgres
+      # would each hold divergent in-memory state and each allocate the same
+      # ledger `seq`; the PK guard fails one write closed, but the loser rolls
+      # back a user-visible mutation. This profile is single-node by design
+      # (wp14.md §0/§4).
+      replicas: 1
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1g
     restart: unless-stopped
 
 volumes:
   chancela-data:
   chancela-validation-worker-data:
+  chancela-pgdata:
+  chancela-redisdata:
+  chancela-app-data:
+
+# File-based docker secrets. The referenced files are gitignored (real secrets);
+# copy the committed docker/secrets/*.example templates and fill them in:
+#   cp docker/secrets/postgres_password.example docker/secrets/postgres_password
+#   cp docker/secrets/database_url.example      docker/secrets/database_url
+#   cp docker/secrets/credential_key.example    docker/secrets/credential_key
+# The password inside database_url MUST match postgres_password.
+secrets:
+  postgres_password:
+    file: ./secrets/postgres_password
+  database_url:
+    file: ./secrets/database_url
+  credential_key:
+    file: ./secrets/credential_key

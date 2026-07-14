@@ -24,6 +24,13 @@
 FROM rust:1-slim-bookworm AS rust-build
 WORKDIR /build
 
+# Cargo features compiled into `chancela-server`. Defaults to today's
+# SQLCipher-only build so the single-node (SQLite) image is unchanged. The
+# Postgres+Redis compose profile overrides this at build time with
+#   --build-arg CARGO_FEATURES="chancela-server/sqlcipher chancela-server/postgres chancela-server/redis"
+# (space-separated; a single --features accepts the whole set).
+ARG CARGO_FEATURES="chancela-server/sqlcipher"
+
 RUN apt-get update \
     && apt-get install -y --no-install-recommends pkg-config libpcsclite-dev perl make \
     && rm -rf /var/lib/apt/lists/*
@@ -38,7 +45,7 @@ COPY . .
 # unmounted.
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/build/target \
-    cargo build --release -p chancela-server --locked --features chancela-server/sqlcipher \
+    cargo build --release -p chancela-server --locked --features "${CARGO_FEATURES}" \
     && cp target/release/chancela-server /chancela-server
 
 ########################  Stage 2: Web build  ########################
