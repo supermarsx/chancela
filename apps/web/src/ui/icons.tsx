@@ -11,7 +11,8 @@
  * Naming is by ACTION, not by shape, so call sites read semantically:
  *   create = Plus · import = Tray · seal = Seal · print = Printer · refresh = Refresh ·
  *   close-book = BookClosed · sign-out = SignOut · copy = Copy · save = Check/Save ·
- *   delete = Trash · external = ExternalLink · cancel = Close · search = Search …
+ *   delete = Trash · external = ExternalLink · cancel = Close · search = Search ·
+ *   clear filters = FilterClear …
  */
 import type { SVGProps } from 'react';
 
@@ -204,6 +205,16 @@ export function Search(props: IconProps) {
     <Icon {...props}>
       <circle cx="10.5" cy="10.5" r="6" />
       <path d="M15 15l4.5 4.5" />
+    </Icon>
+  );
+}
+
+/** clear filters — a funnel with a small clearing mark. */
+export function FilterClear(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M4.5 5.5h15l-6 7v5l-3 1.5v-6.5z" />
+      <path d="M16.5 15.5l3 3M19.5 15.5l-3 3" />
     </Icon>
   );
 }

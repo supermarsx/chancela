@@ -322,7 +322,7 @@ export function LedgerPage() {
                 </Field>
                 <IconButton
                   className="ledger-filterbar__clear"
-                  icon={<Icon.Close />}
+                  icon={<Icon.FilterClear />}
                   label={t('ledger.filters.clear.aria')}
                   disabled={!activeFilters}
                   onClick={() => {

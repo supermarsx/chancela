@@ -214,6 +214,12 @@ describe('LedgerPage', () => {
     expect((clear as HTMLButtonElement).disabled).toBe(true);
     const tooltipId = clear.getAttribute('aria-describedby') ?? '';
     expect(document.getElementById(tooltipId)?.textContent).toBe('Limpar filtros do arquivo');
+    const iconPaths = Array.from(clear.querySelectorAll('svg.icon path')).map((path) =>
+      path.getAttribute('d'),
+    );
+    expect(iconPaths).toContain('M4.5 5.5h15l-6 7v5l-3 1.5v-6.5z');
+    expect(iconPaths).toContain('M16.5 15.5l3 3M19.5 15.5l-3 3');
+    expect(iconPaths).not.toContain('M6 6l12 12M18 6 6 18');
 
     fireEvent.change(screen.getByLabelText('Pesquisar'), {
       target: { value: 'approved digest' },
