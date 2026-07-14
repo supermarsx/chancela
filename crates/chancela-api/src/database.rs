@@ -1,8 +1,8 @@
 use std::ffi::OsString;
 use std::fmt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use chancela_store::{StoreError, StoreOpenOptions};
+use chancela_store::{StoreBackendSelection, StoreError, StoreOpenOptions};
 use serde::Serialize;
 
 /// Environment variable carrying a SQLCipher database passphrase directly.
@@ -256,6 +256,8 @@ impl DatabaseEncryptionConfig {
 pub enum AppStateInitError {
     /// The key env/file configuration is invalid.
     DatabaseEncryption(DatabaseEncryptionConfigError),
+    /// The durable-backend selection (`CHANCELA_DB_BACKEND` / `DATABASE_URL`) is invalid.
+    DatabaseBackend(DatabaseBackendConfigError),
     /// A key was configured, but there is no durable database to encrypt.
     DatabaseEncryptionRequiresDataDir,
     /// A key was configured without compiling SQLCipher support into this crate.
@@ -280,6 +282,7 @@ impl fmt::Display for AppStateInitError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::DatabaseEncryption(err) => err.fmt(f),
+            Self::DatabaseBackend(err) => err.fmt(f),
             Self::DatabaseEncryptionRequiresDataDir => write!(
                 f,
                 "database encryption was configured, but no durable data directory was resolved; \
@@ -308,6 +311,7 @@ impl std::error::Error for AppStateInitError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::DatabaseEncryption(err) => Some(err),
+            Self::DatabaseBackend(err) => Some(err),
             Self::StoreOpen { source, .. } | Self::StoreLoad { source, .. } => Some(source),
             _ => None,
         }
@@ -354,6 +358,260 @@ fn normalize_key(raw: String, source: DatabaseEncryptionKeySource) -> ConfigResu
         return Err(DatabaseEncryptionConfigError::EmptyKey { source });
     }
     Ok(raw.trim_end_matches(&['\r', '\n'][..]).to_owned())
+}
+
+// ---------------------------------------------------------------------------
+// wp14 Phase 2: durable backend selection (CHANCELA_DB_BACKEND / DATABASE_URL)
+// ---------------------------------------------------------------------------
+
+/// Environment variable selecting the durable database backend: `sqlite` (default) or `postgres`.
+pub const DB_BACKEND_ENV: &str = "CHANCELA_DB_BACKEND";
+/// Environment variable carrying the PostgreSQL libpq connection string (backend = `postgres`).
+pub const DATABASE_URL_ENV: &str = "DATABASE_URL";
+/// Environment variable pointing at a file that contains the PostgreSQL connection string. Mirrors
+/// [`DB_KEY_FILE_ENV`] for docker-secret delivery.
+pub const DATABASE_URL_FILE_ENV: &str = "DATABASE_URL_FILE";
+
+/// Which durable backend the operator selected.
+///
+/// # Postgres backend semantics (honesty caveats — read before deploying)
+///
+/// Selecting `postgres` moves only the **durability sink** onto PostgreSQL; Chancela stays a
+/// single-process, in-memory-authoritative application, so the Postgres profile is:
+///
+/// - **A single-writer durability backend, not horizontal scale / HA.** Two server instances on one
+///   database would each hold a divergent in-memory ledger and allocate the same `seq`. The store
+///   enforces this at runtime with a session-level `pg_advisory_lock` writer guard; deployments must
+///   additionally pin `replicas: 1` (never scale the writer).
+/// - **At-rest encryption is volume/disk + TLS-in-transit, *not* SQLCipher file-level ciphertext.**
+///   Vanilla PostgreSQL has no transparent whole-DB encryption; the defensible posture is an
+///   encrypted data volume plus `sslmode=verify-full`. This is a materially weaker guarantee than the
+///   SQLite/SQLCipher default (a DB superuser or a live memory dump still sees plaintext).
+/// - **Backup/restore uses PostgreSQL-native tooling** (`pg_dump`/`pg_restore`), not the SQLite
+///   `VACUUM INTO` + file-swap hot-backup path, which fails closed on this backend.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DatabaseBackendKind {
+    /// The embedded SQLite / SQLCipher backend (default, and the only backend for embedded editions).
+    Sqlite,
+    /// The self-hosted-only PostgreSQL backend.
+    Postgres,
+}
+
+/// A resolved durable-backend selection plus whether an open failure must be fatal.
+///
+/// `requires_durability` is `true` for Postgres so a connection failure fails startup closed instead
+/// of silently degrading to an ephemeral in-memory store (the same fail-loud spirit as a configured
+/// SQLCipher key). The SQLite default keeps today's behaviour (`false`): a failed open logs and falls
+/// back to in-memory unless a key was configured.
+#[derive(Debug)]
+pub(crate) struct ResolvedBackend {
+    /// The backend selection passed to [`chancela_store::Store::open_backend`].
+    pub selection: StoreBackendSelection,
+    /// Whether a store open/load failure must abort startup rather than fall back to in-memory.
+    pub requires_durability: bool,
+}
+
+/// Resolve the durable backend from [`DB_BACKEND_ENV`] (+ [`DATABASE_URL_ENV`] for Postgres).
+///
+/// The SQLite default reproduces today's data-dir + optional SQLCipher-key open exactly. Postgres is
+/// only reachable when this crate was built with the `postgres` feature; without it, a
+/// `CHANCELA_DB_BACKEND=postgres` request fails closed with [`DatabaseBackendConfigError::
+/// PostgresFeatureUnavailable`] rather than silently opening SQLite.
+pub(crate) fn resolve_backend_selection(
+    data_dir: &Path,
+    encryption: &DatabaseEncryptionConfig,
+) -> Result<ResolvedBackend, AppStateInitError> {
+    match backend_kind_from_env()? {
+        DatabaseBackendKind::Sqlite => Ok(ResolvedBackend {
+            selection: StoreBackendSelection::Sqlite {
+                data_dir: data_dir.to_path_buf(),
+                options: encryption.store_open_options(),
+            },
+            requires_durability: false,
+        }),
+        DatabaseBackendKind::Postgres => resolve_postgres_backend(),
+    }
+}
+
+fn backend_kind_from_env() -> Result<DatabaseBackendKind, DatabaseBackendConfigError> {
+    match std::env::var_os(DB_BACKEND_ENV) {
+        None => Ok(DatabaseBackendKind::Sqlite),
+        Some(raw) => {
+            let value = raw
+                .into_string()
+                .map_err(|_| DatabaseBackendConfigError::NonUnicodeBackend)?;
+            parse_backend_kind(&value)
+        }
+    }
+}
+
+fn parse_backend_kind(value: &str) -> Result<DatabaseBackendKind, DatabaseBackendConfigError> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        // An empty selector behaves like an unset one: the SQLite default.
+        "" | "sqlite" | "sqlcipher" => Ok(DatabaseBackendKind::Sqlite),
+        "postgres" | "postgresql" | "pg" => Ok(DatabaseBackendKind::Postgres),
+        _ => Err(DatabaseBackendConfigError::UnknownBackend {
+            value: value.to_owned(),
+        }),
+    }
+}
+
+#[cfg(feature = "postgres")]
+fn resolve_postgres_backend() -> Result<ResolvedBackend, AppStateInitError> {
+    let url = std::env::var_os(DATABASE_URL_ENV)
+        .map(os_secret_to_url)
+        .transpose()?;
+    let url_file = std::env::var_os(DATABASE_URL_FILE_ENV).map(PathBuf::from);
+    let database_url = resolve_database_url(url, url_file)?;
+    Ok(ResolvedBackend {
+        selection: StoreBackendSelection::Postgres { database_url },
+        requires_durability: true,
+    })
+}
+
+#[cfg(not(feature = "postgres"))]
+fn resolve_postgres_backend() -> Result<ResolvedBackend, AppStateInitError> {
+    // Fail closed at the config layer: the Postgres backend was compiled out (embedded builds), so a
+    // stray CHANCELA_DB_BACKEND=postgres must not silently open SQLite.
+    Err(DatabaseBackendConfigError::PostgresFeatureUnavailable.into())
+}
+
+#[cfg(feature = "postgres")]
+fn os_secret_to_url(raw: OsString) -> Result<String, DatabaseBackendConfigError> {
+    raw.into_string()
+        .map_err(|_| DatabaseBackendConfigError::NonUnicodeDatabaseUrl)
+}
+
+/// Resolve the PostgreSQL connection string from the direct env var or its `*_FILE` indirection.
+///
+/// Exactly one source may be configured; TLS/`sslmode` is carried inside the URL verbatim and honored
+/// by the store's PostgreSQL driver (plaintext + `sslmode` pass-through today; `sslmode=verify-full`
+/// certificate pinning is a store-layer follow-up — the driver currently connects without a rustls
+/// TLS bridge).
+#[cfg(feature = "postgres")]
+fn resolve_database_url(
+    url: Option<String>,
+    url_file: Option<PathBuf>,
+) -> Result<String, DatabaseBackendConfigError> {
+    match (url, url_file) {
+        (None, None) => Err(DatabaseBackendConfigError::PostgresRequiresDatabaseUrl),
+        (Some(_), Some(_)) => Err(DatabaseBackendConfigError::AmbiguousDatabaseUrlSources),
+        (Some(raw), None) => normalize_url(raw),
+        (None, Some(path)) => {
+            if path.as_os_str().is_empty() {
+                return Err(DatabaseBackendConfigError::EmptyDatabaseUrlFilePath);
+            }
+            let raw = std::fs::read_to_string(&path).map_err(|source| {
+                DatabaseBackendConfigError::ReadDatabaseUrlFile {
+                    path: path.clone(),
+                    source,
+                }
+            })?;
+            normalize_url(raw)
+        }
+    }
+}
+
+#[cfg(feature = "postgres")]
+fn normalize_url(raw: String) -> Result<String, DatabaseBackendConfigError> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err(DatabaseBackendConfigError::EmptyDatabaseUrl);
+    }
+    Ok(trimmed.to_owned())
+}
+
+/// Invalid database-backend selection configuration (`CHANCELA_DB_BACKEND` / `DATABASE_URL`).
+#[derive(Debug)]
+pub enum DatabaseBackendConfigError {
+    /// The backend selector contained non-Unicode data.
+    NonUnicodeBackend,
+    /// The backend selector named a backend this build does not understand.
+    UnknownBackend {
+        /// The operator-supplied selector value.
+        value: String,
+    },
+    /// `postgres` was requested but this build was not compiled with the `postgres` feature.
+    PostgresFeatureUnavailable,
+    /// The Postgres backend was selected but no `DATABASE_URL` / `DATABASE_URL_FILE` was configured.
+    PostgresRequiresDatabaseUrl,
+    /// Both the direct URL and the URL-file were configured. Only one may be used.
+    AmbiguousDatabaseUrlSources,
+    /// The direct `DATABASE_URL` env var contained non-Unicode data.
+    NonUnicodeDatabaseUrl,
+    /// A configured URL source resolved to an empty value.
+    EmptyDatabaseUrl,
+    /// The URL-file env var was present but empty.
+    EmptyDatabaseUrlFilePath,
+    /// The configured URL file could not be read.
+    ReadDatabaseUrlFile {
+        /// The path configured by [`DATABASE_URL_FILE_ENV`].
+        path: PathBuf,
+        /// The filesystem or UTF-8 error returned while reading the URL file.
+        source: std::io::Error,
+    },
+}
+
+impl fmt::Display for DatabaseBackendConfigError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NonUnicodeBackend => write!(
+                f,
+                "{DB_BACKEND_ENV} contains non-Unicode data; database backend selectors must be UTF-8"
+            ),
+            Self::UnknownBackend { value } => write!(
+                f,
+                "{DB_BACKEND_ENV}={value:?} is not a known database backend; use sqlite (default) or \
+                 postgres"
+            ),
+            Self::PostgresFeatureUnavailable => write!(
+                f,
+                "{DB_BACKEND_ENV}=postgres was requested, but this server was not built with the \
+                 postgres feature; rebuild with --features postgres (the self-hosted image) or use \
+                 the default sqlite backend"
+            ),
+            Self::PostgresRequiresDatabaseUrl => write!(
+                f,
+                "{DB_BACKEND_ENV}=postgres requires a connection string; set {DATABASE_URL_ENV} or \
+                 {DATABASE_URL_FILE_ENV}"
+            ),
+            Self::AmbiguousDatabaseUrlSources => write!(
+                f,
+                "{DATABASE_URL_ENV} and {DATABASE_URL_FILE_ENV} are both set; configure only one \
+                 PostgreSQL connection-string source"
+            ),
+            Self::NonUnicodeDatabaseUrl => write!(
+                f,
+                "{DATABASE_URL_ENV} contains non-Unicode data; PostgreSQL connection strings must be \
+                 UTF-8"
+            ),
+            Self::EmptyDatabaseUrl => {
+                write!(f, "the configured PostgreSQL connection string is empty")
+            }
+            Self::EmptyDatabaseUrlFilePath => write!(f, "{DATABASE_URL_FILE_ENV} is set but empty"),
+            Self::ReadDatabaseUrlFile { path, source } => write!(
+                f,
+                "failed to read the PostgreSQL connection string file configured by \
+                 {DATABASE_URL_FILE_ENV} at {}: {source}",
+                path.display()
+            ),
+        }
+    }
+}
+
+impl std::error::Error for DatabaseBackendConfigError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::ReadDatabaseUrlFile { source, .. } => Some(source),
+            _ => None,
+        }
+    }
+}
+
+impl From<DatabaseBackendConfigError> for AppStateInitError {
+    fn from(err: DatabaseBackendConfigError) -> Self {
+        Self::DatabaseBackend(err)
+    }
 }
 
 #[cfg(test)]
@@ -540,6 +798,114 @@ mod tests {
             DatabaseEncryptionConfigError::UnsupportedKeySource { .. }
         ));
         assert!(err.to_string().contains(DB_KEY_SOURCE_ENV));
+    }
+
+    // --- wp14 Phase 2: backend selection parsing (env-free, pure functions) ---
+
+    #[test]
+    fn unset_backend_defaults_to_sqlite() {
+        assert_eq!(
+            backend_kind_from_env_value(None).expect("unset backend defaults"),
+            DatabaseBackendKind::Sqlite
+        );
+    }
+
+    #[test]
+    fn explicit_sqlite_selectors_parse() {
+        for value in ["sqlite", "SQLite", " sqlite ", "sqlcipher", ""] {
+            assert_eq!(
+                parse_backend_kind(value).expect("sqlite selector parses"),
+                DatabaseBackendKind::Sqlite,
+                "value {value:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn explicit_postgres_selectors_parse() {
+        for value in ["postgres", "Postgres", "postgresql", " PG "] {
+            assert_eq!(
+                parse_backend_kind(value).expect("postgres selector parses"),
+                DatabaseBackendKind::Postgres,
+                "value {value:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn unknown_backend_selector_is_rejected() {
+        let err = parse_backend_kind("mysql").expect_err("unknown backend fails closed");
+        assert!(matches!(
+            err,
+            DatabaseBackendConfigError::UnknownBackend { .. }
+        ));
+        assert!(err.to_string().contains(DB_BACKEND_ENV));
+    }
+
+    /// Test seam mirroring [`backend_kind_from_env`] without touching process-global env state.
+    fn backend_kind_from_env_value(
+        raw: Option<&str>,
+    ) -> Result<DatabaseBackendKind, DatabaseBackendConfigError> {
+        match raw {
+            None => Ok(DatabaseBackendKind::Sqlite),
+            Some(value) => parse_backend_kind(value),
+        }
+    }
+
+    #[cfg(not(feature = "postgres"))]
+    #[test]
+    fn postgres_without_feature_fails_closed() {
+        let err = resolve_postgres_backend().expect_err("postgres backend must be compiled out");
+        assert!(matches!(
+            err,
+            AppStateInitError::DatabaseBackend(
+                DatabaseBackendConfigError::PostgresFeatureUnavailable
+            )
+        ));
+        assert!(err.to_string().contains("postgres feature"));
+    }
+
+    #[cfg(feature = "postgres")]
+    #[test]
+    fn postgres_with_url_resolves() {
+        let url = resolve_database_url(
+            Some("postgres://u:p@db:5432/chancela?sslmode=require".to_owned()),
+            None,
+        )
+        .expect("explicit url resolves");
+        assert_eq!(url, "postgres://u:p@db:5432/chancela?sslmode=require");
+    }
+
+    #[cfg(feature = "postgres")]
+    #[test]
+    fn postgres_without_url_is_rejected() {
+        let err = resolve_database_url(None, None).expect_err("postgres needs a url");
+        assert!(matches!(
+            err,
+            DatabaseBackendConfigError::PostgresRequiresDatabaseUrl
+        ));
+    }
+
+    #[cfg(feature = "postgres")]
+    #[test]
+    fn postgres_ambiguous_url_sources_are_rejected() {
+        let err = resolve_database_url(
+            Some("postgres://db/one".to_owned()),
+            Some(PathBuf::from("url.txt")),
+        )
+        .expect_err("two url sources fail closed");
+        assert!(matches!(
+            err,
+            DatabaseBackendConfigError::AmbiguousDatabaseUrlSources
+        ));
+    }
+
+    #[cfg(feature = "postgres")]
+    #[test]
+    fn postgres_empty_url_is_rejected() {
+        let err =
+            resolve_database_url(Some("   ".to_owned()), None).expect_err("empty url fails closed");
+        assert!(matches!(err, DatabaseBackendConfigError::EmptyDatabaseUrl));
     }
 
     #[cfg(not(feature = "sqlcipher"))]

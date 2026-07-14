@@ -23,6 +23,10 @@ e2e = []
 # Optional SQLCipher support for encrypted at-rest SQLite stores. The default remains plaintext
 # bundled SQLite; configuring CHANCELA_DB_KEY/CHANCELA_DB_KEY_FILE without this feature fails closed.
 sqlcipher = ["chancela-api/sqlcipher", "chancela-store/sqlcipher"]
+# wp14 Phase 2: build the self-hosted server binary with the PostgreSQL backend available. The
+# Docker/self-hosted image enables this; the default build stays SQLite-only. At runtime the backend
+# is still selected by CHANCELA_DB_BACKEND (sqlite unless postgres is explicitly requested).
+postgres = ["chancela-api/postgres", "chancela-store/postgres"]
 
 [dependencies]
 chancela-api = { workspace = true }

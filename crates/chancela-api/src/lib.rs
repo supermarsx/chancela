@@ -175,7 +175,8 @@ pub use authz::{
 };
 pub use backup_recovery::{BackupRecoveryDrillManifestEvidence, BackupRecoveryDrillReceipt};
 pub use database::{
-    AppStateInitError, DB_KEY_ENV, DB_KEY_FILE_ENV, DB_KEY_SOURCE_ENV, DatabaseEncryptionConfig,
+    AppStateInitError, DATABASE_URL_ENV, DATABASE_URL_FILE_ENV, DB_BACKEND_ENV, DB_KEY_ENV,
+    DB_KEY_FILE_ENV, DB_KEY_SOURCE_ENV, DatabaseBackendConfigError, DatabaseEncryptionConfig,
     DatabaseEncryptionConfigError, DatabaseEncryptionKeySource,
 };
 pub use delegations::{DelegationId, StoredDelegation};
@@ -732,7 +733,13 @@ impl AppState {
         // surfaced via `chain_status` (banner + `/health`).
         let encrypted_store = database_encryption.is_configured();
         let encryption_key_source = database_encryption.key_source();
-        match Store::open_with_options(&dir, database_encryption.store_open_options()) {
+        // wp14 Phase 2: pick the durable backend from CHANCELA_DB_BACKEND / DATABASE_URL. SQLite (the
+        // default) resolves to today's data-dir + optional SQLCipher-key open unchanged; Postgres
+        // (only when built with the `postgres` feature) requires a DATABASE_URL and, like an encrypted
+        // store, must fail startup closed rather than silently fall back to ephemeral in-memory.
+        let resolved_backend = database::resolve_backend_selection(&dir, &database_encryption)?;
+        let require_durable_store = encrypted_store || resolved_backend.requires_durability;
+        match Store::open_backend(resolved_backend.selection) {
             Ok(store) => match store.load() {
                 Ok(loaded) => {
                     // Fail-loud gate (t54 §3.1): a broken boot chain enters DEGRADED read-only mode
@@ -769,7 +776,7 @@ impl AppState {
                     state.database_encryption_key_source = encryption_key_source;
                     state.store = Some(store);
                 }
-                Err(e) if encrypted_store => {
+                Err(e) if require_durable_store => {
                     return Err(AppStateInitError::StoreLoad {
                         data_dir: dir.clone(),
                         source: e,
@@ -783,7 +790,7 @@ impl AppState {
                     );
                 }
             },
-            Err(e) if encrypted_store => {
+            Err(e) if require_durable_store => {
                 return Err(AppStateInitError::StoreOpen {
                     data_dir: dir.clone(),
                     source: e,
