@@ -28,6 +28,7 @@ use crate::AppState;
 use crate::actor::{SESSION_HEADER, SESSION_TTL_SECS, resolve_session_actor};
 use crate::apikeys::read_bearer_api_key;
 use crate::attestation::{hash_secret_with_seed, verify_secret_with_seed};
+use crate::cluster_shared_state;
 use crate::error::ApiError;
 use crate::users::{User, UserId, UserView};
 
@@ -221,6 +222,20 @@ pub async fn create_session(
             "palavra-passe não configurada para este utilizador".to_owned(),
         ));
     };
+    // wp16 P3a — GLOBAL sign-in throttle (cluster-wide when Redis is configured; a no-op single-node,
+    // so the per-user backoff below stays the sole authority and behaviour is byte-identical). This
+    // prevents an attacker getting N× the attempts by spraying failures across N nodes. FAIL-CLOSED:
+    // if the shared counter is unreachable it reports `Unavailable`, which does NOT block here — the
+    // per-node backoff is kept as the floor rather than resetting to unlimited.
+    let signin_limit_key = format!("signin:{uid}");
+    if cluster_shared_state::global_limit_blocks(
+        &state.cluster_shared.signin_limiter.peek(&signin_limit_key),
+        cluster_shared_state::GLOBAL_SIGNIN_FAILURE_CAP,
+    ) {
+        return Err(ApiError::TooManyRequests(
+            "demasiadas tentativas — tente novamente mais tarde".to_owned(),
+        ));
+    }
     let now = OffsetDateTime::now_utc();
     let seed = state.verifier_seed.read().await.clone();
     let mut backoff = state.signin_backoff.write().await;
@@ -239,10 +254,20 @@ pub async fn create_session(
     if !verification.verified {
         entry.fails += 1;
         entry.next_allowed_at = now + Duration::seconds(backoff_secs(entry.fails));
+        drop(backoff);
+        // Record the failure against the GLOBAL counter too (a 15-minute window). Best-effort /
+        // fail-closed: an unreachable shared counter simply is not incremented; the per-node backoff
+        // above already advanced, so the throttle never loosens.
+        state
+            .cluster_shared
+            .signin_limiter
+            .record_failure(&signin_limit_key, std::time::Duration::from_secs(15 * 60));
         return Err(ApiError::Unauthorized("credenciais inválidas".to_owned()));
     }
     drop(backoff);
     state.signin_backoff.write().await.remove(&uid);
+    // A successful sign-in clears the global counter too (cluster-wide reset).
+    state.cluster_shared.signin_limiter.clear(&signin_limit_key);
     if verification.needs_upgrade {
         let upgraded = hash_secret_with_seed(&req.password, &seed)?;
         if let Some(updated) =
@@ -265,6 +290,14 @@ pub async fn create_session(
             unlocked_key,
             expires_at: now + Duration::seconds(SESSION_TTL_SECS),
         },
+    );
+    // wp16 P3a — mirror the session IDENTITY (token → user_id, with TTL) into the cluster-shared store
+    // so a follower recognises this leader-minted session. The unlocked signing key stays node-local
+    // (never written to Redis, plan §5.3). A no-op single-node ⇒ byte-identical.
+    state.cluster_shared.sessions.put(
+        &token,
+        uid.0,
+        std::time::Duration::from_secs(SESSION_TTL_SECS.max(0) as u64),
     );
 
     Ok(Json(SessionCreated {
@@ -409,6 +442,14 @@ pub async fn delete_session(
         .filter(|t| !t.is_empty())
     {
         state.sessions.write().await.remove(token);
+        // wp16 P3a — revoke cluster-wide (so a follower stops recognising the token) and broadcast the
+        // revoke so other nodes evict any node-local copy. Both are no-ops single-node ⇒ byte-identical.
+        state.cluster_shared.sessions.revoke(token);
+        state.cluster_shared.invalidation.publish(
+            &cluster_shared_state::InvalidationEvent::SessionRevoked {
+                token: token.to_owned(),
+            },
+        );
     }
     Ok(StatusCode::NO_CONTENT)
 }

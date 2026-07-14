@@ -106,6 +106,10 @@ mod cluster_feed;
 // wp16 P2: write routing on a follower — 307 redirect to the leader (default) or opt-in reverse proxy.
 // Compiled in every build; inert on the single-node SQLite / in-memory build (always its own leader).
 mod cluster_route;
+// wp16 P3a: cluster-shared session identity + GLOBAL sign-in rate-limits + cross-node cache/session
+// invalidation. Compiled in every build; every backend defaults to a local no-op so single-node is
+// byte-identical. Redis-backed (cluster-wide, fail-closed) only with the `redis` feature + REDIS_URL.
+mod cluster_shared_state;
 #[allow(dead_code)]
 mod credential_resolve;
 mod dashboard;
@@ -560,6 +564,15 @@ pub struct AppState {
     /// without it. Honest scope: single-node reads are RAM-served, so this is primarily a shared
     /// cache for a future multi-instance deployment — not a single-node speed-up. See [`cache`].
     pub cache: cache::SharedCache,
+    /// wp16 P3a — the cluster-shared auth state: the shared session identity store, the global
+    /// sign-in/rate-limit counter, and the cross-node invalidation bus. **Every backend defaults to a
+    /// local no-op**, so single-node behaviour is byte-identical: the shared session store defers to
+    /// the node-local [`sessions`](Self::sessions) map and the global limiter defers to the node-local
+    /// [`signin_backoff`](Self::signin_backoff). With the `redis` feature + `REDIS_URL`, sessions
+    /// become cluster-wide (FAIL-CLOSED on a Redis outage), sign-in limits become global
+    /// (fail-closed to the per-node floor), and a session-revoke / role-change is broadcast so other
+    /// nodes evict their caches. See [`cluster_shared_state`].
+    pub cluster_shared: cluster_shared_state::SharedClusterState,
 }
 
 impl AppState {
@@ -841,6 +854,10 @@ impl AppState {
         // `redis` feature is built AND REDIS_URL/REDIS_URL_FILE is set; otherwise the no-op NullCache).
         // The in-process verify memo is separate and always on.
         state.cache = cache::SharedCache::from_env();
+        // wp16 P3a: resolve the cluster-shared session store + global rate-limiter + invalidation bus
+        // (Redis-backed only with the `redis` feature AND REDIS_URL/REDIS_URL_FILE set; otherwise every
+        // backend stays a local no-op and single-node behaviour is byte-identical).
+        state.cluster_shared = cluster_shared_state::SharedClusterState::from_env();
         // Signature-provider credential store (t77 S2): read the encrypted sidecar now (no key file
         // is created at boot — resolution is deferred to the first store), fail-closed on a missing
         // key source or a corrupt sidecar. Strict mode defaults off; the `credential_storage_strict`
@@ -2051,6 +2068,10 @@ pub fn app(state: AppState, web_dist: Option<PathBuf>) -> Router {
     // wp16 P1: mount the follower change-feed (LISTEN/NOTIFY + seq-poll → fail-closed incremental
     // delta apply). Inert unless the backend is an electing one (Postgres); no-op on SQLite/in-memory.
     cluster_feed::spawn_cluster_feed(state.clone());
+    // wp16 P3a: subscribe to the cross-node session/role invalidation channel so a revoke / role
+    // change on another node evicts this node's local session copy + permission-shaped caches. Inert
+    // unless a Redis invalidation bus is active (redis feature + REDIS_URL); single-node spawns nothing.
+    cluster_shared_state::spawn_invalidation_listener(state.clone());
     let api = router(state);
     let app = match web_dist {
         Some(dir) => {

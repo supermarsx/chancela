@@ -26,7 +26,9 @@ use time::OffsetDateTime;
 
 use crate::AppState;
 use crate::apikeys::{read_bearer_api_key, resolve_bearer_principal};
+use crate::cluster_shared_state::SessionLookup;
 use crate::error::ApiError;
+use crate::users::UserId;
 
 /// The HTTP header carrying an opaque session token.
 pub const SESSION_HEADER: &str = "x-chancela-session";
@@ -130,27 +132,51 @@ impl FromRequestParts<AppState> for CurrentActor {
 
 /// Resolve a session token to an active user's username, checking expiry and sliding the
 /// expiry forward. Returns `Ok(Some(username))` for a valid session, `Ok(None)` when the token
-/// is unknown/expired/inactive. Acquires a brief write lock on `sessions` to slide the expiry,
-/// then a read lock on `users` to resolve the username.
+/// is unknown/expired/inactive.
+///
+/// **wp16 P3a (multi-node):** the node-local `sessions` map is the fast path (it also holds the
+/// unlocked signing key). On a *local* miss/expiry the resolver consults the cluster-shared session
+/// store so a session minted on the leader is recognised on a follower. That lookup is **FAIL-CLOSED**:
+/// [`SessionLookup::Unavailable`] (Redis errored / unreachable) and [`SessionLookup::NotFound`] both
+/// yield "unauthenticated" — a session that cannot be verified is never granted access. Single-node
+/// the shared store is a no-op ([`SessionLookup::NotShared`]), so this is byte-identical to before:
+/// a local miss ⇒ `Ok(None)`.
 pub async fn resolve_session_actor(
     state: &AppState,
     token: &str,
 ) -> Result<Option<String>, ApiError> {
-    let user_id = {
+    let std_ttl = std::time::Duration::from_secs(SESSION_TTL_SECS.max(0) as u64);
+    // 1. Node-local fast path (authoritative on the minting node; holds the unlocked key + expiry).
+    let local_uid = {
         let now = OffsetDateTime::now_utc();
         let mut sessions = state.sessions.write().await;
-        let entry = match sessions.get(token) {
-            Some(e) => e,
-            None => return Ok(None),
-        };
-        if now >= entry.expires_at {
-            drop(sessions);
-            state.sessions.write().await.remove(token);
-            return Ok(None);
+        let valid = matches!(sessions.get(token), Some(e) if now < e.expires_at);
+        if valid {
+            let entry = sessions.get_mut(token).expect("entry was just present");
+            entry.expires_at = now + time::Duration::seconds(SESSION_TTL_SECS);
+            Some(entry.user_id)
+        } else {
+            // Drop an expired local entry (idempotent for an absent token), then fall through to the
+            // cluster-shared store below.
+            sessions.remove(token);
+            None
         }
-        let entry = sessions.get_mut(token).expect("entry was just present");
-        entry.expires_at = now + time::Duration::seconds(SESSION_TTL_SECS);
-        entry.user_id
+    };
+    let user_id = match local_uid {
+        // Local hit: refresh the shared TTL too so a follower's copy stays alive while this node uses
+        // the session (a no-op single-node).
+        Some(uid) => {
+            state.cluster_shared.sessions.put(token, uid.0, std_ttl);
+            uid
+        }
+        // Local miss/expiry: consult the cluster-shared store. FAIL-CLOSED — anything other than a
+        // verified `Found` is treated as unauthenticated (`NotShared` single-node ⇒ today's `None`).
+        None => match state.cluster_shared.sessions.resolve(token, std_ttl) {
+            SessionLookup::Found { user_id } => UserId(user_id),
+            SessionLookup::NotShared | SessionLookup::NotFound | SessionLookup::Unavailable => {
+                return Ok(None);
+            }
+        },
     };
     let username = {
         let users = state.users.read().await;
