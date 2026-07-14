@@ -7140,6 +7140,90 @@ export type DataDurableBackendFamily = (typeof DATA_DURABLE_BACKEND_FAMILIES)[nu
 export const DATA_SIDECAR_STORAGE_MODES = ['file', 'database', 'in_memory'] as const;
 export type DataSidecarStorageMode = (typeof DATA_SIDECAR_STORAGE_MODES)[number];
 
+export const DATA_DATABASE_FORMATS = [
+  'missing',
+  'plaintext_sqlite',
+  'non_plaintext_or_encrypted',
+] as const;
+export type DataDatabaseFormat = (typeof DATA_DATABASE_FORMATS)[number];
+
+export const DATA_KEY_CONFIG_STATUSES = ['unconfigured', 'empty', 'configured'] as const;
+export type DataKeyConfigStatus = (typeof DATA_KEY_CONFIG_STATUSES)[number];
+
+export const DATA_KEY_OPS_PLANS = [
+  'create_plaintext_store',
+  'open_plaintext_store',
+  'key_required_for_non_plaintext_store',
+  'reject_empty_key',
+  'sqlcipher_build_required',
+  'create_encrypted_store',
+  'open_encrypted_store',
+  'refuse_plaintext_to_encrypted_migration',
+] as const;
+export type DataKeyOpsPlan = (typeof DATA_KEY_OPS_PLANS)[number];
+
+export type DataDatabaseEncryptionKeySource =
+  | 'none'
+  | 'operator_env'
+  | 'operator_key_file'
+  | 'programmatic'
+  | 'hardware_derived_fallback'
+  | string;
+
+export interface DataHardwareDerivedFallbackStatus {
+  available: boolean;
+  selected: boolean;
+  fail_closed_if_requested: boolean;
+  status: string;
+  message: string;
+}
+
+export interface DataKeyOpsMigrationStep {
+  order: number;
+  title: string;
+  detail: string;
+  source_destructive: boolean;
+}
+
+export interface DataKeyOpsMigrationEvidence {
+  plan: DataKeyOpsPlan | string;
+  database_format: DataDatabaseFormat | string;
+  key_config: DataKeyConfigStatus | string;
+  sqlcipher_available: boolean;
+  database_file: string;
+}
+
+export interface DataKeyOpsMigrationPlan {
+  required: boolean;
+  status: string;
+  summary: string;
+  steps: DataKeyOpsMigrationStep[];
+  evidence: DataKeyOpsMigrationEvidence;
+}
+
+export interface DataKeyOpsStatus {
+  sqlcipher_available: boolean;
+  key_config: DataKeyConfigStatus | string;
+  database_file: string;
+  database_format: DataDatabaseFormat | string;
+  plan: DataKeyOpsPlan | string;
+  migration_plan: DataKeyOpsMigrationPlan;
+}
+
+export interface DataDatabaseEncryptionStatus {
+  configured: boolean;
+  sqlcipher_available: boolean;
+  sqlcipher_backed: boolean;
+  key_source: DataDatabaseEncryptionKeySource;
+  hardware_derived_fallback: DataHardwareDerivedFallbackStatus;
+  database_format: DataDatabaseFormat | string | null;
+  key_ops_plan: DataKeyOpsPlan | string | null;
+  plaintext_migration_pending: boolean;
+  plaintext_migration_blocked: boolean;
+  key_ops: DataKeyOpsStatus | null;
+  key_ops_error?: string;
+}
+
 /** How a usage row was measured. */
 export const DATA_USAGE_BASES = [
   'filesystem',
@@ -7160,6 +7244,7 @@ export interface DataPersistenceStatus {
   active_backend_family: DataDurableBackendFamily | null;
   sidecar_storage_mode: DataSidecarStorageMode;
   database_encryption_configured: boolean;
+  database_encryption: DataDatabaseEncryptionStatus;
   store_schema_version: number | null;
   ledger_length: number;
   ledger_verified: boolean | null;

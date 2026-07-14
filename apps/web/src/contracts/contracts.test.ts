@@ -25,7 +25,10 @@ import {
   CAE_REVISIONS,
   CAE_ROLES,
   DATA_PAYLOAD_ESTIMATE_METHODS,
+  DATA_DATABASE_FORMATS,
   DATA_DURABLE_BACKEND_FAMILIES,
+  DATA_KEY_CONFIG_STATUSES,
+  DATA_KEY_OPS_PLANS,
   DATA_PERSISTENCE_MODES,
   DATA_SIDECAR_STORAGE_MODES,
   DATA_USAGE_BASES,
@@ -117,7 +120,13 @@ import {
   type DashboardReminder,
   type DashboardTargetLinks,
   type DataManagementSettings,
+  type DataDatabaseEncryptionStatus,
   type DataDirStatus,
+  type DataHardwareDerivedFallbackStatus,
+  type DataKeyOpsMigrationEvidence,
+  type DataKeyOpsMigrationPlan,
+  type DataKeyOpsMigrationStep,
+  type DataKeyOpsStatus,
   type DataKeyRotationReceipt,
   type DataKeyRotationReceiptEvidence,
   type DataKeyRotationReceiptNoClaims,
@@ -534,6 +543,181 @@ function assertDataPermissionCheck(obj: unknown, label: string): DataPermissionC
   expect(typeof check.message, `${label}.message should be string`).toBe('string');
   expect(check.message.length, `${label}.message should be non-empty`).toBeGreaterThan(0);
   return check;
+}
+
+function assertDataHardwareDerivedFallbackStatus(
+  obj: unknown,
+  label: string,
+): DataHardwareDerivedFallbackStatus {
+  const status = assertExactKeys<DataHardwareDerivedFallbackStatus>(
+    obj,
+    {
+      available: true,
+      selected: true,
+      fail_closed_if_requested: true,
+      status: true,
+      message: true,
+    },
+    label,
+  );
+  expect(typeof status.available, `${label}.available`).toBe('boolean');
+  expect(typeof status.selected, `${label}.selected`).toBe('boolean');
+  expect(typeof status.fail_closed_if_requested, `${label}.fail_closed_if_requested`).toBe(
+    'boolean',
+  );
+  expect(status.status.length, `${label}.status should be non-empty`).toBeGreaterThan(0);
+  expect(status.message.length, `${label}.message should be non-empty`).toBeGreaterThan(0);
+  return status;
+}
+
+function assertDataKeyOpsMigrationEvidence(
+  obj: unknown,
+  label: string,
+): DataKeyOpsMigrationEvidence {
+  const evidence = assertExactKeys<DataKeyOpsMigrationEvidence>(
+    obj,
+    {
+      plan: true,
+      database_format: true,
+      key_config: true,
+      sqlcipher_available: true,
+      database_file: true,
+    },
+    label,
+  );
+  inEnum(DATA_KEY_OPS_PLANS, evidence.plan, `${label}.plan`);
+  inEnum(DATA_DATABASE_FORMATS, evidence.database_format, `${label}.database_format`);
+  inEnum(DATA_KEY_CONFIG_STATUSES, evidence.key_config, `${label}.key_config`);
+  expect(typeof evidence.sqlcipher_available, `${label}.sqlcipher_available`).toBe('boolean');
+  expect(evidence.database_file.length, `${label}.database_file should be non-empty`).toBeGreaterThan(
+    0,
+  );
+  return evidence;
+}
+
+function assertDataKeyOpsMigrationStep(
+  obj: unknown,
+  label: string,
+): DataKeyOpsMigrationStep {
+  const step = assertExactKeys<DataKeyOpsMigrationStep>(
+    obj,
+    { order: true, title: true, detail: true, source_destructive: true },
+    label,
+  );
+  expect(Number.isInteger(step.order), `${label}.order should be an integer`).toBe(true);
+  expect(step.order, `${label}.order should be positive`).toBeGreaterThan(0);
+  expect(step.title.length, `${label}.title should be non-empty`).toBeGreaterThan(0);
+  expect(step.detail.length, `${label}.detail should be non-empty`).toBeGreaterThan(0);
+  expect(typeof step.source_destructive, `${label}.source_destructive`).toBe('boolean');
+  return step;
+}
+
+function assertDataKeyOpsMigrationPlan(obj: unknown, label: string): DataKeyOpsMigrationPlan {
+  const plan = assertExactKeys<DataKeyOpsMigrationPlan>(
+    obj,
+    { required: true, status: true, summary: true, steps: true, evidence: true },
+    label,
+  );
+  expect(typeof plan.required, `${label}.required`).toBe('boolean');
+  expect(plan.status.length, `${label}.status should be non-empty`).toBeGreaterThan(0);
+  expect(plan.summary.length, `${label}.summary should be non-empty`).toBeGreaterThan(0);
+  expect(Array.isArray(plan.steps), `${label}.steps should be an array`).toBe(true);
+  plan.steps.forEach((step, index) =>
+    assertDataKeyOpsMigrationStep(step, `${label}.steps[${index}]`),
+  );
+  assertDataKeyOpsMigrationEvidence(plan.evidence, `${label}.evidence`);
+  return plan;
+}
+
+function assertDataKeyOpsStatus(obj: unknown, label: string): DataKeyOpsStatus {
+  const status = assertExactKeys<DataKeyOpsStatus>(
+    obj,
+    {
+      sqlcipher_available: true,
+      key_config: true,
+      database_file: true,
+      database_format: true,
+      plan: true,
+      migration_plan: true,
+    },
+    label,
+  );
+  expect(typeof status.sqlcipher_available, `${label}.sqlcipher_available`).toBe('boolean');
+  inEnum(DATA_KEY_CONFIG_STATUSES, status.key_config, `${label}.key_config`);
+  expect(status.database_file.length, `${label}.database_file should be non-empty`).toBeGreaterThan(0);
+  inEnum(DATA_DATABASE_FORMATS, status.database_format, `${label}.database_format`);
+  inEnum(DATA_KEY_OPS_PLANS, status.plan, `${label}.plan`);
+  assertDataKeyOpsMigrationPlan(status.migration_plan, `${label}.migration_plan`);
+  return status;
+}
+
+function assertDataDatabaseEncryptionStatus(
+  obj: unknown,
+  label: string,
+): DataDatabaseEncryptionStatus {
+  const encryption = assertExactKeys<DataDatabaseEncryptionStatus>(
+    obj,
+    {
+      configured: true,
+      sqlcipher_available: true,
+      sqlcipher_backed: true,
+      key_source: true,
+      hardware_derived_fallback: true,
+      database_format: true,
+      key_ops_plan: true,
+      plaintext_migration_pending: true,
+      plaintext_migration_blocked: true,
+      key_ops: true,
+    },
+    label,
+    ['key_ops_error'],
+  );
+  expect(typeof encryption.configured, `${label}.configured`).toBe('boolean');
+  expect(typeof encryption.sqlcipher_available, `${label}.sqlcipher_available`).toBe('boolean');
+  expect(typeof encryption.sqlcipher_backed, `${label}.sqlcipher_backed`).toBe('boolean');
+  inEnum(
+    ['none', 'operator_env', 'operator_key_file', 'programmatic', 'hardware_derived_fallback'],
+    encryption.key_source,
+    `${label}.key_source`,
+  );
+  assertDataHardwareDerivedFallbackStatus(
+    encryption.hardware_derived_fallback,
+    `${label}.hardware_derived_fallback`,
+  );
+  if (encryption.database_format !== null) {
+    inEnum(DATA_DATABASE_FORMATS, encryption.database_format, `${label}.database_format`);
+  }
+  if (encryption.key_ops_plan !== null) {
+    inEnum(DATA_KEY_OPS_PLANS, encryption.key_ops_plan, `${label}.key_ops_plan`);
+  }
+  expect(typeof encryption.plaintext_migration_pending, `${label}.plaintext_migration_pending`).toBe(
+    'boolean',
+  );
+  expect(typeof encryption.plaintext_migration_blocked, `${label}.plaintext_migration_blocked`).toBe(
+    'boolean',
+  );
+  if (encryption.key_ops !== null) assertDataKeyOpsStatus(encryption.key_ops, `${label}.key_ops`);
+  if (encryption.key_ops_error !== undefined) {
+    expect(encryption.key_ops_error.length, `${label}.key_ops_error non-empty`).toBeGreaterThan(0);
+  }
+  for (const forbidden of [
+    'key',
+    'key_hash',
+    'key_fingerprint',
+    'env_value',
+    'secret',
+    'sqlcipher_at_rest_certified',
+    'plaintext_migration_completed',
+    'production_key_custody_completed',
+    'hardware_derived_default_completed',
+    'legal_or_gdpr_lifecycle_claimed',
+  ]) {
+    expect(encryption, `${label} must not expose ${forbidden}`).not.toHaveProperty(forbidden);
+  }
+  expect(encryption.sqlcipher_backed, `${label}.sqlcipher_backed is only local readiness`).toBe(
+    encryption.configured && encryption.sqlcipher_available,
+  );
+  return encryption;
 }
 
 function assertDataUsageConcern(obj: unknown, label: string): DataUsageConcern {
@@ -6208,6 +6392,7 @@ describe('contract fixtures parse through the real client', () => {
         active_backend_family: true,
         sidecar_storage_mode: true,
         database_encryption_configured: true,
+        database_encryption: true,
         store_schema_version: true,
         ledger_length: true,
         ledger_verified: true,
@@ -6231,6 +6416,20 @@ describe('contract fixtures parse through the real client', () => {
     expect(typeof persistence.data_dir_configured).toBe('boolean');
     expect(typeof persistence.durable_store_open).toBe('boolean');
     expect(typeof persistence.database_encryption_configured).toBe('boolean');
+    const databaseEncryption = assertDataDatabaseEncryptionStatus(
+      persistence.database_encryption,
+      'DataStatusResponse.persistence.database_encryption',
+    );
+    expect(databaseEncryption.configured).toBe(persistence.database_encryption_configured);
+    expect(databaseEncryption.key_source).toBe('none');
+    expect(databaseEncryption.sqlcipher_available).toBe(false);
+    expect(databaseEncryption.sqlcipher_backed).toBe(false);
+    expect(databaseEncryption.database_format).toBe('plaintext_sqlite');
+    expect(databaseEncryption.key_ops_plan).toBe('open_plaintext_store');
+    expect(databaseEncryption.plaintext_migration_pending).toBe(true);
+    expect(databaseEncryption.plaintext_migration_blocked).toBe(false);
+    expect(databaseEncryption.hardware_derived_fallback.available).toBe(false);
+    expect(databaseEncryption.hardware_derived_fallback.fail_closed_if_requested).toBe(true);
     if (persistence.store_schema_version !== null) {
       expect(Number.isInteger(persistence.store_schema_version)).toBe(true);
     }

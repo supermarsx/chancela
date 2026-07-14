@@ -6,7 +6,44 @@
     "durable_store_open": true,
     "active_backend_family": "postgres",
     "sidecar_storage_mode": "database",
-    "database_encryption_configured": true,
+    "database_encryption_configured": false,
+    "database_encryption": {
+      "configured": false,
+      "sqlcipher_available": false,
+      "sqlcipher_backed": false,
+      "key_source": "none",
+      "hardware_derived_fallback": {
+        "available": false,
+        "selected": false,
+        "fail_closed_if_requested": true,
+        "status": "unavailable",
+        "message": "No hardware-bound database key derivation provider is wired; requests for it fail closed instead of using a static fallback key."
+      },
+      "database_format": "plaintext_sqlite",
+      "key_ops_plan": "open_plaintext_store",
+      "plaintext_migration_pending": true,
+      "plaintext_migration_blocked": false,
+      "key_ops": {
+        "sqlcipher_available": false,
+        "key_config": "unconfigured",
+        "database_file": "F:\\ChancelaData\\chancela.db",
+        "database_format": "plaintext_sqlite",
+        "plan": "open_plaintext_store",
+        "migration_plan": {
+          "required": false,
+          "status": "not_required",
+          "summary": "no plaintext-to-encrypted export/restore migration is required for this key-ops status",
+          "steps": [],
+          "evidence": {
+            "plan": "open_plaintext_store",
+            "database_format": "plaintext_sqlite",
+            "key_config": "unconfigured",
+            "sqlcipher_available": false,
+            "database_file": "F:\\ChancelaData\\chancela.db"
+          }
+        }
+      }
+    },
     "store_schema_version": 7,
     "ledger_length": 42,
     "ledger_verified": true,

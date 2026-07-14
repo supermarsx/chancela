@@ -45,6 +45,7 @@ import {
   type DataCleanupBody,
   type DataCleanupResult,
   type DataCleanupTarget,
+  type DataDatabaseEncryptionStatus,
   type DataKeyRotationExecuteBody,
   type DataKeyRotationExecution,
   type DataKeyRotationPreflight,
@@ -423,6 +424,154 @@ function StatusBadge({
   if (value === null) return <Badge>{'—'}</Badge>;
   const ok = positive ? value : !value;
   return <Badge tone={ok ? 'ok' : 'warn'}>{value ? t('common.yes') : t('common.no')}</Badge>;
+}
+
+function DataDatabaseEncryptionReadiness({
+  encryption,
+  t,
+}: {
+  encryption: DataDatabaseEncryptionStatus;
+  t: TFunction;
+}) {
+  const migration = encryption.key_ops?.migration_plan;
+  const gaps: string[] = [];
+
+  if (!encryption.sqlcipher_available) gaps.push('Build sem SQLCipher');
+  if (encryption.key_source === 'none') gaps.push('Fonte de chave ausente');
+  if (encryption.plaintext_migration_pending) gaps.push('Migração de plaintext pendente');
+  if (encryption.plaintext_migration_blocked) gaps.push('Migração direta plaintext bloqueada');
+  if (!encryption.hardware_derived_fallback.available) {
+    gaps.push('Fallback derivado de hardware indisponível');
+  }
+  if (encryption.hardware_derived_fallback.fail_closed_if_requested) {
+    gaps.push('Fallback derivado de hardware falha fechado quando solicitado');
+  }
+  if (encryption.key_ops_plan === 'sqlcipher_build_required') {
+    gaps.push('Plano requer build SQLCipher antes de operar a chave');
+  }
+  if (encryption.key_ops?.key_config === 'empty') {
+    gaps.push('Fonte de chave configurada está vazia');
+  }
+  if (encryption.key_ops_plan === 'key_required_for_non_plaintext_store') {
+    gaps.push('Base não-plaintext requer chave configurada');
+  }
+
+  return (
+    <InlineWarning
+      tone={gaps.length > 0 || encryption.key_ops_error ? 'warn' : 'info'}
+      title="Prontidão SQLCipher e custódia da chave"
+    >
+      <div className="stack--tight">
+        <p>
+          Sinais locais do backend com segredos redigidos. Não certificam cifragem em repouso de
+          produção, migração plaintext concluída, runbook de custódia ou ciclo legal/GDPR.
+        </p>
+        <dl className="deflist data-status-summary">
+          <div>
+            <dt>SQLCipher no build</dt>
+            <dd>
+              <StatusBadge value={encryption.sqlcipher_available} t={t} />
+            </dd>
+          </div>
+          <div>
+            <dt>Loja aberta com chave configurada</dt>
+            <dd>
+              <StatusBadge value={encryption.configured} t={t} />
+            </dd>
+          </div>
+          <div>
+            <dt>Backend SQLCipher local</dt>
+            <dd>
+              <StatusBadge value={encryption.sqlcipher_backed} t={t} />
+            </dd>
+          </div>
+          <div>
+            <dt>Fonte de chave</dt>
+            <dd className="mono">{encryption.key_source}</dd>
+          </div>
+          <div>
+            <dt>Formato do cabeçalho</dt>
+            <dd className="mono">{encryption.database_format ?? '—'}</dd>
+          </div>
+          <div>
+            <dt>Plano key-ops</dt>
+            <dd className="mono">{encryption.key_ops_plan ?? '—'}</dd>
+          </div>
+          <div>
+            <dt>Configuração da chave</dt>
+            <dd className="mono">{encryption.key_ops?.key_config ?? '—'}</dd>
+          </div>
+          <div>
+            <dt>Migração plaintext pendente</dt>
+            <dd>
+              <StatusBadge value={encryption.plaintext_migration_pending} positive={false} t={t} />
+            </dd>
+          </div>
+          <div>
+            <dt>Migração plaintext bloqueada</dt>
+            <dd>
+              <StatusBadge value={encryption.plaintext_migration_blocked} positive={false} t={t} />
+            </dd>
+          </div>
+          <div>
+            <dt>Fallback hardware</dt>
+            <dd>
+              <span className="mono">{encryption.hardware_derived_fallback.status}</span>
+            </dd>
+          </div>
+          <div>
+            <dt>Fallback falha fechado</dt>
+            <dd>
+              <StatusBadge
+                value={encryption.hardware_derived_fallback.fail_closed_if_requested}
+                t={t}
+              />
+            </dd>
+          </div>
+          {migration ? (
+            <div className="deflist__wide">
+              <dt>Plano de migração</dt>
+              <dd>
+                <span className="mono">{migration.status}</span>
+                {' · '}
+                {migration.summary}
+              </dd>
+            </div>
+          ) : null}
+          {encryption.key_ops_error ? (
+            <div className="deflist__wide">
+              <dt>Erro key-ops</dt>
+              <dd>{encryption.key_ops_error}</dd>
+            </div>
+          ) : null}
+        </dl>
+        <div>
+          <h5>Lacunas de prontidão</h5>
+          {gaps.length > 0 ? (
+            <ul className="plain-list">
+              {gaps.map((gap) => (
+                <li key={gap}>{gap}</li>
+              ))}
+            </ul>
+          ) : (
+            <p className="field__hint">Sem lacunas locais reportadas neste estado.</p>
+          )}
+        </div>
+        {migration && migration.steps.length > 0 ? (
+          <div>
+            <h5>Passos declarados</h5>
+            <ul className="plain-list">
+              {migration.steps.map((step) => (
+                <li key={step.order}>
+                  <span className="mono">{step.title}</span>: {step.detail}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+      </div>
+    </InlineWarning>
+  );
 }
 
 function IsolatedRestoreVerificationReport({
@@ -2139,6 +2288,26 @@ function DataStatusPanel({
               {status.isError ? <ErrorNote error={status.error} /> : null}
               {data ? (
                 <div className="data-status">
+          <section
+            className="data-status-section"
+            aria-labelledby="data-status-database-encryption-readiness"
+          >
+            <div className="data-status-section__head">
+              <div>
+                <h4 id="data-status-database-encryption-readiness">
+                  Prontidão SQLCipher e custódia da chave
+                </h4>
+                <p className="data-status-section__hint">
+                  Leitura do estado local de persistência; não executa migração, rekey ou validação
+                  de custódia.
+                </p>
+              </div>
+            </div>
+            <DataDatabaseEncryptionReadiness
+              encryption={data.persistence.database_encryption}
+              t={t}
+            />
+          </section>
           <section className="data-status-section" aria-labelledby="data-status-key-rotation">
             <div className="data-status-section__head">
               <div>

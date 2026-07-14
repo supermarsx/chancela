@@ -21,6 +21,66 @@ interface Recorded {
   body: string | null;
 }
 
+const readyDatabaseEncryption = {
+  configured: true,
+  sqlcipher_available: true,
+  sqlcipher_backed: true,
+  key_source: 'operator_env',
+  hardware_derived_fallback: {
+    available: false,
+    selected: false,
+    fail_closed_if_requested: true,
+    status: 'unavailable',
+    message:
+      'No hardware-bound database key derivation provider is wired; requests for it fail closed instead of using a static fallback key.',
+  },
+  database_format: 'non_plaintext_or_encrypted',
+  key_ops_plan: 'open_encrypted_store',
+  plaintext_migration_pending: false,
+  plaintext_migration_blocked: false,
+  key_ops: {
+    sqlcipher_available: true,
+    key_config: 'configured',
+    database_file: 'F:\\ChancelaData\\chancela.db',
+    database_format: 'non_plaintext_or_encrypted',
+    plan: 'open_encrypted_store',
+    migration_plan: {
+      required: false,
+      status: 'not_required',
+      summary:
+        'no plaintext-to-encrypted export/restore migration is required for this key-ops status',
+      steps: [],
+      evidence: {
+        plan: 'open_encrypted_store',
+        database_format: 'non_plaintext_or_encrypted',
+        key_config: 'configured',
+        sqlcipher_available: true,
+        database_file: 'F:\\ChancelaData\\chancela.db',
+      },
+    },
+  },
+} satisfies DataStatusResponse['persistence']['database_encryption'];
+
+const absentDatabaseEncryption = {
+  configured: false,
+  sqlcipher_available: false,
+  sqlcipher_backed: false,
+  key_source: 'none',
+  hardware_derived_fallback: {
+    available: false,
+    selected: false,
+    fail_closed_if_requested: true,
+    status: 'unavailable',
+    message:
+      'No hardware-bound database key derivation provider is wired; requests for it fail closed instead of using a static fallback key.',
+  },
+  database_format: null,
+  key_ops_plan: null,
+  plaintext_migration_pending: false,
+  plaintext_migration_blocked: false,
+  key_ops: null,
+} satisfies DataStatusResponse['persistence']['database_encryption'];
+
 const durableStatus: DataStatusResponse = {
   generated_at: '2026-07-10T10:20:30Z',
   persistence: {
@@ -30,6 +90,7 @@ const durableStatus: DataStatusResponse = {
     active_backend_family: 'sqlite',
     sidecar_storage_mode: 'file',
     database_encryption_configured: true,
+    database_encryption: readyDatabaseEncryption,
     store_schema_version: 7,
     ledger_length: 42,
     ledger_verified: true,
@@ -244,6 +305,7 @@ const inMemoryStatus: DataStatusResponse = {
     active_backend_family: null,
     sidecar_storage_mode: 'in_memory',
     database_encryption_configured: false,
+    database_encryption: absentDatabaseEncryption,
     store_schema_version: null,
     ledger_length: 0,
     ledger_verified: null,
@@ -772,6 +834,92 @@ describe('GestaoDadosSection', () => {
     expect(screen.getByText('6d5e4f00-0000-4000-8000-000000000005')).toBeTruthy();
     expect(document.body.textContent).not.toContain('current-secret');
     expect(document.body.textContent).not.toContain('replacement-secret');
+    expect(document.body.textContent).not.toContain('chancela.db');
+  });
+
+  it('renders SQLCipher and key-custody readiness gaps without key material or completion claims', async () => {
+    const gapStatus: DataStatusResponse = {
+      ...durableStatus,
+      persistence: {
+        ...durableStatus.persistence,
+        database_encryption_configured: false,
+        database_encryption: {
+          configured: false,
+          sqlcipher_available: false,
+          sqlcipher_backed: false,
+          key_source: 'none',
+          hardware_derived_fallback: {
+            available: false,
+            selected: true,
+            fail_closed_if_requested: true,
+            status: 'unavailable',
+            message:
+              'No hardware-bound database key derivation provider is wired; requests for it fail closed instead of using a static fallback key.',
+          },
+          database_format: 'plaintext_sqlite',
+          key_ops_plan: 'refuse_plaintext_to_encrypted_migration',
+          plaintext_migration_pending: true,
+          plaintext_migration_blocked: true,
+          key_ops: {
+            sqlcipher_available: false,
+            key_config: 'configured',
+            database_file: 'F:\\ChancelaData\\chancela.db',
+            database_format: 'plaintext_sqlite',
+            plan: 'refuse_plaintext_to_encrypted_migration',
+            migration_plan: {
+              required: true,
+              status: 'refuse_direct_plaintext_to_encrypted_migration',
+              summary:
+                'direct keyed open is refused; use backup/export-restore into a fresh SQLCipher-enabled store',
+              steps: [
+                {
+                  order: 1,
+                  title: 'backup_export_plaintext',
+                  detail:
+                    'start the existing plaintext instance without a database key and create a verified backup/export before changing encryption settings',
+                  source_destructive: false,
+                },
+              ],
+              evidence: {
+                plan: 'refuse_plaintext_to_encrypted_migration',
+                database_format: 'plaintext_sqlite',
+                key_config: 'configured',
+                sqlcipher_available: false,
+                database_file: 'F:\\ChancelaData\\chancela.db',
+              },
+            },
+          },
+        },
+      },
+    };
+
+    installFetch([gapStatus]);
+    renderWithProviders(<GestaoDadosSection />);
+    await selectTab(TAB_KEYS);
+
+    expect(
+      (await screen.findAllByText('Prontidão SQLCipher e custódia da chave')).length,
+    ).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('Build sem SQLCipher')).toBeTruthy();
+    expect(screen.getByText('Fonte de chave ausente')).toBeTruthy();
+    expect(screen.getByText('Migração de plaintext pendente')).toBeTruthy();
+    expect(screen.getByText('Migração direta plaintext bloqueada')).toBeTruthy();
+    expect(screen.getByText('Fallback derivado de hardware indisponível')).toBeTruthy();
+    expect(
+      screen.getByText('Fallback derivado de hardware falha fechado quando solicitado'),
+    ).toBeTruthy();
+    expect(screen.getByText('plaintext_sqlite')).toBeTruthy();
+    expect(screen.getAllByText('refuse_plaintext_to_encrypted_migration').length).toBeGreaterThan(
+      0,
+    );
+    expect(screen.getByText('refuse_direct_plaintext_to_encrypted_migration')).toBeTruthy();
+    expect(screen.getByText('backup_export_plaintext')).toBeTruthy();
+    expect(document.body.textContent).toContain('Não certificam cifragem em repouso');
+    expect(document.body.textContent).not.toContain('operator-key-secret');
+    expect(document.body.textContent).not.toContain('key_fingerprint');
+    expect(document.body.textContent).not.toContain('produção cifrada certificada');
+    expect(document.body.textContent).not.toContain('migração plaintext concluída: Sim');
+    expect(document.body.textContent).not.toContain('custódia de produção concluída');
     expect(document.body.textContent).not.toContain('chancela.db');
   });
 
