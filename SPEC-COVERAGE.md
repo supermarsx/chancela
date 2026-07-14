@@ -1,6 +1,6 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-14 from current implementation snapshot `27b8e8262c9c95abd597ca72c728d3dd9e120130`,
+*Updated 2026-07-14 from current implementation snapshot `148ffdcdff5a4470bceb1ec9eaeead7faaf4c735`,
 with committed evidence refreshes for the recently landed Signatures & Trust
 provider-credential, stored runtime credential resolution, stored PKCS#12,
 remote batch-initiation surfaces, and Docker/Compose runtime-hardening
@@ -565,7 +565,7 @@ Implementation checkpoints covered here:
   append, production backup policy, RPO/RTO certification, disaster-recovery
   readiness, off-site custody proof, SQLCipher-at-rest proof, legal archive
   certification, FULL coverage, or new CAE provider/legal behavior.
-- Current `27b8e82` keeps Template Catalog/UX/CI **PARTIAL**: the embedded template
+- Current `148ffdc` keeps Template Catalog/UX/CI **PARTIAL**: the embedded template
   catalog now loads 104 JSON template assets (104 total / 44 CSC), including
   standalone
   `procuracao-representacao/v1` instruments for commercial companies,
@@ -1657,12 +1657,13 @@ Implementation checkpoints covered here:
   removing other dashboard data, and source toggles suppress only their
   matching local family. Gestão exposes compact controls for those fields, and
   reminder status now uses absolute calendar-day deltas across year boundaries.
-  Profile-calendar reminders expose local preset coverage/status params
-  (`calendar_preset_support`, preset id/label, local due-rule/calculation
-  flags, supported due-year/basis/fiscal-year offset fields, and false
-  legal-authority/external-delivery/calendar-sync/webhook/workflow-completion
-  claim flags); unsupported presets remain pending no-date advisories with no
-  due-year or due-basis.
+  Profile-calendar reminders expose a typed local advisory plan and matching
+  coverage/status params (`rule_kind`, support/review/source status, local
+  due-rule/calculation flags, supported due-year/basis/fiscal-year offset
+  fields, and explicit no-claim flags). Structural law references remain
+  Pending/unverified metadata; they do not establish a verified source or
+  legal authority. Unsupported presets remain pending no-date advisories with
+  no due-year or due-basis.
   This is policy/default/UI/checkpoint coverage only, not full reminder or
   calendar completion.
 - `225f5c6` keeps Signatures **PARTIAL**: external-signing envelopes can require

@@ -5826,6 +5826,26 @@ function assertCheckpointMap() {
     "dashboard profile-calendar unsupported-preset advisory builder marker",
   );
   assertFileContains(
+    "crates/chancela-core/src/profile.rs",
+    "pub struct ProfileCalendarPlan",
+    "core typed local advisory profile-calendar plan marker",
+  );
+  assertFileContains(
+    "crates/chancela-core/src/profile.rs",
+    "ProfileCalendarSourceStatus::PendingUnverified",
+    "core profile-calendar pending law-source marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/dto.rs",
+    "pub struct DashboardProfileCalendarPlan",
+    "dashboard typed profile-calendar plan DTO marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/dashboard/DashboardPage.tsx",
+    "profileCalendarPlanMeta",
+    "web dashboard profile-calendar status rendering marker",
+  );
+  assertFileContains(
     "crates/chancela-api/src/dashboard.rs",
     "profile_calendar_preset_params(",
     "dashboard profile-calendar preset coverage metadata helper marker",
@@ -9355,7 +9375,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `27b8e82`",
+    "Current checkpoint metadata/static checks through `148ffdc`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -9560,8 +9580,13 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Profile-calendar\n  coverage/status metadata now distinguishes supported local-rule presets",
-    "CI/E2E hardening plan profile-calendar coverage metadata marker",
+    "typed local advisory profile-calendar plan\n  distinguishes rule kind, support/review/source status",
+    "CI/E2E hardening plan typed profile-calendar plan marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Structural law\n  references remain Pending/unverified metadata",
+    "CI/E2E hardening plan profile-calendar pending law-source marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -9790,7 +9815,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `27b8e8262c9c95abd597ca72c728d3dd9e120130`",
+    "implementation snapshot `148ffdcdff5a4470bceb1ec9eaeead7faaf4c735`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -11085,12 +11110,17 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Profile-calendar reminders expose local preset coverage/status params",
-    "spec coverage profile-calendar coverage metadata marker",
+    "Profile-calendar reminders expose a typed local advisory plan and matching\n  coverage/status params",
+    "spec coverage typed profile-calendar plan marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "unsupported presets remain pending no-date advisories with no\n  due-year or due-basis",
+    "Structural law references remain\n  Pending/unverified metadata",
+    "spec coverage profile-calendar pending law-source marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Unsupported presets remain pending no-date advisories with\n  no due-year or due-basis",
     "spec coverage profile-calendar unsupported no-date/no-basis marker",
   );
   assertFileContains(

@@ -1453,11 +1453,13 @@ settingsDefaults.test.ts contracts.test.ts`.
   matching local reminder family, numeric limit/window behavior, and absolute
   calendar-day reminder status across year boundaries. Focused `cargo test -p
   chancela-api --locked profile_calendar_` coverage pins the new
-  profile-calendar metadata. Profile-calendar
-  coverage/status metadata now distinguishes supported local-rule presets from
-  unsupported pending/no-date presets while keeping legal-authority, external
-  delivery/calendar-sync/webhook, compliance-status, and workflow-completion
-  claim flags false. Focused
+  profile-calendar metadata. The typed local advisory profile-calendar plan
+  distinguishes rule kind, support/review/source status, due-rule shape,
+  evaluated fiscal-year basis, and explicit no-claim flags for supported
+  local-rule presets and unsupported pending/no-date presets. Structural law
+  references remain Pending/unverified metadata, not verified law sources or
+  legal authority; legal-authority, external delivery/calendar-sync/webhook,
+  compliance-status, and workflow-completion claim flags remain false. Focused
   `settingsDefaults.test.ts` and `SettingsPage.test.tsx` coverage pins the web
   defaults and compact Gestão controls for the master switch, limit, due-soon
   window, attendance lookahead, and three source toggles. This remains local
@@ -1534,7 +1536,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   --workspace apps/web -- e2e/session.spec.ts e2e/first-launch-onboarding.spec.ts`.
   Treat the static/unit/focused markers as the pinned slice, not broad
   Playwright-browser-suite or browser-matrix proof; the browser suite is not exhaustive.
-- Current checkpoint metadata/static checks through `27b8e82`
+- Current checkpoint metadata/static checks through `148ffdc`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
