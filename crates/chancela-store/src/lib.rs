@@ -30,6 +30,9 @@
 //! let manifest = store.backup(data_dir, &sidecars)?; // VACUUM INTO + zip + manifest
 //! ```
 
+pub mod dialect;
+#[cfg(feature = "postgres")]
+pub(crate) mod pg;
 pub mod recovery;
 pub mod schema;
 
@@ -89,6 +92,26 @@ pub enum StoreError {
     /// An error from the underlying SQLite engine (open, migrate, query, transaction).
     #[error("sqlite error: {0}")]
     Sqlite(#[from] rusqlite::Error),
+    /// An error from the PostgreSQL backend (open, migrate, query, transaction). Only present when
+    /// the `postgres` feature is enabled (wp14 Phase 1).
+    #[cfg(feature = "postgres")]
+    #[error("postgres error: {0}")]
+    Postgres(#[from] postgres::Error),
+    /// A connection-pool error from the PostgreSQL read pool (`r2d2`). Only present when the
+    /// `postgres` feature is enabled.
+    #[cfg(feature = "postgres")]
+    #[error("postgres connection pool error: {0}")]
+    R2d2(#[from] r2d2::Error),
+    /// A store operation was invoked on the PostgreSQL backend that is not yet ported to it
+    /// (wp14 Phase 1). These paths still funnel through the SQLite-only `Tx::raw` / connection
+    /// accessors and fail closed here with a clear, named operation rather than misbehaving. See
+    /// [`crate::pg`] for the supported-vs-deferred split (recovery, backup/restore, blob/paged
+    /// reads, and the non-core `Tx` writers are deferred to the testcontainers lane).
+    #[error("operation not supported on the postgres backend yet: {op}")]
+    UnsupportedOnPostgres {
+        /// The store operation that is not yet available on the Postgres backend.
+        op: &'static str,
+    },
     /// A filesystem error (creating the data dir, the backup archive, reading a sidecar).
     #[error("i/o error: {0}")]
     Io(#[from] std::io::Error),
@@ -203,8 +226,13 @@ pub struct Store {
 /// handling stays inside the Sqlite arm; the dialect is *not* abstracted yet (that is Phase 1's job).
 #[derive(Debug, Clone)]
 pub(crate) enum Backend {
-    /// The embedded SQLite / SQLCipher backend — the only backend in Phase 0.
+    /// The embedded SQLite / SQLCipher backend — the default, and the only backend compiled into
+    /// the desktop/browser editions.
     Sqlite(SqliteBackend),
+    /// The PostgreSQL backend for the self-hosted server edition (wp14 Phase 1). Only present when
+    /// the off-by-default `postgres` feature is enabled; see [`crate::pg`].
+    #[cfg(feature = "postgres")]
+    Postgres(pg::PostgresBackend),
 }
 
 /// The rusqlite-backed backend arm: one WAL-mode connection, shared and mutex-guarded. rusqlite is
@@ -357,6 +385,29 @@ impl StoreOpenOptions {
             Some(_) => StoreKeyConfigStatus::Configured,
         }
     }
+}
+
+/// Which backend [`Store::open_backend`] should open (wp14 Phase 1, §2.4).
+///
+/// SQLite is the default and the only variant available to the embedded desktop/browser editions.
+/// The `Postgres` variant only exists when the off-by-default `postgres` feature is compiled in, so
+/// a stray `CHANCELA_DB_BACKEND=postgres` in an embedded build cannot even construct this — it fails
+/// closed at the type level (the same fail-closed spirit as [`StoreError::EncryptionUnavailable`]).
+#[derive(Debug, Clone)]
+pub enum StoreBackendSelection {
+    /// The embedded SQLite / SQLCipher backend (default). `data_dir` holds `chancela.db`.
+    Sqlite {
+        /// The data directory that holds (or will hold) `chancela.db`.
+        data_dir: PathBuf,
+        /// Open options (optional SQLCipher key).
+        options: StoreOpenOptions,
+    },
+    /// The PostgreSQL backend for the self-hosted server edition.
+    #[cfg(feature = "postgres")]
+    Postgres {
+        /// A libpq connection string, e.g. `postgres://user:pass@host:5432/chancela?sslmode=require`.
+        database_url: String,
+    },
 }
 
 /// Secret-free classification of the configured database key.
@@ -1563,15 +1614,40 @@ impl Store {
         })
     }
 
-    /// Borrow the SQLite connection behind the backend seam (wp14 Phase 0).
+    /// Lock and borrow the SQLite connection behind the backend seam.
     ///
-    /// Internal to the crate — the read methods, `persist`, `backup`, and the [`recovery`] restore
-    /// all funnel their connection access through here so the Sqlite specifics stay in one arm.
-    /// Phase 0 has only the Sqlite arm; Phase 1's Postgres arm will not be reachable through this
-    /// accessor.
-    pub(crate) fn conn(&self) -> &Arc<Mutex<rusqlite::Connection>> {
+    /// Internal to the crate — the read methods, `backup`, and the [`recovery`] restore all funnel
+    /// their SQLite connection access through here so the rusqlite specifics stay in one arm. On the
+    /// [`Backend::Postgres`] arm (wp14 Phase 1) these bespoke SQLite-shaped paths are not yet ported,
+    /// so this fails closed with [`StoreError::UnsupportedOnPostgres`] rather than misbehaving.
+    /// The hot write path ([`Store::persist_result`]) and the boot [`Store::load`] dispatch on the
+    /// backend directly and do **not** go through this accessor.
+    pub(crate) fn locked_conn(
+        &self,
+    ) -> Result<std::sync::MutexGuard<'_, rusqlite::Connection>, StoreError> {
         match &self.backend {
-            Backend::Sqlite(backend) => &backend.conn,
+            Backend::Sqlite(backend) => Ok(backend.conn.lock().unwrap_or_else(|e| e.into_inner())),
+            #[cfg(feature = "postgres")]
+            Backend::Postgres(_) => Err(StoreError::UnsupportedOnPostgres {
+                op: "direct SQLite connection access (bespoke read / backup / recovery path)",
+            }),
+        }
+    }
+
+    /// Open the store on the backend named by `selection` (wp14 Phase 1, §2.4). This is the seam
+    /// Phase 2 wires `CHANCELA_DB_BACKEND` / `DATABASE_URL` into: SQLite (the default) resolves to
+    /// [`Store::open_with_options`]; Postgres connects the pool + advisory-locked writer and runs
+    /// the per-backend DDL. The Postgres arm only exists when the off-by-default `postgres` feature
+    /// is compiled in, so an embedded build fails closed at the type level.
+    pub fn open_backend(selection: StoreBackendSelection) -> Result<Store, StoreError> {
+        match selection {
+            StoreBackendSelection::Sqlite { data_dir, options } => {
+                Store::open_with_options(&data_dir, options)
+            }
+            #[cfg(feature = "postgres")]
+            StoreBackendSelection::Postgres { database_url } => Ok(Store {
+                backend: Backend::Postgres(pg::PostgresBackend::open(&database_url)?),
+            }),
         }
     }
 
@@ -1669,7 +1745,7 @@ impl Store {
     /// provenance (`BundleManifest.source_instance_id`) and the import feed both read it. A restored
     /// backup keeps the *source* instance's id (the stamp is only minted when absent).
     pub fn instance_id(&self) -> Result<String, StoreError> {
-        let guard = self.conn().lock().unwrap_or_else(|e| e.into_inner());
+        let guard = self.locked_conn()?;
         read_instance_id(&guard)
     }
 
@@ -1733,7 +1809,7 @@ impl Store {
             return Err(StoreError::EmptyEncryptionKey);
         }
 
-        let guard = self.conn().lock().unwrap_or_else(|e| e.into_inner());
+        let guard = self.locked_conn()?;
         guard.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
         guard
             .pragma_update(None, "rekey", new_key)
@@ -1754,7 +1830,15 @@ impl Store {
     /// [`Ledger`] via `chancela_ledger::Ledger::try_from_events` (added by t30-e1a), then return
     /// the maps, the ledger, and the boot-verify outcome as [`LoadedState`].
     pub fn load(&self) -> Result<LoadedState, StoreError> {
-        let guard = self.conn().lock().unwrap_or_else(|e| e.into_inner());
+        // The Postgres backend replays the same aggregate + event rows into an identical
+        // `LoadedState` (the `events` rows feed `Ledger::try_from_events`, which re-verifies the
+        // chain byte-for-byte — §1.3/§4). It dispatches here instead of through the SQLite-only
+        // `locked_conn` accessor used by the rest of this method.
+        #[cfg(feature = "postgres")]
+        if let Backend::Postgres(backend) = &self.backend {
+            return backend.load();
+        }
+        let guard = self.locked_conn()?;
 
         // Aggregates: the `json` column is the full serde value; its own `id` field is the map key,
         // so the scope columns (entity_id/book_id) never need re-parsing on load.
@@ -1867,7 +1951,7 @@ impl Store {
         let batch_limit = ledger_event_page_batch_limit(limit, filters.has_residual_filters());
         let mut before_seq = query.before_seq;
         let mut accepted = Vec::with_capacity(target);
-        let guard = self.conn().lock().unwrap_or_else(|e| e.into_inner());
+        let guard = self.locked_conn()?;
 
         loop {
             let (sql, values) = ledger_events_page_sql(&filters, before_seq, batch_limit);
@@ -1928,7 +2012,7 @@ impl Store {
     /// 404-until-sealed). If an act was regenerated more than once, the most recently created row
     /// wins (ordered by `created_at`, then the physical `rowid` as a stable tie-break).
     pub fn document_for_act(&self, act_id: ActId) -> Result<Option<StoredDocument>, StoreError> {
-        let guard = self.conn().lock().unwrap_or_else(|e| e.into_inner());
+        let guard = self.locked_conn()?;
         let mut stmt = guard.prepare(
             "SELECT id, act_id, template_id, pdf_digest, profile, created_at, pdf_bytes \
              FROM documents WHERE act_id = ?1 ORDER BY created_at DESC, rowid DESC LIMIT 1",
@@ -1942,7 +2026,7 @@ impl Store {
     /// original sealed Ata as the canonical signing/download target even after later certidão or
     /// extrato rows are generated for the same act.
     pub fn documents_for_act(&self, act_id: ActId) -> Result<Vec<StoredDocument>, StoreError> {
-        let guard = self.conn().lock().unwrap_or_else(|e| e.into_inner());
+        let guard = self.locked_conn()?;
         let mut stmt = guard.prepare(
             "SELECT id, act_id, template_id, pdf_digest, profile, created_at, pdf_bytes \
              FROM documents WHERE act_id = ?1 ORDER BY created_at ASC, rowid ASC",
@@ -1957,7 +2041,7 @@ impl Store {
 
     /// Fetch a document by its own id (bytes + metadata), or `None` if unknown.
     pub fn document_by_id(&self, id: &str) -> Result<Option<StoredDocument>, StoreError> {
-        let guard = self.conn().lock().unwrap_or_else(|e| e.into_inner());
+        let guard = self.locked_conn()?;
         let mut stmt = guard.prepare(
             "SELECT id, act_id, template_id, pdf_digest, profile, created_at, pdf_bytes \
              FROM documents WHERE id = ?1",
@@ -1972,7 +2056,7 @@ impl Store {
         &self,
         document_id: &str,
     ) -> Result<Vec<StoredGeneratedDocumentDispatchEvidence>, StoreError> {
-        let guard = self.conn().lock().unwrap_or_else(|e| e.into_inner());
+        let guard = self.locked_conn()?;
         let mut stmt = guard.prepare(
             "SELECT document_id, idempotency_key, act_id, template_id, actor, dispatched_at, \
              channel, reference, evidence_reference, imported_document_id, recipients_json, \
@@ -1994,7 +2078,7 @@ impl Store {
         document_id: &str,
         idempotency_key: &str,
     ) -> Result<Option<StoredGeneratedDocumentDispatchEvidence>, StoreError> {
-        let guard = self.conn().lock().unwrap_or_else(|e| e.into_inner());
+        let guard = self.locked_conn()?;
         let mut stmt = guard.prepare(
             "SELECT document_id, idempotency_key, act_id, template_id, actor, dispatched_at, \
              channel, reference, evidence_reference, imported_document_id, recipients_json, \
@@ -2016,7 +2100,7 @@ impl Store {
         &self,
         act_id: Option<ActId>,
     ) -> Result<Vec<StoredImportedDocumentMeta>, StoreError> {
-        let guard = self.conn().lock().unwrap_or_else(|e| e.into_inner());
+        let guard = self.locked_conn()?;
         let mut out = Vec::new();
         if let Some(act_id) = act_id {
             let mut stmt = guard.prepare(
@@ -2054,7 +2138,7 @@ impl Store {
         &self,
         id: &str,
     ) -> Result<Option<StoredImportedDocument>, StoreError> {
-        let guard = self.conn().lock().unwrap_or_else(|e| e.into_inner());
+        let guard = self.locked_conn()?;
         let mut stmt = guard.prepare(
             "SELECT id, act_id, filename, declared_content_type, detected_content_type, sha256, \
              size_bytes, imported_at, imported_by, operator_review_status, operator_reviewed_at, \
@@ -2072,7 +2156,7 @@ impl Store {
         &self,
         imported_document_id: &str,
     ) -> Result<Vec<StoredImportedDocumentReviewHistoryEntry>, StoreError> {
-        let guard = self.conn().lock().unwrap_or_else(|e| e.into_inner());
+        let guard = self.locked_conn()?;
         let mut stmt = guard.prepare(
             "SELECT id, imported_document_id, review_status, reviewed_at, reviewed_by, \
              review_note, acknowledged_guardrail_ids_json \
@@ -2095,7 +2179,7 @@ impl Store {
         &self,
         import_id: &str,
     ) -> Result<Option<StoredPaperBookImport>, StoreError> {
-        let guard = self.conn().lock().unwrap_or_else(|e| e.into_inner());
+        let guard = self.locked_conn()?;
         let mut stmt = guard.prepare(
             "SELECT import_id, entity_ref, entity_name, entity_nipc, book_ref, date_from, date_to, \
              page_count, page_from, page_to, original_number_from, original_number_to, sha256, \
@@ -2113,7 +2197,7 @@ impl Store {
         &self,
         book_ref: Option<&str>,
     ) -> Result<Vec<StoredPaperBookImportMeta>, StoreError> {
-        let guard = self.conn().lock().unwrap_or_else(|e| e.into_inner());
+        let guard = self.locked_conn()?;
         let mut out = Vec::new();
         if let Some(book_ref) = book_ref {
             let mut stmt = guard.prepare(
@@ -2150,7 +2234,7 @@ impl Store {
         import_id: &str,
         status: StoredPaperBookOcrStatus,
     ) -> Result<bool, StoreError> {
-        let guard = self.conn().lock().unwrap_or_else(|e| e.into_inner());
+        let guard = self.locked_conn()?;
         let changed = guard.execute(
             "UPDATE paper_book_imports SET ocr_status = ?1 WHERE import_id = ?2",
             params![status.as_str(), import_id],
@@ -2163,7 +2247,7 @@ impl Store {
         &self,
         draft_id: &str,
     ) -> Result<Option<StoredPaperBookOcrDraft>, StoreError> {
-        let guard = self.conn().lock().unwrap_or_else(|e| e.into_inner());
+        let guard = self.locked_conn()?;
         let mut stmt = guard.prepare(
             "SELECT draft_id, import_id, extracted_text, text_digest, page_spans_json, confidence, \
              engine_name, engine_version, created_at, created_by, review_status, reviewed_at, \
@@ -2179,7 +2263,7 @@ impl Store {
         &self,
         import_id: &str,
     ) -> Result<Vec<StoredPaperBookOcrDraft>, StoreError> {
-        let guard = self.conn().lock().unwrap_or_else(|e| e.into_inner());
+        let guard = self.locked_conn()?;
         let mut stmt = guard.prepare(
             "SELECT draft_id, import_id, extracted_text, text_digest, page_spans_json, confidence, \
              engine_name, engine_version, created_at, created_by, review_status, reviewed_at, \
@@ -2200,7 +2284,7 @@ impl Store {
         import_id: &str,
         draft_id: &str,
     ) -> Result<Option<StoredPaperBookOcrConversionDossier>, StoreError> {
-        let guard = self.conn().lock().unwrap_or_else(|e| e.into_inner());
+        let guard = self.locked_conn()?;
         let mut stmt = guard.prepare(
             "SELECT dossier_id, import_id, draft_id, source_text_digest, \
              source_page_spans_json, source_review_status, source_reviewed_at, \
@@ -2220,7 +2304,7 @@ impl Store {
         &self,
         import_id: &str,
     ) -> Result<Vec<StoredPaperBookOcrConversionDossier>, StoreError> {
-        let guard = self.conn().lock().unwrap_or_else(|e| e.into_inner());
+        let guard = self.locked_conn()?;
         let mut stmt = guard.prepare(
             "SELECT dossier_id, import_id, draft_id, source_text_digest, \
              source_page_spans_json, source_review_status, source_reviewed_at, \
@@ -2243,7 +2327,7 @@ impl Store {
         draft_id: &str,
         target_act_id: &str,
     ) -> Result<Option<StoredPaperBookOcrConversionExecutionArtifact>, StoreError> {
-        let guard = self.conn().lock().unwrap_or_else(|e| e.into_inner());
+        let guard = self.locked_conn()?;
         let mut stmt = guard.prepare(
             "SELECT artifact_id, import_id, draft_id, dossier_id, source_text_digest, \
              source_page_spans_json, source_review_status, source_reviewed_at, \
@@ -2270,7 +2354,7 @@ impl Store {
         import_id: &str,
         draft_id: &str,
     ) -> Result<Vec<StoredPaperBookOcrConversionExecutionArtifact>, StoreError> {
-        let guard = self.conn().lock().unwrap_or_else(|e| e.into_inner());
+        let guard = self.locked_conn()?;
         let mut stmt = guard.prepare(
             "SELECT artifact_id, import_id, draft_id, dossier_id, source_text_digest, \
              source_page_spans_json, source_review_status, source_reviewed_at, \
@@ -2296,7 +2380,7 @@ impl Store {
 
     /// List follow-ups for an act, open items first, then oldest-created first.
     pub fn follow_ups_for_act(&self, act_id: ActId) -> Result<Vec<StoredFollowUp>, StoreError> {
-        let guard = self.conn().lock().unwrap_or_else(|e| e.into_inner());
+        let guard = self.locked_conn()?;
         let mut stmt = guard.prepare(
             "SELECT id, act_id, agenda_number, deliberation_index, title, detail, due_date, \
              assignee, assignee_display, status, created_at, created_by, completed_at, \
@@ -2313,7 +2397,7 @@ impl Store {
 
     /// Fetch one follow-up by id, or `None` if unknown.
     pub fn follow_up(&self, id: &str) -> Result<Option<StoredFollowUp>, StoreError> {
-        let guard = self.conn().lock().unwrap_or_else(|e| e.into_inner());
+        let guard = self.locked_conn()?;
         let mut stmt = guard.prepare(
             "SELECT id, act_id, agenda_number, deliberation_index, title, detail, due_date, \
              assignee, assignee_display, status, created_at, created_by, completed_at, \
@@ -2330,7 +2414,7 @@ impl Store {
         &self,
         act_id: ActId,
     ) -> Result<Option<StoredSignedDocument>, StoreError> {
-        let guard = self.conn().lock().unwrap_or_else(|e| e.into_inner());
+        let guard = self.locked_conn()?;
         let mut stmt = guard.prepare(
             "SELECT act_id, document_id, signed_pdf_digest, signature_family, evidentiary_level, \
              trusted_list_status, signer_cert_subject, signing_time, signed_at, signer_cert_der, \
@@ -2346,7 +2430,7 @@ impl Store {
     /// Load every SIGNED PDF variant (metadata + bytes), keyed by act id — used to rehydrate the
     /// in-memory read model on boot.
     pub fn all_signed_documents(&self) -> Result<HashMap<ActId, StoredSignedDocument>, StoreError> {
-        let guard = self.conn().lock().unwrap_or_else(|e| e.into_inner());
+        let guard = self.locked_conn()?;
         let mut stmt = guard.prepare(
             "SELECT act_id, document_id, signed_pdf_digest, signature_family, evidentiary_level, \
              trusted_list_status, signer_cert_subject, signing_time, signed_at, signer_cert_der, \
@@ -2369,7 +2453,7 @@ impl Store {
         &self,
         session_id: &str,
     ) -> Result<Option<PendingCmdSession>, StoreError> {
-        let guard = self.conn().lock().unwrap_or_else(|e| e.into_inner());
+        let guard = self.locked_conn()?;
         let mut stmt = guard.prepare(
             "SELECT session_id, act_id, actor, status, masked_phone, doc_name, session_json, \
              prepared_json, created_at, expires_at, signer_capacity_evidence_json \
@@ -2385,7 +2469,7 @@ impl Store {
     pub fn all_pending_cmd_sessions(
         &self,
     ) -> Result<HashMap<String, PendingCmdSession>, StoreError> {
-        let guard = self.conn().lock().unwrap_or_else(|e| e.into_inner());
+        let guard = self.locked_conn()?;
         let mut stmt = guard.prepare(
             "SELECT session_id, act_id, actor, status, masked_phone, doc_name, session_json, \
              prepared_json, created_at, expires_at, signer_capacity_evidence_json \
@@ -2419,17 +2503,35 @@ impl Store {
     where
         F: FnOnce(&Tx<'_>) -> Result<T, StoreError>,
     {
-        let mut guard = self.conn().lock().unwrap_or_else(|e| e.into_inner());
-        // rusqlite's `Transaction` rolls back on drop by default, so any early return from `f`
-        // (its `?`) or a mid-closure `Err` discards every statement already issued — nothing is
-        // persisted unless the whole closure succeeds and we reach `commit`.
-        let txn = guard.transaction()?;
-        let tx = Tx {
-            kind: TxKind::Sqlite(txn),
-        };
-        let out = f(&tx)?;
-        tx.commit()?;
-        Ok(out)
+        // Both backends roll back on drop by default, so any early return from `f` (its `?`) or a
+        // mid-closure `Err` discards every statement already issued — nothing is persisted unless
+        // the whole closure succeeds and we reach `commit`. On Postgres this is one transaction on
+        // the single advisory-locked writer connection, preserving the ledger's atomic-append and
+        // single-writer invariants (§4): a duplicate application-assigned `seq` trips the `events`
+        // primary key and rolls the whole transaction back.
+        match &self.backend {
+            Backend::Sqlite(backend) => {
+                let mut guard = backend.conn.lock().unwrap_or_else(|e| e.into_inner());
+                let txn = guard.transaction()?;
+                let tx = Tx {
+                    kind: TxKind::Sqlite(txn),
+                };
+                let out = f(&tx)?;
+                tx.commit()?;
+                Ok(out)
+            }
+            #[cfg(feature = "postgres")]
+            Backend::Postgres(backend) => {
+                let mut writer = backend.writer();
+                let txn = writer.transaction()?;
+                let tx = Tx {
+                    kind: TxKind::Postgres(std::cell::RefCell::new(txn)),
+                };
+                let out = f(&tx)?;
+                tx.commit()?;
+                Ok(out)
+            }
+        }
     }
 
     /// Snapshot the database with `VACUUM INTO` (transactionally consistent, no downtime), bundle
@@ -2446,7 +2548,7 @@ impl Store {
         // In-memory / anonymous databases have no on-disk snapshot to bundle → NotPersistent
         // (the api maps this to the §3.2 422). A real file store reports its path here.
         {
-            let guard = self.conn().lock().unwrap_or_else(|e| e.into_inner());
+            let guard = self.locked_conn()?;
             match guard.path() {
                 Some(p) if !p.is_empty() && p != ":memory:" => {}
                 _ => return Err(StoreError::NotPersistent),
@@ -2462,7 +2564,7 @@ impl Store {
         //    target must not pre-exist; the per-run stamp keeps it unique. Cleaned up after zipping.
         let snapshot = backups_dir.join(format!(".snapshot-{stamp}.db"));
         {
-            let guard = self.conn().lock().unwrap_or_else(|e| e.into_inner());
+            let guard = self.locked_conn()?;
             guard.execute(
                 "VACUUM INTO ?1",
                 params![snapshot.to_string_lossy().as_ref()],
@@ -2579,8 +2681,14 @@ pub struct Tx<'conn> {
 /// rusqlite transaction verbatim; Phase 1 will add a `Postgres` arm alongside it, and each `Tx`
 /// method (already exactly one SQL statement) will match on this to pick its dialect.
 pub(crate) enum TxKind<'conn> {
-    /// The open rusqlite transaction — the only arm in Phase 0.
+    /// The open rusqlite transaction (default backend).
     Sqlite(rusqlite::Transaction<'conn>),
+    /// The open Postgres transaction (wp14 Phase 1). Wrapped in a `RefCell` because the frozen
+    /// `Tx` methods take `&self` while `postgres::Transaction::execute` needs `&mut self`; the
+    /// interior mutability restores the SQLite-parity `&self` write API. Only present when the
+    /// off-by-default `postgres` feature is enabled.
+    #[cfg(feature = "postgres")]
+    Postgres(std::cell::RefCell<postgres::Transaction<'conn>>),
 }
 
 impl<'conn> Tx<'conn> {
@@ -2588,9 +2696,13 @@ impl<'conn> Tx<'conn> {
     /// DELETE / INSERT SQL (domain-wipe, factory-blank, imported-book upsert) inside the same
     /// atomic commit as an `append_event`. This raw escape hatch is SQLite-only. Not part of the
     /// public API surface.
-    pub(crate) fn raw(&self) -> &rusqlite::Transaction<'conn> {
+    pub(crate) fn raw(&self) -> Result<&rusqlite::Transaction<'conn>, StoreError> {
         match &self.kind {
-            TxKind::Sqlite(txn) => txn,
+            TxKind::Sqlite(txn) => Ok(txn),
+            #[cfg(feature = "postgres")]
+            TxKind::Postgres(_) => Err(StoreError::UnsupportedOnPostgres {
+                op: "raw SQLite transaction SQL (bespoke recovery / non-core writer)",
+            }),
         }
     }
 
@@ -2599,6 +2711,8 @@ impl<'conn> Tx<'conn> {
     fn commit(self) -> Result<(), StoreError> {
         match self.kind {
             TxKind::Sqlite(txn) => txn.commit()?,
+            #[cfg(feature = "postgres")]
+            TxKind::Postgres(cell) => cell.into_inner().commit()?,
         }
         Ok(())
     }
@@ -2610,56 +2724,130 @@ impl Tx<'_> {
     /// The hash-chain fields are stored directly: the ids/scope/kind/actor as text, the timestamp
     /// as RFC 3339 text (round-trips the instant), and the three 32-byte digests as BLOBs.
     pub fn append_event(&self, event: &Event) -> Result<(), StoreError> {
+        const SQL: &str = "INSERT INTO events \
+             (seq, id, actor, justification, timestamp, scope, kind, payload_digest, prev_hash, hash, links) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)";
         let timestamp = format_event_timestamp(event.timestamp);
         let links_json = serde_json::to_string(&event.links)?;
-        self.raw().execute(
-            "INSERT INTO events \
-             (seq, id, actor, justification, timestamp, scope, kind, payload_digest, prev_hash, hash, links) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
-            params![
-                event.seq as i64,
-                event.id.to_string(),
-                event.actor,
-                event.justification,
-                timestamp,
-                event.scope,
-                event.kind,
-                &event.payload_digest[..],
-                &event.prev_hash[..],
-                &event.hash[..],
-                links_json,
-            ],
-        )?;
+        match &self.kind {
+            TxKind::Sqlite(_) => {
+                self.raw()?.execute(
+                    SQL,
+                    params![
+                        event.seq as i64,
+                        event.id.to_string(),
+                        event.actor,
+                        event.justification,
+                        timestamp,
+                        event.scope,
+                        event.kind,
+                        &event.payload_digest[..],
+                        &event.prev_hash[..],
+                        &event.hash[..],
+                        links_json,
+                    ],
+                )?;
+            }
+            #[cfg(feature = "postgres")]
+            TxKind::Postgres(cell) => {
+                // No ON CONFLICT: `events` is append-only, so a duplicate application-assigned
+                // `seq` must trip the primary key and roll the whole transaction back (§4).
+                let seq = event.seq as i64;
+                let id = event.id.to_string();
+                let payload_digest: &[u8] = &event.payload_digest;
+                let prev_hash: &[u8] = &event.prev_hash;
+                let hash: &[u8] = &event.hash;
+                cell.borrow_mut().execute(
+                    &crate::dialect::rewrite_placeholders(SQL),
+                    &[
+                        &seq,
+                        &id,
+                        &event.actor,
+                        &event.justification,
+                        &timestamp,
+                        &event.scope,
+                        &event.kind,
+                        &payload_digest,
+                        &prev_hash,
+                        &hash,
+                        &links_json,
+                    ],
+                )?;
+            }
+        }
         Ok(())
     }
 
     /// Upsert an entity's row (`entities`, document-in-relational).
     pub fn upsert_entity(&self, entity: &Entity) -> Result<(), StoreError> {
+        let id = entity.id.to_string();
         let json = serde_json::to_string(entity)?;
-        self.raw().execute(
-            "INSERT OR REPLACE INTO entities (id, json) VALUES (?1, ?2)",
-            params![entity.id.to_string(), json],
-        )?;
+        match &self.kind {
+            TxKind::Sqlite(_) => {
+                self.raw()?.execute(
+                    "INSERT OR REPLACE INTO entities (id, json) VALUES (?1, ?2)",
+                    params![id, json],
+                )?;
+            }
+            #[cfg(feature = "postgres")]
+            TxKind::Postgres(cell) => {
+                cell.borrow_mut().execute(
+                    "INSERT INTO entities (id, json) VALUES ($1, $2) \
+                     ON CONFLICT (id) DO UPDATE SET json = EXCLUDED.json",
+                    &[&id, &json],
+                )?;
+            }
+        }
         Ok(())
     }
 
     /// Upsert a book's row (`books`, with the indexed `entity_id` scope column).
     pub fn upsert_book(&self, book: &Book) -> Result<(), StoreError> {
+        let id = book.id.to_string();
+        let entity_id = book.entity_id.to_string();
         let json = serde_json::to_string(book)?;
-        self.raw().execute(
-            "INSERT OR REPLACE INTO books (id, entity_id, json) VALUES (?1, ?2, ?3)",
-            params![book.id.to_string(), book.entity_id.to_string(), json],
-        )?;
+        match &self.kind {
+            TxKind::Sqlite(_) => {
+                self.raw()?.execute(
+                    "INSERT OR REPLACE INTO books (id, entity_id, json) VALUES (?1, ?2, ?3)",
+                    params![id, entity_id, json],
+                )?;
+            }
+            #[cfg(feature = "postgres")]
+            TxKind::Postgres(cell) => {
+                cell.borrow_mut().execute(
+                    "INSERT INTO books (id, entity_id, json) VALUES ($1, $2, $3) \
+                     ON CONFLICT (id) DO UPDATE SET entity_id = EXCLUDED.entity_id, \
+                     json = EXCLUDED.json",
+                    &[&id, &entity_id, &json],
+                )?;
+            }
+        }
         Ok(())
     }
 
     /// Upsert an act's row (`acts`, with the indexed `book_id` scope column).
     pub fn upsert_act(&self, act: &Act) -> Result<(), StoreError> {
+        let id = act.id.to_string();
+        let book_id = act.book_id.to_string();
         let json = serde_json::to_string(act)?;
-        self.raw().execute(
-            "INSERT OR REPLACE INTO acts (id, book_id, json) VALUES (?1, ?2, ?3)",
-            params![act.id.to_string(), act.book_id.to_string(), json],
-        )?;
+        match &self.kind {
+            TxKind::Sqlite(_) => {
+                self.raw()?.execute(
+                    "INSERT OR REPLACE INTO acts (id, book_id, json) VALUES (?1, ?2, ?3)",
+                    params![id, book_id, json],
+                )?;
+            }
+            #[cfg(feature = "postgres")]
+            TxKind::Postgres(cell) => {
+                cell.borrow_mut().execute(
+                    "INSERT INTO acts (id, book_id, json) VALUES ($1, $2, $3) \
+                     ON CONFLICT (id) DO UPDATE SET book_id = EXCLUDED.book_id, \
+                     json = EXCLUDED.json",
+                    &[&id, &book_id, &json],
+                )?;
+            }
+        }
         Ok(())
     }
 
@@ -2669,11 +2857,24 @@ impl Tx<'_> {
         entity_id: EntityId,
         extract: &RegistryExtract,
     ) -> Result<(), StoreError> {
+        let entity_id = entity_id.to_string();
         let json = serde_json::to_string(extract)?;
-        self.raw().execute(
-            "INSERT OR REPLACE INTO registry_extracts (entity_id, json) VALUES (?1, ?2)",
-            params![entity_id.to_string(), json],
-        )?;
+        match &self.kind {
+            TxKind::Sqlite(_) => {
+                self.raw()?.execute(
+                    "INSERT OR REPLACE INTO registry_extracts (entity_id, json) VALUES (?1, ?2)",
+                    params![entity_id, json],
+                )?;
+            }
+            #[cfg(feature = "postgres")]
+            TxKind::Postgres(cell) => {
+                cell.borrow_mut().execute(
+                    "INSERT INTO registry_extracts (entity_id, json) VALUES ($1, $2) \
+                     ON CONFLICT (entity_id) DO UPDATE SET json = EXCLUDED.json",
+                    &[&entity_id, &json],
+                )?;
+            }
+        }
         Ok(())
     }
 
@@ -2690,20 +2891,47 @@ impl Tx<'_> {
             .created_at
             .format(&Rfc3339)
             .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned());
-        self.raw().execute(
-            "INSERT OR REPLACE INTO documents \
-             (id, act_id, template_id, pdf_digest, profile, created_at, pdf_bytes) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![
-                doc.id,
-                doc.act_id.to_string(),
-                doc.template_id,
-                doc.pdf_digest,
-                doc.profile,
-                created_at,
-                doc.pdf_bytes,
-            ],
-        )?;
+        match &self.kind {
+            TxKind::Sqlite(_) => {
+                self.raw()?.execute(
+                    "INSERT OR REPLACE INTO documents \
+                     (id, act_id, template_id, pdf_digest, profile, created_at, pdf_bytes) \
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                    params![
+                        doc.id,
+                        doc.act_id.to_string(),
+                        doc.template_id,
+                        doc.pdf_digest,
+                        doc.profile,
+                        created_at,
+                        doc.pdf_bytes,
+                    ],
+                )?;
+            }
+            #[cfg(feature = "postgres")]
+            TxKind::Postgres(cell) => {
+                let act_id = doc.act_id.to_string();
+                let pdf_bytes: &[u8] = &doc.pdf_bytes;
+                cell.borrow_mut().execute(
+                    "INSERT INTO documents \
+                     (id, act_id, template_id, pdf_digest, profile, created_at, pdf_bytes) \
+                     VALUES ($1, $2, $3, $4, $5, $6, $7) \
+                     ON CONFLICT (id) DO UPDATE SET act_id = EXCLUDED.act_id, \
+                     template_id = EXCLUDED.template_id, pdf_digest = EXCLUDED.pdf_digest, \
+                     profile = EXCLUDED.profile, created_at = EXCLUDED.created_at, \
+                     pdf_bytes = EXCLUDED.pdf_bytes",
+                    &[
+                        &doc.id,
+                        &act_id,
+                        &doc.template_id,
+                        &doc.pdf_digest,
+                        &doc.profile,
+                        &created_at,
+                        &pdf_bytes,
+                    ],
+                )?;
+            }
+        }
         Ok(())
     }
 
@@ -2725,7 +2953,7 @@ impl Tx<'_> {
             .format(&Rfc3339)
             .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned());
         let recipients_json = serde_json::to_string(&evidence.recipients)?;
-        let changed = self.raw().execute(
+        let changed = self.raw()?.execute(
             "INSERT OR IGNORE INTO generated_document_dispatch_evidence \
              (document_id, idempotency_key, act_id, template_id, actor, dispatched_at, channel, \
               reference, evidence_reference, imported_document_id, recipients_json, operator_note, \
@@ -2771,7 +2999,7 @@ impl Tx<'_> {
         document_id: &str,
         idempotency_key: &str,
     ) -> Result<Option<StoredGeneratedDocumentDispatchEvidence>, StoreError> {
-        let mut stmt = self.raw().prepare(
+        let mut stmt = self.raw()?.prepare(
             "SELECT document_id, idempotency_key, act_id, template_id, actor, dispatched_at, \
              channel, reference, evidence_reference, imported_document_id, recipients_json, \
              operator_note, recorded_at \
@@ -2802,7 +3030,7 @@ impl Tx<'_> {
                 "imported document size does not fit sqlite INTEGER",
             ))
         })?;
-        self.raw().execute(
+        self.raw()?.execute(
             "INSERT OR REPLACE INTO imported_documents \
              (id, act_id, filename, declared_content_type, detected_content_type, sha256, \
               size_bytes, imported_at, imported_by, operator_review_status, \
@@ -2848,7 +3076,7 @@ impl Tx<'_> {
                 .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned())
         });
         let acknowledged_guardrail_ids_json = serde_json::to_string(acknowledged_guardrail_ids)?;
-        let changed = self.raw().execute(
+        let changed = self.raw()?.execute(
             "UPDATE imported_documents SET operator_review_status = ?1, \
              operator_reviewed_at = ?2, operator_reviewed_by = ?3, operator_review_note = ?4, \
              operator_acknowledged_guardrail_ids_json = ?5 \
@@ -2865,7 +3093,7 @@ impl Tx<'_> {
         if changed == 0 {
             return Err(StoreError::NotFound(format!("imported document {id}")));
         }
-        self.raw().execute(
+        self.raw()?.execute(
             "INSERT INTO imported_document_review_history \
              (imported_document_id, review_status, reviewed_at, reviewed_by, review_note, \
               acknowledged_guardrail_ids_json) \
@@ -2909,7 +3137,7 @@ impl Tx<'_> {
             import.meta.original_number_to,
             "paper-book import original_number_to",
         )?;
-        self.raw().execute(
+        self.raw()?.execute(
             "INSERT OR REPLACE INTO paper_book_imports \
              (import_id, entity_ref, entity_name, entity_nipc, book_ref, date_from, date_to, \
               page_count, page_from, page_to, original_number_from, original_number_to, sha256, \
@@ -2950,7 +3178,7 @@ impl Tx<'_> {
         import_id: &str,
         status: StoredPaperBookOcrStatus,
     ) -> Result<(), StoreError> {
-        let changed = self.raw().execute(
+        let changed = self.raw()?.execute(
             "UPDATE paper_book_imports SET ocr_status = ?1 WHERE import_id = ?2",
             params![status.as_str(), import_id],
         )?;
@@ -2977,7 +3205,7 @@ impl Tx<'_> {
                 .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned())
         });
         let page_spans_json = serde_json::to_string(&draft.page_spans)?;
-        self.raw().execute(
+        self.raw()?.execute(
             "INSERT OR REPLACE INTO paper_book_ocr_drafts \
              (draft_id, import_id, extracted_text, text_digest, page_spans_json, confidence, \
               engine_name, engine_version, created_at, created_by, review_status, reviewed_at, \
@@ -3028,7 +3256,7 @@ impl Tx<'_> {
             .created_at
             .format(&Rfc3339)
             .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned());
-        let changed = self.raw().execute(
+        let changed = self.raw()?.execute(
             "INSERT OR IGNORE INTO paper_book_ocr_conversion_dossiers \
              (dossier_id, import_id, draft_id, source_text_digest, source_page_spans_json, \
               source_review_status, source_reviewed_at, source_reviewed_by, created_at, \
@@ -3047,7 +3275,7 @@ impl Tx<'_> {
                 dossier.created_by.as_str(),
             ],
         )?;
-        let mut stmt = self.raw().prepare(
+        let mut stmt = self.raw()?.prepare(
             "SELECT dossier_id, import_id, draft_id, source_text_digest, \
              source_page_spans_json, source_review_status, source_reviewed_at, \
              source_reviewed_by, created_at, created_by \
@@ -3092,7 +3320,7 @@ impl Tx<'_> {
             .created_at
             .format(&Rfc3339)
             .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned());
-        let changed = self.raw().execute(
+        let changed = self.raw()?.execute(
             "INSERT OR IGNORE INTO paper_book_ocr_conversion_execution_artifacts \
              (artifact_id, import_id, draft_id, dossier_id, source_text_digest, \
               source_page_spans_json, source_review_status, source_reviewed_at, \
@@ -3135,7 +3363,7 @@ impl Tx<'_> {
                 artifact.source_extracted_text_in_ledger_event,
             ],
         )?;
-        let mut stmt = self.raw().prepare(
+        let mut stmt = self.raw()?.prepare(
             "SELECT artifact_id, import_id, draft_id, dossier_id, source_text_digest, \
              source_page_spans_json, source_review_status, source_reviewed_at, \
              source_reviewed_by, target_act_id, target_act_state, mutable_draft_act_created, \
@@ -3182,13 +3410,13 @@ impl Tx<'_> {
         draft_id: &str,
         dossier_id: &str,
     ) -> Result<Vec<StoredPaperBookOcrConversionExecutionArtifact>, StoreError> {
-        self.raw().execute(
+        self.raw()?.execute(
             "UPDATE paper_book_ocr_conversion_execution_artifacts \
              SET dossier_id = ?3 \
              WHERE import_id = ?1 AND draft_id = ?2 AND (dossier_id IS NULL OR dossier_id = ?3)",
             params![import_id, draft_id, dossier_id],
         )?;
-        let mut stmt = self.raw().prepare(
+        let mut stmt = self.raw()?.prepare(
             "SELECT artifact_id, import_id, draft_id, dossier_id, source_text_digest, \
              source_page_spans_json, source_review_status, source_reviewed_at, \
              source_reviewed_by, target_act_id, target_act_state, mutable_draft_act_created, \
@@ -3225,7 +3453,7 @@ impl Tx<'_> {
             t.format(&Rfc3339)
                 .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned())
         });
-        let changed = self.raw().execute(
+        let changed = self.raw()?.execute(
             "UPDATE paper_book_ocr_drafts SET review_status = ?1, reviewed_at = ?2, \
              reviewed_by = ?3, review_note = ?4, superseded_by = ?5 WHERE draft_id = ?6",
             params![
@@ -3256,7 +3484,7 @@ impl Tx<'_> {
             t.format(&Rfc3339)
                 .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned())
         });
-        self.raw().execute(
+        self.raw()?.execute(
             "INSERT OR REPLACE INTO follow_ups \
              (id, act_id, agenda_number, deliberation_index, title, detail, due_date, assignee, \
               assignee_display, status, created_at, created_by, completed_at, completed_by) \
@@ -3295,7 +3523,7 @@ impl Tx<'_> {
             .signed_at
             .format(&Rfc3339)
             .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned());
-        self.raw().execute(
+        self.raw()?.execute(
             "INSERT OR REPLACE INTO signed_documents \
              (act_id, document_id, signed_pdf_digest, signature_family, evidentiary_level, \
               trusted_list_status, signer_cert_subject, signing_time, signed_at, signer_cert_der, \
@@ -3337,7 +3565,7 @@ impl Tx<'_> {
             .expires_at
             .format(&Rfc3339)
             .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned());
-        self.raw().execute(
+        self.raw()?.execute(
             "INSERT OR REPLACE INTO pending_cmd_sessions \
              (session_id, act_id, actor, status, masked_phone, doc_name, session_json, \
               prepared_json, created_at, expires_at, signer_capacity_evidence_json) \
@@ -3362,7 +3590,7 @@ impl Tx<'_> {
     /// Delete a pending CMD signing session by id (single-use: consumed on a successful confirm, or
     /// cancelled/expired). A no-op if it is already gone.
     pub fn delete_pending_cmd_session(&self, session_id: &str) -> Result<(), StoreError> {
-        self.raw().execute(
+        self.raw()?.execute(
             "DELETE FROM pending_cmd_sessions WHERE session_id = ?1",
             params![session_id],
         )?;
