@@ -46,6 +46,10 @@ use crate::AppState;
 use crate::actor::CurrentActor;
 use crate::authz::require_permission;
 use crate::error::ApiError;
+use crate::secretstore_persist::{
+    CredentialMode, DecryptedCredentialEntry, FIELD_APPLICATION_ID, FIELD_SECRET,
+    ProviderCredentialError, ProviderCredentialStore,
+};
 
 /// Envelope cap for the SCAP sign endpoint (PKCS#12 + content).
 pub(crate) const SCAP_SIGN_MAX_BYTES: usize = 8 * 1024 * 1024;
@@ -179,10 +183,13 @@ impl ScapClientKind {
 
 /// Build the SCAP client for the requested environment.
 ///
-/// Preprod → the offline [`MockScapTransport`] (no credentials, always declared-only). Prod → the
-/// real [`HttpScapTransport`], which **fails closed** without the deployment-supplied AMA
-/// credentials (`CHANCELA_SCAP_APPLICATION_ID` + `CHANCELA_SCAP_SECRET`).
-fn build_scap_client(environment: EnvironmentRequest) -> Result<ScapClientKind, ApiError> {
+/// Preprod → the offline [`MockScapTransport`] (no stored credential read, always declared-only).
+/// Prod → the real [`HttpScapTransport`], resolving stored SCAP credentials first and using
+/// `CHANCELA_SCAP_APPLICATION_ID` + `CHANCELA_SCAP_SECRET` only when no SCAP record exists.
+fn build_scap_client(
+    environment: EnvironmentRequest,
+    provider_credentials: &ProviderCredentialStore,
+) -> Result<ScapClientKind, ApiError> {
     match environment {
         EnvironmentRequest::Preprod => {
             let client = ScapClient::new(AmaScapConfig::preprod(), MockScapTransport::default())
@@ -190,29 +197,76 @@ fn build_scap_client(environment: EnvironmentRequest) -> Result<ScapClientKind, 
             Ok(ScapClientKind::Mock(client))
         }
         EnvironmentRequest::Prod => {
-            let credentials = match (
-                env_nonempty("CHANCELA_SCAP_APPLICATION_ID"),
-                env_nonempty("CHANCELA_SCAP_SECRET"),
-            ) {
-                (Some(app), Some(secret)) => Some(ScapCredentials::new(app, secret)),
-                _ => None,
-            };
-            // A prod config without credentials fails closed at `ScapClient::new`/
-            // `HttpScapTransport::new` (both call `validate*`). Build the config explicitly so the
-            // rejection happens here rather than depending on process-env presence.
-            let config = match credentials {
-                Some(creds) => AmaScapConfig::prod(creds),
-                None => AmaScapConfig {
-                    environment: chancela_scap::ScapEnvironment::Prod,
-                    base_url: chancela_scap::config::PROD_BASE_URL.to_owned(),
-                    credentials: None,
-                    provider_filter: None,
-                },
-            };
+            let config = resolve_prod_scap_config(provider_credentials)?;
             let transport = HttpScapTransport::new(config.clone()).map_err(map_scap_error)?;
             let client = ScapClient::new(config, transport).map_err(map_scap_error)?;
             Ok(ScapClientKind::Http(client))
         }
+    }
+}
+
+fn resolve_prod_scap_config(
+    provider_credentials: &ProviderCredentialStore,
+) -> Result<AmaScapConfig, ApiError> {
+    let entries = provider_credentials
+        .read_entries_runtime(CredentialMode::Scap, "")
+        .map_err(|err| provider_credential_runtime_err(CredentialMode::Scap, "", err))?;
+
+    if entries.is_empty() {
+        return Ok(scap_prod_config_from_env());
+    }
+
+    let Some(entry) = entries.into_iter().find(|entry| entry.enabled) else {
+        return Err(stored_credentials_disabled_err(CredentialMode::Scap, ""));
+    };
+    scap_prod_config_from_stored(entry)
+}
+
+fn scap_prod_config_from_stored(
+    mut entry: DecryptedCredentialEntry,
+) -> Result<AmaScapConfig, ApiError> {
+    let application_id = nonblank_runtime_secret(entry.fields.remove(FIELD_APPLICATION_ID));
+    let secret = nonblank_runtime_secret(entry.fields.remove(FIELD_SECRET));
+    let mut missing = Vec::new();
+    if application_id.is_none() {
+        missing.push(FIELD_APPLICATION_ID);
+    }
+    if secret.is_none() {
+        missing.push(FIELD_SECRET);
+    }
+    if !missing.is_empty() {
+        return Err(stored_credentials_incomplete_err(
+            CredentialMode::Scap,
+            "",
+            &missing,
+        ));
+    }
+    let application_id = application_id.expect("checked above");
+    let secret = secret.expect("checked above");
+    Ok(scap_prod_config(Some(ScapCredentials::new(
+        application_id.as_str().to_owned(),
+        secret.as_str().to_owned(),
+    ))))
+}
+
+fn scap_prod_config_from_env() -> AmaScapConfig {
+    let credentials = match (
+        env_nonempty("CHANCELA_SCAP_APPLICATION_ID"),
+        env_nonempty("CHANCELA_SCAP_SECRET"),
+    ) {
+        (Some(app), Some(secret)) => Some(ScapCredentials::new(app, secret)),
+        _ => None,
+    };
+    scap_prod_config(credentials)
+}
+
+fn scap_prod_config(credentials: Option<ScapCredentials>) -> AmaScapConfig {
+    AmaScapConfig {
+        environment: chancela_scap::ScapEnvironment::Prod,
+        base_url: env_nonempty("CHANCELA_SCAP_BASE_URL")
+            .unwrap_or_else(|| chancela_scap::config::PROD_BASE_URL.to_owned()),
+        credentials,
+        provider_filter: None,
     }
 }
 
@@ -346,8 +400,9 @@ pub async fn list_providers(
 ) -> Result<Json<ScapProvidersResponse>, ApiError> {
     require_permission(&state, &actor, Permission::ActRead, Scope::Global).await?;
 
+    let provider_credentials = state.provider_credentials.clone();
     let providers = tokio::task::spawn_blocking(move || {
-        let client = build_scap_client(req.environment)?;
+        let client = build_scap_client(req.environment, &provider_credentials)?;
         let providers = client.list_providers().map_err(map_scap_error)?;
         Ok::<_, ApiError>((
             client.environment_label(),
@@ -381,8 +436,9 @@ pub async fn fetch_attributes(
     }
     let citizen = citizen_ref(&citizen_id, req.full_name.as_deref());
 
+    let provider_credentials = state.provider_credentials.clone();
     let result = tokio::task::spawn_blocking(move || {
-        let client = build_scap_client(req.environment)?;
+        let client = build_scap_client(req.environment, &provider_credentials)?;
         let attributes = client.fetch_attributes(&citizen).map_err(map_scap_error)?;
         Ok::<_, ApiError>((
             client.environment_label(),
@@ -481,9 +537,10 @@ pub async fn sign_with_attribute(
         .replace_nanosecond(0)
         .unwrap_or_else(|_| OffsetDateTime::now_utc());
     let environment = req.environment;
+    let provider_credentials = state.provider_credentials.clone();
 
     let outcome = tokio::task::spawn_blocking(move || {
-        let client = build_scap_client(environment)?;
+        let client = build_scap_client(environment, &provider_credentials)?;
 
         // Select the attribute SCAP reports for this citizen (a claim can only be attached if SCAP
         // reports it — an unreported attribute is a 422, never a silent success).
@@ -632,6 +689,68 @@ fn map_scap_error(err: ScapError) -> ApiError {
         }
         ScapError::Transport(msg) => ApiError::Upstream(format!("transporte SCAP falhou: {msg}")),
         _ => ApiError::Internal(format!("SCAP error: {err}")),
+    }
+}
+
+fn nonblank_runtime_secret(value: Option<Zeroizing<String>>) -> Option<Zeroizing<String>> {
+    value.filter(|v| !v.trim().is_empty())
+}
+
+fn stored_credentials_incomplete_err(
+    mode: CredentialMode,
+    provider_id: &str,
+    fields: &[&'static str],
+) -> ApiError {
+    let fields = if fields.is_empty() {
+        "none".to_owned()
+    } else {
+        fields.join(", ")
+    };
+    ApiError::Unprocessable(format!(
+        "stored provider credentials for mode '{}' provider '{}' are incomplete: missing fields {fields}",
+        mode.as_str(),
+        provider_label(provider_id)
+    ))
+}
+
+fn stored_credentials_disabled_err(mode: CredentialMode, provider_id: &str) -> ApiError {
+    ApiError::Unprocessable(format!(
+        "stored provider credentials for mode '{}' provider '{}' are disabled",
+        mode.as_str(),
+        provider_label(provider_id)
+    ))
+}
+
+fn provider_credential_runtime_err(
+    mode: CredentialMode,
+    provider_id: &str,
+    err: ProviderCredentialError,
+) -> ApiError {
+    let reason = match err {
+        ProviderCredentialError::RuntimeStrictModeUnprotected { .. } => {
+            "strict credential storage requires confidential protection"
+        }
+        ProviderCredentialError::CorruptSidecar(_) => "credential sidecar failed closed",
+        ProviderCredentialError::Secret(_) => {
+            "credential key unavailable or field authentication failed"
+        }
+        ProviderCredentialError::Poisoned => "credential store unavailable",
+        ProviderCredentialError::UnknownField { .. } | ProviderCredentialError::Io { .. } => {
+            "credential store operation failed"
+        }
+    };
+    ApiError::Unprocessable(format!(
+        "stored provider credentials for mode '{}' provider '{}' cannot be used: {reason}",
+        mode.as_str(),
+        provider_label(provider_id)
+    ))
+}
+
+fn provider_label(provider_id: &str) -> &str {
+    if provider_id.is_empty() {
+        "<default>"
+    } else {
+        provider_id
     }
 }
 
