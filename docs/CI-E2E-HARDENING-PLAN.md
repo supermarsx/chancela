@@ -1,7 +1,7 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `a0140e4`,
+and implementation snapshot `c83f278`,
 including coverage notes for the bounded PAdES DSS validation-time, PDF/UA v10
 scoped table-header evidence, retention due-candidate explicit evidence states,
 bounded archive/no-action evidence UI, duplicate-review guard/status surfacing, and
@@ -1684,7 +1684,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   --workspace apps/web -- e2e/session.spec.ts e2e/first-launch-onboarding.spec.ts`.
   Treat the static/unit/focused markers as the pinned slice, not broad
   Playwright-browser-suite or browser-matrix proof; the browser suite is not exhaustive.
-- Current checkpoint metadata/static checks through `a0140e4`
+- Current checkpoint metadata/static checks through `c83f278`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
@@ -1745,6 +1745,8 @@ settingsDefaults.test.ts contracts.test.ts`.
   post-act `Certidao`/`Extrato` sealed-provenance semantic lint markers,
   Postgres store runtime source/test markers, SQLite-default feature/config-gated
   backend selector markers, and no-production-readiness caveats,
+  delegation legal-basis requirement, trimmed storage, legacy missing-basis
+  display, and no legal/HR/SCAP/access-policy certification caveats,
   plus metadata-only
   paper-book OCR conversion-dossier route/store/redaction/idempotency, reviewed
   conversion execution artifact store/API/contract markers, and BookDetail UI

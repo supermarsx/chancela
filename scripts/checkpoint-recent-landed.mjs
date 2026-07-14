@@ -9312,7 +9312,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `a0140e4`",
+    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `c83f278`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
@@ -9932,7 +9932,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `a0140e4`",
+    "Current checkpoint metadata/static checks through `c83f278`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -10387,7 +10387,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `a0140e4955cb7f7826b4015557bf8f36ff8ccfed`",
+    "implementation snapshot `c83f2787c46c28427ff9037d8b61006d1f454372`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -10481,6 +10481,16 @@ function assertCheckpointMap() {
     "spec coverage Postgres no-production-readiness caveat marker",
   );
   assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Current `c83f278` keeps Data/Roles/UX/CI **PARTIAL**",
+    "spec coverage delegation legal-basis checkpoint marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "it does not verify legal authority,\n  HR authority, SCAP/representative capacity, tenant access-policy\n  certification",
+    "spec coverage delegation legal-basis no-overclaim marker",
+  );
+  assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
     "Current working-tree Postgres store runtime checks and backend-selection\n  markers",
     "CI/E2E hardening plan Postgres store/backend-selection checks marker",
@@ -10494,6 +10504,11 @@ function assertCheckpointMap() {
     "docs/CI-E2E-HARDENING-PLAN.md",
     "Postgres store runtime source/test markers, SQLite-default feature/config-gated\n  backend selector markers",
     "CI/E2E hardening plan database backend selector checkpoint marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "delegation legal-basis requirement, trimmed storage, legacy missing-basis\n  display, and no legal/HR/SCAP/access-policy certification caveats",
+    "CI/E2E hardening plan delegation legal-basis checkpoint marker",
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",

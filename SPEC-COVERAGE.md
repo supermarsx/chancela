@@ -1,10 +1,10 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-14 from current implementation snapshot `a0140e4955cb7f7826b4015557bf8f36ff8ccfed`,
+*Updated 2026-07-14 from current implementation snapshot `c83f2787c46c28427ff9037d8b61006d1f454372`,
 with committed evidence refreshes for the recently landed Signatures & Trust
 provider-credential, stored runtime credential resolution, stored PKCS#12,
 remote batch-initiation surfaces, and Docker/Compose runtime-hardening
-checkpoint, while preserving the prior committed
+checkpoint, plus delegation legal-basis enforcement, while preserving the prior committed
 `7fcf5ef5f1c2fbd5b9eb26d6aac5c1240144a365` manual-signature
 original-reference sealing path and web accessibility/focus guard evidence and the prior
 `869e02f897f54730df86db739193f86c372e0e19` coverage context,
@@ -1781,7 +1781,7 @@ Implementation checkpoints covered here:
   imported-by/reviewer details, raw bytes, OCR text, or sensitive metadata, and
   they do not run OCR, canonical conversion, PDF/A/PDF/UA generation,
   signed-import validation, legal acceptance, or review mutation.
-- Current `a0140e4` keeps Architecture/CI **PARTIAL**: this checkpoint snapshot
+- Prior `a0140e4` keeps Architecture/CI **PARTIAL**: this checkpoint snapshot
   is anchored after the Docker Postgres profile review fixes. The Dockerfile
   default remains SQLCipher-capable through `ARG CARGO_FEATURES`, the Postgres
   and Redis features are opt-in through the `postgres` compose profile, real
@@ -1792,6 +1792,15 @@ Implementation checkpoints covered here:
   validation and documentation alignment only, not production Postgres
   readiness, HA behavior, live database validation, migration completeness,
   performance proof, or broader architecture completion.
+- Current `c83f278` keeps Data/Roles/UX/CI **PARTIAL**: new delegation grants
+  now require bounded non-empty operator-supplied `legal_basis` evidence, trim
+  the submitted value before storage, and preserve legacy delegation records
+  without `legal_basis` as readable missing-basis records. API tests pin
+  missing/blank/overlong refusal and persistence round-trip behavior, while the
+  RBAC UI submits the trimmed field and marks legacy missing-basis rows. This
+  is local operator-supplied evidence only: it does not verify legal authority,
+  HR authority, SCAP/representative capacity, tenant access-policy
+  certification, legal sufficiency, or full access-policy completion.
 - Current working-tree workflow reminder policy keeps Workflows/UX/CI
   **PARTIAL**: settings now include `workflow.reminders` with `enabled`,
   `dashboard_limit`, `due_soon_days`, `attendance_lookahead_days`, and source
