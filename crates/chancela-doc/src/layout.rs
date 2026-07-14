@@ -60,6 +60,13 @@ pub struct MarkedContentRef {
     pub mcid: i64,
 }
 
+/// Table header scope emitted for the writer's bounded table profile.
+#[derive(Clone, Copy)]
+pub enum TableHeaderScope {
+    Row,
+    Column,
+}
+
 /// Bounded roles emitted by the current deterministic writer.
 #[derive(Clone, Copy)]
 pub enum StructureRole {
@@ -70,7 +77,7 @@ pub enum StructureRole {
     KeyValueTable,
     VoteTable,
     TableRow,
-    TableHeaderCell,
+    TableHeaderCell(TableHeaderScope),
     TableDataCell,
     SignatureBlock,
 }
@@ -353,7 +360,7 @@ impl<'f> Layouter<'f> {
     fn draw_kv_row(&mut self, k: &str, v: &str, x0: f32, val_x: f32, val_x1: f32) {
         self.tagged_element(StructureRole::TableRow, |l| {
             let baseline = l.take_line(BODY);
-            l.tagged_element(StructureRole::TableHeaderCell, |l| {
+            l.tagged_element(StructureRole::TableHeaderCell(TableHeaderScope::Row), |l| {
                 l.frag(x0, baseline, BODY, true, false, k);
             });
             l.tagged_element(StructureRole::TableDataCell, |l| {
@@ -402,18 +409,30 @@ impl<'f> Layouter<'f> {
             // Header row.
             let base = l.take_line(BODY);
             l.tagged_element(StructureRole::TableRow, |l| {
-                l.tagged_element(StructureRole::TableHeaderCell, |l| {
-                    l.frag(x0, base, BODY, true, false, "Deliberação");
-                });
-                l.tagged_element(StructureRole::TableHeaderCell, |l| {
-                    l.right(c1_r, base, BODY, true, "A favor");
-                });
-                l.tagged_element(StructureRole::TableHeaderCell, |l| {
-                    l.right(c2_r, base, BODY, true, "Contra");
-                });
-                l.tagged_element(StructureRole::TableHeaderCell, |l| {
-                    l.right(c3_r, base, BODY, true, "Abstenção");
-                });
+                l.tagged_element(
+                    StructureRole::TableHeaderCell(TableHeaderScope::Column),
+                    |l| {
+                        l.frag(x0, base, BODY, true, false, "Deliberação");
+                    },
+                );
+                l.tagged_element(
+                    StructureRole::TableHeaderCell(TableHeaderScope::Column),
+                    |l| {
+                        l.right(c1_r, base, BODY, true, "A favor");
+                    },
+                );
+                l.tagged_element(
+                    StructureRole::TableHeaderCell(TableHeaderScope::Column),
+                    |l| {
+                        l.right(c2_r, base, BODY, true, "Contra");
+                    },
+                );
+                l.tagged_element(
+                    StructureRole::TableHeaderCell(TableHeaderScope::Column),
+                    |l| {
+                        l.right(c3_r, base, BODY, true, "Abstenção");
+                    },
+                );
             });
             l.rule_at(x0, x1, base - 3.0, 0.6);
             l.gap(3.0);
@@ -421,7 +440,7 @@ impl<'f> Layouter<'f> {
                 // Each row is atomic; `take_line` page-breaks if it will not fit.
                 let base = l.take_line(BODY);
                 l.tagged_element(StructureRole::TableRow, |l| {
-                    l.tagged_element(StructureRole::TableDataCell, |l| {
+                    l.tagged_element(StructureRole::TableHeaderCell(TableHeaderScope::Row), |l| {
                         // wrap-free label (truncation avoided by column width being generous)
                         l.frag_clip(x0, base, BODY, &r.label, label_x1 - x0);
                     });
@@ -536,7 +555,7 @@ fn marked_content_tag(role: StructureRole) -> &'static str {
         StructureRole::KeyValueTable => "Table",
         StructureRole::VoteTable => "Table",
         StructureRole::TableRow => "TR",
-        StructureRole::TableHeaderCell => "TH",
+        StructureRole::TableHeaderCell(_) => "TH",
         StructureRole::TableDataCell => "TD",
         StructureRole::SignatureBlock => "Div",
     }

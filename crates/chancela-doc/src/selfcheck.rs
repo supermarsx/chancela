@@ -507,7 +507,8 @@ enum LocalTopologyRole {
     TopLevelBlock,
     Table,
     TableRow,
-    TableCell,
+    TableHeaderCell,
+    TableDataCell,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -638,9 +639,10 @@ fn verify_local_topology_element(
                     "tagged table topology /TR has no /TH or /TD children".into(),
                 ));
             }
+            let mut header_cell_count = 0usize;
             for kid in kids {
                 let child_ref = local_topology_child_ref(kid, role_name, "/TH or /TD", fail)?;
-                verify_local_topology_element(
+                let child_role = verify_local_topology_element(
                     doc,
                     child_ref,
                     elem_ref,
@@ -648,9 +650,29 @@ fn verify_local_topology_element(
                     seen,
                     fail,
                 )?;
+                if child_role == LocalTopologyRole::TableHeaderCell {
+                    header_cell_count += 1;
+                }
+            }
+            if header_cell_count == 0 {
+                return Err(fail(
+                    "tagged table topology /TR has no scoped /TH header cell".into(),
+                ));
             }
         }
-        LocalTopologyRole::TopLevelBlock | LocalTopologyRole::TableCell => {
+        LocalTopologyRole::TopLevelBlock => {
+            if kids.is_empty() {
+                return Err(fail(format!(
+                    "tagged table topology leaf /{} has no marked-content references",
+                    String::from_utf8_lossy(role_name)
+                )));
+            }
+            for kid in kids {
+                verify_local_leaf_kid(kid, role_name, fail)?;
+            }
+        }
+        LocalTopologyRole::TableHeaderCell | LocalTopologyRole::TableDataCell => {
+            verify_table_cell_attributes(elem, role_name, fail)?;
             if kids.is_empty() {
                 return Err(fail(format!(
                     "tagged table topology leaf /{} has no marked-content references",
@@ -679,7 +701,8 @@ fn local_topology_role(role: &[u8]) -> Option<LocalTopologyRole> {
         | b"ChancelaSignatureBlock" => Some(LocalTopologyRole::TopLevelBlock),
         b"ChancelaKeyValue" | b"ChancelaVoteTable" => Some(LocalTopologyRole::Table),
         b"TR" => Some(LocalTopologyRole::TableRow),
-        b"TH" | b"TD" => Some(LocalTopologyRole::TableCell),
+        b"TH" => Some(LocalTopologyRole::TableHeaderCell),
+        b"TD" => Some(LocalTopologyRole::TableDataCell),
         _ => None,
     }
 }
@@ -692,7 +715,10 @@ fn local_topology_parent_allows(parent: LocalTopologyParent, child: LocalTopolog
             LocalTopologyRole::TopLevelBlock | LocalTopologyRole::Table
         ),
         LocalTopologyParent::Table => child == LocalTopologyRole::TableRow,
-        LocalTopologyParent::TableRow => child == LocalTopologyRole::TableCell,
+        LocalTopologyParent::TableRow => matches!(
+            child,
+            LocalTopologyRole::TableHeaderCell | LocalTopologyRole::TableDataCell
+        ),
     }
 }
 
@@ -750,6 +776,40 @@ fn verify_local_leaf_kid(
             "tagged table topology leaf /{} child is not an /MCR dictionary",
             String::from_utf8_lossy(role_name)
         )));
+    }
+    Ok(())
+}
+
+fn verify_table_cell_attributes(
+    elem: &Dictionary,
+    role_name: &[u8],
+    fail: &dyn Fn(String) -> DocError,
+) -> Result<(), DocError> {
+    if role_name == b"TH" {
+        let attrs = elem.get(b"A").and_then(Object::as_dict).map_err(|_| {
+            fail("tagged table topology /TH has no table header scope attributes".into())
+        })?;
+        if attrs.get(b"O").and_then(Object::as_name).ok() != Some(b"Table") {
+            return Err(fail(
+                "tagged table topology /TH attributes are not owned by /Table".into(),
+            ));
+        }
+        let scope = attrs
+            .get(b"Scope")
+            .and_then(Object::as_name)
+            .map_err(|_| fail("tagged table topology /TH has no /Scope attribute".into()))?;
+        if !matches!(scope, b"Row" | b"Column") {
+            return Err(fail(format!(
+                "tagged table topology /TH has unsupported /Scope /{}",
+                String::from_utf8_lossy(scope)
+            )));
+        }
+    } else if let Ok(attrs) = elem.get(b"A").and_then(Object::as_dict) {
+        if attrs.has(b"Scope") {
+            return Err(fail(
+                "tagged table topology /TD carries a header /Scope attribute".into(),
+            ));
+        }
     }
     Ok(())
 }

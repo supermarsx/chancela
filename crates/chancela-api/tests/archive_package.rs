@@ -1689,7 +1689,7 @@ async fn archive_package_rejects_incomplete_signature_evidence_without_mutating_
 }
 
 #[tokio::test]
-async fn archive_package_reports_unsigned_documents_without_placeholder() {
+async fn archive_package_reports_unsigned_documents_without_placeholder_pdf_accessibility() {
     let dir = TempDir::new();
     let state = AppState::with_data_dir(&dir.0);
     let token = bootstrap(&state).await;
@@ -1945,10 +1945,18 @@ async fn archive_package_reports_unsigned_documents_without_placeholder() {
     assert_eq!(accessibility["pdf_ua_claimed"], false);
     assert_eq!(accessibility["dglab_certification_claimed"], false);
     assert_eq!(accessibility["legal_validity_claimed"], false);
-    assert_eq!(accessibility["report_version"], json!(9));
+    assert_eq!(accessibility["report_version"], json!(10));
     assert_eq!(
         accessibility["accessibility_report_json"]["version"],
-        json!(9)
+        json!(10)
+    );
+    let table_semantics = &accessibility["accessibility_report_json"]["tagged_structure"]["tables"];
+    assert_eq!(table_semantics["header_cells_have_scope"], true);
+    assert_eq!(table_semantics["table_rows_missing_header_count"], json!(0));
+    assert_eq!(table_semantics["row_header_cells_have_scope_row"], true);
+    assert_eq!(
+        table_semantics["column_header_cells_have_scope_column"],
+        true
     );
     assert_eq!(
         accessibility["accessibility_report_json"]["pdf_ua_claimed"],

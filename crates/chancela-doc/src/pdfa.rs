@@ -284,6 +284,12 @@ fn emit_structure_tree(
             "K",
             Object::Array(structure_element_kids(element, &element_ids, page_ids)),
         );
+        if let Some(scope) = table_header_scope(element.role) {
+            let mut attrs = Dictionary::new();
+            attrs.set("O", name("Table"));
+            attrs.set("Scope", name(table_header_scope_name(scope)));
+            elem.set("A", Object::Dictionary(attrs));
+        }
         debug_assert_eq!(element_ids[element_index], element_id);
         pdf.set_object(element_id, Object::Dictionary(elem));
     }
@@ -395,9 +401,23 @@ fn structure_role_name(role: layout::StructureRole) -> &'static str {
         layout::StructureRole::KeyValueTable => "ChancelaKeyValue",
         layout::StructureRole::VoteTable => "ChancelaVoteTable",
         layout::StructureRole::TableRow => "TR",
-        layout::StructureRole::TableHeaderCell => "TH",
+        layout::StructureRole::TableHeaderCell(_) => "TH",
         layout::StructureRole::TableDataCell => "TD",
         layout::StructureRole::SignatureBlock => "ChancelaSignatureBlock",
+    }
+}
+
+fn table_header_scope(role: layout::StructureRole) -> Option<layout::TableHeaderScope> {
+    match role {
+        layout::StructureRole::TableHeaderCell(scope) => Some(scope),
+        _ => None,
+    }
+}
+
+fn table_header_scope_name(scope: layout::TableHeaderScope) -> &'static str {
+    match scope {
+        layout::TableHeaderScope::Row => "Row",
+        layout::TableHeaderScope::Column => "Column",
     }
 }
 

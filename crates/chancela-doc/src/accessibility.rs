@@ -255,12 +255,32 @@ pub struct TableSemanticsReport {
     pub key_value_table_count: usize,
     /// Count of vote table blocks in the model.
     pub vote_table_count: usize,
+    /// Header cells that scope across one row (key/value keys plus vote-row labels).
+    pub row_header_cell_count: usize,
+    /// Header cells that scope down one column (vote-table header rows).
+    pub column_header_cell_count: usize,
+    /// Data cells under the writer's bounded table profile.
+    pub data_cell_count: usize,
+    /// Table rows that would not emit a row/header cell in the writer's bounded profile.
+    pub table_rows_missing_header_count: usize,
     /// Key/value tables are emitted with standard table roles.
     pub key_value_tables_have_table_semantics: bool,
     /// Vote tables are emitted with standard table roles.
     pub vote_tables_have_table_semantics: bool,
+    /// Key/value row labels are explicitly tagged as row headers.
+    pub key_value_row_headers_tagged: bool,
     /// Vote table header cells are explicitly tagged as headers.
     pub vote_table_headers_tagged: bool,
+    /// Vote table header-row cells are explicitly tagged as column headers.
+    pub vote_table_column_headers_tagged: bool,
+    /// Vote table body labels are explicitly tagged as row headers.
+    pub vote_table_row_headers_tagged: bool,
+    /// Row-header cells carry table-owned `/Scope /Row` attributes.
+    pub row_header_cells_have_scope_row: bool,
+    /// Column-header cells carry table-owned `/Scope /Column` attributes.
+    pub column_header_cells_have_scope_column: bool,
+    /// Every emitted header cell carries one of the writer's supported scopes.
+    pub header_cells_have_scope: bool,
     /// All table-like blocks have the local semantics this report tracks.
     pub complete: bool,
 }
@@ -440,7 +460,7 @@ impl AccessibilityReport {
             .join(",");
 
         format!(
-            "{{\"version\":9,\
+            "{{\"version\":10,\
 \"pdf_ua_claimed\":{pdf_ua_claimed},\
 \"metadata\":{{\
 \"title\":{{\"value\":{title},\"source_present\":{title_present},\"fallback_used\":{title_fallback}}},\
@@ -461,7 +481,7 @@ impl AccessibilityReport {
 \"tagged_structure\":{{\
 \"heading_hierarchy\":{{\"document_title_tagged_as_h1\":{title_h1},\"heading_count\":{heading_count},\"max_observed_level\":{max_heading},\"no_skipped_levels\":{no_skipped_headings},\"unsupported_levels\":[{unsupported_headings}]}},\
 \"role_map\":{{\"present\":{role_map_present},\"required_custom_roles\":[{required_roles}],\"missing_custom_roles\":[{missing_roles}],\"standard_targets_only\":{standard_role_targets},\"mapped_roles\":[{mapped_roles}],\"complete\":{role_map_complete}}},\
-\"tables\":{{\"key_value_table_count\":{kv_table_count},\"vote_table_count\":{vote_table_count},\"key_value_tables_have_table_semantics\":{kv_tables_semantic},\"vote_tables_have_table_semantics\":{vote_tables_semantic},\"vote_table_headers_tagged\":{vote_headers_tagged},\"complete\":{table_semantics_complete}}},\
+\"tables\":{{\"key_value_table_count\":{kv_table_count},\"vote_table_count\":{vote_table_count},\"row_header_cell_count\":{row_header_count},\"column_header_cell_count\":{column_header_count},\"data_cell_count\":{table_data_count},\"table_rows_missing_header_count\":{missing_header_rows},\"key_value_tables_have_table_semantics\":{kv_tables_semantic},\"vote_tables_have_table_semantics\":{vote_tables_semantic},\"key_value_row_headers_tagged\":{kv_row_headers_tagged},\"vote_table_headers_tagged\":{vote_headers_tagged},\"vote_table_column_headers_tagged\":{vote_column_headers_tagged},\"vote_table_row_headers_tagged\":{vote_row_headers_tagged},\"row_header_cells_have_scope_row\":{row_headers_scope_row},\"column_header_cells_have_scope_column\":{column_headers_scope_column},\"header_cells_have_scope\":{headers_have_scope},\"complete\":{table_semantics_complete}}},\
 \"structure_tree\":{{\"catalog_mark_info_marked\":{catalog_mark_info_marked},\"catalog_struct_tree_root\":{catalog_struct_tree_root},\"struct_tree_root_type\":{struct_tree_root_type},\"document_element_role\":{document_element_role},\"parent_tree_present\":{parent_tree_present},\"parent_tree_next_key_tracks_pages\":{parent_tree_next_key_tracks_pages},\"pages_have_struct_parents\":{pages_have_struct_parents},\"page_struct_parents_are_page_indexes\":{page_struct_parents_are_page_indexes},\"pages_use_structure_tab_order\":{structure_tree_pages_use_tab_order},\"complete_for_local_profile\":{structure_tree_complete}}},\
 \"structure_depth\":{{\"bounded_local_profile\":{bounded_local_profile},\"max_depth\":{max_depth},\"top_level_semantic_block_count\":{top_level_count},\"table_count\":{depth_table_count},\"table_row_count\":{table_row_count},\"table_cell_count\":{table_cell_count},\"document_root_children_are_top_level_semantic_blocks\":{root_children_top_level},\"tables_contain_rows_only\":{tables_rows_only},\"rows_contain_header_or_data_cells_only\":{rows_cells_only},\"row_and_cell_roles_are_table_scoped\":{row_cell_scoped},\"complete_for_local_profile\":{depth_complete}}},\
 \"marked_content\":{{\"structure_element_count\":{marked_structure_count},\"marked_leaf_element_count\":{marked_leaf_count},\"table_cell_marked_leaf_count\":{marked_table_cell_count},\"artifact_scope_count\":{marked_artifact_scope_count},\"semantic_leaves_have_marked_content\":{semantic_leaves_marked},\"parent_tree_maps_page_mcids\":{parent_tree_maps_mcids},\"artifacts_are_marked_without_mcid\":{artifacts_without_mcid},\"complete_for_local_profile\":{marked_complete}}},\
@@ -503,9 +523,20 @@ impl AccessibilityReport {
             role_map_complete = self.role_map.complete,
             kv_table_count = self.table_semantics.key_value_table_count,
             vote_table_count = self.table_semantics.vote_table_count,
+            row_header_count = self.table_semantics.row_header_cell_count,
+            column_header_count = self.table_semantics.column_header_cell_count,
+            table_data_count = self.table_semantics.data_cell_count,
+            missing_header_rows = self.table_semantics.table_rows_missing_header_count,
             kv_tables_semantic = self.table_semantics.key_value_tables_have_table_semantics,
             vote_tables_semantic = self.table_semantics.vote_tables_have_table_semantics,
+            kv_row_headers_tagged = self.table_semantics.key_value_row_headers_tagged,
             vote_headers_tagged = self.table_semantics.vote_table_headers_tagged,
+            vote_column_headers_tagged = self.table_semantics.vote_table_column_headers_tagged,
+            vote_row_headers_tagged = self.table_semantics.vote_table_row_headers_tagged,
+            row_headers_scope_row = self.table_semantics.row_header_cells_have_scope_row,
+            column_headers_scope_column =
+                self.table_semantics.column_header_cells_have_scope_column,
+            headers_have_scope = self.table_semantics.header_cells_have_scope,
             table_semantics_complete = self.table_semantics.complete,
             catalog_mark_info_marked = self.structure_tree.catalog_mark_info_marked,
             catalog_struct_tree_root = self.structure_tree.catalog_struct_tree_root,
@@ -594,13 +625,15 @@ pub fn report<'a>(input: impl Into<AccessibilityInput<'a>>) -> AccessibilityRepo
     } else if !role_map.complete {
         blockers.push(PdfUaBlocker::RoleMapIncomplete);
     }
-    if !table_semantics.key_value_tables_have_table_semantics {
+    if !table_semantics.key_value_tables_have_table_semantics
+        || !table_semantics.key_value_row_headers_tagged
+    {
         blockers.push(PdfUaBlocker::KeyValueTablesNotTaggedAsTables);
     }
     if !table_semantics.vote_tables_have_table_semantics {
         blockers.push(PdfUaBlocker::VoteTablesNotTaggedAsTables);
     }
-    if !table_semantics.vote_table_headers_tagged {
+    if !table_semantics.vote_table_headers_tagged || !table_semantics.header_cells_have_scope {
         blockers.push(PdfUaBlocker::VoteTableHeadersNotTagged);
     }
     if !artifact_marking.layout_artifacts_marked {
@@ -864,19 +897,91 @@ fn table_semantics(doc: &DocumentModel) -> TableSemanticsReport {
         .iter()
         .filter(|block| matches!(block, Block::VoteTable { .. }))
         .count();
+    let key_value_row_header_cell_count = doc
+        .blocks
+        .iter()
+        .map(|block| match block {
+            Block::KeyValue { rows } => rows.iter().filter(|row| has_words(&row.key)).count(),
+            _ => 0,
+        })
+        .sum::<usize>();
+    let key_value_data_cell_count = doc
+        .blocks
+        .iter()
+        .map(|block| match block {
+            Block::KeyValue { rows } => rows.iter().filter(|row| has_words(&row.value)).count(),
+            _ => 0,
+        })
+        .sum::<usize>();
+    let key_value_rows_missing_header_count = doc
+        .blocks
+        .iter()
+        .map(|block| match block {
+            Block::KeyValue { rows } => rows
+                .iter()
+                .filter(|row| !has_words(&row.key) && has_words(&row.value))
+                .count(),
+            _ => 0,
+        })
+        .sum::<usize>();
+    let vote_body_row_count = doc
+        .blocks
+        .iter()
+        .map(|block| match block {
+            Block::VoteTable { rows } => rows.len(),
+            _ => 0,
+        })
+        .sum::<usize>();
+    let vote_row_header_cell_count = doc
+        .blocks
+        .iter()
+        .map(|block| match block {
+            Block::VoteTable { rows } => rows.iter().filter(|row| has_words(&row.label)).count(),
+            _ => 0,
+        })
+        .sum::<usize>();
+    let vote_rows_missing_header_count =
+        vote_body_row_count.saturating_sub(vote_row_header_cell_count);
+    let table_rows_missing_header_count =
+        key_value_rows_missing_header_count + vote_rows_missing_header_count;
+    let row_header_cell_count = key_value_row_header_cell_count + vote_row_header_cell_count;
+    let column_header_cell_count = vote_table_count * 4;
+    let data_cell_count = key_value_data_cell_count + vote_body_row_count * 3;
     let key_value_tables_have_table_semantics = true;
     let vote_tables_have_table_semantics = true;
-    let vote_table_headers_tagged = true;
+    let key_value_row_headers_tagged = key_value_rows_missing_header_count == 0;
+    let vote_table_column_headers_tagged = true;
+    let vote_table_row_headers_tagged = vote_rows_missing_header_count == 0;
+    let vote_table_headers_tagged =
+        vote_table_column_headers_tagged && vote_table_row_headers_tagged;
+    let row_header_cells_have_scope_row = true;
+    let column_header_cells_have_scope_column = true;
+    let header_cells_have_scope =
+        row_header_cells_have_scope_row && column_header_cells_have_scope_column;
     let complete = key_value_tables_have_table_semantics
         && vote_tables_have_table_semantics
-        && vote_table_headers_tagged;
+        && key_value_row_headers_tagged
+        && vote_table_headers_tagged
+        && vote_table_column_headers_tagged
+        && vote_table_row_headers_tagged
+        && header_cells_have_scope;
 
     TableSemanticsReport {
         key_value_table_count,
         vote_table_count,
+        row_header_cell_count,
+        column_header_cell_count,
+        data_cell_count,
+        table_rows_missing_header_count,
         key_value_tables_have_table_semantics,
         vote_tables_have_table_semantics,
+        key_value_row_headers_tagged,
         vote_table_headers_tagged,
+        vote_table_column_headers_tagged,
+        vote_table_row_headers_tagged,
+        row_header_cells_have_scope_row,
+        column_header_cells_have_scope_column,
+        header_cells_have_scope,
         complete,
     }
 }

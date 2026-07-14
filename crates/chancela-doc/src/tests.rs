@@ -205,6 +205,48 @@ fn collect_structure_kids(parsed: &Document, kid: &Object, out: &mut Vec<Vec<u8>
     }
 }
 
+fn collect_table_header_scopes(parsed: &Document, elem_ref: ObjectId, out: &mut Vec<Vec<u8>>) {
+    let elem = parsed
+        .get_object(elem_ref)
+        .and_then(Object::as_dict)
+        .expect("StructElem dict");
+    if elem.get(b"S").and_then(Object::as_name).ok() == Some(b"TH".as_slice()) {
+        let attrs = elem
+            .get(b"A")
+            .and_then(Object::as_dict)
+            .expect("TH table attributes");
+        assert_eq!(
+            attrs
+                .get(b"O")
+                .and_then(Object::as_name)
+                .expect("TH attribute owner"),
+            b"Table"
+        );
+        out.push(
+            attrs
+                .get(b"Scope")
+                .and_then(Object::as_name)
+                .expect("TH scope")
+                .to_vec(),
+        );
+    }
+    if let Ok(kids) = elem.get(b"K") {
+        collect_table_header_scope_kids(parsed, kids, out);
+    }
+}
+
+fn collect_table_header_scope_kids(parsed: &Document, kid: &Object, out: &mut Vec<Vec<u8>>) {
+    match kid {
+        Object::Reference(id) => collect_table_header_scopes(parsed, *id, out),
+        Object::Array(items) => {
+            for item in items {
+                collect_table_header_scope_kids(parsed, item, out);
+            }
+        }
+        _ => {}
+    }
+}
+
 fn replace_once(bytes: &mut [u8], from: &[u8], to: &[u8]) {
     assert_eq!(from.len(), to.len(), "replacement must preserve offsets");
     let pos = bytes
@@ -324,6 +366,24 @@ fn tagged_pdf_structure_markers_are_emitted() {
                 .collect::<Vec<_>>()
         );
     }
+    let mut header_scopes = Vec::new();
+    collect_table_header_scopes(&parsed, document_ref, &mut header_scopes);
+    assert_eq!(
+        header_scopes
+            .iter()
+            .filter(|scope| scope.as_slice() == b"Row")
+            .count(),
+        4,
+        "key/value keys and vote labels must be scoped row headers"
+    );
+    assert_eq!(
+        header_scopes
+            .iter()
+            .filter(|scope| scope.as_slice() == b"Column")
+            .count(),
+        4,
+        "vote table header row must be scoped column headers"
+    );
 
     let parent_tree_ref = struct_root
         .get(b"ParentTree")
@@ -411,6 +471,18 @@ fn selfcheck_rejects_invalid_table_topology() {
     let err = selfcheck::verify(&bytes).expect_err("invalid table topology must fail");
     assert!(
         err.to_string().contains("tagged table topology"),
+        "unexpected self-check error: {err}"
+    );
+}
+
+#[test]
+fn accessibility_selfcheck_rejects_invalid_table_header_scope() {
+    let mut bytes = pdfa::write(&fixture()).expect("write");
+    replace_once(&mut bytes, b"/Scope/Row", b"/Scope/Foo");
+
+    let err = selfcheck::verify(&bytes).expect_err("invalid table header scope must fail");
+    assert!(
+        err.to_string().contains("unsupported /Scope"),
         "unexpected self-check error: {err}"
     );
 }
@@ -822,7 +894,17 @@ fn accessibility_default_fixture_reports_no_alt_text_model() {
     assert!(report.table_semantics.complete);
     assert!(report.table_semantics.key_value_tables_have_table_semantics);
     assert!(report.table_semantics.vote_tables_have_table_semantics);
+    assert_eq!(report.table_semantics.row_header_cell_count, 4);
+    assert_eq!(report.table_semantics.column_header_cell_count, 4);
+    assert_eq!(report.table_semantics.data_cell_count, 8);
+    assert_eq!(report.table_semantics.table_rows_missing_header_count, 0);
+    assert!(report.table_semantics.key_value_row_headers_tagged);
     assert!(report.table_semantics.vote_table_headers_tagged);
+    assert!(report.table_semantics.vote_table_column_headers_tagged);
+    assert!(report.table_semantics.vote_table_row_headers_tagged);
+    assert!(report.table_semantics.row_header_cells_have_scope_row);
+    assert!(report.table_semantics.column_header_cells_have_scope_column);
+    assert!(report.table_semantics.header_cells_have_scope);
     assert!(report.structure_tree.catalog_mark_info_marked);
     assert!(report.structure_tree.catalog_struct_tree_root);
     assert_eq!(
@@ -1015,7 +1097,17 @@ fn accessibility_role_map_and_table_semantics_are_reported() {
     assert_eq!(report.table_semantics.vote_table_count, 1);
     assert!(report.table_semantics.key_value_tables_have_table_semantics);
     assert!(report.table_semantics.vote_tables_have_table_semantics);
+    assert_eq!(report.table_semantics.row_header_cell_count, 4);
+    assert_eq!(report.table_semantics.column_header_cell_count, 4);
+    assert_eq!(report.table_semantics.data_cell_count, 8);
+    assert_eq!(report.table_semantics.table_rows_missing_header_count, 0);
+    assert!(report.table_semantics.key_value_row_headers_tagged);
     assert!(report.table_semantics.vote_table_headers_tagged);
+    assert!(report.table_semantics.vote_table_column_headers_tagged);
+    assert!(report.table_semantics.vote_table_row_headers_tagged);
+    assert!(report.table_semantics.row_header_cells_have_scope_row);
+    assert!(report.table_semantics.column_header_cells_have_scope_column);
+    assert!(report.table_semantics.header_cells_have_scope);
     assert!(report.table_semantics.complete);
     assert!(
         !report
@@ -1047,7 +1139,11 @@ fn accessibility_report_records_space_emission_without_pdfua_claim() {
     );
 
     let json = report.to_json();
-    assert!(json.contains("\"version\":9"));
+    assert!(json.contains("\"version\":10"));
+    assert!(json.contains("\"row_header_cell_count\":4"));
+    assert!(json.contains("\"column_header_cell_count\":4"));
+    assert!(json.contains("\"header_cells_have_scope\":true"));
+    assert!(json.contains("\"table_rows_missing_header_count\":0"));
     assert!(json.contains("\"structure_depth\":{"));
     assert!(json.contains("\"marked_content\":{"));
     assert!(json.contains("\"bounded_local_profile\":true"));
@@ -1080,7 +1176,7 @@ fn accessibility_bounded_local_pdf_diagnostics_are_emitted_without_pdfua_claim()
     assert!(!report.artifact_marking.artifacts_use_mcid);
 
     let json = report.to_json();
-    assert!(json.contains("\"version\":9"));
+    assert!(json.contains("\"version\":10"));
     assert!(json.contains("\"structure_tree\":{"));
     assert!(json.contains("\"catalog_mark_info_marked\":true"));
     assert!(json.contains("\"mapped_roles\":["));
@@ -1339,10 +1435,12 @@ fn accessibility_report_json_is_deterministic() {
     let a = pdfa::accessibility_report(&fixture()).to_json();
     let b = pdfa::accessibility_report(&fixture()).to_json();
     assert_eq!(a, b);
-    assert!(a.starts_with("{\"version\":9,\"pdf_ua_claimed\":false"));
+    assert!(a.starts_with("{\"version\":10,\"pdf_ua_claimed\":false"));
     assert!(a.contains("\"structure_tree\":{"));
     assert!(a.contains("\"mapped_roles\":["));
     assert!(a.contains("\"key_value_tables_have_table_semantics\":true"));
+    assert!(a.contains("\"row_header_cells_have_scope_row\":true"));
+    assert!(a.contains("\"column_header_cells_have_scope_column\":true"));
     assert!(a.contains("\"known_layout_artifact_targets\":["));
     assert!(a.contains("\"pdf_ua_blockers\":[\"limited_tagged_structure\"]"));
 }
