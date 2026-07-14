@@ -35,6 +35,9 @@ pub mod dialect;
 pub(crate) mod pg;
 #[cfg(feature = "postgres")]
 pub(crate) mod pg_backup;
+// wp16 P0 — Postgres advisory-lock leader election / step-down / failover-handoff primitives.
+#[cfg(feature = "postgres")]
+pub(crate) mod pg_cluster;
 pub mod recovery;
 pub mod schema;
 
@@ -137,6 +140,12 @@ pub enum StoreError {
     /// A backup was requested but the store has no on-disk location to snapshot (in-memory mode).
     #[error("backup requires on-disk persistence")]
     NotPersistent,
+    /// wp16 P0: this node is not the elected cluster writer-leader (it is a follower, or a former
+    /// leader that lost the advisory lock / had its `leader_epoch` fenced / lost its writer session).
+    /// The write path fails closed with this rather than committing on a non-leader session, so at
+    /// most one writer ever appends to the chain; the API maps it to a `503` "not leader".
+    #[error("this node is not the cluster writer-leader")]
+    NotLeader,
     /// A per-book import was refused because its book id already exists (live or imported) and the
     /// [`recovery::CollisionPolicy`] is `Refuse` — the safe default. Ids cannot be renamed on import
     /// without re-hashing (which would destroy the chain's tamper-evidence), so the only choices are
@@ -1652,6 +1661,131 @@ impl Store {
         }
     }
 
+    // ── wp16 P0 cluster / leader-election facade ──────────────────────────────────────────────────
+    //
+    // For the SQLite backend (the embedded single-node editions and the default build) there is no
+    // election: the sole process is always its own writer-leader, so these resolve to the
+    // always-writable single-node answers and the default build is totally unaffected. For the
+    // Postgres backend they delegate to the advisory-lock election in [`crate::pg_cluster`]. Every
+    // method fails closed on the leadership question.
+
+    /// Whether this backend participates in advisory-lock leader election (Postgres) at all. The API
+    /// only mounts its promotion/heartbeat supervisor when this is `true`.
+    pub fn cluster_election_enabled(&self) -> bool {
+        match &self.backend {
+            Backend::Sqlite(_) => false,
+            #[cfg(feature = "postgres")]
+            Backend::Postgres(_) => true,
+        }
+    }
+
+    /// Is this node currently the cluster writer-leader? SQLite is always its own leader.
+    pub fn cluster_is_leader(&self) -> bool {
+        match &self.backend {
+            Backend::Sqlite(_) => true,
+            #[cfg(feature = "postgres")]
+            Backend::Postgres(backend) => backend.is_leader(),
+        }
+    }
+
+    /// **Fail-closed write gate**, consulted immediately before every durable append. SQLite is
+    /// always writable; Postgres re-verifies — on the writer session itself — that it still holds the
+    /// advisory lock AND owns the current `leader_epoch`, returning [`StoreError::NotLeader`] on ANY
+    /// doubt (lost lock, stolen epoch, broken session). A node that lost leadership can never commit.
+    pub fn cluster_assert_writable(&self) -> Result<(), StoreError> {
+        match &self.backend {
+            Backend::Sqlite(_) => Ok(()),
+            #[cfg(feature = "postgres")]
+            Backend::Postgres(backend) => {
+                if crate::pg_cluster::write_gate_allows(
+                    backend.verify_still_leader(),
+                    backend.writes_enabled(),
+                ) {
+                    Ok(())
+                } else {
+                    Err(StoreError::NotLeader)
+                }
+            }
+        }
+    }
+
+    /// Re-check leadership without requiring the write-enable handoff flag. Used by the supervisor
+    /// heartbeat path so a promoted node can hold the lock read-only while catch-up/handoff is still
+    /// in progress or has failed closed.
+    pub fn cluster_verify_leader(&self) -> Result<(), StoreError> {
+        match &self.backend {
+            Backend::Sqlite(_) => Ok(()),
+            #[cfg(feature = "postgres")]
+            Backend::Postgres(backend) => {
+                if backend.verify_still_leader() {
+                    Ok(())
+                } else {
+                    Err(StoreError::NotLeader)
+                }
+            }
+        }
+    }
+
+    /// Enable durable writes after a promoted Postgres node completes the API catch-up/handoff gate.
+    /// No-op on SQLite.
+    pub fn cluster_enable_writes(&self) {
+        match &self.backend {
+            Backend::Sqlite(_) => {}
+            #[cfg(feature = "postgres")]
+            Backend::Postgres(backend) => backend.enable_writes(),
+        }
+    }
+
+    /// Disable durable writes while preserving any held leadership lock. No-op on SQLite.
+    pub fn cluster_disable_writes(&self) {
+        match &self.backend {
+            Backend::Sqlite(_) => {}
+            #[cfg(feature = "postgres")]
+            Backend::Postgres(backend) => backend.disable_writes(),
+        }
+    }
+
+    /// Attempt promotion (follower → leader). SQLite is already the leader. Postgres tries the
+    /// advisory lock; on success it bumps the epoch and returns `Ok(true)` — the caller MUST then run
+    /// the catch-up + chain re-verify handoff (§4.2) before the first append.
+    pub fn cluster_try_promote(&self) -> Result<bool, StoreError> {
+        match &self.backend {
+            Backend::Sqlite(_) => Ok(true),
+            #[cfg(feature = "postgres")]
+            Backend::Postgres(backend) => backend.try_promote(),
+        }
+    }
+
+    /// Leader liveness heartbeat into `cluster_leader`. A no-op (`Ok`) on SQLite; on Postgres it
+    /// stamps `last_heartbeat` while still owning the epoch, failing closed (and stepping down) if the
+    /// node has been deposed.
+    pub fn cluster_heartbeat(&self) -> Result<(), StoreError> {
+        match &self.backend {
+            Backend::Sqlite(_) => Ok(()),
+            #[cfg(feature = "postgres")]
+            Backend::Postgres(backend) => backend.heartbeat(),
+        }
+    }
+
+    /// This node's claimed `leader_epoch` (`0` on SQLite; `-1` on Postgres until it has ever led).
+    pub fn cluster_leader_epoch(&self) -> i64 {
+        match &self.backend {
+            Backend::Sqlite(_) => 0,
+            #[cfg(feature = "postgres")]
+            Backend::Postgres(backend) => backend.leader_epoch(),
+        }
+    }
+
+    /// Durable `MAX(seq)` from the store (the handoff catch-up target). `None` on SQLite (handoff is
+    /// a Postgres-cluster concept) or when the ledger is empty.
+    pub fn cluster_durable_max_seq(&self) -> Result<Option<i64>, StoreError> {
+        match &self.backend {
+            Backend::Sqlite(_) => Ok(None),
+            #[cfg(feature = "postgres")]
+            Backend::Postgres(backend) => backend.durable_max_seq(),
+        }
+    }
+
     /// Inspect the configured key, current build capabilities, and database header without opening
     /// or mutating the SQLite file. This is the operator-facing key-ops preflight used to avoid
     /// accidental plaintext creation and to refuse unsupported plaintext-to-encrypted migration.
@@ -2610,6 +2744,7 @@ impl Store {
     where
         F: FnOnce(&Tx<'_>) -> Result<T, StoreError>,
     {
+        self.cluster_assert_writable()?;
         // Both backends roll back on drop by default, so any early return from `f` (its `?`) or a
         // mid-closure `Err` discards every statement already issued — nothing is persisted unless
         // the whole closure succeeds and we reach `commit`. On Postgres this is one transaction on

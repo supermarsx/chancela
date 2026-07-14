@@ -90,6 +90,11 @@ pub enum ApiError {
     /// An unexpected internal failure, e.g. payload serialization (500). The string is a
     /// short, non-sensitive description safe to return to the caller.
     Internal(String),
+    /// The node cannot serve this write right now (503). wp16 P0: it is not the cluster
+    /// writer-leader — a follower, or a leader mid-failover / stepped down after losing the advisory
+    /// lock. The client should retry; once a leader is elected it serves the write. The message is a
+    /// short, non-sensitive PT string (never leaks internal state).
+    Unavailable(String),
     /// A dependency upstream of the API failed — currently the certidão permanente registry
     /// consultation (network/HTTP failure, or a response that was not a recognisable
     /// certidão). Maps to `502 Bad Gateway` (contract §2.7).
@@ -152,6 +157,7 @@ impl ApiError {
             }
             ApiError::Gone(_) => StatusCode::GONE,
             ApiError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            ApiError::Unavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
             ApiError::Upstream(_) => StatusCode::BAD_GATEWAY,
         }
     }
@@ -167,6 +173,7 @@ impl ApiError {
             | ApiError::Forbidden(msg)
             | ApiError::TooManyRequests(msg)
             | ApiError::Internal(msg)
+            | ApiError::Unavailable(msg)
             | ApiError::Upstream(msg) => msg.clone(),
             ApiError::ComplianceBlocked { message, .. }
             | ApiError::WarningsNotAcknowledged { message, .. }

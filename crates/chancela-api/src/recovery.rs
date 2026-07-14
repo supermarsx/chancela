@@ -500,6 +500,7 @@ pub(crate) fn map_store_error(e: StoreError) -> ApiError {
             eprintln!("chancela-api recovery not-found: {msg}");
             ApiError::NotFound
         }
+        StoreError::NotLeader => AppState::not_leader_error(),
         other => ApiError::Internal(format!("recovery store error: {other}")),
     }
 }

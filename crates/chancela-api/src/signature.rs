@@ -68,7 +68,7 @@ use chancela_signing::{
 };
 use chancela_signing::{Pkcs12IdentitySelector, Pkcs12SigningSource, SoftCertificateError};
 use chancela_smartcard::Pkcs11Token;
-use chancela_store::{PendingCmdSession, StoredDocument, StoredSignedDocument};
+use chancela_store::{PendingCmdSession, StoreError, StoredDocument, StoredSignedDocument};
 use chancela_tsl::{FileTslSource, TslClient, TslError, TslSource};
 use rand_core::RngCore;
 use serde::{Deserialize, Serialize};
@@ -1677,7 +1677,7 @@ pub async fn initiate_cmd_signature(
     if let Some(store) = &state.store {
         store
             .persist(|tx| tx.upsert_pending_cmd_session(&pending))
-            .map_err(|e| ApiError::Internal(format!("failed to persist pending session: {e}")))?;
+            .map_err(|e| AppState::map_store_write_error("failed to persist pending session", e))?;
     }
     state
         .pending_signatures
@@ -3326,7 +3326,7 @@ pub async fn initiate_remote_signature(
     if let Some(store) = &state.store {
         store
             .persist(|tx| tx.upsert_pending_cmd_session(&pending))
-            .map_err(|e| ApiError::Internal(format!("failed to persist pending session: {e}")))?;
+            .map_err(|e| AppState::map_store_write_error("failed to persist pending session", e))?;
     }
     state
         .pending_signatures
@@ -3508,7 +3508,9 @@ pub async fn initiate_remote_batch_signature(
                 }
                 Ok(())
             })
-            .map_err(|e| ApiError::Internal(format!("failed to persist pending sessions: {e}")))?;
+            .map_err(|e| {
+                AppState::map_store_write_error("failed to persist pending sessions", e)
+            })?;
     }
     if !pending_rows.is_empty() {
         let mut pending_signatures = state.pending_signatures.write().await;
@@ -7078,10 +7080,19 @@ async fn find_pending_for_act(state: &AppState, act_id: ActId) -> Option<Pending
 
 /// Delete a pending session (durable + in-memory): consumed / expired / cancelled.
 async fn consume_pending(state: &AppState, session_id: &str) {
+    let mut remove_memory = true;
     if let Some(store) = &state.store {
-        let _ = store.persist(|tx| tx.delete_pending_cmd_session(session_id));
+        if let Err(e) = store.persist(|tx| tx.delete_pending_cmd_session(session_id)) {
+            if matches!(e, StoreError::NotLeader) {
+                remove_memory = false;
+            } else {
+                eprintln!("chancela-api: failed to persist pending session deletion: {e}");
+            }
+        }
     }
-    state.pending_signatures.write().await.remove(session_id);
+    if remove_memory {
+        state.pending_signatures.write().await.remove(session_id);
+    }
 }
 
 /// Map a [`chancela_signing::SigningError`] to an [`ApiError`] with a client-safe status, never

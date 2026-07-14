@@ -223,7 +223,7 @@ pub async fn patch_act(
 
     if let Some(store) = &state.store {
         store.persist(|tx| tx.upsert_act(&next)).map_err(|e| {
-            ApiError::Internal(format!("failed to persist to the durable store: {e}"))
+            AppState::map_store_write_error("failed to persist to the durable store", e)
         })?;
     }
     *act = next;

@@ -3398,9 +3398,10 @@ pub async fn record_generated_document_dispatch_evidence(
         Ok(upsert) => upsert,
         Err(e) => {
             AppState::rollback_ledger_events(&mut ledger, 1);
-            return Err(ApiError::Internal(format!(
-                "failed to persist generated document dispatch evidence: {e}"
-            )));
+            return Err(AppState::map_store_write_error(
+                "failed to persist generated document dispatch evidence",
+                e,
+            ));
         }
     };
     let response_status = if upsert.inserted() {

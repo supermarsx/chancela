@@ -97,6 +97,9 @@ mod bundles;
 mod cache;
 mod cae;
 mod chronology;
+// wp16 P0: Postgres-advisory-lock leader election / step-down / failover handoff (active-passive HA).
+// Compiled in every build; inert unless the durable backend is an electing one (Postgres).
+mod cluster;
 #[allow(dead_code)]
 mod credential_resolve;
 mod dashboard;
@@ -862,6 +865,20 @@ impl AppState {
         let Some(store) = &self.store else {
             return Ok(());
         };
+        // wp16 P0 leadership gate: only the cluster writer-leader may append. A follower — or a
+        // leader that silently lost its advisory lock / had its `leader_epoch` fenced (§7.3) — fails
+        // CLOSED here so at most one writer ever extends the chain. Roll the just-appended in-memory
+        // events back out so memory never diverges from the untouched durable chain, then return a
+        // `503` "not leader". SQLite (single-node) is always its own leader, so this is a no-op there.
+        if let Err(e) = store.cluster_assert_writable() {
+            let len = ledger.len();
+            let kept: Vec<Event> = ledger.events()[..len - event_count].to_vec();
+            *ledger = Ledger::try_from_events(kept).0;
+            return Err(Self::map_store_write_error(
+                "cluster write gate refused the append",
+                e,
+            ));
+        }
         let len = ledger.len();
         // The events just appended are the tail of the chain; persist them plus the changed
         // aggregates atomically (one commits-or-rolls-back transaction).
@@ -875,11 +892,28 @@ impl AppState {
             // Roll the in-memory ledger back to match the (unchanged) durable chain on disk.
             let kept: Vec<Event> = ledger.events()[..len - event_count].to_vec();
             *ledger = Ledger::try_from_events(kept).0;
-            return Err(ApiError::Internal(format!(
-                "failed to persist to the durable store: {e}"
-            )));
+            return Err(Self::map_store_write_error(
+                "failed to persist to the durable store",
+                e,
+            ));
         }
         Ok(())
+    }
+
+    /// Map durable-write failures to the API contract. In a Postgres cluster, `NotLeader` is a
+    /// temporary write-service condition (`503`); other store failures are internal faults.
+    pub(crate) fn map_store_write_error(context: &str, e: StoreError) -> ApiError {
+        match e {
+            StoreError::NotLeader => Self::not_leader_error(),
+            other => ApiError::Internal(format!("{context}: {other}")),
+        }
+    }
+
+    pub(crate) fn not_leader_error() -> ApiError {
+        ApiError::Unavailable(
+            "este nó não é o líder de escrita do cluster (failover em curso); tente novamente"
+                .to_owned(),
+        )
     }
 
     /// Roll the last `count` just-appended events back out of the in-memory `ledger`, rebuilding
@@ -1987,6 +2021,10 @@ async fn unknown_api_route(
 /// is `None`, the server runs API-only and unmatched paths get a short landing message
 /// explaining how to build the UI (see [`landing`]).
 pub fn app(state: AppState, web_dist: Option<PathBuf>) -> Router {
+    // wp16 P0: mount the cluster leader-election supervisor (promotion poll + heartbeat + step-down).
+    // Inert unless the durable backend is an electing one (Postgres); the default SQLite / in-memory
+    // build spawns nothing. Spawned here (inside the server's tokio runtime) so failover is automatic.
+    cluster::spawn_cluster_supervisor(state.clone());
     let api = router(state);
     let app = match web_dist {
         Some(dir) => {

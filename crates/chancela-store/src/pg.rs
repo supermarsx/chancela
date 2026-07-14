@@ -23,11 +23,14 @@
 //! At [`PostgresBackend::open`] the writer connection takes a **session-level advisory lock**
 //! ([`WRITER_ADVISORY_LOCK_KEY`]) and holds it for the process lifetime. Because that one
 //! connection is never returned to a pool, the lock is never released while the server runs, so a
-//! second instance pointed at the same database blocks on the lock — a hard runtime guard for the
-//! single-writer invariant. Compose additionally pins `deploy.replicas: 1` (Phase 2/§6). This is a
-//! *best-effort* Phase-1 guard: it is taken and held, but the fast-fail-with-a-clear-message
-//! ergonomics (statement timeout / `pg_try_advisory_lock`) and TLS (`sslmode=verify-full` via
-//! `postgres-rustls`, §3) are Phase 2/compose items.
+//! second instance pointed at the same database cannot become a second writer — the single-holder
+//! guarantee is the split-brain prevention. wp16 P0 promotes this from a blocking second-instance
+//! *guard* into a **leader-election** primitive: `open` now `pg_try_advisory_lock`s instead of
+//! blocking, so a node that loses the race comes up as a read-only FOLLOWER and polls for promotion
+//! rather than hanging (see [`crate::pg_cluster`] for the election / step-down / failover-handoff /
+//! `leader_epoch`-fence machinery). Compose additionally pins `deploy.replicas: 1` for the
+//! single-writer profile (§6). TLS (`sslmode=verify-full` via `postgres-rustls`, §3) remains a
+//! later hardening item.
 //!
 //! ## What the Postgres backend supports vs defers (all deferrals fail closed, never silently)
 //!
@@ -53,6 +56,7 @@
 //! `start_over_book` — plus the SQLite-temp-file `restore_preflight` drill. These read/mutate through
 //! the SQLite-only `Tx::raw` / `Store::locked_conn` accessors and are not part of the wp15 scope.
 
+use std::sync::atomic::{AtomicBool, AtomicI64};
 use std::sync::{Arc, Mutex};
 
 use chancela_core::{Act, ActId, Book, Entity, EntityId};
@@ -94,6 +98,22 @@ pub(crate) struct PostgresBackend {
     /// the synchronous `persist` path takes it for the duration of one transaction — the direct
     /// analogue of the SQLite backend's one mutex-guarded connection.
     writer: Arc<Mutex<Client>>,
+    /// wp16 P0 — leader-election state. `true` iff **this session** currently holds the writer
+    /// advisory lock and is the cluster writer-leader. Flipped to `false` (fail-closed) the instant a
+    /// liveness check finds the lock lost / the epoch stolen / the writer session broken. The
+    /// [`crate::pg_cluster`] module owns every transition; see it for the invariants.
+    pub(crate) leader: Arc<AtomicBool>,
+    /// True only after a node may serve writes. A promoted follower holds the advisory lock and is
+    /// `leader == true` while its API handoff reloads and verifies durable state, but this flag stays
+    /// false until that handoff succeeds.
+    pub(crate) writes_enabled: Arc<AtomicBool>,
+    /// This node's stable identity, recorded in `cluster_leader` on promotion (env
+    /// `CHANCELA_NODE_ADDRESS`, else a per-process uuid).
+    pub(crate) node_id: Arc<str>,
+    /// The `leader_epoch` this node claimed on its last promotion (`-1` until it has ever led). Used
+    /// as the defence-in-depth fence (§4.3): a write / heartbeat that no longer owns the current
+    /// durable epoch fails closed.
+    pub(crate) my_epoch: Arc<AtomicI64>,
 }
 
 impl std::fmt::Debug for PostgresBackend {
@@ -121,21 +141,40 @@ impl PostgresBackend {
         let manager = PostgresConnectionManager::new(config, NoTls);
         let pool = r2d2::Pool::builder().build(manager)?;
 
-        // Dedicated writer connection: hold the advisory lock for the process lifetime, then run
-        // the idempotent DDL (derived from the SQLite schema so both dialects stay in lock-step).
+        // Dedicated writer connection. wp16 P0 promotes the wp14 writer advisory lock from a blocking
+        // second-instance guard into a **leader-election** primitive: instead of blocking, we
+        // `pg_try_advisory_lock` (unless pinned `CHANCELA_NODE_ROLE=follower`, which never contends).
+        // Winning the lock ⇒ this session is the (candidate) LEADER and the only writer; losing it ⇒
+        // this node is a FOLLOWER that comes up read-only and polls for promotion (see
+        // [`crate::pg_cluster`]). The lock stays on this one never-pooled connection so the ledger's
+        // single-writer invariant is physically coupled to the write channel (plan §7.3).
         let mut writer = Client::connect(database_url, NoTls)?;
-        writer.batch_execute(&format!(
-            "SELECT pg_advisory_lock({WRITER_ADVISORY_LOCK_KEY})"
-        ))?;
-        for stmt in crate::schema::ALL {
-            writer.batch_execute(&crate::dialect::sqlite_ddl_to_pg(stmt))?;
+        let mode = crate::pg_cluster::resolve_election_mode();
+        let node_id: Arc<str> = Arc::from(crate::pg_cluster::resolve_node_id());
+        let is_leader = crate::pg_cluster::acquire_writer_lock(&mut writer, mode)?;
+        let mut epoch: i64 = -1;
+        if is_leader {
+            // Leader-only: run the idempotent DDL (derived from the SQLite schema so both dialects
+            // stay in lock-step), stamp meta, then bump the monotonic `leader_epoch` while holding
+            // the lock (fences any deposed leader, §4.3). Followers skip DDL — the leader owns schema.
+            for stmt in crate::schema::ALL {
+                writer.batch_execute(&crate::dialect::sqlite_ddl_to_pg(stmt))?;
+            }
+            Self::ensure_additive_columns(&mut writer)?;
+            Self::stamp_meta(&mut writer)?;
+            epoch = crate::pg_cluster::ensure_cluster_table_and_bump_epoch(
+                &mut writer,
+                node_id.as_ref(),
+            )?;
         }
-        Self::ensure_additive_columns(&mut writer)?;
-        Self::stamp_meta(&mut writer)?;
 
         Ok(Self {
             pool,
             writer: Arc::new(Mutex::new(writer)),
+            leader: Arc::new(AtomicBool::new(is_leader)),
+            writes_enabled: Arc::new(AtomicBool::new(is_leader)),
+            node_id,
+            my_epoch: Arc::new(AtomicI64::new(epoch)),
         })
     }
 

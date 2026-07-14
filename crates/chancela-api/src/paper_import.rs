@@ -1326,6 +1326,7 @@ pub async fn create_paper_book_ocr_conversion_dossier(
             StoreError::LedgerAppend(ledger_error) => ApiError::Conflict(format!(
                 "appending paper_book_import.ocr_conversion_dossier_created would break a chain: {ledger_error}"
             )),
+            StoreError::NotLeader => AppState::not_leader_error(),
             other => ApiError::Internal(format!(
                 "failed to persist paper-book OCR conversion dossier to the durable store: {other}"
             )),
