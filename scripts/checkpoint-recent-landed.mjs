@@ -282,6 +282,13 @@ const checks = [
     ],
   },
   {
+    name: "API sync handoff preflight tests",
+    command: [
+      "cargo",
+      ["test", "-p", "chancela-api", "--locked", "--lib", "sync_handoff_preflight"],
+    ],
+  },
+  {
     name: "API privacy breach playbook evidence tests",
     command: [
       "cargo",
@@ -8162,6 +8169,156 @@ function assertCheckpointMap() {
     "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
     "renders local backup recovery policy freshness without claiming restore or RPO/RTO certification",
     "web recovery freshness no-claim coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "/v1/sync/handoff-preflight",
+    "API sync handoff preflight route marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/sync_handoff.rs",
+    "read-only composition endpoint",
+    "API sync handoff read-only module boundary marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/sync_handoff.rs",
+    "const ENDPOINT: &str = \"/v1/sync/handoff-preflight\";",
+    "API sync handoff endpoint constant marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/sync_handoff.rs",
+    "production_sync_ready: false",
+    "API sync handoff production readiness false marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/sync_handoff.rs",
+    "active_sync_implemented: false",
+    "API sync handoff active sync false marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/sync_handoff.rs",
+    "records_mutated: false",
+    "API sync handoff mutation false marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/sync_handoff.rs",
+    "operator_actions(&blockers, &missing_evidence)",
+    "API sync handoff operator action summary marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/sync_handoff.rs",
+    "sync_handoff_preflight_summarizes_local_evidence_without_mutation",
+    "API sync handoff durable evidence no-mutation coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/sync_handoff.rs",
+    "sync_handoff_preflight_rejects_untrusted_backup_file_and_unverified_drill",
+    "API sync handoff untrusted backup and unverified drill coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/sync_handoff.rs",
+    "verified_manifest_and_isolated_snapshot",
+    "API sync handoff verified recovery evidence marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/authz.rs",
+    "sync_handoff_preflight_route_is_classified_as_gated",
+    "API sync handoff authz classification coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "sync_handoff_preflight_http_requires_ledger_recover_and_does_not_mutate",
+    "API sync handoff HTTP authz no-mutation coverage",
+  );
+  assertFileContains(
+    "contracts/sync.handoff-preflight.json",
+    '"status": "missing_local_evidence"',
+    "sync handoff contract conservative readiness marker",
+  );
+  assertFileContains(
+    "contracts/sync.handoff-preflight.json",
+    '"active_sync_implemented": false',
+    "sync handoff contract active sync false marker",
+  );
+  assertFileContains(
+    "contracts/sync.handoff-preflight.json",
+    '"deployment_readiness_claimed": false',
+    "sync handoff contract deployment readiness false marker",
+  );
+  assertFileContains(
+    "apps/web/src/contracts/contracts.test.ts",
+    "sync.handoff-preflight.json → SyncHandoffPreflightReport",
+    "web sync handoff contract coverage",
+  );
+  assertFileContains(
+    "crates/chancela-server/tests/e2e_contracts.rs",
+    "sync.handoff-preflight",
+    "server sync handoff contract fixture coverage",
+  );
+  assertFileContains(
+    "crates/chancela-server/tests/e2e_contracts.rs",
+    "not perform sync or touch providers/connectors",
+    "server sync handoff no-provider contract marker",
+  );
+  assertFileContains(
+    "apps/web/src/api/types.ts",
+    "export interface SyncHandoffPreflightReport",
+    "web sync handoff report type marker",
+  );
+  assertFileContains(
+    "apps/web/src/api/types.ts",
+    "No active sync or provider call is performed",
+    "web sync handoff no-provider type comment marker",
+  );
+  assertFileContains(
+    "apps/web/src/api/client.ts",
+    "syncHandoffPreflight: () => get<SyncHandoffPreflightReport>('/v1/sync/handoff-preflight')",
+    "web sync handoff client marker",
+  );
+  assertFileContains(
+    "apps/web/src/api/hooks.ts",
+    "useSyncHandoffPreflight",
+    "web sync handoff hook marker",
+  );
+  assertFileContains(
+    "apps/web/src/api/hooks.ts",
+    "No connector or provider call runs",
+    "web sync handoff hook no-provider marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "function SyncHandoffPreflightReportCard",
+    "web sync handoff local report card marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "candidatos de backup, ensaios verificados",
+    "web sync handoff local-only UI marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "renders sync handoff preflight as local-only evidence with missing verified backup proof",
+    "web sync handoff conservative UI coverage",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "`GET /v1/sync/handoff-preflight`\n  now adds a read-only local sync/handoff",
+    "spec coverage sync handoff endpoint marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "untrusted backup-directory candidates, verified recovery-drill manifest/member/isolated-snapshot evidence when present",
+    "spec coverage sync handoff no-claim marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Current working-tree sync/handoff preflight readiness checks",
+    "CI/E2E hardening plan sync handoff focused checks marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "untrusted backup-directory candidates, verified recovery-drill receipt evidence projection, rejection of malformed/unverified recovery receipts",
+    "CI/E2E hardening plan sync handoff no-claim marker",
   );
   assertFileContains(
     "apps/web/src/features/recovery/LivrosIntegridadeSection.test.tsx",

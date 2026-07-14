@@ -16,6 +16,7 @@ external-signing workflow-only envelope UI, workflow reminder policy, and
 structured platform-log forwarded-ingest/failure-audit slices, plus data-status
 sidecar classification, read-only local DGLAB interchange manifest API
 scaffolding and BookDetail JSON download,
+local sync/handoff preflight readiness reporting over existing evidence only,
 raw-byte per-book import preflight operator preview,
 richer Ata editor AI statement-source provenance rendering, explicit external-validator raw
 report upload UI guardrails, the raw external-validator raw-report byte download
@@ -158,6 +159,20 @@ test operating checklist for driving Chancela toward release confidence.
   staging, ledger restore append, data deletion, SQLCipher-at-rest proof,
   off-site custody proof, RPO/RTO certification, production backup policy, FULL
   coverage, or legal archive certification.
+- The current sync/handoff preflight slice is read-only local evidence
+  composition through `GET /v1/sync/handoff-preflight`, gated by
+  `ledger.recover@Global`. It summarizes durable data status, untrusted
+  backup-directory candidates, verified recovery-drill manifest/member/isolated
+  snapshot evidence when present, book bundle export/import preflight route
+  availability, archive/local DGLAB evidence counts, blockers, missing-evidence
+  items, operator actions, and explicit no-claim flags. It
+  accepts no target path, scans only the configured data directory's existing
+  `backups` folder, and does not call providers, networks, connectors, uploads,
+  downloads, imports, background jobs, or mutating record paths. Treat this as
+  operator handoff review evidence only, not active sync, connector protocol
+  compatibility, production sync readiness, legal validity, DGLAB/archive
+  certification, signing/notarization/attestation, deployment readiness, or
+  external-system readiness.
 - Release and package builds now opt into SQLCipher features by default where the
   supported package scripts and CI metadata require it. Treat this as encrypted
   build-default coverage, not proof of operator key custody, migration success,
@@ -1487,6 +1502,21 @@ settingsDefaults.test.ts contracts.test.ts`.
   swap, sidecar staging, ledger restore append, data deletion, SQLCipher-at-rest
   proof, off-site custody proof, RPO/RTO certification, production backup policy,
   FULL coverage, or legal archive certification is implemented or proven.
+- Current working-tree sync/handoff preflight readiness checks: focused
+  `cargo test -p chancela-api --locked --lib sync_handoff_preflight` coverage pins the
+  read-only `GET /v1/sync/handoff-preflight` report, `ledger.recover@Global`
+  authz classification, in-memory blockers, untrusted backup-directory
+  candidates, verified recovery-drill receipt evidence projection, rejection of
+  malformed/unverified recovery receipts, book bundle/import-preflight route
+  availability, archive/local DGLAB evidence counts, and false no-claim flags.
+  Web contract coverage pins `sync.handoff-preflight.json` and the typed
+  client/hook shape, while the Data Management panel renders only a local report
+  card with no action control or target-path input. This remains local handoff
+  review evidence only: no active sync, connector protocol, background job,
+  upload/download/import, record mutation, production sync readiness, external
+  connector compatibility, legal validity, DGLAB/archive certification,
+  signing/notarization/attestation, deployment readiness, or external-system
+  readiness is implemented or proven.
 - Current working-tree workflow reminder policy checks: focused `cargo test -p
   chancela-api --locked reminder_` coverage pins `workflow.reminders` defaults
   (enabled, dashboard limit 5, due-soon 45 days, attendance lookahead 45 days,

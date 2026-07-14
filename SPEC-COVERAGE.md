@@ -566,7 +566,23 @@ Implementation checkpoints covered here:
   any destructive restore path, handles null preflight manifests safely, and adds
   an explicit Data Management recovery-drill action that posts to the receipt
   route, preserves passphrase bytes exactly on submit, clears the passphrase
-  afterward, and does not call live restore. Focused `GestaoDadosSection`,
+  afterward, and does not call live restore. `GET /v1/sync/handoff-preflight`
+  now adds a read-only local sync/handoff
+  preflight readiness report that composes only existing local evidence: durable
+  data-status/root health, untrusted backup-directory candidates, verified
+  recovery-drill manifest/member/isolated-snapshot evidence when present, book
+  bundle export/import preflight route availability, archive
+  package/local DGLAB manifest evidence counts, blockers, missing evidence,
+  operator actions, and explicit no-claim flags. The endpoint is
+  `ledger.recover@Global` gated, accepts no target path, scans only the existing
+  `backups` directory under the configured data directory when one is configured,
+  and performs no provider, network, connector, upload, download, import, or
+  record-mutation work. Web types/client/hook/contract coverage plus the Data
+  Management summary render the local report without action controls. This is
+  local operator handoff review evidence only; it is not active sync, connector
+  protocol compatibility, background sync, production sync readiness, legal
+  validity, DGLAB/archive certification, signing/notarization/attestation, or
+  deployment readiness. Focused `GestaoDadosSection`,
   `LivrosIntegridadeSection`, and contract tests pin operation discoverability,
   durable-store gating, failure surfacing, status invalidation, nullable
   manifest handling, optional `operator_notes` / `custody_location` receipt keys
