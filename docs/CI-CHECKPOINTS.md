@@ -809,8 +809,9 @@ metadata lane keeps release-trust, SBOM package-linkage, and package provenance
 fixture checks; that the Docker job stays no-push/local-load with `local-ci`
 trust status and `--expect-mode local-ci`; and that the release workflow runs
 package integrity, emits `releaseTrust.mode = unsigned-dev` and
-`attestation.status = not_attested`, validates `--expect-mode unsigned-dev`, and
-runs SBOM package linkage. Production package validation now requires
+`attestation.status = not_attested`, validates `--expect-mode unsigned-dev`,
+passes the collected package path, recomputes the tarball basename and SHA-256
+against the release summary, and runs SBOM package linkage. Production package validation now requires
 `--manifest` whenever either the package mode or expected mode is `production`;
 the self-test covers both signals independently. The Docker trust JSON checks
 preserve nested path context for
@@ -824,7 +825,8 @@ release package, Docker server, and desktop package builds opt into the existing
 paths. Release packaging then validates each generated
 `*-release-artifact.json` plus package manifest in explicit `unsigned-dev` mode,
 including a source SHA cross-check against
-`manifest.sourceProvenance.commitSha`. Docker CI validates
+`manifest.sourceProvenance.commitSha` and a tarball basename/SHA-256 check
+against the actual package path. Docker CI validates
 the actual Compose profiles `single-node` and `validation-worker`, runs
 `bash scripts/docker-smoke.sh --compose-profile chancela-server:ci` after the
 local image load, and validates `chancela-server-signing-status.json` in

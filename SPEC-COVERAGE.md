@@ -1,6 +1,6 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-14 from current implementation snapshot `9ddced8c6bf39fd349c5662bb7d359bb4730936d`,
+*Updated 2026-07-14 from current implementation snapshot `566273c9c7067366cd43fdf3c018297815d6cb30`,
 with committed evidence refreshes for the recently landed Signatures & Trust
 provider-credential, stored runtime credential resolution, stored PKCS#12,
 remote batch-initiation surfaces, remote provider readiness manifests, and Docker/Compose runtime-hardening
@@ -8,8 +8,9 @@ checkpoint, delegation legal-basis enforcement, and compliance-panel internal
 legislacao corpus deep links for structured legal-basis rows, and sealed-act
 chronology projection for local sealed/archived acts with provenance,
 retification edges, and false no-claim flags, while preserving the prior committed
-`5911fe0` AI provenance review-packet helper/copy evidence and `9ddced8`
-Postgres per-book portability plus restore-preflight evidence,
+`5911fe0` AI provenance review-packet helper/copy evidence, `9ddced8`
+Postgres per-book portability plus restore-preflight evidence, and `566273c`
+release-trust package tarball binding evidence,
 `7fcf5ef5f1c2fbd5b9eb26d6aac5c1240144a365` manual-signature
 original-reference sealing path and web accessibility/focus guard evidence and the prior
 `869e02f897f54730df86db739193f86c372e0e19` coverage context,
@@ -204,6 +205,17 @@ being useful. The matrix below records the current factual coverage and the rema
 blockers.
 
 Implementation checkpoints covered here:
+
+- Current `566273c` keeps CI and Signatures & Trust **PARTIAL**: the release
+  trust validator now accepts the workflow-provided package path, recomputes the
+  package tarball basename and SHA-256, and rejects release summaries whose
+  `package` or `packageSha256` fields no longer match the actual tarball. The
+  release workflow passes the collected package path into
+  `scripts/check-release-trust.mjs package` before upload while preserving the
+  existing `unsigned-dev` / `not_attested` posture. This is package metadata
+  binding and static workflow assurance only: no signing, notarization,
+  attestation, release publication, registry push verification, verified
+  provenance service, or reproducible-build claim is added.
 
 - Current `7f9930a` keeps Signatures & Trust/UX/CI **PARTIAL**:
   `GET /v1/signature/providers` now returns a local-only `manifest` for CMD and
@@ -3910,7 +3922,10 @@ behavior, legal disposal, or legal-effect claims.
   runs release-trust, SBOM package-linkage, and package provenance checks; the Docker job remains
   no-push/local-load with `local-ci` trust status and `--expect-mode local-ci`; and the release
   workflow runs package integrity, `releaseTrust.mode = unsigned-dev`,
-  `attestation.status = not_attested`, `--expect-mode unsigned-dev`, and SBOM package linkage.
+  `attestation.status = not_attested`, `--expect-mode unsigned-dev`, validates the release summary
+  against the actual collected package path, and runs SBOM package linkage. With `--package`, the
+  validator recomputes the tarball basename and SHA-256 before accepting `release artifact.package`
+  and `release artifact.packageSha256`.
   Production package validation requires `--manifest` when either the package mode or expected
   mode is `production`, and the self-test covers those two signals independently.
   Docker production metadata must include anchors such as image/artifact digests, HTTPS
@@ -4411,7 +4426,7 @@ behavior, legal disposal, or legal-effect claims.
   written consent, quorum, vote threshold, participant identity, or legal
   acceptance.
 - SBOMs, SBOM package linkage, checksums, package manifests, source provenance metadata,
-  clean-source provenance gates, release-trust metadata validation, Docker signing-status metadata-anchor checks, and Docker OCI
+  clean-source provenance gates, release-trust metadata validation including tarball basename/SHA-256 checks, Docker signing-status metadata-anchor checks, and Docker OCI
   metadata are not
   substitutes for package signing, notarization, Docker signing, attestation, registry-publication
   verification, or reproducible-build proof; package artifact integrity checks and metadata guards

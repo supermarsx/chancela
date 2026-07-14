@@ -1,7 +1,7 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `9ddced8`,
+and implementation snapshot `566273c`,
 including coverage notes for the bounded PAdES DSS validation-time, PDF/UA v11
 blocker-delta and scoped table-header evidence, retention due-candidate explicit evidence states,
 bounded archive/no-action evidence UI, duplicate-review guard/status surfacing, and
@@ -51,8 +51,9 @@ graph evidence and local sealed-act chronology projection over sealed/archived
 acts as source-linked technical visualization evidence only,
 plus local ASiC inspection endpoint and ASiC ZIP decompression-bound coverage,
 plus release workflow static
-assurance for the unsigned/local-only trust posture and production-package
-manifest-required validation, synthetic seed dataset integration coverage
+assurance for the unsigned/local-only trust posture, production-package
+manifest-required validation, and release summary binding to the actual package
+tarball basename/SHA-256, synthetic seed dataset integration coverage
 over API-created entity/book/act/ledger/dashboard/RBAC/delegation paths, and
 RBAC ledger verification regression coverage for user-role, delegation, and
 role-catalog audit events. This
@@ -116,7 +117,9 @@ test operating checklist for driving Chancela toward release confidence.
 - The release-trust self-test statically verifies workflow wiring for the
   unsigned/local-only trust posture: metadata checks, Docker no-push/local-load
   `local-ci` status, package `unsigned-dev` / `not_attested` metadata, and SBOM
-  package linkage. This is static assurance only, not signing, notarization,
+  package linkage. The release workflow also passes the collected package path
+  so the validator recomputes the tarball basename and SHA-256 before accepting
+  the release summary. This is static/package metadata assurance only, not signing, notarization,
   registry publishing, Docker attestation, or a production trust claim.
 - Package/release artifacts carry manifests and checksums where configured, but
   current release packages are not signed or notarized.
@@ -854,11 +857,11 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `9ddced8`
+## Focused Gate Snapshot Through `566273c`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08` and checkpoint-promoted on 2026-07-14 for
-current implementation head `9ddced8`. This is not an exhaustive current
+current implementation head `566273c`. This is not an exhaustive current
 green-run claim; browser, Docker, desktop, package signing/notarization, image
 signing/attestation, and live-provider limits above still apply.
 
@@ -1755,7 +1758,8 @@ settingsDefaults.test.ts contracts.test.ts`.
   `releaseTrust.imagePublication/signing/notarization/attestation.status`
   context; and the release package job's package integrity check,
   `--require-clean-source`, `releaseTrust.mode = unsigned-dev`,
-  `attestation.status = not_attested`, `--expect-mode unsigned-dev`, and SBOM
+  `attestation.status = not_attested`, `--expect-mode unsigned-dev`, collected
+  `--package` path validation, tarball basename/SHA-256 recomputation, and SBOM
   package linkage. Production package validation also requires `--manifest` when
   either package mode or expected mode is `production`, with self-tests covering
   those signals independently. `check-package-artifacts --require-clean-source`
@@ -1851,7 +1855,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   full RBAC/delegation-policy completion, tenant authorization proof,
   legal-capacity verification, broad security certification, or spec
   completion.
-- Current checkpoint metadata/static checks through `9ddced8`
+- Current checkpoint metadata/static checks through `566273c`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
@@ -1937,7 +1941,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   tracking-only response markers, stored slot evidence display,
   operator technical evidence PATCH/no-`complete:true` payload markers, and
   identity-requirement-tagged row markers, release workflow unsigned/local-only
-  static guard, clean-source provenance gate, and production-package manifest-required
+  static guard, clean-source provenance gate, package tarball trust binding, and production-package manifest-required
   markers, plus local CC BatchSigningPanel UI, `useCcBatchSign`,
   `/v1/signature/cc/batch-sign`, transient PIN clear/no-storage and route-reset
   tests, per-document result rendering, auth-mode reporting, declared capacity

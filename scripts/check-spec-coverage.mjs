@@ -32,6 +32,7 @@ const checkpointPaths = new Set([
   "docs/ARCHITECTURE.md",
   "docs/CI-CHECKPOINTS.md",
   "docs/CI-E2E-HARDENING-PLAN.md",
+  "docs/CI-RELEASE-HARDENING.md",
   "scripts/check-spec-coverage.mjs",
   "scripts/checkpoint-recent-landed.mjs",
 ]);

@@ -1,6 +1,6 @@
 # CI Release Hardening
 
-Updated 2026-07-11.
+Updated 2026-07-14.
 
 This page records the current supply-chain and release metadata behavior. It is
 deliberately conservative: CI may upload reports and placeholders, but it must
@@ -26,10 +26,12 @@ publication unless those steps actually happened.
 - The release workflow writes a `releaseTrust` block into each
   `*-release-artifact.json` metadata file, then runs
   `node scripts/check-release-trust.mjs package --expect-mode unsigned-dev`
-  against the package summary and copied package manifest. This intentionally
-  passes only explicit unsigned package metadata today. The same check also
-  confirms the release summary source SHA matches
-  `manifest.sourceProvenance.commitSha`.
+  against the package summary, copied package manifest, and collected package
+  path. This intentionally passes only explicit unsigned package metadata today.
+  The same check also confirms the release summary source SHA matches
+  `manifest.sourceProvenance.commitSha` and recomputes the tarball basename and
+  SHA-256 before accepting `release artifact.package` and
+  `release artifact.packageSha256`.
 - The release workflow runs `npm run test:package-integrity` against the staged
   package and tarball before upload, passing `--require-clean-source` so dirty or
   unknown source provenance fails the release package gate. The package manifest must include
@@ -60,8 +62,9 @@ publication unless those steps actually happened.
 ## Not Yet Enforced or Claimed
 
 - Release packages are uploaded with source provenance, manifests, and SHA-256
-  checksums, and the release gate requires a clean source-tree state, but there
-  is no package code signing or notarization step configured.
+  checksums, and the release gate requires a clean source-tree state plus a
+  matching package tarball basename/SHA-256, but there is no package code
+  signing or notarization step configured.
 - The Docker image is local-only in CI. It is not pushed to a registry, signed,
   attested, or notarized.
 - The Docker security artifact includes

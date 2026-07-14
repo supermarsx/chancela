@@ -3198,6 +3198,31 @@ function assertCheckpointMap() {
     "release trust self-test release SBOM linkage marker",
   );
   assertFileContains(
+    "scripts/check-release-trust.mjs",
+    ".github/workflows/release.yml jobs.package must validate release trust metadata against the collected package",
+    "release trust self-test release package-path validation marker",
+  );
+  assertFileContains(
+    ".github/workflows/release.yml",
+    "--package '${{ steps.collect.outputs.package }}'",
+    "release workflow trust check package path marker",
+  );
+  assertFileContains(
+    "scripts/check-release-trust.mjs",
+    "const actualPackage = path.basename(packagePath);",
+    "release trust validator tarball basename recompute marker",
+  );
+  assertFileContains(
+    "scripts/check-release-trust.mjs",
+    "release artifact.packageSha256 does not match package file SHA-256",
+    "release trust validator tarball SHA-256 recompute marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "recomputes the tarball basename and SHA-256",
+    "CI checkpoints release package tarball binding marker",
+  );
+  assertFileContains(
     "scripts/check-package-artifacts.mjs",
     "--require-clean-source",
     "package artifact clean-source flag marker",
@@ -9911,12 +9936,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `9ddced8`",
+    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `566273c`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `9ddced8`",
+    "Focused Gate Snapshot Through `566273c`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -10551,7 +10576,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `9ddced8`",
+    "Current checkpoint metadata/static checks through `566273c`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -10856,7 +10881,7 @@ function assertCheckpointMap() {
   );
   assertFileContainsNormalized(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "identity-requirement-tagged row markers, release workflow unsigned/local-only static guard, clean-source provenance gate, and production-package manifest-required",
+    "identity-requirement-tagged row markers, release workflow unsigned/local-only static guard, clean-source provenance gate, package tarball trust binding, and production-package manifest-required",
     "CI/E2E hardening plan checkpoint release static guard summary marker",
   );
   assertFileContains(
@@ -11041,7 +11066,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `9ddced8c6bf39fd349c5662bb7d359bb4730936d`",
+    "implementation snapshot `566273c9c7067366cd43fdf3c018297815d6cb30`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
