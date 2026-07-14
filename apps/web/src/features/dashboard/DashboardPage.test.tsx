@@ -1190,6 +1190,71 @@ describe('DashboardPage', () => {
     expect(within(queue).getByText('Fonte acts.state')).toBeTruthy();
   });
 
+  it('renders backup recovery freshness alerts as bounded data-management advisories', async () => {
+    const dashboard: Dashboard = {
+      ...baseDashboard,
+      alerts: [
+        {
+          code: 'backup.recovery.freshness_advisory',
+          label: 'Advisory',
+          severity: 'Warning',
+          category: 'BackupRecoveryFreshness',
+          message:
+            'Raw backend backup message with backups/secret.zip and receipt secret-receipt-id.',
+          params: {
+            freshness_status: 'failed',
+            policy_max_drill_age_days: '90',
+            latest_receipt_at: '2026-07-10T10:40:00Z',
+            latest_receipt_age_days: '4',
+            latest_receipt_preflight_ready: 'false',
+            latest_receipt_isolated_restore_verified: 'false',
+          },
+          target: {
+            entity_id: null,
+            book_id: null,
+            act_id: null,
+            links: { entity: null, book: null, act: null, ledger: null },
+          },
+          source: 'backup_recovery.freshness',
+          law_refs: [],
+          action: {
+            kind: 'open_backup_recovery_policy',
+            label_key: 'notifications.alert.backupRecoveryFreshness.action',
+            api_href: null,
+            route: '/configuracoes?sec=dados',
+          },
+          recommended_next_steps: ['Review local recovery-drill freshness.'],
+          i18n: {
+            title_key: 'notifications.alert.backupRecoveryFreshness.title',
+            body_key: 'notifications.alert.backupRecoveryFreshness.body',
+            action_key: 'notifications.alert.backupRecoveryFreshness.action',
+          },
+        },
+      ],
+    };
+
+    vi.stubGlobal('fetch', fetchTable([{ match: '/v1/dashboard', body: dashboard }]));
+    renderDashboard();
+    await openDashboardTab('Fila de trabalho');
+
+    const queue = await screen.findByRole('list', { name: 'Fila de trabalho do painel' });
+    expect(
+      within(queue)
+        .getByRole('link', { name: 'Rever atualidade da recuperação de backups' })
+        .getAttribute('href'),
+    ).toBe('/configuracoes?sec=dados');
+    expect(
+      within(queue).getByText(
+        'O estado local do ensaio de recuperação está failed. Política: máximo 90 dias; último recibo 2026-07-10T10:40:00Z; idade 4 dias; pré-validação pronta false; verificação isolada false. É apenas um aviso local com recibos guardados.',
+      ),
+    ).toBeTruthy();
+    expect(within(queue).getByText('Fonte backup_recovery.freshness')).toBeTruthy();
+    const rendered = queue.textContent ?? '';
+    expect(rendered).not.toContain('backups/secret.zip');
+    expect(rendered).not.toContain('secret-receipt-id');
+    expect(rendered).not.toContain('/v1/backup/recovery-drills');
+  });
+
   it('keeps complete verified law references visually normal', async () => {
     const dashboard: Dashboard = {
       ...baseDashboard,

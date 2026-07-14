@@ -243,6 +243,11 @@ export const ptBR: Catalog = {
   'notifications.alert.act.archivePending.body':
     'A ata {act_id} está selada e ainda não foi arquivada. Arquive-a quando a evidência de preservação estiver pronta.',
   'notifications.alert.act.archivePending.action': 'Abrir ata',
+  'notifications.alert.backupRecoveryFreshness.title':
+    'Revisar atualidade da recuperação de backups',
+  'notifications.alert.backupRecoveryFreshness.body':
+    'O estado local do ensaio de recuperação está {freshness_status}. Política: máximo {policy_max_drill_age_days} dias; último recibo {latest_receipt_at}; idade {latest_receipt_age_days} dias; preflight pronto {latest_receipt_preflight_ready}; verificação isolada {latest_receipt_isolated_restore_verified}. É apenas um aviso local com recibos guardados.',
+  'notifications.alert.backupRecoveryFreshness.action': 'Abrir gestão de dados',
   'notifications.reminder.annual.csc.title': 'Assembleia geral anual pendente',
   'notifications.reminder.annual.assoc.title': 'Assembleia geral anual pendente',
   'notifications.reminder.annual.fundacao.title': 'Revisão anual pendente',

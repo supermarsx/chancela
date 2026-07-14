@@ -243,6 +243,11 @@ export const fiFI: Catalog = {
   'notifications.alert.act.archivePending.body':
     'Pöytäkirja {act_id} on sinetöity, mutta sitä ei ole vielä arkistoitu. Arkistoi se, kun säilytysnäyttö on valmis.',
   'notifications.alert.act.archivePending.action': 'Avaa pöytäkirja',
+  'notifications.alert.backupRecoveryFreshness.title':
+    'Tarkista varmuuskopion palautuksen ajantasaisuus',
+  'notifications.alert.backupRecoveryFreshness.body':
+    'Paikallisen palautusharjoituksen ajantasaisuus on {freshness_status}. Käytännön enimmäisikä: {policy_max_drill_age_days} päivää; viimeisin kuitti: {latest_receipt_at}; ikä: {latest_receipt_age_days} päivää; preflight valmis: {latest_receipt_preflight_ready}; eristetty varmistus: {latest_receipt_isolated_restore_verified}. Tämä on vain paikallinen ilmoitus tallennetuista kuiteista.',
+  'notifications.alert.backupRecoveryFreshness.action': 'Avaa tietojen hallinta',
   'notifications.reminder.annual.csc.title': 'Varsinainen yhtiökokous odottaa',
   'notifications.reminder.annual.assoc.title': 'Vuosikokous odottaa',
   'notifications.reminder.annual.fundacao.title': 'Vuositarkastus odottaa',

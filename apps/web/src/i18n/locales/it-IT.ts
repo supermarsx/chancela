@@ -246,12 +246,15 @@ export const itIT: Catalog = {
   'notifications.alert.act.archivePending.body':
     'Il verbale {act_id} è sigillato e non ancora archiviato. Archivialo quando l’evidenza di conservazione è pronta.',
   'notifications.alert.act.archivePending.action': 'Apri verbale',
+  'notifications.alert.backupRecoveryFreshness.title': 'Verifica freschezza del recupero backup',
+  'notifications.alert.backupRecoveryFreshness.body':
+    'La freschezza locale della prova di recupero è {freshness_status}. Età massima della policy: {policy_max_drill_age_days} giorni; ultima ricevuta: {latest_receipt_at}; età: {latest_receipt_age_days} giorni; preflight pronto: {latest_receipt_preflight_ready}; verifica isolata: {latest_receipt_isolated_restore_verified}. È solo un avviso locale basato sulle ricevute salvate.',
+  'notifications.alert.backupRecoveryFreshness.action': 'Apri gestione dati',
   'notifications.reminder.annual.csc.title': 'Assemblea generale annuale in sospeso',
   'notifications.reminder.annual.assoc.title': 'Assemblea generale annuale in sospeso',
   'notifications.reminder.annual.fundacao.title': 'Revisione annuale in sospeso',
   'notifications.reminder.annual.cooperativa.title': 'Assemblea generale annuale in sospeso',
-  'notifications.reminder.annual.condominio.title':
-    'Assemblea annuale di condominio in sospeso',
+  'notifications.reminder.annual.condominio.title': 'Assemblea annuale di condominio in sospeso',
   'notifications.reminder.annual.body':
     'Non esiste un verbale annuale sigillato o archiviato per {entity_name} entro {due_date}. Questo promemoria è a titolo consultivo e proviene da {source_rule}.',
   'notifications.reminder.annual.action': 'Apri entità',

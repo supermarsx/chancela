@@ -94,6 +94,11 @@ const ALERT_COPY: Record<string, AlertCopy> = {
     body: 'notifications.alert.act.signingReady.body',
     action: 'notifications.alert.act.signingReady.action',
   },
+  'backup.recovery.freshness_advisory': {
+    title: 'notifications.alert.backupRecoveryFreshness.title',
+    body: 'notifications.alert.backupRecoveryFreshness.body',
+    action: 'notifications.alert.backupRecoveryFreshness.action',
+  },
 };
 
 const REMINDER_COPY: Record<string, ReminderCopy> = {

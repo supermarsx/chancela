@@ -241,6 +241,10 @@ export const enGB: Catalog = {
   'notifications.alert.act.archivePending.body':
     'Minutes {act_id} are sealed and not archived yet. Archive them when preservation evidence is ready.',
   'notifications.alert.act.archivePending.action': 'Open minutes',
+  'notifications.alert.backupRecoveryFreshness.title': 'Review backup recovery freshness',
+  'notifications.alert.backupRecoveryFreshness.body':
+    'Local recovery-drill freshness is {freshness_status}. Policy max age: {policy_max_drill_age_days} days; latest receipt: {latest_receipt_at}; age: {latest_receipt_age_days} days; preflight ready: {latest_receipt_preflight_ready}; isolated verification: {latest_receipt_isolated_restore_verified}. This is a local advisory from stored receipts only.',
+  'notifications.alert.backupRecoveryFreshness.action': 'Open data management',
   'notifications.reminder.annual.csc.title': 'Annual general meeting pending',
   'notifications.reminder.annual.assoc.title': 'Annual general meeting pending',
   'notifications.reminder.annual.fundacao.title': 'Annual review pending',

@@ -114,6 +114,63 @@ describe('buildDashboardNotifications', () => {
     expect(items[0]?.detail).not.toContain('Backend fallback text');
   });
 
+  it('renders backup recovery freshness advisories as local bounded alerts', () => {
+    const items = buildDashboardNotifications(
+      dashboard({
+        alerts: [
+          alert({
+            code: 'backup.recovery.freshness_advisory',
+            message:
+              'Raw backend message with forbidden backup path backups/secret.zip and receipt secret-receipt-id.',
+            params: {
+              freshness_status: 'stale',
+              policy_max_drill_age_days: '90',
+              latest_receipt_at: '2026-03-01T10:00:00Z',
+              latest_receipt_age_days: '135',
+              latest_receipt_preflight_ready: 'true',
+              latest_receipt_isolated_restore_verified: 'true',
+            },
+            target: {
+              entity_id: null,
+              book_id: null,
+              act_id: null,
+              links: { ...targetLinks },
+            },
+            action: {
+              kind: 'open_backup_recovery_policy',
+              label_key: 'notifications.alert.backupRecoveryFreshness.action',
+              api_href: null,
+              route: '/configuracoes?sec=dados',
+            },
+            i18n: {
+              title_key: 'notifications.alert.backupRecoveryFreshness.title',
+              body_key: 'notifications.alert.backupRecoveryFreshness.body',
+              action_key: 'notifications.alert.backupRecoveryFreshness.action',
+            },
+            source: 'backup_recovery.freshness',
+          }),
+        ],
+      }),
+      t,
+    );
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      kind: 'alert',
+      title: 'Rever atualidade da recuperação de backups',
+      action: { href: '/configuracoes?sec=dados', label: 'Abrir gestão de dados' },
+    });
+    expect(items[0]?.detail).toContain('stale');
+    expect(items[0]?.detail).toContain('90 dias');
+    expect(items[0]?.detail).toContain('2026-03-01T10:00:00Z');
+    expect(items[0]?.detail).toContain('135 dias');
+    expect(items[0]?.detail).toContain('true');
+    expect(items[0]?.detail).toContain('aviso local');
+    expect(items[0]?.detail).not.toContain('backups/secret.zip');
+    expect(items[0]?.detail).not.toContain('secret-receipt-id');
+    expect(items[0]?.action?.href).not.toContain('/backup/recovery-drills');
+  });
+
   it('renders lifecycle dashboard alerts as localized actionable items', () => {
     const items = buildDashboardNotifications(
       dashboard({

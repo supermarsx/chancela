@@ -247,12 +247,16 @@ export const frFR: Catalog = {
   'notifications.alert.act.archivePending.body':
     'Le procès-verbal {act_id} est scellé mais pas encore archivé. Archivez-le lorsque les preuves de préservation sont prêtes.',
   'notifications.alert.act.archivePending.action': 'Ouvrir le procès-verbal',
+  'notifications.alert.backupRecoveryFreshness.title':
+    'Vérifier la fraîcheur de récupération des sauvegardes',
+  'notifications.alert.backupRecoveryFreshness.body':
+    "La fraîcheur locale de l'essai de récupération est {freshness_status}. Âge maximal de la politique : {policy_max_drill_age_days} jours ; dernier reçu : {latest_receipt_at} ; âge : {latest_receipt_age_days} jours ; prévalidation prête : {latest_receipt_preflight_ready} ; vérification isolée : {latest_receipt_isolated_restore_verified}. Ce n'est qu'un avis local basé sur les reçus enregistrés.",
+  'notifications.alert.backupRecoveryFreshness.action': 'Ouvrir la gestion des données',
   'notifications.reminder.annual.csc.title': 'Assemblée générale annuelle en attente',
   'notifications.reminder.annual.assoc.title': 'Assemblée générale annuelle en attente',
   'notifications.reminder.annual.fundacao.title': 'Revue annuelle en attente',
   'notifications.reminder.annual.cooperativa.title': 'Assemblée générale annuelle en attente',
-  'notifications.reminder.annual.condominio.title':
-    'Assemblée annuelle de copropriété en attente',
+  'notifications.reminder.annual.condominio.title': 'Assemblée annuelle de copropriété en attente',
   'notifications.reminder.annual.body':
     'Aucun procès-verbal annuel scellé ou archivé n’existe pour {entity_name} au {due_date}. Ce rappel est indicatif et provient de {source_rule}.',
   'notifications.reminder.annual.action': 'Ouvrir l’entité',

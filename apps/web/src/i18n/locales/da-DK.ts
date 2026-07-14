@@ -241,6 +241,10 @@ export const daDK: Catalog = {
   'notifications.alert.act.archivePending.body':
     'Protokol {act_id} er forseglet og endnu ikke arkiveret. Arkivér den, når bevaringsdokumentationen er klar.',
   'notifications.alert.act.archivePending.action': 'Åbn protokol',
+  'notifications.alert.backupRecoveryFreshness.title': 'Gennemgå aktualitet for backupgendannelse',
+  'notifications.alert.backupRecoveryFreshness.body':
+    'Den lokale gendannelsesøvelse har status {freshness_status}. Politikens maksimale alder: {policy_max_drill_age_days} dage; seneste kvittering: {latest_receipt_at}; alder: {latest_receipt_age_days} dage; preflight klar: {latest_receipt_preflight_ready}; isoleret verifikation: {latest_receipt_isolated_restore_verified}. Dette er kun en lokal rådgivning fra gemte kvitteringer.',
+  'notifications.alert.backupRecoveryFreshness.action': 'Åbn datastyring',
   'notifications.reminder.annual.csc.title': 'Årlig generalforsamling afventer',
   'notifications.reminder.annual.assoc.title': 'Årlig generalforsamling afventer',
   'notifications.reminder.annual.fundacao.title': 'Årlig gennemgang afventer',

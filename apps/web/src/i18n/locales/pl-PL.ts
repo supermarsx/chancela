@@ -243,6 +243,10 @@ export const plPL: Catalog = {
   'notifications.alert.act.archivePending.body':
     'Protokół {act_id} jest zapieczętowany i nie został jeszcze zarchiwizowany. Zarchiwizuj go, gdy dowody zachowania będą gotowe.',
   'notifications.alert.act.archivePending.action': 'Otwórz protokół',
+  'notifications.alert.backupRecoveryFreshness.title': 'Sprawdź aktualność odzyskiwania kopii',
+  'notifications.alert.backupRecoveryFreshness.body':
+    'Lokalny test odzyskiwania ma status {freshness_status}. Maksymalny wiek polityki: {policy_max_drill_age_days} dni; ostatni kwit: {latest_receipt_at}; wiek: {latest_receipt_age_days} dni; preflight gotowy: {latest_receipt_preflight_ready}; izolowana weryfikacja: {latest_receipt_isolated_restore_verified}. To tylko lokalne ostrzeżenie z zapisanych kwitów.',
+  'notifications.alert.backupRecoveryFreshness.action': 'Otwórz zarządzanie danymi',
   'notifications.reminder.annual.csc.title': 'Oczekujące zwyczajne walne zgromadzenie',
   'notifications.reminder.annual.assoc.title': 'Oczekujące zwyczajne walne zgromadzenie',
   'notifications.reminder.annual.fundacao.title': 'Oczekujący przegląd roczny',

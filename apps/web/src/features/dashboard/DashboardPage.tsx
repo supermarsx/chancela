@@ -450,6 +450,10 @@ const ALERT_COPY: Partial<Record<string, { title: MessageKey; body: MessageKey }
     title: 'notifications.alert.act.archivePending.title',
     body: 'notifications.alert.act.archivePending.body',
   },
+  'backup.recovery.freshness_advisory': {
+    title: 'notifications.alert.backupRecoveryFreshness.title',
+    body: 'notifications.alert.backupRecoveryFreshness.body',
+  },
 };
 
 const REMINDER_COPY: Partial<

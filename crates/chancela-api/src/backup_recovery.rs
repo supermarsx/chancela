@@ -295,7 +295,7 @@ pub async fn list_backup_recovery_drills(
 ) -> Result<Json<BackupRecoveryDrillList>, ApiError> {
     require_permission(&state, &actor, Permission::LedgerRecover, Scope::Global).await?;
     let mut receipts = state.backup_recovery_drill_receipts.read().await.clone();
-    receipts.sort_by(|a, b| b.created_at.cmp(&a.created_at).then(a.id.cmp(&b.id)));
+    sort_backup_recovery_drill_receipts(&mut receipts);
     let policy = state
         .settings
         .read()
@@ -312,7 +312,11 @@ pub async fn list_backup_recovery_drills(
     }))
 }
 
-fn backup_recovery_freshness_review(
+pub(crate) fn sort_backup_recovery_drill_receipts(receipts: &mut [BackupRecoveryDrillReceipt]) {
+    receipts.sort_by(|a, b| b.created_at.cmp(&a.created_at).then(a.id.cmp(&b.id)));
+}
+
+pub(crate) fn backup_recovery_freshness_review(
     receipts: &[BackupRecoveryDrillReceipt],
     policy: BackupRecoveryPolicySettings,
     now: OffsetDateTime,

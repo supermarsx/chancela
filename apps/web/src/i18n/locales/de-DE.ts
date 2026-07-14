@@ -246,6 +246,10 @@ export const deDE: Catalog = {
   'notifications.alert.act.archivePending.body':
     'Das Protokoll {act_id} ist versiegelt und noch nicht archiviert. Archivieren Sie es, sobald der Aufbewahrungsnachweis bereit ist.',
   'notifications.alert.act.archivePending.action': 'Protokoll öffnen',
+  'notifications.alert.backupRecoveryFreshness.title': 'Backup-Wiederherstellungsaktualität prüfen',
+  'notifications.alert.backupRecoveryFreshness.body':
+    'Die lokale Wiederherstellungsübung hat den Status {freshness_status}. Maximales Richtlinienalter: {policy_max_drill_age_days} Tage; letzter Beleg: {latest_receipt_at}; Alter: {latest_receipt_age_days} Tage; Preflight bereit: {latest_receipt_preflight_ready}; isolierte Prüfung: {latest_receipt_isolated_restore_verified}. Dies ist nur ein lokaler Hinweis aus gespeicherten Belegen.',
+  'notifications.alert.backupRecoveryFreshness.action': 'Datenverwaltung öffnen',
   'notifications.reminder.annual.csc.title': 'Jährliche Hauptversammlung ausstehend',
   'notifications.reminder.annual.assoc.title': 'Jährliche Mitgliederversammlung ausstehend',
   'notifications.reminder.annual.fundacao.title': 'Jährliche Prüfung ausstehend',

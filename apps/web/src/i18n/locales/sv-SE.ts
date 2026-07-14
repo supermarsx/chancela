@@ -243,12 +243,16 @@ export const svSE: Catalog = {
   'notifications.alert.act.archivePending.body':
     'Protokoll {act_id} är förseglat och ännu inte arkiverat. Arkivera det när bevarandeunderlaget är klart.',
   'notifications.alert.act.archivePending.action': 'Öppna protokoll',
+  'notifications.alert.backupRecoveryFreshness.title':
+    'Granska aktualitet för säkerhetskopieåterställning',
+  'notifications.alert.backupRecoveryFreshness.body':
+    'Den lokala återställningsövningen har status {freshness_status}. Maxålder enligt policy: {policy_max_drill_age_days} dagar; senaste kvitto: {latest_receipt_at}; ålder: {latest_receipt_age_days} dagar; preflight klar: {latest_receipt_preflight_ready}; isolerad verifiering: {latest_receipt_isolated_restore_verified}. Detta är endast en lokal avisering från sparade kvitton.',
+  'notifications.alert.backupRecoveryFreshness.action': 'Öppna datahantering',
   'notifications.reminder.annual.csc.title': 'Årlig bolagsstämma väntar',
   'notifications.reminder.annual.assoc.title': 'Årligt föreningsmöte väntar',
   'notifications.reminder.annual.fundacao.title': 'Årlig granskning väntar',
   'notifications.reminder.annual.cooperativa.title': 'Årlig föreningsstämma väntar',
-  'notifications.reminder.annual.condominio.title':
-    'Årsmöte i bostadsrättsförening väntar',
+  'notifications.reminder.annual.condominio.title': 'Årsmöte i bostadsrättsförening väntar',
   'notifications.reminder.annual.body':
     'Det finns inget förseglat eller arkiverat årligt protokoll för {entity_name} senast {due_date}. Påminnelsen är rådgivande och kommer från {source_rule}.',
   'notifications.reminder.annual.action': 'Öppna enhet',

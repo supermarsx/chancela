@@ -24,7 +24,11 @@ use time::{Date, Month, OffsetDateTime};
 
 use crate::AppState;
 use crate::actor::CurrentActor;
-use crate::authz::require_permission;
+use crate::authz::authorizer;
+use crate::backup_recovery::{
+    BackupRecoveryFreshnessReview, BackupRecoveryFreshnessStatus, backup_recovery_freshness_review,
+    sort_backup_recovery_drill_receipts,
+};
 use crate::dto::{
     DashboardActStateCounts, DashboardAction, DashboardAlert, DashboardAlertTarget,
     DashboardCurrentWork, DashboardI18n, DashboardLawReference, DashboardOpenBook,
@@ -55,9 +59,25 @@ pub async fn dashboard(
     actor: CurrentActor,
 ) -> Result<Json<DashboardResponse>, ApiError> {
     // RBAC (t64-E3): the dashboard aggregates act data → `act.read` at Global.
-    require_permission(&state, &actor, Permission::ActRead, Scope::Global).await?;
+    let authz = authorizer(&state, &actor).await?;
+    authz.require(Permission::ActRead, Scope::Global)?;
+    let can_view_backup_recovery_freshness = authz
+        .permits(Permission::LedgerRecover, Scope::Global)
+        || authz.permits(Permission::DataBackup, Scope::Global);
     let redaction = read_redaction_for_actor(&state, &actor).await?;
-    let reminder_policy = state.settings.read().await.workflow.reminders.clone();
+    let settings = state.settings.read().await;
+    let reminder_policy = settings.workflow.reminders.clone();
+    let backup_recovery_policy = settings.data_management.backup_recovery.clone();
+    drop(settings);
+    let now = OffsetDateTime::now_utc();
+    let backup_recovery_alert = if can_view_backup_recovery_freshness {
+        let mut receipts = state.backup_recovery_drill_receipts.read().await.clone();
+        sort_backup_recovery_drill_receipts(&mut receipts);
+        let freshness = backup_recovery_freshness_review(&receipts, backup_recovery_policy, now);
+        backup_recovery_freshness_alert(&freshness)
+    } else {
+        None
+    };
     // entities → books → acts → follow_ups → registry_extracts → ledger (read locks; the global order).
     let entities = state.entities.read().await;
     let books = state.books.read().await;
@@ -123,9 +143,9 @@ pub async fn dashboard(
     } else {
         events[start..].iter().map(LedgerEventView::from).collect()
     };
-    let today = OffsetDateTime::now_utc().date();
+    let today = now.date();
     let current_work = dashboard_current_work(&entities, &books, &acts);
-    let alerts = dashboard_alerts(
+    let mut alerts = dashboard_alerts(
         &entities,
         &books,
         &acts,
@@ -133,6 +153,10 @@ pub async fn dashboard(
         ledger_valid,
         today,
     );
+    if let Some(alert) = backup_recovery_alert {
+        alerts.push(alert);
+        sort_dashboard_alerts(&mut alerts);
+    }
     let reminders = dashboard_reminders_with_generated_dispatch_evidence(
         ReminderInputs {
             entities: &entities,
@@ -536,6 +560,11 @@ fn dashboard_alerts(
         });
     }
 
+    sort_dashboard_alerts(&mut alerts);
+    alerts
+}
+
+fn sort_dashboard_alerts(alerts: &mut [DashboardAlert]) {
     alerts.sort_by(|a, b| {
         a.label
             .cmp(&b.label)
@@ -545,7 +574,99 @@ fn dashboard_alerts(
             .then_with(|| a.target.book_id.cmp(&b.target.book_id))
             .then_with(|| a.target.act_id.cmp(&b.target.act_id))
     });
-    alerts
+}
+
+fn backup_recovery_freshness_alert(
+    freshness: &BackupRecoveryFreshnessReview,
+) -> Option<DashboardAlert> {
+    let status = backup_recovery_freshness_status_value(&freshness.status);
+    if matches!(freshness.status, BackupRecoveryFreshnessStatus::Fresh) {
+        return None;
+    }
+
+    let latest_receipt_at = freshness
+        .latest_receipt_at
+        .clone()
+        .unwrap_or_else(|| "not_recorded".to_owned());
+    let latest_receipt_age_days = freshness
+        .latest_receipt_age_days
+        .map(|days| days.to_string())
+        .unwrap_or_else(|| "not_recorded".to_owned());
+    let latest_receipt_preflight_ready =
+        optional_bool_param(freshness.latest_receipt_preflight_ready);
+    let latest_receipt_isolated_restore_verified =
+        optional_bool_param(freshness.latest_receipt_isolated_restore_verified);
+
+    Some(DashboardAlert {
+        code: "backup.recovery.freshness_advisory".to_owned(),
+        label: "Advisory".to_owned(),
+        severity: "Warning".to_owned(),
+        category: "BackupRecoveryFreshness".to_owned(),
+        message: format!(
+            "Local backup recovery drill freshness is {status}; policy max age is {} days, latest receipt date is {latest_receipt_at}, latest receipt age is {latest_receipt_age_days} days, preflight readiness is {latest_receipt_preflight_ready}, and isolated snapshot verification is {latest_receipt_isolated_restore_verified}. This is a local advisory from stored recovery-drill receipts only; it does not run recovery, inspect archives, restore data, or certify production readiness.",
+            freshness.policy.max_drill_age_days
+        ),
+        params: dashboard_alert_params([
+            ("freshness_status", status.to_owned()),
+            (
+                "policy_max_drill_age_days",
+                freshness.policy.max_drill_age_days.to_string(),
+            ),
+            ("latest_receipt_at", latest_receipt_at),
+            ("latest_receipt_age_days", latest_receipt_age_days),
+            (
+                "latest_receipt_preflight_ready",
+                latest_receipt_preflight_ready,
+            ),
+            (
+                "latest_receipt_isolated_restore_verified",
+                latest_receipt_isolated_restore_verified,
+            ),
+        ]),
+        target: DashboardAlertTarget {
+            entity_id: None,
+            book_id: None,
+            act_id: None,
+            links: DashboardTargetLinks {
+                entity: None,
+                book: None,
+                act: None,
+                ledger: None,
+            },
+        },
+        source: Some("backup_recovery.freshness".to_owned()),
+        law_refs: Vec::new(),
+        action: Some(dashboard_action(
+            "open_backup_recovery_policy",
+            "notifications.alert.backupRecoveryFreshness.action",
+            None,
+            Some("/configuracoes?sec=dados".to_owned()),
+        )),
+        recommended_next_steps: vec![
+            "Review the local recovery-drill receipt freshness state in Data Management."
+                .to_owned(),
+            "Record a new non-destructive recovery drill only when operator evidence exists."
+                .to_owned(),
+        ],
+        i18n: Some(alert_i18n(
+            "notifications.alert.backupRecoveryFreshness.title",
+            "notifications.alert.backupRecoveryFreshness.body",
+            Some("notifications.alert.backupRecoveryFreshness.action"),
+        )),
+    })
+}
+
+fn backup_recovery_freshness_status_value(status: &BackupRecoveryFreshnessStatus) -> &'static str {
+    match status {
+        BackupRecoveryFreshnessStatus::NoReceipt => "no_receipt",
+        BackupRecoveryFreshnessStatus::Fresh => "fresh",
+        BackupRecoveryFreshnessStatus::Stale => "stale",
+        BackupRecoveryFreshnessStatus::Failed => "failed",
+    }
+}
+
+fn optional_bool_param(value: Option<bool>) -> String {
+    value.unwrap_or(false).to_string()
 }
 
 fn push_lifecycle_alerts(
@@ -2435,11 +2556,14 @@ fn calendar_signal_book_kinds(family: EntityFamily) -> &'static [BookKind] {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::backup_recovery::{
+        BackupRecoveryDrillIsolatedRestoreVerification, BackupRecoveryDrillReceipt,
+    };
     use crate::privacy::{
         BreachEvidenceKind, BreachPlaybookEvidenceReceipt, PrivacyRiskLevel,
         TransferControlEvidenceReceipt,
     };
-    use crate::settings::WorkflowReminderSourceSettings;
+    use crate::settings::{BackupRecoveryPolicySettings, WorkflowReminderSourceSettings};
     use chancela_core::{
         AttendanceWeight, Attendee, LegalHold, MeetingChannel, Nipc, NumberingScheme, PresenceMode,
         SignatoryCapacity, TermoDeAbertura,
@@ -2603,6 +2727,215 @@ mod tests {
 
     fn has_source_rule(rules: &[String], expected: &str) -> bool {
         rules.iter().any(|rule| rule == expected)
+    }
+
+    fn backup_recovery_receipt(
+        id: &str,
+        created_at: &str,
+        archive: &str,
+        ready: bool,
+        isolated_verified: bool,
+        isolated_status: &str,
+    ) -> BackupRecoveryDrillReceipt {
+        BackupRecoveryDrillReceipt {
+            id: id.to_owned(),
+            created_at: created_at.to_owned(),
+            archive: archive.to_owned(),
+            preflight_ok: ready,
+            preflight_ready: ready,
+            encrypted: Some(false),
+            ledger_verified: ready,
+            manifest: None,
+            isolated_restore_verified: isolated_verified,
+            isolated_restore_verification: BackupRecoveryDrillIsolatedRestoreVerification {
+                status: isolated_status.to_owned(),
+                db_snapshot_materialized: isolated_verified,
+                db_snapshot_opened: isolated_verified,
+                state_loaded: isolated_verified,
+                ledger_verified: isolated_verified,
+                cleanup_verified: isolated_verified,
+                ..BackupRecoveryDrillIsolatedRestoreVerification::default()
+            },
+            operator_notes: Some("sensitive operator note".to_owned()),
+            custody_location: Some("sensitive custody shelf".to_owned()),
+            restore_executed: false,
+            live_db_swapped: false,
+            sidecars_staged: false,
+            ledger_restored_appended: false,
+            data_deleted: false,
+            offsite_custody_proven: false,
+            legal_archive_certified: false,
+        }
+    }
+
+    fn verified_backup_recovery_receipt(
+        id: &str,
+        created_at: &str,
+        archive: &str,
+    ) -> BackupRecoveryDrillReceipt {
+        backup_recovery_receipt(id, created_at, archive, true, true, "verified")
+    }
+
+    #[test]
+    fn backup_recovery_freshness_alerts_cover_unfresh_states_without_receipt_internals() {
+        let policy = BackupRecoveryPolicySettings::default();
+        let now = OffsetDateTime::parse("2026-07-14T12:00:00Z", &Rfc3339).expect("fixed now");
+
+        let no_receipt = backup_recovery_freshness_review(&[], policy.clone(), now);
+        let no_receipt_alert =
+            backup_recovery_freshness_alert(&no_receipt).expect("no-receipt alert");
+        assert_eq!(no_receipt_alert.code, "backup.recovery.freshness_advisory");
+        assert_eq!(no_receipt_alert.label, "Advisory");
+        assert_eq!(no_receipt_alert.category, "BackupRecoveryFreshness");
+        assert_eq!(
+            no_receipt_alert
+                .params
+                .get("freshness_status")
+                .map(String::as_str),
+            Some("no_receipt")
+        );
+        assert_eq!(
+            no_receipt_alert
+                .params
+                .get("policy_max_drill_age_days")
+                .map(String::as_str),
+            Some("90")
+        );
+        assert_eq!(
+            no_receipt_alert
+                .params
+                .get("latest_receipt_at")
+                .map(String::as_str),
+            Some("not_recorded")
+        );
+        assert_eq!(
+            no_receipt_alert
+                .params
+                .get("latest_receipt_preflight_ready")
+                .map(String::as_str),
+            Some("false")
+        );
+        assert_eq!(
+            no_receipt_alert
+                .params
+                .get("latest_receipt_isolated_restore_verified")
+                .map(String::as_str),
+            Some("false")
+        );
+        assert_eq!(
+            no_receipt_alert
+                .action
+                .as_ref()
+                .and_then(|action| action.route.as_deref()),
+            Some("/configuracoes?sec=dados")
+        );
+
+        let stale_receipts = vec![verified_backup_recovery_receipt(
+            "stale-receipt-secret-id",
+            "2000-01-01T00:00:00Z",
+            "backups/stale-secret-archive.zip",
+        )];
+        let stale = backup_recovery_freshness_review(&stale_receipts, policy.clone(), now);
+        assert!(matches!(stale.status, BackupRecoveryFreshnessStatus::Stale));
+        let stale_alert = backup_recovery_freshness_alert(&stale).expect("stale alert");
+        assert_eq!(
+            stale_alert
+                .params
+                .get("freshness_status")
+                .map(String::as_str),
+            Some("stale")
+        );
+        assert_eq!(
+            stale_alert
+                .params
+                .get("latest_receipt_at")
+                .map(String::as_str),
+            Some("2000-01-01T00:00:00Z")
+        );
+        assert_eq!(
+            stale_alert
+                .params
+                .get("latest_receipt_preflight_ready")
+                .map(String::as_str),
+            Some("true")
+        );
+        assert_eq!(
+            stale_alert
+                .params
+                .get("latest_receipt_isolated_restore_verified")
+                .map(String::as_str),
+            Some("true")
+        );
+
+        let failed_receipts = vec![backup_recovery_receipt(
+            "failed-receipt-secret-id",
+            "2026-07-14T10:00:00Z",
+            "backups/failed-secret-archive.zip",
+            false,
+            false,
+            "failed",
+        )];
+        let failed = backup_recovery_freshness_review(&failed_receipts, policy.clone(), now);
+        assert!(matches!(
+            failed.status,
+            BackupRecoveryFreshnessStatus::Failed
+        ));
+        let failed_alert = backup_recovery_freshness_alert(&failed).expect("failed alert");
+        assert_eq!(
+            failed_alert
+                .params
+                .get("freshness_status")
+                .map(String::as_str),
+            Some("failed")
+        );
+        assert_eq!(
+            failed_alert
+                .params
+                .get("latest_receipt_preflight_ready")
+                .map(String::as_str),
+            Some("false")
+        );
+        assert_eq!(
+            failed_alert
+                .params
+                .get("latest_receipt_isolated_restore_verified")
+                .map(String::as_str),
+            Some("false")
+        );
+
+        let fresh_receipts = vec![verified_backup_recovery_receipt(
+            "fresh-receipt-secret-id",
+            "2026-07-14T10:00:00Z",
+            "backups/fresh-secret-archive.zip",
+        )];
+        let fresh = backup_recovery_freshness_review(&fresh_receipts, policy, now);
+        assert!(matches!(fresh.status, BackupRecoveryFreshnessStatus::Fresh));
+        assert!(
+            backup_recovery_freshness_alert(&fresh).is_none(),
+            "fresh recovery drill receipts must not create a dashboard alert"
+        );
+
+        for alert in [no_receipt_alert, stale_alert, failed_alert] {
+            assert!(!alert.params.contains_key("latest_receipt_id"));
+            assert!(!alert.params.contains_key("archive"));
+            assert!(!alert.params.contains_key("manifest"));
+            assert!(!alert.params.contains_key("findings"));
+            let serialized = serde_json::to_string(&alert).expect("alert serializes");
+            for forbidden in [
+                "secret-id",
+                "secret-archive",
+                "sensitive operator note",
+                "sensitive custody shelf",
+                "member_count",
+                "restore_executed",
+                "live_db_swapped",
+            ] {
+                assert!(
+                    !serialized.contains(forbidden),
+                    "dashboard alert leaked {forbidden}: {serialized}"
+                );
+            }
+        }
     }
 
     /// The store collections plus generated-dispatch evidence a sealed-condominium reminder fixture

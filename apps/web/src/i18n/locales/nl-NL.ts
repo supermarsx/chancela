@@ -241,13 +241,16 @@ export const nlNL: Catalog = {
   'notifications.alert.act.archivePending.body':
     'Notulen {act_id} zijn verzegeld en nog niet gearchiveerd. Archiveer ze wanneer het bewaarbewijs gereed is.',
   'notifications.alert.act.archivePending.action': 'Notulen openen',
+  'notifications.alert.backupRecoveryFreshness.title': 'Actualiteit van back-upherstel controleren',
+  'notifications.alert.backupRecoveryFreshness.body':
+    'De lokale herstelproef heeft status {freshness_status}. Maximale beleidsleeftijd: {policy_max_drill_age_days} dagen; laatste ontvangstbewijs: {latest_receipt_at}; leeftijd: {latest_receipt_age_days} dagen; preflight gereed: {latest_receipt_preflight_ready}; geïsoleerde verificatie: {latest_receipt_isolated_restore_verified}. Dit is alleen een lokale waarschuwing uit opgeslagen ontvangstbewijzen.',
+  'notifications.alert.backupRecoveryFreshness.action': 'Gegevensbeheer openen',
   'notifications.reminder.annual.csc.title': 'Jaarlijkse algemene vergadering in behandeling',
   'notifications.reminder.annual.assoc.title': 'Jaarlijkse algemene vergadering in behandeling',
   'notifications.reminder.annual.fundacao.title': 'Jaarlijkse evaluatie in behandeling',
   'notifications.reminder.annual.cooperativa.title':
     'Jaarlijkse algemene vergadering in behandeling',
-  'notifications.reminder.annual.condominio.title':
-    'Jaarlijkse VvE-vergadering in behandeling',
+  'notifications.reminder.annual.condominio.title': 'Jaarlijkse VvE-vergadering in behandeling',
   'notifications.reminder.annual.body':
     'Er zijn geen verzegelde of gearchiveerde jaarlijkse notulen voor {entity_name} tegen {due_date}. Deze herinnering is adviserend en komt voort uit {source_rule}.',
   'notifications.reminder.annual.action': 'Entiteit openen',

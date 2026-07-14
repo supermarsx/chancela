@@ -244,6 +244,10 @@ export const esES: Catalog = {
   'notifications.alert.act.archivePending.body':
     'El acta {act_id} está sellada y aún no se ha archivado. Archívela cuando la evidencia de preservación esté lista.',
   'notifications.alert.act.archivePending.action': 'Abrir acta',
+  'notifications.alert.backupRecoveryFreshness.title': 'Revisar vigencia de recuperación de copias',
+  'notifications.alert.backupRecoveryFreshness.body':
+    'La frescura local del ensayo de recuperación es {freshness_status}. Edad máxima de política: {policy_max_drill_age_days} días; último recibo: {latest_receipt_at}; edad: {latest_receipt_age_days} días; preflight listo: {latest_receipt_preflight_ready}; verificación aislada: {latest_receipt_isolated_restore_verified}. Es solo un aviso local de recibos guardados.',
+  'notifications.alert.backupRecoveryFreshness.action': 'Abrir gestión de datos',
   'notifications.reminder.annual.csc.title': 'Junta general anual pendiente',
   'notifications.reminder.annual.assoc.title': 'Junta general anual pendiente',
   'notifications.reminder.annual.fundacao.title': 'Revisión anual pendiente',

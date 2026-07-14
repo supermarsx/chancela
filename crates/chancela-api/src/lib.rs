@@ -7984,6 +7984,76 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn dashboard_backup_recovery_freshness_advisory_is_recovery_authority_gated() {
+        use chancela_authz::{LEITOR_ROLE_ID, Permission, Role, RoleAssignment, RoleId, Scope};
+
+        let state = fresh_state().await;
+        let backup_reviewer = RoleId(Uuid::from_u128(0xBACA));
+        state.roles.write().await.insert(Role {
+            id: backup_reviewer,
+            name: "Dashboard backup reviewer".to_owned(),
+            permission_set: [Permission::ActRead, Permission::DataBackup]
+                .into_iter()
+                .collect(),
+            protected: false,
+        });
+
+        let backup_actor = seed_user(
+            &state,
+            "dashboard.backup.reviewer",
+            vec![RoleAssignment::new(backup_reviewer, Scope::Global)],
+        )
+        .await;
+        let backup_token = seed_session(&state, &backup_actor.to_string()).await;
+        let (status, backup_dashboard) = send_raw(
+            state.clone(),
+            with_session(get("/v1/dashboard"), &backup_token),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{backup_dashboard}");
+        let backup_alert = backup_dashboard["alerts"]
+            .as_array()
+            .expect("backup dashboard alerts")
+            .iter()
+            .find(|alert| alert["code"] == "backup.recovery.freshness_advisory")
+            .expect("backup-authorized dashboard includes freshness advisory");
+        assert_eq!(backup_alert["label"], "Advisory");
+        assert_eq!(backup_alert["params"]["freshness_status"], "no_receipt");
+        assert_eq!(backup_alert["params"]["policy_max_drill_age_days"], "90");
+        assert_eq!(backup_alert["params"]["latest_receipt_at"], "not_recorded");
+        assert_eq!(
+            backup_alert["params"]["latest_receipt_preflight_ready"],
+            "false"
+        );
+        assert_eq!(
+            backup_alert["params"]["latest_receipt_isolated_restore_verified"],
+            "false"
+        );
+        assert!(backup_alert["params"].get("latest_receipt_id").is_none());
+        assert!(backup_alert["params"].get("archive").is_none());
+        assert_eq!(backup_alert["action"]["route"], "/configuracoes?sec=dados");
+
+        let reader = seed_user(
+            &state,
+            "dashboard.reader.no.backup",
+            vec![RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global)],
+        )
+        .await;
+        let reader_token = seed_session(&state, &reader.to_string()).await;
+        let (status, reader_dashboard) =
+            send_raw(state, with_session(get("/v1/dashboard"), &reader_token)).await;
+        assert_eq!(status, StatusCode::OK, "{reader_dashboard}");
+        assert!(
+            reader_dashboard["alerts"]
+                .as_array()
+                .expect("reader dashboard alerts")
+                .iter()
+                .all(|alert| alert["code"] != "backup.recovery.freshness_advisory"),
+            "plain dashboard readers must not receive backup recovery freshness state: {reader_dashboard}"
+        );
+    }
+
+    #[tokio::test]
     async fn settings_partial_document_fills_defaults() {
         // Only one nested field is supplied; every other field must default cleanly.
         let (status, stored) = send(
