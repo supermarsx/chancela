@@ -127,7 +127,14 @@ completion, identity-required refusal, replay idempotency, upload body limits,
 i18n leakage guards, external-signing stored slot evidence rendering,
 operator technical evidence form submission, identity-requirement-tagged
 evidence rows, `PATCH` slot payloads that omit `complete:true`, validator
-fixtures, and the standalone desktop Cargo workspace.
+fixtures, off-by-default Postgres store runtime write/read markers with ignored
+`DATABASE_URL` live tests and `UnsupportedOnPostgres` backup/restore/recovery
+boundaries, and the standalone desktop Cargo workspace.
+
+The Postgres store markers prove source/test coverage for the off-by-default
+backend runtime paths only. They do not prove production Postgres readiness,
+live DB validation, migration completeness, HA/cloud deployment, certification,
+or external sync readiness.
 
 It intentionally reuses existing test surfaces:
 

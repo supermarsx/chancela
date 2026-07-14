@@ -1,7 +1,7 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `6a2c91e`,
+and implementation snapshot `547408e`,
 including coverage notes for the bounded PAdES DSS validation-time, PDF/UA v10
 scoped table-header evidence, retention due-candidate explicit evidence states,
 bounded archive/no-action evidence UI, duplicate-review guard/status surfacing, and
@@ -14,7 +14,8 @@ CSC quota/delegation/revocation and standalone agenda-item template parity,
 retained-export cleanup dry-run planning, first-class template catalog metadata lint,
 external-signing workflow-only envelope UI, workflow reminder policy, and
 structured platform-log forwarded-ingest/failure-audit slices, ROL-02 seeded
-role archetype explicitness, plus data-status
+role archetype explicitness, Postgres store runtime write/read marker coverage,
+plus data-status
 sidecar classification, read-only local DGLAB interchange manifest API
 scaffolding and BookDetail JSON download,
 local sync/handoff preflight readiness reporting over existing evidence only,
@@ -885,6 +886,17 @@ settingsDefaults.test.ts contracts.test.ts`.
   (`cargo test -p chancela-store --locked --features sqlcipher sqlcipher`) now
   has a Windows CI lane that installs pinned Strawberry Perl before Rust/Cargo so
   vendored OpenSSL sees a Windows-native Perl first on `PATH`.
+- Current working-tree Postgres store runtime checks: static/source markers pin
+  the off-by-default `postgres` feature, `PostgresBackend::open`,
+  advisory-locked single writer, boot `load` replay, request-serving `Tx` write
+  methods, runtime `Store` read projections, and ignored `DATABASE_URL` tests
+  `persist_and_reload_event_roundtrips_on_postgres` and
+  `runtime_reads_and_writes_roundtrip_on_postgres`. This is marker/static
+  coverage plus opt-in live-test scaffolding only; default CI does not run
+  against a live Postgres database, and SQLite-shaped backup/restore/recovery/
+  raw transaction paths still fail closed with `UnsupportedOnPostgres`. It is
+  not production Postgres readiness, live DB validation, migration completeness,
+  HA/cloud deployment, certification, or external sync readiness.
 - Recent 2026-07-10 focused checks through `783538c`: `npm run
   check:encrypted-build-defaults`, `cargo metadata --locked --format-version 1
   --features "chancela-server/sqlcipher chancela-cli/sqlcipher" --no-deps`,
@@ -1650,7 +1662,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   --workspace apps/web -- e2e/session.spec.ts e2e/first-launch-onboarding.spec.ts`.
   Treat the static/unit/focused markers as the pinned slice, not broad
   Playwright-browser-suite or browser-matrix proof; the browser suite is not exhaustive.
-- Current checkpoint metadata/static checks through `6a2c91e`
+- Current checkpoint metadata/static checks through `547408e`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
@@ -1709,6 +1721,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   CSC structural-change template IDs/Pending-law-reference/local-rendering
   markers, and
   post-act `Certidao`/`Extrato` sealed-provenance semantic lint markers,
+  Postgres store runtime source/test markers and no-production-readiness caveats,
   plus metadata-only
   paper-book OCR conversion-dossier route/store/redaction/idempotency, reviewed
   conversion execution artifact store/API/contract markers, and BookDetail UI

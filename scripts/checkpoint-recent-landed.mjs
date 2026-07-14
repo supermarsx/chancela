@@ -9272,7 +9272,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `6a2c91e`",
+    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `547408e`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
@@ -9892,7 +9892,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `6a2c91e`",
+    "Current checkpoint metadata/static checks through `547408e`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -10347,7 +10347,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `6a2c91e9f3bc406f63608b7ac199168a0fa13e20`",
+    "implementation snapshot `547408ebf9558094cf0c8293b2c0f125efd5a31e`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -10419,6 +10419,56 @@ function assertCheckpointMap() {
     "docs/CI-E2E-HARDENING-PLAN.md",
     "`cargo test -p chancela-api --locked seeded_role`",
     "CI/E2E hardening plan ROL-02 API seeded role command marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Current `547408e` keeps Data/Architecture/CI **PARTIAL**",
+    "spec coverage Postgres store checkpoint marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Postgres store runtime write/read paths",
+    "spec coverage Postgres store recent coverage marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "not production Postgres readiness, live DB\n  validation, migration completeness, HA/cloud deployment, certification",
+    "spec coverage Postgres no-production-readiness caveat marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Current working-tree Postgres store runtime checks",
+    "CI/E2E hardening plan Postgres store checks marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "default CI does not run\n  against a live Postgres database",
+    "CI/E2E hardening plan Postgres no-live-DB marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "Postgres store markers prove source/test coverage for the off-by-default\nbackend runtime paths only",
+    "CI checkpoints Postgres off-by-default backend marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/src/pg.rs",
+    "This backend now covers the store reads and writes used by the request-serving facade",
+    "store Postgres runtime support source marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/src/pg.rs",
+    "Deferred **by design** (fail closed with [`crate::StoreError::UnsupportedOnPostgres`]",
+    "store Postgres unsupported paths source marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/tests/postgres_backend.rs",
+    "runtime_reads_and_writes_roundtrip_on_postgres",
+    "store Postgres runtime ignored test marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/tests/postgres_backend.rs",
+    "#[ignore = \"requires a live PostgreSQL at DATABASE_URL\"]",
+    "store Postgres live database ignore marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
