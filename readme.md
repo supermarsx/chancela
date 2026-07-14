@@ -177,7 +177,7 @@ root so the Dockerfile can reach every crate and the web app):
 ```sh
 npm run build:docker
 npm run test:docker:smoke
-docker compose -f docker/docker-compose.yml up --build
+docker compose -f docker/docker-compose.yml --profile single-node up --build
 ```
 
 Inside the container the server binds `0.0.0.0:8080` (`CHANCELA_ADDR`) and stores durable
@@ -190,12 +190,13 @@ endpoint should report `persistent: true`, `ledger_verified: true`, and a numeri
 [`docker/`](docker/) for the hardening details (read-only rootfs, dropped capabilities,
 non-root user).
 
-### Postgres + Redis (self-hosted, scaled-ops)
+### Postgres + Redis (self-hosted durability profile)
 
 The default Docker path above is the single-node **SQLite/SQLCipher** edition and
-stays the simplest option. For operators who want a managed, networked,
-externally backed-up database, the `postgres` compose profile runs the server on
-**PostgreSQL** (durability backend) with an optional **Redis** cache-aside:
+stays the simplest option. For operators who want PG-native backup/inspection
+tooling and a networked database process, the `postgres` compose profile runs
+the server on **PostgreSQL** (durability backend) with an optional **Redis**
+cache-aside:
 
 ```sh
 # Create the file-based docker secrets from the committed templates:
@@ -209,17 +210,15 @@ docker compose -f docker/docker-compose.yml --profile postgres up --build
 **This is a durability upgrade, not scale-out.** Chancela holds authoritative
 domain state in memory and allocates the ledger `seq` in process, so **exactly
 one** app instance may write. The profile pins `deploy.replicas: 1`; never scale
-it. Postgres buys operator-familiar backups/monitoring and a networked DB — it
-does **not** provide HA, failover, or horizontal scale. It is **still a
-single-node deployment**.
+it. Postgres does **not** provide HA, failover, or horizontal scale here. It is
+**still a single-node deployment**.
 
 Honest caveats (details in [`docker/DEPLOYMENT-PROFILES.md`](docker/DEPLOYMENT-PROFILES.md)):
 
 - **At-rest encryption on Postgres** = encrypted data volume (LUKS / encrypted
-  cloud block storage) **plus TLS in transit**, which is *disk-level* — weaker
-  than SQLCipher's file-level ciphertext. `sslmode=verify-full` to Postgres is a
-  known follow-up (the intra-compose network is trusted; enable TLS for a remote
-  DB).
+  block storage), which is *disk-level* - weaker than SQLCipher's file-level
+  ciphertext. TLS/`sslmode=verify-full` is not wired in this compose lane; the
+  current backend uses `NoTls`.
 - **Backup/restore uses PG-native tooling** (`pg_dump`/`pg_restore` or PITR). The
   in-app `POST /v1/backup` endpoint is **Unsupported** on the Postgres backend.
 - **Performance**: the write-through store transaction becomes a network
@@ -233,11 +232,11 @@ and fail closed on ambiguity/emptiness):
 | Variable | Backend | Meaning |
 | --- | --- | --- |
 | `CHANCELA_DB_BACKEND` | both | `sqlite` (default) \| `postgres`. |
-| `DATABASE_URL` / `DATABASE_URL_FILE` | postgres | libpq connection string (include `sslmode=verify-full` for a remote DB). Delivered as the `database_url` secret. |
+| `DATABASE_URL` / `DATABASE_URL_FILE` | postgres | Local compose libpq connection string. Delivered as the `database_url` secret. |
 | `CHANCELA_DB_KEY` / `CHANCELA_DB_KEY_FILE` | sqlite | SQLCipher passphrase (ignored on the Postgres backend). |
 | `CHANCELA_CREDENTIAL_KEY` / `CHANCELA_CREDENTIAL_KEY_FILE` | both | Provider-credential store root key. **Required on Postgres** (no SQLCipher `DerivedFromDbKey`). Delivered as the `credential_key` secret. |
-| `REDIS_URL` / `REDIS_URL_FILE` | both | Optional cache-aside; absent (or feature off) ⇒ no-op. |
-| `CHANCELA_CACHE` | both | `moka` enables the in-process ledger-verdict memo (no network). |
+| `REDIS_URL` / `REDIS_URL_FILE` | both | Optional cache-aside; absent (or feature off) => no-op. |
+| `CHANCELA_CACHE` | both | `moka` enables the in-process cache-aside when Redis is not configured. |
 | `CHANCELA_DATA_DIR` | both | Still required on Postgres — the credential sidecar and CAE/law/TSL caches live here. |
 
 ## Desktop edition

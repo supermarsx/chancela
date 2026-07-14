@@ -15,6 +15,9 @@ node_modules
 .github
 .orchestration
 
+# Runtime secrets must never enter the Docker build context.
+docker/secrets
+
 # Desktop shell is not part of the server or web image
 apps/desktop
 

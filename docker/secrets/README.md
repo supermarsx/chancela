@@ -16,11 +16,15 @@ cp docker/secrets/credential_key.example    docker/secrets/credential_key
 | Secret file         | Consumed as                        | Notes |
 | ------------------- | ---------------------------------- | ----- |
 | `postgres_password` | `POSTGRES_PASSWORD_FILE` (postgres) | Long random password. |
-| `database_url`      | `DATABASE_URL_FILE` (chancela app)  | Full libpq URL **including** the same password. References the `postgres` service by name. For a remote DB use `sslmode=verify-full`. |
+| `database_url`      | `DATABASE_URL_FILE` (chancela app)  | Full libpq URL **including** the same password. References the local `postgres` service by name. |
 | `credential_key`    | `CHANCELA_CREDENTIAL_KEY_FILE` (chancela app) | Provider-credential store root key. **Required** on Postgres (no SQLCipher `DerivedFromDbKey`). Any high-entropy value; generate with `openssl rand -base64 48`. |
 
 The password inside `database_url` **must match** `postgres_password`, otherwise
 the app cannot authenticate to Postgres.
+
+The template uses `sslmode=disable` because this compose lane connects to the
+local Compose network with the current `NoTls` backend. Remote Postgres with
+`sslmode=verify-full` needs a future TLS connector before it is supported.
 
 Generate strong values, for example:
 

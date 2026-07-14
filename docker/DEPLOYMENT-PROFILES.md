@@ -63,7 +63,7 @@ ship a separate worker image or worker entrypoint.
 
 ### `postgres`
 
-Brings up the self-hosted **scaled-ops** stack: the `chancela` app built with the
+Brings up the self-hosted Postgres stack: the `chancela` app built with the
 PostgreSQL durability backend plus an optional Redis cache-aside, a `postgres`
 service, and a `redis` service.
 
@@ -82,10 +82,10 @@ docker compose -f docker/docker-compose.yml --profile postgres up --build
 The app holds authoritative domain state in memory and allocates the ledger
 `seq` in process, so **exactly one** `chancela` instance may write. The profile
 pins `deploy.replicas: 1` and you must never scale it: two instances against one
-Postgres would diverge and collide on the ledger `seq`. Postgres buys a managed,
-networked, externally backed-up DB — it does **not** buy HA, failover, or
-horizontal scale (that is a separate, much larger effort). This profile is
-**still a single-node deployment**.
+Postgres would violate the single-writer design. Postgres enables PG-native
+backup/inspection tooling and a networked database process - it does **not** buy
+HA, failover, or horizontal scale (that is a separate, much larger effort). This
+profile is **still a single-node deployment**.
 
 Services and posture:
 
@@ -96,18 +96,19 @@ Services and posture:
   at `/var/lib/chancela` — still required on Postgres for the credential sidecar
   (`provider-credentials.enc.json`), the CAE/law/TSL caches, and the JSON
   sidecars. Loopback host port (default `127.0.0.1:8080`, override with
-  `CHANCELA_HOST_PORT`). `depends_on` postgres+redis `service_healthy`.
-- **`postgres`** (`postgres:16-alpine`, pinned): `POSTGRES_DB`/`POSTGRES_USER`
+  `CHANCELA_HOST_PORT`). Startup waits only for `postgres` health; Redis remains
+  a fail-open cache service.
+- **`postgres`** (`postgres:16-alpine`, version-tagged): `POSTGRES_DB`/`POSTGRES_USER`
   (override with `CHANCELA_PG_DB`/`CHANCELA_PG_USER`), `POSTGRES_PASSWORD_FILE`
   docker secret, named volume `chancela-pgdata` for the data directory,
   `pg_isready` healthcheck, `no-new-privileges`, resource limits. Not published
-  to the host — reachable only on the compose network. The app self-migrates
-  (idempotent `CREATE TABLE IF NOT EXISTS` DDL on boot under an advisory writer
-  lock), so **no init SQL / migration job is needed**.
-- **`redis`** (`redis:7-alpine`, pinned): AOF persistence on `chancela-redisdata`,
+  to the host - reachable only on the compose network. The app runs idempotent
+  schema creation/checks on boot under an advisory writer lock, so this profile
+  does not need an init SQL job.
+- **`redis`** (`redis:7-alpine`, version-tagged): AOF persistence on `chancela-redisdata`,
   `maxmemory` + `allkeys-lru`, `redis-cli ping` healthcheck, `no-new-privileges`,
-  resource limits. The app is fully correct with Redis down or absent (cache-aside
-  fails open).
+  resource limits. This is only a cache service: the app is fully correct with
+  Redis down or absent because cache operations fail open.
 
 All three services carry `deploy.resources.limits` (honoured by `docker compose
 up` v2).
@@ -127,21 +128,20 @@ File-based docker secrets under `docker/secrets/` (real files gitignored;
 
 Postgres has **no** transparent whole-DB encryption in vanilla community builds,
 so this profile does **not** give you SQLCipher's file-level ciphertext-at-rest.
-The at-rest posture is:
+The at-rest posture for Postgres data is:
 
-- **Volume/disk encryption** (host-provided: LUKS or an encrypted cloud block
-  device) for the `chancela-pgdata` volume, **plus**
-- **TLS in transit** to Postgres.
+- **Volume/disk encryption** (host-provided: LUKS or an encrypted block device)
+  for the `chancela-pgdata` volume.
 
 This is disk-level: a DB superuser or a live memory dump still sees plaintext —
 a materially weaker guarantee than SQLCipher. The credential store keeps its own
 app-layer XChaCha20-Poly1305 encryption regardless (its root key comes from
 `CHANCELA_CREDENTIAL_KEY_FILE`, since `DerivedFromDbKey` needs SQLCipher).
 
-**TLS to Postgres (`sslmode=verify-full`) is a known follow-up.** The
-intra-compose network between the app and `postgres` is trusted; for a **remote**
-Postgres, enable TLS by setting `sslmode=verify-full` in the `database_url`
-secret and mounting the CA/cert material.
+**TLS to Postgres (`sslmode=verify-full`) is not implemented in this lane.** The
+current backend uses `NoTls` and the compose profile assumes the local Compose
+network. A remote Postgres deployment needs a future TLS connector before it can
+claim verified transport security.
 
 #### Backup and restore on Postgres
 

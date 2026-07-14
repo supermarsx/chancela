@@ -12,8 +12,8 @@ hardening posture.
 With --config-check, only validates that every Compose profile
 (single-node, validation-worker, postgres) renders a valid config via
 `docker compose config --quiet` — no image is built or started. This is the
-lightweight gate for the postgres profile (a full Postgres feature build is
-too heavy for the smoke; the CI docker lane covers the real build).
+lightweight gate for the postgres profile and does not prove live Postgres
+runtime behavior.
 EOF
 }
 

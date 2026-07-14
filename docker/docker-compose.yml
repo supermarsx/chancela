@@ -6,11 +6,14 @@
 # Server plus bounded validation-worker sidecar:
 #   docker compose -f docker/docker-compose.yml --profile validation-worker up --build
 #
+# Postgres durability backend plus Redis cache service:
+#   docker compose -f docker/docker-compose.yml --profile postgres up --build
+#
 # Security posture:
 #   - read_only root filesystem, writable scratch via tmpfs only.
 #   - all Linux capabilities dropped.
 #   - no-new-privileges: process cannot gain privileges via setuid binaries.
-#   - config injected via environment at runtime (never baked into the image).
+#   - config injected via environment or docker secrets at runtime (never baked into the image).
 name: chancela
 
 services:
@@ -101,14 +104,13 @@ services:
     restart: unless-stopped
 
   # -----------------------------------------------------------------------
-  # `postgres` profile — durability backend (PostgreSQL) + optional Redis
-  # cache, for the self-hosted scaled-ops edition.
+  # `postgres` profile: PostgreSQL durability backend plus a Redis cache service.
   #
   #   docker compose -f docker/docker-compose.yml --profile postgres up --build
   #
   # HONEST SCOPE (see docker/DEPLOYMENT-PROFILES.md and wp14.md §0/§4): this is
-  # still a SINGLE-WRITER, single-node deployment. Postgres buys a managed,
-  # networked, externally-backed-up DB — NOT horizontal scale or HA. The app
+  # still a SINGLE-WRITER, single-node deployment. Postgres enables PG-native
+  # backup/inspection tooling, NOT horizontal scale or HA. The app
   # holds authoritative state in memory and allocates the ledger `seq` in
   # process, so exactly ONE `chancela` instance may write. Never scale it.
   # -----------------------------------------------------------------------
@@ -130,13 +132,13 @@ services:
       - postgres_password
     volumes:
       # Named volume for the data directory. Put this on ENCRYPTED storage
-      # (LUKS / cloud encrypted block storage) — see DEPLOYMENT-PROFILES.md:
+      # (LUKS / encrypted block storage) - see DEPLOYMENT-PROFILES.md:
       # Postgres has no transparent whole-DB encryption, so at-rest protection
-      # is volume-level + TLS, NOT SQLCipher file-level ciphertext.
+      # is volume-level, NOT SQLCipher file-level ciphertext.
       - chancela-pgdata:/var/lib/postgresql/data
     # Not published to the host: the DB is reachable only on the compose
-    # network. For a remote PG, enable TLS (sslmode=verify-full) — a known
-    # follow-up; the intra-compose network is trusted.
+    # network. Remote Postgres/TLS is not wired in this lane: the current
+    # backend uses NoTls, so sslmode=verify-full requires a future TLS connector.
     expose:
       - "5432"
     healthcheck:
@@ -157,8 +159,8 @@ services:
     profiles:
       - postgres
     image: redis:7-alpine
-    # Cache-aside boost. AOF persistence on a named volume so a restart keeps a
-    # warm cache; the app is fully correct with Redis down/absent (fail-open).
+    # Cache-aside service. Authoritative state stays in the app/Postgres path;
+    # cache operations fail open and do not affect correctness.
     command:
       [
         "redis-server",
@@ -219,8 +221,6 @@ services:
       # libpq connection string (incl. the password) as a docker secret. It
       # references the `postgres` service by name on the compose network.
       DATABASE_URL_FILE: /run/secrets/database_url
-      # Optional in-process cache-aside win (ledger-verdict memo); no network.
-      CHANCELA_CACHE: moka
       # Optional shared Redis cache-aside; inert if unreachable (fail-open).
       REDIS_URL: redis://redis:6379
       # REQUIRED on Postgres: the provider-credential store root key. Without
@@ -239,8 +239,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
-        condition: service_healthy
     healthcheck:
       test: ["CMD", "/usr/bin/busybox", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health"]
       interval: 30s
@@ -249,10 +247,9 @@ services:
       retries: 3
     deploy:
       # SINGLE WRITER — never raise this. Two instances against one Postgres
-      # would each hold divergent in-memory state and each allocate the same
-      # ledger `seq`; the PK guard fails one write closed, but the loser rolls
-      # back a user-visible mutation. This profile is single-node by design
-      # (wp14.md §0/§4).
+      # are outside this profile's contract: the app keeps authoritative state
+      # in memory and allocates ledger `seq` in process. This profile is
+      # single-node by design (wp14.md §0/§4).
       replicas: 1
       resources:
         limits:
