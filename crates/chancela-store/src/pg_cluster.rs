@@ -5,21 +5,18 @@
 //! heartbeat cadence and failover handoff live in `chancela-api`'s `cluster` module and drive these
 //! primitives. The embedded SQLite / default builds never compile any of this.
 //!
-//! ## The model (active-passive HA)
+//! ## The model (bounded advisory-lock election)
 //!
 //! Multiple app nodes point at one Postgres. Exactly **one** holds the writer advisory lock
-//! ([`crate::pg::WRITER_ADVISORY_LOCK_KEY`]) — it is the LEADER and the *only* writer. The rest are
-//! FOLLOWERS: they came up read-only (they lost the `pg_try_advisory_lock` race in
-//! [`crate::pg::PostgresBackend::open`]) and poll to be promoted when the leader dies. This is
-//! active-passive HA with automatic crash failover — **not** multi-writer, and **not** zero-RTO. A
-//! follower serving independent fresh reads / a change feed is a LATER phase; in P0 a non-leader
-//! simply fails writes closed with 503.
+//! ([`crate::pg::WRITER_ADVISORY_LOCK_KEY`]) at a time. This module treats that session as LEADER
+//! for this backend's write path; non-holders are FOLLOWERS and fail writes closed with 503. This is
+//! not a production HA certification, consensus protocol, multi-writer mode, or zero-RTO promise. A
+//! follower serving independent fresh reads / a change feed is a LATER phase.
 //!
-//! ## Fail-closed guarantees (the whole point)
+//! ## Fail-closed local checks
 //!
-//! 1. **One writer, ever.** Postgres grants the advisory key to at most one session, so at most one
-//!    node is leader database-wide. Writes only ever run on the lock-holding writer session
-//!    ([`crate::Store::persist`]), so a follower physically cannot commit onto the chain.
+//! 1. **Only the lock holder passes this write gate.** Postgres grants the advisory key to at most
+//!    one session, and [`crate::Store::persist`] checks that state before opening a transaction.
 //! 2. **Immediate step-down.** [`PostgresBackend::verify_still_leader`] re-checks, on the *writer
 //!    session itself*, that this session still (a) physically holds the advisory lock and (b) owns
 //!    the current `leader_epoch`. ANY doubt — a broken connection, a lost lock, an epoch bumped by a
@@ -27,8 +24,8 @@
 //!    returns [`crate::StoreError::NotLeader`]. The API-layer write gate calls this before *every*
 //!    durable append.
 //! 3. **Epoch fence (§4.3).** Each promotion bumps a monotonic `leader_epoch` in the single-row
-//!    `cluster_leader` table while holding the lock. A zombie ex-leader that briefly wakes still
-//!    cannot write (it lost the lock), and its stale epoch makes the anomaly observable + fenced.
+//!    `cluster_leader` table while holding the lock. A stale ex-leader should fail this code's write
+//!    gate because it no longer proves both lock ownership and the current epoch.
 //! 4. **Handoff gate (§4.2).** A promoted follower must re-read durable `MAX(seq)` and re-verify the
 //!    chain from Postgres, discarding any stale in-memory tail, BEFORE its first append. The
 //!    catch-up itself is orchestrated by the API layer; [`PostgresBackend::durable_max_seq`] and the
@@ -396,7 +393,8 @@ mod tests {
         let Some(url) = test_url() else { return };
         let a = PostgresBackend::open(&url).expect("first node opens");
         assert!(a.is_leader(), "the first node must win the advisory lock");
-        // A second node pointed at the same DB must NOT also become leader (single-holder guarantee).
+        // A second node pointed at the same DB must not acquire the same advisory lock while it is
+        // still held by the first writer session.
         let b = PostgresBackend::open(&url).expect("second node opens as follower");
         assert!(
             !b.is_leader(),
@@ -434,7 +432,7 @@ mod tests {
         let first_epoch = leader.leader_epoch();
         let follower = PostgresBackend::open(&url).expect("opens as follower");
         assert!(!follower.is_leader());
-        // Follower cannot promote while the leader still holds the lock (no split-brain).
+        // Follower cannot promote while the leader still holds the lock.
         assert_eq!(
             follower.try_promote().expect("try_promote runs"),
             false,

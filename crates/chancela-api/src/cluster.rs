@@ -1,4 +1,4 @@
-//! **wp16 Phase 0 — cluster leader election, step-down and failover handoff (active-passive HA).**
+//! **wp16 Phase 0 — Postgres advisory-lock leader election, step-down and handoff.**
 //!
 //! This is the API-layer half of wp16 P0; the Postgres-advisory-lock primitives live in
 //! `chancela_store`'s `pg_cluster` module and are reached through the [`chancela_store::Store`]
@@ -9,20 +9,19 @@
 //!
 //! ## The model
 //!
-//! Multiple `chancela-server` nodes point at one Postgres. Exactly **one** holds the writer advisory
-//! lock — it is the LEADER, the only node that appends to the ledger. The rest are FOLLOWERS: they
-//! came up read-only and poll to be promoted when the leader dies. This is **active-passive HA with
-//! automatic crash failover** — not multi-writer, and not zero-RTO. In P0 a non-leader simply
-//! **rejects writes with `503` "not leader"** (independent follower reads / a change feed / a
-//! write-redirect are LATER phases).
+//! Multiple `chancela-server` nodes can point at one Postgres. The writer advisory lock is used as a
+//! bounded local election primitive: the holder is treated as LEADER for this process's write path,
+//! and non-holders are FOLLOWERS that reject writes with `503`. This is not a production HA
+//! certification, consensus protocol, multi-writer mode, or zero-RTO promise; independent follower
+//! reads, a change feed, and write redirects are later phases.
 //!
-//! ## Fail-closed guarantees
+//! ## Fail-closed checks
 //!
 //! - **Write gate.** [`crate::AppState::persist_write_through`] calls
 //!   [`chancela_store::Store::cluster_assert_writable`] before every durable append. On Postgres that
 //!   re-verifies — on the writer session itself — that this node still holds the advisory lock and
 //!   owns the current `leader_epoch`, failing closed (`503`) on ANY doubt. A follower, or a leader
-//!   that silently lost its lock, physically cannot commit.
+//!   that silently lost its lock, is rejected before this code commits a durable write.
 //! - **Step-down.** The supervisor's leader tick re-verifies + heartbeats each poll; any failure
 //!   flips the node to follower immediately.
 //! - **Handoff gate.** A newly-promoted follower runs [`crate::AppState::cluster_promotion_handoff`]
@@ -48,8 +47,7 @@ use crate::error::ApiError;
 /// This node's configured role, from `CHANCELA_NODE_ROLE`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum NodeRole {
-    /// Try to become leader; fall back to follower (the production default — makes failover
-    /// automatic).
+    /// Try to become leader; fall back to follower (the default polling-election mode).
     Auto,
     /// Pinned leader (campaigns for the lock exactly like `Auto`; the pin documents deployment
     /// intent).
@@ -299,13 +297,41 @@ fn cluster_tick(store: &Store, role: NodeRole, want_heartbeat: bool) -> Tick {
     }
 }
 
+fn validate_handoff_ledger_len(
+    loaded_len: usize,
+    durable_max_seq: Option<i64>,
+) -> Result<(), String> {
+    match durable_max_seq {
+        Some(max) if max < 0 => Err(format!("durable MAX(seq) is negative: {max}")),
+        Some(max) => {
+            let expected = i64::try_from(loaded_len)
+                .map_err(|_| format!("loaded ledger length {loaded_len} does not fit i64"))?;
+            let actual = max
+                .checked_add(1)
+                .ok_or_else(|| format!("durable MAX(seq) {max} cannot be incremented"))?;
+            if expected == actual {
+                Ok(())
+            } else {
+                Err(format!(
+                    "loaded ledger length {loaded_len} does not match durable MAX(seq) {max}"
+                ))
+            }
+        }
+        None if loaded_len == 0 => Ok(()),
+        None => Err(format!(
+            "durable MAX(seq) is NULL but loaded ledger length is {loaded_len}"
+        )),
+    }
+}
+
 impl AppState {
-    /// **Failover handoff gate (§4.2 / §4.4).** Run by a newly-promoted follower AFTER it wins the
+    /// **Promotion handoff gate (§4.2 / §4.4).** Run by a newly-promoted follower AFTER it wins the
     /// advisory lock and BEFORE its first append: re-read the authoritative durable state from
-    /// Postgres (which re-verifies the whole hash chain), discard any stale in-memory tail beyond
-    /// durable `MAX(seq)`, and swap the durable state into memory. If the durable chain fails
-    /// re-verification the node enters DEGRADED read-only mode instead of writing over a suspect
-    /// chain. A no-op when there is no store.
+    /// Postgres (which re-verifies the whole hash chain), verify that loaded ledger length matches
+    /// durable `MAX(seq)`, reload the durable projections needed by write handlers, and only then
+    /// swap the durable state into memory. Any read, verification, or length mismatch fails closed:
+    /// the node stays read-only/degraded rather than writing over uncertain state. A no-op when
+    /// there is no store.
     ///
     /// Because the reload makes in-memory `events.len()` equal durable `MAX(seq)+1`, the first new
     /// append gets the correct next `seq` with the genuine durable head as its `prev_hash` — no gap,
@@ -315,9 +341,15 @@ impl AppState {
             return Ok(());
         };
         // Catch up + re-verify from Postgres (authoritative). `load` re-runs the chain verification.
-        let loaded = store
-            .load()
-            .map_err(|e| ApiError::Internal(format!("promotion handoff load failed: {e}")))?;
+        let loaded = match store.load() {
+            Ok(loaded) => loaded,
+            Err(e) => {
+                *self.degraded.write().await = true;
+                return Err(ApiError::Internal(format!(
+                    "promotion handoff load failed: {e}"
+                )));
+            }
+        };
         // §4.2 step d: a broken durable chain must NOT be extended — go read-only and alarm.
         if let Err(e) = &loaded.chain_status {
             *self.degraded.write().await = true;
@@ -326,8 +358,40 @@ impl AppState {
                  read-only mode"
             )));
         }
-        let durable_max = store.cluster_durable_max_seq().ok().flatten();
         let durable_len = loaded.ledger.len();
+        let durable_max = match store.cluster_durable_max_seq() {
+            Ok(max) => max,
+            Err(e) => {
+                *self.degraded.write().await = true;
+                return Err(ApiError::Internal(format!(
+                    "promotion handoff failed to read durable MAX(seq): {e}"
+                )));
+            }
+        };
+        if let Err(msg) = validate_handoff_ledger_len(durable_len, durable_max) {
+            *self.degraded.write().await = true;
+            return Err(ApiError::Internal(format!(
+                "promotion handoff refused mismatched durable ledger state: {msg}"
+            )));
+        }
+        let signed = match store.all_signed_documents() {
+            Ok(signed) => signed,
+            Err(e) => {
+                *self.degraded.write().await = true;
+                return Err(ApiError::Internal(format!(
+                    "promotion handoff failed to reload signed documents: {e}"
+                )));
+            }
+        };
+        let pending = match store.all_pending_cmd_sessions() {
+            Ok(pending) => pending,
+            Err(e) => {
+                *self.degraded.write().await = true;
+                return Err(ApiError::Internal(format!(
+                    "promotion handoff failed to reload pending CMD sessions: {e}"
+                )));
+            }
+        };
         // Swap the authoritative durable state in, discarding any stale in-memory tail (§4.4).
         *self.entities.write().await = loaded.entities;
         *self.books.write().await = loaded.books;
@@ -335,22 +399,10 @@ impl AppState {
         *self.follow_ups.write().await = loaded.follow_ups;
         *self.registry_extracts.write().await = loaded.registry_extracts;
         *self.ledger.write().await = loaded.ledger;
-        if let Ok(signed) = store.all_signed_documents() {
-            *self.signed_documents.write().await = signed;
-        }
-        if let Ok(pending) = store.all_pending_cmd_sessions() {
-            *self.pending_signatures.write().await = pending;
-        }
+        *self.signed_documents.write().await = signed;
+        *self.pending_signatures.write().await = pending;
         // The chain re-verified: lift any degraded gate this node was holding.
         *self.degraded.write().await = false;
-        // Sanity: the caught-up in-memory length must equal durable MAX(seq)+1 (dense run).
-        if let Some(max) = durable_max {
-            debug_assert_eq!(
-                durable_len as i64,
-                max + 1,
-                "handoff: in-memory ledger length must equal durable MAX(seq)+1"
-            );
-        }
         Ok(())
     }
 }
@@ -412,8 +464,8 @@ mod tests {
 
     #[test]
     fn leader_steps_down_on_lost_lock_fail_closed() {
-        // The core split-brain-prevention transition: a leader that cannot prove it still holds the
-        // lock becomes a follower immediately, regardless of configured role.
+        // The core fail-closed transition: a leader that cannot prove it still holds the lock becomes
+        // a follower immediately, regardless of configured role.
         assert_eq!(
             transition(RoleState::Leader, NodeRole::Leader, LockEvent::Lost),
             RoleState::Follower
@@ -457,6 +509,19 @@ mod tests {
             env_duration_secs("CHANCELA_NO_SUCH_VAR_XYZ", 0),
             Duration::from_secs(1)
         );
+    }
+
+    #[test]
+    fn handoff_ledger_len_validation_fails_closed_on_mismatch() {
+        assert!(validate_handoff_ledger_len(0, None).is_ok());
+        assert!(validate_handoff_ledger_len(1, Some(0)).is_ok());
+        assert!(validate_handoff_ledger_len(3, Some(2)).is_ok());
+
+        assert!(validate_handoff_ledger_len(1, None).is_err());
+        assert!(validate_handoff_ledger_len(2, Some(2)).is_err());
+        assert!(validate_handoff_ledger_len(0, Some(0)).is_err());
+        assert!(validate_handoff_ledger_len(1, Some(-1)).is_err());
+        assert!(validate_handoff_ledger_len(1, Some(i64::MAX)).is_err());
     }
 
     #[tokio::test]

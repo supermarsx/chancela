@@ -258,9 +258,9 @@ pub async fn reanchor_ledger(
     let record = ledger
         .reanchor(&actor, &req.reason, at)
         .map_err(map_reanchor_error)?;
-    store
-        .persist_reanchored_ledger(&ledger)
-        .map_err(|e| ApiError::Internal(format!("failed to persist the re-anchored chain: {e}")))?;
+    store.persist_reanchored_ledger(&ledger).map_err(|e| {
+        AppState::map_store_write_error("failed to persist the re-anchored chain", e)
+    })?;
 
     crate::refresh_degraded(&state, &ledger).await;
     let degraded = *state.degraded.read().await;

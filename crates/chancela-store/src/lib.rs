@@ -1691,7 +1691,8 @@ impl Store {
     /// **Fail-closed write gate**, consulted immediately before every durable append. SQLite is
     /// always writable; Postgres re-verifies — on the writer session itself — that it still holds the
     /// advisory lock AND owns the current `leader_epoch`, returning [`StoreError::NotLeader`] on ANY
-    /// doubt (lost lock, stolen epoch, broken session). A node that lost leadership can never commit.
+    /// doubt (lost lock, stolen epoch, broken session). A node that lost leadership is rejected by
+    /// this gate before opening a durable write transaction.
     pub fn cluster_assert_writable(&self) -> Result<(), StoreError> {
         match &self.backend {
             Backend::Sqlite(_) => Ok(()),

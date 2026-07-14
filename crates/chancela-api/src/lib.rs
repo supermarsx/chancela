@@ -2023,7 +2023,8 @@ async fn unknown_api_route(
 pub fn app(state: AppState, web_dist: Option<PathBuf>) -> Router {
     // wp16 P0: mount the cluster leader-election supervisor (promotion poll + heartbeat + step-down).
     // Inert unless the durable backend is an electing one (Postgres); the default SQLite / in-memory
-    // build spawns nothing. Spawned here (inside the server's tokio runtime) so failover is automatic.
+    // build spawns nothing. Spawned here (inside the server's tokio runtime) so the bounded advisory
+    // lock polling loop is active when the Postgres backend is selected.
     cluster::spawn_cluster_supervisor(state.clone());
     let api = router(state);
     let app = match web_dist {

@@ -22,12 +22,12 @@
 //!
 //! At [`PostgresBackend::open`] the writer connection takes a **session-level advisory lock**
 //! ([`WRITER_ADVISORY_LOCK_KEY`]) and holds it for the process lifetime. Because that one
-//! connection is never returned to a pool, the lock is never released while the server runs, so a
-//! second instance pointed at the same database cannot become a second writer — the single-holder
-//! guarantee is the split-brain prevention. wp16 P0 promotes this from a blocking second-instance
-//! *guard* into a **leader-election** primitive: `open` now `pg_try_advisory_lock`s instead of
-//! blocking, so a node that loses the race comes up as a read-only FOLLOWER and polls for promotion
-//! rather than hanging (see [`crate::pg_cluster`] for the election / step-down / failover-handoff /
+//! connection is never returned to a pool, the lock is never released while the server runs normally,
+//! so a second instance pointed at the same database fails this backend's write gate unless it later
+//! acquires the advisory lock. wp16 P0 promotes this from a blocking second-instance guard into a
+//! bounded leader-election primitive: `open` now `pg_try_advisory_lock`s instead of blocking, so a
+//! node that loses the race comes up as a read-only FOLLOWER and polls for promotion rather than
+//! hanging (see [`crate::pg_cluster`] for the election / step-down / handoff /
 //! `leader_epoch`-fence machinery). Compose additionally pins `deploy.replicas: 1` for the
 //! single-writer profile (§6). TLS (`sslmode=verify-full` via `postgres-rustls`, §3) remains a
 //! later hardening item.
