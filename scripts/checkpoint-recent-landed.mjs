@@ -9911,12 +9911,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `5911fe0`",
+    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `9ddced8`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `5911fe0`",
+    "Focused Gate Snapshot Through `9ddced8`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -10551,7 +10551,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `5911fe0`",
+    "Current checkpoint metadata/static checks through `9ddced8`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -11041,7 +11041,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `5911fe00854e55faff0b0299c9295c27954a8ebe`",
+    "implementation snapshot `9ddced8c6bf39fd349c5662bb7d359bb4730936d`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -11306,7 +11306,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Current `ffe8043` keeps Data/Architecture/CI **PARTIAL**",
+    "Current `9ddced8` keeps Data/Architecture/CI **PARTIAL**",
     "spec coverage Postgres store checkpoint marker",
   );
   assertFileContains(
@@ -11381,7 +11381,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current `ffe8043` Postgres store runtime, backend-selection, logical\n  recovery, cluster write-gating, and covered follower-feed checks",
+    "Current `9ddced8` Postgres store runtime, backend-selection, logical\n  recovery, cluster write-gating, and covered follower-feed checks",
     "CI/E2E hardening plan Postgres store/backend-selection checks marker",
   );
   assertFileContains(
@@ -11401,7 +11401,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "The Postgres store, backend-selection, logical recovery, and local\nadvisory-lock/fail-closed cluster write gate and promotion handoff markers prove\nsource/test coverage for the off-by-default backend runtime paths, API/server\nselector, app-level logical backup/restore/recovery paths, pre-append\nwrite-gate refusal",
+    "The Postgres store, backend-selection, logical recovery, per-book portability,\nrestore-preflight, and local\nadvisory-lock/fail-closed cluster write gate and promotion handoff markers prove\nsource/test coverage for the off-by-default backend runtime paths, API/server\nselector, app-level logical backup/restore/recovery paths, Postgres per-book\nexport/import/imported-bundle/start-over paths, non-destructive logical-bundle\npreflight verification, pre-append\nwrite-gate refusal",
     "CI checkpoints Postgres/backend selector bounded marker",
   );
   assertFileContains(

@@ -145,10 +145,11 @@ i18n leakage guards, external-signing stored slot evidence rendering,
 operator technical evidence form submission, identity-requirement-tagged
 evidence rows, `PATCH` slot payloads that omit `complete:true`, validator
 fixtures, off-by-default Postgres store runtime write/read markers, Postgres
-logical backup/restore/recovery source and test markers, local advisory-lock
+logical backup/restore/recovery source and test markers, Postgres per-book
+export/import/start-over plus restore-preflight markers, local advisory-lock
 cluster write-gate and fail-closed promotion handoff markers, ignored
-`DATABASE_URL` live tests, and remaining `UnsupportedOnPostgres` per-book
-portability plus `restore_preflight` boundaries, SQLite-default
+`DATABASE_URL` live tests, and remaining SQLite-only internal
+`UnsupportedOnPostgres` boundaries, SQLite-default
 feature/config-gated database backend selection markers, and the standalone
 desktop Cargo workspace.
 
@@ -175,10 +176,13 @@ ledger-integrity regression coverage only. They do not complete RBAC,
 delegation policy, tenant authorization, legal-capacity validation, broad
 security certification, or any spec area.
 
-The Postgres store, backend-selection, logical recovery, and local
+The Postgres store, backend-selection, logical recovery, per-book portability,
+restore-preflight, and local
 advisory-lock/fail-closed cluster write gate and promotion handoff markers prove
 source/test coverage for the off-by-default backend runtime paths, API/server
-selector, app-level logical backup/restore/recovery paths, pre-append
+selector, app-level logical backup/restore/recovery paths, Postgres per-book
+export/import/imported-bundle/start-over paths, non-destructive logical-bundle
+preflight verification, pre-append
 write-gate refusal, promotion handoff reloading/re-verification, and HTTP 503
 `NotLeader` mapping only. The `bac4337` data-status refresh reports the active
 durable backend family and sidecar storage mode, adds backend-neutral logical

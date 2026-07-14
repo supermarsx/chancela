@@ -1,7 +1,7 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `5911fe0`,
+and implementation snapshot `9ddced8`,
 including coverage notes for the bounded PAdES DSS validation-time, PDF/UA v11
 blocker-delta and scoped table-header evidence, retention due-candidate explicit evidence states,
 bounded archive/no-action evidence UI, duplicate-review guard/status surfacing, and
@@ -21,6 +21,7 @@ external-signing workflow-only envelope UI, workflow reminder policy, and
 structured platform-log forwarded-ingest/failure-audit slices, ROL-02 seeded
 role archetype explicitness, Postgres store runtime write/read marker coverage,
 Postgres logical backup/restore/recovery marker coverage,
+Postgres per-book export/import/start-over plus restore-preflight marker coverage,
 local advisory-lock cluster write gating and fail-closed promotion handoff markers,
 SQLite-default feature/config-gated backend selection, DPIA template/guidance
 checkpoint coverage,
@@ -853,11 +854,11 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `5911fe0`
+## Focused Gate Snapshot Through `9ddced8`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08` and checkpoint-promoted on 2026-07-14 for
-current implementation head `5911fe0`. This is not an exhaustive current
+current implementation head `9ddced8`. This is not an exhaustive current
 green-run claim; browser, Docker, desktop, package signing/notarization, image
 signing/attestation, and live-provider limits above still apply.
 
@@ -945,7 +946,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   (`cargo test -p chancela-store --locked --features sqlcipher sqlcipher`) now
   has a Windows CI lane that installs pinned Strawberry Perl before Rust/Cargo so
   vendored OpenSSL sees a Windows-native Perl first on `PATH`.
-- Current `ffe8043` Postgres store runtime, backend-selection, logical
+- Current `9ddced8` Postgres store runtime, backend-selection, logical
   recovery, cluster write-gating, and covered follower-feed checks: static/source markers pin the off-by-default `postgres`
   feature, `PostgresBackend::open`, advisory-locked single writer, boot `load`
   replay, request-serving `Tx` write methods, runtime `Store` read projections,
@@ -969,10 +970,15 @@ settingsDefaults.test.ts contracts.test.ts`.
   and ignored live LISTEN/NOTIFY scaffolding gated by `DATABASE_URL`. This is
   marker/static coverage plus local advisory-lock/fail-closed gating, covered
   read-model feed coverage, and opt-in live-test scaffolding only;
-  SQLite remains the default, Postgres selection is feature/config gated,
-  default CI does not run against a live Postgres database, and only per-book
-  portability paths plus the SQLite-temp-file `restore_preflight` drill still
-  fail closed with `UnsupportedOnPostgres`. It is not production Postgres
+  The wp21 markers from `9ddced8` additionally pin Postgres per-book
+  export/import/imported-bundle/start-over portability through pooled reads and
+  backend-agnostic transaction writers, plus non-destructive logical-bundle
+  `restore_preflight` verification; ignored live-Postgres tests cover
+  export/import round-trip, tamper quarantine, collision-refuse atomicity,
+  start-over coherence, and bad-bundle preflight refusal. SQLite remains the
+  default, Postgres selection is feature/config gated, default CI does not run
+  against a live Postgres database, and only direct SQLite internals remain
+  fail-closed on Postgres. It is not production Postgres
   readiness, global read-freshness certification for settings/users/roles/
   sidecars, live DB validation, migration completeness, production HA
   readiness, consensus correctness, split-brain impossibility, live failover
@@ -1845,7 +1851,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   full RBAC/delegation-policy completion, tenant authorization proof,
   legal-capacity verification, broad security certification, or spec
   completion.
-- Current checkpoint metadata/static checks through `5911fe0`
+- Current checkpoint metadata/static checks through `9ddced8`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and

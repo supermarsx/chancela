@@ -1,6 +1,6 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-14 from current implementation snapshot `5911fe00854e55faff0b0299c9295c27954a8ebe`,
+*Updated 2026-07-14 from current implementation snapshot `9ddced8c6bf39fd349c5662bb7d359bb4730936d`,
 with committed evidence refreshes for the recently landed Signatures & Trust
 provider-credential, stored runtime credential resolution, stored PKCS#12,
 remote batch-initiation surfaces, remote provider readiness manifests, and Docker/Compose runtime-hardening
@@ -8,7 +8,8 @@ checkpoint, delegation legal-basis enforcement, and compliance-panel internal
 legislacao corpus deep links for structured legal-basis rows, and sealed-act
 chronology projection for local sealed/archived acts with provenance,
 retification edges, and false no-claim flags, while preserving the prior committed
-`5911fe0` AI provenance review-packet helper/copy evidence,
+`5911fe0` AI provenance review-packet helper/copy evidence and `9ddced8`
+Postgres per-book portability plus restore-preflight evidence,
 `7fcf5ef5f1c2fbd5b9eb26d6aac5c1240144a365` manual-signature
 original-reference sealing path and web accessibility/focus guard evidence and the prior
 `869e02f897f54730df86db739193f86c372e0e19` coverage context,
@@ -598,7 +599,7 @@ Implementation checkpoints covered here:
   legal-capacity proof, tenant/group policy, HR authority, access-policy
   certification, or automatic reconciliation of customized persisted non-Owner
   roles.
-- Current `ffe8043` keeps Data/Architecture/CI **PARTIAL**: the
+- Current `9ddced8` keeps Data/Architecture/CI **PARTIAL**: the
   off-by-default `postgres` feature covers the request-serving store runtime
   write/read paths from `547408e` and backend selection from `cec169c`: schema
   DDL from the shared schema constants, `meta` schema/instance stamping, boot
@@ -643,11 +644,17 @@ Implementation checkpoints covered here:
   `ledger_core_aggregates_signed_documents` scope with nullable lag. Focused
   tests pin delta gaps/forks, aggregate-refresh failure discard, health scope,
   and store tail/notify helper contracts; live LISTEN/NOTIFY tests remain
-  ignored and gated by `DATABASE_URL`. Only the per-book portability paths
-  (`export_book`, `import_book`,
-  `imported_books`, per-book `start_over_book`) and SQLite-temp-file
-  `restore_preflight` drill remain deferred on Postgres with
-  `UnsupportedOnPostgres`. This is optional backend plumbing and logical
+  ignored and gated by `DATABASE_URL`. The `9ddced8` wp21 slice also ports the
+  remaining operator-facing Postgres per-book portability paths (`export_book`,
+  `import_book`, `preflight_import_book_bytes`, `imported_books`,
+  `imported_bundle`, and per-book `start_over_book`) through pooled Postgres
+  reads plus backend-agnostic transaction writers, and runs `restore_preflight`
+  as a non-destructive in-memory verification of the logical backup bundle
+  instead of a SQLite temp-file drill. Ignored live-Postgres tests cover
+  per-book export/import round-trip, tamper quarantine and collision-refuse
+  atomicity, per-book start-over coherence, and restore-preflight refusal of a
+  bad bundle. Only direct SQLite internals (`Store::locked_conn` and `Tx::raw`)
+  remain fail-closed on Postgres. This is optional backend plumbing and logical
   recovery marker coverage plus local advisory-lock/fail-closed gating and
   covered-feed marker coverage only:
   SQLite remains the default, Postgres selection is feature/config gated, and
@@ -2407,9 +2414,10 @@ behavior, legal disposal, or legal-effect claims.
   length mismatch refusal, and the 503 response; live PG election/failover
   tests remain ignored and gated by `DATABASE_URL`. Default CI still does not
   run a live Postgres
-  database; only per-book portability paths and the SQLite-temp-file
-  `restore_preflight` drill remain deferred with `UnsupportedOnPostgres`. This
-  is optional runtime/logical-recovery backend plumbing and marker coverage
+  database; `9ddced8` adds Postgres per-book export/import/imported-bundle/
+  start-over portability plus non-destructive logical-bundle `restore_preflight`
+  evidence, with remaining fail-closed arms limited to SQLite-only internals.
+  This is optional runtime/logical-recovery backend plumbing and marker coverage
   plus local advisory-lock/fail-closed gating only, not production Postgres
   readiness, live DB validation, migration completeness, production HA
   readiness, consensus correctness, split-brain impossibility, live failover
