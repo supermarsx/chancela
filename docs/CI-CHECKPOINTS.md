@@ -524,9 +524,10 @@ flags as source-linked technical evidence only, not a legal registry certificate
 DRE verification, registry/provider authority verification, archive mutation,
 legal validity, user/editor authoritative graph, or an authority-approved graph,
 mapped PDF inter-word space,
-PDF/UA blocker-decomposition markers, PDF accessibility report JSON v8,
+PDF/UA blocker-decomposition markers, PDF accessibility report JSON v11,
+deterministic `pdf_ua_blocker_delta`, cleared/remaining blocker counts,
 marked-content coverage counts, `writer_owned_decorative_artifacts_accounted_for`, reduced default-fixture
-`limited_tagged_structure` blocker lists, exhaustive `DocumentBlock`
+`limited_tagged_structure` remaining blocker lists, exhaustive `DocumentBlock`
 non-text-accounting coverage, ASiC structural profile-shape,
 manifest/signature diagnostic, blocker-ID, `technical_validation`,
 `validate_asic_container`, `AsicValidationReport`, `AsicSignatureValidation`,

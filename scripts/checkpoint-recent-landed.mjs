@@ -2285,7 +2285,7 @@ function assertCheckpointMap() {
   assertFileContains(
     "crates/chancela-doc/src/tests.rs",
     "accessibility_bounded_local_pdf_diagnostics_are_emitted_without_pdfua_claim",
-    "PDF accessibility v10 local diagnostics no-claim coverage",
+    "PDF accessibility v11 local diagnostics no-claim coverage",
   );
   assertFileContains(
     "crates/chancela-doc/src/tests.rs",
@@ -2304,8 +2304,28 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-doc/src/tests.rs",
-    '\\"version\\":10',
-    "PDF accessibility report JSON v10 coverage",
+    '\\"version\\":11',
+    "PDF accessibility report JSON v11 coverage",
+  );
+  assertFileContains(
+    "crates/chancela-doc/src/tests.rs",
+    '\\"pdf_ua_blocker_delta\\":{\\"delta_basis\\":\\"local_chancela_doc_writer_evidence_only\\"',
+    "PDF accessibility deterministic blocker-delta marker",
+  );
+  assertFileContains(
+    "crates/chancela-doc/src/tests.rs",
+    '\\"remaining_blockers\\":[\\"limited_tagged_structure\\"]',
+    "PDF accessibility blocker-delta remaining limited-structure marker",
+  );
+  assertFileContains(
+    "crates/chancela-doc/src/tests.rs",
+    '\\"cleared_count\\":12',
+    "PDF accessibility blocker-delta cleared-count marker",
+  );
+  assertFileContains(
+    "crates/chancela-doc/src/tests.rs",
+    '\\"remaining_count\\":1',
+    "PDF accessibility blocker-delta remaining-count marker",
   );
   assertFileContains(
     "crates/chancela-doc/src/tests.rs",
@@ -9676,12 +9696,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `fc9e9b6`",
+    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `47ed33b`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `fc9e9b6`",
+    "Focused Gate Snapshot Through `47ed33b`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -9696,8 +9716,8 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "accessibility report JSON version 10, scoped row/column table-header",
-    "CI/E2E hardening plan PDF accessibility v10 table-header marker",
+    "accessibility report JSON version 11, deterministic `pdf_ua_blocker_delta`",
+    "CI/E2E hardening plan PDF accessibility v11 blocker-delta marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -10306,7 +10326,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `fc9e9b6`",
+    "Current checkpoint metadata/static checks through `47ed33b`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -10786,7 +10806,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `fc9e9b6d59f5b757617d2e04cc5490e30f7a4efb`",
+    "implementation snapshot `47ed33b17aff3036c961051376ac90f32f8dce0e`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -10826,7 +10846,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Current `fc9e9b6` keeps Roles & Access/Data/CI **PARTIAL**",
+    "Current `47ed33b` keeps Documents/Roles & Access/Data/CI **PARTIAL**",
     "spec coverage RBAC ledger verification checkpoint marker",
   );
   assertFileContains(
@@ -12711,8 +12731,13 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "PDF accessibility report JSON\n  version 10 now includes scoped row/column table-header counts",
-    "spec coverage PDF accessibility report v10 table-header marker",
+    "PDF accessibility report JSON\n  version 11 now includes deterministic `pdf_ua_blocker_delta` evidence",
+    "spec coverage PDF accessibility report v11 blocker-delta marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "cleared count of 12 and remaining count of 1",
+    "spec coverage PDF accessibility blocker-delta count marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",

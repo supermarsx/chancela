@@ -1,9 +1,9 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `fc9e9b6`,
-including coverage notes for the bounded PAdES DSS validation-time, PDF/UA v10
-scoped table-header evidence, retention due-candidate explicit evidence states,
+and implementation snapshot `47ed33b`,
+including coverage notes for the bounded PAdES DSS validation-time, PDF/UA v11
+blocker-delta and scoped table-header evidence, retention due-candidate explicit evidence states,
 bounded archive/no-action evidence UI, duplicate-review guard/status surfacing, and
 prior bounded execution suppression with active/suppressed candidate counts plus
 retention execution review closure,
@@ -319,7 +319,7 @@ test operating checklist for driving Chancela toward release confidence.
   it returns local input-shape guidance and no-claim boundaries; with
   `arguments.document_archive` it returns deterministic aggregate counts for
   validation report/status, digest/fixity fields, signed-document metadata,
-  external-validator attachment statuses, PDF accessibility v10 report/blocker
+  external-validator attachment statuses, PDF accessibility v11 report/blocker
   and row/column table-header evidence, archive/evidence-index path markers,
   no-claim flag observations, and missing-evidence blockers. It echoes no raw
   reports, digest values, path values, IDs, notes, raw PDF bytes, or secrets;
@@ -816,11 +816,11 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `fc9e9b6`
+## Focused Gate Snapshot Through `47ed33b`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08` and checkpoint-promoted on 2026-07-14 for
-current implementation head `fc9e9b6`. This is not an exhaustive current
+current implementation head `47ed33b`. This is not an exhaustive current
 green-run claim; browser, Docker, desktop, package signing/notarization, image
 signing/attestation, and live-provider limits above still apply.
 
@@ -1009,8 +1009,10 @@ settingsDefaults.test.ts contracts.test.ts`.
   TSA hash behavior, and labelled `Registos TSA` result grouping without making
   live trust-network calls.
 - Current working-tree PDF accessibility checks: focused document tests pin
-  accessibility report JSON version 10, scoped row/column table-header
-  evidence, structure-tree diagnostics, explicit role-map target entries,
+  accessibility report JSON version 11, deterministic `pdf_ua_blocker_delta`
+  evidence with local basis, cleared blockers, remaining blockers, cleared
+  count of 12, remaining count of 1, scoped row/column table-header evidence,
+  structure-tree diagnostics, explicit role-map target entries,
   marked-content coverage counts, bounded local topology facts, and
   marked-artifact target/operator evidence for writer-owned decorative rule
   artifacts emitted as PDF artifacts. The default
@@ -1020,14 +1022,15 @@ settingsDefaults.test.ts contracts.test.ts`.
   `accessibility_page_breaks_do_not_require_decorative_accounting`, and
   `accessibility_non_text_accounting_covers_current_block_variants` keeps
   `DocumentBlock` accounting exhaustive for future caller-owned non-text
-  variants. `LimitedTaggedStructure` remains machine-visible while
+  variants. The default remaining blocker is `limited_tagged_structure`;
+  `LimitedTaggedStructure` remains machine-visible while
   `pdf_ua_claimed` stays false and no PDF/UA certification claim or `pdfuaid`
   metadata is emitted. This is blocker reduction only, not PDF/UA conformance,
   validator evidence, legal sufficiency, or signed-PDF accessibility
   certification.
 - Current working-tree PDF accessibility evidence projection checks: focused
   API/archive tests project the deterministic `chancela-doc` accessibility
-  report JSON v10 into document bundle validation reports and archive package
+  report JSON v11 into document bundle validation reports and archive package
   `evidence/pdf-accessibility/{document_id}.json` sidecars. Act-owned documents
   are derived from the persisted render model; book-level or unsupported model
   cases remain explicit `pdf_accessibility_report_unavailable` sidecars. The
@@ -1283,7 +1286,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   no extra resource params, no bridge/API/AI-provider/legal-service/HTTP/SSE/
   provider calls, aggregate counts for validation report/status, digest/fixity
   fields, signed-document state, external-validator attachments/statuses, PDF
-  accessibility v10 report versions, PDF/UA blockers, row/column table-header
+  accessibility v11 report versions, PDF/UA blocker deltas, row/column table-header
   evidence, archive/evidence-index path markers, no-claim observations, and
   missing-evidence blockers, plus false PDF/UA conformance, DGLAB
   certification, legal validity, signature validity, qualified-signature,
@@ -1787,7 +1790,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   full RBAC/delegation-policy completion, tenant authorization proof,
   legal-capacity verification, broad security certification, or spec
   completion.
-- Current checkpoint metadata/static checks through `fc9e9b6`
+- Current checkpoint metadata/static checks through `47ed33b`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
@@ -1836,7 +1839,8 @@ settingsDefaults.test.ts contracts.test.ts`.
   concurrent duplicate guard, queued review status/id/time UI surfacing, and
   false destructive/full-erasure markers, plus PAdES DSS caller validation-time, malformed-time refusal, VRI
   `/TU`, document-timestamp local renewal planning, and monitor-state markers,
-  plus PDF accessibility JSON version 10, scoped table-header evidence,
+  plus PDF accessibility JSON version 11, deterministic `pdf_ua_blocker_delta`,
+  cleared/remaining blocker counts, scoped table-header evidence,
   structural-depth evidence, structure-tree diagnostics, explicit role-map
   target entries,
   marked-content coverage counts, writer-owned marked-artifact accounting,
