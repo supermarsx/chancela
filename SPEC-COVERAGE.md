@@ -1,6 +1,6 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-14 from current implementation snapshot `7f9930abb702f883dbdb73a043dae27279464697`,
+*Updated 2026-07-14 from current implementation snapshot `5911fe00854e55faff0b0299c9295c27954a8ebe`,
 with committed evidence refreshes for the recently landed Signatures & Trust
 provider-credential, stored runtime credential resolution, stored PKCS#12,
 remote batch-initiation surfaces, remote provider readiness manifests, and Docker/Compose runtime-hardening
@@ -8,6 +8,7 @@ checkpoint, delegation legal-basis enforcement, and compliance-panel internal
 legislacao corpus deep links for structured legal-basis rows, and sealed-act
 chronology projection for local sealed/archived acts with provenance,
 retification edges, and false no-claim flags, while preserving the prior committed
+`5911fe0` AI provenance review-packet helper/copy evidence,
 `7fcf5ef5f1c2fbd5b9eb26d6aac5c1240144a365` manual-signature
 original-reference sealing path and web accessibility/focus guard evidence and the prior
 `869e02f897f54730df86db739193f86c372e0e19` coverage context,
@@ -2069,7 +2070,7 @@ Implementation checkpoints covered here:
   government ID check, or representative capacity before a slot is marked signed.
   These are recorded workflow evidence requirements only; they do not assert legal
   identity, representative authority, qualified status, or legal effect.
-- Current working-tree AI provenance panel depth keeps AI/UX/Workflows **PARTIAL**:
+- Current `5911fe0` AI provenance review packet keeps AI/UX/Workflows **PARTIAL**:
   the Ata editor renders a bounded local provenance panel from existing
   `ai_provenance.statement_sources[]` rows, with deterministic local summary
   counts, grouped `source_type` and review-status counts, row path/type/label/status,
@@ -2079,8 +2080,15 @@ Implementation checkpoints covered here:
   `legal_validity: false`, `source_certification: false`, `provider: false`,
   `trust: false`, `external_validation: false`, and
   `signature_qualification: false`. Authorized operators can still record
-  accept/reject decisions, and the move to Signing remains disabled while
-  AI-assisted text is pending or rejected. This is deterministic local and
+  accept/reject decisions, copy a deterministic pretty-JSON review packet
+  generated from `act.ai_provenance`, and the move to Signing remains disabled
+  while AI-assisted text is pending or rejected. The copied packet records
+  `schema_version`, `generated_from`, source/tool presence, human-review presence
+  booleans, total/counts by source type and review status, missing row count/path
+  indexes, pending-or-unverified row count, claim-flagged row count, and false
+  `no_claim_flags`; it is without raw sensitive statement, actor, or note values
+  and omits raw statement labels, operator instruction, reviewer identity, and
+  review notes. This is deterministic local and
   offline/static review guidance only: no bridge/API/AI-provider/hidden-provider
   calls, no secrets, no AI provider execution/model-quality review, no source
   certification, no legal/factual/signature/trust/QES/eIDAS validity, no external
@@ -3761,9 +3769,13 @@ behavior, legal disposal, or legal-effect claims.
   instead of presented as drafts. MCP draft calls now inject bounded act-level `ai_provenance`;
   the API persists that provenance, records accepted/rejected human-review decisions through a
   ledgered endpoint, and blocks AI-assisted acts from advancing to Signing until human review is
-  accepted. The Ata editor now surfaces that review gate. This is a durable human-review gate and
-  provenance injection path only, not legal validity, AI-quality review, or a complete provenance
-  experience. The signature-bundle tool wraps the existing signature status endpoint as technical
+  accepted. The Ata editor now surfaces that review gate and can copy a deterministic
+  `act.ai_provenance` review packet with source/review/missing/pending/claim counts,
+  false no-claim flags, and no raw statement labels, operator instruction,
+  reviewer identity, or review note echo. This is a durable human-review gate and
+  provenance packet path only, not legal validity, AI-quality review, source
+  certification, MCP completion, provider assurance, or a complete provenance experience.
+  The signature-bundle tool wraps the existing signature status endpoint as technical
   evidence only and refuses to claim legal validation. The server is still off by default and now
   additionally refuses to serve unless the tenant AI gate is enabled; settings UI exposes that
   default-off tenant gate to managers. MCP also exposes a local spec-09 coverage resource, a
@@ -4090,9 +4102,11 @@ behavior, legal disposal, or legal-effect claims.
   have persisted provenance with deterministic `ai_provenance.statement_sources[]` rows plus
   accepted/rejected human-review decisions that gate the Signing transition, with the Ata editor
   surfacing that gate, grouped statement-source counts by `source_type`, row
-  path/type/label/status, conservative false/no-claim flags, and missing/null
-  fallback labels. Unsafe statement-row human-verified, authoritative-source,
-  and legal-validity claims are clamped false. That gate records human review
+  path/type/label/status, conservative false/no-claim flags, missing/null
+  fallback labels, and a deterministic review-packet copy generated from
+  `act.ai_provenance` with source/review/missing/pending/claim counts and no raw
+  statement labels, operator instruction, reviewer identity, or review note echo.
+  Unsafe statement-row human-verified, authoritative-source, and legal-validity claims are clamped false. That gate records human review
   only; it is not legal certification, AI output-quality or model-accuracy
   validation, authoritative-source certification, a provider call, hidden
   signing/trust operation, automated draft-vs-signed comparison execution, a

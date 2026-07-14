@@ -37,8 +37,10 @@ assurance, MCP resource/prompt coverage including workflow provenance review
 guidance, draft-vs-signed comparison review guidance, and the
 `chancela://mcp/meeting-metadata-extraction-review` local review aid over
 caller-supplied meeting JSON/text metadata, the bounded local
-provenance panel with deterministic local counts, no bridge/API/AI-provider/hidden-provider
-calls, no raw text/contact/secret/access-code echo, no secrets, and false legal/source/workflow/provider/trust/external/signature-qualification
+provenance panel with deterministic local counts and a deterministic
+`act.ai_provenance` review-packet copy with counts/status/missing/pending/claim
+rows, false no-claim flags, no bridge/API/AI-provider/hidden-provider
+calls, no raw text/contact/secret/access-code echo, no statement-label/reviewer-note echo, no secrets, and false legal/source/workflow/provider/trust/external/signature-qualification
 flags, web fixtures, ASiC
 inspect `technical_validation` and structural diagnostic markers, registry chronology
 graph markers, sealed-act chronology projection markers for local sealed/archived

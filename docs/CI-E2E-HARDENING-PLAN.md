@@ -1,7 +1,7 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `7f9930a`,
+and implementation snapshot `5911fe0`,
 including coverage notes for the bounded PAdES DSS validation-time, PDF/UA v11
 blocker-delta and scoped table-header evidence, retention due-candidate explicit evidence states,
 bounded archive/no-action evidence UI, duplicate-review guard/status surfacing, and
@@ -31,7 +31,8 @@ scaffolding and BookDetail JSON download,
 local sync/handoff preflight readiness reporting over existing evidence only,
 archive filter reset icon-only clear-control coverage,
 raw-byte per-book import preflight operator preview,
-richer Ata editor AI statement-source provenance rendering, explicit external-validator raw
+richer Ata editor AI statement-source provenance rendering and deterministic
+AI provenance review-packet copy, explicit external-validator raw
 report upload UI guardrails, the raw external-validator raw-report byte download
 API, the MCP workflow provenance, draft-vs-signed comparison, privacy-control,
 and document/archive review aids,
@@ -852,11 +853,11 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `7f9930a`
+## Focused Gate Snapshot Through `5911fe0`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08` and checkpoint-promoted on 2026-07-14 for
-current implementation head `7f9930a`. This is not an exhaustive current
+current implementation head `5911fe0`. This is not an exhaustive current
 green-run claim; browser, Docker, desktop, package signing/notarization, image
 signing/attestation, and live-provider limits above still apply.
 
@@ -1243,7 +1244,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   GDPR erasure, full erasure, legal disposal completion, legal approval,
   disposal execution, persisted resolved flag, legal-hold/policy mutation,
   candidate disposal, or FULL coverage is implemented.
-- Current working-tree AI provenance checks: MCP/API draft creation now carries
+- Current `5911fe0` AI provenance checks: MCP/API draft creation now carries
   deterministic `ai_provenance.statement_sources[]` rows, the API persists those
   rows while clamping unsafe row-level human-verified, authoritative-source, and
   legal-validity claims false, and the Ata editor AI review panel renders a
@@ -1254,7 +1255,12 @@ settingsDefaults.test.ts contracts.test.ts`.
   missing/null field fallbacks plus explicit false no-claim markers
   (`legal_validity: false`, `source_certification: false`, `provider: false`,
   `trust: false`, `external_validation: false`, and
-  `signature_qualification: false`) while keeping accept/reject unchanged. This
+  `signature_qualification: false`) while keeping accept/reject unchanged. It
+  also copies a deterministic pretty-JSON review packet generated from
+  `act.ai_provenance`, with `schema_version`, `generated_from`, source/tool
+  presence, human-review presence booleans, counts/status/missing/pending/claim
+  rows, and false `no_claim_flags`, without raw statement labels, operator
+  instruction, reviewer identity, or review notes. This
   remains deterministic persistence/rendering and offline/static review guidance
   coverage only: no bridge/API/AI-provider/hidden-provider calls, no secrets,
   no model accuracy or AI quality assessment, no legal advice or legal-validity
@@ -1839,7 +1845,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   full RBAC/delegation-policy completion, tenant authorization proof,
   legal-capacity verification, broad security certification, or spec
   completion.
-- Current checkpoint metadata/static checks through `7f9930a`
+- Current checkpoint metadata/static checks through `5911fe0`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and

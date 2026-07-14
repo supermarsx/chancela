@@ -6109,6 +6109,41 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/acts/AtaEditorPage.tsx",
+    "const reviewPacketJson = formatAiProvenanceReviewPacket(provenance);",
+    "web AI review packet JSON generation marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/AtaEditorPage.tsx",
+    "await navigator.clipboard.writeText(reviewPacketJson);",
+    "web AI review packet copy handoff marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/aiProvenanceReviewPacket.ts",
+    "generated_from: 'act.ai_provenance'",
+    "web AI provenance review packet source marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/aiProvenanceReviewPacket.ts",
+    "counts_by_review_status",
+    "web AI provenance review packet status counts marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/aiProvenanceReviewPacket.ts",
+    "pending_or_unverified_row_count",
+    "web AI provenance review packet pending row count marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/aiProvenanceReviewPacket.ts",
+    "claim_flagged_row_count",
+    "web AI provenance review packet claim row count marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/aiProvenanceReviewPacket.ts",
+    "ai_quality: false",
+    "web AI provenance review packet no AI-quality claim marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/AtaEditorPage.tsx",
     "const sourceTypeCounts = Array.from",
     "web AI review grouped source-type counts marker",
   );
@@ -6176,6 +6211,21 @@ function assertCheckpointMap() {
     "apps/web/src/features/acts/AtaEditorStructured.test.tsx",
     "renders grouped provenance summary by source_type",
     "web AI review grouped source-type summary coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/AtaEditorStructured.test.tsx",
+    "builds a deterministic review packet without raw sensitive review fields",
+    "web AI review packet no-sensitive-echo coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/AtaEditorStructured.test.tsx",
+    "copies the deterministic review packet as stable pretty JSON",
+    "web AI review packet copy coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/AtaEditorStructured.test.tsx",
+    "SECRET_REVIEW_NOTE",
+    "web AI review packet raw review note non-echo coverage marker",
   );
   assertFileContains(
     "apps/web/src/features/acts/AtaEditorStructured.test.tsx",
@@ -9861,12 +9911,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `7f9930a`",
+    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `5911fe0`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `7f9930a`",
+    "Focused Gate Snapshot Through `5911fe0`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -9976,8 +10026,18 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current working-tree AI provenance checks",
+    "Current `5911fe0` AI provenance checks",
     "CI/E2E hardening plan AI provenance focused checks marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "AI provenance review-packet copy",
+    "CI/E2E hardening plan AI provenance review packet summary marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "without raw statement labels, operator\n  instruction, reviewer identity, or review notes",
+    "CI/E2E hardening plan AI provenance review packet no-sensitive-echo marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -10491,7 +10551,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `7f9930a`",
+    "Current checkpoint metadata/static checks through `5911fe0`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -10981,7 +11041,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `7f9930abb702f883dbdb73a043dae27279464697`",
+    "implementation snapshot `5911fe00854e55faff0b0299c9295c27954a8ebe`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -11449,9 +11509,12 @@ function assertCheckpointMap() {
     "pub(crate) fn execute_recovery_batch(&self, sql: &str)",
     "store backend-agnostic recovery batch marker",
   );
-  assertFileContains(
+  assertFileContainsAny(
     "crates/chancela-store/src/pg.rs",
-    "Still deferred **by design** (fail closed with [`crate::StoreError::UnsupportedOnPostgres`]): the",
+    [
+      "Still deferred **by design** (fail closed with [`crate::StoreError::UnsupportedOnPostgres`]): the",
+      "Nothing operator-facing now fails closed with [`crate::StoreError::UnsupportedOnPostgres`]",
+    ],
     "store Postgres unsupported paths source marker",
   );
   assertFileContains(
@@ -12906,6 +12969,16 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
+    "copy a deterministic pretty-JSON review packet\n  generated from `act.ai_provenance`",
+    "spec coverage AI provenance review packet copy marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "without raw sensitive statement, actor, or note values",
+    "spec coverage AI provenance review packet no-sensitive-echo marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
     "automated draft-vs-signed comparison execution, a\n  complete provenance experience",
     "spec coverage AI no automated draft-vs-signed execution caveat marker",
   );
@@ -13121,6 +13194,24 @@ function assertFileContains(relativePath, needle, label) {
   assert.ok(
     hasMarker,
     `${label} missing expected marker ${needle}`,
+  );
+}
+
+function assertFileContainsAny(relativePath, needles, label) {
+  assertFileExists(relativePath, label);
+  const body = readFileSync(join(repoRoot, relativePath), "utf8").replaceAll(
+    "\r\n",
+    "\n",
+  );
+  const normalizedBody = normalizeWhitespace(body);
+  const hasMarker = needles.some(
+    (needle) =>
+      body.includes(needle) ||
+      normalizedBody.includes(normalizeWhitespace(needle)),
+  );
+  assert.ok(
+    hasMarker,
+    `${label} missing one expected marker from ${needles.join(" | ")}`,
   );
 }
 
