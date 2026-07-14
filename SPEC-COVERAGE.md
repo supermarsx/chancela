@@ -1,6 +1,6 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-14 from current implementation snapshot `bac43375fe38b57f1b7ca9400a6e175d1b0b9c7e`,
+*Updated 2026-07-14 from current implementation snapshot `11bbb32ae6eebd6f689b03d7bac972973668ff19`,
 with committed evidence refreshes for the recently landed Signatures & Trust
 provider-credential, stored runtime credential resolution, stored PKCS#12,
 remote batch-initiation surfaces, and Docker/Compose runtime-hardening
@@ -123,7 +123,8 @@ semantic lint through the first-class `template_catalog_metadata_lint` command,
 local `POST /v1/signature/asic/inspect` ASiC inspection plus
 decompression-bound ASiC ZIP guardrails, and release workflow static assurance
 for the unsigned/local-only trust posture plus production package
-manifest-required validation, plus `b9394ca` imported-document review dashboard
+manifest-required validation, plus `11bbb32` sealed post-act template
+generation UI for certidao/extrato generated documents, plus `b9394ca` imported-document review dashboard
 reminders and review-form deep-link focus routing, plus MCP workflow provenance review prompt/resource
 guidance and draft-vs-signed comparison review aid, dashboard guest
 recent-events redaction, generated-document by-id download routing,
@@ -192,6 +193,19 @@ being useful. The matrix below records the current factual coverage and the rema
 blockers.
 
 Implementation checkpoints covered here:
+
+- Current `11bbb32` keeps Documents/Archive, UX, and CI **PARTIAL**: the web
+  sealed-act document panel now exposes post-act `Certidao` and `Extrato`
+  template discovery, operator-triggered generation through the existing
+  generated-document route, generated PDF download for those rows, and focused
+  unit evidence that dispatch-evidence fetching/forms stay scoped to the
+  absent-owner communication template. Backend generated-document by-id
+  download, on-demand generation, and communication dispatch-evidence storage
+  remain the underlying evidence path. This is sealed-act generated-document UI
+  plumbing only: it does not replace the canonical Ata, submit to external
+  registries, complete signing, send or prove dispatch, certify legal
+  sufficiency, certify legal validity, or perform legal review of template
+  wording.
 
 - Current `d981694` keeps Signatures/Documents/UX/CI **PARTIAL**: the web
   signing panel now renders a compact post-signed technical/local metadata
@@ -3710,7 +3724,8 @@ behavior, legal disposal, or legal-effect claims.
   prompt/resource markers, MCP draft-vs-signed comparison review prompt/resource
   markers, MCP chronology review summary resource markers, dashboard guest
   `recent_events: []` redaction markers,
-  generated-document by-id download route plus absent-owner dispatch-evidence
+  generated-document by-id download route plus sealed post-act certidao/extrato
+  generation UI markers and absent-owner communication dispatch-evidence
   route/store/idempotency/coverage/evidence-attached/no-completion/no-claim
   markers plus document-bundle `generated_dispatch_evidence` and archive
   `evidence/generated-dispatch/{document_id}.json` metadata-only sidecar

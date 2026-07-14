@@ -2735,7 +2735,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "generated-document by-id\ndownload route plus absent-owner dispatch-evidence recording",
+    "generated-document by-id\ndownload route plus sealed post-act certidao/extrato template generation UI,\nabsent-owner communication dispatch-evidence recording",
     "CI checkpoints generated-document dispatch-evidence route lane marker",
   );
   assertFileContainsNormalized(
@@ -2885,7 +2885,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "generated-document by-id route, dispatch-evidence route, `act.read`/\n`document.generate` gates, durable/in-memory, canonical Ata preservation,\nabsent-owner communication auto-generation, dispatch-evidence store,\nidempotency, selected-recipient evidence coverage, evidence-attached headers,\nno dispatch completion, web client/hooks/panel/i18n metadata-only evidence UI,\ngenerated-document deep-link query/hash focus routing, one-time\nActDocumentPanel dispatch-evidence selection/focus, no send/delivery/\nlegal-notice copy, no-claim markers, and dashboard reminder/notification\nsource/action/deep-link/no-date ordering/fixture markers",
+    "generated-document by-id route, sealed post-act certidao/extrato generation UI,\ndispatch-evidence route, `act.read`/`document.generate` gates,\ndurable/in-memory, canonical Ata preservation,\nabsent-owner communication auto-generation, communication-template-scoped dispatch-evidence store,\nidempotency, selected-recipient evidence coverage, evidence-attached headers,\nno dispatch completion, web client/hooks/panel/i18n metadata-only evidence UI,\ngenerated-document deep-link query/hash focus routing, one-time\nActDocumentPanel dispatch-evidence selection/focus, no send/delivery/\nlegal-notice copy, no-claim markers, and dashboard reminder/notification\nsource/action/deep-link/no-date ordering/fixture markers",
     "CI checkpoints static generated-document dispatch-evidence marker",
   );
   assertFileContains(
@@ -6895,8 +6895,13 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/api/client.test.ts",
-    "routes generated-document discovery, PDF download, and dispatch evidence bodies",
+    "routes generated-document discovery, generation, PDF download, and dispatch evidence bodies",
     "web generated-document client route/body coverage",
+  );
+  assertFileContains(
+    "apps/web/src/api/client.test.ts",
+    "await api.generateActDocument('act 1/2', 'condominio-certidão deliberações/v1');",
+    "web generated-document post-act generation client coverage",
   );
   assertFileContains(
     "apps/web/src/api/client.test.ts",
@@ -6937,6 +6942,16 @@ function assertCheckpointMap() {
     "apps/web/src/features/documents/ActDocumentPanel.test.tsx",
     "renders generated communications, evidence rows, and no-claim copy",
     "web generated absent-owner communication list coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/documents/ActDocumentPanel.test.tsx",
+    "shows post-act templates, generates an extract, downloads it, and keeps dispatch evidence scoped",
+    "web sealed post-act template generation UI coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/documents/ActDocumentPanel.test.tsx",
+    "calls.some((call) => call.url.includes('generated-extrato-1/dispatch-evidence'))",
+    "web sealed post-act template dispatch-evidence scope coverage",
   );
   assertFileContains(
     "apps/web/src/features/documents/ActDocumentPanel.test.tsx",
@@ -9647,12 +9662,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `bac4337`",
+    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `11bbb32`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `bac4337`",
+    "Focused Gate Snapshot Through `11bbb32`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -10277,7 +10292,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `bac4337`",
+    "Current checkpoint metadata/static checks through `11bbb32`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -10742,7 +10757,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `bac43375fe38b57f1b7ca9400a6e175d1b0b9c7e`",
+    "implementation snapshot `11bbb32ae6eebd6f689b03d7bac972973668ff19`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(

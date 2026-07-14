@@ -71,7 +71,8 @@ password-required account creation/session static markers,
 trust identifier-match explanations, trust/import/static request-boundary
 hardening, and read-only local DGLAB interchange
 manifest API and BookDetail JSON-download markers, generated-document by-id
-download route plus absent-owner dispatch-evidence recording and generated
+download route plus sealed post-act certidao/extrato template generation UI,
+absent-owner communication dispatch-evidence recording, and generated
 absent-owner evidence UI and dashboard absent-owner dispatch-evidence reminders,
 compact validator-report actions, template provenance UI, release clean-source
 provenance gating, local CC batch-signing UI markers for BatchSigningPanel,
@@ -242,7 +243,8 @@ It intentionally reuses existing test surfaces:
   `cargo test -p chancela-api --locked dashboard_recent_events_redacts_guest_feed_but_keeps_owner_and_reader_feed`
   including guest `recent_events: []`, retained Owner/Leitor recent events, and
   continued guest denial from `/v1/ledger/events`.
-- API generated-document by-id downloads, absent-owner dispatch evidence, and
+- API generated-document by-id downloads, sealed post-act template generation
+  UI, absent-owner dispatch evidence, and
   dashboard reminders:
   `cargo test -p chancela-api --locked on_demand_generate_persists_a_chosen_document_and_emits_the_event`
   and
@@ -289,10 +291,13 @@ It intentionally reuses existing test surfaces:
   legal-notice/legal-sufficiency, provider, registry, DGLAB, and legal-archive
   acceptance flags. Web/UI markers pin `listGeneratedDocuments`,
   `getGeneratedDocumentDispatchEvidence`,
-  `recordGeneratedDocumentDispatchEvidence`, generated absent-owner
-  communication listing, generated PDF fetch, stored evidence rows,
-  metadata-only evidence form submission, `operator_evidence_*` statuses,
-  `documents.generated.noClaim.*` copy, generated-document deep-link
+  `recordGeneratedDocumentDispatchEvidence`, `generateActDocument`,
+  sealed post-act `Certidao`/`Extrato` template discovery and
+  generation/download, generated absent-owner communication listing, generated
+  PDF fetch, stored evidence rows, metadata-only evidence form submission,
+  `operator_evidence_*` statuses, `documents.generated.noClaim.*` copy,
+  dispatch-evidence scope remaining limited to
+  `condominio-comunicacao-ausentes/v1`, generated-document deep-link
   `generated_document_id`, `focus=dispatch-evidence`,
   `#generated-dispatch-evidence`, `actDocumentPanelTargetFromLocation`, one-time
   dispatch-evidence selection/focus, and no send/delivery/legal-notice or
@@ -535,9 +540,10 @@ markers, MCP draft-vs-signed comparison review prompt/resource plus deterministi
 local comparison report/no-call/no-claim markers, dashboard guest
 `recent_events: []` redaction and no-permission-grant
 markers, privacy control review reminder source-rule/dashboard/browser markers,
-generated-document by-id route, dispatch-evidence route, `act.read`/
-`document.generate` gates, durable/in-memory, canonical Ata preservation,
-absent-owner communication auto-generation, dispatch-evidence store,
+generated-document by-id route, sealed post-act certidao/extrato generation UI,
+dispatch-evidence route, `act.read`/`document.generate` gates,
+durable/in-memory, canonical Ata preservation,
+absent-owner communication auto-generation, communication-template-scoped dispatch-evidence store,
 idempotency, selected-recipient evidence coverage, evidence-attached headers,
 no dispatch completion, web client/hooks/panel/i18n metadata-only evidence UI,
 generated-document deep-link query/hash focus routing, one-time

@@ -1,7 +1,7 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `bac4337`,
+and implementation snapshot `11bbb32`,
 including coverage notes for the bounded PAdES DSS validation-time, PDF/UA v10
 scoped table-header evidence, retention due-candidate explicit evidence states,
 bounded archive/no-action evidence UI, duplicate-review guard/status surfacing, and
@@ -33,6 +33,7 @@ report upload UI guardrails, the raw external-validator raw-report byte download
 API, the MCP workflow provenance, draft-vs-signed comparison, privacy-control,
 and document/archive review aids,
 dashboard guest recent-events redaction, generated-document by-id download route,
+sealed post-act certidao/extrato template generation UI,
 condominium absent-owner communication auto-generation, and operator-supplied
 dispatch-evidence recording with dashboard reminder surfacing,
 document-bundle/archive generated dispatch-evidence metadata preservation,
@@ -369,22 +370,28 @@ test operating checklist for driving Chancela toward release confidence.
   `archive_package_indexes_generated_absent_owner_dispatch_evidence_metadata_only`
   and
   `document_bundle_indexes_generated_absent_owner_dispatch_evidence_without_replacing_ata`.
-  The web follow-on slice covers `listGeneratedDocuments`, generated PDF
-  fetch, `getGeneratedDocumentDispatchEvidence`,
-  `recordGeneratedDocumentDispatchEvidence`, generated absent-owner
+  The web follow-on slice covers `listGeneratedDocuments`,
+  `generateActDocument`, generated PDF fetch,
+  `getGeneratedDocumentDispatchEvidence`,
+  `recordGeneratedDocumentDispatchEvidence`, sealed post-act `Certidao` and
+  `Extrato` template discovery/generation/download, generated absent-owner
   communication listing, stored evidence rows, permission-gated metadata-only
   evidence recording, `operator_evidence_*` statuses, and
-  `documents.generated.noClaim.*` copy. Dashboard and notification actions use
+  `documents.generated.noClaim.*` copy. Dispatch evidence remains scoped to
+  `condominio-comunicacao-ausentes/v1`; generated certidao/extrato rows do not
+  fetch or render dispatch-evidence forms. Dashboard and notification actions use
   generated-document deep links with `generated_document_id`,
   `focus=dispatch-evidence`, and `#generated-dispatch-evidence`; the Ata route
   resolves them through `actDocumentPanelTargetFromLocation`, and
   `ActDocumentPanel` selects/focuses the dispatch-evidence form once for
-  operator evidence recording. Treat this as navigation and focus support for
-  operator evidence recording only: it does not send mail/email/SMS/provider
-  messages, prove delivery, mark dispatch complete, complete legal notice, add
-  legal sufficiency/legal-effect claims, sign, archive, or certify legal
-  validity. It also makes no DGLAB certification or legal archive acceptance
-  claim.
+  operator evidence recording. Treat this as sealed-act generated-document UI
+  plumbing plus navigation/focus support for operator evidence recording only:
+  it does not replace the canonical Ata, send mail/email/SMS/provider messages,
+  prove delivery, mark dispatch complete, complete legal notice, add legal
+  sufficiency/legal-effect claims, submit to an external registry, sign,
+  complete signing, archive, certify legal validity, or perform legal review of
+  generated template wording. It also makes no DGLAB certification or legal
+  archive acceptance claim.
 - The current imported-document receipt/history slice projects a `Recibo de
   revisão` panel and bounded technical review history from the imported-document
   view. Pending rows show no fake receipt, while reviewed rows show latest
@@ -805,11 +812,11 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `bac4337`
+## Focused Gate Snapshot Through `11bbb32`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08` and checkpoint-promoted on 2026-07-14 for
-current implementation head `bac4337`. This is not an exhaustive current
+current implementation head `11bbb32`. This is not an exhaustive current
 green-run claim; browser, Docker, desktop, package signing/notarization, image
 signing/attestation, and live-provider limits above still apply.
 
@@ -1754,7 +1761,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   --workspace apps/web -- e2e/session.spec.ts e2e/first-launch-onboarding.spec.ts`.
   Treat the static/unit/focused markers as the pinned slice, not broad
   Playwright-browser-suite or browser-matrix proof; the browser suite is not exhaustive.
-- Current checkpoint metadata/static checks through `bac4337`
+- Current checkpoint metadata/static checks through `11bbb32`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
