@@ -1,6 +1,6 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-14 from current implementation snapshot `c83f2787c46c28427ff9037d8b61006d1f454372`,
+*Updated 2026-07-14 from current implementation snapshot `f060f42a63a753eedc237f464bf9a1ac55d2b937`,
 with committed evidence refreshes for the recently landed Signatures & Trust
 provider-credential, stored runtime credential resolution, stored PKCS#12,
 remote batch-initiation surfaces, and Docker/Compose runtime-hardening
@@ -1792,7 +1792,17 @@ Implementation checkpoints covered here:
   validation and documentation alignment only, not production Postgres
   readiness, HA behavior, live database validation, migration completeness,
   performance proof, or broader architecture completion.
-- Current `c83f278` keeps Data/Roles/UX/CI **PARTIAL**: new delegation grants
+- Current `f060f42` keeps Workflows/UX/CI **PARTIAL**: the existing
+  `condominio-annual` backend reminder now renders through localized
+  notification-center and dashboard work-queue copy using
+  `notifications.reminder.annual.condominio.title` and the existing annual
+  entity action across all shipped locales. Focused web tests pin the localized
+  title/action path and no fallback to the raw backend reason or entity-name
+  title for this reminder. This is web copy/i18n coverage only: it does not
+  mark the condominium preset supported, calculate or add a due date, add law
+  references, claim legal-calendar authority or compliance status, trigger
+  external delivery/calendar/webhook behavior, or complete any workflow.
+- Prior `c83f278` keeps Data/Roles/UX/CI **PARTIAL**: new delegation grants
   now require bounded non-empty operator-supplied `legal_basis` evidence, trim
   the submitted value before storage, and preserve legacy delegation records
   without `legal_basis` as readable missing-basis records. API tests pin

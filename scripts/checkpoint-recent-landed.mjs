@@ -9312,7 +9312,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `c83f278`",
+    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `f060f42`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
@@ -9932,7 +9932,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `c83f278`",
+    "Current checkpoint metadata/static checks through `f060f42`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -10387,7 +10387,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `c83f2787c46c28427ff9037d8b61006d1f454372`",
+    "implementation snapshot `f060f42a63a753eedc237f464bf9a1ac55d2b937`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -10482,8 +10482,43 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Current `c83f278` keeps Data/Roles/UX/CI **PARTIAL**",
-    "spec coverage delegation legal-basis checkpoint marker",
+    "Current `f060f42` keeps Workflows/UX/CI **PARTIAL**",
+    "spec coverage condominium annual reminder localization checkpoint marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "it does not\n  mark the condominium preset supported, calculate or add a due date, add law\n  references, claim legal-calendar authority or compliance status",
+    "spec coverage condominium annual reminder no-claim marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/notifications/notifications.ts",
+    "'condominio-annual': {\n    title: 'notifications.reminder.annual.condominio.title'",
+    "notification-center condominium annual reminder copy marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/dashboard/DashboardPage.tsx",
+    "'condominio-annual': {\n    title: 'notifications.reminder.annual.condominio.title'",
+    "dashboard condominium annual reminder copy marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/notifications/notifications.test.ts",
+    "renders condominium annual reminders with localized advisory copy and entity action",
+    "notification-center condominium annual reminder test marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/dashboard/DashboardPage.test.tsx",
+    "Assembleia anual de condomínio pendente",
+    "dashboard condominium annual reminder localized title test marker",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/i18n.test.ts",
+    "keeps condominium annual reminder titles localized",
+    "i18n condominium annual reminder title test marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Prior `c83f278` keeps Data/Roles/UX/CI **PARTIAL**",
+    "spec coverage delegation legal-basis prior checkpoint marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
