@@ -227,6 +227,12 @@ const durableStatus: DataStatusResponse = {
     },
     scan_errors: ['failed to read exports: access denied'],
   },
+  key_rotation: {
+    latest_receipt: null,
+    history: [],
+    history_count: 0,
+    history_limit: 10,
+  },
 };
 
 const inMemoryStatus: DataStatusResponse = {
@@ -271,6 +277,12 @@ const inMemoryStatus: DataStatusResponse = {
     sidecars: [],
     sqlite_logical: [],
     scan_errors: [],
+  },
+  key_rotation: {
+    latest_receipt: null,
+    history: [],
+    history_count: 0,
+    history_limit: 10,
   },
 };
 
@@ -599,9 +611,9 @@ describe('GestaoDadosSection', () => {
     expect(platformLogsCleanup.querySelector('.data-status-cleanup__main')?.textContent).toContain(
       'Remove apenas o ficheiro local platform-logs.json',
     );
-    expect(platformLogsCleanup.querySelector('.data-status-cleanup__metric')?.textContent).toContain(
-      '256 B',
-    );
+    expect(
+      platformLogsCleanup.querySelector('.data-status-cleanup__metric')?.textContent,
+    ).toContain('256 B');
     expect(
       within(platformLogsCleanup).getByRole('button', { name: 'Limpar registos' }),
     ).toBeTruthy();
@@ -705,6 +717,62 @@ describe('GestaoDadosSection', () => {
 
     expect(await screen.findByText('F:\\Data2')).toBeTruthy();
     expect(calls.filter((c) => c.url.includes('/v1/data/status'))).toHaveLength(2);
+  });
+
+  it('renders secret-free key rotation receipt history as local evidence only', async () => {
+    const receiptStatus: DataStatusResponse = {
+      ...durableStatus,
+      key_rotation: {
+        latest_receipt: {
+          schema_version: 1,
+          receipt_id: '0f4d87a0-7019-4f83-a770-b548f42a022d',
+          rotated_at: '2026-07-10T09:15:00Z',
+          actor_user_id: '6d5e4f00-0000-4000-8000-000000000005',
+          mode: 'guarded_sqlcipher_rekey',
+          status: 'rekey_applied',
+          backend_family: 'sqlite',
+          rekey_executed: true,
+          ledger_integrity_verified: true,
+          ledger_length: 42,
+          evidence: {
+            operation: 'sqlcipher_rekey',
+            requested_key_config: 'configured',
+            sqlcipher_available: true,
+            checkpointed_before_rekey: true,
+            checkpointed_after_rekey: true,
+            post_rekey_integrity_checked: true,
+          },
+          no_claims: {
+            current_key_persisted: false,
+            replacement_key_persisted: false,
+            key_fingerprint_persisted: false,
+            database_path_persisted: false,
+            sqlcipher_at_rest_certified: false,
+            plaintext_migration_performed: false,
+            legal_disposal_or_erasure_certified: false,
+          },
+        },
+        history: [],
+        history_count: 1,
+        history_limit: 10,
+      },
+    };
+    receiptStatus.key_rotation.history = [receiptStatus.key_rotation.latest_receipt!];
+
+    installFetch([receiptStatus]);
+    renderWithProviders(<GestaoDadosSection />);
+    await selectTab(TAB_KEYS);
+
+    expect(await screen.findByText('Recibos locais de rotação')).toBeTruthy();
+    expect(screen.getByText(/Evidência operacional local/)).toBeTruthy();
+    expect(screen.getByText(/não certificam cifragem em repouso/)).toBeTruthy();
+    expect(screen.getByText('guarded_sqlcipher_rekey')).toBeTruthy();
+    expect(screen.getAllByText('rekey_applied').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('sqlcipher_rekey')).toBeTruthy();
+    expect(screen.getByText('6d5e4f00-0000-4000-8000-000000000005')).toBeTruthy();
+    expect(document.body.textContent).not.toContain('current-secret');
+    expect(document.body.textContent).not.toContain('replacement-secret');
+    expect(document.body.textContent).not.toContain('chancela.db');
   });
 
   it('runs a secret-clearing data key rotation preflight and renders only returned evidence', async () => {

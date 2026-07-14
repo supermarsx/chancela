@@ -71,6 +71,16 @@
         "file_count": 1,
         "directory_count": 0,
         "relative_roots": ["settings.json"]
+      },
+      {
+        "id": "data_key_rotation_receipts",
+        "label": "Data key rotation receipts",
+        "bytes": 512,
+        "basis": "filesystem",
+        "exact": true,
+        "file_count": 1,
+        "directory_count": 0,
+        "relative_roots": ["data-key-rotation-receipts.json"]
       }
     ],
     "logical_payload": [
@@ -238,5 +248,69 @@
       "estimate_basis": "sqlite_logical_payload"
     },
     "scan_errors": ["failed to read exports: access denied"]
+  },
+  "key_rotation": {
+    "latest_receipt": {
+      "schema_version": 1,
+      "receipt_id": "0f4d87a0-7019-4f83-a770-b548f42a022d",
+      "rotated_at": "2026-07-10T09:15:00Z",
+      "actor_user_id": "6d5e4f00-0000-4000-8000-000000000005",
+      "mode": "guarded_sqlcipher_rekey",
+      "status": "rekey_applied",
+      "backend_family": "sqlite",
+      "rekey_executed": true,
+      "ledger_integrity_verified": true,
+      "ledger_length": 42,
+      "evidence": {
+        "operation": "sqlcipher_rekey",
+        "requested_key_config": "configured",
+        "sqlcipher_available": true,
+        "checkpointed_before_rekey": true,
+        "checkpointed_after_rekey": true,
+        "post_rekey_integrity_checked": true
+      },
+      "no_claims": {
+        "current_key_persisted": false,
+        "replacement_key_persisted": false,
+        "key_fingerprint_persisted": false,
+        "database_path_persisted": false,
+        "sqlcipher_at_rest_certified": false,
+        "plaintext_migration_performed": false,
+        "legal_disposal_or_erasure_certified": false
+      }
+    },
+    "history": [
+      {
+        "schema_version": 1,
+        "receipt_id": "0f4d87a0-7019-4f83-a770-b548f42a022d",
+        "rotated_at": "2026-07-10T09:15:00Z",
+        "actor_user_id": "6d5e4f00-0000-4000-8000-000000000005",
+        "mode": "guarded_sqlcipher_rekey",
+        "status": "rekey_applied",
+        "backend_family": "sqlite",
+        "rekey_executed": true,
+        "ledger_integrity_verified": true,
+        "ledger_length": 42,
+        "evidence": {
+          "operation": "sqlcipher_rekey",
+          "requested_key_config": "configured",
+          "sqlcipher_available": true,
+          "checkpointed_before_rekey": true,
+          "checkpointed_after_rekey": true,
+          "post_rekey_integrity_checked": true
+        },
+        "no_claims": {
+          "current_key_persisted": false,
+          "replacement_key_persisted": false,
+          "key_fingerprint_persisted": false,
+          "database_path_persisted": false,
+          "sqlcipher_at_rest_certified": false,
+          "plaintext_migration_performed": false,
+          "legal_disposal_or_erasure_certified": false
+        }
+      }
+    ],
+    "history_count": 1,
+    "history_limit": 10
   }
 }

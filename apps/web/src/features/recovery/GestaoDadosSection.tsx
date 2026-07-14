@@ -49,6 +49,8 @@ import {
   type DataKeyRotationExecution,
   type DataKeyRotationPreflight,
   type DataKeyRotationPreflightBody,
+  type DataKeyRotationReceipt,
+  type DataKeyRotationReceiptStatus,
   type DataPayloadStats,
   type DataPermissionCheck,
   type DataPermissionStatus,
@@ -1218,6 +1220,121 @@ function DataKeyRotationExecutionReport({
   );
 }
 
+function DataKeyRotationReceiptSummary({
+  summary,
+  locale,
+  t,
+}: {
+  summary: DataKeyRotationReceiptStatus;
+  locale: string;
+  t: TFunction;
+}) {
+  const latest = summary.latest_receipt;
+  const history = summary.history.slice(0, Math.min(summary.history.length, summary.history_limit));
+
+  return (
+    <InlineWarning tone={summary.read_error ? 'warn' : 'info'} title="Recibos locais de rotação">
+      <div className="stack--tight">
+        <p>
+          Evidência operacional local gerada após rekey SQLCipher aceite. Estes recibos não
+          certificam cifragem em repouso, migração de plaintext, eliminação legal ou ciclo de vida
+          GDPR completo.
+        </p>
+        {summary.read_error ? <p className="field__hint">{summary.read_error}</p> : null}
+        {latest ? (
+          <>
+            <dl className="deflist data-status-summary">
+              <div>
+                <dt>Última rotação</dt>
+                <dd>{formatTimestamp(latest.rotated_at, locale)}</dd>
+              </div>
+              <div>
+                <dt>{t('data.status.keyRotation.status')}</dt>
+                <dd>
+                  <Badge tone={latest.rekey_executed ? 'ok' : 'warn'}>{latest.status}</Badge>
+                </dd>
+              </div>
+              <div>
+                <dt>Modo</dt>
+                <dd className="mono">{latest.mode}</dd>
+              </div>
+              <div>
+                <dt>Backend</dt>
+                <dd className="mono">{latest.backend_family ?? '—'}</dd>
+              </div>
+              <div>
+                <dt>Utilizador</dt>
+                <dd className="mono">{latest.actor_user_id ?? '—'}</dd>
+              </div>
+              <div>
+                <dt>{t('data.status.ledgerLength')}</dt>
+                <dd>{new Intl.NumberFormat(locale).format(latest.ledger_length)}</dd>
+              </div>
+              <div>
+                <dt>{t('data.status.ledgerVerified')}</dt>
+                <dd>
+                  <StatusBadge value={latest.ledger_integrity_verified} t={t} />
+                </dd>
+              </div>
+              <div>
+                <dt>Histórico guardado</dt>
+                <dd>
+                  {new Intl.NumberFormat(locale).format(summary.history_count)} /{' '}
+                  {new Intl.NumberFormat(locale).format(summary.history_limit)}
+                </dd>
+              </div>
+            </dl>
+            <dl className="deflist data-status-summary">
+              <div>
+                <dt>Operação</dt>
+                <dd className="mono">{latest.evidence.operation}</dd>
+              </div>
+              <div>
+                <dt>{t('data.status.keyRotation.evidence.replacementKey')}</dt>
+                <dd className="mono">{latest.evidence.requested_key_config}</dd>
+              </div>
+              <div>
+                <dt>{t('data.status.keyRotation.evidence.sqlcipher')}</dt>
+                <dd>{latest.evidence.sqlcipher_available ? t('common.yes') : t('common.no')}</dd>
+              </div>
+              <div>
+                <dt>Sem chave guardada</dt>
+                <dd>
+                  {!latest.no_claims.current_key_persisted &&
+                  !latest.no_claims.replacement_key_persisted &&
+                  !latest.no_claims.key_fingerprint_persisted
+                    ? t('common.yes')
+                    : t('common.no')}
+                </dd>
+              </div>
+              <div>
+                <dt>Sem caminho da BD</dt>
+                <dd>{latest.no_claims.database_path_persisted ? t('common.no') : t('common.yes')}</dd>
+              </div>
+            </dl>
+          </>
+        ) : (
+          <p className="muted">Ainda não há recibos de rotação SQLCipher bem-sucedida.</p>
+        )}
+        {history.length > 1 ? (
+          <div>
+            <h5>Histórico recente</h5>
+            <ul className="data-status-list">
+              {history.map((receipt: DataKeyRotationReceipt) => (
+                <li key={receipt.receipt_id}>
+                  <span>{formatTimestamp(receipt.rotated_at, locale)}</span>
+                  <Badge tone={receipt.rekey_executed ? 'ok' : 'warn'}>{receipt.status}</Badge>
+                  <span className="mono">{receipt.backend_family ?? '—'}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+      </div>
+    </InlineWarning>
+  );
+}
+
 function UsageList({
   concerns,
   locale,
@@ -2032,6 +2149,7 @@ function DataStatusPanel({
                 </p>
               </div>
             </div>
+            <DataKeyRotationReceiptSummary summary={data.key_rotation} locale={locale} t={t} />
             <form className="form" onSubmit={(event) => void submitKeyRotationPreflight(event)}>
               <div className="data-status-usage-groups">
                 <Field

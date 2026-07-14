@@ -7221,6 +7221,48 @@ export interface DataUsageStatus {
   scan_errors: string[];
 }
 
+export interface DataKeyRotationReceiptEvidence {
+  operation: string;
+  requested_key_config: string;
+  sqlcipher_available: boolean;
+  checkpointed_before_rekey: boolean;
+  checkpointed_after_rekey: boolean;
+  post_rekey_integrity_checked: boolean;
+}
+
+export interface DataKeyRotationReceiptNoClaims {
+  current_key_persisted: boolean;
+  replacement_key_persisted: boolean;
+  key_fingerprint_persisted: boolean;
+  database_path_persisted: boolean;
+  sqlcipher_at_rest_certified: boolean;
+  plaintext_migration_performed: boolean;
+  legal_disposal_or_erasure_certified: boolean;
+}
+
+export interface DataKeyRotationReceipt {
+  schema_version: number;
+  receipt_id: string;
+  rotated_at: string;
+  actor_user_id: string | null;
+  mode: string;
+  status: DataKeyRotationExecutionStatus;
+  backend_family: DataDurableBackendFamily | null;
+  rekey_executed: boolean;
+  ledger_integrity_verified: boolean;
+  ledger_length: number;
+  evidence: DataKeyRotationReceiptEvidence;
+  no_claims: DataKeyRotationReceiptNoClaims;
+}
+
+export interface DataKeyRotationReceiptStatus {
+  latest_receipt: DataKeyRotationReceipt | null;
+  history: DataKeyRotationReceipt[];
+  history_count: number;
+  history_limit: number;
+  read_error?: string;
+}
+
 /** Read-only storage, data-directory and usage telemetry for Settings → Dados. */
 export interface DataStatusResponse {
   generated_at: string;
@@ -7228,6 +7270,7 @@ export interface DataStatusResponse {
   data_dir: DataDirStatus;
   permissions: DataPermissionStatus;
   usage: DataUsageStatus;
+  key_rotation: DataKeyRotationReceiptStatus;
 }
 
 /** Bounded storage-maintenance targets under the configured data directory. */

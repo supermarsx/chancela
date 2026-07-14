@@ -23,6 +23,7 @@ use common::{TEST_PASSWORD, password_hash};
 const PREFLIGHT_PATH: &str = "/v1/data/key-rotation/preflight";
 const EXECUTE_PATH: &str = "/v1/data/key-rotation";
 const STATUS_PATH: &str = "/v1/data/status";
+const RECEIPTS_FILE: &str = "data-key-rotation-receipts.json";
 
 static ENV_LOCK: Mutex<()> = Mutex::new(());
 
@@ -220,6 +221,10 @@ async fn execution_requires_settings_manage_permission_without_leaking_keys() {
 
     assert_eq!(status, StatusCode::FORBIDDEN, "permission denial: {body}");
     assert_secret_free(&body, &[new_key]);
+    assert!(
+        !tmp.dir.join(RECEIPTS_FILE).exists(),
+        "forbidden execution must not create a key-rotation receipt"
+    );
 }
 
 #[tokio::test]
@@ -250,6 +255,10 @@ async fn execution_refuses_plaintext_store_without_leaking_key_or_migrating() {
         "plaintext refusal explains non-destructive migration boundary: {body}"
     );
     assert_secret_free(&body, &[new_key]);
+    assert!(
+        !tmp.dir.join(RECEIPTS_FILE).exists(),
+        "plaintext refusal must not create a key-rotation receipt"
+    );
 
     let db =
         std::fs::read(tmp.dir.join(chancela_store::DB_FILE)).expect("database remains readable");
@@ -364,6 +373,10 @@ async fn data_status_exposes_plaintext_database_encryption_gap() {
     assert_eq!(encryption["plaintext_migration_pending"], true);
     assert_eq!(encryption["plaintext_migration_blocked"], false);
     assert_eq!(encryption["key_ops"]["key_config"], "unconfigured");
+    assert_eq!(body["key_rotation"]["latest_receipt"], Value::Null);
+    assert_eq!(body["key_rotation"]["history"], json!([]));
+    assert_eq!(body["key_rotation"]["history_count"], 0);
+    assert_eq!(body["key_rotation"]["history_limit"], 10);
 }
 
 #[tokio::test]
@@ -396,6 +409,90 @@ async fn data_status_reports_operator_key_source_and_blocked_plaintext_migration
         "refuse_direct_plaintext_to_encrypted_migration"
     );
     assert_secret_free(&body, &["<configured>"]);
+}
+
+#[cfg(feature = "sqlcipher")]
+#[tokio::test]
+async fn successful_guarded_rekey_persists_secret_free_receipt_and_status_history() {
+    let tmp = TempDir::new("execute-success-receipt");
+    let initial_key = "initial-key-not-persisted";
+    let replacement_key = "replacement-key-not-persisted";
+    let state = AppState::try_with_data_dir(
+        tmp.dir.clone(),
+        DatabaseEncryptionConfig::with_key(initial_key).expect("initial key config"),
+    )
+    .expect("encrypted state opens");
+    let token = owner_session(&state).await;
+
+    let (status, body) = send(
+        state.clone(),
+        with_session(
+            post_json(EXECUTE_PATH, json!({ "new_key": replacement_key })),
+            &token,
+        ),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK, "rekey execution: {body}");
+    assert_eq!(body["status"], "rekey_applied");
+    assert_eq!(body["rekey_executed"], true);
+    assert_secret_free(&body, &[initial_key, replacement_key]);
+
+    let receipt_path = tmp.dir.join(RECEIPTS_FILE);
+    assert!(receipt_path.is_file(), "success receipt is persisted");
+    let receipt_file: Value =
+        serde_json::from_slice(&std::fs::read(&receipt_path).expect("receipt file reads"))
+            .expect("receipt file is JSON");
+    assert_eq!(receipt_file["schema_version"], 1);
+    let receipts = receipt_file["receipts"]
+        .as_array()
+        .expect("receipt history array");
+    assert_eq!(receipts.len(), 1);
+    let receipt = &receipts[0];
+    assert_eq!(receipt["schema_version"], 1);
+    assert!(
+        receipt["receipt_id"]
+            .as_str()
+            .is_some_and(|id| !id.is_empty())
+    );
+    assert!(receipt["rotated_at"].as_str().is_some());
+    assert_eq!(receipt["actor_user_id"].is_string(), true);
+    assert_eq!(receipt["mode"], "guarded_sqlcipher_rekey");
+    assert_eq!(receipt["status"], "rekey_applied");
+    assert_eq!(receipt["backend_family"], "sqlite");
+    assert_eq!(receipt["rekey_executed"], true);
+    assert_eq!(receipt["ledger_integrity_verified"], true);
+    assert_eq!(receipt["evidence"]["operation"], "sqlcipher_rekey");
+    assert_eq!(receipt["evidence"]["requested_key_config"], "configured");
+    assert_eq!(receipt["evidence"]["sqlcipher_available"], true);
+    assert_eq!(receipt["no_claims"]["current_key_persisted"], false);
+    assert_eq!(receipt["no_claims"]["replacement_key_persisted"], false);
+    assert_eq!(receipt["no_claims"]["key_fingerprint_persisted"], false);
+    assert_eq!(receipt["no_claims"]["database_path_persisted"], false);
+    assert_eq!(receipt["no_claims"]["sqlcipher_at_rest_certified"], false);
+    assert_eq!(receipt["no_claims"]["plaintext_migration_performed"], false);
+    assert_eq!(
+        receipt["no_claims"]["legal_disposal_or_erasure_certified"],
+        false
+    );
+    assert_secret_free(
+        &receipt_file,
+        &[initial_key, replacement_key, "chancela.db"],
+    );
+
+    let (status, status_body) = send(state, with_session(get(STATUS_PATH), &token)).await;
+    assert_eq!(status, StatusCode::OK, "data status: {status_body}");
+    assert_eq!(
+        status_body["key_rotation"]["latest_receipt"]["receipt_id"],
+        receipt["receipt_id"]
+    );
+    assert_eq!(status_body["key_rotation"]["history_count"], 1);
+    assert_eq!(status_body["key_rotation"]["history_limit"], 10);
+    assert_eq!(
+        status_body["key_rotation"]["history"][0]["status"],
+        "rekey_applied"
+    );
+    assert_secret_free(&status_body, &[initial_key, replacement_key, "chancela.db"]);
 }
 
 #[cfg(not(feature = "sqlcipher"))]

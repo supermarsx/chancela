@@ -16,7 +16,8 @@ use axum::extract::State;
 use chancela_authz::{Permission, Scope};
 use chancela_store::{
     Store, StoreDatabaseFormat, StoreError, StoreKeyOpsPlan, StoreKeyOpsStatus,
-    StoreKeyRotationExecution, StoreKeyRotationPreflight, StoreOpenOptions,
+    StoreKeyRotationExecution, StoreKeyRotationExecutionStatus, StoreKeyRotationPreflight,
+    StoreOpenOptions,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -36,6 +37,7 @@ pub struct DataStatusResponse {
     pub data_dir: DataDirStatus,
     pub permissions: PermissionStatus,
     pub usage: UsageStatus,
+    pub key_rotation: DataKeyRotationReceiptStatus,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -240,6 +242,63 @@ pub struct DataCleanupResponse {
     pub skipped: Vec<String>,
     pub data_dir: Option<String>,
 }
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DataKeyRotationReceiptStatus {
+    pub latest_receipt: Option<DataKeyRotationReceipt>,
+    pub history: Vec<DataKeyRotationReceipt>,
+    pub history_count: u64,
+    pub history_limit: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub read_error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DataKeyRotationReceipt {
+    pub schema_version: u32,
+    pub receipt_id: String,
+    pub rotated_at: String,
+    pub actor_user_id: Option<String>,
+    pub mode: String,
+    pub status: String,
+    pub backend_family: Option<String>,
+    pub rekey_executed: bool,
+    pub ledger_integrity_verified: bool,
+    pub ledger_length: u64,
+    pub evidence: DataKeyRotationReceiptEvidence,
+    pub no_claims: DataKeyRotationReceiptNoClaims,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DataKeyRotationReceiptEvidence {
+    pub operation: String,
+    pub requested_key_config: String,
+    pub sqlcipher_available: bool,
+    pub checkpointed_before_rekey: bool,
+    pub checkpointed_after_rekey: bool,
+    pub post_rekey_integrity_checked: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DataKeyRotationReceiptNoClaims {
+    pub current_key_persisted: bool,
+    pub replacement_key_persisted: bool,
+    pub key_fingerprint_persisted: bool,
+    pub database_path_persisted: bool,
+    pub sqlcipher_at_rest_certified: bool,
+    pub plaintext_migration_performed: bool,
+    pub legal_disposal_or_erasure_certified: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct DataKeyRotationReceiptStore {
+    schema_version: u32,
+    receipts: Vec<DataKeyRotationReceipt>,
+}
+
+const DATA_KEY_ROTATION_RECEIPTS_FILE: &str = "data-key-rotation-receipts.json";
+const DATA_KEY_ROTATION_RECEIPT_SCHEMA_VERSION: u32 = 1;
+const DATA_KEY_ROTATION_RECEIPT_HISTORY_LIMIT: usize = 10;
 
 #[derive(Deserialize)]
 pub struct DataKeyRotationPreflightRequest {
@@ -472,14 +531,19 @@ pub async fn get_data_status(
         Vec::new()
     };
 
-    let (mut fs, database_encryption) = match data_dir {
+    let (mut fs, database_encryption, key_rotation) = match data_dir {
         Some(dir) => task::spawn_blocking(move || {
             let database_encryption = inspect_database_encryption(
                 Some(&dir),
                 database_encryption_configured,
                 database_encryption_key_source,
             );
-            (inspect_data_dir(dir, store), database_encryption)
+            let key_rotation = read_key_rotation_receipt_status(&dir);
+            (
+                inspect_data_dir(dir, store),
+                database_encryption,
+                key_rotation,
+            )
         })
         .await
         .map_err(|e| ApiError::Internal(format!("data status worker failed: {e}")))?,
@@ -490,6 +554,7 @@ pub async fn get_data_status(
                 database_encryption_configured,
                 database_encryption_key_source,
             ),
+            empty_key_rotation_receipt_status(),
         ),
     };
     fs.usage.sidecars = sidecars;
@@ -514,6 +579,7 @@ pub async fn get_data_status(
         data_dir: fs.data_dir,
         permissions: fs.permissions,
         usage: fs.usage,
+        key_rotation,
     }))
 }
 
@@ -633,7 +699,7 @@ pub async fn execute_data_key_rotation(
     let authz = authorizer(&state, &actor).await?;
     // Execution is intentionally interactive-session-only. API-key principals may run the
     // read-only preflight if granted settings.manage, but not mutate the data-store key.
-    authz.principal()?;
+    let principal = authz.principal()?;
     authz.require(Permission::SettingsManage, Scope::Global)?;
 
     let Some(data_dir) = state.data_dir() else {
@@ -663,11 +729,34 @@ pub async fn execute_data_key_rotation(
         )));
     }
 
+    let backend_family = if state.sidecars_db_backed {
+        DurableBackendFamily::Postgres
+    } else {
+        DurableBackendFamily::Sqlite
+    };
+    let actor_user_id = principal.to_string();
+
     let execution =
         task::spawn_blocking(move || store.rotate_encryption_key_with_evidence(&new_key))
             .await
             .map_err(|e| ApiError::Internal(format!("data key-rotation worker failed: {e}")))?
             .map_err(map_key_rotation_execution_error)?;
+
+    let receipt = key_rotation_receipt_from_execution(
+        &execution,
+        Some(actor_user_id),
+        Some(backend_family),
+        now_rfc3339(),
+    );
+    let receipt_data_dir = data_dir.clone();
+    task::spawn_blocking(move || persist_key_rotation_receipt(&receipt_data_dir, receipt))
+        .await
+        .map_err(|e| ApiError::Internal(format!("data key-rotation receipt worker failed: {e}")))?
+        .map_err(|e| {
+            ApiError::Internal(format!(
+                "data key-rotation receipt could not be persisted: {e}"
+            ))
+        })?;
 
     Ok(Json(execution))
 }
@@ -690,6 +779,148 @@ fn map_key_rotation_execution_error(e: StoreError) -> ApiError {
             "data key-rotation execution was rejected by SQLCipher or the store could not be verified after rekey".to_owned(),
         ),
         _ => ApiError::Internal("data key-rotation execution failed".to_owned()),
+    }
+}
+
+fn key_rotation_receipt_from_execution(
+    execution: &StoreKeyRotationExecution,
+    actor_user_id: Option<String>,
+    backend_family: Option<DurableBackendFamily>,
+    rotated_at: String,
+) -> DataKeyRotationReceipt {
+    DataKeyRotationReceipt {
+        schema_version: DATA_KEY_ROTATION_RECEIPT_SCHEMA_VERSION,
+        receipt_id: uuid::Uuid::new_v4().to_string(),
+        rotated_at,
+        actor_user_id,
+        mode: "guarded_sqlcipher_rekey".to_owned(),
+        status: match execution.status {
+            StoreKeyRotationExecutionStatus::RekeyApplied => "rekey_applied".to_owned(),
+        },
+        backend_family: backend_family
+            .map(durable_backend_family_code)
+            .map(str::to_owned),
+        rekey_executed: execution.rekey_executed,
+        ledger_integrity_verified: execution.ledger_integrity_verified,
+        ledger_length: execution.ledger_length,
+        evidence: DataKeyRotationReceiptEvidence {
+            operation: execution.evidence.operation.to_owned(),
+            requested_key_config: execution.evidence.requested_key_config.to_owned(),
+            sqlcipher_available: execution.evidence.sqlcipher_available,
+            checkpointed_before_rekey: execution.evidence.checkpointed_before_rekey,
+            checkpointed_after_rekey: execution.evidence.checkpointed_after_rekey,
+            post_rekey_integrity_checked: execution.evidence.post_rekey_integrity_checked,
+        },
+        no_claims: DataKeyRotationReceiptNoClaims {
+            current_key_persisted: false,
+            replacement_key_persisted: false,
+            key_fingerprint_persisted: false,
+            database_path_persisted: false,
+            sqlcipher_at_rest_certified: false,
+            plaintext_migration_performed: false,
+            legal_disposal_or_erasure_certified: false,
+        },
+    }
+}
+
+fn durable_backend_family_code(family: DurableBackendFamily) -> &'static str {
+    match family {
+        DurableBackendFamily::Sqlite => "sqlite",
+        DurableBackendFamily::Postgres => "postgres",
+    }
+}
+
+fn empty_key_rotation_receipt_status() -> DataKeyRotationReceiptStatus {
+    DataKeyRotationReceiptStatus {
+        latest_receipt: None,
+        history: Vec::new(),
+        history_count: 0,
+        history_limit: DATA_KEY_ROTATION_RECEIPT_HISTORY_LIMIT as u64,
+        read_error: None,
+    }
+}
+
+fn read_key_rotation_receipt_status(data_dir: &Path) -> DataKeyRotationReceiptStatus {
+    match read_key_rotation_receipt_store(data_dir) {
+        Ok(mut store) => {
+            store
+                .receipts
+                .sort_by(|left, right| right.rotated_at.cmp(&left.rotated_at));
+            store
+                .receipts
+                .truncate(DATA_KEY_ROTATION_RECEIPT_HISTORY_LIMIT);
+            DataKeyRotationReceiptStatus {
+                latest_receipt: store.receipts.first().cloned(),
+                history_count: store.receipts.len() as u64,
+                history: store.receipts,
+                history_limit: DATA_KEY_ROTATION_RECEIPT_HISTORY_LIMIT as u64,
+                read_error: None,
+            }
+        }
+        Err(KeyRotationReceiptReadError::Missing) => empty_key_rotation_receipt_status(),
+        Err(KeyRotationReceiptReadError::Unreadable) => DataKeyRotationReceiptStatus {
+            read_error: Some("key rotation receipt history could not be read".to_owned()),
+            ..empty_key_rotation_receipt_status()
+        },
+    }
+}
+
+enum KeyRotationReceiptReadError {
+    Missing,
+    Unreadable,
+}
+
+fn read_key_rotation_receipt_store(
+    data_dir: &Path,
+) -> Result<DataKeyRotationReceiptStore, KeyRotationReceiptReadError> {
+    let path = data_dir.join(DATA_KEY_ROTATION_RECEIPTS_FILE);
+    match fs::read_to_string(path) {
+        Ok(raw) => serde_json::from_str::<DataKeyRotationReceiptStore>(&raw)
+            .map_err(|_| KeyRotationReceiptReadError::Unreadable),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            Err(KeyRotationReceiptReadError::Missing)
+        }
+        Err(_) => Err(KeyRotationReceiptReadError::Unreadable),
+    }
+}
+
+fn persist_key_rotation_receipt(
+    data_dir: &Path,
+    receipt: DataKeyRotationReceipt,
+) -> std::io::Result<()> {
+    fs::create_dir_all(data_dir)?;
+    let mut store =
+        read_key_rotation_receipt_store(data_dir).unwrap_or(DataKeyRotationReceiptStore {
+            schema_version: DATA_KEY_ROTATION_RECEIPT_SCHEMA_VERSION,
+            receipts: Vec::new(),
+        });
+    store.schema_version = DATA_KEY_ROTATION_RECEIPT_SCHEMA_VERSION;
+    store.receipts.insert(0, receipt);
+    store
+        .receipts
+        .sort_by(|left, right| right.rotated_at.cmp(&left.rotated_at));
+    store
+        .receipts
+        .truncate(DATA_KEY_ROTATION_RECEIPT_HISTORY_LIMIT);
+
+    let path = data_dir.join(DATA_KEY_ROTATION_RECEIPTS_FILE);
+    let tmp = data_dir.join(format!(
+        ".{DATA_KEY_ROTATION_RECEIPTS_FILE}.{}-{}.tmp",
+        std::process::id(),
+        uuid::Uuid::new_v4()
+    ));
+    let bytes = serde_json::to_vec_pretty(&store)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    fs::write(&tmp, bytes)?;
+    if path.exists() {
+        fs::remove_file(&path)?;
+    }
+    match fs::rename(&tmp, &path) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let _ = fs::remove_file(&tmp);
+            Err(e)
+        }
     }
 }
 
@@ -2461,6 +2692,11 @@ fn concern_for_root(root: &str) -> ConcernDef {
             label: "Backup recovery drill receipts",
             basis: UsageBasis::Filesystem,
         },
+        DATA_KEY_ROTATION_RECEIPTS_FILE => ConcernDef {
+            id: "data_key_rotation_receipts",
+            label: "Data key rotation receipts",
+            basis: UsageBasis::Filesystem,
+        },
         crate::external_signing::EXTERNAL_SIGNING_ENVELOPES_FILE => ConcernDef {
             id: "external_signing",
             label: "External signing",
@@ -2651,6 +2887,10 @@ mod tests {
         assert_eq!(
             concern_for_root("backup-recovery-drills.json").id,
             "backup_recovery_drills"
+        );
+        assert_eq!(
+            concern_for_root(DATA_KEY_ROTATION_RECEIPTS_FILE).id,
+            "data_key_rotation_receipts"
         );
         assert_eq!(
             concern_for_root("external-signing-envelopes.json").id,

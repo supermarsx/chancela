@@ -118,6 +118,10 @@ import {
   type DashboardTargetLinks,
   type DataManagementSettings,
   type DataDirStatus,
+  type DataKeyRotationReceipt,
+  type DataKeyRotationReceiptEvidence,
+  type DataKeyRotationReceiptNoClaims,
+  type DataKeyRotationReceiptStatus,
   type DataPayloadStats,
   type DataPermissionCheck,
   type DataPermissionStatus,
@@ -614,6 +618,87 @@ function assertDataPayloadStats(obj: unknown, label: string): DataPayloadStats {
   inEnum(DATA_PAYLOAD_ESTIMATE_METHODS, stats.estimate_method, `${label}.estimate_method`);
   inEnum(DATA_USAGE_BASES, stats.estimate_basis, `${label}.estimate_basis`);
   return stats;
+}
+
+function assertDataKeyRotationReceipt(obj: unknown, label: string): DataKeyRotationReceipt {
+  const receipt = assertExactKeys<DataKeyRotationReceipt>(
+    obj,
+    {
+      schema_version: true,
+      receipt_id: true,
+      rotated_at: true,
+      actor_user_id: true,
+      mode: true,
+      status: true,
+      backend_family: true,
+      rekey_executed: true,
+      ledger_integrity_verified: true,
+      ledger_length: true,
+      evidence: true,
+      no_claims: true,
+    },
+    label,
+  );
+  expect(receipt.schema_version).toBe(1);
+  expect(receipt.receipt_id, `${label}.receipt_id should be uuid-like`).toMatch(/^[0-9a-f-]{36}$/);
+  assertTimestamp(receipt.rotated_at, `${label}.rotated_at`);
+  if (receipt.actor_user_id !== null) {
+    expect(receipt.actor_user_id, `${label}.actor_user_id should be uuid-like`).toMatch(
+      /^[0-9a-f-]{36}$/,
+    );
+  }
+  expect(receipt.mode).toBe('guarded_sqlcipher_rekey');
+  expect(receipt.status).toBe('rekey_applied');
+  if (receipt.backend_family !== null) {
+    inEnum(DATA_DURABLE_BACKEND_FAMILIES, receipt.backend_family, `${label}.backend_family`);
+  }
+  expect(typeof receipt.rekey_executed, `${label}.rekey_executed`).toBe('boolean');
+  expect(typeof receipt.ledger_integrity_verified, `${label}.ledger_integrity_verified`).toBe(
+    'boolean',
+  );
+  expect(Number.isInteger(receipt.ledger_length), `${label}.ledger_length`).toBe(true);
+
+  const evidence = assertExactKeys<DataKeyRotationReceiptEvidence>(
+    receipt.evidence,
+    {
+      operation: true,
+      requested_key_config: true,
+      sqlcipher_available: true,
+      checkpointed_before_rekey: true,
+      checkpointed_after_rekey: true,
+      post_rekey_integrity_checked: true,
+    },
+    `${label}.evidence`,
+  );
+  expect(evidence.operation).toBe('sqlcipher_rekey');
+  expect(['absent', 'empty', 'configured']).toContain(evidence.requested_key_config);
+  expect(typeof evidence.sqlcipher_available).toBe('boolean');
+  expect(typeof evidence.checkpointed_before_rekey).toBe('boolean');
+  expect(typeof evidence.checkpointed_after_rekey).toBe('boolean');
+  expect(typeof evidence.post_rekey_integrity_checked).toBe('boolean');
+
+  const noClaims = assertExactKeys<DataKeyRotationReceiptNoClaims>(
+    receipt.no_claims,
+    {
+      current_key_persisted: true,
+      replacement_key_persisted: true,
+      key_fingerprint_persisted: true,
+      database_path_persisted: true,
+      sqlcipher_at_rest_certified: true,
+      plaintext_migration_performed: true,
+      legal_disposal_or_erasure_certified: true,
+    },
+    `${label}.no_claims`,
+  );
+  expect(noClaims.current_key_persisted).toBe(false);
+  expect(noClaims.replacement_key_persisted).toBe(false);
+  expect(noClaims.key_fingerprint_persisted).toBe(false);
+  expect(noClaims.database_path_persisted).toBe(false);
+  expect(noClaims.sqlcipher_at_rest_certified).toBe(false);
+  expect(noClaims.plaintext_migration_performed).toBe(false);
+  expect(noClaims.legal_disposal_or_erasure_certified).toBe(false);
+  expect(JSON.stringify(receipt)).not.toContain('chancela.db');
+  return receipt;
 }
 
 function assertPrivacyRecordBase(
@@ -6108,6 +6193,7 @@ describe('contract fixtures parse through the real client', () => {
         data_dir: true,
         permissions: true,
         usage: true,
+        key_rotation: true,
       },
       'DataStatusResponse',
     );
@@ -6265,6 +6351,40 @@ describe('contract fixtures parse through the real client', () => {
     }
     for (const error of usage.scan_errors) {
       expect(error.length, 'DataStatusResponse.usage.scan_errors[] non-empty').toBeGreaterThan(0);
+    }
+
+    const keyRotation = assertExactKeys<DataKeyRotationReceiptStatus>(
+      status.key_rotation,
+      {
+        latest_receipt: true,
+        history: true,
+        history_count: true,
+        history_limit: true,
+      },
+      'DataStatusResponse.key_rotation',
+      ['read_error'],
+    );
+    expect(Array.isArray(keyRotation.history), 'key_rotation.history array').toBe(true);
+    expect(Number.isInteger(keyRotation.history_count), 'key_rotation.history_count integer').toBe(
+      true,
+    );
+    expect(Number.isInteger(keyRotation.history_limit), 'key_rotation.history_limit integer').toBe(
+      true,
+    );
+    expect(keyRotation.history_limit).toBeGreaterThan(0);
+    expect(keyRotation.history_count).toBe(keyRotation.history.length);
+    if (keyRotation.latest_receipt !== null) {
+      const latest = assertDataKeyRotationReceipt(
+        keyRotation.latest_receipt,
+        'DataStatusResponse.key_rotation.latest_receipt',
+      );
+      expect(keyRotation.history[0]?.receipt_id).toBe(latest.receipt_id);
+    }
+    for (const [index, receipt] of keyRotation.history.entries()) {
+      assertDataKeyRotationReceipt(receipt, `DataStatusResponse.key_rotation.history[${index}]`);
+    }
+    if (keyRotation.read_error !== undefined) {
+      expect(keyRotation.read_error.length).toBeGreaterThan(0);
     }
   });
 
