@@ -2744,6 +2744,21 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
+    "chancela://mcp/meeting-metadata-extraction-review",
+    "CI checkpoints MCP meeting metadata extraction URI marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "caller-supplied meeting JSON/text metadata",
+    "CI checkpoints MCP meeting metadata caller-supplied marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "no raw text/contact/secret/access-code echo",
+    "CI checkpoints MCP meeting metadata no-echo marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
     "chancela://mcp/chronology-review-summary",
     "CI checkpoints MCP chronology review summary URI marker",
   );
@@ -9696,12 +9711,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `47ed33b`",
+    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `b680b36`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `47ed33b`",
+    "Focused Gate Snapshot Through `b680b36`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -10326,8 +10341,18 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `47ed33b`",
+    "Current checkpoint metadata/static checks through `b680b36`",
     "CI/E2E hardening plan current checkpoint checks marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "chancela://mcp/meeting-metadata-extraction-review",
+    "CI/E2E hardening plan MCP meeting metadata resource marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "echoes\n  no raw document text, uploaded bytes, names, contacts, emails, phone numbers,\n  access codes, credentials, secrets",
+    "CI/E2E hardening plan MCP meeting metadata no-echo marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -10806,7 +10831,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `47ed33b17aff3036c961051376ac90f32f8dce0e`",
+    "implementation snapshot `b680b3601fb2dcfaed03bb269e29c87802b9a4c1`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -10846,8 +10871,18 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Current `47ed33b` keeps Documents/Roles & Access/Data/CI **PARTIAL**",
+    "Current `b680b36` keeps AI & MCP/CI **PARTIAL**",
     "spec coverage RBAC ledger verification checkpoint marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "chancela://mcp/meeting-metadata-extraction-review",
+    "spec coverage MCP meeting metadata review resource marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "does not echo raw document text, uploaded bytes, names,\n  contacts, emails, phone numbers, access codes, credentials, secrets",
+    "spec coverage MCP meeting metadata no-echo marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",

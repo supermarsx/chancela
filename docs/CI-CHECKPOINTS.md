@@ -34,9 +34,11 @@ guardrail acknowledgements, written-resolution evidence status binding and
 browser receipt proof, trust
 parsing, declared signer-capacity evidence preservation, live-provider static
 assurance, MCP resource/prompt coverage including workflow provenance review
-guidance and draft-vs-signed comparison review guidance, the bounded local
+guidance, draft-vs-signed comparison review guidance, and the
+`chancela://mcp/meeting-metadata-extraction-review` local review aid over
+caller-supplied meeting JSON/text metadata, the bounded local
 provenance panel with deterministic local counts, no bridge/API/AI-provider/hidden-provider
-calls, no secrets, and false legal/source/provider/trust/external/signature-qualification
+calls, no raw text/contact/secret/access-code echo, no secrets, and false legal/source/workflow/provider/trust/external/signature-qualification
 flags, web fixtures, ASiC
 inspect `technical_validation` and structural diagnostic markers, registry chronology
 graph markers, sealed-act chronology projection markers for local sealed/archived
@@ -674,7 +676,8 @@ provider approval, live provider readiness, DGLAB certification, full release
 hardening, raw MCP report-byte exposure,
 auto-role reconciliation, permission grants, archive custody/decryption material,
 AI-01/full AI completion, MCP draft-signed legal/source/trust/external
-certification or signed-artifact validity, generated-document signing, bundle readiness, template legal
+certification or signed-artifact validity, MCP meeting metadata extraction legal/source/workflow
+certification, generated-document signing, bundle readiness, template legal
 review, threshold correctness, law verification, provider execution, registry
 filing, legal-effect claims, mail/email/SMS/provider sending, provider
 dispatch-sent proof, dispatch completion from operator evidence, delivery proof,

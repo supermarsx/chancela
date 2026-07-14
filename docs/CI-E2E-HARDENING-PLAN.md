@@ -1,7 +1,7 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `47ed33b`,
+and implementation snapshot `b680b36`,
 including coverage notes for the bounded PAdES DSS validation-time, PDF/UA v11
 blocker-delta and scoped table-header evidence, retention due-candidate explicit evidence states,
 bounded archive/no-action evidence UI, duplicate-review guard/status surfacing, and
@@ -331,6 +331,19 @@ test operating checklist for driving Chancela toward release confidence.
   certification, legal validity, signature validity, archive certification,
   provider validation, external-validator success, trust validation, legal
   review, AI/MCP completion, or provider/legal assurance.
+- The current MCP meeting metadata extraction review slice adds the read-only
+  `chancela://mcp/meeting-metadata-extraction-review` resource. With no
+  arguments it returns static human-review guidance; with
+  `arguments.meeting_document` as caller-supplied JSON or text metadata it
+  returns deterministic local candidate counts, bounded channel classification,
+  evidence-reference presence, blockers, warnings, and false no-claim flags. It
+  makes no bridge/API/AI-provider/legal-service/HTTP/SSE/provider calls; echoes
+  no raw document text, uploaded bytes, names, contacts, emails, phone numbers,
+  access codes, credentials, secrets, agenda text, digests, or caller IDs; and
+  requires human verification. Treat this as local review signal only, not legal
+  validity, source certification, workflow completion, meeting legality, notice
+  sufficiency, extraction accuracy certification, AI-01 completion, full AI/MCP
+  completion, or provider/model assurance.
 - The current dashboard guest redaction slice returns `recent_events: []` from
   `GET /v1/dashboard` for guest/minimal redaction callers, while Owner and
   `Leitor` sessions keep recent events. Guest still lacks `GET /v1/ledger/events`.
@@ -816,11 +829,11 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `47ed33b`
+## Focused Gate Snapshot Through `b680b36`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08` and checkpoint-promoted on 2026-07-14 for
-current implementation head `47ed33b`. This is not an exhaustive current
+current implementation head `b680b36`. This is not an exhaustive current
 green-run claim; browser, Docker, desktop, package signing/notarization, image
 signing/attestation, and live-provider limits above still apply.
 
@@ -1790,14 +1803,14 @@ settingsDefaults.test.ts contracts.test.ts`.
   full RBAC/delegation-policy completion, tenant authorization proof,
   legal-capacity verification, broad security certification, or spec
   completion.
-- Current checkpoint metadata/static checks through `47ed33b`
+- Current checkpoint metadata/static checks through `b680b36`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
   `git diff --check -- SPEC-COVERAGE.md docs\CI-E2E-HARDENING-PLAN.md
   docs\CI-CHECKPOINTS.md scripts\checkpoint-recent-landed.mjs
   scripts\check-release-trust.mjs`. These pin the spec snapshot,
-  hardening-plan head, PDF table-structure semantics, export save-prompt
+  hardening-plan head, MCP meeting metadata extraction review resource, PDF table-structure semantics, export save-prompt
   routing, dashboard dates tab, notification footer icon-only action, and
   clarified platform operations UI, user/signatory email capture, and compact
   Data Management cleanup controls, retained-export dry-run planning with
