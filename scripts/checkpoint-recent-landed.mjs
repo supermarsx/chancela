@@ -5724,6 +5724,31 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-mcp/src/server.rs",
+    "workflow_provenance_review_report_payload",
+    "MCP workflow provenance review argumented report payload marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    "resources_read_workflow_provenance_review_accepts_arguments_and_counts_without_echoing_raw_values",
+    "MCP workflow provenance review aggregate count/no-echo coverage",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    '"workflow_provenance_summary"',
+    "MCP workflow provenance summary object marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    '"human_review_decision_status_counts"',
+    "MCP workflow provenance human-review count marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    '"evidence_marker_counts"',
+    "MCP workflow provenance evidence-marker count marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
     '"bridge_calls": false',
     "MCP workflow provenance review no bridge call marker",
   );
@@ -5739,8 +5764,28 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-mcp/src/server.rs",
+    '"ai_provider_calls": false',
+    "MCP workflow provenance review no AI-provider call marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    '"raw_document_text_echoed": false',
+    "MCP workflow provenance review no raw text echo marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
     '"source_certification": false',
     "MCP workflow provenance review no source-certification claim marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    '"workflow_completion": false',
+    "MCP workflow provenance review no workflow-completion claim marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    '"extraction_accuracy": false',
+    "MCP workflow provenance review no extraction-accuracy claim marker",
   );
   assertFileContains(
     "crates/chancela-mcp/src/server.rs",
@@ -10111,12 +10156,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `fe08c70`",
+    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `9402174`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `fe08c70`",
+    "Focused Gate Snapshot Through `9402174`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -10263,6 +10308,11 @@ function assertCheckpointMap() {
     "docs/CI-E2E-HARDENING-PLAN.md",
     "`chancela://mcp/workflow-provenance-review` resource",
     "CI/E2E hardening plan MCP workflow provenance resource marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "arguments.workflow_evidence` local JSON/text summary mode",
+    "CI/E2E hardening plan MCP workflow provenance argumented summary marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -10751,7 +10801,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `fe08c70`",
+    "Current checkpoint metadata/static checks through `9402174`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -11281,13 +11331,18 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `fe08c70eb8ec863de536861fca464657c9787a5a`",
+    "implementation snapshot `94021741477dd04dbfc89d4479c75daedb5f3e94`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Current `fe08c70` keeps Data/Architecture/UX/CI **PARTIAL**",
-    "spec coverage key custody readiness current checkpoint marker",
+    "Current `9402174` keeps Legal/Compliance, Template Catalog, and CI",
+    "spec coverage automated-review law corpus current checkpoint marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Recent `eb1a846` keeps AI & MCP/CI **PARTIAL**",
+    "spec coverage workflow provenance recent checkpoint marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
@@ -12219,17 +12274,22 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "static `workflow_provenance_review_checklist` prompt and the read-only\n  `chancela://mcp/workflow-provenance-review` resource",
+    "read-only `chancela://mcp/workflow-provenance-review` resource; with\n  `arguments.workflow_evidence`",
     "spec coverage MCP workflow provenance prompt/resource marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "no bridge/API/provider calls, no secrets, and\n  explicit false legal-validity",
+    "aggregate workflow lifecycle counts, human-review decision status counts",
     "spec coverage MCP workflow provenance no-call/no-secret marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "not workflow completion, AI completion, MCP\n  completion, source certification",
+    "it makes no bridge/API/AI-provider/legal-service/provider calls; and it keeps\n  legal-validity",
+    "spec coverage MCP workflow provenance no-call marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "workflow-completion,\n  provider-assurance, trust, external-validation, archive-certification",
     "spec coverage MCP workflow provenance no-completion marker",
   );
   assertFileContains(

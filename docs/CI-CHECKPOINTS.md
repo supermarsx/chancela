@@ -37,13 +37,14 @@ guardrail acknowledgements, written-resolution evidence status binding and
 browser receipt proof, trust
 parsing, declared signer-capacity evidence preservation, live-provider static
 assurance, MCP resource/prompt coverage including workflow provenance review
-guidance, draft-vs-signed comparison review guidance, and the
+guidance plus caller-supplied local JSON/text summary counts, draft-vs-signed
+comparison review guidance, and the
 `chancela://mcp/meeting-metadata-extraction-review` local review aid over
 caller-supplied meeting JSON/text metadata, the bounded local
 provenance panel with deterministic local counts and a deterministic
 `act.ai_provenance` review-packet copy with counts/status/missing/pending/claim
 rows, false no-claim flags, no bridge/API/AI-provider/hidden-provider
-calls, no raw text/contact/secret/access-code echo, no statement-label/reviewer-note echo, no secrets, and false legal/source/workflow/provider/trust/external/signature-qualification
+calls, no raw text/contact/secret/access-code echo, no statement-label/reviewer-note echo, no secrets, aggregate workflow/human-review/evidence-marker counts only, and false legal/source/workflow/provider/trust/external/signature-qualification/extraction-accuracy
 flags, web fixtures, ASiC
 inspect `technical_validation` and structural diagnostic markers, registry chronology
 graph markers, sealed-act chronology projection markers for local sealed/archived
@@ -607,6 +608,8 @@ markers plus BookDetail JSON-save markers,
 release clean-source provenance gate markers, seeded role drift API/UI markers,
 archive readability/ZK caveat markers, template `FamilyChannelMismatch` markers,
 MCP trust-catalog structured-filter and redacted external-validator summary
+markers, MCP workflow provenance review prompt/resource plus deterministic
+local workflow/human-review/evidence-marker summary/no-raw-echo/no-call/no-claim
 markers, MCP draft-vs-signed comparison review prompt/resource plus deterministic
 local comparison report/no-call/no-claim markers, dashboard guest
 `recent_events: []` redaction and no-permission-grant

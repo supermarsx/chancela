@@ -1,8 +1,10 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `fe08c70`,
-including coverage notes for key-custody readiness UI/contract surfacing,
+and implementation snapshot `9402174`,
+including coverage notes for automated-review law corpus evidence, MCP workflow
+provenance local JSON/text summary,
+key-custody readiness UI/contract surfacing,
 data key-rotation receipt history,
 bounded PAdES DSS validation-time, PDF/UA v11
 blocker-delta and scoped table-header evidence, retention due-candidate explicit evidence states,
@@ -17,6 +19,8 @@ CSC quota/delegation/revocation and standalone agenda-item template parity,
 retained-export cleanup preview-token/manifest-gated execution evidence,
 compliance legal-basis internal corpus deep links, first-class template catalog metadata lint,
 deterministic local template law-reference corpus audit coverage,
+automated-review law-corpus vendoring for 39 of 40 previously Pending
+DRE-sourced articles without human-Verified promotion,
 bounded platform-log sidecar cleanup target coverage,
 remote signing provider readiness manifests,
 external-signing workflow-only envelope UI, workflow reminder policy, and
@@ -292,14 +296,23 @@ test operating checklist for driving Chancela toward release confidence.
   coverage only, not external-validator legal acceptance, certification,
   PDF/UA/PAdES certification, compliance proof, live trust validation, or full
   report replay.
-- The current MCP workflow provenance slice adds the static
+- The current MCP workflow provenance slice keeps the static
   `workflow_provenance_review_checklist` prompt and
   `chancela://mcp/workflow-provenance-review` resource as offline review aids.
-  They accept no arguments, include no secrets, make no bridge/API/provider
-  calls, and keep legal-validity, source-certification, provider, trust,
-  external, archive-certification, and signature-qualification flags false. Treat
-  them as human review guidance only, not AI/MCP completion, source
-  certification, trust validation, or provider/legal assurance.
+  With no arguments the resource returns static guidance; with
+  `arguments.workflow_evidence` as caller-supplied JSON object/array or text, it
+  returns deterministic aggregate workflow lifecycle counts, human-review
+  decision status counts, missing human-review decision counts, evidence-marker
+  counts, and raw-content/contact/secret-like warning counts. It echoes no raw
+  workflow text, uploaded bytes, contacts, credentials, secrets, access codes,
+  reviewer values, identifiers, digests, or caller payloads; makes no
+  bridge/API/AI-provider/legal-service/provider calls; and keeps
+  legal-validity, source-certification, workflow-completion,
+  provider-assurance, trust, external-validation, archive-certification,
+  signature-qualification, extraction-accuracy, AI-completion, and
+  MCP-completion flags false. Treat it as human review guidance only, not
+  AI/MCP completion, source certification, trust validation, extraction
+  certification, or provider/legal assurance.
 - The current MCP draft-vs-signed comparison slice adds the static
   `draft_signed_comparison_review_checklist` prompt and
   `chancela://mcp/draft-signed-comparison-review` resource. With no arguments
@@ -869,11 +882,11 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `fe08c70`
+## Focused Gate Snapshot Through `9402174`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08` and checkpoint-promoted on 2026-07-15 for
-current implementation head `fe08c70`. This is not an exhaustive current
+current implementation head `9402174`. This is not an exhaustive current
 green-run claim; browser, Docker, desktop, package signing/notarization, image
 signing/attestation, and live-provider limits above still apply.
 
@@ -1293,12 +1306,23 @@ settingsDefaults.test.ts contracts.test.ts`.
 - Current working-tree MCP workflow provenance review checks: focused
   `cargo test -p chancela-mcp --locked` coverage pins the static
   `workflow_provenance_review_checklist` prompt, the
-  `chancela://mcp/workflow-provenance-review` resource, offline/static
-  resource flags, no arguments, no bridge/API/provider calls, no secrets, review
-  category coverage, and false legal/source/provider/trust/external claim flags.
-  This is review guidance only: no AI or MCP completion claim, no legal validity,
-  no source certification, no provider assurance, no trust validation, and no
-  external validation.
+  `chancela://mcp/workflow-provenance-review` resource, offline/static guidance,
+  `arguments.workflow_evidence` local JSON/text summary mode, aggregate
+  workflow/human-review/evidence-marker/warning counts, no raw echo, no
+  bridge/API/AI-provider/provider calls, no secrets, review category coverage,
+  and false legal/source/workflow/provider/trust/external/signature/extraction
+  claim flags. This is review guidance only: no AI or MCP completion claim, no
+  legal validity, no source certification, no workflow completion, no provider
+  assurance, no trust validation, no external validation, and no extraction
+  accuracy certification.
+- Current working-tree law corpus automated-review checks: focused local corpus
+  coverage now has a third `AutomatedReview` tier for automatically vendored
+  statutory text that is complete enough to render but explicitly not
+  human-Verified. The gate keeps complete-source/body requirements for those
+  articles, keeps the DRE human approval manifest untouched, leaves the oversized
+  amending article Pending, and does not claim legal certification, human legal
+  approval, DRE source-authority verification, template sufficiency, legal
+  validity, or spec completion.
 - Current working-tree MCP draft-vs-signed comparison review checks: focused
   `cargo test -p chancela-mcp --locked` coverage pins the static
   `draft_signed_comparison_review_checklist` prompt, the
@@ -1867,7 +1891,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   full RBAC/delegation-policy completion, tenant authorization proof,
   legal-capacity verification, broad security certification, or spec
   completion.
-- Current checkpoint metadata/static checks through `fe08c70`
+- Current checkpoint metadata/static checks through `9402174`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and

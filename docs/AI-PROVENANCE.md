@@ -34,6 +34,17 @@ fixity markers, signed-document metadata, external-validator attachment summarie
 v10 blockers/table-header evidence, archive path markers, no-claim flags, and missing-evidence
 blockers.
 
+`chancela://mcp/workflow-provenance-review` follows the same local-only
+boundary. With no arguments it returns static human-review guidance. With
+`arguments.workflow_evidence` as caller-supplied JSON object/array or text, it
+returns deterministic aggregate workflow lifecycle counts, human-review decision
+status counts, missing human-review decision counts, evidence-marker counts for
+ledger/archive/signature/digest/imported/generated document references, and
+warning counts for raw-content, contact, and secret-like fields. It requires
+human verification and does not echo raw workflow text, uploaded bytes, contacts,
+credentials, secrets, access codes, reviewer values, document identifiers,
+digests, or raw caller payloads.
+
 `chancela://mcp/meeting-metadata-extraction-review` follows the same boundary.
 With no arguments it returns static human-review guidance. With
 `arguments.meeting_document` as caller-supplied JSON or text metadata, it returns
@@ -43,11 +54,13 @@ requires human verification and does not echo raw document text, uploaded bytes,
 names, contacts, emails, phone numbers, access codes, credentials, secrets,
 agenda text, digests, or caller identifiers.
 
-These resources do not fetch providers, call the API, add HTTP/SSE transport, expose raw reports,
-or claim PDF/UA conformance, DGLAB certification, legal validity, signature validity, archive
-certification, provider validation, external-validator success, legal review, source
-certification, workflow completion, meeting legality, notice sufficiency, extraction accuracy,
-AI-01 completion, or full AI/MCP completion.
+These resources do not fetch providers, call the API, call AI providers, add
+HTTP/SSE transport, expose raw reports, or claim PDF/UA conformance, DGLAB certification, legal validity,
+signature validity, archive certification, provider validation, provider
+assurance, trust validation, external-validator success, legal review, source
+certification, workflow completion, meeting legality, notice sufficiency,
+signature qualification, extraction accuracy, AI-01 completion, or full AI/MCP
+completion.
 
 ## Legal effect
 
