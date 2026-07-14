@@ -329,6 +329,7 @@ impl SharedInvalidationBus {
 }
 
 /// The Redis pub/sub channel session/permission invalidations are broadcast on.
+#[cfg(feature = "redis")]
 pub const INVALIDATION_CHANNEL: &str = "chancela:v1:invalidate";
 
 impl crate::AppState {
@@ -347,6 +348,7 @@ impl crate::AppState {
             .publish(&InvalidationEvent::RoleChanged { user_id });
     }
 
+    #[cfg(feature = "redis")]
     pub(crate) async fn apply_invalidation(&self, event: &InvalidationEvent) {
         match event {
             InvalidationEvent::SessionRevoked { token } => {

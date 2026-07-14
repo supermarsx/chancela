@@ -1459,7 +1459,7 @@ impl ProviderCredentialStore {
     /// resolves deterministically on hosts without an OS key store — the DB-blob analogue of
     /// [`load_with_db_key`](Self::load_with_db_key). Used by the `#[ignore]` live-Postgres credential
     /// round-trip so the wp13 envelope is exercised against the real `provider_credentials` table.
-    #[cfg(test)]
+    #[cfg(all(test, feature = "postgres"))]
     pub(crate) fn load_db_backed_with_db_key(
         store: Store,
         data_dir: &Path,
