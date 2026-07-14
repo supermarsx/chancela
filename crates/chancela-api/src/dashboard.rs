@@ -3491,9 +3491,9 @@ mod tests {
             plan.due_rule.default_fiscal_year_end.as_deref(),
             Some("12-31")
         );
-        assert_eq!(plan.evaluation.local_due_date_rule_configured, true);
-        assert_eq!(plan.evaluation.local_due_date_calculated, true);
-        assert_eq!(plan.evaluation.legal_deadline_calculated, false);
+        assert!(plan.evaluation.local_due_date_rule_configured);
+        assert!(plan.evaluation.local_due_date_calculated);
+        assert!(!plan.evaluation.legal_deadline_calculated);
         assert_eq!(plan.evaluation.fiscal_year_end.as_deref(), Some("08-31"));
         assert_eq!(plan.evaluation.due_year, Some(2026));
         assert_eq!(
@@ -4264,9 +4264,9 @@ mod tests {
             plan.due_rule.unsupported_reason.as_deref(),
             Some("missing_local_due_date_rule")
         );
-        assert_eq!(plan.evaluation.local_due_date_rule_configured, false);
-        assert_eq!(plan.evaluation.local_due_date_calculated, false);
-        assert_eq!(plan.evaluation.legal_deadline_calculated, false);
+        assert!(!plan.evaluation.local_due_date_rule_configured);
+        assert!(!plan.evaluation.local_due_date_calculated);
+        assert!(!plan.evaluation.legal_deadline_calculated);
         assert_eq!(
             plan.evaluation.unsupported_reason.as_deref(),
             Some("missing_local_due_date_rule")
