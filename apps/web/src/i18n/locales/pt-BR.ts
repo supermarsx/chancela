@@ -3292,6 +3292,21 @@ export const ptBR: Catalog = {
   'documents.metadata.legalThresholdMissing': 'Não fornecido pelo bundle do documento.',
   'documents.metadata.hint':
     'Estes são metadados de geração e preservação; não constituem verificação legal.',
+  'documents.accessibility.aria': 'Evidência técnica de acessibilidade PDF',
+  'documents.accessibility.title': 'Evidência técnica de acessibilidade PDF',
+  'documents.accessibility.hint':
+    'Metadados técnicos locais; não declaram PDF/UA, certificação DGLAB, validade legal nem conformidade de acessibilidade do PDF assinado.',
+  'documents.accessibility.status': 'Estado',
+  'documents.accessibility.status.attached': 'Evidência anexada',
+  'documents.accessibility.status.unavailable': 'Evidência indisponível',
+  'documents.accessibility.source': 'Fonte',
+  'documents.accessibility.version': 'Versão do relatório',
+  'documents.accessibility.blockers': 'Bloqueios técnicos',
+  'documents.accessibility.blockers.count': '{count} bloqueio(s)',
+  'documents.accessibility.blockers.none': 'Sem bloqueios indicados',
+  'documents.accessibility.noClaimFlags': 'Flags sem reivindicação',
+  'documents.accessibility.unavailableReason': 'Motivo de indisponibilidade',
+  'documents.accessibility.notIndicated': 'Não indicado',
   'documents.generated.sectionAria': 'Comunicações geradas para ausentes',
   'documents.generated.title': 'Comunicações geradas',
   'documents.generated.notice':

@@ -3277,6 +3277,21 @@ export const enUS: Catalog = {
   'documents.metadata.legalThresholdMissing': 'Not provided by the document bundle.',
   'documents.metadata.hint':
     'These are generation and preservation metadata; they do not constitute legal verification.',
+  'documents.accessibility.aria': 'PDF accessibility technical evidence',
+  'documents.accessibility.title': 'PDF accessibility technical evidence',
+  'documents.accessibility.hint':
+    'Local technical metadata only; it does not claim PDF/UA, DGLAB certification, legal validity, or signed-PDF accessibility compliance.',
+  'documents.accessibility.status': 'Status',
+  'documents.accessibility.status.attached': 'Evidence attached',
+  'documents.accessibility.status.unavailable': 'Evidence unavailable',
+  'documents.accessibility.source': 'Source',
+  'documents.accessibility.version': 'Report version',
+  'documents.accessibility.blockers': 'Technical blockers',
+  'documents.accessibility.blockers.count': '{count} blocker(s)',
+  'documents.accessibility.blockers.none': 'No blockers indicated',
+  'documents.accessibility.noClaimFlags': 'No-claim flags',
+  'documents.accessibility.unavailableReason': 'Unavailable reason',
+  'documents.accessibility.notIndicated': 'Not indicated',
   'documents.generated.sectionAria': 'Generated absent-owner communications',
   'documents.generated.title': 'Generated communications',
   'documents.generated.notice':

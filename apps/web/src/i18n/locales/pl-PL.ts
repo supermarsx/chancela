@@ -3286,6 +3286,21 @@ export const plPL: Catalog = {
   'documents.metadata.legalThresholdMissing': 'Nie dostarczone przez pakiet dokumentu.',
   'documents.metadata.hint':
     'To metadane generowania i zachowania; nie stanowią weryfikacji prawnej.',
+  'documents.accessibility.aria': 'Techniczny dowód dostępności PDF',
+  'documents.accessibility.title': 'Techniczny dowód dostępności PDF',
+  'documents.accessibility.hint':
+    'Wyłącznie lokalne metadane techniczne; nie zgłaszają PDF/UA, certyfikacji DGLAB, ważności prawnej ani zgodności dostępności podpisanego PDF.',
+  'documents.accessibility.status': 'Status',
+  'documents.accessibility.status.attached': 'Dowód dołączony',
+  'documents.accessibility.status.unavailable': 'Dowód niedostępny',
+  'documents.accessibility.source': 'Źródło',
+  'documents.accessibility.version': 'Wersja raportu',
+  'documents.accessibility.blockers': 'Blokady techniczne',
+  'documents.accessibility.blockers.count': '{count} blokad(a)',
+  'documents.accessibility.blockers.none': 'Nie wskazano blokad',
+  'documents.accessibility.noClaimFlags': 'Flagi bez roszczeń',
+  'documents.accessibility.unavailableReason': 'Powód niedostępności',
+  'documents.accessibility.notIndicated': 'Nie wskazano',
   'documents.generated.sectionAria': 'Wygenerowane komunikaty do nieobecnych właścicieli',
   'documents.generated.title': 'Wygenerowane komunikaty',
   'documents.generated.notice':

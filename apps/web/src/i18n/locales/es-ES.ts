@@ -3293,6 +3293,21 @@ export const esES: Catalog = {
   'documents.metadata.legalThresholdMissing': 'No proporcionado por el paquete del documento.',
   'documents.metadata.hint':
     'Estos son metadatos de generación y preservación; no constituyen verificación legal.',
+  'documents.accessibility.aria': 'Evidencia técnica de accesibilidad PDF',
+  'documents.accessibility.title': 'Evidencia técnica de accesibilidad PDF',
+  'documents.accessibility.hint':
+    'Solo metadatos técnicos locales; no declaran PDF/UA, certificación DGLAB, validez legal ni conformidad de accesibilidad del PDF firmado.',
+  'documents.accessibility.status': 'Estado',
+  'documents.accessibility.status.attached': 'Evidencia adjunta',
+  'documents.accessibility.status.unavailable': 'Evidencia no disponible',
+  'documents.accessibility.source': 'Fuente',
+  'documents.accessibility.version': 'Versión del informe',
+  'documents.accessibility.blockers': 'Bloqueos técnicos',
+  'documents.accessibility.blockers.count': '{count} bloqueo(s)',
+  'documents.accessibility.blockers.none': 'Sin bloqueos indicados',
+  'documents.accessibility.noClaimFlags': 'Flags sin reivindicación',
+  'documents.accessibility.unavailableReason': 'Motivo de indisponibilidad',
+  'documents.accessibility.notIndicated': 'No indicado',
   'documents.generated.sectionAria': 'Comunicaciones generadas para propietarios ausentes',
   'documents.generated.title': 'Comunicaciones generadas',
   'documents.generated.notice':

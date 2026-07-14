@@ -3296,6 +3296,21 @@ export const itIT: Catalog = {
   'documents.metadata.legalThresholdMissing': 'Non fornita dal bundle del documento.',
   'documents.metadata.hint':
     'Questi sono metadati di generazione e conservazione; non costituiscono una verifica legale.',
+  'documents.accessibility.aria': 'Evidenza tecnica di accessibilità PDF',
+  'documents.accessibility.title': 'Evidenza tecnica di accessibilità PDF',
+  'documents.accessibility.hint':
+    'Solo metadati tecnici locali; non dichiarano PDF/UA, certificazione DGLAB, validità legale né conformità di accessibilità del PDF firmato.',
+  'documents.accessibility.status': 'Stato',
+  'documents.accessibility.status.attached': 'Evidenza allegata',
+  'documents.accessibility.status.unavailable': 'Evidenza non disponibile',
+  'documents.accessibility.source': 'Origine',
+  'documents.accessibility.version': 'Versione del rapporto',
+  'documents.accessibility.blockers': 'Blocchi tecnici',
+  'documents.accessibility.blockers.count': '{count} blocco/i',
+  'documents.accessibility.blockers.none': 'Nessun blocco indicato',
+  'documents.accessibility.noClaimFlags': 'Flag senza dichiarazioni',
+  'documents.accessibility.unavailableReason': 'Ragione dell’indisponibilità',
+  'documents.accessibility.notIndicated': 'Non indicato',
   'documents.generated.sectionAria': 'Comunicazioni generate per proprietari assenti',
   'documents.generated.title': 'Comunicazioni generate',
   'documents.generated.notice':

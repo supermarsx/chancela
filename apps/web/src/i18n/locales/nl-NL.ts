@@ -3294,6 +3294,21 @@ export const nlNL: Catalog = {
   'documents.metadata.legalThresholdMissing': 'Niet geleverd door de documentbundel.',
   'documents.metadata.hint':
     'Dit zijn metadata van generatie en bewaring; ze vormen geen juridische verificatie.',
+  'documents.accessibility.aria': 'Technisch bewijs voor PDF-toegankelijkheid',
+  'documents.accessibility.title': 'Technisch bewijs voor PDF-toegankelijkheid',
+  'documents.accessibility.hint':
+    'Alleen lokale technische metadata; ze claimen geen PDF/UA, DGLAB-certificering, juridische geldigheid of toegankelijkheidsconformiteit van de ondertekende PDF.',
+  'documents.accessibility.status': 'Status',
+  'documents.accessibility.status.attached': 'Bewijs gekoppeld',
+  'documents.accessibility.status.unavailable': 'Bewijs niet beschikbaar',
+  'documents.accessibility.source': 'Bron',
+  'documents.accessibility.version': 'Rapportversie',
+  'documents.accessibility.blockers': 'Technische blokkades',
+  'documents.accessibility.blockers.count': '{count} blokkade(s)',
+  'documents.accessibility.blockers.none': 'Geen blokkades vermeld',
+  'documents.accessibility.noClaimFlags': 'Vlaggen zonder claim',
+  'documents.accessibility.unavailableReason': 'Reden van onbeschikbaarheid',
+  'documents.accessibility.notIndicated': 'Niet aangegeven',
   'documents.generated.sectionAria': 'Gegenereerde communicatie voor afwezige eigenaars',
   'documents.generated.title': 'Gegenereerde communicatie',
   'documents.generated.notice':

@@ -3287,6 +3287,21 @@ export const svFI: Catalog = {
   'documents.metadata.legalThresholdMissing': 'Tillhandahålls inte av dokumentets paket.',
   'documents.metadata.hint':
     'Det här är metadata om generering och bevarande; de utgör ingen rättslig verifiering.',
+  'documents.accessibility.aria': 'Tekniskt bevis för PDF-tillgänglighet',
+  'documents.accessibility.title': 'Tekniskt bevis för PDF-tillgänglighet',
+  'documents.accessibility.hint':
+    'Endast lokala tekniska metadata; de gör inget anspråk på PDF/UA, DGLAB-certifiering, rättslig giltighet eller tillgänglighetsöverensstämmelse för signerad PDF.',
+  'documents.accessibility.status': 'Status',
+  'documents.accessibility.status.attached': 'Bevis bifogat',
+  'documents.accessibility.status.unavailable': 'Bevis inte tillgängligt',
+  'documents.accessibility.source': 'Källa',
+  'documents.accessibility.version': 'Rapportversion',
+  'documents.accessibility.blockers': 'Tekniska blockerare',
+  'documents.accessibility.blockers.count': '{count} blockerare',
+  'documents.accessibility.blockers.none': 'Inga blockerare angivna',
+  'documents.accessibility.noClaimFlags': 'Flaggor utan anspråk',
+  'documents.accessibility.unavailableReason': 'Orsak till otillgänglighet',
+  'documents.accessibility.notIndicated': 'Inte angivet',
   'documents.generated.sectionAria': 'Genererade meddelanden till frånvarande ägare',
   'documents.generated.title': 'Genererade meddelanden',
   'documents.generated.notice':

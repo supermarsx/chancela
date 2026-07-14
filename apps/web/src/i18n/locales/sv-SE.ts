@@ -3282,6 +3282,21 @@ export const svSE: Catalog = {
   'documents.metadata.legalThresholdMissing': 'Tillhandahålls inte av dokumentets bundle.',
   'documents.metadata.hint':
     'Detta är metadata för generering och bevarande; de utgör ingen rättslig verifiering.',
+  'documents.accessibility.aria': 'Teknisk PDF-tillgänglighetsbevisning',
+  'documents.accessibility.title': 'Teknisk PDF-tillgänglighetsbevisning',
+  'documents.accessibility.hint':
+    'Endast lokala tekniska metadata; de gör inget anspråk på PDF/UA, DGLAB-certifiering, rättslig giltighet eller tillgänglighetsöverensstämmelse för signerad PDF.',
+  'documents.accessibility.status': 'Status',
+  'documents.accessibility.status.attached': 'Bevis bifogat',
+  'documents.accessibility.status.unavailable': 'Bevis ej tillgängligt',
+  'documents.accessibility.source': 'Källa',
+  'documents.accessibility.version': 'Rapportversion',
+  'documents.accessibility.blockers': 'Tekniska hinder',
+  'documents.accessibility.blockers.count': '{count} hinder',
+  'documents.accessibility.blockers.none': 'Inga hinder angivna',
+  'documents.accessibility.noClaimFlags': 'Flaggor utan anspråk',
+  'documents.accessibility.unavailableReason': 'Orsak till ej tillgängligt läge',
+  'documents.accessibility.notIndicated': 'Inte angivet',
   'documents.generated.sectionAria': 'Genererade meddelanden till frånvarande ägare',
   'documents.generated.title': 'Genererade meddelanden',
   'documents.generated.notice':

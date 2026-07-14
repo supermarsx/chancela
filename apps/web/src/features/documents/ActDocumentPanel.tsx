@@ -18,6 +18,8 @@ import { useEffect, useRef, useState } from 'react';
 import { DISPATCH_CHANNELS } from '../../api/types';
 import type {
   ActView,
+  DocumentBundlePdfAccessibilityEvidenceIndex,
+  DocumentBundleValidationReport,
   DispatchChannel,
   DocumentImportValidationFinding,
   DocumentImportValidationReport,
@@ -959,6 +961,131 @@ function MetadataValue({ value, missing }: { value: unknown; missing: string }) 
   const text = metadataText(value);
   if (!text) return <span className="muted">{missing}</span>;
   return <Truncate text={text} mono />;
+}
+
+function pdfAccessibilityStatusLabel(status: string | null, t: TFunction): string {
+  switch (status) {
+    case 'pdf_accessibility_report_attached':
+      return t('documents.accessibility.status.attached');
+    case 'pdf_accessibility_report_unavailable':
+      return t('documents.accessibility.status.unavailable');
+    default:
+      return status ?? t('documents.accessibility.notIndicated');
+  }
+}
+
+function pdfAccessibilityStatusTone(status: string | null): 'neutral' | 'warn' {
+  return status === 'pdf_accessibility_report_unavailable' ? 'warn' : 'neutral';
+}
+
+function pdfAccessibilityBlockers(
+  report: DocumentBundleValidationReport['pdf_accessibility'] | undefined,
+  index: DocumentBundlePdfAccessibilityEvidenceIndex | undefined,
+): string[] {
+  const values = report?.pdf_ua_blockers?.length
+    ? report.pdf_ua_blockers
+    : (index?.pdf_ua_blockers ?? []);
+  return values.flatMap((value) => {
+    const text = metadataText(value);
+    return text ? [text] : [];
+  });
+}
+
+function DocumentPdfAccessibilityEvidence({
+  validationReport,
+  t,
+}: {
+  validationReport: DocumentBundleValidationReport | undefined;
+  t: TFunction;
+}) {
+  const report = validationReport?.pdf_accessibility;
+  const index = validationReport?.evidence_index?.pdf_accessibility;
+  if (!report && !index) return null;
+
+  const status = metadataText(report?.evidence_status) ?? metadataText(index?.evidence_status);
+  const source = metadataText(report?.report_source);
+  const version = typeof report?.report_version === 'number' ? String(report.report_version) : null;
+  const blockers = pdfAccessibilityBlockers(report, index);
+  const unavailableReason =
+    status === 'pdf_accessibility_report_unavailable'
+      ? metadataText(report?.unavailable_reason)
+      : null;
+
+  return (
+    <div className="stack--tight" role="group" aria-label={t('documents.accessibility.aria')}>
+      <p className="card__label">{t('documents.accessibility.title')}</p>
+      <dl className="deflist deflist--tight">
+        <div>
+          <dt>{t('documents.accessibility.status')}</dt>
+          <dd>
+            <Badge tone={pdfAccessibilityStatusTone(status)}>
+              {pdfAccessibilityStatusLabel(status, t)}
+            </Badge>
+          </dd>
+        </div>
+        <div>
+          <dt>{t('documents.accessibility.source')}</dt>
+          <dd>
+            {source ? (
+              <code className="mono">{source}</code>
+            ) : (
+              <span className="muted">{t('documents.accessibility.notIndicated')}</span>
+            )}
+          </dd>
+        </div>
+        <div>
+          <dt>{t('documents.accessibility.version')}</dt>
+          <dd>
+            {version ? (
+              <code className="mono">{version}</code>
+            ) : (
+              <span className="muted">{t('documents.accessibility.notIndicated')}</span>
+            )}
+          </dd>
+        </div>
+        <div>
+          <dt>{t('documents.accessibility.blockers')}</dt>
+          <dd>
+            {blockers.length ? (
+              <div className="stack--tight">
+                <span>
+                  {t('documents.accessibility.blockers.count', {
+                    count: String(blockers.length),
+                  })}
+                </span>
+                <ul className="plain-list">
+                  {blockers.map((blocker) => (
+                    <li key={blocker}>
+                      <code className="mono">{blocker}</code>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : (
+              t('documents.accessibility.blockers.none')
+            )}
+          </dd>
+        </div>
+        <div>
+          <dt>{t('documents.accessibility.noClaimFlags')}</dt>
+          <dd className="row-wrap">
+            <code className="mono">pdf_ua_claimed=false</code>
+            <code className="mono">dglab_certification_claimed=false</code>
+            <code className="mono">legal_validity_claimed=false</code>
+          </dd>
+        </div>
+        {unavailableReason ? (
+          <div>
+            <dt>{t('documents.accessibility.unavailableReason')}</dt>
+            <dd>
+              <code className="mono">{unavailableReason}</code>
+            </dd>
+          </div>
+        ) : null}
+      </dl>
+      <p className="field__hint">{t('documents.accessibility.hint')}</p>
+    </div>
+  );
 }
 
 function ActDocumentMetadata({
@@ -2209,6 +2336,10 @@ export function ActDocumentPanel({
               </div>
               <p className="field__hint">{t('documents.download.workingCopyHint')}</p>
               <ActDocumentMetadata document={bundle.data.document} t={t} />
+              <DocumentPdfAccessibilityEvidence
+                validationReport={bundle.data.validation_report}
+                t={t}
+              />
               <p className="doc-integrity">
                 <span>{t('documents.digest.label')}</span>
                 <Digest value={bundle.data.document.pdf_digest} />

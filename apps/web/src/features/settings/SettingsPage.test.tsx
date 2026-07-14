@@ -3,9 +3,11 @@ import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/re
 import { SettingsPage } from './SettingsPage';
 import {
   DEFAULT_SETTINGS,
+  RETENTION_DISPOSAL_ACTIONS,
   type PrivacyAdvisoryReviewStatus,
   type PrivacyAdvisoryReviewSummary,
   type RetentionCandidateResolutionRecord,
+  type RetentionDisposalAction,
   type RetentionDueCandidatesReport,
 } from '../../api/types';
 import { renderWithProviders } from '../../test/utils';
@@ -672,6 +674,13 @@ type TestSettings = typeof DEFAULT_SETTINGS;
 
 function cloneJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function retentionDisposalActionForResolution(action: string): RetentionDisposalAction {
+  if (RETENTION_DISPOSAL_ACTIONS.includes(action as RetentionDisposalAction)) {
+    return action as RetentionDisposalAction;
+  }
+  throw new Error(`unsupported retention disposal action for resolution snapshot: ${action}`);
 }
 
 function retentionSuppressionSummary(
@@ -1799,7 +1808,7 @@ function privacyFetch(
           policy_name: candidate.policy_name,
           schedule_id: candidate.schedule_id,
           retention_period: candidate.retention_period,
-          disposal_action: candidate.disposal_action,
+          disposal_action: retentionDisposalActionForResolution(candidate.disposal_action),
           destructive_action: candidate.destructive_action,
           outcome: candidate.outcome,
           status: candidate.status,

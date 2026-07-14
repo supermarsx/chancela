@@ -976,10 +976,60 @@ export interface DocumentBundleSignedPdfSignalReport {
   validation_error: string | null;
 }
 
+export interface DocumentBundleEvidencePaths {
+  canonical_pdf_download: string;
+  signed_pdf_download: string | null;
+  attachments_manifest_json_pointer: string;
+  validation_report_json_pointer: string;
+}
+
+export interface DocumentBundlePdfAccessibilityEvidenceIndex {
+  evidence_kind: string;
+  metadata_schema: string;
+  bundle_report_json_pointer: string;
+  archive_path_pattern: string;
+  evidence_status: string;
+  status_scope: string;
+  pdf_ua_claimed: false;
+  dglab_certification_claimed: false;
+  legal_validity_claimed: false;
+  pdf_ua_blockers: string[];
+}
+
+export interface DocumentBundleEvidenceIndex {
+  index_kind: string;
+  status_scope: string;
+  document_id: string;
+  act_id: string;
+  bundle_paths: DocumentBundleEvidencePaths;
+  pdf_accessibility?: DocumentBundlePdfAccessibilityEvidenceIndex;
+  external_validator_reports?: JsonValue;
+  generated_dispatch_evidence?: JsonValue[];
+}
+
+export interface PdfAccessibilityEvidenceReport {
+  evidence_kind: string;
+  metadata_schema: string;
+  status_scope: string;
+  evidence_status: string;
+  document_id: string;
+  act_id: string | null;
+  template_id: string;
+  report_source: string;
+  pdf_ua_claimed: false;
+  dglab_certification_claimed: false;
+  legal_validity_claimed: false;
+  report_version: number | null;
+  pdf_ua_blockers: string[];
+  accessibility_report_json?: JsonValue;
+  unavailable_reason?: string | null;
+}
+
 export interface DocumentBundleValidationReport {
   report_kind: 'document_bundle_validation' | string;
   scope: 'generated_document_bundle' | string;
   status: 'technical_consistent' | 'technical_warning' | 'technical_error' | string;
+  evidence_index?: DocumentBundleEvidenceIndex;
   legal_notice: string;
   bundle_document_consistency: {
     route_act_id: string;
@@ -1002,6 +1052,7 @@ export interface DocumentBundleValidationReport {
     startxref_present: boolean;
     pdfa_identification_markers_present: boolean;
   };
+  pdf_accessibility?: PdfAccessibilityEvidenceReport;
   fixity: {
     canonical_pdf_sha256: string;
     stored_pdf_digest: string;

@@ -3285,6 +3285,21 @@ export const fiFI: Catalog = {
   'documents.metadata.legalThresholdMissing': 'Asiakirjan paketti ei toimittanut tätä.',
   'documents.metadata.hint':
     'Nämä ovat luonti- ja säilytysmetatietoja; ne eivät ole oikeudellinen todennus.',
+  'documents.accessibility.aria': 'PDF-saavutettavuuden tekninen näyttö',
+  'documents.accessibility.title': 'PDF-saavutettavuuden tekninen näyttö',
+  'documents.accessibility.hint':
+    'Vain paikallisia teknisiä metatietoja; ne eivät väitä PDF/UA:ta, DGLAB-sertifiointia, oikeudellista pätevyyttä tai allekirjoitetun PDF:n saavutettavuuden vaatimustenmukaisuutta.',
+  'documents.accessibility.status': 'Tila',
+  'documents.accessibility.status.attached': 'Näyttö liitetty',
+  'documents.accessibility.status.unavailable': 'Näyttö ei saatavilla',
+  'documents.accessibility.source': 'Lähde',
+  'documents.accessibility.version': 'Raportin versio',
+  'documents.accessibility.blockers': 'Tekniset estot',
+  'documents.accessibility.blockers.count': '{count} esto(a)',
+  'documents.accessibility.blockers.none': 'Estoita ei ilmoitettu',
+  'documents.accessibility.noClaimFlags': 'Ei-vaade-liput',
+  'documents.accessibility.unavailableReason': 'Ei-saatavuuden syy',
+  'documents.accessibility.notIndicated': 'Ei ilmoitettu',
   'documents.generated.sectionAria': 'Luodut poissa olevien omistajien viestit',
   'documents.generated.title': 'Luodut viestit',
   'documents.generated.notice':

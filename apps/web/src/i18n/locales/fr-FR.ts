@@ -3302,6 +3302,21 @@ export const frFR: Catalog = {
   'documents.metadata.legalThresholdMissing': 'Non fourni par le bundle du document.',
   'documents.metadata.hint':
     'Il s’agit de métadonnées de génération et de préservation ; elles ne constituent pas une vérification légale.',
+  'documents.accessibility.aria': 'Preuve technique d’accessibilité PDF',
+  'documents.accessibility.title': 'Preuve technique d’accessibilité PDF',
+  'documents.accessibility.hint':
+    'Métadonnées techniques locales uniquement ; elles ne revendiquent ni PDF/UA, ni certification DGLAB, ni validité juridique, ni conformité d’accessibilité du PDF signé.',
+  'documents.accessibility.status': 'État',
+  'documents.accessibility.status.attached': 'Preuve jointe',
+  'documents.accessibility.status.unavailable': 'Preuve indisponible',
+  'documents.accessibility.source': 'Source',
+  'documents.accessibility.version': 'Version du rapport',
+  'documents.accessibility.blockers': 'Blocages techniques',
+  'documents.accessibility.blockers.count': '{count} blocage(s)',
+  'documents.accessibility.blockers.none': 'Aucun blocage indiqué',
+  'documents.accessibility.noClaimFlags': 'Flags sans revendication',
+  'documents.accessibility.unavailableReason': 'Motif d’indisponibilité',
+  'documents.accessibility.notIndicated': 'Non indiqué',
   'documents.generated.sectionAria': 'Communications générées pour propriétaires absents',
   'documents.generated.title': 'Communications générées',
   'documents.generated.notice':

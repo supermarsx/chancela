@@ -3307,6 +3307,21 @@ export const deDE: Catalog = {
   'documents.metadata.legalThresholdMissing': 'Nicht vom Dokument-Bundle bereitgestellt.',
   'documents.metadata.hint':
     'Dies sind Metadaten zur Erzeugung und Aufbewahrung; sie stellen keine rechtliche Prüfung dar.',
+  'documents.accessibility.aria': 'Technischer Nachweis zur PDF-Barrierefreiheit',
+  'documents.accessibility.title': 'Technischer Nachweis zur PDF-Barrierefreiheit',
+  'documents.accessibility.hint':
+    'Nur lokale technische Metadaten; sie beanspruchen weder PDF/UA, DGLAB-Zertifizierung, rechtliche Gültigkeit noch Barrierefreiheitskonformität des signierten PDF.',
+  'documents.accessibility.status': 'Status',
+  'documents.accessibility.status.attached': 'Nachweis angehängt',
+  'documents.accessibility.status.unavailable': 'Nachweis nicht verfügbar',
+  'documents.accessibility.source': 'Quelle',
+  'documents.accessibility.version': 'Berichtsversion',
+  'documents.accessibility.blockers': 'Technische Blocker',
+  'documents.accessibility.blockers.count': '{count} Blocker',
+  'documents.accessibility.blockers.none': 'Keine Blocker angegeben',
+  'documents.accessibility.noClaimFlags': 'Flags ohne Anspruch',
+  'documents.accessibility.unavailableReason': 'Grund der Nichtverfügbarkeit',
+  'documents.accessibility.notIndicated': 'Nicht angegeben',
   'documents.generated.sectionAria': 'Generierte Mitteilungen an abwesende Eigentümer',
   'documents.generated.title': 'Generierte Mitteilungen',
   'documents.generated.notice':

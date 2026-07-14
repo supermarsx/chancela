@@ -3284,6 +3284,21 @@ export const daDK: Catalog = {
   'documents.metadata.legalThresholdMissing': 'Ikke leveret af dokumentbundtet.',
   'documents.metadata.hint':
     'Dette er metadata om generering og bevaring; de udgør ikke juridisk verifikation.',
+  'documents.accessibility.aria': 'Teknisk PDF-tilgængelighedsdokumentation',
+  'documents.accessibility.title': 'Teknisk PDF-tilgængelighedsdokumentation',
+  'documents.accessibility.hint':
+    'Kun lokale tekniske metadata; de gør ikke krav på PDF/UA, DGLAB-certificering, juridisk gyldighed eller tilgængelighedsoverholdelse for signeret PDF.',
+  'documents.accessibility.status': 'Status',
+  'documents.accessibility.status.attached': 'Dokumentation vedhæftet',
+  'documents.accessibility.status.unavailable': 'Dokumentation utilgængelig',
+  'documents.accessibility.source': 'Kilde',
+  'documents.accessibility.version': 'Rapportversion',
+  'documents.accessibility.blockers': 'Tekniske blokeringer',
+  'documents.accessibility.blockers.count': '{count} blokering(er)',
+  'documents.accessibility.blockers.none': 'Ingen blokeringer angivet',
+  'documents.accessibility.noClaimFlags': 'Flag uden krav',
+  'documents.accessibility.unavailableReason': 'Årsag til utilgængelighed',
+  'documents.accessibility.notIndicated': 'Ikke angivet',
   'documents.generated.sectionAria': 'Genererede meddelelser til fraværende ejere',
   'documents.generated.title': 'Genererede meddelelser',
   'documents.generated.notice':

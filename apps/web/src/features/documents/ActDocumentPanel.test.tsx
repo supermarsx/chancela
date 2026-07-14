@@ -63,6 +63,35 @@ const bundle: DocumentBundle = {
     report_kind: 'document_bundle_validation',
     scope: 'generated_document_bundle',
     status: 'technical_consistent',
+    evidence_index: {
+      index_kind: 'document_bundle_evidence_index',
+      status_scope: 'technical_metadata_only',
+      document_id: 'doc-1',
+      act_id: 'act-1',
+      bundle_paths: {
+        canonical_pdf_download: '/v1/acts/act-1/document',
+        signed_pdf_download: null,
+        attachments_manifest_json_pointer: '/attachments_manifest',
+        validation_report_json_pointer: '/validation_report',
+      },
+      pdf_accessibility: {
+        evidence_kind: 'pdf_accessibility_report',
+        metadata_schema: 'chancela-pdf-accessibility-evidence/v1',
+        bundle_report_json_pointer: '/validation_report/pdf_accessibility',
+        archive_path_pattern: 'evidence/pdf-accessibility/{document_id}.json',
+        evidence_status: 'pdf_accessibility_report_attached',
+        status_scope: 'technical_metadata_only',
+        pdf_ua_claimed: false,
+        dglab_certification_claimed: false,
+        legal_validity_claimed: false,
+        pdf_ua_blockers: ['limited_tagged_structure', 'missing_role_map'],
+      },
+      external_validator_reports: {
+        evidence_kind: 'external_validator_report_metadata',
+        status_scope: 'technical_metadata_only',
+        attachments: [],
+      },
+    },
     legal_notice:
       'Local technical evidence only; no legal validity, PDF/A conformance, qualified signature, or trust-provider validation is certified.',
     bundle_document_consistency: {
@@ -85,6 +114,26 @@ const bundle: DocumentBundle = {
       eof_marker_present: true,
       startxref_present: true,
       pdfa_identification_markers_present: false,
+    },
+    pdf_accessibility: {
+      evidence_kind: 'pdf_accessibility_report',
+      metadata_schema: 'chancela-pdf-accessibility-evidence/v1',
+      status_scope: 'technical_metadata_only',
+      evidence_status: 'pdf_accessibility_report_attached',
+      document_id: 'doc-1',
+      act_id: 'act-1',
+      template_id: 'csc-ata-ag/v1',
+      report_source: 'chancela_doc_pdfa_accessibility_report',
+      pdf_ua_claimed: false,
+      dglab_certification_claimed: false,
+      legal_validity_claimed: false,
+      report_version: 9,
+      pdf_ua_blockers: ['limited_tagged_structure', 'missing_role_map'],
+      accessibility_report_json: {
+        version: 9,
+        pdf_ua_claimed: false,
+        pdf_ua_blockers: ['limited_tagged_structure', 'missing_role_map'],
+      },
     },
     fixity: {
       canonical_pdf_sha256: 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2',
@@ -707,6 +756,103 @@ describe('ActDocumentPanel — download only post-seal', () => {
     ).toBeTruthy();
     expect(within(metadata).getByText('Não fornecido pelo bundle do documento.')).toBeTruthy();
     expect(within(metadata).queryByRole('link')).toBeNull();
+  });
+
+  it('shows attached PDF accessibility evidence as technical no-claim metadata', async () => {
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.includes('/document/bundle')) return json(bundle);
+      const imports = emptyImports(url);
+      if (imports) return imports;
+      return Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    const sealed: ActView = { ...baseAct, state: 'Sealed', ata_number: 1 };
+    renderWithProviders(<ActDocumentPanel act={sealed} family="CommercialCompany" />);
+
+    const evidence = await screen.findByRole('group', {
+      name: 'Evidência técnica de acessibilidade PDF',
+    });
+    expect(within(evidence).getByText('Evidência anexada')).toBeTruthy();
+    expect(within(evidence).getByText('chancela_doc_pdfa_accessibility_report')).toBeTruthy();
+    expect(within(evidence).getByText('9')).toBeTruthy();
+    expect(within(evidence).getByText('2 bloqueio(s)')).toBeTruthy();
+    expect(within(evidence).getByText('limited_tagged_structure')).toBeTruthy();
+    expect(within(evidence).getByText('missing_role_map')).toBeTruthy();
+    expect(within(evidence).getByText('pdf_ua_claimed=false')).toBeTruthy();
+    expect(within(evidence).getByText('dglab_certification_claimed=false')).toBeTruthy();
+    expect(within(evidence).getByText('legal_validity_claimed=false')).toBeTruthy();
+    expect(
+      within(evidence).getByText(
+        'Metadados técnicos locais; não declaram PDF/UA, certificação DGLAB, validade legal nem conformidade de acessibilidade do PDF assinado.',
+      ),
+    ).toBeTruthy();
+    expect(within(evidence).queryByText(/PDF\/UA conforme/i)).toBeNull();
+    expect(within(evidence).queryByText(/Certificação DGLAB confirmada/i)).toBeNull();
+    expect(within(evidence).queryByText(/Validade legal confirmada/i)).toBeNull();
+    expect(within(evidence).queryByRole('link')).toBeNull();
+  });
+
+  it('shows unavailable PDF accessibility evidence without sidecar links or conformance claims', async () => {
+    const unavailableBundle: DocumentBundle = {
+      ...bundle,
+      validation_report: {
+        ...bundle.validation_report,
+        evidence_index: {
+          ...bundle.validation_report.evidence_index!,
+          pdf_accessibility: {
+            ...bundle.validation_report.evidence_index!.pdf_accessibility!,
+            evidence_status: 'pdf_accessibility_report_unavailable',
+            pdf_ua_blockers: [],
+          },
+        },
+        pdf_accessibility: {
+          evidence_kind: 'pdf_accessibility_report',
+          metadata_schema: 'chancela-pdf-accessibility-evidence/v1',
+          status_scope: 'technical_metadata_only',
+          evidence_status: 'pdf_accessibility_report_unavailable',
+          document_id: 'doc-1',
+          act_id: 'act-1',
+          template_id: 'csc-ata-ag/v1',
+          report_source: 'unavailable',
+          pdf_ua_claimed: false,
+          dglab_certification_claimed: false,
+          legal_validity_claimed: false,
+          report_version: null,
+          pdf_ua_blockers: [],
+          unavailable_reason: 'document_model_unavailable_for_accessibility_report',
+        },
+      },
+    };
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.includes('/document/bundle')) return json(unavailableBundle);
+      const imports = emptyImports(url);
+      if (imports) return imports;
+      return Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    const sealed: ActView = { ...baseAct, state: 'Sealed', ata_number: 1 };
+    renderWithProviders(<ActDocumentPanel act={sealed} family="CommercialCompany" />);
+
+    const evidence = await screen.findByRole('group', {
+      name: 'Evidência técnica de acessibilidade PDF',
+    });
+    expect(within(evidence).getByText('Evidência indisponível')).toBeTruthy();
+    expect(within(evidence).getByText('unavailable')).toBeTruthy();
+    expect(within(evidence).getAllByText('Não indicado').length).toBeGreaterThanOrEqual(1);
+    expect(within(evidence).getByText('Sem bloqueios indicados')).toBeTruthy();
+    expect(
+      within(evidence).getByText('document_model_unavailable_for_accessibility_report'),
+    ).toBeTruthy();
+    expect(within(evidence).getByText('pdf_ua_claimed=false')).toBeTruthy();
+    expect(within(evidence).getByText('dglab_certification_claimed=false')).toBeTruthy();
+    expect(within(evidence).getByText('legal_validity_claimed=false')).toBeTruthy();
+    expect(within(evidence).queryByText(/PDF\/UA conforme/i)).toBeNull();
+    expect(within(evidence).queryByText(/Certificação DGLAB confirmada/i)).toBeNull();
+    expect(within(evidence).queryByText(/Validade legal confirmada/i)).toBeNull();
+    expect(within(evidence).queryByText('evidence/pdf-accessibility/{document_id}.json')).toBeNull();
+    expect(within(evidence).queryByRole('link')).toBeNull();
   });
 
   it('renders missing template id and profile honestly instead of blank metadata', async () => {
