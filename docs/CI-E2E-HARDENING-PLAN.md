@@ -1,14 +1,15 @@
 # CI and E2E Hardening Plan
 
-Updated 2026-07-13 from the current CI configuration and head `564821f`,
+Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,
+and implementation snapshot `c2cd027`,
 including coverage notes for the bounded PAdES DSS validation-time, PDF/UA v10
 scoped table-header evidence, retention due-candidate explicit evidence states,
 bounded archive/no-action evidence UI, duplicate-review guard/status surfacing, and
 prior bounded execution suppression with active/suppressed candidate counts plus
 retention execution review closure,
 recovery-drill custody
-receipt and optional-key contract tolerance, paper-book OCR conversion-dossier UI
-and reviewed conversion execution artifact evidence,
+receipt and optional-key contract tolerance, paper-book OCR conversion-dossier UI,
+local OCR/canonical rehearsal report, and reviewed conversion execution artifact evidence,
 CSC quota/delegation/revocation and standalone agenda-item template parity,
 retained-export cleanup dry-run planning, first-class template catalog metadata lint,
 external-signing workflow-only envelope UI, workflow reminder policy, and
@@ -1316,7 +1317,8 @@ settingsDefaults.test.ts contracts.test.ts`.
   disposal execution, PDF/A/PAdES/PDF-UA certification, authority approval, or
   legal archive claim is implemented.
 - Current working-tree paper-book OCR conversion-dossier and execution-artifact
-  checks: focused `cargo test -p chancela-store --test store --locked
+  checks, plus local OCR/canonical rehearsal report checks: focused
+  `cargo test -p chancela-store --test store --locked
   paper_book_ocr_conversion`, `cargo test -p chancela-api --test paper_import
   --locked paper_book_ocr_conversion`,
   `npm run test --workspace apps/web -- src/contracts/contracts.test.ts`, and
@@ -1332,12 +1334,17 @@ settingsDefaults.test.ts contracts.test.ts`.
   fallbacks for no OCR draft/no accepted draft/no dossier, existing-dossier
   rendering without duplicate creation, accepted-draft gating, operator-only
   creation with no automatic POST, separate mutable draft-act creation, reviewed
-  conversion execution evidence rendering, and no document/signature/seal/archive
-  endpoint calls from the dossier UI. This is metadata-only/reviewed execution
-  evidence for mutable drafting only; no legal archive certification, official
-  DGLAB acceptance/export, PDF/UA delivery, OCR accuracy certification,
-  canonical minutes/legal conversion, signed artifact validity, or legal-validity
-  claim is implemented.
+  conversion execution evidence rendering, the read-only
+  `/v1/books/paper-import/{id}/ocr-canonical-rehearsal` report shape,
+  readiness/blocker/no-claim summaries, confidence known/unknown buckets, digest
+  and page-span evidence counts, the `paper-book.ocr-canonical-rehearsal.json`
+  contract fixture, and the BookDetail compact local report panel, with no
+  document/signature/seal/archive endpoint calls from the dossier UI. This is
+  metadata-only/reviewed execution/local rehearsal evidence for mutable drafting
+  only; no mutation, external OCR/provider/validator/legal-service call, legal
+  archive certification, official DGLAB acceptance/export, PDF/UA delivery, OCR
+  accuracy certification, canonical minutes/legal conversion, signed artifact
+  validity, or legal-validity claim is implemented.
 - Current working-tree external-signing envelope UI checks: focused
   `external_signer_invites` coverage pins optional envelope/slot request fields,
   first sequential slot initiation, later sequential slot 409 refusal without
@@ -1573,7 +1580,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   --workspace apps/web -- e2e/session.spec.ts e2e/first-launch-onboarding.spec.ts`.
   Treat the static/unit/focused markers as the pinned slice, not broad
   Playwright-browser-suite or browser-matrix proof; the browser suite is not exhaustive.
-- Current checkpoint metadata/static checks through `4e5f762`
+- Current checkpoint metadata/static checks through `c2cd027`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and

@@ -1,6 +1,6 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-14 from current implementation snapshot `4e5f7622334546936502c9115d30e65f4c6ef6a5`,
+*Updated 2026-07-14 from current implementation snapshot `c2cd027b34175b0d709adf2abb8f30cc9c6b3547`,
 with committed evidence refreshes for the recently landed Signatures & Trust
 provider-credential, stored runtime credential resolution, stored PKCS#12,
 remote batch-initiation surfaces, and Docker/Compose runtime-hardening
@@ -171,6 +171,21 @@ blockers.
 
 Implementation checkpoints covered here:
 
+- Current working-tree paper-book local OCR/canonical rehearsal report keeps
+  Workflows, Documents & Archive, UX, and CI **PARTIAL**: `GET
+  /v1/books/paper-import/{id}/ocr-canonical-rehearsal` now returns a read-only
+  `paper_book_ocr_canonical_rehearsal` report derived only from stored
+  preserved-import, OCR draft, metadata-only dossier, and reviewed
+  mutable-draft artifact metadata. The report records import/draft/dossier
+  presence, page-span and evidence counts, digest presence, confidence
+  known/unknown buckets, readiness status, local blockers, required operator
+  actions, and explicit false no-claim flags. BookDetail renders a compact
+  local OCR/canonical rehearsal report panel, and a contract fixture pins the
+  response shape. This is local readiness evidence only: it mutates no records,
+  exposes no raw OCR text, calls no OCR/provider/validator/legal service, and
+  does not create canonical acts, canonical documents, archive packages,
+  PDF/A/PDF/UA, signatures, seals, OCR-accuracy certification, legal validity,
+  DGLAB certification, or paper-book conversion completion.
 - Current `3fcfda3` PDF accessibility evidence projection keeps Documents,
   Archive/Data, and CI **PARTIAL**: document bundle validation reports now
   embed the deterministic `chancela-doc` accessibility report JSON v10 plus
@@ -566,7 +581,7 @@ Implementation checkpoints covered here:
   append, production backup policy, RPO/RTO certification, disaster-recovery
   readiness, off-site custody proof, SQLCipher-at-rest proof, legal archive
   certification, FULL coverage, or new CAE provider/legal behavior.
-- Current `4e5f762` keeps Template Catalog/UX/CI **PARTIAL**: the embedded template
+- Current `c2cd027` keeps Template Catalog/UX/CI **PARTIAL**: the embedded template
   catalog now loads 104 JSON template assets (104 total / 44 CSC), including
   standalone
   `procuracao-representacao/v1` instruments for commercial companies,
@@ -2207,6 +2222,22 @@ behavior, legal disposal, or legal-effect claims.
   review metadata only, not authoritative OCR text, not canonical minutes
   conversion, not document generation, not signing/sealing, not OCR accuracy
   certification, and not legal acceptance or legal validity.
+- **Paper-book OCR/canonical rehearsal report:** `GET
+  /v1/books/paper-import/{id}/ocr-canonical-rehearsal` now computes a local
+  OCR/canonical rehearsal report from existing preserved import metadata, OCR
+  drafts, metadata-only conversion dossiers, and reviewed mutable-draft
+  execution artifacts. The report is a dry-run/read-only shape with stable
+  import, OCR, dossier, readiness, no-claim, operator-action, and finding
+  sections. It records presence/counts/page spans/digests, confidence buckets,
+  local blockers such as `accepted_ocr_draft_required` or
+  `metadata_only_conversion_dossier_required`, and explicit false flags for
+  mutation, external OCR/provider/validator/legal-service calls, canonical
+  conversion, OCR accuracy, legal review/validity, canonical act/document
+  creation, PDF/A/PDF/UA creation/certification, signing/signature validity,
+  archive certification, DGLAB certification, and raw OCR text in the report.
+  BookDetail displays the compact readiness/blocker/no-claim panel and the
+  contract fixture pins the response. This remains local readiness evidence
+  only and does not convert a paper book or create sealed/canonical records.
 - **Declared signer-capacity evidence preservation:** CMD, CSC remote, local
   PKCS#12, and official signed-PDF handoff signing/import paths now preserve
   request/operator-declared signer capacity through pending CMD sessions,
@@ -3751,17 +3782,23 @@ behavior, legal disposal, or legal-effect claims.
   canonical records, create signed PDFs, create seals, validate signatures, add PDF/UA, certify legal
   acceptance, or validate legal effect.
 - Paper-book local OCR run, OCR draft review metadata, accepted-draft conversion
-  dossiers, any accepted-draft-to-act drafting aid, UI, and focused browser
-  workflow coverage record bounded command status and non-authoritative
-  review/drafting evidence with explicit false canonical/signature/legal flags.
+  dossiers, local OCR/canonical rehearsal report, any accepted-draft-to-act
+  drafting aid, UI, and focused browser workflow coverage record bounded command
+  status and non-authoritative review/drafting/readiness evidence with explicit
+  false canonical/signature/legal flags.
   The BookDetail OCR/dossier review-depth summary is derived from loaded metadata
   only and has explicit fallbacks for no OCR draft, no accepted draft, and no
-  dossier. The conversion-dossier path is metadata-only and keeps raw OCR text
-  out of API responses and ledger events; duplicate creation is idempotent. Any
+  dossier. The local OCR/canonical rehearsal report is derived only from stored
+  import/OCR/dossier/artifact metadata and summarizes digest presence,
+  page-span/evidence counts, confidence known/unknown buckets, readiness, local
+  blockers, and explicit false no-claim flags without mutation or external
+  calls. The conversion-dossier path is metadata-only and keeps raw OCR text out
+  of API responses and ledger events; duplicate creation is idempotent. Any
   mutable drafting aid remains non-authoritative. These paths do not create
   canonical acts, create canonical documents or archive packages, create PDF/A
-  or PDF/UA, sign or seal anything, certify OCR accuracy, or accept historical
-  scans as legally converted digital records.
+  or PDF/UA, sign or seal anything, certify OCR accuracy, claim legal validity,
+  certify DGLAB/archive status, or accept historical scans as legally converted
+  digital records.
 - Paper-book canonical-conversion preflight evidence classifies whether an operator-supplied
   evidence set is missing, blocked, or sufficient for a later draft step. The
   accepted-draft conversion dossier is metadata-only, and any accepted-draft

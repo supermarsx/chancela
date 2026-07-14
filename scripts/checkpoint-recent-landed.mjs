@@ -807,6 +807,80 @@ function assertCheckpointMap() {
     "API paper-book OCR conversion dossier artifact list marker",
   );
   assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "/v1/books/paper-import/{id}/ocr-canonical-rehearsal",
+    "paper import OCR canonical rehearsal report route",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/paper_import.rs",
+    "pub struct PaperBookOcrCanonicalRehearsalReport",
+    "API paper-book OCR canonical rehearsal report shape marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/paper_import.rs",
+    "paper_book_ocr_canonical_rehearsal_report",
+    "API paper-book OCR canonical rehearsal report builder marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/paper_import.rs",
+    "records_mutated: false",
+    "API paper-book OCR canonical rehearsal no-mutation marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/paper_import.rs",
+    "dglab_certification_claimed: false",
+    "API paper-book OCR canonical rehearsal no-DGLAB-certification marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/paper_import.rs",
+    "paper_book_ocr_canonical_rehearsal_reports_blockers_without_mutation",
+    "API paper-book OCR canonical rehearsal blocker coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/paper_import.rs",
+    "paper_book_ocr_canonical_rehearsal_summarizes_local_evidence_only",
+    "API paper-book OCR canonical rehearsal evidence-summary coverage",
+  );
+  assertFileExists(
+    "contracts/paper-book.ocr-canonical-rehearsal.json",
+    "paper-book OCR canonical rehearsal contract fixture",
+  );
+  assertFileContains(
+    "contracts/paper-book.ocr-canonical-rehearsal.json",
+    '"report_kind": "paper_book_ocr_canonical_rehearsal"',
+    "paper-book OCR canonical rehearsal contract fixture marker",
+  );
+  assertFileContains(
+    "apps/web/src/contracts/contracts.test.ts",
+    "assertPaperBookOcrCanonicalRehearsalReport",
+    "web contract paper-book OCR canonical rehearsal assertion marker",
+  );
+  assertFileContains(
+    "apps/web/src/api/types.ts",
+    "export interface PaperBookOcrCanonicalRehearsalReport",
+    "web type paper-book OCR canonical rehearsal report marker",
+  );
+  assertFileContains(
+    "apps/web/src/api/client.ts",
+    "getPaperBookOcrCanonicalRehearsal",
+    "web client paper-book OCR canonical rehearsal API marker",
+  );
+  assertFileContains(
+    "apps/web/src/api/hooks.ts",
+    "usePaperBookOcrCanonicalRehearsal",
+    "web hook paper-book OCR canonical rehearsal query marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/books/BookDetailPage.tsx",
+    "Relatório OCR/canónico local",
+    "BookDetail paper-book OCR canonical rehearsal panel marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/books/books.test.tsx",
+    "paperBookOcrCanonicalRehearsalReport",
+    "web paper-book OCR canonical rehearsal fixture coverage",
+  );
+  assertFileContains(
     "apps/web/src/contracts/contracts.test.ts",
     "conversion_execution_artifacts[]",
     "web contract paper-book OCR conversion dossier artifact fixture marker",
@@ -863,13 +937,13 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/books/BookDetailPage.tsx",
-    "Preflight canónico OCR read-only",
-    "web paper-book OCR canonical-conversion read-only preflight marker",
+    "Relatório OCR/canónico local",
+    "web paper-book OCR canonical rehearsal local report marker",
   );
   assertFileContains(
     "apps/web/src/features/books/books.test.tsx",
-    "legal_acceptance_recorded_is_operator_evidence_only",
-    "web paper-book OCR canonical-conversion preflight operator-evidence boundary coverage",
+    "records_mutated: false",
+    "web paper-book OCR canonical rehearsal no-mutation boundary coverage",
   );
   assertFileContains(
     "apps/web/src/features/books/books.test.tsx",
@@ -8945,7 +9019,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-13 from the current CI configuration and head `564821f`",
+    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `c2cd027`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
@@ -9555,13 +9629,28 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `4e5f762`",
+    "Current checkpoint metadata/static checks through `c2cd027`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
     "Current working-tree paper-book OCR conversion-dossier and execution-artifact\n  checks",
     "CI/E2E hardening plan paper-book conversion-dossier checks marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "local OCR/canonical rehearsal report",
+    "CI/E2E hardening plan paper-book OCR canonical rehearsal marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "/v1/books/paper-import/{id}/ocr-canonical-rehearsal",
+    "CI/E2E hardening plan paper-book OCR canonical rehearsal route marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "metadata-only/reviewed execution/local rehearsal evidence",
+    "CI/E2E hardening plan paper-book local rehearsal no-overclaim marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -9995,7 +10084,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `4e5f7622334546936502c9115d30e65f4c6ef6a5`",
+    "implementation snapshot `c2cd027b34175b0d709adf2abb8f30cc9c6b3547`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -10917,6 +11006,31 @@ function assertCheckpointMap() {
     "SPEC-COVERAGE.md",
     "metadata-only, non-canonical conversion",
     "spec coverage paper-book conversion-dossier implemented boundary marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Current working-tree paper-book local OCR/canonical rehearsal report keeps",
+    "spec coverage paper-book OCR canonical rehearsal checkpoint marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "/v1/books/paper-import/{id}/ocr-canonical-rehearsal",
+    "spec coverage paper-book OCR canonical rehearsal route marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "confidence known/unknown buckets",
+    "spec coverage paper-book OCR canonical rehearsal confidence marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "mutates no records",
+    "spec coverage paper-book OCR canonical rehearsal no-mutation marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "does not convert a paper book or create sealed/canonical records",
+    "spec coverage paper-book OCR canonical rehearsal no-conversion marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
