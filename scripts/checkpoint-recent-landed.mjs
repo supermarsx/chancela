@@ -7343,6 +7343,46 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-api/src/chronology.rs",
+    "pub sealed_act_projection: Option<SealedActProjectionView>",
+    "API entity chronology sealed-act projection response field",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/chronology.rs",
+    "fn build_sealed_act_projection(",
+    "API entity chronology sealed-act projection builder marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/chronology.rs",
+    "chronology_returns_sealed_act_projection_without_registry_extract",
+    "API entity chronology sealed-act projection coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/chronology.rs",
+    "sealed_act_projection_adds_retification_event_and_edge_without_mutating_acts",
+    "API entity chronology retification/no-mutation coverage",
+  );
+  assertFileContains(
+    "apps/web/src/api/types.ts",
+    "export interface EntityChronologySealedActProjection",
+    "web type entity chronology sealed-act projection marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/entities/EntityChronologyPanel.tsx",
+    "function SealedActProjectionSection",
+    "web entity chronology sealed-act projection panel marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/entities/entities.test.tsx",
+    "Cronologia local de atos selados",
+    "web entity chronology sealed-act projection render coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/entities/entities.test.tsx",
+    "Não reclama validade jurídica",
+    "web entity chronology sealed-act no-claim copy coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/chronology.rs",
     "source_inscription_count",
     "API entity chronology source inscription analytics marker",
   );
@@ -7388,8 +7428,23 @@ function assertCheckpointMap() {
   );
   assertFileContainsNormalized(
     "SPEC-COVERAGE.md",
-    "no chronology editing, legal ownership/priority conclusion, registry certification, DRE verification, external call, or authority-approved graph",
+    "no chronology editing, legal ownership/priority conclusion, registry certification, provider certification, DRE verification, external call, archive mutation, or authority-approved graph claim",
     "spec coverage entity chronology analytics no-claim marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "Current `4298f46` keeps Entity/UX/CI **PARTIAL**",
+    "spec coverage sealed-act chronology checkpoint marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "local sealed or archived acts for the entity into a `sealed_act_projection` with event/source provenance, typed local nodes and edges, retification/correction edges, and false `legal_validity_claimed` and `authority_certified_claimed` flags",
+    "spec coverage sealed-act chronology projection details marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "does not mutate archives or acts, certify a registry/provider result, prove legal validity, replace legal review, or claim authoritative ownership/relationship facts",
+    "spec coverage sealed-act chronology boundary marker",
   );
   assertFileContains(
     "apps/web/src/features/entities/entities.test.tsx",
@@ -9532,12 +9587,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `2c5eaf3`",
+    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `4298f46`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `2c5eaf3`",
+    "Focused Gate Snapshot Through `4298f46`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -10152,8 +10207,18 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `2c5eaf3`",
+    "Current checkpoint metadata/static checks through `4298f46`",
     "CI/E2E hardening plan current checkpoint checks marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Current working-tree sealed-act chronology projection checks",
+    "CI/E2E hardening plan sealed-act chronology focused checks marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "no registry/provider certification, legal validity claim, archive or act mutation, user/editor authoritative graph claim",
+    "CI/E2E hardening plan sealed-act chronology no-claim marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -10607,7 +10672,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `2c5eaf3d432341cb5075abea6739ffe97bc50e68`",
+    "implementation snapshot `4298f46ff1c0b424b8bf14c58f729da7f3544a51`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(

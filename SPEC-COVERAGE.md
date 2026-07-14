@@ -1,11 +1,13 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-14 from current implementation snapshot `2c5eaf3d432341cb5075abea6739ffe97bc50e68`,
+*Updated 2026-07-14 from current implementation snapshot `4298f46ff1c0b424b8bf14c58f729da7f3544a51`,
 with committed evidence refreshes for the recently landed Signatures & Trust
 provider-credential, stored runtime credential resolution, stored PKCS#12,
 remote batch-initiation surfaces, and Docker/Compose runtime-hardening
 checkpoint, delegation legal-basis enforcement, and compliance-panel internal
-legislacao corpus deep links for structured legal-basis rows, while preserving the prior committed
+legislacao corpus deep links for structured legal-basis rows, and sealed-act
+chronology projection for local sealed/archived acts with provenance,
+retification edges, and false no-claim flags, while preserving the prior committed
 `7fcf5ef5f1c2fbd5b9eb26d6aac5c1240144a365` manual-signature
 original-reference sealing path and web accessibility/focus guard evidence and the prior
 `869e02f897f54730df86db739193f86c372e0e19` coverage context,
@@ -210,6 +212,17 @@ Implementation checkpoints covered here:
   does not fetch external law, verify legal text, promote DRE-sourced entries,
   replace legal review, or upgrade compliance/legal status.
 
+- Current `4298f46` keeps Entity/UX/CI **PARTIAL**: `GET
+  /v1/entities/{id}/chronology` now projects local sealed or archived acts for
+  the entity into a `sealed_act_projection` with event/source provenance,
+  typed local nodes and edges, retification/correction edges, and false
+  `legal_validity_claimed` and `authority_certified_claimed` flags. The Entity
+  chronology panel renders the local projection and provenance alongside the
+  registry chronology without treating it as an editor or authoritative graph.
+  This is read-only local act chronology evidence only: it does not mutate
+  archives or acts, certify a registry/provider result, prove legal validity,
+  replace legal review, or claim authoritative ownership/relationship facts.
+
 - Current working-tree paper-book local OCR/canonical rehearsal report keeps
   Workflows, Documents & Archive, UX, and CI **PARTIAL**: `GET
   /v1/books/paper-import/{id}/ocr-canonical-rehearsal` now returns a read-only
@@ -337,14 +350,16 @@ Implementation checkpoints covered here:
 - Current working-tree entity chronology analytics summary keeps Entity/UX/CI
   **PARTIAL**: `GET /v1/entities/{id}/chronology` now includes a deterministic
   `analytics` object derived only from the existing imported-registry chronology
-  events and structured graph bundle. The summary exposes event totals,
+  events and structured graph bundle; the same response can also carry a local
+  sealed-act projection for sealed/archived acts, provenance, retification
+  edges, and false no-claim flags. The summary exposes event totals,
   dated/undated counts, event-kind counts, unique source-inscription counts/list,
   and structured graph node/edge/warning counts; the Entity detail chronology
   panel renders those values with explicit local technical/source-linked copy.
-  This is read-only local analytics over already parsed evidence only: it makes
-  no chronology editing, legal ownership/priority conclusion, registry
-  certification, DRE verification, external call, or authority-approved graph
-  claim.
+  This is read-only local analytics and projection over already parsed or sealed
+  local evidence only: it makes no chronology editing, legal ownership/priority
+  conclusion, registry certification, provider certification, DRE verification,
+  external call, archive mutation, or authority-approved graph claim.
 - Current working-tree privacy DPIA/breach/transfer advisory review status and
   reminder depth keeps Legal/Compliance/Data/Workflows/UX/CI **PARTIAL**:
   DPIA, breach playbook, and transfer-control read views now include an
@@ -1615,9 +1630,12 @@ Implementation checkpoints covered here:
   surface deterministic local counts over imported chronology events and
   structured graph bundles, including event totals, dated/undated counts,
   event-kind counts, unique source inscriptions, and graph node/edge/warning
-  counts. This is source-linked technical summary only, not editing, legal
-  priority/ownership analysis, registry certification, DRE verification,
-  external registry/provider integration, or an authority-approved graph.
+  counts. The response also projects local sealed/archived acts into
+  `sealed_act_projection` with provenance, retification edges, and false
+  legal-validity/authority-certified flags. This is source-linked technical
+  summary and local act projection only, not editing, legal priority/ownership
+  analysis, registry certification, DRE verification, external registry/provider
+  integration, archive mutation, or an authority-approved graph.
 - `b43a82e` keeps CI/Architecture **PARTIAL**: the recent-landed static checkpoint
   pins durable external-validator report metadata sidecar persistence/reload,
   malformed-sidecar counting, and related API regression markers. This is static
@@ -3567,10 +3585,13 @@ behavior, legal disposal, or legal-effect claims.
   single canonical user-management surface.
 - **Registry chronology:** the registry import layer exposes deterministic chronology events and
   Mermaid shareholders/organs/relationships views for imported extracts, with the web UI rendering
-  a richer frontend chronology visualization over the existing structured graph evidence. This is
-  parsed registry visualization evidence only, not a legal registry certificate, legal registry
-  certification, DRE verification, registry/provider authority verification, ownership or
-  relationship determination, or an authority-approved graph; visual editing and source-linked
+  a richer frontend chronology visualization over the existing structured graph evidence. The
+  chronology endpoint also projects local sealed/archived acts into a read-only
+  `sealed_act_projection` with provenance, retification edges, and false legal-validity/authority
+  no-claim flags. This is parsed registry visualization plus local sealed-act projection evidence
+  only, not a legal registry certificate, legal registry certification, DRE verification,
+  registry/provider authority verification, ownership or relationship determination, archive
+  mutation, legal validity, or an authority-approved graph; visual editing and source-linked
   compliance remain future work.
 - **MCP tool coverage:** The stdio MCP catalog includes read/write-controlled `/api/v1` tools for
   entity/book/act operations, the `draft_minutes` alias to the draft-act API, Mermaid chronology

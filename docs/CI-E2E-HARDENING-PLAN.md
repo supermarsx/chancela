@@ -1,7 +1,7 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `2c5eaf3`,
+and implementation snapshot `4298f46`,
 including coverage notes for the bounded PAdES DSS validation-time, PDF/UA v10
 scoped table-header evidence, retention due-candidate explicit evidence states,
 bounded archive/no-action evidence UI, duplicate-review guard/status surfacing, and
@@ -40,7 +40,8 @@ imported-document review dashboard reminders and review-form deep-link focus rou
 password-required account creation/session hardening,
 written-resolution evidence receipt local browser proof,
 route-stubbed richer entity chronology visualization over existing structured
-graph evidence as source-linked technical visualization evidence only,
+graph evidence and local sealed-act chronology projection over sealed/archived
+acts as source-linked technical visualization evidence only,
 plus local ASiC inspection endpoint and ASiC ZIP decompression-bound coverage,
 plus release workflow static
 assurance for the unsigned/local-only trust posture and production-package
@@ -803,11 +804,11 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `2c5eaf3`
+## Focused Gate Snapshot Through `4298f46`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08` and checkpoint-promoted on 2026-07-14 for
-current implementation head `2c5eaf3`. This is not an exhaustive current
+current implementation head `4298f46`. This is not an exhaustive current
 green-run claim; browser, Docker, desktop, package signing/notarization, image
 signing/attestation, and live-provider limits above still apply.
 
@@ -1274,6 +1275,16 @@ settingsDefaults.test.ts contracts.test.ts`.
   validity, no signature validity, no archive certification, no provider
   validation, no external-validator success, no trust validation, no legal
   review, no provider/legal assurance, and no AI or MCP completion claim.
+- Current working-tree sealed-act chronology projection checks: focused API/UI
+  evidence pins `sealed_act_projection` on `GET /v1/entities/{id}/chronology`
+  for local sealed or archived acts, including provenance rows, local nodes and
+  edges, retification/correction edges, and false `legal_validity_claimed` and
+  `authority_certified_claimed` flags. The Entity chronology panel renders the
+  projection as local act chronology with source labels and no-claim copy. This
+  is read-only local sealed-act projection evidence only: no registry/provider
+  certification, legal validity claim, archive or act mutation, user/editor
+  authoritative graph claim, live provider call, or ownership/relationship
+  determination is made.
 - Current working-tree dashboard guest recent-events redaction checks: focused
   `cargo test -p chancela-api --locked dashboard_recent_events_redacts_guest_feed_but_keeps_owner_and_reader_feed`
   coverage pins `recent_events: []` for guest/minimal dashboard readers, Owner
@@ -1736,7 +1747,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   --workspace apps/web -- e2e/session.spec.ts e2e/first-launch-onboarding.spec.ts`.
   Treat the static/unit/focused markers as the pinned slice, not broad
   Playwright-browser-suite or browser-matrix proof; the browser suite is not exhaustive.
-- Current checkpoint metadata/static checks through `2c5eaf3`
+- Current checkpoint metadata/static checks through `4298f46`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and

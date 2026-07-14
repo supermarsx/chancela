@@ -39,7 +39,9 @@ provenance panel with deterministic local counts, no bridge/API/AI-provider/hidd
 calls, no secrets, and false legal/source/provider/trust/external/signature-qualification
 flags, web fixtures, ASiC
 inspect `technical_validation` and structural diagnostic markers, registry chronology
-graph markers, PDF writer spacing and PDF/UA blocker-decomposition markers,
+graph markers, sealed-act chronology projection markers for local sealed/archived
+acts, provenance, retification edges, and false no-claim flags, PDF writer spacing
+and PDF/UA blocker-decomposition markers,
 archive timestamp append markers, raw-byte per-book import preflight markers for
 no-mutation operator previews,
 paper-book OCR API/UI markers including accepted OCR draft to mutable draft-act
@@ -469,9 +471,12 @@ target preservation, PageHeader h1 coverage, and modal focus-trap behavior,
 template law-reference UI markers,
 password-required account creation/session API and web markers,
 structured registry chronology graph markers plus richer frontend chronology
-visualization markers as source-linked technical evidence only, not a legal
-registry certificate, DRE verification, registry/provider authority verification,
-or an authority-approved graph, mapped PDF inter-word space,
+visualization markers and local sealed-act chronology projection markers with
+provenance, retification edges, and false legal-validity/authority-certified
+flags as source-linked technical evidence only, not a legal registry certificate,
+DRE verification, registry/provider authority verification, archive mutation,
+legal validity, user/editor authoritative graph, or an authority-approved graph,
+mapped PDF inter-word space,
 PDF/UA blocker-decomposition markers, PDF accessibility report JSON v8,
 marked-content coverage counts, `writer_owned_decorative_artifacts_accounted_for`, reduced default-fixture
 `limited_tagged_structure` blocker lists, exhaustive `DocumentBlock`
