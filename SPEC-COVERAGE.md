@@ -1,6 +1,6 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-14 from current implementation snapshot `547408ebf9558094cf0c8293b2c0f125efd5a31e`,
+*Updated 2026-07-14 from current implementation snapshot `cec169cf8c464ec642936158c1fb2e33f4d52e9d`,
 with committed evidence refreshes for the recently landed Signatures & Trust
 provider-credential, stored runtime credential resolution, stored PKCS#12,
 remote batch-initiation surfaces, and Docker/Compose runtime-hardening
@@ -150,7 +150,8 @@ retention review-closure slice through `869e02f` (`6724d07` API route,
 sync/handoff preflight reporting and `e8bcd19` archive filter reset icon
 semantics, followed by `d981694` web signed-act technical metadata comparison,
 then `6a2c91e` explicit ROL-02 seeded role archetypes, followed by
-`547408e` off-by-default Postgres store runtime write/read paths.
+`547408e` off-by-default Postgres store runtime write/read paths and
+`cec169c` SQLite-default, feature/config-gated database backend selection.
 Earlier coverage text remains prior snapshot context. All top-level spec areas remain **PARTIAL**.
 This is an implementation and test coverage snapshot, not a legal certification,
 not production CMD approval, not DRE verification promotion, not full PDF/UA
@@ -430,21 +431,29 @@ Implementation checkpoints covered here:
   legal-capacity proof, tenant/group policy, HR authority, access-policy
   certification, or automatic reconciliation of customized persisted non-Owner
   roles.
-- Current `547408e` keeps Data/Architecture/CI **PARTIAL**: the off-by-default
-  `postgres` feature now covers request-serving store runtime write/read paths:
-  schema DDL from the shared schema constants, `meta` schema/instance stamping,
-  boot `load` replay, core aggregate/document/signed-document/follow-up/
-  imported-document/paper-book/dispatch-evidence `Tx` writes, paged ledger
-  reads, document/blob reads, pending-CMD reads, and imported-document review
-  history identity ids. Focused source/test markers pin `PostgresBackend::open`,
-  the advisory-locked single writer, `persist_and_reload_event_roundtrips_on_postgres`,
-  and `runtime_reads_and_writes_roundtrip_on_postgres`. The live Postgres tests
-  remain `#[ignore]`, require `DATABASE_URL`, and are not part of default CI;
-  SQLite-file-shaped backup, restore, recovery, imported-book, and raw transaction
-  paths still fail closed with `UnsupportedOnPostgres`. This is optional backend
-  plumbing and marker coverage only, not production Postgres readiness, live DB
-  validation, migration completeness, HA/cloud deployment, certification,
-  external sync readiness, or a replacement for SQLite/SQLCipher validation.
+- Current `cec169c` keeps Data/Architecture/CI **PARTIAL**: the off-by-default
+  `postgres` feature covers the request-serving store runtime write/read paths
+  from `547408e`: schema DDL from the shared schema constants, `meta`
+  schema/instance stamping, boot `load` replay, core aggregate/document/
+  signed-document/follow-up/imported-document/paper-book/dispatch-evidence
+  `Tx` writes, paged ledger reads, document/blob reads, pending-CMD reads, and
+  imported-document review history identity ids. The API/server startup path now
+  resolves `CHANCELA_DB_BACKEND=sqlite` by default and can select Postgres only
+  when the build includes the off-by-default `postgres` feature and exactly one
+  `DATABASE_URL`/`DATABASE_URL_FILE` source is configured. Focused source/test
+  markers pin `PostgresBackend::open`, the advisory-locked single writer,
+  `persist_and_reload_event_roundtrips_on_postgres`,
+  `runtime_reads_and_writes_roundtrip_on_postgres`, `resolve_backend_selection`,
+  `Store::open_backend`, default-SQLite parsing, and fail-closed unknown,
+  missing, ambiguous, empty, or not-built-with-`postgres` selector cases. The
+  live Postgres tests remain `#[ignore]`, require `DATABASE_URL`, and are not
+  part of default CI; SQLite-file-shaped backup, restore, recovery,
+  imported-book, and raw transaction paths still fail closed with
+  `UnsupportedOnPostgres`. This is optional backend plumbing and marker coverage
+  only: SQLite remains the default, Postgres selection is feature/config gated,
+  and this is not production Postgres readiness, live DB validation, migration
+  completeness, HA/cloud deployment, certification, external sync readiness, or
+  a replacement for SQLite/SQLCipher validation.
 - Working tree keeps Data/Architecture/CI **PARTIAL**: data-status filesystem
   telemetry now classifies `platform-logs.json` under `platform_logs` and
   `backup-recovery-drills.json` under `backup_recovery_drills`, while preserving
@@ -2097,6 +2106,20 @@ behavior, legal disposal, or legal-effect claims.
   coverage only, not production Postgres readiness, live DB validation, migration
   completeness, HA/cloud deployment, certification, external sync readiness, or
   a replacement for the SQLite/SQLCipher validation lanes.
+- **Database backend runtime selection:** `cec169c` wires API/server startup to
+  select `CHANCELA_DB_BACKEND=sqlite` by default, or
+  `CHANCELA_DB_BACKEND=postgres` only when the build includes the off-by-default
+  `postgres` feature and exactly one `DATABASE_URL`/`DATABASE_URL_FILE` source is
+  configured. Static markers pin `DB_BACKEND_ENV`, `DATABASE_URL_FILE_ENV`,
+  `resolve_backend_selection`, `Store::open_backend`, the API/server feature
+  gates, default-SQLite parsing, and fail-closed selector tests for unknown
+  backends, missing URLs, ambiguous URL sources, empty URLs, and
+  not-built-with-`postgres`. This is startup selection/config validation only:
+  SQLite remains default, Postgres selection is feature/config gated, default CI
+  does not perform live Postgres database validation, and it is not production
+  Postgres readiness, migration completeness, HA/cloud deployment,
+  certification, external sync readiness, or a replacement for SQLite/SQLCipher
+  validation.
 - **Release clean-source provenance gate:** `check-package-artifacts
   --require-clean-source` now fails package manifests whose
   `manifest.sourceProvenance.sourceTreeState` is `dirty` or `unknown`; the

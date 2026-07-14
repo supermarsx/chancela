@@ -129,10 +129,14 @@ operator technical evidence form submission, identity-requirement-tagged
 evidence rows, `PATCH` slot payloads that omit `complete:true`, validator
 fixtures, off-by-default Postgres store runtime write/read markers with ignored
 `DATABASE_URL` live tests and `UnsupportedOnPostgres` backup/restore/recovery
-boundaries, and the standalone desktop Cargo workspace.
+boundaries, SQLite-default feature/config-gated database backend selection
+markers, and the standalone desktop Cargo workspace.
 
-The Postgres store markers prove source/test coverage for the off-by-default
-backend runtime paths only. They do not prove production Postgres readiness,
+The Postgres store and backend-selection markers prove source/test coverage for
+the off-by-default backend runtime paths and API/server selector only. SQLite
+remains the default backend; Postgres selection is feature/config gated through
+`CHANCELA_DB_BACKEND=postgres` plus exactly one `DATABASE_URL` or
+`DATABASE_URL_FILE` source. They do not prove production Postgres readiness,
 live DB validation, migration completeness, HA/cloud deployment, certification,
 or external sync readiness.
 

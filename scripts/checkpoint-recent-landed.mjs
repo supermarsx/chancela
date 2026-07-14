@@ -9272,7 +9272,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `547408e`",
+    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `cec169c`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
@@ -9892,7 +9892,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `547408e`",
+    "Current checkpoint metadata/static checks through `cec169c`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -10347,7 +10347,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `547408ebf9558094cf0c8293b2c0f125efd5a31e`",
+    "implementation snapshot `cec169cf8c464ec642936158c1fb2e33f4d52e9d`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -10422,13 +10422,18 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Current `547408e` keeps Data/Architecture/CI **PARTIAL**",
+    "Current `cec169c` keeps Data/Architecture/CI **PARTIAL**",
     "spec coverage Postgres store checkpoint marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Postgres store runtime write/read paths",
-    "spec coverage Postgres store recent coverage marker",
+    "Database backend runtime selection",
+    "spec coverage database backend selection recent coverage marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "SQLite remains default, Postgres selection is feature/config gated",
+    "spec coverage database backend default/gated caveat marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
@@ -10437,8 +10442,23 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current working-tree Postgres store runtime checks",
-    "CI/E2E hardening plan Postgres store checks marker",
+    "Current working-tree Postgres store runtime checks and backend-selection\n  markers",
+    "CI/E2E hardening plan Postgres store/backend-selection checks marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "SQLite remains the default, Postgres selection is\n  feature/config gated",
+    "CI/E2E hardening plan database backend default/gated marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Postgres store runtime source/test markers, SQLite-default feature/config-gated\n  backend selector markers",
+    "CI/E2E hardening plan database backend selector checkpoint marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "The Postgres store and backend-selection markers prove source/test coverage for\nthe off-by-default backend runtime paths and API/server selector only",
+    "CI checkpoints Postgres/backend selector bounded marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -10447,8 +10467,68 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "Postgres store markers prove source/test coverage for the off-by-default\nbackend runtime paths only",
-    "CI checkpoints Postgres off-by-default backend marker",
+    "SQLite\nremains the default backend; Postgres selection is feature/config gated",
+    "CI checkpoints database backend default/gated marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/Cargo.toml",
+    "postgres = [\"chancela-store/postgres\"]",
+    "API postgres feature gate marker",
+  );
+  assertFileContains(
+    "crates/chancela-server/Cargo.toml",
+    "postgres = [\"chancela-api/postgres\", \"chancela-store/postgres\"]",
+    "server postgres feature gate marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/database.rs",
+    "pub const DB_BACKEND_ENV: &str = \"CHANCELA_DB_BACKEND\";",
+    "database backend selector env marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/database.rs",
+    "pub const DATABASE_URL_FILE_ENV: &str = \"DATABASE_URL_FILE\";",
+    "database URL file env marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/database.rs",
+    "pub(crate) fn resolve_backend_selection",
+    "database backend resolution function marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/database.rs",
+    "StoreBackendSelection::Postgres { database_url }",
+    "database backend Postgres store selection marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/database.rs",
+    "requires_durability: true",
+    "database backend Postgres fail-closed durability marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/database.rs",
+    "fn unset_backend_defaults_to_sqlite()",
+    "database backend default SQLite test marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/database.rs",
+    "fn postgres_without_feature_fails_closed()",
+    "database backend postgres feature gate test marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/database.rs",
+    "fn postgres_ambiguous_url_sources_are_rejected()",
+    "database backend ambiguous URL source test marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "let resolved_backend = database::resolve_backend_selection(&dir, &database_encryption)?;",
+    "AppState database backend resolution call marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "match Store::open_backend(resolved_backend.selection)",
+    "AppState database backend open marker",
   );
   assertFileContains(
     "crates/chancela-store/src/pg.rs",
