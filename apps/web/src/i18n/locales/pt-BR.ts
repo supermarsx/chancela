@@ -752,7 +752,7 @@ export const ptBR: Catalog = {
   'books.detail.ocrSummary.sectionLabel':
     'Resumo de profundidade OCR e dossiê do livro em papel',
   'books.detail.preflight.sectionLabel':
-    'Verificação prévia de conversão canônica OCR da importação {id}',
+    'Relatório OCR/canônico local da importação {id}',
   'books.detail.preflight.metadataOnlyTitle': 'Apenas metadados, somente leitura, não canônico',
   'books.detail.ocrDraft.sectionLabel': 'Rascunhos OCR da importação {id}',
   'books.detail.ocrDraft.reviewTitle': 'Rascunhos OCR e revisão auxiliar',

@@ -750,7 +750,7 @@ export const svSE: Catalog = {
   'books.detail.ocrSummary.sectionLabel':
     'Sammanfattning av OCR-djup och dossier för pappersboken',
   'books.detail.preflight.sectionLabel':
-    'OCR-preflight för kanonisk konvertering av import {id}',
+    'Lokal OCR/kanonisk rapport för import {id}',
   'books.detail.preflight.metadataOnlyTitle': 'Endast metadata, skrivskyddat, icke-kanoniskt',
   'books.detail.ocrDraft.sectionLabel': 'OCR-utkast för import {id}',
   'books.detail.ocrDraft.reviewTitle': 'OCR-utkast och kompletterande granskning',

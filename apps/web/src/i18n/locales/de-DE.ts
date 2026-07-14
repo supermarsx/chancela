@@ -757,7 +757,7 @@ export const deDE: Catalog = {
   'books.detail.ocrSummary.sectionLabel':
     'Zusammenfassung von OCR-Tiefe und Dossier des Papierbuchs',
   'books.detail.preflight.sectionLabel':
-    'OCR-Preflight zur kanonischen Konvertierung des Imports {id}',
+    'Lokaler OCR/Kanonik-Bericht für Import {id}',
   'books.detail.preflight.metadataOnlyTitle': 'Nur Metadaten, schreibgeschützt, nicht kanonisch',
   'books.detail.ocrDraft.sectionLabel': 'OCR-Entwürfe des Imports {id}',
   'books.detail.ocrDraft.reviewTitle': 'OCR-Entwürfe und ergänzende Prüfung',

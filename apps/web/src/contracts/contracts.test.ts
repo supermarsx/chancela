@@ -157,6 +157,13 @@ import {
   type PaperBookOriginalAtaNumberRange,
   type PaperBookImportPackage,
   type PaperBookImportReport,
+  type PaperBookOcrCanonicalRehearsalConfidenceBuckets,
+  type PaperBookOcrCanonicalRehearsalDossierEvidence,
+  type PaperBookOcrCanonicalRehearsalImportEvidence,
+  type PaperBookOcrCanonicalRehearsalNoClaims,
+  type PaperBookOcrCanonicalRehearsalOcrEvidence,
+  type PaperBookOcrCanonicalRehearsalReadiness,
+  type PaperBookOcrCanonicalRehearsalReport,
   type PaperBookPageRange,
   type PermissionGrant,
   type PermissionScope,
@@ -588,11 +595,7 @@ function assertDataPayloadStats(obj: unknown, label: string): DataPayloadStats {
       `${label}.average_bytes_per_row should be non-negative`,
     ).toBeGreaterThanOrEqual(0);
   }
-  inEnum(
-    DATA_PAYLOAD_ESTIMATE_METHODS,
-    stats.estimate_method,
-    `${label}.estimate_method`,
-  );
+  inEnum(DATA_PAYLOAD_ESTIMATE_METHODS, stats.estimate_method, `${label}.estimate_method`);
   inEnum(DATA_USAGE_BASES, stats.estimate_basis, `${label}.estimate_basis`);
   return stats;
 }
@@ -1522,7 +1525,10 @@ function assertRetentionCandidateResolutionRecord(
   record.evidence.forEach((evidence, i) =>
     assertRetentionReviewClosureEvidence(evidence, `${label}.evidence[${i}]`),
   );
-  const snapshot = assertRetentionCandidateResolutionSnapshot(record.candidate, `${label}.candidate`);
+  const snapshot = assertRetentionCandidateResolutionSnapshot(
+    record.candidate,
+    `${label}.candidate`,
+  );
   expect(snapshot.candidate_id, `${label}.candidate.candidate_id`).toBe(record.candidate_id);
   expect(snapshot.candidate_fingerprint, `${label}.candidate.candidate_fingerprint`).toBe(
     record.candidate_fingerprint,
@@ -2452,6 +2458,216 @@ function assertPaperBookImportReport(obj: unknown, label: string): PaperBookImpo
   return report;
 }
 
+function assertPaperBookOcrCanonicalRehearsalReport(
+  obj: unknown,
+  label: string,
+): PaperBookOcrCanonicalRehearsalReport {
+  const report = assertExactKeys<PaperBookOcrCanonicalRehearsalReport>(
+    obj,
+    {
+      report_kind: true,
+      dry_run: true,
+      rehearsal_scope: true,
+      legal_notice: true,
+      import_id: true,
+      source_import: true,
+      ocr_evidence: true,
+      dossier_evidence: true,
+      readiness: true,
+      no_claims: true,
+      required_operator_actions: true,
+      findings: true,
+    },
+    label,
+  );
+  expect(report.report_kind).toBe('paper_book_ocr_canonical_rehearsal');
+  expect(report.dry_run).toBe(true);
+  expect(report.rehearsal_scope).toBe('local_ocr_canonical_conversion_rehearsal');
+  expect(report.legal_notice).toContain('computed locally');
+  expect(report.legal_notice).toContain('does not perform OCR');
+  expect(report.import_id.length, `${label}.import_id`).toBeGreaterThan(0);
+
+  const source = assertExactKeys<PaperBookOcrCanonicalRehearsalImportEvidence>(
+    report.source_import,
+    {
+      import_present: true,
+      preserved_package_present: true,
+      book_ref: true,
+      ocr_status: true,
+      page_count: true,
+      source_page_range: true,
+      original_ata_number_range: true,
+      package_digest_present: true,
+      package_size_bytes: true,
+      source_filename_present: true,
+      bytes_in_report: true,
+      non_canonical: true,
+    },
+    `${label}.source_import`,
+  );
+  expect(source.import_present).toBe(true);
+  expect(source.preserved_package_present).toBe(true);
+  expect(source.book_ref.length).toBeGreaterThan(0);
+  expect(source.page_count).toBeGreaterThan(0);
+  expect(source.package_size_bytes).toBeGreaterThan(0);
+  expect(source.bytes_in_report).toBe(false);
+  expect(source.non_canonical).toBe(true);
+  const sourceRange = assertExactKeys<PaperBookPageRange>(
+    source.source_page_range,
+    { from: true, to: true },
+    `${label}.source_import.source_page_range`,
+  );
+  expect(sourceRange.from).toBeGreaterThan(0);
+  expect(sourceRange.to).toBeGreaterThanOrEqual(sourceRange.from);
+  expect(sourceRange.to).toBeLessThanOrEqual(source.page_count);
+  if (source.original_ata_number_range) {
+    const originalRange = assertExactKeys<PaperBookOriginalAtaNumberRange>(
+      source.original_ata_number_range,
+      { from: true, to: true },
+      `${label}.source_import.original_ata_number_range`,
+    );
+    expect(originalRange.from).toBeGreaterThan(0);
+    expect(originalRange.to).toBeGreaterThanOrEqual(originalRange.from);
+  }
+
+  const ocr = assertExactKeys<PaperBookOcrCanonicalRehearsalOcrEvidence>(
+    report.ocr_evidence,
+    {
+      draft_count: true,
+      accepted_draft_count: true,
+      unreviewed_draft_count: true,
+      rejected_draft_count: true,
+      superseded_draft_count: true,
+      selected_accepted_draft_id: true,
+      selected_accepted_draft_text_digest_present: true,
+      selected_accepted_draft_extracted_text_present: true,
+      selected_accepted_draft_page_span_count: true,
+      selected_accepted_draft_page_span_pages: true,
+      operator_review_recorded: true,
+      raw_ocr_text_in_report: true,
+      confidence_buckets: true,
+    },
+    `${label}.ocr_evidence`,
+  );
+  expect(ocr.draft_count).toBeGreaterThanOrEqual(ocr.accepted_draft_count);
+  expect(ocr.raw_ocr_text_in_report).toBe(false);
+  const confidence = assertExactKeys<PaperBookOcrCanonicalRehearsalConfidenceBuckets>(
+    ocr.confidence_buckets,
+    {
+      known_count: true,
+      unknown_count: true,
+      high_count: true,
+      medium_count: true,
+      low_count: true,
+    },
+    `${label}.ocr_evidence.confidence_buckets`,
+  );
+  expect(confidence.known_count + confidence.unknown_count).toBe(ocr.draft_count);
+  expect(confidence.high_count + confidence.medium_count + confidence.low_count).toBe(
+    confidence.known_count,
+  );
+
+  const dossier = assertExactKeys<PaperBookOcrCanonicalRehearsalDossierEvidence>(
+    report.dossier_evidence,
+    {
+      dossier_count: true,
+      metadata_only_dossier_present: true,
+      selected_dossier_id: true,
+      selected_dossier_source_digest_present: true,
+      selected_dossier_page_span_count: true,
+      selected_dossier_page_span_pages: true,
+      bound_execution_artifact_count: true,
+      selected_bound_execution_artifact_count: true,
+      mutable_draft_act_artifact_present: true,
+      source_extracted_text_in_response: true,
+      source_extracted_text_in_ledger_event: true,
+    },
+    `${label}.dossier_evidence`,
+  );
+  expect(dossier.dossier_count).toBeGreaterThanOrEqual(0);
+  expect(dossier.bound_execution_artifact_count).toBeGreaterThanOrEqual(
+    dossier.selected_bound_execution_artifact_count,
+  );
+  expect(dossier.source_extracted_text_in_response).toBe(false);
+  expect(dossier.source_extracted_text_in_ledger_event).toBe(false);
+
+  const readiness = assertExactKeys<PaperBookOcrCanonicalRehearsalReadiness>(
+    report.readiness,
+    {
+      status: true,
+      scope: true,
+      evidence_source: true,
+      blockers: true,
+      next_local_action: true,
+    },
+    `${label}.readiness`,
+  );
+  inEnum(['blocked', 'local_rehearsal_ready'], readiness.status, `${label}.readiness.status`);
+  expect(readiness.scope).toBe('local_rehearsal_only');
+  expect(readiness.evidence_source).toBe('stored_paper_import_ocr_draft_dossier_metadata');
+  for (const blocker of readiness.blockers) {
+    const item = assertExactKeys<PaperBookCanonicalConversionPreflightBlocker>(
+      blocker,
+      { code: true, field: true, message: true },
+      `${label}.readiness.blocker`,
+    );
+    expect(item.code.length).toBeGreaterThan(0);
+    expect(item.field.length).toBeGreaterThan(0);
+    expect(item.message.length).toBeGreaterThan(0);
+  }
+
+  const noClaims = assertExactKeys<PaperBookOcrCanonicalRehearsalNoClaims>(
+    report.no_claims,
+    {
+      records_mutated: true,
+      external_ocr_called: true,
+      external_validator_called: true,
+      external_legal_service_called: true,
+      canonical_conversion_claimed: true,
+      ocr_accuracy_claimed: true,
+      legal_review_claimed: true,
+      legal_validity_claimed: true,
+      canonical_minutes_claimed: true,
+      canonical_act_created: true,
+      canonical_document_created: true,
+      sealed_document_created: true,
+      signed_document_created: true,
+      archive_package_created: true,
+      archive_certification_claimed: true,
+      pdfa_created: true,
+      pdfa_certification_claimed: true,
+      pdfua_created: true,
+      pdfua_certification_claimed: true,
+      signature_created: true,
+      signing_requested: true,
+      signature_validity_claimed: true,
+      qualified_signature_claimed: true,
+      dglab_certification_claimed: true,
+      raw_ocr_text_in_report: true,
+    },
+    `${label}.no_claims`,
+  );
+  for (const [key, value] of Object.entries(noClaims)) {
+    expect(value, `${label}.no_claims.${key}`).toBe(false);
+  }
+
+  expect(report.required_operator_actions.length).toBeGreaterThan(0);
+  expect(report.findings.length).toBeGreaterThan(0);
+  for (const finding of report.findings) {
+    const item = assertExactKeys<PaperBookImportFinding>(
+      finding,
+      { severity: true, code: true, message: true },
+      `${label}.finding`,
+    );
+    inEnum(['info', 'warning', 'error'], item.severity, `${label}.finding.severity`);
+    expect(item.code.length).toBeGreaterThan(0);
+    expect(item.message.length).toBeGreaterThan(0);
+  }
+  expect(JSON.stringify(report)).not.toContain('canonical_conversion_claimed":true');
+  expect(JSON.stringify(report)).not.toContain('legal_validity_claimed":true');
+  return report;
+}
+
 function assertPaperBookOcrDraft(obj: unknown, label: string): PaperBookOcrDraftView {
   const draft = assertExactKeys<PaperBookOcrDraftView>(
     obj,
@@ -3313,6 +3529,16 @@ describe('contract fixtures parse through the real client', () => {
       await api.listPaperBookOcrConversionDossiers('11111111-1111-4111-8111-111111111111');
     expect(listed.length).toBe(1);
     assertPaperBookOcrConversionDossier(listed[0], 'PaperBookOcrConversionDossierView[]');
+  });
+
+  it('paper-book.ocr-canonical-rehearsal.json → PaperBookOcrCanonicalRehearsalReport (GET local rehearsal)', async () => {
+    stubFetch(fixture('paper-book.ocr-canonical-rehearsal.json'));
+    const report: PaperBookOcrCanonicalRehearsalReport =
+      await api.getPaperBookOcrCanonicalRehearsal('11111111-1111-4111-8111-111111111111');
+    assertPaperBookOcrCanonicalRehearsalReport(report, 'PaperBookOcrCanonicalRehearsalReport');
+    expect(JSON.stringify(report)).not.toContain('canonical_conversion_claimed":true');
+    expect(JSON.stringify(report)).not.toContain('ocr_accuracy_claimed":true');
+    expect(JSON.stringify(report)).not.toContain('dglab_certification_claimed":true');
   });
 
   it('ledger.events.json → LedgerEventView[] (GET /v1/ledger/events)', async () => {
@@ -6093,6 +6319,7 @@ describe('contract fixtures — cross-cutting guarantees', () => {
       'paper-book.ocr-run.json',
       'paper-book.ocr-canonical-draft.json',
       'paper-book.ocr-conversion-dossier.json',
+      'paper-book.ocr-canonical-rehearsal.json',
       'api-key.list.json',
       'api-key.create.json',
       'api-key.revoke.json',

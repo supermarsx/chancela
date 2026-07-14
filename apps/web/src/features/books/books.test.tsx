@@ -25,6 +25,7 @@ import {
   type Entity,
   type LocalDglabInterchangeManifest,
   type PaperBookImportView,
+  type PaperBookOcrCanonicalRehearsalReport,
   type PaperBookOcrConversionDossierView,
   type PaperBookOcrConversionExecutionArtifactView,
   type PaperBookOcrDraftView,
@@ -96,6 +97,152 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+function paperBookOcrCanonicalRehearsalReport(
+  importId: string,
+  options: {
+    status?: 'blocked' | 'local_rehearsal_ready';
+    blockerCodes?: string[];
+    draftId?: string | null;
+    dossierId?: string | null;
+    draftCount?: number;
+    acceptedDraftCount?: number;
+    dossierCount?: number;
+    artifactCount?: number;
+    mutableDraftActArtifactPresent?: boolean;
+  } = {},
+): PaperBookOcrCanonicalRehearsalReport {
+  const status = options.status ?? 'blocked';
+  const blockerCodes =
+    options.blockerCodes ??
+    (status === 'blocked'
+      ? ['accepted_ocr_draft_required', 'metadata_only_conversion_dossier_required']
+      : []);
+  const draftId = options.draftId ?? null;
+  const dossierId = options.dossierId ?? null;
+  const draftCount = options.draftCount ?? (draftId ? 1 : 0);
+  const dossierCount = options.dossierCount ?? (dossierId ? 1 : 0);
+  return {
+    report_kind: 'paper_book_ocr_canonical_rehearsal',
+    dry_run: true,
+    rehearsal_scope: 'local_ocr_canonical_conversion_rehearsal',
+    legal_notice:
+      'This OCR/canonical rehearsal report is computed locally from preserved metadata and makes no legal, OCR accuracy, PDF/A, PDF/UA, signing, archive, or DGLAB certification claim.',
+    import_id: importId,
+    source_import: {
+      import_present: true,
+      preserved_package_present: true,
+      book_ref: 'book-1',
+      ocr_status: 'completed',
+      page_count: 240,
+      source_page_range: { from: 1, to: 48 },
+      original_ata_number_range: { from: 101, to: 119 },
+      package_digest_present: true,
+      package_size_bytes: 4096,
+      source_filename_present: true,
+      bytes_in_report: false,
+      non_canonical: true,
+    },
+    ocr_evidence: {
+      draft_count: draftCount,
+      accepted_draft_count: options.acceptedDraftCount ?? (draftId ? 1 : 0),
+      unreviewed_draft_count: draftId && draftCount > 1 ? draftCount - 1 : 0,
+      rejected_draft_count: 0,
+      superseded_draft_count: 0,
+      selected_accepted_draft_id: draftId,
+      selected_accepted_draft_text_digest_present: draftId !== null,
+      selected_accepted_draft_extracted_text_present: false,
+      selected_accepted_draft_page_span_count: draftId ? 1 : 0,
+      selected_accepted_draft_page_span_pages: draftId ? 3 : 0,
+      operator_review_recorded: draftId !== null,
+      raw_ocr_text_in_report: false,
+      confidence_buckets: {
+        known_count: draftId ? 1 : 0,
+        unknown_count: Math.max(draftCount - (draftId ? 1 : 0), 0),
+        high_count: draftId ? 1 : 0,
+        medium_count: 0,
+        low_count: 0,
+      },
+    },
+    dossier_evidence: {
+      dossier_count: dossierCount,
+      metadata_only_dossier_present: dossierCount > 0,
+      selected_dossier_id: dossierId,
+      selected_dossier_source_digest_present: dossierId !== null,
+      selected_dossier_page_span_count: dossierId ? 1 : 0,
+      selected_dossier_page_span_pages: dossierId ? 3 : 0,
+      bound_execution_artifact_count: options.artifactCount ?? 0,
+      selected_bound_execution_artifact_count: options.artifactCount ?? 0,
+      mutable_draft_act_artifact_present: options.mutableDraftActArtifactPresent ?? false,
+      source_extracted_text_in_response: false,
+      source_extracted_text_in_ledger_event: false,
+    },
+    readiness: {
+      status,
+      scope: 'local_rehearsal_only',
+      evidence_source: 'stored_paper_import_ocr_draft_dossier_metadata',
+      blockers: blockerCodes.map((code) => ({
+        code,
+        field: `rehearsal.${code}`,
+        message: `local rehearsal blocker: ${code}`,
+      })),
+      next_local_action:
+        status === 'local_rehearsal_ready'
+          ? 'retain_report_as_local_readiness_evidence'
+          : 'resolve_local_evidence_blockers_without_creating_canonical_records',
+    },
+    no_claims: {
+      records_mutated: false,
+      external_ocr_called: false,
+      external_validator_called: false,
+      external_legal_service_called: false,
+      canonical_conversion_claimed: false,
+      ocr_accuracy_claimed: false,
+      legal_review_claimed: false,
+      legal_validity_claimed: false,
+      canonical_minutes_claimed: false,
+      canonical_act_created: false,
+      canonical_document_created: false,
+      sealed_document_created: false,
+      signed_document_created: false,
+      archive_package_created: false,
+      archive_certification_claimed: false,
+      pdfa_created: false,
+      pdfa_certification_claimed: false,
+      pdfua_created: false,
+      pdfua_certification_claimed: false,
+      signature_created: false,
+      signing_requested: false,
+      signature_validity_claimed: false,
+      qualified_signature_claimed: false,
+      dglab_certification_claimed: false,
+      raw_ocr_text_in_report: false,
+    },
+    required_operator_actions: [
+      'review_preserved_import_metadata',
+      'review_accepted_ocr_draft_metadata',
+      'review_metadata_only_conversion_dossier',
+    ],
+    findings: [
+      {
+        severity: 'info',
+        code: 'report_only',
+        message: 'local report is read-only and does not mutate records',
+      },
+    ],
+  };
+}
+
+const PAPER_BOOK_REHEARSAL_HIGH_RISK_NO_CLAIM_FLAGS = [
+  'legal_validity_claimed',
+  'signing_requested',
+  'signature_validity_claimed',
+  'qualified_signature_claimed',
+  'signed_document_created',
+  'archive_package_created',
+  'pdfa_created',
+  'pdfua_created',
+] as const;
+
 function blobText(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -123,6 +270,14 @@ function bookDetailFetch(
     if (url === '/v1/books/paper-import?book_ref=book-1') return Promise.resolve(jsonResponse([]));
     if (method === 'GET' && /^\/v1\/books\/paper-import\/[^/]+\/conversion-dossiers$/.test(url)) {
       return Promise.resolve(jsonResponse([]));
+    }
+    const rehearsalMatch = url.match(
+      /^\/v1\/books\/paper-import\/([^/]+)\/ocr-canonical-rehearsal$/,
+    );
+    if (method === 'GET' && rehearsalMatch) {
+      return Promise.resolve(
+        jsonResponse(paperBookOcrCanonicalRehearsalReport(decodeURIComponent(rehearsalMatch[1]))),
+      );
     }
     if (url === '/v1/books/book-1/legal-hold') {
       return Promise.resolve(
@@ -928,28 +1083,39 @@ describe('BookDetailPage — paper-book preserved imports', () => {
       await within(summary).findByText('Sem dossier aplicável sem rascunho aceite.'),
     ).toBeTruthy();
     const preflight = await screen.findByRole('region', {
-      name: /Preflight de conversão canónica OCR/i,
+      name: /Relatório OCR\/canónico local/i,
     });
-    expect(within(preflight).getByText('Preflight canónico OCR read-only')).toBeTruthy();
-    expect(within(preflight).getByText(/Apenas metadados, só de leitura e não canónico/i)).toBeTruthy();
-    expect(within(preflight).getByText('bloqueado')).toBeTruthy();
+    expect(
+      screen.queryByRole('region', { name: /Preflight de conversão canónica OCR/i }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole('region', { name: /OCR canonical conversion preflight/i }),
+    ).toBeNull();
+    expect(within(preflight).getByText('Relatório OCR/canónico local')).toBeTruthy();
+    expect(
+      within(preflight).getByText(/Apenas metadados, só de leitura e não canónico/i),
+    ).toBeTruthy();
+    expect(within(preflight).getByText(/bloqueado por metadados locais/i)).toBeTruthy();
     expect(within(preflight).getAllByText(/accepted_ocr_draft_required/i).length).toBeGreaterThan(
       0,
     );
     expect(
       within(preflight).getAllByText(/metadata_only_conversion_dossier_required/i).length,
     ).toBeGreaterThan(0);
-    expect(
-      within(preflight).getByText(/legal_acceptance_recorded_is_operator_evidence_only/i),
-    ).toBeTruthy();
     expect(within(preflight).getByText(/raw_ocr_text_in_report: false/i)).toBeTruthy();
+    expect(within(preflight).getByText(/records_mutated: false/i)).toBeTruthy();
+    expect(within(preflight).getByText(/external_ocr_called: false/i)).toBeTruthy();
+    expect(within(preflight).getByText(/canonical_conversion_claimed:\s*false/i)).toBeTruthy();
     expect(within(preflight).getByText(/canonical_act_created: false/i)).toBeTruthy();
     expect(within(preflight).getByText(/canonical_document_created: false/i)).toBeTruthy();
+    expect(within(preflight).getByText(/sealed_document_created: false/i)).toBeTruthy();
     expect(within(preflight).getByText(/signature_created: false/i)).toBeTruthy();
-    expect(within(preflight).getByText(/signing_requested: false/i)).toBeTruthy();
-    expect(within(preflight).getByText(/legal_validity_claimed: false/i)).toBeTruthy();
-    expect(within(preflight).getByText(/PDF\/A: false/i)).toBeTruthy();
-    expect(within(preflight).getByText(/PDF\/UA: false/i)).toBeTruthy();
+    expect(within(preflight).getByText(/pdfa_certification_claimed:\s*false/i)).toBeTruthy();
+    expect(within(preflight).getByText(/pdfua_certification_claimed:\s*false/i)).toBeTruthy();
+    expect(within(preflight).getByText(/dglab_certification_claimed: false/i)).toBeTruthy();
+    for (const flag of PAPER_BOOK_REHEARSAL_HIGH_RISK_NO_CLAIM_FLAGS) {
+      expect(within(preflight).getByText(new RegExp(`${flag}:\\s*false`, 'i'))).toBeTruthy();
+    }
     expect(screen.getByText('Sem rascunhos OCR registados')).toBeTruthy();
     expect(
       calls.some((call) => call.url.endsWith('/conversion-dossier') && call.method === 'POST'),
@@ -1235,6 +1401,23 @@ describe('BookDetailPage — paper-book preserved imports', () => {
         return jsonResponse(dossiers);
       }
       if (
+        url === `/v1/books/paper-import/${preserved.import_id}/ocr-canonical-rehearsal` &&
+        method === 'GET'
+      ) {
+        const dossier = dossiers[0] ?? null;
+        return jsonResponse(
+          paperBookOcrCanonicalRehearsalReport(preserved.import_id, {
+            status: dossier ? 'local_rehearsal_ready' : 'blocked',
+            blockerCodes: dossier ? [] : ['metadata_only_conversion_dossier_required'],
+            draftId: draft.draft_id,
+            dossierId: dossier?.dossier_id ?? null,
+            draftCount: 1,
+            acceptedDraftCount: 1,
+            dossierCount: dossiers.length,
+          }),
+        );
+      }
+      if (
         url ===
           `/v1/books/paper-import/${preserved.import_id}/ocr-drafts/${draft.draft_id}/conversion-dossier` &&
         method === 'POST'
@@ -1272,16 +1455,16 @@ describe('BookDetailPage — paper-book preserved imports', () => {
     expect(within(summary).queryByText(/assinatura válida/i)).toBeNull();
     expect(within(summary).queryByText(/PDF\/A certificado/i)).toBeNull();
     const preflight = await screen.findByRole('region', {
-      name: /Preflight de conversão canónica OCR/i,
+      name: /Relatório OCR\/canónico local/i,
     });
-    expect(within(preflight).getByText('Preflight canónico OCR read-only')).toBeTruthy();
+    expect(within(preflight).getByText('Relatório OCR/canónico local')).toBeTruthy();
     expect(
       within(preflight).getAllByText(/metadata_only_conversion_dossier_required/i).length,
     ).toBeGreaterThan(0);
     expect(within(preflight).getByText(draft.draft_id)).toBeTruthy();
     expect(within(preflight).getByText(/raw_ocr_text_in_report: false/i)).toBeTruthy();
-    expect(within(preflight).getByText(/signature_validity_claimed: false/i)).toBeTruthy();
-    expect(within(preflight).getByText(/qualified_signature_claimed: false/i)).toBeTruthy();
+    expect(within(preflight).getByText(/canonical_conversion_claimed:\s*false/i)).toBeTruthy();
+    expect(within(preflight).getByText(/pdfa_certification_claimed:\s*false/i)).toBeTruthy();
     expect(
       calls.some((call) => call.url.endsWith('/conversion-dossier') && call.method === 'POST'),
     ).toBe(false);
@@ -1308,13 +1491,8 @@ describe('BookDetailPage — paper-book preserved imports', () => {
     ).toBeTruthy();
     expect(within(preflight).getByText(createdDossier.dossier_id)).toBeTruthy();
     expect(within(preflight).queryByText('metadata_only_conversion_dossier_required')).toBeNull();
-    expect(
-      within(preflight).getByText('evidência local reunida para revisão externa'),
-    ).toBeTruthy();
-    expect(within(preflight).getByText('nenhum bloqueio de metadados local')).toBeTruthy();
-    expect(
-      within(preflight).getByText(/legal_acceptance_recorded_is_operator_evidence_only/i),
-    ).toBeTruthy();
+    expect(within(preflight).getByText('evidência local reunida')).toBeTruthy();
+    expect(within(preflight).getByText('nenhum bloqueio local no relatório')).toBeTruthy();
     expect(screen.getByText(/metadata-only, non-canonical/i)).toBeTruthy();
     expect(screen.getByText(/Ata criada: não/i)).toBeTruthy();
     expect(screen.getAllByText(/documento canónico: não/i).length).toBeGreaterThanOrEqual(1);

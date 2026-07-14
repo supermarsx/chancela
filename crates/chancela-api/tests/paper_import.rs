@@ -475,6 +475,21 @@ async fn list_conversion_dossiers(
     .await
 }
 
+async fn get_ocr_canonical_rehearsal(
+    state: &AppState,
+    token: &str,
+    import_id: &str,
+) -> (StatusCode, Value) {
+    send(
+        state,
+        get_req(
+            &format!("/v1/books/paper-import/{import_id}/ocr-canonical-rehearsal"),
+            token,
+        ),
+    )
+    .await
+}
+
 #[tokio::test]
 async fn valid_paper_book_import_validation_returns_non_canonical_dry_run_report() {
     let state = AppState::default();
@@ -1513,6 +1528,407 @@ async fn paper_book_ocr_conversion_dossier_requires_accepted_matching_draft_and_
 }
 
 #[tokio::test]
+async fn paper_book_ocr_canonical_rehearsal_reports_blockers_without_mutation() {
+    let dir = TempDir::new();
+    let state = AppState::with_data_dir(dir.path());
+    let token = bootstrap(&state).await;
+    let bytes = package_bytes();
+    let (status, created) = preserve(&state, &token, preserve_body(&bytes)).await;
+    assert_eq!(status, StatusCode::CREATED, "preserve: {created}");
+    let import_id = created["import_id"].as_str().expect("import id");
+    let before_events = state.ledger.read().await.events().len();
+
+    let (status, report) = get_ocr_canonical_rehearsal(&state, &token, import_id).await;
+
+    assert_eq!(status, StatusCode::OK, "rehearsal: {report}");
+    assert_eq!(report["report_kind"], "paper_book_ocr_canonical_rehearsal");
+    assert_eq!(report["dry_run"], true);
+    assert_eq!(report["import_id"], import_id);
+    assert_eq!(report["source_import"]["import_present"], true);
+    assert_eq!(report["source_import"]["preserved_package_present"], true);
+    assert_eq!(report["source_import"]["package_digest_present"], true);
+    assert_eq!(report["source_import"]["bytes_in_report"], false);
+    assert_eq!(report["source_import"]["non_canonical"], true);
+    assert_eq!(report["ocr_evidence"]["draft_count"], 0);
+    assert_eq!(report["ocr_evidence"]["raw_ocr_text_in_report"], false);
+    assert_eq!(report["dossier_evidence"]["dossier_count"], 0);
+    assert_eq!(report["readiness"]["status"], "blocked");
+    let blocker_codes: Vec<_> = report["readiness"]["blockers"]
+        .as_array()
+        .expect("blockers")
+        .iter()
+        .map(|blocker| blocker["code"].as_str().expect("blocker code"))
+        .collect();
+    assert!(blocker_codes.contains(&"accepted_ocr_draft_required"));
+    assert_eq!(report["no_claims"]["records_mutated"], false);
+    assert_eq!(report["no_claims"]["external_ocr_called"], false);
+    assert_eq!(report["no_claims"]["external_validator_called"], false);
+    assert_eq!(report["no_claims"]["external_legal_service_called"], false);
+    assert_eq!(report["no_claims"]["canonical_conversion_claimed"], false);
+    assert_eq!(report["no_claims"]["ocr_accuracy_claimed"], false);
+    assert_eq!(report["no_claims"]["legal_review_claimed"], false);
+    assert_eq!(report["no_claims"]["legal_validity_claimed"], false);
+    assert_eq!(report["no_claims"]["canonical_act_created"], false);
+    assert_eq!(report["no_claims"]["canonical_document_created"], false);
+    assert_eq!(report["no_claims"]["sealed_document_created"], false);
+    assert_eq!(report["no_claims"]["signed_document_created"], false);
+    assert_eq!(report["no_claims"]["archive_certification_claimed"], false);
+    assert_eq!(report["no_claims"]["pdfa_certification_claimed"], false);
+    assert_eq!(report["no_claims"]["pdfua_certification_claimed"], false);
+    assert_eq!(report["no_claims"]["signature_created"], false);
+    assert_eq!(report["no_claims"]["dglab_certification_claimed"], false);
+    assert_eq!(state.ledger.read().await.events().len(), before_events);
+}
+
+#[tokio::test]
+async fn paper_book_ocr_canonical_rehearsal_summarizes_local_evidence_only() {
+    let dir = TempDir::new();
+    let state = AppState::with_data_dir(dir.path());
+    let token = bootstrap(&state).await;
+    let bytes = package_bytes();
+    let (status, created) = preserve(&state, &token, preserve_body(&bytes)).await;
+    assert_eq!(status, StatusCode::CREATED, "preserve: {created}");
+    let import_id = created["import_id"].as_str().expect("import id");
+    let ocr_text = "Deliberacao importada por OCR para rehearsal local.";
+    let digest = hex(&Sha256::digest(ocr_text));
+    let (status, draft) = create_ocr_draft(
+        &state,
+        &token,
+        import_id,
+        json!({
+            "extracted_text": ocr_text,
+            "text_digest": digest,
+            "page_spans": [{ "start_page": 1, "end_page": 3 }],
+            "confidence": 0.92,
+            "engine_name": "operator-supplied-ocr"
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "draft: {draft}");
+    let draft_id = draft["draft_id"].as_str().expect("draft id");
+    let (status, reviewed) = review_ocr_draft(
+        &state,
+        &token,
+        import_id,
+        draft_id,
+        json!({ "review_status": "accepted", "review_note": "Checked against scan." }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "review: {reviewed}");
+    let (status, dossier) =
+        create_conversion_dossier_from_ocr_draft(&state, &token, import_id, draft_id).await;
+    assert_eq!(status, StatusCode::CREATED, "dossier: {dossier}");
+    let dossier_id = dossier["dossier_id"].as_str().expect("dossier id");
+    let before_events = state.ledger.read().await.events().len();
+
+    let (status, report) = get_ocr_canonical_rehearsal(&state, &token, import_id).await;
+
+    assert_eq!(status, StatusCode::OK, "rehearsal: {report}");
+    assert_eq!(report["readiness"]["status"], "local_rehearsal_ready");
+    assert!(
+        report["readiness"]["blockers"]
+            .as_array()
+            .expect("blockers")
+            .is_empty()
+    );
+    assert_eq!(
+        report["readiness"]["next_local_action"],
+        "retain_report_as_local_readiness_evidence"
+    );
+    assert_eq!(report["ocr_evidence"]["draft_count"], 1);
+    assert_eq!(report["ocr_evidence"]["accepted_draft_count"], 1);
+    assert_eq!(
+        report["ocr_evidence"]["selected_accepted_draft_id"],
+        draft_id
+    );
+    assert_eq!(
+        report["ocr_evidence"]["selected_accepted_draft_text_digest_present"],
+        true
+    );
+    assert_eq!(
+        report["ocr_evidence"]["selected_accepted_draft_extracted_text_present"],
+        true
+    );
+    assert_eq!(
+        report["ocr_evidence"]["selected_accepted_draft_page_span_count"],
+        1
+    );
+    assert_eq!(
+        report["ocr_evidence"]["selected_accepted_draft_page_span_pages"],
+        3
+    );
+    assert_eq!(report["ocr_evidence"]["operator_review_recorded"], true);
+    assert_eq!(report["ocr_evidence"]["raw_ocr_text_in_report"], false);
+    assert_eq!(
+        report["ocr_evidence"]["confidence_buckets"]["known_count"],
+        1
+    );
+    assert_eq!(
+        report["ocr_evidence"]["confidence_buckets"]["high_count"],
+        1
+    );
+    assert_eq!(
+        report["ocr_evidence"]["confidence_buckets"]["unknown_count"],
+        0
+    );
+    assert_eq!(report["dossier_evidence"]["dossier_count"], 1);
+    assert_eq!(
+        report["dossier_evidence"]["metadata_only_dossier_present"],
+        true
+    );
+    assert_eq!(
+        report["dossier_evidence"]["selected_dossier_id"],
+        dossier_id
+    );
+    assert_eq!(
+        report["dossier_evidence"]["selected_dossier_source_digest_present"],
+        true
+    );
+    assert_eq!(
+        report["dossier_evidence"]["selected_dossier_page_span_count"],
+        1
+    );
+    assert_eq!(
+        report["dossier_evidence"]["selected_dossier_page_span_pages"],
+        3
+    );
+    assert_eq!(
+        report["dossier_evidence"]["bound_execution_artifact_count"],
+        0
+    );
+    assert_eq!(
+        report["dossier_evidence"]["mutable_draft_act_artifact_present"],
+        false
+    );
+    assert_eq!(
+        report["dossier_evidence"]["source_extracted_text_in_response"],
+        false
+    );
+    assert_eq!(
+        report["dossier_evidence"]["source_extracted_text_in_ledger_event"],
+        false
+    );
+    assert_eq!(report["no_claims"]["records_mutated"], false);
+    assert_eq!(report["no_claims"]["canonical_conversion_claimed"], false);
+    assert_eq!(report["no_claims"]["ocr_accuracy_claimed"], false);
+    assert_eq!(report["no_claims"]["legal_validity_claimed"], false);
+    assert_eq!(report["no_claims"]["pdfa_created"], false);
+    assert_eq!(report["no_claims"]["pdfua_created"], false);
+    assert_eq!(report["no_claims"]["signature_created"], false);
+    assert!(
+        !report.to_string().contains(ocr_text),
+        "rehearsal report must not expose raw OCR text: {report}"
+    );
+    assert_eq!(state.ledger.read().await.events().len(), before_events);
+}
+
+#[tokio::test]
+async fn paper_book_ocr_canonical_rehearsal_requires_stored_draft_digest_metadata() {
+    let dir = TempDir::new();
+    let state = AppState::with_data_dir(dir.path());
+    let token = bootstrap(&state).await;
+    let bytes = package_bytes();
+    let (status, created) = preserve(&state, &token, preserve_body(&bytes)).await;
+    assert_eq!(status, StatusCode::CREATED, "preserve: {created}");
+    let import_id = created["import_id"].as_str().expect("import id");
+    let ocr_text = "Deliberacao OCR com texto mas sem digest metadata.";
+    let (status, draft) = create_ocr_draft(
+        &state,
+        &token,
+        import_id,
+        json!({
+            "extracted_text": ocr_text,
+            "page_spans": [{ "start_page": 1, "end_page": 2 }],
+            "confidence": 0.88,
+            "engine_name": "operator-supplied-ocr"
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "draft: {draft}");
+    assert!(draft["text_digest"].is_null());
+    let draft_id = draft["draft_id"].as_str().expect("draft id");
+    let (status, reviewed) = review_ocr_draft(
+        &state,
+        &token,
+        import_id,
+        draft_id,
+        json!({ "review_status": "accepted", "review_note": "Checked against scan." }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "review: {reviewed}");
+    let (status, dossier) =
+        create_conversion_dossier_from_ocr_draft(&state, &token, import_id, draft_id).await;
+    assert_eq!(status, StatusCode::CREATED, "dossier: {dossier}");
+    assert!(dossier["source_text_digest"].is_null());
+    let before_report = state.ledger.read().await.events().len();
+
+    let (status, report) = get_ocr_canonical_rehearsal(&state, &token, import_id).await;
+
+    assert_eq!(status, StatusCode::OK, "rehearsal: {report}");
+    assert_eq!(report["readiness"]["status"], "blocked");
+    assert_eq!(
+        report["ocr_evidence"]["selected_accepted_draft_id"],
+        draft_id
+    );
+    assert_eq!(
+        report["ocr_evidence"]["selected_accepted_draft_text_digest_present"],
+        false
+    );
+    assert_eq!(
+        report["ocr_evidence"]["selected_accepted_draft_extracted_text_present"],
+        true
+    );
+    assert_eq!(
+        report["dossier_evidence"]["selected_dossier_source_digest_present"],
+        false
+    );
+    let blocker_codes: Vec<_> = report["readiness"]["blockers"]
+        .as_array()
+        .expect("blockers")
+        .iter()
+        .map(|blocker| blocker["code"].as_str().expect("blocker code"))
+        .collect();
+    assert!(blocker_codes.contains(&"ocr_text_digest_required"));
+    assert!(blocker_codes.contains(&"dossier_source_digest_required"));
+    assert_eq!(report["no_claims"]["canonical_conversion_claimed"], false);
+    assert_eq!(report["no_claims"]["legal_validity_claimed"], false);
+    assert!(
+        !report.to_string().contains(ocr_text),
+        "rehearsal report must not expose raw OCR text: {report}"
+    );
+    assert_eq!(state.ledger.read().await.events().len(), before_report);
+}
+
+#[tokio::test]
+async fn paper_book_ocr_canonical_rehearsal_ignores_mutable_artifacts_from_other_drafts() {
+    let dir = TempDir::new();
+    let state = AppState::with_data_dir(dir.path());
+    let token = bootstrap(&state).await;
+    let book_id = create_open_book(&state, &token).await;
+    let (status, created) = preserve(
+        &state,
+        &token,
+        preserve_body_for_book(&package_bytes(), &book_id),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "preserve: {created}");
+    let import_id = created["import_id"].as_str().expect("import id");
+
+    let first_text = "Primeiro rascunho OCR aceite para artefacto mutavel.";
+    let first_digest = hex(&Sha256::digest(first_text));
+    let (status, first) = create_ocr_draft(
+        &state,
+        &token,
+        import_id,
+        json!({
+            "extracted_text": first_text,
+            "text_digest": first_digest,
+            "page_spans": [{ "start_page": 1, "end_page": 1 }],
+            "confidence": 0.91,
+            "engine_name": "operator-supplied-ocr"
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "first draft: {first}");
+    let first_draft_id = first["draft_id"].as_str().expect("first draft id");
+    let (status, first_reviewed) = review_ocr_draft(
+        &state,
+        &token,
+        import_id,
+        first_draft_id,
+        json!({ "review_status": "accepted", "review_note": "Accepted for draft act." }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "first review: {first_reviewed}");
+    let (status, artifact_body) =
+        create_act_draft_from_ocr_draft(&state, &token, import_id, first_draft_id).await;
+    assert_eq!(
+        status,
+        StatusCode::CREATED,
+        "first draft artifact: {artifact_body}"
+    );
+    assert_eq!(
+        artifact_body["conversion_execution_artifact"]["mutable_draft_act_created"],
+        true
+    );
+
+    let selected_text = "Segundo rascunho OCR aceite para dossier selecionado.";
+    let selected_digest = hex(&Sha256::digest(selected_text));
+    let (status, selected) = create_ocr_draft(
+        &state,
+        &token,
+        import_id,
+        json!({
+            "extracted_text": selected_text,
+            "text_digest": selected_digest,
+            "page_spans": [{ "start_page": 2, "end_page": 3 }],
+            "confidence": 0.94,
+            "engine_name": "operator-supplied-ocr"
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "selected draft: {selected}");
+    let selected_draft_id = selected["draft_id"].as_str().expect("selected draft id");
+    let (status, selected_reviewed) = review_ocr_draft(
+        &state,
+        &token,
+        import_id,
+        selected_draft_id,
+        json!({ "review_status": "accepted", "review_note": "Selected for rehearsal." }),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "selected review: {selected_reviewed}"
+    );
+    let (status, selected_dossier) =
+        create_conversion_dossier_from_ocr_draft(&state, &token, import_id, selected_draft_id)
+            .await;
+    assert_eq!(
+        status,
+        StatusCode::CREATED,
+        "selected dossier: {selected_dossier}"
+    );
+    let selected_dossier_id = selected_dossier["dossier_id"]
+        .as_str()
+        .expect("selected dossier id");
+    let before_report = state.ledger.read().await.events().len();
+
+    let (status, report) = get_ocr_canonical_rehearsal(&state, &token, import_id).await;
+
+    assert_eq!(status, StatusCode::OK, "rehearsal: {report}");
+    assert_eq!(report["readiness"]["status"], "local_rehearsal_ready");
+    assert_eq!(
+        report["ocr_evidence"]["selected_accepted_draft_id"],
+        selected_draft_id
+    );
+    assert_eq!(
+        report["dossier_evidence"]["selected_dossier_id"],
+        selected_dossier_id
+    );
+    assert_eq!(
+        report["dossier_evidence"]["bound_execution_artifact_count"],
+        1
+    );
+    assert_eq!(
+        report["dossier_evidence"]["selected_bound_execution_artifact_count"],
+        0
+    );
+    assert_eq!(
+        report["dossier_evidence"]["mutable_draft_act_artifact_present"],
+        false
+    );
+    assert_eq!(report["no_claims"]["canonical_document_created"], false);
+    assert_eq!(report["no_claims"]["legal_validity_claimed"], false);
+    assert!(
+        !report.to_string().contains(first_text) && !report.to_string().contains(selected_text),
+        "rehearsal report must not expose raw OCR text: {report}"
+    );
+    assert_eq!(state.ledger.read().await.events().len(), before_report);
+}
+
+#[tokio::test]
 async fn paper_book_ocr_conversion_artifact_records_accepted_draft_act() {
     let dir = TempDir::new();
     let state = AppState::with_data_dir(dir.path());
@@ -1717,6 +2133,36 @@ async fn paper_book_ocr_conversion_artifact_records_accepted_draft_act() {
         .paper_book_ocr_conversion_execution_artifacts_for_draft(import_id, draft_id)
         .expect("bound artifact list");
     assert_eq!(stored_artifacts[0].dossier_id.as_deref(), Some(dossier_id));
+
+    let before_report = state.ledger.read().await.events().len();
+    let (status, report) = get_ocr_canonical_rehearsal(&state, &token, import_id).await;
+    assert_eq!(status, StatusCode::OK, "rehearsal with artifact: {report}");
+    assert_eq!(report["readiness"]["status"], "local_rehearsal_ready");
+    assert_eq!(
+        report["ocr_evidence"]["selected_accepted_draft_id"],
+        draft_id
+    );
+    assert_eq!(
+        report["dossier_evidence"]["selected_dossier_id"],
+        dossier_id
+    );
+    assert_eq!(
+        report["dossier_evidence"]["bound_execution_artifact_count"],
+        1
+    );
+    assert_eq!(
+        report["dossier_evidence"]["selected_bound_execution_artifact_count"],
+        1
+    );
+    assert_eq!(
+        report["dossier_evidence"]["mutable_draft_act_artifact_present"],
+        true
+    );
+    assert_eq!(report["no_claims"]["canonical_document_created"], false);
+    assert_eq!(report["no_claims"]["sealed_document_created"], false);
+    assert_eq!(report["no_claims"]["archive_certification_claimed"], false);
+    assert_eq!(report["no_claims"]["dglab_certification_claimed"], false);
+    assert_eq!(state.ledger.read().await.events().len(), before_report);
 }
 
 #[tokio::test]

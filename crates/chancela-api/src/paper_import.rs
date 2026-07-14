@@ -44,6 +44,7 @@ const PAPER_BOOK_OCR_DRAFT_NOTICE: &str = "OCR draft results are non-authoritati
 const PAPER_BOOK_OCR_DRAFT_TO_ACT_NOTICE: &str = "Accepted OCR draft text was copied into a new mutable draft act as a drafting aid only. No canonical document, PDF/A, signature, seal, or legal-validity acceptance was created.";
 const PAPER_BOOK_OCR_CONVERSION_DOSSIER_NOTICE: &str = "This paper-book OCR conversion dossier is metadata-only, non-canonical, and non-legal-validity-conferring. It records accepted OCR draft review metadata only and does not create acts, documents, signed documents, archive packages, signatures, seals, PDF/A, or PDF/UA outputs.";
 const PAPER_BOOK_OCR_CONVERSION_EXECUTION_ARTIFACT_NOTICE: &str = "This reviewed OCR conversion execution artifact binds accepted OCR/dossier evidence to a mutable Draft act only. It is not a canonical or legal conversion and makes no PDF/A, PDF/UA, signature, archive-package, archive-certification, or legal-validity claim.";
+const PAPER_BOOK_OCR_CANONICAL_REHEARSAL_NOTICE: &str = "This OCR/canonical rehearsal report is computed locally from preserved paper-book import metadata, OCR draft review metadata, and metadata-only dossier evidence. It does not perform OCR, mutate records, create canonical or sealed documents, call validators, certify PDF/A or PDF/UA, sign anything, or claim legal validity.";
 const MAX_NOTES_CHARS: usize = 2_000;
 const MAX_OCR_TEXT_CHARS: usize = 1_000_000;
 const MAX_OCR_REVIEW_NOTE_CHARS: usize = 2_000;
@@ -481,6 +482,117 @@ pub struct PaperBookImportView {
     pub qualified_signature_claimed: bool,
     pub legal_notice: &'static str,
     pub bytes_download: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct PaperBookOcrCanonicalRehearsalReport {
+    pub report_kind: &'static str,
+    pub dry_run: bool,
+    pub rehearsal_scope: &'static str,
+    pub legal_notice: &'static str,
+    pub import_id: String,
+    pub source_import: PaperBookOcrCanonicalRehearsalImportEvidence,
+    pub ocr_evidence: PaperBookOcrCanonicalRehearsalOcrEvidence,
+    pub dossier_evidence: PaperBookOcrCanonicalRehearsalDossierEvidence,
+    pub readiness: PaperBookOcrCanonicalRehearsalReadiness,
+    pub no_claims: PaperBookOcrCanonicalRehearsalNoClaims,
+    pub required_operator_actions: Vec<&'static str>,
+    pub findings: Vec<PaperBookImportFinding>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PaperBookOcrCanonicalRehearsalImportEvidence {
+    pub import_present: bool,
+    pub preserved_package_present: bool,
+    pub book_ref: String,
+    pub ocr_status: &'static str,
+    pub page_count: u32,
+    pub source_page_range: PaperBookPageRangeReport,
+    pub original_ata_number_range: Option<PaperBookOriginalAtaNumberRangeReport>,
+    pub package_digest_present: bool,
+    pub package_size_bytes: usize,
+    pub source_filename_present: bool,
+    pub bytes_in_report: bool,
+    pub non_canonical: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct PaperBookOcrCanonicalRehearsalOcrEvidence {
+    pub draft_count: usize,
+    pub accepted_draft_count: usize,
+    pub unreviewed_draft_count: usize,
+    pub rejected_draft_count: usize,
+    pub superseded_draft_count: usize,
+    pub selected_accepted_draft_id: Option<String>,
+    pub selected_accepted_draft_text_digest_present: bool,
+    pub selected_accepted_draft_extracted_text_present: bool,
+    pub selected_accepted_draft_page_span_count: usize,
+    pub selected_accepted_draft_page_span_pages: u32,
+    pub operator_review_recorded: bool,
+    pub raw_ocr_text_in_report: bool,
+    pub confidence_buckets: PaperBookOcrCanonicalRehearsalConfidenceBuckets,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PaperBookOcrCanonicalRehearsalConfidenceBuckets {
+    pub known_count: usize,
+    pub unknown_count: usize,
+    pub high_count: usize,
+    pub medium_count: usize,
+    pub low_count: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PaperBookOcrCanonicalRehearsalDossierEvidence {
+    pub dossier_count: usize,
+    pub metadata_only_dossier_present: bool,
+    pub selected_dossier_id: Option<String>,
+    pub selected_dossier_source_digest_present: bool,
+    pub selected_dossier_page_span_count: usize,
+    pub selected_dossier_page_span_pages: u32,
+    pub bound_execution_artifact_count: usize,
+    pub selected_bound_execution_artifact_count: usize,
+    pub mutable_draft_act_artifact_present: bool,
+    pub source_extracted_text_in_response: bool,
+    pub source_extracted_text_in_ledger_event: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PaperBookOcrCanonicalRehearsalReadiness {
+    pub status: &'static str,
+    pub scope: &'static str,
+    pub evidence_source: &'static str,
+    pub blockers: Vec<PaperBookCanonicalConversionBlocker>,
+    pub next_local_action: Option<&'static str>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PaperBookOcrCanonicalRehearsalNoClaims {
+    pub records_mutated: bool,
+    pub external_ocr_called: bool,
+    pub external_validator_called: bool,
+    pub external_legal_service_called: bool,
+    pub canonical_conversion_claimed: bool,
+    pub ocr_accuracy_claimed: bool,
+    pub legal_review_claimed: bool,
+    pub legal_validity_claimed: bool,
+    pub canonical_minutes_claimed: bool,
+    pub canonical_act_created: bool,
+    pub canonical_document_created: bool,
+    pub sealed_document_created: bool,
+    pub signed_document_created: bool,
+    pub archive_package_created: bool,
+    pub archive_certification_claimed: bool,
+    pub pdfa_created: bool,
+    pub pdfa_certification_claimed: bool,
+    pub pdfua_created: bool,
+    pub pdfua_certification_claimed: bool,
+    pub signature_created: bool,
+    pub signing_requested: bool,
+    pub signature_validity_claimed: bool,
+    pub qualified_signature_claimed: bool,
+    pub dglab_certification_claimed: bool,
+    pub raw_ocr_text_in_report: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -1300,6 +1412,52 @@ pub async fn list_paper_book_ocr_conversion_dossiers(
     Ok(Json(out))
 }
 
+/// `GET /v1/books/paper-import/{id}/ocr-canonical-rehearsal` - compute a local readiness report
+/// from preserved import, OCR draft, dossier, and mutable-draft artifact metadata. This is
+/// read-only and never calls OCR, validators, signing, archive, DGLAB, or legal services.
+pub async fn get_paper_book_ocr_canonical_rehearsal(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+    Path(id): Path<String>,
+) -> Result<Json<PaperBookOcrCanonicalRehearsalReport>, ApiError> {
+    let import = load_paper_book_import_for_actor(&state, &actor, &id).await?;
+    let Some(store) = &state.store else {
+        return Err(ApiError::NotFound);
+    };
+
+    let drafts = store
+        .paper_book_ocr_drafts(&import.meta.import_id)
+        .map_err(|e| ApiError::Internal(format!("paper-book OCR draft store read failed: {e}")))?;
+    let dossiers = store
+        .paper_book_ocr_conversion_dossiers(&import.meta.import_id)
+        .map_err(|e| {
+            ApiError::Internal(format!(
+                "paper-book OCR conversion dossier store read failed: {e}"
+            ))
+        })?;
+    let mut artifacts = Vec::new();
+    for draft in &drafts {
+        let mut rows = store
+            .paper_book_ocr_conversion_execution_artifacts_for_draft(
+                &import.meta.import_id,
+                &draft.draft_id,
+            )
+            .map_err(|e| {
+                ApiError::Internal(format!(
+                    "paper-book OCR conversion execution artifact store read failed: {e}"
+                ))
+            })?;
+        artifacts.append(&mut rows);
+    }
+
+    Ok(Json(paper_book_ocr_canonical_rehearsal_report(
+        &import.meta,
+        &drafts,
+        &dossiers,
+        &artifacts,
+    )))
+}
+
 /// `GET /v1/books/paper-import/{id}/bytes` - download the preserved non-canonical package bytes.
 pub async fn get_paper_book_import_bytes(
     State(state): State<AppState>,
@@ -1652,6 +1810,282 @@ fn paper_book_ocr_run_response(
         signature_created: false,
         legal_validity_claimed: false,
         legal_notice: PAPER_BOOK_PRESERVATION_NOTICE,
+    }
+}
+
+fn paper_book_ocr_canonical_rehearsal_report(
+    import: &StoredPaperBookImportMeta,
+    drafts: &[StoredPaperBookOcrDraft],
+    dossiers: &[StoredPaperBookOcrConversionDossier],
+    artifacts: &[StoredPaperBookOcrConversionExecutionArtifact],
+) -> PaperBookOcrCanonicalRehearsalReport {
+    let selected_draft = drafts.iter().find(|draft| {
+        draft.review_status == StoredPaperBookOcrReviewStatus::Accepted
+            && draft.superseded_by.is_none()
+    });
+    let selected_dossier = selected_draft.and_then(|draft| {
+        dossiers
+            .iter()
+            .find(|dossier| dossier.draft_id == draft.draft_id)
+    });
+    let selected_artifact_count = match (selected_draft, selected_dossier) {
+        (Some(draft), Some(dossier)) => artifacts
+            .iter()
+            .filter(|artifact| artifact_matches_selected_rehearsal_chain(artifact, draft, dossier))
+            .count(),
+        _ => 0,
+    };
+    let mutable_draft_act_artifact_present = match (selected_draft, selected_dossier) {
+        (Some(draft), Some(dossier)) => artifacts.iter().any(|artifact| {
+            artifact.mutable_draft_act_created
+                && artifact_matches_selected_rehearsal_chain(artifact, draft, dossier)
+        }),
+        _ => false,
+    };
+    let selected_draft_digest_present = selected_draft
+        .and_then(|draft| draft.text_digest.as_deref())
+        .is_some_and(|digest| !digest.trim().is_empty());
+    let selected_draft_page_span_count = selected_draft
+        .map(|draft| draft.page_spans.len())
+        .unwrap_or(0);
+    let selected_draft_page_span_pages = selected_draft
+        .map(|draft| paper_book_ocr_page_span_pages(&draft.page_spans))
+        .unwrap_or(0);
+    let selected_dossier_source_digest_present = selected_dossier
+        .and_then(|dossier| dossier.source_text_digest.as_deref())
+        .is_some();
+    let selected_dossier_page_span_count = selected_dossier
+        .map(|dossier| dossier.source_page_spans.len())
+        .unwrap_or(0);
+    let selected_dossier_page_span_pages = selected_dossier
+        .map(|dossier| paper_book_ocr_page_span_pages(&dossier.source_page_spans))
+        .unwrap_or(0);
+
+    let mut blockers = Vec::new();
+    if selected_draft.is_none() {
+        blockers.push(preflight_blocker(
+            "accepted_ocr_draft_required",
+            "ocr_evidence.selected_accepted_draft_id",
+            "local rehearsal requires an accepted OCR draft metadata record",
+        ));
+    }
+    if selected_draft.is_some() && !selected_draft_digest_present {
+        blockers.push(preflight_blocker(
+            "ocr_text_digest_required",
+            "ocr_evidence.selected_accepted_draft_text_digest_present",
+            "local rehearsal requires OCR text digest evidence for the accepted draft",
+        ));
+    }
+    if selected_draft.is_some() && selected_draft_page_span_count == 0 {
+        blockers.push(preflight_blocker(
+            "ocr_page_spans_required",
+            "ocr_evidence.selected_accepted_draft_page_span_count",
+            "local rehearsal requires page-span metadata for the accepted OCR draft",
+        ));
+    }
+    if selected_draft.is_some() && selected_dossier.is_none() {
+        blockers.push(preflight_blocker(
+            "metadata_only_conversion_dossier_required",
+            "dossier_evidence.selected_dossier_id",
+            "local rehearsal requires a metadata-only conversion dossier for the accepted OCR draft",
+        ));
+    }
+    if selected_dossier.is_some() && !selected_dossier_source_digest_present {
+        blockers.push(preflight_blocker(
+            "dossier_source_digest_required",
+            "dossier_evidence.selected_dossier_source_digest_present",
+            "local rehearsal requires source digest evidence in the metadata-only dossier",
+        ));
+    }
+    if selected_dossier.is_some() && selected_dossier_page_span_count == 0 {
+        blockers.push(preflight_blocker(
+            "dossier_page_spans_required",
+            "dossier_evidence.selected_dossier_page_span_count",
+            "local rehearsal requires source page-span evidence in the metadata-only dossier",
+        ));
+    }
+
+    let readiness_status = if blockers.is_empty() {
+        "local_rehearsal_ready"
+    } else {
+        "blocked"
+    };
+    let next_local_action = if blockers.is_empty() {
+        Some("retain_report_as_local_readiness_evidence")
+    } else {
+        Some("resolve_local_evidence_blockers_without_creating_canonical_records")
+    };
+
+    PaperBookOcrCanonicalRehearsalReport {
+        report_kind: "paper_book_ocr_canonical_rehearsal",
+        dry_run: true,
+        rehearsal_scope: "local_ocr_canonical_conversion_rehearsal",
+        legal_notice: PAPER_BOOK_OCR_CANONICAL_REHEARSAL_NOTICE,
+        import_id: import.import_id.clone(),
+        source_import: PaperBookOcrCanonicalRehearsalImportEvidence {
+            import_present: true,
+            preserved_package_present: true,
+            book_ref: import.book_ref.clone(),
+            ocr_status: import.ocr_status.as_str(),
+            page_count: import.page_count,
+            source_page_range: PaperBookPageRangeReport {
+                from: import.page_from,
+                to: import.page_to,
+            },
+            original_ata_number_range: original_ata_range_from_meta(import),
+            package_digest_present: !import.sha256.trim().is_empty(),
+            package_size_bytes: import.size_bytes,
+            source_filename_present: import.source_filename.is_some(),
+            bytes_in_report: false,
+            non_canonical: true,
+        },
+        ocr_evidence: PaperBookOcrCanonicalRehearsalOcrEvidence {
+            draft_count: drafts.len(),
+            accepted_draft_count: drafts
+                .iter()
+                .filter(|draft| draft.review_status == StoredPaperBookOcrReviewStatus::Accepted)
+                .count(),
+            unreviewed_draft_count: drafts
+                .iter()
+                .filter(|draft| draft.review_status == StoredPaperBookOcrReviewStatus::Unreviewed)
+                .count(),
+            rejected_draft_count: drafts
+                .iter()
+                .filter(|draft| draft.review_status == StoredPaperBookOcrReviewStatus::Rejected)
+                .count(),
+            superseded_draft_count: drafts
+                .iter()
+                .filter(|draft| draft.review_status == StoredPaperBookOcrReviewStatus::Superseded)
+                .count(),
+            selected_accepted_draft_id: selected_draft.map(|draft| draft.draft_id.clone()),
+            selected_accepted_draft_text_digest_present: selected_draft_digest_present,
+            selected_accepted_draft_extracted_text_present: selected_draft
+                .and_then(|draft| draft.extracted_text.as_deref())
+                .is_some_and(|text| !text.trim().is_empty()),
+            selected_accepted_draft_page_span_count: selected_draft_page_span_count,
+            selected_accepted_draft_page_span_pages: selected_draft_page_span_pages,
+            operator_review_recorded: selected_draft
+                .is_some_and(|draft| draft.reviewed_at.is_some() && draft.reviewed_by.is_some()),
+            raw_ocr_text_in_report: false,
+            confidence_buckets: paper_book_ocr_confidence_buckets(drafts),
+        },
+        dossier_evidence: PaperBookOcrCanonicalRehearsalDossierEvidence {
+            dossier_count: dossiers.len(),
+            metadata_only_dossier_present: !dossiers.is_empty(),
+            selected_dossier_id: selected_dossier.map(|dossier| dossier.dossier_id.clone()),
+            selected_dossier_source_digest_present,
+            selected_dossier_page_span_count,
+            selected_dossier_page_span_pages,
+            bound_execution_artifact_count: artifacts.len(),
+            selected_bound_execution_artifact_count: selected_artifact_count,
+            mutable_draft_act_artifact_present,
+            source_extracted_text_in_response: false,
+            source_extracted_text_in_ledger_event: false,
+        },
+        readiness: PaperBookOcrCanonicalRehearsalReadiness {
+            status: readiness_status,
+            scope: "local_rehearsal_only",
+            evidence_source: "stored_paper_import_ocr_draft_dossier_metadata",
+            blockers,
+            next_local_action,
+        },
+        no_claims: paper_book_ocr_canonical_rehearsal_no_claims(),
+        required_operator_actions: vec![
+            "review_preserved_import_metadata",
+            "review_accepted_ocr_draft_metadata",
+            "review_metadata_only_conversion_dossier",
+            "keep_any_future_canonical_conversion_in_a_separate_workflow",
+        ],
+        findings: vec![
+            PaperBookImportFinding::info(
+                "report_only",
+                "rehearsal is read-only; no import, draft, dossier, act, document, signature, archive, or ledger record was created",
+            ),
+            PaperBookImportFinding::info(
+                "local_evidence_only",
+                "readiness is computed only from stored local metadata and does not claim OCR accuracy or legal acceptance",
+            ),
+            PaperBookImportFinding::info(
+                "no_external_services",
+                "report generation did not call OCR providers, validators, signing services, archive certification, DGLAB, or legal services",
+            ),
+        ],
+    }
+}
+
+fn artifact_matches_selected_rehearsal_chain(
+    artifact: &StoredPaperBookOcrConversionExecutionArtifact,
+    draft: &StoredPaperBookOcrDraft,
+    dossier: &StoredPaperBookOcrConversionDossier,
+) -> bool {
+    artifact.draft_id == draft.draft_id
+        && artifact.dossier_id.as_deref() == Some(dossier.dossier_id.as_str())
+}
+
+fn paper_book_ocr_confidence_buckets(
+    drafts: &[StoredPaperBookOcrDraft],
+) -> PaperBookOcrCanonicalRehearsalConfidenceBuckets {
+    let mut buckets = PaperBookOcrCanonicalRehearsalConfidenceBuckets {
+        known_count: 0,
+        unknown_count: 0,
+        high_count: 0,
+        medium_count: 0,
+        low_count: 0,
+    };
+    for draft in drafts {
+        let Some(confidence) = draft.confidence else {
+            buckets.unknown_count += 1;
+            continue;
+        };
+        buckets.known_count += 1;
+        if confidence >= 0.90 {
+            buckets.high_count += 1;
+        } else if confidence >= 0.75 {
+            buckets.medium_count += 1;
+        } else {
+            buckets.low_count += 1;
+        }
+    }
+    buckets
+}
+
+fn paper_book_ocr_page_span_pages(spans: &[StoredPaperBookOcrPageSpan]) -> u32 {
+    spans.iter().fold(0u32, |total, span| {
+        total.saturating_add(
+            span.end_page
+                .saturating_sub(span.start_page)
+                .saturating_add(1),
+        )
+    })
+}
+
+fn paper_book_ocr_canonical_rehearsal_no_claims() -> PaperBookOcrCanonicalRehearsalNoClaims {
+    PaperBookOcrCanonicalRehearsalNoClaims {
+        records_mutated: false,
+        external_ocr_called: false,
+        external_validator_called: false,
+        external_legal_service_called: false,
+        canonical_conversion_claimed: false,
+        ocr_accuracy_claimed: false,
+        legal_review_claimed: false,
+        legal_validity_claimed: false,
+        canonical_minutes_claimed: false,
+        canonical_act_created: false,
+        canonical_document_created: false,
+        sealed_document_created: false,
+        signed_document_created: false,
+        archive_package_created: false,
+        archive_certification_claimed: false,
+        pdfa_created: false,
+        pdfa_certification_claimed: false,
+        pdfua_created: false,
+        pdfua_certification_claimed: false,
+        signature_created: false,
+        signing_requested: false,
+        signature_validity_claimed: false,
+        qualified_signature_claimed: false,
+        dglab_certification_claimed: false,
+        raw_ocr_text_in_report: false,
     }
 }
 
@@ -2265,12 +2699,7 @@ fn build_ocr_conversion_execution_artifact(
 }
 
 fn ocr_draft_source_text_digest(draft: &StoredPaperBookOcrDraft) -> Option<String> {
-    draft.text_digest.clone().or_else(|| {
-        draft.extracted_text.as_deref().map(|text| {
-            let digest: [u8; 32] = Sha256::digest(text.as_bytes()).into();
-            crate::hex::hex(&digest)
-        })
-    })
+    draft.text_digest.clone()
 }
 
 fn paper_book_ocr_draft_act_title(

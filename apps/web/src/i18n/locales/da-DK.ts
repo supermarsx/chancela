@@ -751,7 +751,7 @@ export const daDK: Catalog = {
   'books.detail.ocrSummary.sectionLabel':
     'Oversigt over OCR-dybde og dossier for papirbogen',
   'books.detail.preflight.sectionLabel':
-    'OCR-preflight til kanonisk konvertering af import {id}',
+    'Lokal OCR/kanonisk rapport for import {id}',
   'books.detail.preflight.metadataOnlyTitle': 'Kun metadata, skrivebeskyttet, ikke-kanonisk',
   'books.detail.ocrDraft.sectionLabel': 'OCR-udkast for import {id}',
   'books.detail.ocrDraft.reviewTitle': 'OCR-udkast og supplerende gennemgang',

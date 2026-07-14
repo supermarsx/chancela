@@ -754,7 +754,7 @@ export const itIT: Catalog = {
   'books.detail.ocrSummary.sectionLabel':
     'Riepilogo della profondità OCR e del dossier del libro cartaceo',
   'books.detail.preflight.sectionLabel':
-    'Verifica preliminare di conversione canonica OCR dell’importazione {id}',
+    'Report OCR/canonico locale dell’importazione {id}',
   'books.detail.preflight.metadataOnlyTitle': 'Solo metadati, sola lettura, non canonico',
   'books.detail.ocrDraft.sectionLabel': 'Bozze OCR dell’importazione {id}',
   'books.detail.ocrDraft.reviewTitle': 'Bozze OCR e revisione ausiliaria',

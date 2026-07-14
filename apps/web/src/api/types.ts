@@ -6703,6 +6703,111 @@ export interface PaperBookImportView {
   bytes_download: string;
 }
 
+export interface PaperBookOcrCanonicalRehearsalImportEvidence {
+  import_present: boolean;
+  preserved_package_present: boolean;
+  book_ref: string;
+  ocr_status: PaperBookOcrStatus;
+  page_count: number;
+  source_page_range: PaperBookPageRange;
+  original_ata_number_range: PaperBookOriginalAtaNumberRange | null;
+  package_digest_present: boolean;
+  package_size_bytes: number;
+  source_filename_present: boolean;
+  bytes_in_report: boolean;
+  non_canonical: boolean;
+}
+
+export interface PaperBookOcrCanonicalRehearsalConfidenceBuckets {
+  known_count: number;
+  unknown_count: number;
+  high_count: number;
+  medium_count: number;
+  low_count: number;
+}
+
+export interface PaperBookOcrCanonicalRehearsalOcrEvidence {
+  draft_count: number;
+  accepted_draft_count: number;
+  unreviewed_draft_count: number;
+  rejected_draft_count: number;
+  superseded_draft_count: number;
+  selected_accepted_draft_id: string | null;
+  selected_accepted_draft_text_digest_present: boolean;
+  selected_accepted_draft_extracted_text_present: boolean;
+  selected_accepted_draft_page_span_count: number;
+  selected_accepted_draft_page_span_pages: number;
+  operator_review_recorded: boolean;
+  raw_ocr_text_in_report: boolean;
+  confidence_buckets: PaperBookOcrCanonicalRehearsalConfidenceBuckets;
+}
+
+export interface PaperBookOcrCanonicalRehearsalDossierEvidence {
+  dossier_count: number;
+  metadata_only_dossier_present: boolean;
+  selected_dossier_id: string | null;
+  selected_dossier_source_digest_present: boolean;
+  selected_dossier_page_span_count: number;
+  selected_dossier_page_span_pages: number;
+  bound_execution_artifact_count: number;
+  selected_bound_execution_artifact_count: number;
+  mutable_draft_act_artifact_present: boolean;
+  source_extracted_text_in_response: boolean;
+  source_extracted_text_in_ledger_event: boolean;
+}
+
+export interface PaperBookOcrCanonicalRehearsalReadiness {
+  status: 'blocked' | 'local_rehearsal_ready' | string;
+  scope: 'local_rehearsal_only' | string;
+  evidence_source: string;
+  blockers: PaperBookCanonicalConversionPreflightBlocker[];
+  next_local_action: string | null;
+}
+
+export interface PaperBookOcrCanonicalRehearsalNoClaims {
+  records_mutated: boolean;
+  external_ocr_called: boolean;
+  external_validator_called: boolean;
+  external_legal_service_called: boolean;
+  canonical_conversion_claimed: boolean;
+  ocr_accuracy_claimed: boolean;
+  legal_review_claimed: boolean;
+  legal_validity_claimed: boolean;
+  canonical_minutes_claimed: boolean;
+  canonical_act_created: boolean;
+  canonical_document_created: boolean;
+  sealed_document_created: boolean;
+  signed_document_created: boolean;
+  archive_package_created: boolean;
+  archive_certification_claimed: boolean;
+  pdfa_created: boolean;
+  pdfa_certification_claimed: boolean;
+  pdfua_created: boolean;
+  pdfua_certification_claimed: boolean;
+  signature_created: boolean;
+  signing_requested: boolean;
+  signature_validity_claimed: boolean;
+  qualified_signature_claimed: boolean;
+  dglab_certification_claimed: boolean;
+  raw_ocr_text_in_report: boolean;
+}
+
+/** `GET /v1/books/paper-import/{id}/ocr-canonical-rehearsal` local report. */
+export interface PaperBookOcrCanonicalRehearsalReport {
+  report_kind: 'paper_book_ocr_canonical_rehearsal';
+  dry_run: true;
+  rehearsal_scope: 'local_ocr_canonical_conversion_rehearsal' | string;
+  legal_notice: string;
+  import_id: string;
+  source_import: PaperBookOcrCanonicalRehearsalImportEvidence;
+  ocr_evidence: PaperBookOcrCanonicalRehearsalOcrEvidence;
+  dossier_evidence: PaperBookOcrCanonicalRehearsalDossierEvidence;
+  readiness: PaperBookOcrCanonicalRehearsalReadiness;
+  no_claims: PaperBookOcrCanonicalRehearsalNoClaims;
+  required_operator_actions: string[];
+  findings: PaperBookImportFinding[];
+}
+
 /** `POST /v1/books/{id}/start-over` request (forward-writing lifecycle op; reason + a
  *  fresh-book opening spec). Non-destructive: the old book is archived + chained. */
 export interface StartOverBookBody {

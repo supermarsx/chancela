@@ -61,6 +61,7 @@ import type {
   PaperBookImportValidateBody,
   PaperBookImportPreserveBody,
   PaperBookImportView,
+  PaperBookOcrCanonicalRehearsalReport,
   PaperBookOcrConversionDossierView,
   PaperBookOcrDraftCanonicalDraftResponse,
   PaperBookOcrDraftCreateBody,
@@ -147,6 +148,8 @@ export const keys = {
     ['books', 'paper-imports', importId, 'ocr-drafts'] as const,
   paperBookOcrConversionDossiers: (importId: string) =>
     ['books', 'paper-imports', importId, 'conversion-dossiers'] as const,
+  paperBookOcrCanonicalRehearsal: (importId: string) =>
+    ['books', 'paper-imports', importId, 'ocr-canonical-rehearsal'] as const,
   act: (id: string) => ['acts', id] as const,
   compliance: (id: string) => ['acts', id, 'compliance'] as const,
   actFollowUps: (id: string) => ['acts', id, 'follow-ups'] as const,
@@ -545,6 +548,9 @@ export function useRunPaperBookImportOcr(bookRef?: string) {
       }
       void qc.invalidateQueries({ queryKey: ['books', 'paper-imports'] });
       void qc.invalidateQueries({ queryKey: keys.paperBookOcrDrafts(result.import_id) });
+      void qc.invalidateQueries({
+        queryKey: keys.paperBookOcrCanonicalRehearsal(result.import_id),
+      });
       void qc.invalidateQueries({ queryKey: ['ledger'] });
     },
   });
@@ -579,6 +585,9 @@ export function useCreatePaperBookOcrDraft() {
         upsertPaperBookOcrDraft(rows, draft),
       );
       void qc.invalidateQueries({ queryKey: keys.paperBookOcrDrafts(draft.import_id) });
+      void qc.invalidateQueries({
+        queryKey: keys.paperBookOcrCanonicalRehearsal(draft.import_id),
+      });
       void qc.invalidateQueries({ queryKey: ['ledger'] });
     },
   });
@@ -601,6 +610,9 @@ export function useReviewPaperBookOcrDraft() {
         upsertPaperBookOcrDraft(rows, draft),
       );
       void qc.invalidateQueries({ queryKey: keys.paperBookOcrDrafts(draft.import_id) });
+      void qc.invalidateQueries({
+        queryKey: keys.paperBookOcrCanonicalRehearsal(draft.import_id),
+      });
       void qc.invalidateQueries({ queryKey: ['ledger'] });
     },
   });
@@ -615,6 +627,9 @@ export function useCreatePaperBookOcrDraftActDraft(bookId?: string) {
       qc.setQueryData(keys.act(result.act.id), result.act);
       void qc.invalidateQueries({ queryKey: keys.bookActs(bookId ?? result.act.book_id) });
       void qc.invalidateQueries({ queryKey: keys.act(result.act.id) });
+      void qc.invalidateQueries({
+        queryKey: keys.paperBookOcrCanonicalRehearsal(result.import_id),
+      });
       void qc.invalidateQueries({ queryKey: ['ledger'] });
     },
   });
@@ -624,6 +639,15 @@ export function usePaperBookOcrConversionDossiers(importId: string) {
   return useQuery({
     queryKey: keys.paperBookOcrConversionDossiers(importId),
     queryFn: () => api.listPaperBookOcrConversionDossiers(importId),
+    enabled: !!importId,
+    retry: false,
+  });
+}
+
+export function usePaperBookOcrCanonicalRehearsal(importId: string) {
+  return useQuery<PaperBookOcrCanonicalRehearsalReport>({
+    queryKey: keys.paperBookOcrCanonicalRehearsal(importId),
+    queryFn: () => api.getPaperBookOcrCanonicalRehearsal(importId),
     enabled: !!importId,
     retry: false,
   });
@@ -654,6 +678,9 @@ export function useCreatePaperBookOcrConversionDossier() {
       );
       void qc.invalidateQueries({
         queryKey: keys.paperBookOcrConversionDossiers(dossier.import_id),
+      });
+      void qc.invalidateQueries({
+        queryKey: keys.paperBookOcrCanonicalRehearsal(dossier.import_id),
       });
       void qc.invalidateQueries({ queryKey: ['ledger'] });
     },
@@ -2556,8 +2583,13 @@ export function usePrivacyRetentionCandidateResolutions(enabled = true) {
 export function useRecordPrivacyRetentionCandidateResolution() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ candidateId, body }: { candidateId: string; body: RetentionCandidateResolutionBody }) =>
-      api.recordRetentionCandidateResolution(candidateId, body),
+    mutationFn: ({
+      candidateId,
+      body,
+    }: {
+      candidateId: string;
+      body: RetentionCandidateResolutionBody;
+    }) => api.recordRetentionCandidateResolution(candidateId, body),
     onSuccess: (recorded) => {
       qc.setQueryData<RetentionCandidateResolutionRecord[]>(
         keys.privacyRetentionCandidateResolutions,

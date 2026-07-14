@@ -748,7 +748,7 @@ export const enGB: Catalog = {
     'Reviewed conversion execution evidence for dossier {id}',
   'books.detail.ocrDossier.createSectionLabel': 'Create OCR conversion dossier for {id}',
   'books.detail.ocrSummary.sectionLabel': 'Paper-book OCR and dossier depth summary',
-  'books.detail.preflight.sectionLabel': 'OCR canonical conversion preflight for import {id}',
+  'books.detail.preflight.sectionLabel': 'Local OCR/canonical report for import {id}',
   'books.detail.preflight.metadataOnlyTitle': 'Metadata-only, read-only, non-canonical',
   'books.detail.ocrDraft.sectionLabel': 'OCR drafts for import {id}',
   'books.detail.ocrDraft.reviewTitle': 'OCR drafts and auxiliary review',

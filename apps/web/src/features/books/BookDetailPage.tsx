@@ -21,6 +21,7 @@ import {
   useDownloadPaperBookImport,
   useEntity,
   useEnqueuePaperBookImportOcr,
+  usePaperBookOcrCanonicalRehearsal,
   usePaperBookOcrConversionDossiers,
   usePaperBookOcrDrafts,
   usePaperBookImports,
@@ -38,6 +39,7 @@ import type {
   PaperBookImportPreservationReport,
   PaperBookImportReport,
   PaperBookImportView,
+  PaperBookOcrCanonicalRehearsalReport,
   PaperBookOcrConversionDossierView,
   PaperBookOcrConversionExecutionArtifactView,
   PaperBookOcrDraftCanonicalDraftResponse,
@@ -267,8 +269,53 @@ function noClaimLabel(value: boolean): string {
   return value ? 'sim' : 'não';
 }
 
-function paperBookPreflightStatusLabel(blockers: string[]): string {
-  return blockers.length ? 'bloqueado' : 'evidência local reunida para revisão externa';
+function paperBookRehearsalStatusLabel(status: string): string {
+  switch (status) {
+    case 'local_rehearsal_ready':
+      return 'evidência local reunida';
+    case 'blocked':
+      return 'bloqueado por metadados locais';
+    default:
+      return status;
+  }
+}
+
+const PAPER_BOOK_REHEARSAL_NO_CLAIM_FLAGS: Array<
+  keyof PaperBookOcrCanonicalRehearsalReport['no_claims']
+> = [
+  'records_mutated',
+  'external_ocr_called',
+  'external_validator_called',
+  'external_legal_service_called',
+  'canonical_conversion_claimed',
+  'ocr_accuracy_claimed',
+  'legal_review_claimed',
+  'legal_validity_claimed',
+  'canonical_minutes_claimed',
+  'canonical_act_created',
+  'canonical_document_created',
+  'sealed_document_created',
+  'signed_document_created',
+  'archive_package_created',
+  'archive_certification_claimed',
+  'pdfa_created',
+  'pdfa_certification_claimed',
+  'pdfua_created',
+  'pdfua_certification_claimed',
+  'signature_created',
+  'signing_requested',
+  'signature_validity_claimed',
+  'qualified_signature_claimed',
+  'dglab_certification_claimed',
+  'raw_ocr_text_in_report',
+];
+
+function paperBookRehearsalNoClaimText(
+  noClaims: PaperBookOcrCanonicalRehearsalReport['no_claims'],
+): string {
+  return PAPER_BOOK_REHEARSAL_NO_CLAIM_FLAGS.map(
+    (flag) => `${flag}: ${String(noClaims[flag])}`,
+  ).join(' · ');
 }
 
 function paperBookOcrTextPreview(draft: PaperBookOcrDraftView): string {
@@ -348,11 +395,15 @@ function LegalHoldPanel({ bookId }: { bookId: string }) {
           <>
             <InlineWarning
               tone={active ? 'warn' : 'info'}
-              title={active ? t('books.detail.legalHold.stateActive') : t('books.detail.legalHold.stateNone')}
+              title={
+                active
+                  ? t('books.detail.legalHold.stateActive')
+                  : t('books.detail.legalHold.stateNone')
+              }
             >
               A retenção legal bloqueia o descarte por regras de retenção enquanto estiver ativa.
-              Este painel mostra evidência local de estado/revisão e não aprova descarte nem
-              declara cumprimento legal.
+              Este painel mostra evidência local de estado/revisão e não aprova descarte nem declara
+              cumprimento legal.
             </InlineWarning>
             <dl className="deflist">
               <div>
@@ -495,7 +546,10 @@ function PaperBookOcrDraftReviewForm({
 
   return (
     <form className="form" aria-label={t('books.detail.ocrReview.formLabel')} onSubmit={submit}>
-      <Field label={t('books.detail.ocrReview.statusLabel')} htmlFor={`ocr-review-status-${draft.draft_id}`}>
+      <Field
+        label={t('books.detail.ocrReview.statusLabel')}
+        htmlFor={`ocr-review-status-${draft.draft_id}`}
+      >
         <Select
           id={`ocr-review-status-${draft.draft_id}`}
           value={status}
@@ -853,10 +907,7 @@ function PaperBookOcrDossierReviewSummary({
       !acceptedDossier.source_extracted_text_in_ledger_event);
 
   return (
-    <section
-      className="stack--tight"
-      aria-label={t('books.detail.ocrSummary.sectionLabel')}
-    >
+    <section className="stack--tight" aria-label={t('books.detail.ocrSummary.sectionLabel')}>
       <p className="card__label">Resumo OCR/dossier derivado</p>
       <dl className="deflist deflist--tight">
         <div>
@@ -927,99 +978,102 @@ function PaperBookOcrDossierReviewSummary({
   );
 }
 
-function PaperBookCanonicalConversionPreflightGate({
-  row,
-  dossiers,
-  drafts,
+function PaperBookOcrCanonicalRehearsalPanel({
+  report,
   loading,
+  error,
+  importId,
 }: {
-  row: PaperBookImportView;
-  dossiers: PaperBookOcrConversionDossierView[];
-  drafts: PaperBookOcrDraftView[];
+  report: PaperBookOcrCanonicalRehearsalReport | undefined;
   loading: boolean;
+  error: unknown;
+  importId: string;
 }) {
   const t = useT();
-  const acceptedDraft = drafts.find((draft) => draft.review_status === 'accepted') ?? null;
-  const acceptedDossier = acceptedDraft
-    ? (dossiers.find((dossier) => dossier.draft_id === acceptedDraft.draft_id) ?? null)
-    : null;
-  const blockers = [
-    ...(acceptedDraft ? [] : ['accepted_ocr_draft_required']),
-    ...(loading || acceptedDossier ? [] : ['metadata_only_conversion_dossier_required']),
-  ];
-  const sourceTextDigest =
-    acceptedDossier?.source_text_digest ?? acceptedDraft?.text_digest ?? null;
+  const blockers = report?.readiness.blockers.map((blocker) => blocker.code) ?? [];
 
   return (
     <section
       className="stack--tight"
-      aria-label={t('books.detail.preflight.sectionLabel', { id: row.import_id })}
+      aria-label={t('books.detail.preflight.sectionLabel', { id: importId })}
     >
-      <p className="card__label">Preflight canónico OCR read-only</p>
+      <p className="card__label">Relatório OCR/canónico local</p>
       <InlineWarning tone="info" title={t('books.detail.preflight.metadataOnlyTitle')}>
-        Evidência bounded para revisão de conversão canónica posterior. Não executa conversão, não
-        promove rascunhos e não aceita legalmente o conteúdo.
+        Rehearsal local calculado a partir de metadados preservados. Não executa OCR, não cria
+        documentos canónicos, não assina e não valida legalmente.
       </InlineWarning>
-      <dl className="deflist deflist--tight">
-        <div>
-          <dt>Estado</dt>
-          <dd>{loading ? 'a carregar dossier' : paperBookPreflightStatusLabel(blockers)}</dd>
-        </div>
-        <div>
-          <dt>Âmbito</dt>
-          <dd>ocr_to_canonical_conversion_preflight</dd>
-        </div>
-        <div>
-          <dt>Importação preservada</dt>
-          <dd>
-            <span className="mono">{row.import_id}</span> · páginas {paperBookPageRange(row)} ·
-            digest <span className="mono">{row.sha256.slice(0, 16)}...</span>
-          </dd>
-        </div>
-        <div>
-          <dt>Rascunho OCR aceite</dt>
-          <dd>
-            {acceptedDraft ? (
-              <span className="mono">{acceptedDraft.draft_id}</span>
-            ) : (
-              'accepted_ocr_draft_required'
-            )}
-          </dd>
-        </div>
-        <div>
-          <dt>Dossier metadata-only</dt>
-          <dd>
-            {loading
-              ? 'a carregar'
-              : acceptedDossier
-                ? acceptedDossier.dossier_id
-                : 'metadata_only_conversion_dossier_required'}
-          </dd>
-        </div>
-        <div>
-          <dt>Digest OCR de referência</dt>
-          <dd>
-            {sourceTextDigest ? <span className="mono">{sourceTextDigest}</span> : 'não exposto'}
-          </dd>
-        </div>
-        <div>
-          <dt>Bloqueios</dt>
-          <dd>{blockers.length ? blockers.join(', ') : 'nenhum bloqueio de metadados local'}</dd>
-        </div>
-        <div>
-          <dt>Limite legal</dt>
-          <dd>legal_acceptance_recorded_is_operator_evidence_only</dd>
-        </div>
-        <div>
-          <dt>Sem produção</dt>
-          <dd>
-            raw_ocr_text_in_report: false · canonical_act_created: false ·
-            canonical_document_created: false · signature_created: false · signing_requested: false
-            · signature_validity_claimed: false · qualified_signature_claimed: false ·
-            legal_validity_claimed: false · PDF/A: false · PDF/UA: false
-          </dd>
-        </div>
-      </dl>
+      {loading ? (
+        <SkeletonDeflist rows={6} />
+      ) : error ? (
+        <ErrorNote error={error} />
+      ) : report ? (
+        <dl className="deflist deflist--tight">
+          <div>
+            <dt>Estado</dt>
+            <dd>{paperBookRehearsalStatusLabel(report.readiness.status)}</dd>
+          </div>
+          <div>
+            <dt>Âmbito</dt>
+            <dd>{report.rehearsal_scope}</dd>
+          </div>
+          <div>
+            <dt>Importação preservada</dt>
+            <dd>
+              <span className="mono">{report.import_id}</span> · páginas{' '}
+              {report.source_import.source_page_range.from} a{' '}
+              {report.source_import.source_page_range.to} · digest presente:{' '}
+              {noClaimLabel(report.source_import.package_digest_present)}
+            </dd>
+          </div>
+          <div>
+            <dt>Rascunhos OCR</dt>
+            <dd>
+              total {report.ocr_evidence.draft_count} · aceites{' '}
+              {report.ocr_evidence.accepted_draft_count} · desconhecidos{' '}
+              {report.ocr_evidence.confidence_buckets.unknown_count}
+              {report.ocr_evidence.selected_accepted_draft_id ? (
+                <>
+                  {' '}
+                  · <span className="mono">{report.ocr_evidence.selected_accepted_draft_id}</span>
+                </>
+              ) : null}
+            </dd>
+          </div>
+          <div>
+            <dt>Dossier</dt>
+            <dd>
+              total {report.dossier_evidence.dossier_count} · metadados:{' '}
+              {noClaimLabel(report.dossier_evidence.metadata_only_dossier_present)}
+              {report.dossier_evidence.selected_dossier_id ? (
+                <>
+                  {' '}
+                  · <span className="mono">{report.dossier_evidence.selected_dossier_id}</span>
+                </>
+              ) : null}
+            </dd>
+          </div>
+          <div>
+            <dt>Artefactos</dt>
+            <dd>
+              draft mutável:{' '}
+              {noClaimLabel(report.dossier_evidence.mutable_draft_act_artifact_present)}
+              {' · '}execuções ligadas: {report.dossier_evidence.bound_execution_artifact_count}
+            </dd>
+          </div>
+          <div>
+            <dt>Bloqueios</dt>
+            <dd>{blockers.length ? blockers.join(', ') : 'nenhum bloqueio local no relatório'}</dd>
+          </div>
+          <div>
+            <dt>Sem reivindicação</dt>
+            <dd>{paperBookRehearsalNoClaimText(report.no_claims)}</dd>
+          </div>
+        </dl>
+      ) : (
+        <EmptyState title="Relatório local indisponível">
+          A importação preservada ainda não devolveu relatório OCR/canónico local.
+        </EmptyState>
+      )}
     </section>
   );
 }
@@ -1029,6 +1083,7 @@ function PaperBookOcrDraftPanel({ row }: { row: PaperBookImportView }) {
   const toast = useToast();
   const drafts = usePaperBookOcrDrafts(row.import_id);
   const dossiers = usePaperBookOcrConversionDossiers(row.import_id);
+  const rehearsal = usePaperBookOcrCanonicalRehearsal(row.import_id);
   const create = useCreatePaperBookOcrDraft();
   const createActDraft = useCreatePaperBookOcrDraftActDraft(row.book_ref);
   const createDossier = useCreatePaperBookOcrConversionDossier();
@@ -1139,7 +1194,10 @@ function PaperBookOcrDraftPanel({ row }: { row: PaperBookImportView }) {
   }
 
   return (
-    <section className="stack--tight" aria-label={t('books.detail.ocrDraft.sectionLabel', { id: row.import_id })}>
+    <section
+      className="stack--tight"
+      aria-label={t('books.detail.ocrDraft.sectionLabel', { id: row.import_id })}
+    >
       <InlineWarning tone="info" title={t('books.detail.ocrDraft.reviewTitle')}>
         {PAPER_BOOK_OCR_DRAFT_COPY}
       </InlineWarning>
@@ -1148,13 +1206,17 @@ function PaperBookOcrDraftPanel({ row }: { row: PaperBookImportView }) {
         drafts={rows}
         loading={dossiers.isLoading}
       />
-      <PaperBookCanonicalConversionPreflightGate
-        row={row}
-        dossiers={dossiers.data ?? []}
-        drafts={rows}
-        loading={dossiers.isLoading}
+      <PaperBookOcrCanonicalRehearsalPanel
+        report={rehearsal.data}
+        loading={rehearsal.isLoading}
+        error={rehearsal.error}
+        importId={row.import_id}
       />
-      <form className="form" aria-label={t('books.detail.ocrDraft.createFormLabel')} onSubmit={submit}>
+      <form
+        className="form"
+        aria-label={t('books.detail.ocrDraft.createFormLabel')}
+        onSubmit={submit}
+      >
         <Field
           label={t('books.detail.ocrDraft.textLabel')}
           htmlFor={`ocr-text-${row.import_id}`}
@@ -1180,7 +1242,10 @@ function PaperBookOcrDraftPanel({ row }: { row: PaperBookImportView }) {
               placeholder={t('books.detail.ocrDraft.digestPlaceholder')}
             />
           </Field>
-          <Field label={t('books.detail.ocrDraft.startPageLabel')} htmlFor={`ocr-start-page-${row.import_id}`}>
+          <Field
+            label={t('books.detail.ocrDraft.startPageLabel')}
+            htmlFor={`ocr-start-page-${row.import_id}`}
+          >
             <Input
               id={`ocr-start-page-${row.import_id}`}
               type="number"
@@ -1189,7 +1254,10 @@ function PaperBookOcrDraftPanel({ row }: { row: PaperBookImportView }) {
               onChange={(event) => setStartPage(event.target.value)}
             />
           </Field>
-          <Field label={t('books.detail.ocrDraft.endPageLabel')} htmlFor={`ocr-end-page-${row.import_id}`}>
+          <Field
+            label={t('books.detail.ocrDraft.endPageLabel')}
+            htmlFor={`ocr-end-page-${row.import_id}`}
+          >
             <Input
               id={`ocr-end-page-${row.import_id}`}
               type="number"
@@ -1213,14 +1281,20 @@ function PaperBookOcrDraftPanel({ row }: { row: PaperBookImportView }) {
               onChange={(event) => setConfidence(event.target.value)}
             />
           </Field>
-          <Field label={t('books.detail.ocrDraft.engineLabel')} htmlFor={`ocr-engine-${row.import_id}`}>
+          <Field
+            label={t('books.detail.ocrDraft.engineLabel')}
+            htmlFor={`ocr-engine-${row.import_id}`}
+          >
             <Input
               id={`ocr-engine-${row.import_id}`}
               value={engineName}
               onChange={(event) => setEngineName(event.target.value)}
             />
           </Field>
-          <Field label={t('books.detail.ocrDraft.engineVersionLabel')} htmlFor={`ocr-engine-version-${row.import_id}`}>
+          <Field
+            label={t('books.detail.ocrDraft.engineVersionLabel')}
+            htmlFor={`ocr-engine-version-${row.import_id}`}
+          >
             <Input
               id={`ocr-engine-version-${row.import_id}`}
               value={engineVersion}

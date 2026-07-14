@@ -753,7 +753,7 @@ export const esES: Catalog = {
   'books.detail.ocrSummary.sectionLabel':
     'Resumen de profundidad OCR y expediente del libro en papel',
   'books.detail.preflight.sectionLabel':
-    'Comprobación previa de conversión canónica OCR de la importación {id}',
+    'Informe OCR/canónico local de la importación {id}',
   'books.detail.preflight.metadataOnlyTitle': 'Solo metadatos, solo lectura, no canónico',
   'books.detail.ocrDraft.sectionLabel': 'Borradores OCR de la importación {id}',
   'books.detail.ocrDraft.reviewTitle': 'Borradores OCR y revisión auxiliar',

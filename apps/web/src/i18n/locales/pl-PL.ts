@@ -752,7 +752,7 @@ export const plPL: Catalog = {
   'books.detail.ocrSummary.sectionLabel':
     'Podsumowanie zakresu OCR i dossier księgi papierowej',
   'books.detail.preflight.sectionLabel':
-    'Kontrola wstępna kanonicznej konwersji OCR importu {id}',
+    'Lokalny raport OCR/kanoniczny importu {id}',
   'books.detail.preflight.metadataOnlyTitle': 'Tylko metadane, tylko do odczytu, niekanoniczne',
   'books.detail.ocrDraft.sectionLabel': 'Szkice OCR importu {id}',
   'books.detail.ocrDraft.reviewTitle': 'Szkice OCR i weryfikacja pomocnicza',

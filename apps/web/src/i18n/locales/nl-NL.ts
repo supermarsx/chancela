@@ -750,7 +750,7 @@ export const nlNL: Catalog = {
   'books.detail.ocrSummary.sectionLabel':
     'Samenvatting van OCR-diepte en dossier van het papieren boek',
   'books.detail.preflight.sectionLabel':
-    'OCR-preflight voor canonieke conversie van import {id}',
+    'Lokaal OCR/canoniek rapport van import {id}',
   'books.detail.preflight.metadataOnlyTitle': 'Alleen metadata, alleen-lezen, niet-canoniek',
   'books.detail.ocrDraft.sectionLabel': 'OCR-concepten van import {id}',
   'books.detail.ocrDraft.reviewTitle': 'OCR-concepten en aanvullende controle',

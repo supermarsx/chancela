@@ -1244,6 +1244,10 @@ pub fn router(state: AppState) -> Router {
             get(paper_import::list_paper_book_ocr_conversion_dossiers),
         )
         .route(
+            "/v1/books/paper-import/{id}/ocr-canonical-rehearsal",
+            get(paper_import::get_paper_book_ocr_canonical_rehearsal),
+        )
+        .route(
             "/v1/books/paper-import/{id}/bytes",
             get(paper_import::get_paper_book_import_bytes),
         )

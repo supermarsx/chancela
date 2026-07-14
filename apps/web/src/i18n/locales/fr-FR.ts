@@ -757,7 +757,7 @@ export const frFR: Catalog = {
   'books.detail.ocrSummary.sectionLabel':
     'Résumé de la profondeur OCR et du dossier du registre papier',
   'books.detail.preflight.sectionLabel':
-    'Contrôle préalable de conversion canonique OCR de l’import {id}',
+    'Rapport OCR/canonique local de l’import {id}',
   'books.detail.preflight.metadataOnlyTitle':
     'Métadonnées uniquement, lecture seule, non canonique',
   'books.detail.ocrDraft.sectionLabel': 'Brouillons OCR de l’import {id}',

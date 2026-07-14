@@ -93,6 +93,7 @@ import type {
   PaperBookImportPreserveBody,
   PaperBookImportView,
   PaperBookImportValidateBody,
+  PaperBookOcrCanonicalRehearsalReport,
   PaperBookOcrConversionDossierView,
   PaperBookOcrDraftCanonicalDraftResponse,
   PaperBookOcrDraftCreateBody,
@@ -926,7 +927,10 @@ export const api = {
     get<RetentionDueCandidatesReport>('/v1/privacy/retention-due-candidates'),
   listRetentionCandidateResolutions: () =>
     get<RetentionCandidateResolutionRecord[]>('/v1/privacy/retention-candidate-resolutions'),
-  recordRetentionCandidateResolution: (candidateId: string, body: RetentionCandidateResolutionBody) =>
+  recordRetentionCandidateResolution: (
+    candidateId: string,
+    body: RetentionCandidateResolutionBody,
+  ) =>
     post<RetentionCandidateResolutionRecord>(
       `/v1/privacy/retention-due-candidates/${encodeURIComponent(candidateId)}/resolution`,
       body,
@@ -1158,6 +1162,10 @@ export const api = {
   listPaperBookOcrConversionDossiers: (id: string) =>
     get<PaperBookOcrConversionDossierView[]>(
       `/v1/books/paper-import/${encodeURIComponent(id)}/conversion-dossiers`,
+    ),
+  getPaperBookOcrCanonicalRehearsal: (id: string) =>
+    get<PaperBookOcrCanonicalRehearsalReport>(
+      `/v1/books/paper-import/${encodeURIComponent(id)}/ocr-canonical-rehearsal`,
     ),
   createPaperBookOcrConversionDossier: (importId: string, draftId: string) =>
     post<PaperBookOcrConversionDossierView>(

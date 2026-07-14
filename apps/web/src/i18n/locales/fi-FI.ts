@@ -749,7 +749,7 @@ export const fiFI: Catalog = {
   'books.detail.ocrSummary.sectionLabel':
     'Yhteenveto paperikirjan OCR-syvyydestä ja kansiosta',
   'books.detail.preflight.sectionLabel':
-    'OCR:n kanonisen muunnoksen esitarkistus tuonnille {id}',
+    'Paikallinen OCR/kanoninen raportti tuonnille {id}',
   'books.detail.preflight.metadataOnlyTitle': 'Vain metatiedot, vain luku, ei-kanoninen',
   'books.detail.ocrDraft.sectionLabel': 'Tuonnin {id} OCR-luonnokset',
   'books.detail.ocrDraft.reviewTitle': 'OCR-luonnokset ja täydentävä tarkistus',

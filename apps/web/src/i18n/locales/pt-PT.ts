@@ -760,7 +760,7 @@ export const ptPT = {
   'books.detail.ocrSummary.sectionLabel':
     'Resumo de profundidade OCR e dossier do livro em papel',
   'books.detail.preflight.sectionLabel':
-    'Preflight de conversão canónica OCR da importação {id}',
+    'Relatório OCR/canónico local da importação {id}',
   'books.detail.preflight.metadataOnlyTitle': 'Apenas metadados, só de leitura e não canónico',
   'books.detail.ocrDraft.sectionLabel': 'Rascunhos OCR da importação {id}',
   'books.detail.ocrDraft.reviewTitle': 'Rascunhos OCR e revisão auxiliar',
