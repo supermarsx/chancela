@@ -43,6 +43,9 @@ pub const MCP_CHRONOLOGY_REVIEW_SUMMARY_RESOURCE_URI: &str =
 /// Read-only MCP resource URI for local privacy-control review summaries.
 pub const MCP_PRIVACY_CONTROL_REVIEW_SUMMARY_RESOURCE_URI: &str =
     "chancela://mcp/privacy-control-review-summary";
+/// Read-only MCP resource URI for local document/archive review summaries.
+pub const MCP_DOCUMENT_ARCHIVE_REVIEW_SUMMARY_RESOURCE_URI: &str =
+    "chancela://mcp/document-archive-review-summary";
 
 const DRAFT_MINUTES_REVIEW_PROMPT_NAME: &str = "draft_minutes_human_review_checklist";
 const DRAFT_MINUTES_REVIEW_PROMPT_TITLE: &str = "Draft Minutes Human Review Checklist";
@@ -375,6 +378,17 @@ impl<T: HttpTransport> McpServer<T> {
                         "audience": ["user", "assistant"],
                         "priority": 0.65,
                     },
+                },
+                {
+                    "uri": MCP_DOCUMENT_ARCHIVE_REVIEW_SUMMARY_RESOURCE_URI,
+                    "name": "document_archive_review_summary",
+                    "title": "Document/Archive Review Summary",
+                    "description": "Read-only local document-bundle/archive evidence summary resource. Without arguments it returns static input guidance; with document_archive JSON it returns deterministic aggregate counts, technical evidence flags, PDF accessibility v10 summary fields, archive path counts, and missing-evidence blockers. Contains no secrets, performs no bridge, API, AI, legal-service, HTTP/SSE, or provider calls, does not expose raw reports, and makes no PDF/UA, DGLAB, legal-validity, signature-validity, archive-certification, provider-validation, external-validator-success, or legal-review claims.",
+                    "mimeType": "application/json",
+                    "annotations": {
+                        "audience": ["user", "assistant"],
+                        "priority": 0.65,
+                    },
                 }
             ]
         })
@@ -437,6 +451,19 @@ impl<T: HttpTransport> McpServer<T> {
         } else {
             None
         };
+        let document_archive_arguments = if uri == MCP_DOCUMENT_ARCHIVE_REVIEW_SUMMARY_RESOURCE_URI
+        {
+            if params.keys().any(|key| key != "uri" && key != "arguments") {
+                return JsonRpcResponse::error(
+                    id,
+                    codes::INVALID_PARAMS,
+                    "document/archive review summary resource accepts only uri or uri plus arguments",
+                );
+            }
+            params.get("arguments")
+        } else {
+            None
+        };
         let payload = match uri {
             MCP_STATUS_RESOURCE_URI => self.status_resource_payload(),
             MCP_SPEC_09_COVERAGE_RESOURCE_URI => self.spec_09_coverage_resource_payload(),
@@ -481,6 +508,23 @@ impl<T: HttpTransport> McpServer<T> {
                     }
                 },
                 None => self.privacy_control_review_summary_resource_payload(),
+            },
+            MCP_DOCUMENT_ARCHIVE_REVIEW_SUMMARY_RESOURCE_URI => match document_archive_arguments {
+                Some(arguments) => {
+                    match document_archive_review_summary_report_payload(arguments) {
+                        Ok(payload) => payload,
+                        Err(message) => {
+                            return JsonRpcResponse::error(
+                                id,
+                                codes::INVALID_PARAMS,
+                                format!(
+                                    "invalid document/archive review summary arguments: {message}"
+                                ),
+                            );
+                        }
+                    }
+                }
+                None => self.document_archive_review_summary_resource_payload(),
             },
             _ => {
                 return JsonRpcResponse::error_with_data(
@@ -593,6 +637,7 @@ impl<T: HttpTransport> McpServer<T> {
                             MCP_DRAFT_SIGNED_COMPARISON_REVIEW_RESOURCE_URI,
                             MCP_CHRONOLOGY_REVIEW_SUMMARY_RESOURCE_URI,
                             MCP_PRIVACY_CONTROL_REVIEW_SUMMARY_RESOURCE_URI,
+                            MCP_DOCUMENT_ARCHIVE_REVIEW_SUMMARY_RESOURCE_URI,
                         ],
                         "prompts": prompt_names,
                     },
@@ -633,12 +678,13 @@ impl<T: HttpTransport> McpServer<T> {
                     MCP_DRAFT_SIGNED_COMPARISON_REVIEW_RESOURCE_URI,
                     MCP_CHRONOLOGY_REVIEW_SUMMARY_RESOURCE_URI,
                     MCP_PRIVACY_CONTROL_REVIEW_SUMMARY_RESOURCE_URI,
+                    MCP_DOCUMENT_ARCHIVE_REVIEW_SUMMARY_RESOURCE_URI,
                 ],
                 "prompts": [
                     WORKFLOW_PROVENANCE_REVIEW_PROMPT_NAME,
                     DRAFT_SIGNED_COMPARISON_REVIEW_PROMPT_NAME,
                 ],
-                "purpose": "offline_human_review_guidance_plus_deterministic_local_draft_signed_chronology_and_privacy_control_metadata_summaries",
+                "purpose": "offline_human_review_guidance_plus_deterministic_local_draft_signed_chronology_privacy_control_and_document_archive_metadata_summaries",
                 "ai_01_claimed": false,
                 "ai_02_claimed": false,
                 "full_ai_mcp_completion_claimed": false,
@@ -957,6 +1003,113 @@ impl<T: HttpTransport> McpServer<T> {
                 "Use this summary as advisory local review assistance only.",
                 "No bridge, API, AI-provider, legal-service, provider, notification, transfer, filing, certification, disposal, deletion, anonymization, redaction, or erasure action is performed.",
                 "Normal platform permissions, privacy workflow gates, legal review, and human verification remain required."
+            ],
+        })
+    }
+
+    fn document_archive_review_summary_resource_payload(&self) -> Value {
+        json!({
+            "kind": "chancela_mcp_document_archive_review_summary",
+            "schema_version": 1,
+            "source": "static_mcp_review_aid",
+            "offline": true,
+            "static": true,
+            "local_json_only": true,
+            "arguments": [],
+            "optional_arguments": [
+                {
+                    "name": "document_archive",
+                    "description": "Caller-supplied local JSON object containing document_bundle, archive_package, evidence_index, validation_report, pdf_accessibility, signed_document, and external_validator_reports evidence. The resource returns deterministic counts, bounded statuses, no-claim observations, and missing-evidence blockers only; it does not echo raw reports or raw document bytes.",
+                }
+            ],
+            "expected_input_shape": {
+                "resources_read_params": {
+                    "uri": MCP_DOCUMENT_ARCHIVE_REVIEW_SUMMARY_RESOURCE_URI,
+                    "arguments": {
+                        "document_archive": {
+                            "document_bundle": "optional bundle JSON returned or assembled by the caller",
+                            "archive_package": "optional archive/package manifest or evidence-index JSON supplied by the caller",
+                            "validation_report": "optional local validation-report object",
+                            "pdf_accessibility": "optional chancela-pdf-accessibility-evidence/v1 sidecar or report object",
+                            "signed_document": "optional signed-document technical metadata object",
+                            "external_validator_reports": "optional metadata attachment summary object or array"
+                        }
+                    }
+                }
+            },
+            "summary_categories": [
+                {
+                    "id": "validation_and_fixity",
+                    "title": "Validation and fixity",
+                    "checkpoints": [
+                        "Report whether a validation report/status marker is present using bounded status buckets.",
+                        "Count digest/checksum/SHA-256 fields without echoing digest values.",
+                        "Flag missing validation or fixity evidence as local review blockers only.",
+                    ],
+                },
+                {
+                    "id": "signed_document_state",
+                    "title": "Signed document state",
+                    "checkpoints": [
+                        "Detect signed-document technical metadata and bounded status labels when supplied.",
+                        "Count signature metadata and signed-PDF digest presence without validating signatures.",
+                        "Keep signature-validity, qualified-signature, and legal-validity claims false.",
+                    ],
+                },
+                {
+                    "id": "external_validator_attachments",
+                    "title": "External validator attachments",
+                    "checkpoints": [
+                        "Count caller-supplied external-validator metadata attachment objects and bounded attachment statuses.",
+                        "Count raw-report references without exposing raw report bytes, content, or payload fields.",
+                        "Do not infer provider validation, external-validator success, trust validation, certification, or legal acceptance.",
+                    ],
+                },
+                {
+                    "id": "pdf_accessibility_v10",
+                    "title": "PDF accessibility v10",
+                    "checkpoints": [
+                        "Summarize report-version counts, known PDF/UA blocker codes, and table row/column header counts from supplied local JSON.",
+                        "Count explicit false no-claim flags for PDF/UA, DGLAB, legal validity, signature validity, archive certification, provider validation, external-validator success, and legal review.",
+                        "Treat truthy no-claim fields as blockers, never as conformance or certification.",
+                    ],
+                },
+                {
+                    "id": "archive_paths",
+                    "title": "Archive paths",
+                    "checkpoints": [
+                        "Count evidence-index, archive-evidence, PDF-accessibility, external-validator, canonical-PDF, and signed-PDF path markers without dumping raw reports.",
+                        "Keep output local and advisory; normal source review and platform permissions remain required.",
+                    ],
+                },
+            ],
+            "bridge_calls": false,
+            "api_calls": false,
+            "provider_calls": false,
+            "ai_provider_calls": false,
+            "legal_service_calls": false,
+            "http_sse_transport_added": false,
+            "raw_reports_exposed": false,
+            "raw_document_bytes_exposed": false,
+            "secrets_in_resource": false,
+            "claims": {
+                "pdf_ua_conformance": false,
+                "dglab_certification": false,
+                "legal_validity": false,
+                "signature_validity": false,
+                "qualified_signature": false,
+                "archive_certification": false,
+                "provider_validation": false,
+                "external_validator_success": false,
+                "trust_validation": false,
+                "legal_review": false,
+            },
+            "operator_boundaries": [
+                "Use only document/archive JSON supplied in resources/read arguments.",
+                "Do not include credentials, API keys, secrets, raw report bytes, raw PDF bytes, or unnecessary personal data in caller JSON.",
+                "Use this summary as advisory local review assistance only.",
+                "No bridge, API, HTTP/SSE, AI-provider, legal-service, signature, archive-certification, external-validator, trust-list, DGLAB, or provider calls are made.",
+                "No PDF/UA conformance, DGLAB certification, legal validity, signature validity, archive certification, provider validation, external-validator success, trust validation, or legal review is claimed."
             ],
         })
     }
@@ -1875,6 +2028,416 @@ const PRIVACY_FALSE_CLAIM_FLAG_SPECS: &[PrivacyFalseClaimFlagSpec] = &[
     },
 ];
 
+#[derive(Debug, Clone, Copy)]
+struct DocumentArchiveNoClaimFlagSpec {
+    id: &'static str,
+    field_names: &'static [&'static str],
+}
+
+#[derive(Debug, Default)]
+struct DocumentArchivePathCounts {
+    path_value_count: usize,
+    archive_evidence_path_count: usize,
+    evidence_index_path_count: usize,
+    pdf_accessibility_path_count: usize,
+    external_validator_path_count: usize,
+    canonical_pdf_path_count: usize,
+    signed_pdf_path_count: usize,
+    evidence_index_object_present: bool,
+}
+
+#[derive(Debug, Default)]
+struct DocumentArchiveFixityCounts {
+    digest_field_count: usize,
+    sha256_field_count: usize,
+    checksum_field_count: usize,
+    fixity_section_count: usize,
+}
+
+#[derive(Debug, Default)]
+struct DocumentArchiveSignedDocumentSummary {
+    present: bool,
+    status: String,
+    signed_pdf_digest_present: bool,
+    signature_metadata_present: bool,
+    timestamp_token_present: bool,
+}
+
+#[derive(Debug, Default)]
+struct DocumentArchiveExternalValidatorSummary {
+    sections_present: usize,
+    attachment_count: usize,
+    status_counts: BTreeMap<String, usize>,
+    raw_report_reference_count: usize,
+    raw_payload_field_count: usize,
+}
+
+#[derive(Debug, Default)]
+struct DocumentArchivePdfAccessibilitySummary {
+    evidence_section_count: usize,
+    report_version_counts: BTreeMap<String, usize>,
+    v10_report_count: usize,
+    blocker_counts: BTreeMap<String, usize>,
+    blocker_total: usize,
+    table_semantics_object_count: usize,
+    row_header_cell_count_total: usize,
+    column_header_cell_count_total: usize,
+    table_rows_missing_header_count_total: usize,
+    row_header_scope_true_count: usize,
+    column_header_scope_true_count: usize,
+}
+
+const DOCUMENT_ARCHIVE_VALIDATION_STATUS_PATHS: &[&str] = &[
+    "document_bundle.validation_report.status",
+    "archive_package.validation_report.status",
+    "validation_report.status",
+    "validation.status",
+    "report.status",
+    "status",
+    "evidence_status",
+];
+const DOCUMENT_ARCHIVE_SIGNED_STATUS_PATHS: &[&str] = &[
+    "document_bundle.validation_report.signed_document.status",
+    "archive_package.signed_document.status",
+    "validation_report.signed_document.status",
+    "signed_document.status",
+    "signed.status",
+    "signature.status",
+    "signature_status",
+    "status",
+];
+const DOCUMENT_ARCHIVE_EXTERNAL_VALIDATOR_STATUS_PATHS: &[&str] = &[
+    "attachment_status",
+    "bundle_attachment_status",
+    "evidence_status",
+    "status",
+    "raw_report.preservation_status",
+    "raw_report.status",
+];
+const DOCUMENT_ARCHIVE_VALIDATION_REPORT_PATHS: &[&str] = &[
+    "document_bundle.validation_report",
+    "archive_package.validation_report",
+    "validation_report",
+    "validation.report",
+    "report",
+];
+const DOCUMENT_ARCHIVE_VALIDATION_REPORT_MARKER_PATHS: &[&str] = &[
+    "document_bundle.validation_report.report_kind",
+    "archive_package.validation_report.report_kind",
+    "validation_report.report_kind",
+    "validation.report.report_kind",
+    "report.report_kind",
+    "report_kind",
+];
+const DOCUMENT_ARCHIVE_STATUS_LABELS: &[&str] = &[
+    "technical_ok",
+    "technical_warning",
+    "technical_error",
+    "technical",
+    "present",
+    "attached",
+    "signed",
+    "unsigned",
+    "not_present",
+    "not_available",
+    "not_attempted",
+    "missing",
+    "blocked",
+    "failed",
+    "error",
+    "warning",
+    "warnings",
+    "valid",
+    "invalid",
+    "passed",
+    "pass",
+    "ok",
+    "partial",
+    "unknown",
+    "pdf_accessibility_report_attached",
+    "pdf_accessibility_report_unavailable",
+    "pdf_accessibility_evidence_attached",
+    "pdf_accessibility_evidence_unavailable",
+    "pdf_accessibility_evidence_partially_available",
+    "external_validator_report_metadata_attached",
+    "no_external_validator_report_metadata_attached",
+    "raw_report_manifest_only",
+    "raw_report_attached",
+];
+const DOCUMENT_ARCHIVE_PDF_UA_BLOCKER_LABELS: &[&str] = &[
+    "missing_struct_tree_root",
+    "content_is_not_tagged",
+    "missing_role_map",
+    "role_map_incomplete",
+    "heading_hierarchy_skips_levels",
+    "unsupported_heading_level",
+    "key_value_tables_not_tagged_as_tables",
+    "vote_tables_not_tagged_as_tables",
+    "vote_table_headers_not_tagged",
+    "no_alt_text_model",
+    "non_text_content_not_accounted_for",
+    "layout_artifacts_not_marked",
+    "limited_tagged_structure",
+];
+const DOCUMENT_ARCHIVE_NO_CLAIM_FLAG_SPECS: &[DocumentArchiveNoClaimFlagSpec] = &[
+    DocumentArchiveNoClaimFlagSpec {
+        id: "pdf_ua_conformance",
+        field_names: &[
+            "pdf_ua_claimed",
+            "pdfua_claimed",
+            "pdf_ua_conformance_claimed",
+            "pdfua_conformance_claimed",
+            "pdf_ua_certification_claimed",
+        ],
+    },
+    DocumentArchiveNoClaimFlagSpec {
+        id: "dglab_certification",
+        field_names: &[
+            "dglab_certification_claimed",
+            "dglab_acceptance_claimed",
+            "official_dglab_acceptance_claimed",
+        ],
+    },
+    DocumentArchiveNoClaimFlagSpec {
+        id: "legal_validity",
+        field_names: &[
+            "legal_validity_claimed",
+            "legal_effect_claimed",
+            "legal_acceptance_claimed",
+            "legal_sufficiency_claimed",
+        ],
+    },
+    DocumentArchiveNoClaimFlagSpec {
+        id: "signature_validity",
+        field_names: &[
+            "signature_validity_claimed",
+            "signature_valid_claimed",
+            "qualified_signature_claimed",
+            "signature_qualification_claimed",
+        ],
+    },
+    DocumentArchiveNoClaimFlagSpec {
+        id: "archive_certification",
+        field_names: &[
+            "archive_certification_claimed",
+            "legal_archive_certification_claimed",
+            "archive_certified",
+        ],
+    },
+    DocumentArchiveNoClaimFlagSpec {
+        id: "provider_validation",
+        field_names: &[
+            "provider_validation_claimed",
+            "provider_validated",
+            "trust_provider_validation_performed",
+            "live_provider_validation_performed",
+        ],
+    },
+    DocumentArchiveNoClaimFlagSpec {
+        id: "external_validator_success",
+        field_names: &[
+            "external_validation_claimed",
+            "external_validator_success_claimed",
+            "external_validator_success",
+            "external_certification_claimed",
+        ],
+    },
+    DocumentArchiveNoClaimFlagSpec {
+        id: "legal_review",
+        field_names: &[
+            "legal_review_completed",
+            "legal_review_claimed",
+            "legal_review_accepted",
+        ],
+    },
+];
+
+fn document_archive_review_summary_report_payload(arguments: &Value) -> Result<Value, String> {
+    let args = arguments
+        .as_object()
+        .ok_or_else(|| "arguments must be an object".to_string())?;
+    let document_archive = args
+        .get("document_archive")
+        .ok_or_else(|| "document_archive must be supplied".to_string())?;
+    if !document_archive.is_object() {
+        return Err("document_archive must be an object".to_string());
+    }
+    let validation_report_present = document_archive_report_present(document_archive);
+    let validation_status = document_archive_bounded_label_at_paths(
+        document_archive,
+        DOCUMENT_ARCHIVE_VALIDATION_STATUS_PATHS,
+        "missing",
+    );
+    let raw_report_field_count = count_raw_report_fields(document_archive);
+    let raw_payload_field_count = count_raw_payload_fields(document_archive);
+    let path_counts = document_archive_path_counts(document_archive);
+    let fixity_counts = document_archive_fixity_counts(document_archive);
+    let signed_document_summary = document_archive_signed_document_summary(document_archive);
+    let external_validator_summary = document_archive_external_validator_summary(document_archive);
+    let pdf_accessibility_summary = document_archive_pdf_accessibility_summary(document_archive);
+    let no_claim_counts = document_archive_no_claim_flag_counts(document_archive);
+
+    let missing_no_claim_flags = no_claim_counts
+        .iter()
+        .filter_map(|(flag, counts)| {
+            (counts.get("explicit_false").copied().unwrap_or(0) == 0).then_some(flag.clone())
+        })
+        .collect::<Vec<_>>();
+    let truthy_no_claim_flag_total = no_claim_counts
+        .values()
+        .map(|counts| counts.get("truthy").copied().unwrap_or(0))
+        .sum::<usize>();
+
+    let mut missing_evidence_blockers = BTreeSet::new();
+    if !validation_report_present {
+        missing_evidence_blockers.insert("validation_report_missing");
+    }
+    if !fixity_counts.digest_present() {
+        missing_evidence_blockers.insert("digest_or_fixity_missing");
+    }
+    if !signed_document_summary.present {
+        missing_evidence_blockers.insert("signed_document_metadata_missing");
+    } else if !signed_document_summary.signed_pdf_digest_present {
+        missing_evidence_blockers.insert("signed_pdf_digest_missing");
+    }
+    if external_validator_summary.sections_present == 0 {
+        missing_evidence_blockers.insert("external_validator_summary_missing");
+    } else if external_validator_summary.attachment_count == 0 {
+        missing_evidence_blockers.insert("external_validator_attachments_missing");
+    }
+    if !pdf_accessibility_summary.evidence_present() {
+        missing_evidence_blockers.insert("pdf_accessibility_evidence_missing");
+    }
+    if pdf_accessibility_summary.v10_report_count == 0 {
+        missing_evidence_blockers.insert("pdf_accessibility_v10_report_missing");
+    }
+    if !path_counts.evidence_index_present() {
+        missing_evidence_blockers.insert("archive_evidence_index_missing");
+    }
+    if !missing_no_claim_flags.is_empty() {
+        missing_evidence_blockers.insert("explicit_no_claim_flags_missing");
+    }
+    if truthy_no_claim_flag_total > 0 {
+        missing_evidence_blockers.insert("truthy_no_claim_flags_present");
+    }
+
+    Ok(json!({
+        "kind": "chancela_mcp_document_archive_review_summary_report",
+        "schema_version": 1,
+        "source": "local_mcp_deterministic_document_archive_summarizer",
+        "offline": true,
+        "local_json_only": true,
+        "deterministic": true,
+        "aggregate_counts_only": true,
+        "bridge_calls": false,
+        "api_calls": false,
+        "provider_calls": false,
+        "ai_provider_calls": false,
+        "legal_service_calls": false,
+        "http_sse_transport_added": false,
+        "raw_reports_exposed": false,
+        "raw_document_bytes_exposed": false,
+        "raw_report_bytes_echoed": false,
+        "digest_values_echoed": false,
+        "path_values_echoed": false,
+        "secrets_in_resource": false,
+        "claims": {
+            "pdf_ua_conformance": false,
+            "dglab_certification": false,
+            "legal_validity": false,
+            "signature_validity": false,
+            "qualified_signature": false,
+            "archive_certification": false,
+            "provider_validation": false,
+            "external_validator_success": false,
+            "trust_validation": false,
+            "legal_review": false
+        },
+        "validation_summary": {
+            "validation_report_present": validation_report_present,
+            "primary_status": validation_status,
+            "raw_report_field_count": raw_report_field_count,
+            "raw_payload_field_count": raw_payload_field_count,
+            "raw_reports_exposed": false
+        },
+        "fixity_summary": {
+            "digest_present": fixity_counts.digest_present(),
+            "digest_field_count": fixity_counts.digest_field_count,
+            "sha256_field_count": fixity_counts.sha256_field_count,
+            "checksum_field_count": fixity_counts.checksum_field_count,
+            "fixity_section_count": fixity_counts.fixity_section_count,
+            "digest_values_echoed": false
+        },
+        "signed_document_summary": {
+            "present": signed_document_summary.present,
+            "status": signed_document_summary.status,
+            "signed_pdf_digest_present": signed_document_summary.signed_pdf_digest_present,
+            "signature_metadata_present": signed_document_summary.signature_metadata_present,
+            "timestamp_token_present": signed_document_summary.timestamp_token_present,
+            "signature_validation_performed": false,
+            "signature_validity_claimed": false
+        },
+        "external_validator_summary": {
+            "sections_present": external_validator_summary.sections_present,
+            "attachment_count": external_validator_summary.attachment_count,
+            "status_counts": external_validator_summary.status_counts,
+            "raw_report_reference_count": external_validator_summary.raw_report_reference_count,
+            "raw_payload_field_count": external_validator_summary.raw_payload_field_count,
+            "raw_reports_exposed": false,
+            "provider_validation_performed": false,
+            "external_validator_success_claimed": false
+        },
+        "pdf_accessibility_v10_summary": {
+            "evidence_present": pdf_accessibility_summary.evidence_present(),
+            "evidence_section_count": pdf_accessibility_summary.evidence_section_count,
+            "report_version_counts": pdf_accessibility_summary.report_version_counts,
+            "v10_report_count": pdf_accessibility_summary.v10_report_count,
+            "blocker_total": pdf_accessibility_summary.blocker_total,
+            "blocker_counts": pdf_accessibility_summary.blocker_counts,
+            "table_header_counts": {
+                "table_semantics_object_count": pdf_accessibility_summary.table_semantics_object_count,
+                "row_header_cell_count_total": pdf_accessibility_summary.row_header_cell_count_total,
+                "column_header_cell_count_total": pdf_accessibility_summary.column_header_cell_count_total,
+                "table_rows_missing_header_count_total": pdf_accessibility_summary.table_rows_missing_header_count_total,
+                "row_header_scope_true_count": pdf_accessibility_summary.row_header_scope_true_count,
+                "column_header_scope_true_count": pdf_accessibility_summary.column_header_scope_true_count
+            },
+            "pdf_ua_conformance_claimed": false,
+            "dglab_certification_claimed": false,
+            "legal_validity_claimed": false
+        },
+        "archive_path_summary": {
+            "evidence_index_present": path_counts.evidence_index_present(),
+            "path_value_count": path_counts.path_value_count,
+            "archive_evidence_path_count": path_counts.archive_evidence_path_count,
+            "evidence_index_path_count": path_counts.evidence_index_path_count,
+            "pdf_accessibility_path_count": path_counts.pdf_accessibility_path_count,
+            "external_validator_path_count": path_counts.external_validator_path_count,
+            "canonical_pdf_path_count": path_counts.canonical_pdf_path_count,
+            "signed_pdf_path_count": path_counts.signed_pdf_path_count,
+            "path_values_echoed": false
+        },
+        "no_claim_flag_observations": {
+            "by_flag": no_claim_counts,
+            "missing_explicit_false_flags": missing_no_claim_flags,
+            "truthy_flag_total": truthy_no_claim_flag_total
+        },
+        "missing_evidence_blockers": missing_evidence_blockers.into_iter().collect::<Vec<_>>(),
+        "document_archive_review_caveats": [
+            "This is a deterministic local aggregate summary over caller-supplied document_archive JSON only.",
+            "The report does not echo raw reports, raw document bytes, digest values, path values, IDs, names, notes, or secrets.",
+            "Unrecognized statuses and PDF/UA blocker values are counted as other instead of being echoed.",
+            "Truthy caller-supplied no-claim fields are counted as blockers only and do not create conformance, certification, legal-validity, signature-validity, provider-validation, external-validator-success, or legal-review claims.",
+            "Counts do not validate PDF/UA conformance, DGLAB certification, legal validity, signature validity, archive certification, provider validation, external-validator success, trust validation, or legal review."
+        ],
+        "operator_boundaries": [
+            "No bridge, API, HTTP/SSE, AI-provider, legal-service, signature, archive-certification, external-validator, trust-list, DGLAB, or provider calls were made.",
+            "No PDF/UA conformance, DGLAB certification, legal validity, signature validity, qualified signature, archive certification, provider validation, external-validator success, trust validation, or legal review is claimed.",
+            "Human review, legal review, normal platform permissions, and source evidence checks remain required."
+        ]
+    }))
+}
+
 fn draft_signed_comparison_report_payload(arguments: &Value) -> Result<Value, String> {
     let args = arguments
         .as_object()
@@ -2316,6 +2879,518 @@ fn chronology_review_summary_report_payload(arguments: &Value) -> Result<Value, 
             "Human review and normal platform evidence checks remain required."
         ]
     }))
+}
+
+impl DocumentArchivePathCounts {
+    fn evidence_index_present(&self) -> bool {
+        self.evidence_index_object_present || self.evidence_index_path_count > 0
+    }
+}
+
+impl DocumentArchiveFixityCounts {
+    fn digest_present(&self) -> bool {
+        self.digest_field_count + self.sha256_field_count + self.checksum_field_count > 0
+    }
+}
+
+impl DocumentArchivePdfAccessibilitySummary {
+    fn evidence_present(&self) -> bool {
+        self.evidence_section_count > 0
+            || !self.report_version_counts.is_empty()
+            || self.blocker_total > 0
+            || self.table_semantics_object_count > 0
+    }
+}
+
+fn document_archive_report_present(root: &Value) -> bool {
+    DOCUMENT_ARCHIVE_VALIDATION_REPORT_PATHS
+        .iter()
+        .any(|path| value_at_dotted_path(root, path).is_some())
+        || first_located_value(root, DOCUMENT_ARCHIVE_VALIDATION_REPORT_MARKER_PATHS)
+            .is_some_and(|located| is_present_chronology_marker_value(located.value))
+}
+
+fn document_archive_bounded_label_at_paths(
+    root: &Value,
+    paths: &'static [&'static str],
+    missing_label: &str,
+) -> String {
+    privacy_bounded_classification(
+        first_located_value(root, paths),
+        missing_label,
+        DOCUMENT_ARCHIVE_STATUS_LABELS,
+    )
+}
+
+fn count_raw_report_fields(root: &Value) -> usize {
+    count_keys_matching(root, is_raw_report_reference_key)
+}
+
+fn count_raw_payload_fields(root: &Value) -> usize {
+    count_keys_matching(root, is_raw_payload_key)
+}
+
+fn document_archive_path_counts(root: &Value) -> DocumentArchivePathCounts {
+    let mut counts = DocumentArchivePathCounts::default();
+    collect_document_archive_path_counts(root, None, &mut counts);
+    counts
+}
+
+fn collect_document_archive_path_counts(
+    value: &Value,
+    key: Option<&str>,
+    counts: &mut DocumentArchivePathCounts,
+) {
+    match value {
+        Value::Object(map) => {
+            for (child_key, child) in map {
+                let normalized = normalize_chronology_label(child_key);
+                if normalized == "evidence_index" || normalized == "index_kind" {
+                    counts.evidence_index_object_present = true;
+                }
+                collect_document_archive_path_counts(child, Some(child_key), counts);
+            }
+        }
+        Value::Array(values) => {
+            for child in values {
+                collect_document_archive_path_counts(child, key, counts);
+            }
+        }
+        Value::String(path) => {
+            let key = key.unwrap_or_default();
+            let normalized_key = normalize_chronology_label(key);
+            if !normalized_key.contains("path")
+                && !normalized_key.contains("download")
+                && !normalized_key.contains("uri")
+                && !normalized_key.contains("pointer")
+            {
+                return;
+            }
+            counts.path_value_count += 1;
+            let normalized_path = path.trim().to_ascii_lowercase();
+            if normalized_key.contains("evidence_index")
+                || normalized_path == "evidence/index.json"
+                || normalized_path.ends_with("/evidence/index.json")
+            {
+                counts.evidence_index_path_count += 1;
+            }
+            if normalized_path.starts_with("evidence/") || normalized_key.contains("evidence") {
+                counts.archive_evidence_path_count += 1;
+            }
+            if normalized_path.starts_with("evidence/pdf-accessibility/")
+                || normalized_key.contains("pdf_accessibility")
+            {
+                counts.pdf_accessibility_path_count += 1;
+            }
+            if normalized_path.starts_with("evidence/external-validators/")
+                || normalized_key.contains("external_validator")
+            {
+                counts.external_validator_path_count += 1;
+            }
+            if normalized_path.starts_with("documents/") || normalized_key.contains("canonical_pdf")
+            {
+                counts.canonical_pdf_path_count += 1;
+            }
+            if normalized_path.starts_with("signed/") || normalized_key.contains("signed_pdf") {
+                counts.signed_pdf_path_count += 1;
+            }
+        }
+        _ => {}
+    }
+}
+
+fn document_archive_fixity_counts(root: &Value) -> DocumentArchiveFixityCounts {
+    let mut counts = DocumentArchiveFixityCounts::default();
+    collect_document_archive_fixity_counts(root, None, &mut counts);
+    counts
+}
+
+fn collect_document_archive_fixity_counts(
+    value: &Value,
+    key: Option<&str>,
+    counts: &mut DocumentArchiveFixityCounts,
+) {
+    match value {
+        Value::Object(map) => {
+            for (child_key, child) in map {
+                let normalized = normalize_chronology_label(child_key);
+                if normalized == "fixity" {
+                    counts.fixity_section_count += 1;
+                }
+                if is_present_chronology_marker_value(child) {
+                    if normalized.contains("sha256") {
+                        counts.sha256_field_count += 1;
+                    } else if normalized.contains("digest") {
+                        counts.digest_field_count += 1;
+                    } else if normalized.contains("checksum") {
+                        counts.checksum_field_count += 1;
+                    }
+                }
+                collect_document_archive_fixity_counts(child, Some(child_key), counts);
+            }
+        }
+        Value::Array(values) => {
+            for child in values {
+                collect_document_archive_fixity_counts(child, key, counts);
+            }
+        }
+        _ => {
+            let _ = key;
+        }
+    }
+}
+
+fn document_archive_signed_document_summary(root: &Value) -> DocumentArchiveSignedDocumentSummary {
+    let mut summary = DocumentArchiveSignedDocumentSummary {
+        status: document_archive_bounded_label_at_paths(
+            root,
+            DOCUMENT_ARCHIVE_SIGNED_STATUS_PATHS,
+            "missing",
+        ),
+        ..DocumentArchiveSignedDocumentSummary::default()
+    };
+    collect_document_archive_signed_document_summary(root, None, &mut summary);
+    if !summary.present {
+        summary.status = "not_present".to_string();
+    }
+    summary
+}
+
+fn collect_document_archive_signed_document_summary(
+    value: &Value,
+    key: Option<&str>,
+    summary: &mut DocumentArchiveSignedDocumentSummary,
+) {
+    match value {
+        Value::Object(map) => {
+            for (child_key, child) in map {
+                let normalized = normalize_chronology_label(child_key);
+                if normalized == "signed_document"
+                    || normalized == "signed"
+                    || normalized == "signed_pdf"
+                    || normalized == "signature"
+                    || normalized == "signing_metadata"
+                {
+                    summary.present = true;
+                }
+                if normalized.contains("signed_pdf_digest")
+                    || normalized == "stored_signed_pdf_digest"
+                    || normalized == "signed_document_digest"
+                {
+                    summary.signed_pdf_digest_present |= is_present_chronology_marker_value(child);
+                    summary.present |= summary.signed_pdf_digest_present;
+                }
+                if normalized.contains("signature_bundle")
+                    || normalized == "signature_metadata"
+                    || normalized == "signing_metadata"
+                    || normalized == "signer_certificate_path"
+                    || normalized == "signer_cert_subject_present"
+                {
+                    summary.signature_metadata_present |= is_present_chronology_marker_value(child);
+                    summary.present |= summary.signature_metadata_present;
+                }
+                if normalized.contains("timestamp_token") || normalized.contains("doctimestamp") {
+                    summary.timestamp_token_present |= is_present_chronology_marker_value(child);
+                    summary.present |= summary.timestamp_token_present;
+                }
+                collect_document_archive_signed_document_summary(child, Some(child_key), summary);
+            }
+        }
+        Value::Array(values) => {
+            for child in values {
+                collect_document_archive_signed_document_summary(child, key, summary);
+            }
+        }
+        _ => {
+            let _ = key;
+        }
+    }
+}
+
+fn document_archive_external_validator_summary(
+    root: &Value,
+) -> DocumentArchiveExternalValidatorSummary {
+    let mut summary = DocumentArchiveExternalValidatorSummary::default();
+    collect_document_archive_external_validator_summary(root, None, false, &mut summary);
+    summary
+}
+
+fn collect_document_archive_external_validator_summary(
+    value: &Value,
+    key: Option<&str>,
+    inside_external_validator: bool,
+    summary: &mut DocumentArchiveExternalValidatorSummary,
+) {
+    let key_is_external = key.is_some_and(is_external_validator_key);
+    let inside_external_validator = inside_external_validator || key_is_external;
+    if key_is_external && matches!(value, Value::Object(_) | Value::Array(_)) {
+        summary.sections_present += 1;
+    }
+
+    match value {
+        Value::Object(map) => {
+            if inside_external_validator {
+                let status = document_archive_bounded_label_at_paths(
+                    value,
+                    DOCUMENT_ARCHIVE_EXTERNAL_VALIDATOR_STATUS_PATHS,
+                    "missing",
+                );
+                increment_count(&mut summary.status_counts, status);
+                if let Some(attachments) = map.get("attachments").and_then(Value::as_array) {
+                    summary.attachment_count += attachments.len();
+                }
+            }
+            for (child_key, child) in map {
+                let normalized = normalize_chronology_label(child_key);
+                if inside_external_validator && normalized == "raw_report" {
+                    summary.raw_report_reference_count += 1;
+                }
+                if inside_external_validator && is_raw_payload_key(child_key) {
+                    summary.raw_payload_field_count += 1;
+                }
+                collect_document_archive_external_validator_summary(
+                    child,
+                    Some(child_key),
+                    inside_external_validator,
+                    summary,
+                );
+            }
+        }
+        Value::Array(values) => {
+            if key_is_external {
+                summary.attachment_count += values.len();
+            }
+            for child in values {
+                collect_document_archive_external_validator_summary(
+                    child,
+                    key,
+                    inside_external_validator,
+                    summary,
+                );
+            }
+        }
+        _ => {}
+    }
+}
+
+fn document_archive_pdf_accessibility_summary(
+    root: &Value,
+) -> DocumentArchivePdfAccessibilitySummary {
+    let mut summary = DocumentArchivePdfAccessibilitySummary::default();
+    collect_document_archive_pdf_accessibility_summary(root, None, false, &mut summary);
+    summary
+}
+
+fn collect_document_archive_pdf_accessibility_summary(
+    value: &Value,
+    key: Option<&str>,
+    inside_pdf_accessibility: bool,
+    summary: &mut DocumentArchivePdfAccessibilitySummary,
+) {
+    let key_is_pdf_accessibility = key.is_some_and(is_pdf_accessibility_key);
+    let object_is_pdf_accessibility = document_archive_pdf_accessibility_marker(value);
+    let inside_pdf_accessibility =
+        inside_pdf_accessibility || key_is_pdf_accessibility || object_is_pdf_accessibility;
+    if (key_is_pdf_accessibility || object_is_pdf_accessibility)
+        && matches!(value, Value::Object(_) | Value::Array(_))
+    {
+        summary.evidence_section_count += 1;
+    }
+
+    match value {
+        Value::Object(map) => {
+            if inside_pdf_accessibility {
+                if let Some(version) = map
+                    .get("report_version")
+                    .or_else(|| {
+                        map.get("version")
+                            .filter(|_| map.contains_key("tagged_structure"))
+                    })
+                    .and_then(Value::as_u64)
+                {
+                    increment_count(&mut summary.report_version_counts, version.to_string());
+                    if version == 10 {
+                        summary.v10_report_count += 1;
+                    }
+                }
+                if let Some(blockers) = map.get("pdf_ua_blockers").and_then(Value::as_array) {
+                    for blocker in blockers {
+                        summary.blocker_total += 1;
+                        let label = blocker
+                            .as_str()
+                            .map(normalize_chronology_label)
+                            .filter(|label| {
+                                DOCUMENT_ARCHIVE_PDF_UA_BLOCKER_LABELS.contains(&label.as_str())
+                            })
+                            .unwrap_or_else(|| "other".to_string());
+                        increment_count(&mut summary.blocker_counts, label);
+                    }
+                }
+                if let Some(tables) = value_at_dotted_path(value, "tagged_structure.tables")
+                    .or_else(|| {
+                        map.get("tables").filter(|tables| {
+                            tables
+                                .as_object()
+                                .is_some_and(|table| table.contains_key("row_header_cell_count"))
+                        })
+                    })
+                    .and_then(Value::as_object)
+                {
+                    summary.table_semantics_object_count += 1;
+                    summary.row_header_cell_count_total += tables
+                        .get("row_header_cell_count")
+                        .and_then(usize_from_value)
+                        .unwrap_or(0);
+                    summary.column_header_cell_count_total += tables
+                        .get("column_header_cell_count")
+                        .and_then(usize_from_value)
+                        .unwrap_or(0);
+                    summary.table_rows_missing_header_count_total += tables
+                        .get("table_rows_missing_header_count")
+                        .and_then(usize_from_value)
+                        .unwrap_or(0);
+                    if tables
+                        .get("row_header_cells_have_scope_row")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false)
+                    {
+                        summary.row_header_scope_true_count += 1;
+                    }
+                    if tables
+                        .get("column_header_cells_have_scope_column")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false)
+                    {
+                        summary.column_header_scope_true_count += 1;
+                    }
+                }
+            }
+            for (child_key, child) in map {
+                collect_document_archive_pdf_accessibility_summary(
+                    child,
+                    Some(child_key),
+                    inside_pdf_accessibility,
+                    summary,
+                );
+            }
+        }
+        Value::Array(values) => {
+            for child in values {
+                collect_document_archive_pdf_accessibility_summary(
+                    child,
+                    key,
+                    inside_pdf_accessibility,
+                    summary,
+                );
+            }
+        }
+        _ => {}
+    }
+}
+
+fn document_archive_no_claim_flag_counts(
+    root: &Value,
+) -> BTreeMap<String, BTreeMap<String, usize>> {
+    let mut counts = DOCUMENT_ARCHIVE_NO_CLAIM_FLAG_SPECS
+        .iter()
+        .map(|spec| {
+            (
+                spec.id.to_string(),
+                BTreeMap::from([
+                    ("explicit_false".to_string(), 0usize),
+                    ("truthy".to_string(), 0usize),
+                    ("other_present".to_string(), 0usize),
+                ]),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+
+    for spec in DOCUMENT_ARCHIVE_NO_CLAIM_FLAG_SPECS {
+        if let Some(spec_counts) = counts.get_mut(spec.id) {
+            count_document_archive_no_claim_observations(root, spec, spec_counts);
+        }
+    }
+
+    counts
+}
+
+fn count_document_archive_no_claim_observations(
+    value: &Value,
+    spec: &DocumentArchiveNoClaimFlagSpec,
+    counts: &mut BTreeMap<String, usize>,
+) {
+    match value {
+        Value::Object(map) => {
+            for (key, child) in map {
+                if spec.field_names.contains(&key.as_str()) {
+                    let bucket = match privacy_boolean_observation(child) {
+                        Some(false) => "explicit_false",
+                        Some(true) => "truthy",
+                        None => "other_present",
+                    };
+                    *counts.entry(bucket.to_string()).or_insert(0) += 1;
+                }
+                count_document_archive_no_claim_observations(child, spec, counts);
+            }
+        }
+        Value::Array(values) => {
+            for child in values {
+                count_document_archive_no_claim_observations(child, spec, counts);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn count_keys_matching(value: &Value, predicate: fn(&str) -> bool) -> usize {
+    match value {
+        Value::Object(map) => map
+            .iter()
+            .map(|(key, child)| usize::from(predicate(key)) + count_keys_matching(child, predicate))
+            .sum(),
+        Value::Array(values) => values
+            .iter()
+            .map(|child| count_keys_matching(child, predicate))
+            .sum(),
+        _ => 0,
+    }
+}
+
+fn is_raw_report_reference_key(key: &str) -> bool {
+    matches!(
+        normalize_chronology_label(key).as_str(),
+        "raw_report" | "raw_report_bytes" | "raw_report_content" | "raw_report_path"
+    )
+}
+
+fn is_raw_payload_key(key: &str) -> bool {
+    matches!(
+        normalize_chronology_label(key).as_str(),
+        "content_base64" | "data_base64" | "raw_bytes" | "raw_report_bytes" | "bytes"
+    )
+}
+
+fn is_external_validator_key(key: &str) -> bool {
+    let key = normalize_chronology_label(key);
+    key.contains("external_validator") || key.contains("validator_report")
+}
+
+fn is_pdf_accessibility_key(key: &str) -> bool {
+    let key = normalize_chronology_label(key);
+    key.contains("pdf_accessibility")
+        || key == "accessibility_report_json"
+        || key == "pdf_ua_blockers"
+}
+
+fn document_archive_pdf_accessibility_marker(value: &Value) -> bool {
+    let Some(map) = value.as_object() else {
+        return false;
+    };
+    map.get("metadata_schema").and_then(Value::as_str)
+        == Some("chancela-pdf-accessibility-evidence/v1")
+        || map.get("evidence_kind").and_then(Value::as_str) == Some("pdf_accessibility_report")
+        || map.contains_key("pdf_ua_blockers")
+        || map.contains_key("accessibility_report_json")
 }
 
 fn chronology_events(chronology: &Value) -> Result<&[Value], String> {
@@ -3653,7 +4728,7 @@ mod tests {
             .unwrap();
         let result = resp.result.unwrap();
         let resources = result["resources"].as_array().unwrap();
-        assert_eq!(resources.len(), 6);
+        assert_eq!(resources.len(), 7);
         let by_uri = |uri: &str| {
             resources
                 .iter()
@@ -3694,6 +4769,12 @@ mod tests {
         assert_eq!(privacy["mimeType"], json!("application/json"));
         assert_eq!(
             privacy["annotations"]["audience"],
+            json!(["user", "assistant"])
+        );
+        let document_archive = by_uri(MCP_DOCUMENT_ARCHIVE_REVIEW_SUMMARY_RESOURCE_URI);
+        assert_eq!(document_archive["mimeType"], json!("application/json"));
+        assert_eq!(
+            document_archive["annotations"]["audience"],
             json!(["user", "assistant"])
         );
         assert!(server.bridge_recorded().is_empty());
@@ -4989,6 +6070,560 @@ mod tests {
     }
 
     #[test]
+    fn resources_read_document_archive_review_summary_returns_static_guidance_without_http_or_secret()
+     {
+        let server = McpServer::from_config(&enabled_cfg(), MockTransport::new(200, "{}")).unwrap();
+        let resp = server
+            .handle(&req(
+                "resources/read",
+                71,
+                json!({ "uri": MCP_DOCUMENT_ARCHIVE_REVIEW_SUMMARY_RESOURCE_URI }),
+            ))
+            .unwrap();
+        let result = resp.result.unwrap();
+        let contents = result["contents"].as_array().unwrap();
+        assert_eq!(contents.len(), 1);
+        assert_eq!(
+            contents[0]["uri"],
+            json!(MCP_DOCUMENT_ARCHIVE_REVIEW_SUMMARY_RESOURCE_URI)
+        );
+        assert_eq!(contents[0]["mimeType"], json!("application/json"));
+        let text = contents[0]["text"].as_str().unwrap();
+        assert!(!text.contains("chk_ab12cd_secretsecret"));
+        assert!(!text.contains("secretsecret"));
+
+        let review: Value = serde_json::from_str(text).unwrap();
+        assert_eq!(
+            review["kind"],
+            json!("chancela_mcp_document_archive_review_summary")
+        );
+        assert_eq!(review["offline"], json!(true));
+        assert_eq!(review["static"], json!(true));
+        assert_eq!(review["local_json_only"], json!(true));
+        assert_eq!(review["arguments"], json!([]));
+        assert_eq!(review["bridge_calls"], json!(false));
+        assert_eq!(review["api_calls"], json!(false));
+        assert_eq!(review["provider_calls"], json!(false));
+        assert_eq!(review["http_sse_transport_added"], json!(false));
+        assert_eq!(review["raw_reports_exposed"], json!(false));
+        assert_eq!(review["raw_document_bytes_exposed"], json!(false));
+        assert_eq!(review["secrets_in_resource"], json!(false));
+        for claim in [
+            "pdf_ua_conformance",
+            "dglab_certification",
+            "legal_validity",
+            "signature_validity",
+            "qualified_signature",
+            "archive_certification",
+            "provider_validation",
+            "external_validator_success",
+            "trust_validation",
+            "legal_review",
+        ] {
+            assert_eq!(
+                review["claims"][claim],
+                json!(false),
+                "static resource claim {claim} should be false: {review}"
+            );
+        }
+
+        let categories = review["summary_categories"].as_array().unwrap();
+        let category_ids = categories
+            .iter()
+            .map(|category| category["id"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        for expected in [
+            "validation_and_fixity",
+            "signed_document_state",
+            "external_validator_attachments",
+            "pdf_accessibility_v10",
+            "archive_paths",
+        ] {
+            assert!(
+                category_ids.contains(&expected),
+                "resource should include category {expected:?}: {review}"
+            );
+        }
+        assert!(server.bridge_recorded().is_empty());
+    }
+
+    #[test]
+    fn resources_read_document_archive_review_summary_accepts_arguments_and_is_deterministic_without_raw_reports_or_overclaims()
+     {
+        let server = McpServer::from_config(&enabled_cfg(), MockTransport::new(200, "{}")).unwrap();
+        let document_archive_a = json!({
+            "document_bundle": {
+                "document": {
+                    "id": "doc-secret-id-that-must-not-echo",
+                    "pdf_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                },
+                "validation_report": {
+                    "report_kind": "document_bundle_validation",
+                    "scope": "generated_document_bundle",
+                    "status": "technical_warning",
+                    "fixity": {
+                        "canonical_pdf_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                        "canonical_pdf_digest_matches_metadata": true,
+                        "signed_pdf_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+                    },
+                    "signed_document": {
+                        "present": true,
+                        "status": "signed",
+                        "signed_pdf_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+                        "signature_metadata": {
+                            "signature_bundle_id": "sig-secret-that-must-not-echo"
+                        },
+                        "timestamp_token_present": true,
+                        "signature_validity_claimed": false
+                    },
+                    "pdf_accessibility": {
+                        "evidence_kind": "pdf_accessibility_report",
+                        "metadata_schema": "chancela-pdf-accessibility-evidence/v1",
+                        "evidence_status": "pdf_accessibility_report_attached",
+                        "pdf_ua_claimed": false,
+                        "dglab_certification_claimed": false,
+                        "legal_validity_claimed": false,
+                        "archive_certification_claimed": false,
+                        "provider_validation_claimed": false,
+                        "external_validator_success_claimed": false,
+                        "legal_review_completed": false,
+                        "report_version": 10,
+                        "pdf_ua_blockers": [
+                            "limited_tagged_structure",
+                            "caller secret blocker value"
+                        ],
+                        "accessibility_report_json": {
+                            "version": 10,
+                            "pdf_ua_claimed": false,
+                            "pdf_ua_blockers": ["limited_tagged_structure"],
+                            "tagged_structure": {
+                                "tables": {
+                                    "row_header_cell_count": 3,
+                                    "column_header_cell_count": 4,
+                                    "table_rows_missing_header_count": 0,
+                                    "row_header_cells_have_scope_row": true,
+                                    "column_header_cells_have_scope_column": true
+                                }
+                            }
+                        }
+                    },
+                    "evidence_index": {
+                        "index_kind": "document_bundle_evidence_index",
+                        "bundle_paths": {
+                            "canonical_pdf_download": "/v1/acts/act-secret/document",
+                            "signed_pdf_download": "/v1/acts/act-secret/document/signed",
+                            "validation_report_json_pointer": "/validation_report"
+                        },
+                        "external_validator_reports": {
+                            "bundle_attachment_status": "external_validator_report_metadata_attached",
+                            "attachments": [
+                                {
+                                    "case_id": "case-secret-that-must-not-echo",
+                                    "validator_family": "eu-dss",
+                                    "archive_path": "evidence/external-validators/case-eu-dss.json",
+                                    "content_type": "application/json",
+                                    "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                                    "raw_report": {
+                                        "preservation_status": "raw_report_attached",
+                                        "content_base64": "RAW-REPORT-SECRET-CONTENT"
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            },
+            "archive_package": {
+                "evidence_index": {
+                    "index_kind": "archive_evidence_index",
+                    "evidence_index_path": "evidence/index.json",
+                    "documents": [
+                        {
+                            "canonical_pdf_path": "documents/doc-secret-id-that-must-not-echo.pdf",
+                            "document_metadata_path": "metadata/doc-secret-id-that-must-not-echo.json",
+                            "signature_evidence_path": "evidence/doc-secret-id-that-must-not-echo.json",
+                            "pdf_accessibility_evidence_path": "evidence/pdf-accessibility/doc-secret-id-that-must-not-echo.json",
+                            "signed_pdf_path": "signed/doc-secret-id-that-must-not-echo.pdf"
+                        }
+                    ],
+                    "pdf_accessibility_reports": {
+                        "attachment_status": "pdf_accessibility_evidence_partially_available",
+                        "attachments_total": 2,
+                        "attached_count": 1,
+                        "unavailable_count": 1,
+                        "pdf_ua_claimed": false,
+                        "dglab_certification_claimed": false,
+                        "legal_validity_claimed": false,
+                        "attachments": [
+                            {
+                                "path": "evidence/pdf-accessibility/doc-secret-id-that-must-not-echo.json",
+                                "evidence_status": "pdf_accessibility_report_attached",
+                                "pdf_ua_claimed": false,
+                                "dglab_certification_claimed": false,
+                                "legal_validity_claimed": false,
+                                "pdf_ua_blockers": ["limited_tagged_structure"]
+                            },
+                            {
+                                "path": "evidence/pdf-accessibility/book-secret-id-that-must-not-echo.json",
+                                "evidence_status": "pdf_accessibility_report_unavailable",
+                                "pdf_ua_claimed": false,
+                                "dglab_certification_claimed": false,
+                                "legal_validity_claimed": false
+                            }
+                        ]
+                    }
+                },
+                "manifest": {
+                    "files": [
+                        {
+                            "path": "evidence/index.json",
+                            "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+                        }
+                    ]
+                }
+            }
+        });
+        let document_archive_b = json!({
+            "archive_package": document_archive_a["archive_package"].clone(),
+            "document_bundle": document_archive_a["document_bundle"].clone()
+        });
+        let params_a = json!({
+            "uri": MCP_DOCUMENT_ARCHIVE_REVIEW_SUMMARY_RESOURCE_URI,
+            "arguments": {
+                "case_id": "case-7",
+                "document_archive": document_archive_a
+            }
+        });
+        let params_b = json!({
+            "arguments": {
+                "document_archive": document_archive_b,
+                "case_id": "case-7"
+            },
+            "uri": MCP_DOCUMENT_ARCHIVE_REVIEW_SUMMARY_RESOURCE_URI
+        });
+
+        let response_a = server
+            .handle(&req("resources/read", 72, params_a))
+            .unwrap()
+            .result
+            .unwrap();
+        let response_b = server
+            .handle(&req("resources/read", 73, params_b))
+            .unwrap()
+            .result
+            .unwrap();
+        let text_a = response_a["contents"][0]["text"].as_str().unwrap();
+        let text_b = response_b["contents"][0]["text"].as_str().unwrap();
+        assert_eq!(text_a, text_b, "summary output must be deterministic");
+        for secret in [
+            "RAW-REPORT-SECRET-CONTENT",
+            "case-secret-that-must-not-echo",
+            "doc-secret-id-that-must-not-echo",
+            "sig-secret-that-must-not-echo",
+            "caller secret blocker value",
+            "act-secret",
+            "case-7",
+        ] {
+            assert!(
+                !text_a.contains(secret),
+                "summary must not echo caller value {secret:?}: {text_a}"
+            );
+        }
+        assert!(!text_a.contains("chk_ab12cd_secretsecret"));
+        assert!(!text_a.contains("secretsecret"));
+        assert!(!text_a.contains("\"pdf_ua_conformance\": true"));
+        assert!(!text_a.contains("\"dglab_certification\": true"));
+        assert!(!text_a.contains("\"legal_validity\": true"));
+        assert!(!text_a.contains("\"signature_validity\": true"));
+        assert!(!text_a.contains("\"archive_certification\": true"));
+        assert!(!text_a.contains("\"provider_validation\": true"));
+        assert!(!text_a.contains("\"external_validator_success\": true"));
+
+        let report: Value = serde_json::from_str(text_a).unwrap();
+        assert_eq!(
+            report["kind"],
+            json!("chancela_mcp_document_archive_review_summary_report")
+        );
+        assert_eq!(
+            report["source"],
+            json!("local_mcp_deterministic_document_archive_summarizer")
+        );
+        assert!(
+            report.get("case_id").is_none(),
+            "summary must not echo caller-supplied IDs: {report}"
+        );
+        assert_eq!(report["offline"], json!(true));
+        assert_eq!(report["local_json_only"], json!(true));
+        assert_eq!(report["deterministic"], json!(true));
+        assert_eq!(report["aggregate_counts_only"], json!(true));
+        assert_eq!(report["bridge_calls"], json!(false));
+        assert_eq!(report["api_calls"], json!(false));
+        assert_eq!(report["provider_calls"], json!(false));
+        assert_eq!(report["ai_provider_calls"], json!(false));
+        assert_eq!(report["legal_service_calls"], json!(false));
+        assert_eq!(report["http_sse_transport_added"], json!(false));
+        assert_eq!(report["raw_reports_exposed"], json!(false));
+        assert_eq!(report["raw_document_bytes_exposed"], json!(false));
+        assert_eq!(report["raw_report_bytes_echoed"], json!(false));
+        assert_eq!(report["digest_values_echoed"], json!(false));
+        assert_eq!(report["path_values_echoed"], json!(false));
+        assert_eq!(report["secrets_in_resource"], json!(false));
+
+        for claim in [
+            "pdf_ua_conformance",
+            "dglab_certification",
+            "legal_validity",
+            "signature_validity",
+            "qualified_signature",
+            "archive_certification",
+            "provider_validation",
+            "external_validator_success",
+            "trust_validation",
+            "legal_review",
+        ] {
+            assert_eq!(
+                report["claims"][claim],
+                json!(false),
+                "report claim {claim} should be false: {report}"
+            );
+        }
+
+        assert_eq!(
+            report["validation_summary"]["validation_report_present"],
+            json!(true)
+        );
+        assert_eq!(
+            report["validation_summary"]["primary_status"],
+            json!("technical_warning")
+        );
+        assert_eq!(report["fixity_summary"]["digest_present"], json!(true));
+        assert!(
+            report["fixity_summary"]["sha256_field_count"]
+                .as_u64()
+                .unwrap()
+                >= 4,
+            "summary should count SHA-256 fields without echoing values: {report}"
+        );
+        assert_eq!(report["signed_document_summary"]["present"], json!(true));
+        assert_eq!(report["signed_document_summary"]["status"], json!("signed"));
+        assert_eq!(
+            report["signed_document_summary"]["signed_pdf_digest_present"],
+            json!(true)
+        );
+        assert_eq!(
+            report["signed_document_summary"]["signature_validation_performed"],
+            json!(false)
+        );
+        assert_eq!(
+            report["external_validator_summary"]["attachment_count"],
+            json!(1)
+        );
+        assert_eq!(
+            report["external_validator_summary"]["raw_report_reference_count"],
+            json!(1)
+        );
+        assert_eq!(
+            report["external_validator_summary"]["raw_payload_field_count"],
+            json!(1)
+        );
+        assert_eq!(
+            report["external_validator_summary"]["provider_validation_performed"],
+            json!(false)
+        );
+        assert_eq!(
+            report["pdf_accessibility_v10_summary"]["evidence_present"],
+            json!(true)
+        );
+        assert!(
+            report["pdf_accessibility_v10_summary"]["v10_report_count"]
+                .as_u64()
+                .unwrap()
+                >= 2,
+            "parent sidecar and nested report JSON should be counted: {report}"
+        );
+        assert!(
+            report["pdf_accessibility_v10_summary"]["blocker_counts"]["limited_tagged_structure"]
+                .as_u64()
+                .unwrap()
+                >= 3,
+            "known PDF/UA blocker observations should be counted without echoing raw values: {report}"
+        );
+        assert!(
+            report["pdf_accessibility_v10_summary"]["blocker_counts"]["other"]
+                .as_u64()
+                .unwrap()
+                >= 1,
+            "unrecognized caller blocker text should be bucketed as other: {report}"
+        );
+        assert!(
+            report["pdf_accessibility_v10_summary"]["table_header_counts"]
+                ["row_header_cell_count_total"]
+                .as_u64()
+                .unwrap()
+                >= 3,
+            "row-header cells should be counted from supplied table evidence: {report}"
+        );
+        assert!(
+            report["pdf_accessibility_v10_summary"]["table_header_counts"]
+                ["column_header_cell_count_total"]
+                .as_u64()
+                .unwrap()
+                >= 4,
+            "column-header cells should be counted from supplied table evidence: {report}"
+        );
+        assert!(
+            report["pdf_accessibility_v10_summary"]["table_header_counts"]
+                ["row_header_scope_true_count"]
+                .as_u64()
+                .unwrap()
+                >= 1,
+            "row-header scope evidence should be counted: {report}"
+        );
+        assert!(
+            report["pdf_accessibility_v10_summary"]["table_header_counts"]
+                ["column_header_scope_true_count"]
+                .as_u64()
+                .unwrap()
+                >= 1,
+            "column-header scope evidence should be counted: {report}"
+        );
+        assert_eq!(
+            report["archive_path_summary"]["evidence_index_present"],
+            json!(true)
+        );
+        assert!(
+            report["archive_path_summary"]["pdf_accessibility_path_count"]
+                .as_u64()
+                .unwrap()
+                >= 2,
+            "PDF accessibility path markers should be counted without echoing values: {report}"
+        );
+        assert_eq!(
+            report["no_claim_flag_observations"]["by_flag"]["pdf_ua_conformance"]["explicit_false"],
+            json!(5)
+        );
+        assert_eq!(
+            report["no_claim_flag_observations"]["by_flag"]["dglab_certification"]["explicit_false"],
+            json!(4)
+        );
+        assert_eq!(
+            report["no_claim_flag_observations"]["by_flag"]["legal_validity"]["explicit_false"],
+            json!(4)
+        );
+        assert_eq!(
+            report["no_claim_flag_observations"]["by_flag"]["signature_validity"]["explicit_false"],
+            json!(1)
+        );
+        assert_eq!(
+            report["no_claim_flag_observations"]["truthy_flag_total"],
+            json!(0)
+        );
+        assert!(
+            report["missing_evidence_blockers"]
+                .as_array()
+                .unwrap()
+                .is_empty(),
+            "complete supplied no-claim evidence should not produce blockers: {report}"
+        );
+        assert!(server.bridge_recorded().is_empty());
+    }
+
+    #[test]
+    fn resources_read_document_archive_review_summary_does_not_treat_evidence_index_as_validation_report()
+     {
+        let server = McpServer::from_config(&enabled_cfg(), MockTransport::new(200, "{}")).unwrap();
+        let response = server
+            .handle(&req(
+                "resources/read",
+                74,
+                json!({
+                    "uri": MCP_DOCUMENT_ARCHIVE_REVIEW_SUMMARY_RESOURCE_URI,
+                    "arguments": {
+                        "document_archive": {
+                            "archive_package": {
+                                "evidence_index": {
+                                    "index_kind": "archive_evidence_index",
+                                    "evidence_index_path": "evidence/index.json"
+                                }
+                            }
+                        }
+                    }
+                }),
+            ))
+            .unwrap()
+            .result
+            .unwrap();
+        let text = response["contents"][0]["text"].as_str().unwrap();
+        let report: Value = serde_json::from_str(text).unwrap();
+        assert_eq!(
+            report["validation_summary"]["validation_report_present"],
+            json!(false),
+            "archive/evidence index metadata must not masquerade as validation-report evidence: {report}"
+        );
+        assert_eq!(
+            report["archive_path_summary"]["evidence_index_present"],
+            json!(true)
+        );
+        let blockers = report["missing_evidence_blockers"].as_array().unwrap();
+        assert!(
+            blockers
+                .iter()
+                .any(|blocker| blocker == "validation_report_missing"),
+            "missing validation report should remain a blocker when only evidence-index metadata is supplied: {report}"
+        );
+        assert!(server.bridge_recorded().is_empty());
+    }
+
+    #[test]
+    fn resources_read_document_archive_review_summary_rejects_bad_arguments_and_extra_params() {
+        let server = McpServer::from_config(&enabled_cfg(), MockTransport::new(200, "{}")).unwrap();
+
+        let missing_document_archive = server
+            .handle(&req(
+                "resources/read",
+                75,
+                json!({
+                    "uri": MCP_DOCUMENT_ARCHIVE_REVIEW_SUMMARY_RESOURCE_URI,
+                    "arguments": { "case_id": "case-7" }
+                }),
+            ))
+            .unwrap();
+        let error = missing_document_archive.error.unwrap();
+        assert_eq!(error.code, codes::INVALID_PARAMS);
+        assert!(error.message.contains("document_archive must be supplied"));
+
+        let non_object_document_archive = server
+            .handle(&req(
+                "resources/read",
+                76,
+                json!({
+                    "uri": MCP_DOCUMENT_ARCHIVE_REVIEW_SUMMARY_RESOURCE_URI,
+                    "arguments": { "document_archive": [] }
+                }),
+            ))
+            .unwrap();
+        let error = non_object_document_archive.error.unwrap();
+        assert_eq!(error.code, codes::INVALID_PARAMS);
+        assert!(error.message.contains("document_archive must be an object"));
+
+        let extra_param = server
+            .handle(&req(
+                "resources/read",
+                77,
+                json!({
+                    "uri": MCP_DOCUMENT_ARCHIVE_REVIEW_SUMMARY_RESOURCE_URI,
+                    "cursor": "ignored"
+                }),
+            ))
+            .unwrap();
+        let error = extra_param.error.unwrap();
+        assert_eq!(error.code, codes::INVALID_PARAMS);
+        assert!(error.message.contains("uri plus arguments"));
+
+        assert!(server.bridge_recorded().is_empty());
+    }
+
+    #[test]
     fn resources_read_privacy_control_review_summary_rejects_bad_arguments_and_extra_params() {
         let server = McpServer::from_config(&enabled_cfg(), MockTransport::new(200, "{}")).unwrap();
 
@@ -5160,7 +6795,8 @@ mod tests {
                 MCP_WORKFLOW_PROVENANCE_REVIEW_RESOURCE_URI,
                 MCP_DRAFT_SIGNED_COMPARISON_REVIEW_RESOURCE_URI,
                 MCP_CHRONOLOGY_REVIEW_SUMMARY_RESOURCE_URI,
-                MCP_PRIVACY_CONTROL_REVIEW_SUMMARY_RESOURCE_URI
+                MCP_PRIVACY_CONTROL_REVIEW_SUMMARY_RESOURCE_URI,
+                MCP_DOCUMENT_ARCHIVE_REVIEW_SUMMARY_RESOURCE_URI
             ])
         );
         assert!(
@@ -5183,7 +6819,8 @@ mod tests {
                 MCP_WORKFLOW_PROVENANCE_REVIEW_RESOURCE_URI,
                 MCP_DRAFT_SIGNED_COMPARISON_REVIEW_RESOURCE_URI,
                 MCP_CHRONOLOGY_REVIEW_SUMMARY_RESOURCE_URI,
-                MCP_PRIVACY_CONTROL_REVIEW_SUMMARY_RESOURCE_URI
+                MCP_PRIVACY_CONTROL_REVIEW_SUMMARY_RESOURCE_URI,
+                MCP_DOCUMENT_ARCHIVE_REVIEW_SUMMARY_RESOURCE_URI
             ])
         );
         assert_eq!(
