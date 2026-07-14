@@ -5444,16 +5444,31 @@ fn document_bundle_evidence_index(
     }
 }
 
-fn build_document_bundle_validation_report(
+struct DocumentBundleValidationReportInput<'a> {
     act_id: ActId,
-    doc: &StoredDocument,
-    pdf: &BundlePdfRef,
-    attachments_manifest: &[BundleAttachment],
-    signed: Option<&StoredSignedDocument>,
+    doc: &'a StoredDocument,
+    pdf: &'a BundlePdfRef,
+    attachments_manifest: &'a [BundleAttachment],
+    signed: Option<&'a StoredSignedDocument>,
     pdf_accessibility: PdfAccessibilityEvidenceReport,
-    external_validator_reports: &[ExternalValidatorEvidenceAttachment],
-    generated_dispatch_evidence: &[GeneratedDispatchEvidencePreservationIndex],
+    external_validator_reports: &'a [ExternalValidatorEvidenceAttachment],
+    generated_dispatch_evidence: &'a [GeneratedDispatchEvidencePreservationIndex],
+}
+
+fn build_document_bundle_validation_report(
+    input: DocumentBundleValidationReportInput<'_>,
 ) -> DocumentBundleValidationReport {
+    let DocumentBundleValidationReportInput {
+        act_id,
+        doc,
+        pdf,
+        attachments_manifest,
+        signed,
+        pdf_accessibility,
+        external_validator_reports,
+        generated_dispatch_evidence,
+    } = input;
+
     let canonical_pdf_sha256 = sha256_hex(&doc.pdf_bytes);
     let canonical_pdf_digest_matches_metadata = canonical_pdf_sha256 == doc.pdf_digest;
     let pdf_recognition = recognize_pdf(&doc.pdf_bytes);
@@ -5825,16 +5840,17 @@ pub async fn get_document_bundle(
         byte_length: doc.pdf_bytes.len(),
         download: format!("/v1/acts/{id}/document"),
     };
-    let validation_report = build_document_bundle_validation_report(
-        act_id,
-        &doc,
-        &pdf,
-        &attachments_manifest,
-        signed.as_ref(),
-        pdf_accessibility,
-        &external_validator_reports,
-        &generated_dispatch_evidence,
-    );
+    let validation_report =
+        build_document_bundle_validation_report(DocumentBundleValidationReportInput {
+            act_id,
+            doc: &doc,
+            pdf: &pdf,
+            attachments_manifest: &attachments_manifest,
+            signed: signed.as_ref(),
+            pdf_accessibility,
+            external_validator_reports: &external_validator_reports,
+            generated_dispatch_evidence: &generated_dispatch_evidence,
+        });
 
     Ok(Json(DocumentBundle {
         act_id: act_id.to_string(),
