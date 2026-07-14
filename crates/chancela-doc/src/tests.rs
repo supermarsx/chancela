@@ -874,6 +874,11 @@ fn accessibility_default_fixture_reports_no_alt_text_model() {
     assert!(report.pages_use_structure_tab_order);
     assert!(!report.alt_text_model_present);
     assert!(!report.pdf_ua_claimed);
+    assert_eq!(
+        report.pdf_ua_blocker_delta.delta_basis,
+        "local_chancela_doc_writer_evidence_only"
+    );
+    assert!(!report.pdf_ua_blocker_delta.pdf_ua_claimed);
     assert!(report.heading_hierarchy.document_title_tagged_as_h1);
     assert_eq!(report.heading_hierarchy.heading_count, 2);
     assert!(report.heading_hierarchy.no_skipped_levels);
@@ -1021,6 +1026,33 @@ fn accessibility_default_fixture_reports_no_alt_text_model() {
             .pdf_ua_blockers
             .contains(&pdfa::PdfUaBlocker::LimitedTaggedStructure)
     );
+    assert_eq!(
+        report.pdf_ua_blocker_delta.remaining_blockers,
+        report.pdf_ua_blockers
+    );
+    assert_eq!(report.pdf_ua_blocker_delta.remaining_count, 1);
+    assert_eq!(
+        report.pdf_ua_blocker_delta.cleared_count,
+        pdfa::PdfUaBlocker::ALL.len() - 1
+    );
+    assert!(
+        report
+            .pdf_ua_blocker_delta
+            .cleared_blockers
+            .contains(&pdfa::PdfUaBlocker::MissingStructTreeRoot)
+    );
+    assert!(
+        report
+            .pdf_ua_blocker_delta
+            .cleared_blockers
+            .contains(&pdfa::PdfUaBlocker::NoAltTextModel)
+    );
+    assert!(
+        !report
+            .pdf_ua_blocker_delta
+            .cleared_blockers
+            .contains(&pdfa::PdfUaBlocker::LimitedTaggedStructure)
+    );
 }
 
 #[test]
@@ -1139,7 +1171,7 @@ fn accessibility_report_records_space_emission_without_pdfua_claim() {
     );
 
     let json = report.to_json();
-    assert!(json.contains("\"version\":10"));
+    assert!(json.contains("\"version\":11"));
     assert!(json.contains("\"row_header_cell_count\":4"));
     assert!(json.contains("\"column_header_cell_count\":4"));
     assert!(json.contains("\"header_cells_have_scope\":true"));
@@ -1149,6 +1181,7 @@ fn accessibility_report_records_space_emission_without_pdfua_claim() {
     assert!(json.contains("\"bounded_local_profile\":true"));
     assert!(json.contains("\"inter_word_spaces_emitted\":true"));
     assert!(json.contains("\"pdf_ua_claimed\":false"));
+    assert!(!json.contains("\"pdf_ua_claimed\":true"));
 }
 
 #[test]
@@ -1176,7 +1209,10 @@ fn accessibility_bounded_local_pdf_diagnostics_are_emitted_without_pdfua_claim()
     assert!(!report.artifact_marking.artifacts_use_mcid);
 
     let json = report.to_json();
-    assert!(json.contains("\"version\":10"));
+    assert!(json.contains("\"version\":11"));
+    assert!(json.contains(
+        "\"pdf_ua_blocker_delta\":{\"delta_basis\":\"local_chancela_doc_writer_evidence_only\""
+    ));
     assert!(json.contains("\"structure_tree\":{"));
     assert!(json.contains("\"catalog_mark_info_marked\":true"));
     assert!(json.contains("\"mapped_roles\":["));
@@ -1187,6 +1223,10 @@ fn accessibility_bounded_local_pdf_diagnostics_are_emitted_without_pdfua_claim()
     assert!(json.contains("\"artifact_scope_operator\":\"BMC\""));
     assert!(json.contains("\"artifacts_use_mcid\":false"));
     assert!(json.contains("\"pdf_ua_claimed\":false"));
+    assert!(json.contains("\"remaining_blockers\":[\"limited_tagged_structure\"]"));
+    assert!(json.contains("\"cleared_count\":12"));
+    assert!(json.contains("\"remaining_count\":1"));
+    assert!(!json.contains("\"pdf_ua_claimed\":true"));
     assert!(!json.contains("pdfuaid"));
 
     let bytes = pdfa::write(&fixture()).expect("write");
@@ -1236,6 +1276,16 @@ fn accessibility_explicit_alt_text_decorative_model_keeps_limited_structure_bloc
         report.pdf_ua_blockers,
         vec![pdfa::PdfUaBlocker::LimitedTaggedStructure]
     );
+    assert_eq!(
+        report.pdf_ua_blocker_delta.remaining_blockers,
+        vec![pdfa::PdfUaBlocker::LimitedTaggedStructure]
+    );
+    assert_eq!(
+        report.pdf_ua_blocker_delta.cleared_count,
+        pdfa::PdfUaBlocker::ALL.len() - 1
+    );
+    assert_eq!(report.pdf_ua_blocker_delta.remaining_count, 1);
+    assert!(!report.pdf_ua_blocker_delta.pdf_ua_claimed);
     assert!(
         !report
             .pdf_ua_blockers
@@ -1435,7 +1485,11 @@ fn accessibility_report_json_is_deterministic() {
     let a = pdfa::accessibility_report(&fixture()).to_json();
     let b = pdfa::accessibility_report(&fixture()).to_json();
     assert_eq!(a, b);
-    assert!(a.starts_with("{\"version\":10,\"pdf_ua_claimed\":false"));
+    assert!(a.starts_with("{\"version\":11,\"pdf_ua_claimed\":false,\"pdf_ua_blocker_delta\":{"));
+    assert!(a.contains("\"delta_basis\":\"local_chancela_doc_writer_evidence_only\""));
+    assert!(a.contains("\"remaining_blockers\":[\"limited_tagged_structure\"]"));
+    assert!(a.contains("\"cleared_count\":12"));
+    assert!(a.contains("\"remaining_count\":1"));
     assert!(a.contains("\"structure_tree\":{"));
     assert!(a.contains("\"mapped_roles\":["));
     assert!(a.contains("\"key_value_tables_have_table_semantics\":true"));
@@ -1443,6 +1497,7 @@ fn accessibility_report_json_is_deterministic() {
     assert!(a.contains("\"column_header_cells_have_scope_column\":true"));
     assert!(a.contains("\"known_layout_artifact_targets\":["));
     assert!(a.contains("\"pdf_ua_blockers\":[\"limited_tagged_structure\"]"));
+    assert!(!a.contains("\"pdf_ua_claimed\":true"));
 }
 
 #[test]

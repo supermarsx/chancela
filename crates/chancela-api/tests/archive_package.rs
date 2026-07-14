@@ -1945,10 +1945,29 @@ async fn archive_package_reports_unsigned_documents_without_placeholder_pdf_acce
     assert_eq!(accessibility["pdf_ua_claimed"], false);
     assert_eq!(accessibility["dglab_certification_claimed"], false);
     assert_eq!(accessibility["legal_validity_claimed"], false);
-    assert_eq!(accessibility["report_version"], json!(10));
+    assert_eq!(accessibility["report_version"], json!(11));
     assert_eq!(
         accessibility["accessibility_report_json"]["version"],
-        json!(10)
+        json!(11)
+    );
+    let blocker_delta = &accessibility["accessibility_report_json"]["pdf_ua_blocker_delta"];
+    assert_eq!(
+        blocker_delta["delta_basis"],
+        "local_chancela_doc_writer_evidence_only"
+    );
+    assert_eq!(blocker_delta["pdf_ua_claimed"], false);
+    assert_eq!(blocker_delta["cleared_count"], json!(12));
+    assert_eq!(blocker_delta["remaining_count"], json!(1));
+    assert_eq!(
+        blocker_delta["remaining_blockers"],
+        json!(["limited_tagged_structure"])
+    );
+    assert!(
+        blocker_delta["cleared_blockers"]
+            .as_array()
+            .expect("cleared PDF/UA blockers")
+            .contains(&json!("no_alt_text_model")),
+        "PDF/UA blocker delta is embedded: {accessibility}"
     );
     let table_semantics = &accessibility["accessibility_report_json"]["tagged_structure"]["tables"];
     assert_eq!(table_semantics["header_cells_have_scope"], true);

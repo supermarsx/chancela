@@ -14,6 +14,8 @@ use chancela_core::{Block, DocumentModel};
 pub const FALLBACK_TITLE: &str = "Untitled Chancela document";
 /// BCP-47 "undetermined" language tag used when the source tag is blank or implausible.
 pub const FALLBACK_LANGUAGE: &str = "und";
+/// Fixed basis string for the local PDF/UA blocker delta evidence.
+pub const PDF_UA_BLOCKER_DELTA_BASIS: &str = "local_chancela_doc_writer_evidence_only";
 
 /// A metadata value after deterministic normalisation.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -201,8 +203,27 @@ pub struct AccessibilityReport {
     pub alt_text_model_present: bool,
     /// True only when the writer has enough tagged-PDF machinery to claim PDF/UA.
     pub pdf_ua_claimed: bool,
+    /// Local evidence delta between all stable blockers and the currently remaining blockers.
+    pub pdf_ua_blocker_delta: PdfUaBlockerDelta,
     /// Ordered blockers preventing a PDF/UA claim.
     pub pdf_ua_blockers: Vec<PdfUaBlocker>,
+}
+
+/// Local PDF/UA blocker delta derived only from this writer's stable blocker enum.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PdfUaBlockerDelta {
+    /// Evidence scope for the delta.
+    pub delta_basis: String,
+    /// Stable blockers locally cleared by current writer evidence.
+    pub cleared_blockers: Vec<PdfUaBlocker>,
+    /// Stable blockers still preventing a PDF/UA claim.
+    pub remaining_blockers: Vec<PdfUaBlocker>,
+    /// Count of locally cleared blockers.
+    pub cleared_count: usize,
+    /// Count of remaining blockers.
+    pub remaining_count: usize,
+    /// Always false: this delta is not a PDF/UA conformance claim.
+    pub pdf_ua_claimed: bool,
 }
 
 /// Local facts about heading levels this writer can tag.
@@ -429,6 +450,23 @@ pub enum PdfUaBlocker {
 }
 
 impl PdfUaBlocker {
+    /// Stable enum order used for deterministic blocker deltas.
+    pub const ALL: [Self; 13] = [
+        Self::MissingStructTreeRoot,
+        Self::ContentIsNotTagged,
+        Self::MissingRoleMap,
+        Self::RoleMapIncomplete,
+        Self::HeadingHierarchySkipsLevels,
+        Self::UnsupportedHeadingLevel,
+        Self::KeyValueTablesNotTaggedAsTables,
+        Self::VoteTablesNotTaggedAsTables,
+        Self::VoteTableHeadersNotTagged,
+        Self::NoAltTextModel,
+        Self::NonTextContentNotAccountedFor,
+        Self::LayoutArtifactsNotMarked,
+        Self::LimitedTaggedStructure,
+    ];
+
     /// Stable code used in the deterministic JSON report.
     pub fn code(self) -> &'static str {
         match self {
@@ -458,10 +496,15 @@ impl AccessibilityReport {
             .map(|b| json_string(b.code()))
             .collect::<Vec<_>>()
             .join(",");
+        let cleared_blockers =
+            json_pdf_ua_blocker_array(&self.pdf_ua_blocker_delta.cleared_blockers);
+        let remaining_blockers =
+            json_pdf_ua_blocker_array(&self.pdf_ua_blocker_delta.remaining_blockers);
 
         format!(
-            "{{\"version\":10,\
+            "{{\"version\":11,\
 \"pdf_ua_claimed\":{pdf_ua_claimed},\
+\"pdf_ua_blocker_delta\":{{\"delta_basis\":{delta_basis},\"cleared_blockers\":[{cleared_blockers}],\"remaining_blockers\":[{remaining_blockers}],\"cleared_count\":{cleared_count},\"remaining_count\":{remaining_count},\"pdf_ua_claimed\":{delta_pdf_ua_claimed}}},\
 \"metadata\":{{\
 \"title\":{{\"value\":{title},\"source_present\":{title_present},\"fallback_used\":{title_fallback}}},\
 \"language\":{{\"value\":{language},\"source_present\":{language_present},\"fallback_used\":{language_fallback}}},\
@@ -492,6 +535,12 @@ impl AccessibilityReport {
 \"pdf_ua_blockers\":[{blockers}]\
 }}",
             pdf_ua_claimed = self.pdf_ua_claimed,
+            delta_basis = json_string(&self.pdf_ua_blocker_delta.delta_basis),
+            cleared_blockers = cleared_blockers,
+            remaining_blockers = remaining_blockers,
+            cleared_count = self.pdf_ua_blocker_delta.cleared_count,
+            remaining_count = self.pdf_ua_blocker_delta.remaining_count,
+            delta_pdf_ua_claimed = self.pdf_ua_blocker_delta.pdf_ua_claimed,
             title = json_string(&self.metadata.title.value),
             title_present = self.metadata.title.source_present,
             title_fallback = self.metadata.title.fallback_used,
@@ -647,6 +696,7 @@ pub fn report<'a>(input: impl Into<AccessibilityInput<'a>>) -> AccessibilityRepo
         }
     }
     blockers.push(PdfUaBlocker::LimitedTaggedStructure);
+    let pdf_ua_blocker_delta = pdf_ua_blocker_delta(&blockers);
 
     AccessibilityReport {
         metadata: metadata(input.doc),
@@ -672,7 +722,26 @@ pub fn report<'a>(input: impl Into<AccessibilityInput<'a>>) -> AccessibilityRepo
         non_text_content,
         alt_text_model_present,
         pdf_ua_claimed: false,
+        pdf_ua_blocker_delta,
         pdf_ua_blockers: blockers,
+    }
+}
+
+fn pdf_ua_blocker_delta(remaining_blockers: &[PdfUaBlocker]) -> PdfUaBlockerDelta {
+    let cleared_blockers = PdfUaBlocker::ALL
+        .iter()
+        .copied()
+        .filter(|blocker| !remaining_blockers.contains(blocker))
+        .collect::<Vec<_>>();
+    let remaining_blockers = remaining_blockers.to_vec();
+
+    PdfUaBlockerDelta {
+        delta_basis: PDF_UA_BLOCKER_DELTA_BASIS.to_string(),
+        cleared_count: cleared_blockers.len(),
+        remaining_count: remaining_blockers.len(),
+        cleared_blockers,
+        remaining_blockers,
+        pdf_ua_claimed: false,
     }
 }
 
@@ -1316,6 +1385,14 @@ fn json_string_array(strings: &[String]) -> String {
     strings
         .iter()
         .map(|s| json_string(s))
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+fn json_pdf_ua_blocker_array(blockers: &[PdfUaBlocker]) -> String {
+    blockers
+        .iter()
+        .map(|blocker| json_string(blocker.code()))
         .collect::<Vec<_>>()
         .join(",")
 }
