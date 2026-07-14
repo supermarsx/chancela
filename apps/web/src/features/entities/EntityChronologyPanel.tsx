@@ -4,6 +4,7 @@ import { useEntityChronology } from '../../api/hooks';
 import type {
   EntityChronologyEvent,
   EntityChronologyMermaid,
+  EntityChronologySealedActProjection,
   EntityChronologyView,
 } from '../../api/types';
 import { useT, type TFunction } from '../../i18n';
@@ -295,6 +296,106 @@ function ChronologyAnalytics({ view, t }: { view: EntityChronologyView; t: TFunc
   );
 }
 
+function shortDigest(value: string | null): string {
+  if (!value) return '—';
+  return value.length > 16 ? `${value.slice(0, 12)}…${value.slice(-4)}` : value;
+}
+
+function sealedActSourceLabel(source: EntityChronologySealedActProjection['provenance'][number]) {
+  const ata = source.ata_number == null ? 'ata —' : `ata ${source.ata_number}`;
+  const seq = source.seal_event_seq == null ? 'seq —' : `seq ${source.seal_event_seq}`;
+  return `${ata} · ${seq}`;
+}
+
+function SealedActProjectionSection({
+  projection,
+}: {
+  projection: EntityChronologySealedActProjection;
+}) {
+  return (
+    <section className="chronology-analytics" aria-label="Cronologia local de atos selados">
+      <div className="chronology-analytics__head">
+        <h4>Cronologia local de atos selados</h4>
+        <p className="muted">
+          Projeção técnica local baseada apenas em atas seladas ou arquivadas. Não reclama validade
+          jurídica nem certificação de autoridade.
+        </p>
+      </div>
+
+      <dl className="chronology-metrics">
+        <div>
+          <dt>Eventos locais</dt>
+          <dd>{projection.events.length}</dd>
+        </div>
+        <div>
+          <dt>Nós</dt>
+          <dd>{projection.graph.nodes.length}</dd>
+        </div>
+        <div>
+          <dt>Ligações</dt>
+          <dd>{projection.graph.edges.length}</dd>
+        </div>
+        <div>
+          <dt>Fontes seladas</dt>
+          <dd>{projection.provenance.length}</dd>
+        </div>
+      </dl>
+
+      <div className="table-wrap">
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Data</th>
+              <th>Tipo</th>
+              <th>Descrição</th>
+              <th>Fonte selada</th>
+              <th>Digest</th>
+            </tr>
+          </thead>
+          <tbody>
+            {projection.events.map((event, index) => (
+              <tr key={`${event.act_id}-${event.kind}-${index}`}>
+                <td>
+                  {event.date ? (
+                    <time className="mono" dateTime={event.date}>
+                      {event.date}
+                    </time>
+                  ) : (
+                    '—'
+                  )}
+                </td>
+                <td>
+                  <code className="mono">{event.kind}</code>
+                </td>
+                <td>{event.description}</td>
+                <td>
+                  <code className="mono">{sealedActSourceLabel(event.source)}</code>
+                </td>
+                <td>
+                  <code className="mono" title={event.source.payload_digest ?? undefined}>
+                    {shortDigest(event.source.payload_digest)}
+                  </code>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {projection.graph.edges.length > 0 ? (
+        <ul className="chronology-analytics__list" aria-label="Proveniência das ligações locais">
+          {projection.graph.edges.map((edge) => (
+            <li key={edge.id}>
+              <code className="mono">{edge.kind}</code> {edge.from} -&gt; {edge.to} ·{' '}
+              {sealedActSourceLabel(edge.source)}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </section>
+  );
+}
+
 function MermaidSource({
   label,
   value,
@@ -389,6 +490,10 @@ export function EntityChronologyPanel({ entityId }: { entityId: string }) {
     <Card title={t('entities.chronology.title')}>
       <div className="stack">
         <p className="muted">{t('entities.chronology.boundary')}</p>
+
+        {chronology.data.sealed_act_projection ? (
+          <SealedActProjectionSection projection={chronology.data.sealed_act_projection} />
+        ) : null}
 
         <ChronologyVisualTimeline events={chronology.data.events} t={t} />
 

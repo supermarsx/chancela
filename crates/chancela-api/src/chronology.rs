@@ -10,10 +10,10 @@
 
 use axum::Json;
 use axum::extract::{Path, State};
-use chancela_core::EntityId;
+use chancela_core::{Act, ActState, Book, BookId, EntityId};
 use chancela_registry::RegistryExtract;
 use chancela_registry::chronology::{
-    Chronology, ChronologyEvent, ChronologyGraphBundle, ChronologyKind,
+    Chronology, ChronologyEvent, ChronologyGraph, ChronologyGraphBundle, ChronologyKind,
 };
 use serde::Serialize;
 use uuid::Uuid;
@@ -23,8 +23,9 @@ use chancela_authz::Permission;
 use crate::AppState;
 use crate::actor::CurrentActor;
 use crate::authz::{require_permission, scope_of_entity};
+use crate::dto::format_date;
 use crate::error::ApiError;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 /// Wire view of one normalized timeline event. `kind` is the bare [`ChronologyKind`] variant name
 /// (`"Constitution"`, `"CapitalChange"`, …).
@@ -135,6 +136,61 @@ fn graph_counts(
     }
 }
 
+#[derive(Clone, Serialize)]
+pub struct SealedActSourceView {
+    pub kind: &'static str,
+    pub act_id: String,
+    pub book_id: String,
+    pub ata_number: Option<u64>,
+    pub payload_digest: Option<String>,
+    pub seal_event_seq: Option<u64>,
+}
+
+#[derive(Serialize)]
+pub struct SealedActProjectionEventView {
+    pub date: Option<String>,
+    pub kind: String,
+    pub description: String,
+    pub act_id: String,
+    pub book_id: String,
+    pub ata_number: Option<u64>,
+    pub act_state: String,
+    pub source: SealedActSourceView,
+}
+
+#[derive(Serialize)]
+pub struct SealedActProjectionGraphNodeView {
+    pub id: String,
+    pub label: String,
+    pub kind: String,
+    pub source: SealedActSourceView,
+}
+
+#[derive(Serialize)]
+pub struct SealedActProjectionGraphEdgeView {
+    pub id: String,
+    pub from: String,
+    pub to: String,
+    pub label: String,
+    pub kind: String,
+    pub source: SealedActSourceView,
+}
+
+#[derive(Serialize)]
+pub struct SealedActProjectionGraphView {
+    pub nodes: Vec<SealedActProjectionGraphNodeView>,
+    pub edges: Vec<SealedActProjectionGraphEdgeView>,
+}
+
+#[derive(Serialize)]
+pub struct SealedActProjectionView {
+    pub events: Vec<SealedActProjectionEventView>,
+    pub graph: SealedActProjectionGraphView,
+    pub provenance: Vec<SealedActSourceView>,
+    pub legal_validity_claimed: bool,
+    pub authority_certified_claimed: bool,
+}
+
 /// The chronology response: the ordered event timeline plus Mermaid, structured graph views, and
 /// deterministic local analytics over those already-derived technical views.
 #[derive(Serialize)]
@@ -143,11 +199,35 @@ pub struct ChronologyView {
     pub mermaid: MermaidBundleView,
     pub graph: ChronologyGraphBundle,
     pub analytics: ChronologyAnalyticsView,
+    pub sealed_act_projection: Option<SealedActProjectionView>,
 }
 
 impl ChronologyView {
     /// Build the full view from an extract (DOC-30 events + DOC-31 Mermaid).
     pub fn build(extract: &RegistryExtract) -> Self {
+        Self::build_with_projection(Some(extract), None)
+    }
+
+    fn build_with_projection(
+        extract: Option<&RegistryExtract>,
+        sealed_act_projection: Option<SealedActProjectionView>,
+    ) -> Self {
+        let Some(extract) = extract else {
+            let graph = empty_graph_bundle();
+            let events = Vec::new();
+            let analytics = ChronologyAnalyticsView::build(&events, &graph);
+            return ChronologyView {
+                events,
+                mermaid: MermaidBundleView {
+                    shareholders: String::new(),
+                    organs: String::new(),
+                    relationships: String::new(),
+                },
+                graph,
+                analytics,
+                sealed_act_projection,
+            };
+        };
         let chrono = Chronology::build(extract);
         let events: Vec<ChronologyEventView> = chrono
             .events
@@ -166,7 +246,190 @@ impl ChronologyView {
             mermaid,
             graph,
             analytics,
+            sealed_act_projection,
         }
+    }
+}
+
+fn empty_graph_bundle() -> ChronologyGraphBundle {
+    ChronologyGraphBundle {
+        shareholders: empty_graph(),
+        organs: empty_graph(),
+        relationships: empty_graph(),
+    }
+}
+
+fn empty_graph() -> ChronologyGraph {
+    ChronologyGraph {
+        nodes: Vec::new(),
+        edges: Vec::new(),
+        warnings: Vec::new(),
+    }
+}
+
+fn build_sealed_act_projection(
+    entity_id: EntityId,
+    books: &HashMap<BookId, Book>,
+    acts: &HashMap<chancela_core::ActId, Act>,
+) -> Option<SealedActProjectionView> {
+    let mut owned_books: Vec<_> = books
+        .values()
+        .filter(|book| book.entity_id == entity_id)
+        .map(|book| book.id)
+        .collect();
+    owned_books.sort_by_key(|book_id| book_id.to_string());
+
+    let mut projected_acts: Vec<&Act> = acts
+        .values()
+        .filter(|act| {
+            owned_books.contains(&act.book_id)
+                && matches!(act.state, ActState::Sealed | ActState::Archived)
+        })
+        .collect();
+    projected_acts.sort_by(|left, right| {
+        act_sort_key(left)
+            .cmp(&act_sort_key(right))
+            .then_with(|| left.id.to_string().cmp(&right.id.to_string()))
+    });
+
+    if projected_acts.is_empty() {
+        return None;
+    }
+
+    let projected_ids: Vec<_> = projected_acts.iter().map(|act| act.id).collect();
+    let mut events = Vec::new();
+    let mut nodes = Vec::new();
+    let mut edges = Vec::new();
+    let mut provenance = Vec::new();
+
+    for act in &projected_acts {
+        let source = sealed_act_source(act);
+        provenance.push(source.clone());
+        events.push(SealedActProjectionEventView {
+            date: act.meeting_date.map(format_date),
+            kind: "SealedAct".to_owned(),
+            description: format!(
+                "{} ata{}{}",
+                state_name(act.state),
+                act.ata_number
+                    .map(|number| format!(" n.º {number}"))
+                    .unwrap_or_default(),
+                if act.title.trim().is_empty() {
+                    String::new()
+                } else {
+                    format!(": {}", act.title.trim())
+                }
+            ),
+            act_id: act.id.to_string(),
+            book_id: act.book_id.to_string(),
+            ata_number: act.ata_number,
+            act_state: state_name(act.state).to_owned(),
+            source: source.clone(),
+        });
+        nodes.push(SealedActProjectionGraphNodeView {
+            id: act_node_id(act.id),
+            label: act_node_label(act),
+            kind: "sealed_act".to_owned(),
+            source: source.clone(),
+        });
+
+        if let Some(retified_id) = act.retifies {
+            events.push(SealedActProjectionEventView {
+                date: act.meeting_date.map(format_date),
+                kind: "Correction".to_owned(),
+                description: format!(
+                    "Ata{} rectifies act {}",
+                    act.ata_number
+                        .map(|number| format!(" n.º {number}"))
+                        .unwrap_or_default(),
+                    retified_id
+                ),
+                act_id: act.id.to_string(),
+                book_id: act.book_id.to_string(),
+                ata_number: act.ata_number,
+                act_state: state_name(act.state).to_owned(),
+                source: source.clone(),
+            });
+            edges.push(SealedActProjectionGraphEdgeView {
+                id: format!("correction:{}:{}", act.id, retified_id),
+                from: act_node_id(act.id),
+                to: act_node_id(retified_id),
+                label: "retifies".to_owned(),
+                kind: "correction".to_owned(),
+                source,
+            });
+        }
+    }
+
+    for window in projected_acts.windows(2) {
+        let [previous, current] = window else {
+            continue;
+        };
+        if previous.book_id != current.book_id {
+            continue;
+        }
+        if !projected_ids.contains(&previous.id) || !projected_ids.contains(&current.id) {
+            continue;
+        }
+        edges.push(SealedActProjectionGraphEdgeView {
+            id: format!("book-sequence:{}:{}", previous.id, current.id),
+            from: act_node_id(previous.id),
+            to: act_node_id(current.id),
+            label: "same book sequence".to_owned(),
+            kind: "book_sequence".to_owned(),
+            source: sealed_act_source(current),
+        });
+    }
+
+    Some(SealedActProjectionView {
+        events,
+        graph: SealedActProjectionGraphView { nodes, edges },
+        provenance,
+        legal_validity_claimed: false,
+        authority_certified_claimed: false,
+    })
+}
+
+fn act_sort_key(act: &Act) -> (Option<String>, Option<u64>, String, String) {
+    (
+        act.meeting_date.map(format_date),
+        act.ata_number,
+        act.book_id.to_string(),
+        act.id.to_string(),
+    )
+}
+
+fn sealed_act_source(act: &Act) -> SealedActSourceView {
+    SealedActSourceView {
+        kind: "sealed_act",
+        act_id: act.id.to_string(),
+        book_id: act.book_id.to_string(),
+        ata_number: act.ata_number,
+        payload_digest: act.payload_digest.map(|digest| crate::hex::hex(&digest)),
+        seal_event_seq: act.seal_event_seq,
+    }
+}
+
+fn act_node_id(act_id: chancela_core::ActId) -> String {
+    format!("act:{act_id}")
+}
+
+fn act_node_label(act: &Act) -> String {
+    act.ata_number
+        .map(|number| format!("Ata n.º {number}"))
+        .unwrap_or_else(|| format!("Act {}", act.id))
+}
+
+fn state_name(state: ActState) -> &'static str {
+    match state {
+        ActState::Draft => "Draft",
+        ActState::Review => "Review",
+        ActState::Convened => "Convened",
+        ActState::Deliberated => "Deliberated",
+        ActState::TextApproved => "TextApproved",
+        ActState::Signing => "Signing",
+        ActState::Sealed => "Sealed",
+        ActState::Archived => "Archived",
     }
 }
 
@@ -202,9 +465,27 @@ pub async fn get_entity_chronology(
         scope_of_entity(EntityId(id)),
     )
     .await?;
+    let entity_id = EntityId(id);
+    let entities = state.entities.read().await;
+    let entity_exists = entities.contains_key(&entity_id);
+    let books = state.books.read().await;
+    let acts = state.acts.read().await;
     let extracts = state.registry_extracts.read().await;
-    let extract = extracts.get(&EntityId(id)).ok_or(ApiError::NotFound)?;
-    Ok(Json(ChronologyView::build(extract)))
+    let extract = extracts.get(&entity_id);
+    let sealed_act_projection = build_sealed_act_projection(entity_id, &books, &acts);
+    if !entity_exists && extract.is_none() && sealed_act_projection.is_none() {
+        return Err(ApiError::NotFound);
+    }
+    if extract.is_none() && sealed_act_projection.is_none() {
+        return Err(ApiError::NotFound);
+    }
+    let view = match (extract, sealed_act_projection) {
+        (Some(extract), None) => ChronologyView::build(extract),
+        (extract, sealed_act_projection) => {
+            ChronologyView::build_with_projection(extract, sealed_act_projection)
+        }
+    };
+    Ok(Json(view))
 }
 
 #[cfg(test)]
@@ -213,8 +494,12 @@ mod tests {
     use crate::actor::SESSION_TTL_SECS;
     use axum::body::{Body, to_bytes};
     use axum::http::{Request, StatusCode};
+    use chancela_core::{
+        ActId, ActState, BookId, BookKind, Entity, EntityKind, MeetingChannel, Nipc,
+    };
     use serde_json::Value;
     use std::sync::Arc;
+    use time::macros::date;
     use tower::ServiceExt;
 
     /// A structurally faithful certidão with a constitution + a designation inscrição, so the built
@@ -311,6 +596,35 @@ mod tests {
             .uri(uri)
             .body(Body::empty())
             .expect("request builds")
+    }
+
+    fn entity() -> Entity {
+        Entity::new(
+            "Encosto Estratégico, Lda",
+            Nipc::parse("503004642").expect("valid NIPC"),
+            "Lisboa",
+            EntityKind::SociedadePorQuotas,
+        )
+    }
+
+    fn projected_act(
+        id: u128,
+        book_id: BookId,
+        title: &str,
+        state: ActState,
+        ata_number: Option<u64>,
+        meeting_date: Option<time::Date>,
+        digest_byte: u8,
+        seal_event_seq: Option<u64>,
+    ) -> Act {
+        let mut act = Act::draft(book_id, title, MeetingChannel::Physical);
+        act.id = ActId(Uuid::from_u128(id));
+        act.state = state;
+        act.ata_number = ata_number;
+        act.meeting_date = meeting_date;
+        act.payload_digest = Some([digest_byte; 32]);
+        act.seal_event_seq = seal_event_seq;
+        act
     }
 
     fn post_json(uri: &str, body: Value) -> Request<Body> {
@@ -465,6 +779,179 @@ mod tests {
         let missing = Uuid::new_v4();
         let (status, _) = send(state, get(&format!("/v1/entities/{missing}/chronology"))).await;
         assert_eq!(status, StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn chronology_returns_sealed_act_projection_without_registry_extract() {
+        let state = AppState::default();
+        let entity = entity();
+        let entity_id = entity.id;
+        let book = Book::new(entity_id, BookKind::AssembleiaGeral);
+        let book_id = book.id;
+        let archived = projected_act(
+            0x101,
+            book_id,
+            "Aprovação de contas",
+            ActState::Archived,
+            Some(1),
+            Some(date!(2026 - 01 - 10)),
+            1,
+            Some(11),
+        );
+        let sealed = projected_act(
+            0x102,
+            book_id,
+            "Designação da gerência",
+            ActState::Sealed,
+            Some(2),
+            Some(date!(2026 - 02 - 10)),
+            2,
+            Some(12),
+        );
+        let draft = projected_act(
+            0x103,
+            book_id,
+            "Draft must stay out",
+            ActState::Draft,
+            None,
+            Some(date!(2025 - 12 - 31)),
+            3,
+            None,
+        );
+        state.entities.write().await.insert(entity_id, entity);
+        state.books.write().await.insert(book_id, book);
+        {
+            let mut acts = state.acts.write().await;
+            acts.insert(archived.id, archived);
+            acts.insert(sealed.id, sealed);
+            acts.insert(draft.id, draft);
+        }
+
+        let (status, view) = send(
+            state,
+            get(&format!("/v1/entities/{}/chronology", entity_id.0)),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK, "projection-only body: {view}");
+        assert_eq!(view["events"].as_array().expect("registry events").len(), 0);
+        let projection = &view["sealed_act_projection"];
+        assert!(projection.is_object(), "projection is present: {view}");
+        assert_eq!(projection["legal_validity_claimed"], false);
+        assert_eq!(projection["authority_certified_claimed"], false);
+        let events = projection["events"].as_array().expect("projection events");
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0]["ata_number"], 1);
+        assert_eq!(events[0]["act_state"], "Archived");
+        assert_eq!(events[1]["ata_number"], 2);
+        assert_eq!(events[1]["act_state"], "Sealed");
+        assert!(
+            !serde_json::to_string(projection)
+                .expect("projection JSON")
+                .contains("Draft must stay out"),
+            "draft/review/signing acts are excluded"
+        );
+        for event in events {
+            assert_eq!(event["source"]["kind"], "sealed_act");
+            assert!(event["source"]["act_id"].as_str().is_some());
+            assert!(event["source"]["book_id"].as_str().is_some());
+            assert!(event["source"]["payload_digest"].as_str().is_some());
+            assert!(event["source"]["seal_event_seq"].as_u64().is_some());
+        }
+        let nodes = projection["graph"]["nodes"]
+            .as_array()
+            .expect("projection nodes");
+        assert_eq!(nodes.len(), 2);
+        assert!(
+            nodes
+                .iter()
+                .all(|node| node["source"]["kind"] == "sealed_act")
+        );
+        assert_eq!(
+            projection["provenance"]
+                .as_array()
+                .expect("provenance")
+                .len(),
+            2
+        );
+    }
+
+    #[tokio::test]
+    async fn sealed_act_projection_adds_retification_event_and_edge_without_mutating_acts() {
+        let state = AppState::default();
+        let entity = entity();
+        let entity_id = entity.id;
+        let book = Book::new(entity_id, BookKind::AssembleiaGeral);
+        let book_id = book.id;
+        let original = projected_act(
+            0x201,
+            book_id,
+            "Deliberação original",
+            ActState::Sealed,
+            Some(1),
+            Some(date!(2026 - 03 - 01)),
+            4,
+            Some(21),
+        );
+        let original_id = original.id;
+        let mut correction = projected_act(
+            0x202,
+            book_id,
+            "Termo de retificação",
+            ActState::Sealed,
+            Some(2),
+            Some(date!(2026 - 03 - 02)),
+            5,
+            Some(22),
+        );
+        correction.retifies = Some(original_id);
+        let correction_snapshot = correction.clone();
+
+        state.entities.write().await.insert(entity_id, entity);
+        state.books.write().await.insert(book_id, book);
+        {
+            let mut acts = state.acts.write().await;
+            acts.insert(original.id, original);
+            acts.insert(correction.id, correction);
+        }
+
+        let (status, view) = send(
+            state.clone(),
+            get(&format!("/v1/entities/{}/chronology", entity_id.0)),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK, "projection body: {view}");
+        let projection = &view["sealed_act_projection"];
+        let events = projection["events"].as_array().expect("projection events");
+        assert!(
+            events.iter().any(|event| event["kind"] == "Correction"
+                && event["source"]["act_id"] == correction_snapshot.id.to_string()),
+            "retifies creates a correction event: {projection}"
+        );
+        let edges = projection["graph"]["edges"]
+            .as_array()
+            .expect("projection edges");
+        assert!(
+            edges.iter().any(|edge| edge["kind"] == "correction"
+                && edge["source"]["act_id"] == correction_snapshot.id.to_string()
+                && edge["to"] == format!("act:{original_id}")),
+            "retifies creates a correction edge sourced to the correction act: {projection}"
+        );
+        assert!(
+            edges
+                .iter()
+                .all(|edge| edge["source"]["kind"] == "sealed_act")
+        );
+
+        let stored_correction = state
+            .acts
+            .read()
+            .await
+            .get(&correction_snapshot.id)
+            .cloned()
+            .expect("stored correction");
+        assert_eq!(stored_correction, correction_snapshot);
     }
 
     #[tokio::test]

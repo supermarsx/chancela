@@ -663,6 +663,111 @@ describe('EntityDetailPage', () => {
                 relationships: { nodes: 1, edges: 0, warnings: 1 },
               },
             },
+            sealed_act_projection: {
+              events: [
+                {
+                  date: '2026-03-01',
+                  kind: 'SealedAct',
+                  description: 'Sealed ata n.º 1: Deliberação original',
+                  act_id: 'act-original',
+                  book_id: 'book-1',
+                  ata_number: 1,
+                  act_state: 'Sealed',
+                  source: {
+                    kind: 'sealed_act',
+                    act_id: 'act-original',
+                    book_id: 'book-1',
+                    ata_number: 1,
+                    payload_digest: 'a'.repeat(64),
+                    seal_event_seq: 21,
+                  },
+                },
+                {
+                  date: '2026-03-02',
+                  kind: 'Correction',
+                  description: 'Ata n.º 2 rectifies act act-original',
+                  act_id: 'act-correction',
+                  book_id: 'book-1',
+                  ata_number: 2,
+                  act_state: 'Sealed',
+                  source: {
+                    kind: 'sealed_act',
+                    act_id: 'act-correction',
+                    book_id: 'book-1',
+                    ata_number: 2,
+                    payload_digest: 'b'.repeat(64),
+                    seal_event_seq: 22,
+                  },
+                },
+              ],
+              graph: {
+                nodes: [
+                  {
+                    id: 'act:act-original',
+                    label: 'Ata n.º 1',
+                    kind: 'sealed_act',
+                    source: {
+                      kind: 'sealed_act',
+                      act_id: 'act-original',
+                      book_id: 'book-1',
+                      ata_number: 1,
+                      payload_digest: 'a'.repeat(64),
+                      seal_event_seq: 21,
+                    },
+                  },
+                  {
+                    id: 'act:act-correction',
+                    label: 'Ata n.º 2',
+                    kind: 'sealed_act',
+                    source: {
+                      kind: 'sealed_act',
+                      act_id: 'act-correction',
+                      book_id: 'book-1',
+                      ata_number: 2,
+                      payload_digest: 'b'.repeat(64),
+                      seal_event_seq: 22,
+                    },
+                  },
+                ],
+                edges: [
+                  {
+                    id: 'correction:act-correction:act-original',
+                    from: 'act:act-correction',
+                    to: 'act:act-original',
+                    label: 'retifies',
+                    kind: 'correction',
+                    source: {
+                      kind: 'sealed_act',
+                      act_id: 'act-correction',
+                      book_id: 'book-1',
+                      ata_number: 2,
+                      payload_digest: 'b'.repeat(64),
+                      seal_event_seq: 22,
+                    },
+                  },
+                ],
+              },
+              provenance: [
+                {
+                  kind: 'sealed_act',
+                  act_id: 'act-original',
+                  book_id: 'book-1',
+                  ata_number: 1,
+                  payload_digest: 'a'.repeat(64),
+                  seal_event_seq: 21,
+                },
+                {
+                  kind: 'sealed_act',
+                  act_id: 'act-correction',
+                  book_id: 'book-1',
+                  ata_number: 2,
+                  payload_digest: 'b'.repeat(64),
+                  seal_event_seq: 22,
+                },
+              ],
+              legal_validity_claimed: false,
+              authority_certified_claimed: false,
+            },
           }),
         );
       }
@@ -706,6 +811,14 @@ describe('EntityDetailPage', () => {
     expect(analytics.textContent).toContain('não certificam prioridade');
     expect(analytics.textContent).toContain('validade jurídica');
     expect(analytics.textContent).toContain('aprovação de autoridade');
+    const sealedProjection = screen.getByLabelText('Cronologia local de atos selados');
+    expect(sealedProjection.textContent).toContain('Eventos locais');
+    expect(sealedProjection.textContent).toContain('Fontes seladas');
+    expect(sealedProjection.textContent).toContain('SealedAct');
+    expect(sealedProjection.textContent).toContain('Correction');
+    expect(sealedProjection.textContent).toContain('ata 2 · seq 22');
+    expect(sealedProjection.textContent).toContain('correction');
+    expect(sealedProjection.textContent).toContain('Não reclama validade jurídica');
     expect(
       (screen.getByLabelText('Código Mermaid: Sócios e quotas') as HTMLTextAreaElement).value,
     ).toContain('Entidade -->|"Quota EUR 5000"| Maria');

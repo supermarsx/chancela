@@ -323,11 +323,59 @@ export interface EntityChronologyAnalytics {
   graph: EntityChronologyGraphAnalytics;
 }
 
+export interface EntityChronologySealedActSource {
+  kind: 'sealed_act' | string;
+  act_id: string;
+  book_id: string;
+  ata_number: number | null;
+  payload_digest: string | null;
+  seal_event_seq: number | null;
+}
+
+export interface EntityChronologySealedActProjectionEvent {
+  date: string | null;
+  kind: string;
+  description: string;
+  act_id: string;
+  book_id: string;
+  ata_number: number | null;
+  act_state: ActState | string;
+  source: EntityChronologySealedActSource;
+}
+
+export interface EntityChronologySealedActProjectionGraphNode {
+  id: string;
+  label: string;
+  kind: string;
+  source: EntityChronologySealedActSource;
+}
+
+export interface EntityChronologySealedActProjectionGraphEdge {
+  id: string;
+  from: string;
+  to: string;
+  label: string;
+  kind: string;
+  source: EntityChronologySealedActSource;
+}
+
+export interface EntityChronologySealedActProjection {
+  events: EntityChronologySealedActProjectionEvent[];
+  graph: {
+    nodes: EntityChronologySealedActProjectionGraphNode[];
+    edges: EntityChronologySealedActProjectionGraphEdge[];
+  };
+  provenance: EntityChronologySealedActSource[];
+  legal_validity_claimed: false;
+  authority_certified_claimed: false;
+}
+
 export interface EntityChronologyView {
   events: EntityChronologyEvent[];
   mermaid: EntityChronologyMermaid;
   graph: EntityChronologyGraphBundle;
   analytics: EntityChronologyAnalytics;
+  sealed_act_projection?: EntityChronologySealedActProjection | null;
 }
 
 export interface BookView {
