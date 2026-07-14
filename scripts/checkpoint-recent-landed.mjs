@@ -2282,6 +2282,51 @@ function assertCheckpointMap() {
     "PDF accessibility default fixture no-alt blocker removal marker",
   );
   assertFileContains(
+    "crates/chancela-api/src/documents.rs",
+    "pub(crate) const PDF_ACCESSIBILITY_ARCHIVE_PATH_PATTERN",
+    "API PDF accessibility archive path pattern marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/documents.rs",
+    "pdf_accessibility_evidence_for_act_document",
+    "API PDF accessibility persisted-model projection helper",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/documents.rs",
+    "pdf_accessibility_report_unavailable",
+    "API PDF accessibility unavailable fail-closed marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/archive_package.rs",
+    "load_pdf_accessibility_archive_attachments",
+    "archive package PDF accessibility sidecar loader",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/archive_package.rs",
+    "PDF_ACCESSIBILITY_ARCHIVE_PATH_PREFIX",
+    "archive package PDF accessibility sidecar prefix",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "PDF/UA blockers are projected from the doc report",
+    "document bundle PDF accessibility projection coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/archive_package.rs",
+    "book-level PDF accessibility evidence is explicitly unavailable",
+    "archive package book-level PDF accessibility unavailable coverage",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Current working-tree PDF accessibility evidence projection checks",
+    "CI/E2E hardening plan PDF accessibility projection marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Current working-tree PDF accessibility evidence projection keeps Documents",
+    "spec coverage PDF accessibility projection partial marker",
+  );
+  assertFileContains(
     "crates/chancela-api/src/external_validator_evidence.rs",
     "create_external_validator_report_metadata",
     "external-validator report metadata capture API",

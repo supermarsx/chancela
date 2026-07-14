@@ -171,6 +171,18 @@ blockers.
 
 Implementation checkpoints covered here:
 
+- Current working-tree PDF accessibility evidence projection keeps Documents,
+  Archive/Data, and CI **PARTIAL**: document bundle validation reports now
+  embed the deterministic `chancela-doc` accessibility report JSON v9 plus
+  machine-readable PDF/UA blockers, and archive packages include
+  `evidence/pdf-accessibility/{document_id}.json` sidecars with manifest
+  entries and evidence-index path pointers. Act-owned documents derive this
+  from the persisted render model; book-level or unsupported cases stay
+  fail-closed as `pdf_accessibility_report_unavailable`. The evidence carries
+  explicit false `pdf_ua_claimed`, `dglab_certification_claimed`, and
+  `legal_validity_claimed` flags, and does not claim PDF/UA conformance, DGLAB
+  certification, legal validity, external certification, or signed-PDF
+  accessibility certification.
 - Current `14d0f0c` retention candidate-resolution checkpoint keeps
   Legal/Compliance, Data, UX, and CI **PARTIAL**: candidate-level retention
   disposition records are persisted as evidence-only sidecars, projected back

@@ -5860,6 +5860,38 @@ mod tests {
             "/attachments_manifest"
         );
         assert_eq!(
+            report["evidence_index"]["pdf_accessibility"]["evidence_kind"],
+            "pdf_accessibility_report"
+        );
+        assert_eq!(
+            report["evidence_index"]["pdf_accessibility"]["metadata_schema"],
+            "chancela-pdf-accessibility-evidence/v1"
+        );
+        assert_eq!(
+            report["evidence_index"]["pdf_accessibility"]["bundle_report_json_pointer"],
+            "/validation_report/pdf_accessibility"
+        );
+        assert_eq!(
+            report["evidence_index"]["pdf_accessibility"]["archive_path_pattern"],
+            "evidence/pdf-accessibility/{document_id}.json"
+        );
+        assert_eq!(
+            report["evidence_index"]["pdf_accessibility"]["evidence_status"],
+            "pdf_accessibility_report_attached"
+        );
+        assert_eq!(
+            report["evidence_index"]["pdf_accessibility"]["pdf_ua_claimed"],
+            false
+        );
+        assert_eq!(
+            report["evidence_index"]["pdf_accessibility"]["dglab_certification_claimed"],
+            false
+        );
+        assert_eq!(
+            report["evidence_index"]["pdf_accessibility"]["legal_validity_claimed"],
+            false
+        );
+        assert_eq!(
             report["evidence_index"]["external_validator_reports"]["evidence_kind"],
             "external_validator_report_metadata"
         );
@@ -5887,12 +5919,59 @@ mod tests {
             .expect("evidence index JSON serializes");
         assert!(
             !evidence_index_text.contains("trust-list")
-                && !evidence_index_text.contains("trust_list")
-                && !evidence_index_text.contains("legal"),
-            "evidence index stays path/metadata scoped: {report}"
+                && !evidence_index_text.contains("trust_list"),
+            "evidence index stays local technical metadata scoped: {report}"
+        );
+        assert!(
+            !evidence_index_text.contains("pdfuaid")
+                && !evidence_index_text.contains("DGLAB")
+                && !evidence_index_text.contains("\"pdf_ua_claimed\":true")
+                && !evidence_index_text.contains("\"dglab_certification_claimed\":true")
+                && !evidence_index_text.contains("\"legal_validity_claimed\":true"),
+            "evidence index must not carry PDF/UA, DGLAB, or legal-validity claims: {report}"
         );
         assert_eq!(report["canonical_pdf"]["present"], true);
         assert_eq!(report["canonical_pdf"]["media_type"], "application/pdf");
+        assert_eq!(
+            report["pdf_accessibility"]["evidence_kind"],
+            "pdf_accessibility_report"
+        );
+        assert_eq!(
+            report["pdf_accessibility"]["evidence_status"],
+            "pdf_accessibility_report_attached"
+        );
+        assert_eq!(report["pdf_accessibility"]["pdf_ua_claimed"], false);
+        assert_eq!(
+            report["pdf_accessibility"]["dglab_certification_claimed"],
+            false
+        );
+        assert_eq!(report["pdf_accessibility"]["legal_validity_claimed"], false);
+        assert_eq!(report["pdf_accessibility"]["report_version"], json!(9));
+        assert_eq!(
+            report["pdf_accessibility"]["accessibility_report_json"]["version"],
+            json!(9)
+        );
+        assert_eq!(
+            report["pdf_accessibility"]["accessibility_report_json"]["pdf_ua_claimed"],
+            false
+        );
+        assert!(
+            report["pdf_accessibility"]["pdf_ua_blockers"]
+                .as_array()
+                .expect("accessibility blockers")
+                .contains(&json!("limited_tagged_structure")),
+            "PDF/UA blockers are projected from the doc report: {report}"
+        );
+        let accessibility_text =
+            serde_json::to_string(&report["pdf_accessibility"]).expect("accessibility JSON");
+        assert!(
+            !accessibility_text.contains("pdfuaid")
+                && !accessibility_text.contains("DGLAB")
+                && !accessibility_text.contains("\"pdf_ua_claimed\":true")
+                && !accessibility_text.contains("\"dglab_certification_claimed\":true")
+                && !accessibility_text.contains("\"legal_validity_claimed\":true"),
+            "accessibility evidence remains technical and no-claim: {report}"
+        );
         assert_eq!(
             report["fixity"]["canonical_pdf_sha256"],
             bundle["document"]["pdf_digest"]

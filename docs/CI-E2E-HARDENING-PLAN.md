@@ -920,6 +920,17 @@ settingsDefaults.test.ts contracts.test.ts`.
   metadata is emitted. This is blocker reduction only, not PDF/UA conformance,
   validator evidence, legal sufficiency, or signed-PDF accessibility
   certification.
+- Current working-tree PDF accessibility evidence projection checks: focused
+  API/archive tests project the deterministic `chancela-doc` accessibility
+  report JSON v9 into document bundle validation reports and archive package
+  `evidence/pdf-accessibility/{document_id}.json` sidecars. Act-owned documents
+  are derived from the persisted render model; book-level or unsupported model
+  cases remain explicit `pdf_accessibility_report_unavailable` sidecars. The
+  bundle and archive indexes expose path pointers and false
+  `pdf_ua_claimed`, `dglab_certification_claimed`, and
+  `legal_validity_claimed` flags only. This is technical blocker/fixity
+  metadata, not PDF/UA conformance, DGLAB certification, legal validity,
+  external certification, or signed-PDF accessibility certification.
 - Recent export-save checks through `ff1823a`: focused browser E2E pins
   `installCancelledBrowserSavePicker`, the visible `Guardar cancelado` result,
   preserved save-picker options, no browser-download fallback, and no mutation

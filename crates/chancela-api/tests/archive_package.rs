@@ -424,6 +424,45 @@ async fn seal_condominium_absent_owner_act(
     }
 }
 
+async fn open_empty_archive_book(state: &AppState, token: &str) -> String {
+    let (status, entity) = send(
+        state,
+        json_req(
+            "POST",
+            "/v1/entities",
+            token,
+            json!({
+                "name": "Arquivo Sem Atas, S.A.",
+                "nipc": "503004642",
+                "seat": "Lisboa",
+                "kind": "SociedadeAnonima"
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "entity: {entity}");
+    let entity_id = entity["id"].as_str().expect("entity id").to_owned();
+
+    let (status, book) = send(
+        state,
+        json_req(
+            "POST",
+            "/v1/books",
+            token,
+            json!({
+                "entity_id": entity_id,
+                "kind": "AssembleiaGeral",
+                "purpose": "livro de atas sem atas arquivadas",
+                "opening_date": "2026-01-15",
+                "required_signatories": ["Administrador"]
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "book: {book}");
+    book["id"].as_str().expect("book id").to_owned()
+}
+
 async fn record_absent_owner_dispatch_evidence(
     state: &AppState,
     token: &str,
@@ -1702,6 +1741,7 @@ async fn archive_package_reports_unsigned_documents_without_placeholder() {
     assert_eq!(preservation.fixity.total_byte_len, total_byte_len);
 
     let evidence_path = format!("evidence/{}.json", sealed.document_id);
+    let pdf_accessibility_path = format!("evidence/pdf-accessibility/{}.json", sealed.document_id);
     let evidence_file = manifest
         .files
         .iter()
@@ -1715,6 +1755,27 @@ async fn archive_package_reports_unsigned_documents_without_placeholder() {
     );
     assert_eq!(
         evidence_file
+            .document_id
+            .map(|id| id.to_string())
+            .as_deref(),
+        Some(sealed.document_id.as_str())
+    );
+    let pdf_accessibility_file = manifest
+        .files
+        .iter()
+        .find(|file| file.path == pdf_accessibility_path)
+        .expect("PDF accessibility evidence report in manifest");
+    assert_eq!(pdf_accessibility_file.role, PackageFileRole::EvidenceReport);
+    assert_eq!(pdf_accessibility_file.content_type, "application/json");
+    assert_eq!(
+        pdf_accessibility_file
+            .act_id
+            .map(|id| id.to_string())
+            .as_deref(),
+        Some(sealed.act_id.as_str())
+    );
+    assert_eq!(
+        pdf_accessibility_file
             .document_id
             .map(|id| id.to_string())
             .as_deref(),
@@ -1762,6 +1823,91 @@ async fn archive_package_reports_unsigned_documents_without_placeholder() {
         evidence_index["external_validator_reports"]["attachments"],
         json!([])
     );
+    assert_eq!(
+        evidence_index["pdf_accessibility_reports"]["evidence_kind"],
+        "pdf_accessibility_report"
+    );
+    assert_eq!(
+        evidence_index["pdf_accessibility_reports"]["metadata_schema"],
+        "chancela-pdf-accessibility-evidence/v1"
+    );
+    assert_eq!(
+        evidence_index["pdf_accessibility_reports"]["indexed_path_prefix"],
+        "evidence/pdf-accessibility/"
+    );
+    assert_eq!(
+        evidence_index["pdf_accessibility_reports"]["indexed_path_pattern"],
+        "evidence/pdf-accessibility/{document_id}.json"
+    );
+    assert_eq!(
+        evidence_index["pdf_accessibility_reports"]["attachment_status"],
+        "pdf_accessibility_evidence_partially_available"
+    );
+    assert_eq!(
+        evidence_index["pdf_accessibility_reports"]["attachments_total"],
+        json!(2)
+    );
+    assert_eq!(
+        evidence_index["pdf_accessibility_reports"]["attached_count"],
+        json!(1)
+    );
+    assert_eq!(
+        evidence_index["pdf_accessibility_reports"]["unavailable_count"],
+        json!(1)
+    );
+    assert_eq!(
+        evidence_index["pdf_accessibility_reports"]["pdf_ua_claimed"],
+        false
+    );
+    assert_eq!(
+        evidence_index["pdf_accessibility_reports"]["dglab_certification_claimed"],
+        false
+    );
+    assert_eq!(
+        evidence_index["pdf_accessibility_reports"]["legal_validity_claimed"],
+        false
+    );
+    let pdf_accessibility_attachments = evidence_index["pdf_accessibility_reports"]["attachments"]
+        .as_array()
+        .expect("PDF accessibility attachments");
+    assert!(
+        pdf_accessibility_attachments.iter().any(|entry| {
+            entry["document_id"] == sealed.document_id
+                && entry["act_id"] == sealed.act_id
+                && entry["path"] == pdf_accessibility_path
+                && entry["content_type"] == "application/json"
+                && entry["evidence_status"] == "pdf_accessibility_report_attached"
+                && entry["pdf_ua_claimed"] == false
+                && entry["dglab_certification_claimed"] == false
+                && entry["legal_validity_claimed"] == false
+        }),
+        "act PDF accessibility evidence is indexed: {evidence_index}"
+    );
+    assert!(
+        pdf_accessibility_attachments.iter().any(|entry| {
+            entry["act_id"].is_null()
+                && entry["evidence_status"] == "pdf_accessibility_report_unavailable"
+        }),
+        "book-level PDF accessibility evidence is explicitly unavailable: {evidence_index}"
+    );
+    let book_accessibility_path = pdf_accessibility_attachments
+        .iter()
+        .find(|entry| {
+            entry["act_id"].is_null()
+                && entry["evidence_status"] == "pdf_accessibility_report_unavailable"
+        })
+        .and_then(|entry| entry["path"].as_str())
+        .expect("book-level PDF accessibility sidecar path");
+    let book_accessibility = member_json(&members, book_accessibility_path);
+    assert_eq!(
+        book_accessibility["evidence_status"],
+        "pdf_accessibility_report_unavailable"
+    );
+    assert_eq!(book_accessibility["pdf_ua_claimed"], false);
+    assert_eq!(
+        book_accessibility["unavailable_reason"],
+        "book_level_document_accessibility_model_unavailable"
+    );
     assert!(
         evidence_index["documents"]
             .as_array()
@@ -1769,6 +1915,7 @@ async fn archive_package_reports_unsigned_documents_without_placeholder() {
             .iter()
             .any(|entry| entry["document_id"] == sealed.document_id
                 && entry["signature_evidence_path"] == evidence_path
+                && entry["pdf_accessibility_evidence_path"] == pdf_accessibility_path
                 && entry["canonical_pdf_path"] == format!("documents/{}.pdf", sealed.document_id)
                 && entry["document_metadata_path"]
                     == format!("metadata/{}.json", sealed.document_id)),
@@ -1777,10 +1924,52 @@ async fn archive_package_reports_unsigned_documents_without_placeholder() {
     let evidence_index_text =
         String::from_utf8_lossy(members.get("evidence/index.json").expect("index bytes"));
     assert!(
-        !evidence_index_text.contains("trust-list")
-            && !evidence_index_text.contains("trust_list")
-            && !evidence_index_text.contains("legal"),
-        "evidence index stays path/metadata scoped: {evidence_index}"
+        !evidence_index_text.contains("trust-list") && !evidence_index_text.contains("trust_list"),
+        "evidence index stays local technical metadata scoped: {evidence_index}"
+    );
+    assert!(
+        !evidence_index_text.contains("pdfuaid")
+            && !evidence_index_text.contains("DGLAB")
+            && !evidence_index_text.contains("\"pdf_ua_claimed\":true")
+            && !evidence_index_text.contains("\"dglab_certification_claimed\":true")
+            && !evidence_index_text.contains("\"legal_validity_claimed\":true"),
+        "evidence index must not carry PDF/UA, DGLAB, or legal-validity claims: {evidence_index}"
+    );
+
+    let accessibility = member_json(&members, &pdf_accessibility_path);
+    assert_eq!(accessibility["evidence_kind"], "pdf_accessibility_report");
+    assert_eq!(
+        accessibility["evidence_status"],
+        "pdf_accessibility_report_attached"
+    );
+    assert_eq!(accessibility["pdf_ua_claimed"], false);
+    assert_eq!(accessibility["dglab_certification_claimed"], false);
+    assert_eq!(accessibility["legal_validity_claimed"], false);
+    assert_eq!(accessibility["report_version"], json!(9));
+    assert_eq!(
+        accessibility["accessibility_report_json"]["version"],
+        json!(9)
+    );
+    assert_eq!(
+        accessibility["accessibility_report_json"]["pdf_ua_claimed"],
+        false
+    );
+    assert!(
+        accessibility["pdf_ua_blockers"]
+            .as_array()
+            .expect("PDF/UA blockers")
+            .contains(&json!("limited_tagged_structure")),
+        "PDF accessibility blockers are projected: {accessibility}"
+    );
+    let accessibility_text =
+        String::from_utf8_lossy(members.get(&pdf_accessibility_path).expect("sidecar bytes"));
+    assert!(
+        !accessibility_text.contains("pdfuaid")
+            && !accessibility_text.contains("DGLAB")
+            && !accessibility_text.contains("\"pdf_ua_claimed\":true")
+            && !accessibility_text.contains("\"dglab_certification_claimed\":true")
+            && !accessibility_text.contains("\"legal_validity_claimed\":true"),
+        "PDF accessibility sidecar remains technical and no-claim: {accessibility}"
     );
 
     let report = member_json(&members, &evidence_path);
@@ -1801,6 +1990,83 @@ async fn archive_package_reports_unsigned_documents_without_placeholder() {
             .contains("placeholder"),
         "report must not contain placeholder evidence"
     );
+}
+
+#[tokio::test]
+async fn archive_package_reports_book_only_pdf_accessibility_evidence_unavailable() {
+    let dir = TempDir::new();
+    let state = AppState::with_data_dir(&dir.0);
+    let token = bootstrap(&state).await;
+    let book_id = open_empty_archive_book(&state, &token).await;
+    close_book(&state, &token, &book_id).await;
+
+    let package = archive_package_bytes(&state, &book_id, &token).await;
+    let manifest = validate_package(&package).expect("archive package validates");
+    assert!(
+        manifest
+            .document_ids
+            .iter()
+            .all(|document_id| Uuid::parse_str(&book_id).expect("book uuid") != *document_id),
+        "book-level document ids are distinct preserved document ids"
+    );
+
+    let members = zip_members(&package);
+    let evidence_index = member_json(&members, "evidence/index.json");
+    let indexed_docs = evidence_index["documents"]
+        .as_array()
+        .expect("indexed documents");
+    assert!(
+        !indexed_docs.is_empty(),
+        "book-only archive has preserved book documents: {evidence_index}"
+    );
+    assert!(
+        indexed_docs.iter().all(|entry| entry["act_id"].is_null()),
+        "book-only archive must not index act-level documents: {evidence_index}"
+    );
+
+    let reports = &evidence_index["pdf_accessibility_reports"];
+    let attachments = reports["attachments"]
+        .as_array()
+        .expect("PDF accessibility attachments");
+    assert_eq!(
+        reports["attachment_status"],
+        "pdf_accessibility_evidence_unavailable"
+    );
+    assert_eq!(reports["attachments_total"], json!(attachments.len()));
+    assert_eq!(reports["attached_count"], json!(0));
+    assert_eq!(reports["unavailable_count"], json!(attachments.len()));
+    assert!(
+        !attachments.is_empty(),
+        "book-only archive must report unavailable book-level accessibility evidence: {reports}"
+    );
+    assert!(
+        attachments.iter().all(|entry| {
+            entry["act_id"].is_null()
+                && entry["evidence_status"] == "pdf_accessibility_report_unavailable"
+                && entry["pdf_ua_claimed"] == false
+                && entry["dglab_certification_claimed"] == false
+                && entry["legal_validity_claimed"] == false
+        }),
+        "all book-only accessibility entries are fail-closed unavailable evidence: {reports}"
+    );
+
+    for attachment in attachments {
+        let path = attachment["path"]
+            .as_str()
+            .expect("PDF accessibility sidecar path");
+        let sidecar = member_json(&members, path);
+        assert_eq!(
+            sidecar["evidence_status"],
+            "pdf_accessibility_report_unavailable"
+        );
+        assert_eq!(
+            sidecar["unavailable_reason"],
+            "book_level_document_accessibility_model_unavailable"
+        );
+        assert_eq!(sidecar["pdf_ua_claimed"], false);
+        assert_eq!(sidecar["dglab_certification_claimed"], false);
+        assert_eq!(sidecar["legal_validity_claimed"], false);
+    }
 }
 
 #[tokio::test]
@@ -2326,8 +2592,8 @@ async fn archive_package_embeds_matching_external_validator_raw_report_attachmen
     );
     assert!(
         !String::from_utf8_lossy(members.get("evidence/index.json").expect("index bytes"))
-            .contains("legal"),
-        "raw external validator report evidence stays technical scoped"
+            .contains("\"legal_validity_claimed\":true"),
+        "raw external validator report evidence stays technical and no-claim scoped"
     );
     let raw_text = String::from_utf8_lossy(
         members

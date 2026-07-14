@@ -110,6 +110,14 @@ const IMPORTED_DOCUMENT_REVIEW_GUARDRAIL_CHECKLIST: &[&str] = &[
 const DOCUMENT_BUNDLE_VALIDATION_NOTICE: &str = "Technical bundle evidence report only; it does \
 not certify legal validity, PDF/A conformance, PDF/UA conformance, qualified-signature status, \
 DGLAB certification, or production long-term validation.";
+pub(crate) const PDF_ACCESSIBILITY_EVIDENCE_KIND: &str = "pdf_accessibility_report";
+pub(crate) const PDF_ACCESSIBILITY_EVIDENCE_SCHEMA: &str = "chancela-pdf-accessibility-evidence/v1";
+pub(crate) const PDF_ACCESSIBILITY_ARCHIVE_PATH_PREFIX: &str = "evidence/pdf-accessibility/";
+pub(crate) const PDF_ACCESSIBILITY_ARCHIVE_PATH_PATTERN: &str =
+    "evidence/pdf-accessibility/{document_id}.json";
+pub(crate) const PDF_ACCESSIBILITY_REPORT_ATTACHED: &str = "pdf_accessibility_report_attached";
+pub(crate) const PDF_ACCESSIBILITY_REPORT_UNAVAILABLE: &str =
+    "pdf_accessibility_report_unavailable";
 const MAX_IMPORTED_DOCUMENT_REVIEW_NOTE_CHARS: usize = 2_000;
 const MAX_DISPATCH_EVIDENCE_LOCATOR_CHARS: usize = 512;
 const MAX_DISPATCH_EVIDENCE_NOTE_CHARS: usize = 2_000;
@@ -5108,6 +5116,7 @@ pub struct DocumentBundleValidationReport {
     pub legal_notice: &'static str,
     pub bundle_document_consistency: BundleDocumentConsistencyReport,
     pub canonical_pdf: BundleCanonicalPdfReport,
+    pub pdf_accessibility: PdfAccessibilityEvidenceReport,
     pub fixity: BundleFixityReport,
     pub signed_document: BundleSignedDocumentReport,
     pub non_certification: BundleNonCertificationReport,
@@ -5121,6 +5130,7 @@ pub struct DocumentBundleEvidenceIndex {
     pub document_id: String,
     pub act_id: String,
     pub bundle_paths: DocumentBundleEvidencePaths,
+    pub pdf_accessibility: DocumentBundlePdfAccessibilityEvidenceIndex,
     pub external_validator_reports: DocumentBundleExternalValidatorReportIndex,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub generated_dispatch_evidence: Vec<GeneratedDispatchEvidencePreservationIndex>,
@@ -5132,6 +5142,41 @@ pub struct DocumentBundleEvidencePaths {
     pub signed_pdf_download: Option<String>,
     pub attachments_manifest_json_pointer: &'static str,
     pub validation_report_json_pointer: &'static str,
+}
+
+#[derive(Serialize)]
+pub struct DocumentBundlePdfAccessibilityEvidenceIndex {
+    pub evidence_kind: &'static str,
+    pub metadata_schema: &'static str,
+    pub bundle_report_json_pointer: &'static str,
+    pub archive_path_pattern: &'static str,
+    pub evidence_status: &'static str,
+    pub status_scope: &'static str,
+    pub pdf_ua_claimed: bool,
+    pub dglab_certification_claimed: bool,
+    pub legal_validity_claimed: bool,
+    pub pdf_ua_blockers: Vec<String>,
+}
+
+#[derive(Clone, Serialize)]
+pub struct PdfAccessibilityEvidenceReport {
+    pub evidence_kind: &'static str,
+    pub metadata_schema: &'static str,
+    pub status_scope: &'static str,
+    pub evidence_status: &'static str,
+    pub document_id: String,
+    pub act_id: Option<String>,
+    pub template_id: String,
+    pub report_source: &'static str,
+    pub pdf_ua_claimed: bool,
+    pub dglab_certification_claimed: bool,
+    pub legal_validity_claimed: bool,
+    pub report_version: Option<u64>,
+    pub pdf_ua_blockers: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub accessibility_report_json: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unavailable_reason: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -5226,10 +5271,121 @@ pub struct BundleNonCertificationReport {
     pub trust_provider_validation_performed: bool,
 }
 
+pub(crate) fn pdf_accessibility_archive_path(document_id: &str) -> String {
+    format!("{PDF_ACCESSIBILITY_ARCHIVE_PATH_PREFIX}{document_id}.json")
+}
+
+pub(crate) fn unavailable_pdf_accessibility_evidence(
+    doc: &StoredDocument,
+    act_id: Option<ActId>,
+    reason: impl Into<String>,
+) -> PdfAccessibilityEvidenceReport {
+    PdfAccessibilityEvidenceReport {
+        evidence_kind: PDF_ACCESSIBILITY_EVIDENCE_KIND,
+        metadata_schema: PDF_ACCESSIBILITY_EVIDENCE_SCHEMA,
+        status_scope: TECHNICAL_METADATA_ONLY,
+        evidence_status: PDF_ACCESSIBILITY_REPORT_UNAVAILABLE,
+        document_id: doc.id.clone(),
+        act_id: act_id.map(|id| id.to_string()),
+        template_id: doc.template_id.clone(),
+        report_source: "unavailable",
+        pdf_ua_claimed: false,
+        dglab_certification_claimed: false,
+        legal_validity_claimed: false,
+        report_version: None,
+        pdf_ua_blockers: Vec::new(),
+        accessibility_report_json: None,
+        unavailable_reason: Some(reason.into()),
+    }
+}
+
+fn pdf_accessibility_evidence_from_model(
+    doc: &StoredDocument,
+    act_id: Option<ActId>,
+    model: &DocumentModel,
+) -> Result<PdfAccessibilityEvidenceReport, ApiError> {
+    let report = chancela_doc::pdfa::accessibility_report(model);
+    let report_json: Value = serde_json::from_str(&report.to_json()).map_err(|e| {
+        ApiError::Internal(format!("PDF accessibility report JSON parse failed: {e}"))
+    })?;
+    if report_json
+        .get("pdf_ua_claimed")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
+        return Ok(unavailable_pdf_accessibility_evidence(
+            doc,
+            act_id,
+            "pdf_accessibility_report_claimed_pdf_ua_unsupported_by_api_policy",
+        ));
+    }
+    let report_version = report_json.get("version").and_then(Value::as_u64);
+    let pdf_ua_blockers = report_json
+        .get("pdf_ua_blockers")
+        .and_then(Value::as_array)
+        .map(|blockers| {
+            blockers
+                .iter()
+                .filter_map(|blocker| blocker.as_str().map(str::to_owned))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    Ok(PdfAccessibilityEvidenceReport {
+        evidence_kind: PDF_ACCESSIBILITY_EVIDENCE_KIND,
+        metadata_schema: PDF_ACCESSIBILITY_EVIDENCE_SCHEMA,
+        status_scope: TECHNICAL_METADATA_ONLY,
+        evidence_status: PDF_ACCESSIBILITY_REPORT_ATTACHED,
+        document_id: doc.id.clone(),
+        act_id: act_id.map(|id| id.to_string()),
+        template_id: doc.template_id.clone(),
+        report_source: "chancela_doc_pdfa_accessibility_report",
+        pdf_ua_claimed: false,
+        dglab_certification_claimed: false,
+        legal_validity_claimed: false,
+        report_version,
+        pdf_ua_blockers,
+        accessibility_report_json: Some(report_json),
+        unavailable_reason: None,
+    })
+}
+
+pub(crate) async fn pdf_accessibility_evidence_for_act_document(
+    state: &AppState,
+    act_id: ActId,
+    doc: &StoredDocument,
+) -> PdfAccessibilityEvidenceReport {
+    let model = match render_persisted_act_document_model(state, act_id, &doc.template_id).await {
+        Ok(model) => model,
+        Err(ApiError::NotFound) => {
+            return unavailable_pdf_accessibility_evidence(
+                doc,
+                Some(act_id),
+                "act_document_model_unavailable",
+            );
+        }
+        Err(err) => {
+            return unavailable_pdf_accessibility_evidence(
+                doc,
+                Some(act_id),
+                format!("act_document_model_render_failed: {err:?}"),
+            );
+        }
+    };
+    match pdf_accessibility_evidence_from_model(doc, Some(act_id), &model) {
+        Ok(evidence) => evidence,
+        Err(err) => unavailable_pdf_accessibility_evidence(
+            doc,
+            Some(act_id),
+            format!("pdf_accessibility_report_unavailable: {err:?}"),
+        ),
+    }
+}
+
 fn document_bundle_evidence_index(
     act_id: ActId,
     doc: &StoredDocument,
     signed: Option<&StoredSignedDocument>,
+    pdf_accessibility: &PdfAccessibilityEvidenceReport,
     external_validator_reports: &[ExternalValidatorEvidenceAttachment],
     generated_dispatch_evidence: &[GeneratedDispatchEvidencePreservationIndex],
 ) -> DocumentBundleEvidenceIndex {
@@ -5262,6 +5418,18 @@ fn document_bundle_evidence_index(
             attachments_manifest_json_pointer: "/attachments_manifest",
             validation_report_json_pointer: "/validation_report",
         },
+        pdf_accessibility: DocumentBundlePdfAccessibilityEvidenceIndex {
+            evidence_kind: PDF_ACCESSIBILITY_EVIDENCE_KIND,
+            metadata_schema: PDF_ACCESSIBILITY_EVIDENCE_SCHEMA,
+            bundle_report_json_pointer: "/validation_report/pdf_accessibility",
+            archive_path_pattern: PDF_ACCESSIBILITY_ARCHIVE_PATH_PATTERN,
+            evidence_status: pdf_accessibility.evidence_status,
+            status_scope: TECHNICAL_METADATA_ONLY,
+            pdf_ua_claimed: false,
+            dglab_certification_claimed: false,
+            legal_validity_claimed: false,
+            pdf_ua_blockers: pdf_accessibility.pdf_ua_blockers.clone(),
+        },
         external_validator_reports: DocumentBundleExternalValidatorReportIndex {
             evidence_kind: EXTERNAL_VALIDATOR_REPORT_EVIDENCE_KIND,
             metadata_schema: EXTERNAL_VALIDATOR_REPORT_EVIDENCE_SCHEMA,
@@ -5282,6 +5450,7 @@ fn build_document_bundle_validation_report(
     pdf: &BundlePdfRef,
     attachments_manifest: &[BundleAttachment],
     signed: Option<&StoredSignedDocument>,
+    pdf_accessibility: PdfAccessibilityEvidenceReport,
     external_validator_reports: &[ExternalValidatorEvidenceAttachment],
     generated_dispatch_evidence: &[GeneratedDispatchEvidencePreservationIndex],
 ) -> DocumentBundleValidationReport {
@@ -5373,6 +5542,18 @@ fn build_document_bundle_validation_report(
         findings.push(DocumentValidationFinding::warning(
             "attachment_digest_missing",
             message,
+        ));
+    }
+    if pdf_accessibility.evidence_status != PDF_ACCESSIBILITY_REPORT_ATTACHED {
+        findings.push(DocumentValidationFinding::warning(
+            "pdf_accessibility_report_unavailable",
+            pdf_accessibility
+                .unavailable_reason
+                .clone()
+                .unwrap_or_else(|| {
+                    "PDF accessibility evidence could not be derived from the persisted document model"
+                        .to_owned()
+                }),
         ));
     }
 
@@ -5514,6 +5695,7 @@ fn build_document_bundle_validation_report(
             act_id,
             doc,
             signed,
+            &pdf_accessibility,
             external_validator_reports,
             generated_dispatch_evidence,
         ),
@@ -5539,6 +5721,7 @@ fn build_document_bundle_validation_report(
             startxref_present: pdf_recognition.has_startxref,
             pdfa_identification_markers_present: pdf_recognition.pdfa.is_pdfa_ish,
         },
+        pdf_accessibility,
         fixity: BundleFixityReport {
             canonical_pdf_sha256,
             stored_pdf_digest: doc.pdf_digest.clone(),
@@ -5636,6 +5819,7 @@ pub async fn get_document_bundle(
         matching_attachments(&external_validator_report_metadata, observed_pdf_sha256);
     let generated_dispatch_evidence =
         generated_dispatch_evidence_preservation_indexes_for_act(&state, act_id).await?;
+    let pdf_accessibility = pdf_accessibility_evidence_for_act_document(&state, act_id, &doc).await;
     let pdf = BundlePdfRef {
         media_type: "application/pdf",
         byte_length: doc.pdf_bytes.len(),
@@ -5647,6 +5831,7 @@ pub async fn get_document_bundle(
         &pdf,
         &attachments_manifest,
         signed.as_ref(),
+        pdf_accessibility,
         &external_validator_reports,
         &generated_dispatch_evidence,
     );

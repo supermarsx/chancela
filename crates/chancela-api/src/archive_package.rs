@@ -30,6 +30,13 @@ use crate::AppState;
 use crate::actor::CurrentActor;
 use crate::actor::CurrentAttestor;
 use crate::authz::{require_permission, scope_of_book};
+use crate::documents::{
+    PDF_ACCESSIBILITY_ARCHIVE_PATH_PATTERN, PDF_ACCESSIBILITY_ARCHIVE_PATH_PREFIX,
+    PDF_ACCESSIBILITY_EVIDENCE_KIND, PDF_ACCESSIBILITY_EVIDENCE_SCHEMA,
+    PDF_ACCESSIBILITY_REPORT_ATTACHED, PDF_ACCESSIBILITY_REPORT_UNAVAILABLE,
+    PdfAccessibilityEvidenceReport, pdf_accessibility_archive_path,
+    pdf_accessibility_evidence_for_act_document, unavailable_pdf_accessibility_evidence,
+};
 use crate::error::ApiError;
 use crate::external_validator_evidence::{
     EXTERNAL_VALIDATOR_RAW_REPORT_ARCHIVE_PATH_PATTERN,
@@ -294,6 +301,7 @@ struct ArchiveEvidenceIndex {
     evidence_index_path: &'static str,
     documents: Vec<ArchiveDocumentEvidenceIndexEntry>,
     package_evidence: ArchivePackageEvidenceIndexEntry,
+    pdf_accessibility_reports: PdfAccessibilityReportArchiveIndex,
     external_validator_reports: ExternalValidatorReportEvidenceIndex,
     generated_dispatch_evidence: GeneratedDispatchEvidenceArchiveIndex,
 }
@@ -305,6 +313,7 @@ struct ArchiveDocumentEvidenceIndexEntry {
     canonical_pdf_path: String,
     document_metadata_path: String,
     signature_evidence_path: String,
+    pdf_accessibility_evidence_path: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     signed_pdf_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -342,6 +351,50 @@ struct ExternalValidatorReportEvidenceAttachmentIndex {
     sha256: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     raw_report: Option<ExternalValidatorRawReportAttachmentIndex>,
+}
+
+#[derive(Serialize)]
+struct PdfAccessibilityReportArchiveIndex {
+    evidence_kind: &'static str,
+    metadata_schema: &'static str,
+    indexed_path_prefix: &'static str,
+    indexed_path_pattern: &'static str,
+    attachment_status: &'static str,
+    attachments_total: usize,
+    attached_count: usize,
+    unavailable_count: usize,
+    status_scope: &'static str,
+    pdf_ua_claimed: bool,
+    dglab_certification_claimed: bool,
+    legal_validity_claimed: bool,
+    attachments: Vec<PdfAccessibilityReportArchiveAttachmentIndex>,
+}
+
+#[derive(Clone)]
+struct PdfAccessibilityReportArchiveAttachment {
+    document_id: Uuid,
+    act_id: Option<ActId>,
+    path: String,
+    bytes: Vec<u8>,
+    content_type: &'static str,
+    evidence_status: &'static str,
+    pdf_ua_claimed: bool,
+    dglab_certification_claimed: bool,
+    legal_validity_claimed: bool,
+    pdf_ua_blockers: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct PdfAccessibilityReportArchiveAttachmentIndex {
+    document_id: Uuid,
+    act_id: Option<Uuid>,
+    path: String,
+    content_type: &'static str,
+    evidence_status: &'static str,
+    pdf_ua_claimed: bool,
+    dglab_certification_claimed: bool,
+    legal_validity_claimed: bool,
+    pdf_ua_blockers: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -681,6 +734,8 @@ async fn build_book_archive_package(
         .collect::<Vec<_>>();
     let generated_dispatch_evidence =
         load_generated_dispatch_evidence_indexes(state, &included_acts).await?;
+    let pdf_accessibility_reports =
+        load_pdf_accessibility_archive_attachments(state, &package_docs).await?;
 
     let created_at = stable_package_time(&package_docs);
     let external_validator_reports = {
@@ -714,6 +769,17 @@ async fn build_book_archive_package(
             doc,
         ));
         append_signed_sidecars(&mut files, doc)?;
+    }
+    for report in &pdf_accessibility_reports {
+        let mut file = PackageFileInput::new(
+            report.path.clone(),
+            PackageFileRole::EvidenceReport,
+            report.content_type,
+            report.bytes.clone(),
+        );
+        file.act_id = report.act_id.map(|act_id| act_id.0);
+        file.document_id = Some(report.document_id);
+        files.push(file);
     }
 
     if let Some(hold) = legal_hold.as_ref() {
@@ -761,6 +827,7 @@ async fn build_book_archive_package(
             created_at,
             &package_docs,
             legal_hold.is_some(),
+            &pdf_accessibility_reports,
             &external_validator_reports,
             &generated_dispatch_evidence,
         )?,
@@ -1379,6 +1446,12 @@ fn package_member_targets(docs: &[PackageDocument]) -> Vec<WouldDeleteTarget> {
             format!("evidence/{}.json", doc.document_id),
             JSON_CONTENT_TYPE,
         ));
+        targets.push(package_member_target(
+            "pdf_accessibility_evidence",
+            doc,
+            pdf_accessibility_archive_path(&doc.document_id.to_string()),
+            JSON_CONTENT_TYPE,
+        ));
         if let Some(signed) = &doc.signed {
             targets.push(package_member_target(
                 "signed_pdf",
@@ -1465,6 +1538,50 @@ async fn load_generated_dispatch_evidence_indexes(
             .then_with(|| left.generated_document_id.cmp(&right.generated_document_id))
     });
     Ok(indexes)
+}
+
+async fn load_pdf_accessibility_archive_attachments(
+    state: &AppState,
+    docs: &[PackageDocument],
+) -> Result<Vec<PdfAccessibilityReportArchiveAttachment>, ApiError> {
+    let mut attachments = Vec::new();
+    for doc in docs {
+        let evidence = match doc.act_id {
+            Some(act_id) => {
+                pdf_accessibility_evidence_for_act_document(state, act_id, &doc.document).await
+            }
+            None => unavailable_pdf_accessibility_evidence(
+                &doc.document,
+                None,
+                "book_level_document_accessibility_model_unavailable",
+            ),
+        };
+        attachments.push(pdf_accessibility_archive_attachment(doc, evidence)?);
+    }
+    Ok(attachments)
+}
+
+fn pdf_accessibility_archive_attachment(
+    doc: &PackageDocument,
+    evidence: PdfAccessibilityEvidenceReport,
+) -> Result<PdfAccessibilityReportArchiveAttachment, ApiError> {
+    let bytes = serde_json::to_vec_pretty(&evidence).map_err(|e| {
+        ApiError::Internal(format!(
+            "PDF accessibility evidence serialization failed: {e}"
+        ))
+    })?;
+    Ok(PdfAccessibilityReportArchiveAttachment {
+        document_id: doc.document_id,
+        act_id: doc.act_id,
+        path: pdf_accessibility_archive_path(&doc.document_id.to_string()),
+        bytes,
+        content_type: JSON_CONTENT_TYPE,
+        evidence_status: evidence.evidence_status,
+        pdf_ua_claimed: false,
+        dglab_certification_claimed: false,
+        legal_validity_claimed: false,
+        pdf_ua_blockers: evidence.pdf_ua_blockers,
+    })
 }
 
 fn generated_dispatch_evidence_archive_path(
@@ -1793,6 +1910,7 @@ fn archive_evidence_index_bytes(
     created_at: OffsetDateTime,
     docs: &[PackageDocument],
     legal_hold: bool,
+    pdf_accessibility_reports: &[PdfAccessibilityReportArchiveAttachment],
     external_validator_reports: &[ExternalValidatorEvidenceAttachment],
     generated_dispatch_evidence: &[crate::documents::GeneratedDispatchEvidencePreservationIndex],
 ) -> Result<Vec<u8>, ApiError> {
@@ -1808,6 +1926,9 @@ fn archive_evidence_index_bytes(
         package_evidence: ArchivePackageEvidenceIndexEntry {
             legal_hold_evidence_path: legal_hold.then_some("evidence/legal-hold.json"),
         },
+        pdf_accessibility_reports: pdf_accessibility_report_archive_index(
+            pdf_accessibility_reports,
+        ),
         external_validator_reports: external_validator_report_evidence_index(
             external_validator_reports,
         ),
@@ -1825,6 +1946,9 @@ fn archive_document_evidence_index(doc: &PackageDocument) -> ArchiveDocumentEvid
         canonical_pdf_path: format!("documents/{}.pdf", doc.document_id),
         document_metadata_path: format!("metadata/{}.json", doc.document_id),
         signature_evidence_path: format!("evidence/{}.json", doc.document_id),
+        pdf_accessibility_evidence_path: pdf_accessibility_archive_path(
+            &doc.document_id.to_string(),
+        ),
         signed_pdf_path: doc
             .signed
             .as_ref()
@@ -1843,6 +1967,58 @@ fn archive_document_evidence_index(doc: &PackageDocument) -> ArchiveDocumentEvid
                 .as_ref()
                 .map(|_| format!("evidence/{}-timestamp-token.tsr", doc.document_id))
         }),
+    }
+}
+
+fn pdf_accessibility_report_archive_index(
+    attachments: &[PdfAccessibilityReportArchiveAttachment],
+) -> PdfAccessibilityReportArchiveIndex {
+    let attachment_indexes = attachments
+        .iter()
+        .map(|attachment| PdfAccessibilityReportArchiveAttachmentIndex {
+            document_id: attachment.document_id,
+            act_id: attachment.act_id.map(|act_id| act_id.0),
+            path: attachment.path.clone(),
+            content_type: attachment.content_type,
+            evidence_status: attachment.evidence_status,
+            pdf_ua_claimed: attachment.pdf_ua_claimed,
+            dglab_certification_claimed: attachment.dglab_certification_claimed,
+            legal_validity_claimed: attachment.legal_validity_claimed,
+            pdf_ua_blockers: attachment.pdf_ua_blockers.clone(),
+        })
+        .collect::<Vec<_>>();
+    let attachments_total = attachment_indexes.len();
+    let attached_count = attachment_indexes
+        .iter()
+        .filter(|attachment| attachment.evidence_status == PDF_ACCESSIBILITY_REPORT_ATTACHED)
+        .count();
+    let unavailable_count = attachment_indexes
+        .iter()
+        .filter(|attachment| attachment.evidence_status == PDF_ACCESSIBILITY_REPORT_UNAVAILABLE)
+        .count();
+    let attachment_status = if attachments_total == 0 {
+        "no_pdf_accessibility_evidence_attached"
+    } else if attached_count == attachments_total {
+        "pdf_accessibility_evidence_attached"
+    } else if unavailable_count == attachments_total {
+        "pdf_accessibility_evidence_unavailable"
+    } else {
+        "pdf_accessibility_evidence_partially_available"
+    };
+    PdfAccessibilityReportArchiveIndex {
+        evidence_kind: PDF_ACCESSIBILITY_EVIDENCE_KIND,
+        metadata_schema: PDF_ACCESSIBILITY_EVIDENCE_SCHEMA,
+        indexed_path_prefix: PDF_ACCESSIBILITY_ARCHIVE_PATH_PREFIX,
+        indexed_path_pattern: PDF_ACCESSIBILITY_ARCHIVE_PATH_PATTERN,
+        attachment_status,
+        attachments_total,
+        attached_count,
+        unavailable_count,
+        status_scope: TECHNICAL_METADATA_ONLY,
+        pdf_ua_claimed: false,
+        dglab_certification_claimed: false,
+        legal_validity_claimed: false,
+        attachments: attachment_indexes,
     }
 }
 
