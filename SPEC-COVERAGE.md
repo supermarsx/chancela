@@ -1,7 +1,8 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-14 from current implementation snapshot `566273c9c7067366cd43fdf3c018297815d6cb30`,
-with committed evidence refreshes for the recently landed Signatures & Trust
+*Updated 2026-07-15 from current implementation snapshot `4c80e7884e85402e7a5928776d77c9da35c2bf48`,
+with committed evidence refreshes for the recently landed data key-rotation
+receipt history and the earlier Signatures & Trust
 provider-credential, stored runtime credential resolution, stored PKCS#12,
 remote batch-initiation surfaces, remote provider readiness manifests, and Docker/Compose runtime-hardening
 checkpoint, delegation legal-basis enforcement, and compliance-panel internal
@@ -9,8 +10,9 @@ legislacao corpus deep links for structured legal-basis rows, and sealed-act
 chronology projection for local sealed/archived acts with provenance,
 retification edges, and false no-claim flags, while preserving the prior committed
 `5911fe0` AI provenance review-packet helper/copy evidence, `9ddced8`
-Postgres per-book portability plus restore-preflight evidence, and `566273c`
-release-trust package tarball binding evidence,
+Postgres per-book portability plus restore-preflight evidence, `566273c`
+release-trust package tarball binding evidence, and `4c80e78`
+data key-rotation receipt history evidence,
 `7fcf5ef5f1c2fbd5b9eb26d6aac5c1240144a365` manual-signature
 original-reference sealing path and web accessibility/focus guard evidence and the prior
 `869e02f897f54730df86db739193f86c372e0e19` coverage context,
@@ -205,6 +207,21 @@ being useful. The matrix below records the current factual coverage and the rema
 blockers.
 
 Implementation checkpoints covered here:
+
+- Current `4c80e78` keeps Data/Architecture/UX/CI **PARTIAL**: successful
+  guarded SQLCipher rekey execution now persists a bounded
+  `data-key-rotation-receipts.json` history and exposes it through
+  `/v1/data/status` plus the Data Management "Chaves e reposição" surface.
+  The receipt/status/contract/web markers cover only secret-free operational
+  metadata: mode/status, actor, backend, ledger length/integrity, bounded
+  history count/limit, SQLCipher evidence booleans, and explicit false
+  no-claim flags for current/replacement key persistence, key fingerprint,
+  database path, SQLCipher-at-rest certification, plaintext migration, and
+  legal disposal/erasure certification. Forbidden users, plaintext stores, and
+  no-SQLCipher/non-ready paths do not create success receipts. This does not
+  prove live production SQLCipher encryption at rest, plaintext migration,
+  production key-secret rotation runbooks, hardware-derived key custody,
+  legal disposal, GDPR lifecycle completion, or complete data lifecycle policy.
 
 - Current `566273c` keeps CI and Signatures & Trust **PARTIAL**: the release
   trust validator now accepts the workflow-provided package path, recomputes the
@@ -2927,6 +2944,19 @@ behavior, legal disposal, or legal-effect claims.
   execution for the already-open SQLCipher store path only; it is not live
   SQLCipher proof on this host, plaintext migration, operator secret rotation
   runbook completion, or production at-rest encryption certification.
+- **Data key-rotation receipt history:** successful guarded SQLCipher rekey now
+  appends a bounded `data-key-rotation-receipts.json` history and `/v1/data/status`
+  exposes `key_rotation.latest_receipt`, `history`, `history_count`, and
+  `history_limit`. The persisted receipt records only secret-free operation,
+  backend, actor, ledger, and SQLCipher evidence booleans plus false no-claim
+  flags for current/replacement keys, key fingerprint, raw database path,
+  SQLCipher-at-rest certification, plaintext migration, and legal
+  disposal/erasure certification. The API tests prove forbidden execution and
+  plaintext refusal do not create success receipts; the contract fixture and
+  Data Management UI render the bounded history without secrets. This remains
+  operational receipt evidence only, not production SQLCipher-at-rest proof,
+  plaintext migration, legal disposal, GDPR lifecycle completion, or a complete
+  key-rotation runbook.
 - **Paper-book OCR draft review UI:** preserved paper-book imports now expose
   non-authoritative OCR draft list/create/review controls in the book detail
   page, with explicit acknowledgement that the draft is auxiliary and does not
@@ -3962,8 +3992,10 @@ behavior, legal disposal, or legal-effect claims.
   exposes secret-free SQLCipher key-rotation preflight plus feature-gated rekey execution evidence
   with post-rekey integrity checking, and the API exposes a `settings.manage@Global`-gated
   `POST /v1/data/key-rotation/preflight` route that returns only readiness evidence and redacts
-  submitted keys from debug output, and the web Data Management panel can run that read-only
-  preflight while clearing entered secrets. API data status also exposes a non-secret
+  submitted keys from debug output, a guarded execution route now persists bounded,
+  secret-free key-rotation receipts for accepted SQLCipher rekeys only, and the
+  web Data Management panel can run that read-only preflight while clearing entered
+  secrets and render the local receipt history. API data status also exposes a non-secret
   `database_encryption` object with key-source classification and a `hardware_derived_fallback`
   status that is explicitly unavailable and fail-closed if requested. This is a guard, status, operator-plan, web/API
   preflight, and store-level evidence surface only: it does not prove live production SQLCipher
@@ -4244,10 +4276,14 @@ behavior, legal disposal, or legal-effect claims.
   completion evidence.
 - Database key-ops status/preflight is a secret-free configuration/build/header classification and
   startup guard with web/API/CLI/store key-env/preflight/rekey evidence. The API/web execution path
-  is limited to an already-open keyed SQLCipher store and refuses plaintext stores. It does not prove
-  live production SQLCipher encryption, host decryptability, plaintext migration, production secret
-  rotation runbooks, completed at-rest encryption certification, or conversion of plaintext SQLite
-  stores into encrypted stores.
+  is limited to an already-open keyed SQLCipher store, refuses plaintext stores,
+  and persists bounded success receipts only after accepted guarded SQLCipher
+  rekey. Those receipts do not persist current/replacement keys, key
+  fingerprints, raw database paths, or secret material. It does not prove live
+  production SQLCipher encryption, host decryptability, plaintext migration,
+  production secret rotation runbooks, completed at-rest encryption
+  certification, conversion of plaintext SQLite stores into encrypted stores,
+  legal disposal, or GDPR lifecycle completion.
 - The database key migration plan is operator guidance attached to key-ops status; it does not run
   backup/export-restore, verify a live encrypted restore, provide production operator rotation
   flows, or retire plaintext data.

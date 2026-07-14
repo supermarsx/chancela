@@ -30,6 +30,7 @@ provider validity or authority approval.
 
 `npm run test:checkpoint:recent-landed` is a focused local and CI guard for
 recently landed work that crosses Rust API tests, data key preflight guards,
+bounded data key-rotation receipt history for accepted guarded SQLCipher rekeys,
 guardrail acknowledgements, written-resolution evidence status binding and
 browser receipt proof, trust
 parsing, declared signer-capacity evidence preservation, live-provider static
@@ -519,6 +520,7 @@ It intentionally reuses existing test surfaces:
 
 The script also performs a cheap static map before running commands. That map
 asserts the expected test files, fixture markers, data key preflight markers,
+data key-rotation receipt persistence/status/UI/contract markers,
 official-signature/imported-document guardrail acknowledgement markers,
 official signed-PDF handoff browser proof markers for
 `apps/web/e2e/official-signed-handoff.spec.ts`, the route-stubbed
@@ -689,6 +691,15 @@ false live-restore flags. They do not prove live restore execution, live DB
 swap, live sidecar staging, `ledger.restored` append, SQLCipher-at-rest proof,
 RPO/RTO, off-site custody, production backup policy, legal archive
 certification, or FULL coverage.
+Data key-rotation receipt markers pin only the successful guarded SQLCipher
+rekey receipt history: bounded `data-key-rotation-receipts.json` persistence,
+`/v1/data/status` projection, contract fixture shape, Data Management rendering,
+false no-claim flags, and forbidden/plaintext refusal paths that do not create
+success receipts. They do not persist or expose current/replacement keys, key
+hashes/fingerprints, raw database paths, env var secrets, or secret material,
+and they do not prove SQLCipher-at-rest production encryption, plaintext
+migration, legal disposal, GDPR lifecycle completion, or full key-rotation
+runbook completion.
 They do not certify legal validity, legal retention schedules or approvals,
 retention deletion or anonymization/redaction execution, retention execution
 completion, destructive GDPR erasure, full erasure, template legal effect, DRE
@@ -708,6 +719,9 @@ trust-list legal validity, hostile DNS/rebinding proof, production qualified tru
 provider approval, live provider readiness, DGLAB certification, full release
 hardening, raw MCP report-byte exposure,
 auto-role reconciliation, permission grants, archive custody/decryption material,
+current or replacement data keys, data-key hashes/fingerprints, raw database
+paths, SQLCipher-at-rest production proof, plaintext migration, legal disposal,
+or GDPR lifecycle completion,
 AI-01/full AI completion, MCP draft-signed legal/source/trust/external
 certification or signed-artifact validity, MCP meeting metadata extraction legal/source/workflow
 certification, generated-document signing, bundle readiness, template legal

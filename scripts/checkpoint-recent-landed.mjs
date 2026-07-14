@@ -9725,6 +9725,96 @@ function assertCheckpointMap() {
     "web data key rotation execution coverage",
   );
   assertFileContains(
+    "crates/chancela-api/src/data_status.rs",
+    'const DATA_KEY_ROTATION_RECEIPTS_FILE: &str = "data-key-rotation-receipts.json";',
+    "API data key rotation receipt file marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/data_status.rs",
+    "const DATA_KEY_ROTATION_RECEIPT_HISTORY_LIMIT: usize = 10;",
+    "API data key rotation receipt history limit marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/data_status.rs",
+    "persist_key_rotation_receipt(&receipt_data_dir, receipt)",
+    "API data key rotation receipt persistence marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/data_status.rs",
+    "latest_receipt: store.receipts.first().cloned()",
+    "API data key rotation latest receipt status marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/data_status.rs",
+    "key_fingerprint_persisted: false",
+    "API data key rotation no fingerprint receipt marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/data_key_ops.rs",
+    "successful_guarded_rekey_persists_secret_free_receipt_and_status_history",
+    "API data key rotation successful receipt coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/data_key_ops.rs",
+    "forbidden execution must not create a key-rotation receipt",
+    "API data key rotation forbidden no-receipt coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/data_key_ops.rs",
+    "plaintext refusal must not create a key-rotation receipt",
+    "API data key rotation plaintext refusal no-receipt coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/data_key_ops.rs",
+    "&[initial_key, replacement_key, \"chancela.db\"]",
+    "API data key rotation receipt no secret/path coverage",
+  );
+  assertFileContains(
+    "contracts/data.status.json",
+    '"id": "data_key_rotation_receipts"',
+    "data status contract key-rotation receipt usage marker",
+  );
+  assertFileContains(
+    "contracts/data.status.json",
+    '"key_rotation":',
+    "data status contract key-rotation object marker",
+  );
+  assertFileContains(
+    "contracts/data.status.json",
+    '"history_limit": 10',
+    "data status contract key-rotation history limit marker",
+  );
+  assertFileContains(
+    "contracts/data.status.json",
+    '"key_fingerprint_persisted": false',
+    "data status contract key-rotation no fingerprint marker",
+  );
+  assertFileContains(
+    "apps/web/src/contracts/contracts.test.ts",
+    "assertDataKeyRotationReceipt",
+    "web contract data key rotation receipt validator marker",
+  );
+  assertFileContains(
+    "apps/web/src/contracts/contracts.test.ts",
+    "expect(JSON.stringify(receipt)).not.toContain('chancela.db');",
+    "web contract data key rotation no database path marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "Recibos locais de rotação",
+    "web data key rotation receipt summary UI marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "Sem chave guardada",
+    "web data key rotation no-key receipt UI marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "renders secret-free key rotation receipt history as local evidence only",
+    "web data key rotation receipt history coverage",
+  );
+  assertFileContains(
     "apps/web/src/features/signing/SigningPanel.test.tsx",
     "SigningPanel — local PKCS#12 software certificate",
     "web local PKCS#12 signing coverage",
@@ -9936,12 +10026,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `566273c`",
+    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `4c80e78`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `566273c`",
+    "Focused Gate Snapshot Through `4c80e78`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -10576,8 +10666,28 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `566273c`",
+    "Current checkpoint metadata/static checks through `4c80e78`",
     "CI/E2E hardening plan current checkpoint checks marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "data key-rotation receipt history\n  markers for the bounded receipt file",
+    "CI/E2E hardening plan key-rotation receipt history marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "bounded data key-rotation receipt history for accepted guarded SQLCipher rekeys",
+    "CI checkpoints key-rotation receipt lane marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "forbidden/plaintext refusal paths that do not create\nsuccess receipts",
+    "CI checkpoints key-rotation no-success-refusal marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "current/replacement keys, key\nhashes/fingerprints, raw database paths",
+    "CI checkpoints key-rotation no-secret/path marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -11066,8 +11176,28 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `566273c9c7067366cd43fdf3c018297815d6cb30`",
+    "implementation snapshot `4c80e7884e85402e7a5928776d77c9da35c2bf48`",
     "spec coverage current implementation snapshot marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Current `4c80e78` keeps Data/Architecture/UX/CI **PARTIAL**",
+    "spec coverage key-rotation receipt current checkpoint marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Forbidden users, plaintext stores, and\n  no-SQLCipher/non-ready paths do not create success receipts",
+    "spec coverage key-rotation no-success-refusal marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Data key-rotation receipt history",
+    "spec coverage key-rotation receipt history section marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "false no-claim\n  flags for current/replacement keys, key fingerprint, raw database path",
+    "spec coverage key-rotation no-secret/path marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",

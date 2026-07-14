@@ -1,8 +1,9 @@
 # CI and E2E Hardening Plan
 
-Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `566273c`,
-including coverage notes for the bounded PAdES DSS validation-time, PDF/UA v11
+Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,
+and implementation snapshot `4c80e78`,
+including coverage notes for the data key-rotation receipt history,
+bounded PAdES DSS validation-time, PDF/UA v11
 blocker-delta and scoped table-header evidence, retention due-candidate explicit evidence states,
 bounded archive/no-action evidence UI, duplicate-review guard/status surfacing, and
 prior bounded execution suppression with active/suppressed candidate counts plus
@@ -857,11 +858,11 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `566273c`
+## Focused Gate Snapshot Through `4c80e78`
 
 Historical focused checks from the active director loop, refreshed on
-2026-07-10 for head `3e72e08` and checkpoint-promoted on 2026-07-14 for
-current implementation head `566273c`. This is not an exhaustive current
+2026-07-10 for head `3e72e08` and checkpoint-promoted on 2026-07-15 for
+current implementation head `4c80e78`. This is not an exhaustive current
 green-run claim; browser, Docker, desktop, package signing/notarization, image
 signing/attestation, and live-provider limits above still apply.
 
@@ -1855,13 +1856,13 @@ settingsDefaults.test.ts contracts.test.ts`.
   full RBAC/delegation-policy completion, tenant authorization proof,
   legal-capacity verification, broad security certification, or spec
   completion.
-- Current checkpoint metadata/static checks through `566273c`
+- Current checkpoint metadata/static checks through `4c80e78`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
   `git diff --check -- SPEC-COVERAGE.md docs\CI-E2E-HARDENING-PLAN.md
-  docs\CI-CHECKPOINTS.md scripts\checkpoint-recent-landed.mjs
-  scripts\check-release-trust.mjs`. These pin the spec snapshot,
+  docs\CI-CHECKPOINTS.md scripts\checkpoint-recent-landed.mjs`.
+  These pin the spec snapshot,
   hardening-plan head, MCP meeting metadata extraction review resource, PDF table-structure semantics, export save-prompt
   routing, dashboard dates tab, notification footer icon-only action, and
   clarified platform operations UI, user/signatory email capture, and compact
@@ -1880,7 +1881,10 @@ settingsDefaults.test.ts contracts.test.ts`.
   markers, retention execution review-queue and review-closure markers, retention due-candidate
   bounded archive/no-action evidence and explicit evidence-state markers,
   backend database-encryption
-  key-source/hardware-fallback markers, and PDF verifier DSS/VRI `/TU` plus
+  key-source/hardware-fallback markers, data key-rotation receipt history
+  markers for the bounded receipt file, `/v1/data/status` projection, contract
+  fixture, Data Management rendering, no-secret/no-path/no-fingerprint false
+  flags, and no-success-receipt forbidden/plaintext refusal paths, and PDF verifier DSS/VRI `/TU` plus
   local-renewal/legal-boundary markers, plus raw external-validator report
   attachment parser, size-bound, redaction, archive-package, document-bundle, web
   contract markers, and Ferramentas file-selection/no-auto-upload/explicit-submit/
