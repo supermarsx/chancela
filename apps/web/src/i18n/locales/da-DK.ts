@@ -2645,6 +2645,9 @@ export const daDK: Catalog = {
   'signing.remoteBatch.result.confirmNormally': 'Bekræft i denne akts normale flow.',
   'signing.remoteBatch.result.noSecret':
     'Svaret viser ingen legitimationsoplysninger, koder eller aktiveringer.',
+  'signing.remoteBatch.manifest.title': 'No provider-native batch',
+  'signing.remoteBatch.manifest.body':
+    '{provider}: local readiness only. Repeated per-document initiates={repeated}; provider-native batch={native}; one PIN/OTP/SAD for the whole batch={single}. This listing makes no live provider call, provider approval, legal validity, or Trusted List validation claim.',
   'signing.signed.qualifiedLabelCsc':
     'Kvalificeret elektronisk signatur (kvalificeret certifikat fra en tillidstjenesteudbyder).',
   'signing.signed.localPkcs12Title': 'Protokol signeret med lokalt softwarecertifikat',
@@ -2847,6 +2850,23 @@ export const daDK: Catalog = {
     'Kvalificeret fjernudbyder. Appen indsamler kun referencen og videresender autorisationen til udbyderen.',
   'signing.provider.csc.unconfigured':
     'Fjernudbyder oplistet af serveren, men endnu uden aktive legitimationsoplysninger i denne installation.',
+  'signing.provider.manifest.title': 'Local readiness:',
+  'signing.provider.manifest.configured': 'configured',
+  'signing.provider.manifest.unconfigured': 'not configured',
+  'signing.provider.manifest.environment.preprod': 'preprod environment',
+  'signing.provider.manifest.environment.prod': 'prod environment',
+  'signing.provider.manifest.environment.sandbox': 'sandbox environment',
+  'signing.provider.manifest.environment.unknown': 'environment not locally known',
+  'signing.provider.manifest.productionBlocked': 'production blocked',
+  'signing.provider.manifest.productionNotBlocked': 'production not blocked by local config',
+  'signing.provider.manifest.authorization.pinOtp': 'PIN/OTP',
+  'signing.provider.manifest.authorization.service': 'service authorization',
+  'signing.provider.manifest.authorization.user': 'user authorization',
+  'signing.provider.manifest.authorization.unknown': 'authorization not locally known',
+  'signing.provider.manifest.batchSemantics':
+    'Remote batch: repeated per-document initiates={repeated}; provider-native batch={native}; one PIN/OTP/SAD for batch={single}.',
+  'signing.provider.manifest.boundary':
+    'Local readiness only: no live provider call, provider approval, legal validity, qualified-status, or Trusted List validation claim at listing.',
   'signing.invites.title': 'Invitationer til ekstern signering',
   'signing.invites.permissionNote':
     'Håndtering af eksterne invitationer bruger den samme signeringstilladelse for denne bog.',

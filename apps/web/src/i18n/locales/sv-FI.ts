@@ -2650,6 +2650,9 @@ export const svFI: Catalog = {
     'Bekräfta i det normala flödet för detta protokoll.',
   'signing.remoteBatch.result.noSecret':
     'Svaret visar inga inloggningsuppgifter, koder eller aktiveringar.',
+  'signing.remoteBatch.manifest.title': 'No provider-native batch',
+  'signing.remoteBatch.manifest.body':
+    '{provider}: local readiness only. Repeated per-document initiates={repeated}; provider-native batch={native}; one PIN/OTP/SAD for the whole batch={single}. This listing makes no live provider call, provider approval, legal validity, or Trusted List validation claim.',
   'signing.signed.qualifiedLabelCsc':
     'Kvalificerad elektronisk underskrift (kvalificerat certifikat från en betrodd tjänsteleverantör).',
   'signing.signed.localPkcs12Title': 'Protokoll signerat med lokalt programvarucertifikat',
@@ -2851,6 +2854,23 @@ export const svFI: Catalog = {
     'Kvalificerad fjärrleverantör. Appen samlar bara in referensen och vidarebefordrar auktoriseringen till leverantören.',
   'signing.provider.csc.unconfigured':
     'Fjärrleverantör som listas av servern, men ännu utan aktiva autentiseringsuppgifter i den här installationen.',
+  'signing.provider.manifest.title': 'Local readiness:',
+  'signing.provider.manifest.configured': 'configured',
+  'signing.provider.manifest.unconfigured': 'not configured',
+  'signing.provider.manifest.environment.preprod': 'preprod environment',
+  'signing.provider.manifest.environment.prod': 'prod environment',
+  'signing.provider.manifest.environment.sandbox': 'sandbox environment',
+  'signing.provider.manifest.environment.unknown': 'environment not locally known',
+  'signing.provider.manifest.productionBlocked': 'production blocked',
+  'signing.provider.manifest.productionNotBlocked': 'production not blocked by local config',
+  'signing.provider.manifest.authorization.pinOtp': 'PIN/OTP',
+  'signing.provider.manifest.authorization.service': 'service authorization',
+  'signing.provider.manifest.authorization.user': 'user authorization',
+  'signing.provider.manifest.authorization.unknown': 'authorization not locally known',
+  'signing.provider.manifest.batchSemantics':
+    'Remote batch: repeated per-document initiates={repeated}; provider-native batch={native}; one PIN/OTP/SAD for batch={single}.',
+  'signing.provider.manifest.boundary':
+    'Local readiness only: no live provider call, provider approval, legal validity, qualified-status, or Trusted List validation claim at listing.',
   'signing.invites.title': 'Inbjudningar till extern underskrift',
   'signing.invites.permissionNote':
     'Hanteringen av externa inbjudningar använder samma underskriftsbehörighet som den här boken.',

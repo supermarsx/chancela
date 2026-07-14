@@ -3144,6 +3144,44 @@ pub struct SignatureProviderView {
     /// credentials are complete or the provider's authorization environment is present). **Never
     /// the secret itself.**
     pub configured: bool,
+    /// Local-only readiness/capability manifest. This is based on settings/env/protected-credential
+    /// metadata only; listing providers does not call SCMD/CSC/TSL or assert approval/legal status.
+    pub manifest: SignatureProviderManifest,
+}
+
+#[derive(Serialize)]
+pub struct SignatureProviderManifest {
+    pub readiness: SignatureProviderReadiness,
+    pub capabilities: SignatureProviderCapabilities,
+    pub boundaries: SignatureProviderBoundaries,
+    pub evidence_basis: Vec<&'static str>,
+}
+
+#[derive(Serialize)]
+pub struct SignatureProviderReadiness {
+    pub configured: bool,
+    pub environment: Option<&'static str>,
+    pub sandbox: Option<bool>,
+    pub production_blocked: bool,
+    pub missing_local_config: Vec<&'static str>,
+    pub authorization_mode: Option<&'static str>,
+}
+
+#[derive(Serialize)]
+pub struct SignatureProviderCapabilities {
+    pub remote_single_initiate_confirm: bool,
+    pub remote_batch_repeated_per_document_initiate: bool,
+    pub provider_native_batch_claimed: bool,
+    pub single_otp_pin_sad_batch_claimed: bool,
+}
+
+#[derive(Serialize)]
+pub struct SignatureProviderBoundaries {
+    pub live_provider_checked: bool,
+    pub provider_approval_claimed: bool,
+    pub legal_validity_claimed: bool,
+    pub qualified_status_determined_at_listing: bool,
+    pub trust_list_validation_performed_at_listing: bool,
 }
 
 /// A resolved, configured remote-signing provider (carries its non-secret config).
@@ -3174,25 +3212,206 @@ pub async fn list_signature_providers(
 
     let mut out = Vec::new();
     // Chave Móvel Digital — always offered; configured when an ApplicationId resolves (env/settings).
+    let cmd_manifest = cmd_provider_manifest(&state).await;
     out.push(SignatureProviderView {
         id: CMD_PROVIDER_ID.to_owned(),
         family: FAMILY_CMD.to_owned(),
         label: "Chave Móvel Digital".to_owned(),
         evidentiary_level: EVIDENTIARY_QUALIFIED,
-        configured: resolve_cmd_config(&state).await.is_ok(),
+        configured: cmd_manifest.readiness.configured,
+        manifest: cmd_manifest,
     });
     // Every configured CSC QTSP. In tests the injected transport seam stands in for real creds.
     let di = state.csc_transport.is_some();
     for cfg in state.csc_providers.iter() {
+        let manifest = csc_provider_manifest(&state, cfg, di);
         out.push(SignatureProviderView {
             id: cfg.provider_id.clone(),
             family: FAMILY_QUALIFIED.to_owned(),
             label: cfg.display_name.clone(),
             evidentiary_level: EVIDENTIARY_QUALIFIED,
-            configured: csc_provider_configured_for_picker(&state, cfg, di),
+            configured: manifest.readiness.configured,
+            manifest,
         });
     }
     Ok(Json(out))
+}
+
+async fn cmd_provider_manifest(state: &AppState) -> SignatureProviderManifest {
+    let cmd = { state.settings.read().await.signing.cmd.clone() };
+    let configured = resolve_cmd_config(state).await.is_ok();
+    let environment = Some(match cmd.env {
+        crate::settings::CmdEnvSetting::Preprod => "preprod",
+        crate::settings::CmdEnvSetting::Prod => "prod",
+    });
+    let mut missing_local_config = Vec::new();
+    let mut ama_cert_configured = cmd.ama_cert_configured;
+
+    match state
+        .provider_credentials
+        .read_runtime(CredentialMode::Cmd, "")
+    {
+        Ok(Some(record)) => {
+            ama_cert_configured |= credential_record_field_nonblank(&record, FIELD_AMA_CERT_PEM);
+            missing_local_config.extend(cmd_stored_missing_fields_for_manifest(&cmd, &record));
+        }
+        Ok(None) => {
+            let env_cfg = match CmdConfig::from_env() {
+                Ok(cfg) => Some(cfg),
+                Err(err) if cmd_env_config_is_missing(&err) => None,
+                Err(_) => {
+                    missing_local_config.push("cmd_environment");
+                    None
+                }
+            };
+            if let Some(cfg) = &env_cfg {
+                ama_cert_configured |= cfg.ama_cert_pem.is_some();
+            }
+            let application_id_configured = env_cfg
+                .as_ref()
+                .map(|cfg| !cfg.application_id.trim().is_empty())
+                .unwrap_or(false)
+                || cmd
+                    .application_id
+                    .as_deref()
+                    .is_some_and(|id| !id.trim().is_empty());
+            if !application_id_configured {
+                missing_local_config.push(FIELD_APPLICATION_ID);
+            }
+            if matches!(cmd.env, crate::settings::CmdEnvSetting::Prod) && !ama_cert_configured {
+                missing_local_config.push(FIELD_AMA_CERT_PEM);
+            }
+        }
+        Err(_) => missing_local_config.push("protected_credential_metadata_unavailable"),
+    }
+    missing_local_config.sort_unstable();
+    missing_local_config.dedup();
+
+    provider_manifest(
+        configured,
+        environment,
+        None,
+        !configured
+            || !matches!(cmd.env, crate::settings::CmdEnvSetting::Prod)
+            || !ama_cert_configured,
+        missing_local_config,
+        Some("pin_otp"),
+        vec![
+            "local_settings_metadata",
+            "environment_metadata",
+            "protected_credential_metadata",
+        ],
+    )
+}
+
+fn csc_provider_manifest(state: &AppState, cfg: &CscConfig, di: bool) -> SignatureProviderManifest {
+    let configured = csc_provider_configured_for_picker(state, cfg, di);
+    let mut missing_local_config = Vec::new();
+    let mut evidence_basis = vec![
+        "local_provider_env_metadata",
+        "environment_metadata",
+        "protected_credential_metadata",
+    ];
+
+    match state
+        .provider_credentials
+        .read_runtime(CredentialMode::CscQtsp, &cfg.provider_id)
+    {
+        Ok(Some(record)) => {
+            missing_local_config.extend(csc_stored_missing_fields(cfg, &record));
+        }
+        Ok(None) => {
+            if !csc_env_configured_for_authorization(cfg) && !di {
+                missing_local_config.extend(csc_missing_secret_fields(
+                    cfg.authorization,
+                    false,
+                    false,
+                    false,
+                ));
+            }
+        }
+        Err(_) => missing_local_config.push("protected_credential_metadata_unavailable"),
+    }
+    if di {
+        evidence_basis.push("injected_transport_metadata");
+    }
+    missing_local_config.sort_unstable();
+    missing_local_config.dedup();
+
+    provider_manifest(
+        configured,
+        Some(if cfg.sandbox { "sandbox" } else { "prod" }),
+        Some(cfg.sandbox),
+        !configured || cfg.sandbox,
+        missing_local_config,
+        Some(cfg.authorization.as_str()),
+        evidence_basis,
+    )
+}
+
+fn provider_manifest(
+    configured: bool,
+    environment: Option<&'static str>,
+    sandbox: Option<bool>,
+    production_blocked: bool,
+    missing_local_config: Vec<&'static str>,
+    authorization_mode: Option<&'static str>,
+    evidence_basis: Vec<&'static str>,
+) -> SignatureProviderManifest {
+    SignatureProviderManifest {
+        readiness: SignatureProviderReadiness {
+            configured,
+            environment,
+            sandbox,
+            production_blocked,
+            missing_local_config,
+            authorization_mode,
+        },
+        capabilities: SignatureProviderCapabilities {
+            remote_single_initiate_confirm: true,
+            remote_batch_repeated_per_document_initiate: true,
+            provider_native_batch_claimed: false,
+            single_otp_pin_sad_batch_claimed: false,
+        },
+        boundaries: SignatureProviderBoundaries {
+            live_provider_checked: false,
+            provider_approval_claimed: false,
+            legal_validity_claimed: false,
+            qualified_status_determined_at_listing: false,
+            trust_list_validation_performed_at_listing: false,
+        },
+        evidence_basis,
+    }
+}
+
+fn cmd_stored_missing_fields_for_manifest(
+    cmd: &crate::settings::SigningCmdSettings,
+    record: &DecryptedCredentialRecord,
+) -> Vec<&'static str> {
+    let mut missing = Vec::new();
+    if !credential_record_field_nonblank(record, FIELD_APPLICATION_ID) {
+        missing.push(FIELD_APPLICATION_ID);
+    }
+    let has_username = credential_record_field_nonblank(record, FIELD_HTTP_BASIC_USERNAME);
+    let has_password = credential_record_field_nonblank(record, FIELD_HTTP_BASIC_PASSWORD);
+    match (has_username, has_password) {
+        (true, false) => missing.push(FIELD_HTTP_BASIC_PASSWORD),
+        (false, true) => missing.push(FIELD_HTTP_BASIC_USERNAME),
+        _ => {}
+    }
+    if matches!(cmd.env, crate::settings::CmdEnvSetting::Prod)
+        && !credential_record_field_nonblank(record, FIELD_AMA_CERT_PEM)
+    {
+        missing.push(FIELD_AMA_CERT_PEM);
+    }
+    missing
+}
+
+fn credential_record_field_nonblank(record: &DecryptedCredentialRecord, field: &str) -> bool {
+    record
+        .fields
+        .get(field)
+        .is_some_and(|value| !value.trim().is_empty())
 }
 
 // --- generic initiate -------------------------------------------------------------------------

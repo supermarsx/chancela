@@ -1377,12 +1377,14 @@ function ProviderChoice({
   title,
   description,
   badges,
+  details,
   disabledNote,
   children,
 }: {
   title: string;
   description: string;
   badges?: React.ReactNode;
+  details?: React.ReactNode;
   disabledNote?: string;
   children: React.ReactNode;
 }) {
@@ -1394,9 +1396,62 @@ function ProviderChoice({
           {badges}
         </div>
         <p>{description}</p>
+        {details}
         {disabledNote ? <p className="field__hint">{disabledNote}</p> : null}
       </div>
       <div className="signing-provider__action">{children}</div>
+    </div>
+  );
+}
+
+function providerEnvironmentLabel(environment: string | null | undefined, t: TFunction): string {
+  if (environment === 'preprod') return t('signing.provider.manifest.environment.preprod');
+  if (environment === 'prod') return t('signing.provider.manifest.environment.prod');
+  if (environment === 'sandbox') return t('signing.provider.manifest.environment.sandbox');
+  return t('signing.provider.manifest.environment.unknown');
+}
+
+function providerAuthorizationLabel(mode: string | null | undefined, t: TFunction): string {
+  if (mode === 'pin_otp') return t('signing.provider.manifest.authorization.pinOtp');
+  if (mode === 'service') return t('signing.provider.manifest.authorization.service');
+  if (mode === 'user') return t('signing.provider.manifest.authorization.user');
+  return t('signing.provider.manifest.authorization.unknown');
+}
+
+function ProviderManifestSummary({ provider }: { provider?: SignatureProviderView }) {
+  const t = useT();
+  const manifest = provider?.manifest;
+  if (!manifest) return null;
+  return (
+    <div className="field__hint stack--tight">
+      <p>
+        <strong>{t('signing.provider.manifest.title')}</strong>{' '}
+        {manifest.readiness.configured
+          ? t('signing.provider.manifest.configured')
+          : t('signing.provider.manifest.unconfigured')}
+        {' · '}
+        {providerEnvironmentLabel(manifest.readiness.environment, t)}
+        {' · '}
+        {manifest.readiness.production_blocked
+          ? t('signing.provider.manifest.productionBlocked')
+          : t('signing.provider.manifest.productionNotBlocked')}
+        {' · '}
+        {providerAuthorizationLabel(manifest.readiness.authorization_mode, t)}
+      </p>
+      <p>
+        {t('signing.provider.manifest.batchSemantics', {
+          repeated: manifest.capabilities.remote_batch_repeated_per_document_initiate
+            ? t('common.yes')
+            : t('common.no'),
+          native: manifest.capabilities.provider_native_batch_claimed
+            ? t('common.yes')
+            : t('common.no'),
+          single: manifest.capabilities.single_otp_pin_sad_batch_claimed
+            ? t('common.yes')
+            : t('common.no'),
+        })}
+      </p>
+      <p>{t('signing.provider.manifest.boundary')}</p>
     </div>
   );
 }
@@ -2525,6 +2580,7 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
   const documentBundle = useActDocumentBundle(act.id, sealed && data?.status === 'signed');
   // Only CSC QTSPs come from the picker list — CMD + CC always have their own always-available
   // entry actions and do not depend on the list resolving (older server / no `signing.perform`).
+  const cmdProviderView = (providers.data ?? []).find((p) => p.id === CMD_PROVIDER_ID);
   const cscProviders = (providers.data ?? []).filter((p) => p.id !== CMD_PROVIDER_ID);
   const preferred = qc.getQueryData<Settings>(keys.settings)?.signing.preferred_family;
 
@@ -3389,6 +3445,7 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
                   <ProviderChoice
                     title={t('signing.provider.cmd.title')}
                     description={t('signing.provider.cmd.description')}
+                    details={<ProviderManifestSummary provider={cmdProviderView} />}
                     badges={
                       isRecommended('cmd') ? (
                         <Badge tone="accent">{t('signing.recommended')}</Badge>
@@ -3485,6 +3542,7 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
                         key={provider.id}
                         title={provider.label}
                         description={t('signing.provider.csc.description')}
+                        details={<ProviderManifestSummary provider={provider} />}
                         badges={
                           isRecommended('csc') ? (
                             <Badge tone="accent">{t('signing.recommended')}</Badge>
@@ -3509,6 +3567,7 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
                         key={provider.id}
                         title={provider.label}
                         description={t('signing.provider.csc.unconfigured')}
+                        details={<ProviderManifestSummary provider={provider} />}
                         disabledNote={t('signing.csc.notConfigured')}
                       >
                         <Button

@@ -2667,6 +2667,9 @@ export const ptPT = {
   'signing.remoteBatch.result.error': 'Erro',
   'signing.remoteBatch.result.confirmNormally': 'Confirmar no fluxo normal deste ato.',
   'signing.remoteBatch.result.noSecret': 'A resposta não mostra credenciais, códigos ou ativações.',
+  'signing.remoteBatch.manifest.title': 'Sem lote nativo do prestador',
+  'signing.remoteBatch.manifest.body':
+    '{provider}: prontidão local apenas. Inícios repetidos por documento={repeated}; lote nativo do prestador={native}; PIN/OTP/SAD único para todo o lote={single}. Não há chamada ao prestador, aprovação, validade jurídica ou validação da Lista de Confiança nesta listagem.',
   'signing.seal.affordance.open': 'Posicionar selo visível',
   'signing.seal.affordance.hint':
     'Opcional. Sem selo visível, a assinatura mantém-se sem marca visível no documento.',
@@ -2945,6 +2948,23 @@ export const ptPT = {
     'Prestador remoto qualificado. A app recolhe apenas a referência e encaminha a autorização para o prestador.',
   'signing.provider.csc.unconfigured':
     'Prestador remoto listado pelo servidor, mas ainda sem credenciais ativas nesta instalação.',
+  'signing.provider.manifest.title': 'Prontidão local:',
+  'signing.provider.manifest.configured': 'configurado',
+  'signing.provider.manifest.unconfigured': 'não configurado',
+  'signing.provider.manifest.environment.preprod': 'ambiente preprod',
+  'signing.provider.manifest.environment.prod': 'ambiente prod',
+  'signing.provider.manifest.environment.sandbox': 'ambiente sandbox',
+  'signing.provider.manifest.environment.unknown': 'ambiente não conhecido localmente',
+  'signing.provider.manifest.productionBlocked': 'produção bloqueada',
+  'signing.provider.manifest.productionNotBlocked': 'produção não bloqueada pela configuração local',
+  'signing.provider.manifest.authorization.pinOtp': 'PIN/OTP',
+  'signing.provider.manifest.authorization.service': 'autorização de serviço',
+  'signing.provider.manifest.authorization.user': 'autorização de utilizador',
+  'signing.provider.manifest.authorization.unknown': 'autorização não conhecida localmente',
+  'signing.provider.manifest.batchSemantics':
+    'Lote remoto: inícios repetidos por documento={repeated}; lote nativo do prestador={native}; PIN/OTP/SAD único para lote={single}.',
+  'signing.provider.manifest.boundary':
+    'Só prontidão local: sem chamada ao prestador, aprovação do prestador, validade jurídica, estatuto qualificado ou validação da Lista de Confiança nesta listagem.',
   'signing.invites.title': 'Convites de assinatura externa',
   'signing.invites.permissionNote':
     'A gestão de convites externos usa a mesma permissão de assinatura deste livro.',

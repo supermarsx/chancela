@@ -2671,6 +2671,9 @@ export const frFR: Catalog = {
   'signing.remoteBatch.result.confirmNormally': 'Confirmer dans le flux normal de cet acte.',
   'signing.remoteBatch.result.noSecret':
     'La réponse n’affiche ni identifiants, ni codes, ni activations.',
+  'signing.remoteBatch.manifest.title': 'No provider-native batch',
+  'signing.remoteBatch.manifest.body':
+    '{provider}: local readiness only. Repeated per-document initiates={repeated}; provider-native batch={native}; one PIN/OTP/SAD for the whole batch={single}. This listing makes no live provider call, provider approval, legal validity, or Trusted List validation claim.',
   'signing.signed.qualifiedLabelCsc':
     "Signature électronique qualifiée (certificat qualifié d'un prestataire de services de confiance).",
   'signing.signed.localPkcs12Title': 'Procès-verbal signé avec un certificat logiciel local',
@@ -2875,6 +2878,23 @@ export const frFR: Catalog = {
     'Prestataire distant qualifié. L’application ne recueille que la référence et transmet l’autorisation au prestataire.',
   'signing.provider.csc.unconfigured':
     'Prestataire distant répertorié par le serveur, mais sans identifiants actifs sur cette installation.',
+  'signing.provider.manifest.title': 'Local readiness:',
+  'signing.provider.manifest.configured': 'configured',
+  'signing.provider.manifest.unconfigured': 'not configured',
+  'signing.provider.manifest.environment.preprod': 'preprod environment',
+  'signing.provider.manifest.environment.prod': 'prod environment',
+  'signing.provider.manifest.environment.sandbox': 'sandbox environment',
+  'signing.provider.manifest.environment.unknown': 'environment not locally known',
+  'signing.provider.manifest.productionBlocked': 'production blocked',
+  'signing.provider.manifest.productionNotBlocked': 'production not blocked by local config',
+  'signing.provider.manifest.authorization.pinOtp': 'PIN/OTP',
+  'signing.provider.manifest.authorization.service': 'service authorization',
+  'signing.provider.manifest.authorization.user': 'user authorization',
+  'signing.provider.manifest.authorization.unknown': 'authorization not locally known',
+  'signing.provider.manifest.batchSemantics':
+    'Remote batch: repeated per-document initiates={repeated}; provider-native batch={native}; one PIN/OTP/SAD for batch={single}.',
+  'signing.provider.manifest.boundary':
+    'Local readiness only: no live provider call, provider approval, legal validity, qualified-status, or Trusted List validation claim at listing.',
   'signing.invites.title': 'Invitations de signature externe',
   'signing.invites.permissionNote':
     'La gestion des invitations externes utilise la même permission de signature que ce registre.',

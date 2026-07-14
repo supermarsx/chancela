@@ -2197,6 +2197,62 @@ async fn get_providers_lists_cmd_and_configured_csc() {
     assert_eq!(cmd["family"], "ChaveMovelDigital");
     assert_eq!(cmd["evidentiary_level"], "Qualified");
     assert_eq!(cmd["configured"], true, "cmd has an ApplicationId");
+    assert_eq!(cmd["manifest"]["readiness"]["configured"], true);
+    assert_eq!(cmd["manifest"]["readiness"]["environment"], "preprod");
+    assert_eq!(cmd["manifest"]["readiness"]["production_blocked"], true);
+    assert_eq!(
+        cmd["manifest"]["readiness"]["authorization_mode"],
+        "pin_otp"
+    );
+    assert_eq!(
+        cmd["manifest"]["capabilities"]["remote_single_initiate_confirm"],
+        true
+    );
+    assert_eq!(
+        cmd["manifest"]["capabilities"]["remote_batch_repeated_per_document_initiate"],
+        true
+    );
+    assert_eq!(
+        cmd["manifest"]["capabilities"]["provider_native_batch_claimed"],
+        false
+    );
+    assert_eq!(
+        cmd["manifest"]["capabilities"]["single_otp_pin_sad_batch_claimed"],
+        false
+    );
+    assert_eq!(
+        cmd["manifest"]["boundaries"]["live_provider_checked"],
+        false
+    );
+    assert_eq!(
+        cmd["manifest"]["boundaries"]["provider_approval_claimed"],
+        false
+    );
+    assert_eq!(
+        cmd["manifest"]["boundaries"]["legal_validity_claimed"],
+        false
+    );
+    assert_eq!(
+        cmd["manifest"]["boundaries"]["qualified_status_determined_at_listing"],
+        false
+    );
+    assert_eq!(
+        cmd["manifest"]["boundaries"]["trust_list_validation_performed_at_listing"],
+        false
+    );
+    let cmd_basis = cmd["manifest"]["evidence_basis"]
+        .as_array()
+        .expect("cmd basis");
+    assert!(
+        cmd_basis
+            .iter()
+            .any(|basis| basis == "local_settings_metadata")
+    );
+    assert!(
+        cmd_basis
+            .iter()
+            .any(|basis| basis == "protected_credential_metadata")
+    );
 
     let csc = arr
         .iter()
@@ -2205,6 +2261,63 @@ async fn get_providers_lists_cmd_and_configured_csc() {
     assert_eq!(csc["family"], "QualifiedCertificate");
     assert_eq!(csc["label"], "Encosto QTSP");
     assert_eq!(csc["configured"], true, "csc provider is configured (DI)");
+    assert_eq!(csc["manifest"]["readiness"]["configured"], true);
+    assert_eq!(csc["manifest"]["readiness"]["environment"], "sandbox");
+    assert_eq!(csc["manifest"]["readiness"]["sandbox"], true);
+    assert_eq!(csc["manifest"]["readiness"]["production_blocked"], true);
+    assert_eq!(
+        csc["manifest"]["readiness"]["authorization_mode"],
+        "service"
+    );
+    assert_eq!(
+        csc["manifest"]["capabilities"]["remote_single_initiate_confirm"],
+        true
+    );
+    assert_eq!(
+        csc["manifest"]["capabilities"]["remote_batch_repeated_per_document_initiate"],
+        true
+    );
+    assert_eq!(
+        csc["manifest"]["capabilities"]["provider_native_batch_claimed"],
+        false
+    );
+    assert_eq!(
+        csc["manifest"]["capabilities"]["single_otp_pin_sad_batch_claimed"],
+        false
+    );
+    assert_eq!(
+        csc["manifest"]["boundaries"]["live_provider_checked"],
+        false
+    );
+    assert_eq!(
+        csc["manifest"]["boundaries"]["provider_approval_claimed"],
+        false
+    );
+    assert_eq!(
+        csc["manifest"]["boundaries"]["legal_validity_claimed"],
+        false
+    );
+    assert_eq!(
+        csc["manifest"]["boundaries"]["qualified_status_determined_at_listing"],
+        false
+    );
+    assert_eq!(
+        csc["manifest"]["boundaries"]["trust_list_validation_performed_at_listing"],
+        false
+    );
+    let csc_basis = csc["manifest"]["evidence_basis"]
+        .as_array()
+        .expect("csc basis");
+    assert!(
+        csc_basis
+            .iter()
+            .any(|basis| basis == "local_provider_env_metadata")
+    );
+    assert!(
+        csc_basis
+            .iter()
+            .any(|basis| basis == "injected_transport_metadata")
+    );
 }
 
 /// An unknown provider id → 422; a known-but-unconfigured provider → 422.

@@ -2615,6 +2615,9 @@ export const enGB: Catalog = {
   'signing.remoteBatch.result.confirmNormally': "Confirm in this act's normal flow.",
   'signing.remoteBatch.result.noSecret':
     'The response does not show credentials, codes, or activations.',
+  'signing.remoteBatch.manifest.title': 'No provider-native batch',
+  'signing.remoteBatch.manifest.body':
+    '{provider}: local readiness only. Repeated per-document initiates={repeated}; provider-native batch={native}; one PIN/OTP/SAD for the whole batch={single}. This listing makes no live provider call, provider approval, legal validity, or Trusted List validation claim.',
   'signing.signed.qualifiedLabelCsc':
     'Qualified electronic signature (qualified certificate from a trust service provider).',
   'signing.signed.localPkcs12Title': 'Minutes signed with a local software certificate',
@@ -2813,6 +2816,23 @@ export const enGB: Catalog = {
     'Qualified remote provider. The app only collects the reference and forwards authorization to the provider.',
   'signing.provider.csc.unconfigured':
     'Remote provider listed by the server, but without active credentials in this installation.',
+  'signing.provider.manifest.title': 'Local readiness:',
+  'signing.provider.manifest.configured': 'configured',
+  'signing.provider.manifest.unconfigured': 'not configured',
+  'signing.provider.manifest.environment.preprod': 'preprod environment',
+  'signing.provider.manifest.environment.prod': 'prod environment',
+  'signing.provider.manifest.environment.sandbox': 'sandbox environment',
+  'signing.provider.manifest.environment.unknown': 'environment not locally known',
+  'signing.provider.manifest.productionBlocked': 'production blocked',
+  'signing.provider.manifest.productionNotBlocked': 'production not blocked by local config',
+  'signing.provider.manifest.authorization.pinOtp': 'PIN/OTP',
+  'signing.provider.manifest.authorization.service': 'service authorization',
+  'signing.provider.manifest.authorization.user': 'user authorization',
+  'signing.provider.manifest.authorization.unknown': 'authorization not locally known',
+  'signing.provider.manifest.batchSemantics':
+    'Remote batch: repeated per-document initiates={repeated}; provider-native batch={native}; one PIN/OTP/SAD for batch={single}.',
+  'signing.provider.manifest.boundary':
+    'Local readiness only: no live provider call, provider approval, legal validity, qualified-status, or Trusted List validation claim at listing.',
   'signing.invites.title': 'External signature invites',
   'signing.invites.permissionNote':
     'External invite management uses the same signing permission for this book.',

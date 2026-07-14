@@ -5507,6 +5507,8 @@ export interface ScapSignResponse {
  * `{provider}` path segment (`"cmd"`, `"multicert"`, …); `family` is `ChaveMovelDigital` for
  * CMD or `QualifiedCertificate` for a CSC QTSP; `configured` reports whether the provider's
  * credentials resolve (never the secret itself) — an unconfigured provider is offered disabled.
+ * `manifest` is local-only readiness/capability metadata; provider listing does not contact the
+ * live provider, validate trust lists, determine qualified status, or assert legal validity.
  */
 export interface SignatureProviderView {
   id: string;
@@ -5514,6 +5516,38 @@ export interface SignatureProviderView {
   label: string;
   evidentiary_level: string;
   configured: boolean;
+  manifest?: SignatureProviderManifest;
+}
+
+export interface SignatureProviderManifest {
+  readiness: SignatureProviderReadiness;
+  capabilities: SignatureProviderCapabilities;
+  boundaries: SignatureProviderBoundaries;
+  evidence_basis: string[];
+}
+
+export interface SignatureProviderReadiness {
+  configured: boolean;
+  environment: string | null;
+  sandbox: boolean | null;
+  production_blocked: boolean;
+  missing_local_config: string[];
+  authorization_mode: string | null;
+}
+
+export interface SignatureProviderCapabilities {
+  remote_single_initiate_confirm: boolean;
+  remote_batch_repeated_per_document_initiate: boolean;
+  provider_native_batch_claimed: false;
+  single_otp_pin_sad_batch_claimed: false;
+}
+
+export interface SignatureProviderBoundaries {
+  live_provider_checked: false;
+  provider_approval_claimed: false;
+  legal_validity_claimed: false;
+  qualified_status_determined_at_listing: false;
+  trust_list_validation_performed_at_listing: false;
 }
 
 /**

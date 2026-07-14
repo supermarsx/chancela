@@ -51,6 +51,26 @@ function resultStatusBadge(result: RemoteBatchInitiateResult, t: TFunction) {
   return <Badge tone="error">{t('signing.remoteBatch.result.error')}</Badge>;
 }
 
+function RemoteBatchProviderManifest({ provider }: { provider?: SignatureProviderView }) {
+  const t = useT();
+  const manifest = provider?.manifest;
+  if (!manifest) return null;
+  return (
+    <InlineWarning tone="info" title={t('signing.remoteBatch.manifest.title')}>
+      {t('signing.remoteBatch.manifest.body', {
+        provider: provider.label,
+        repeated: manifest.capabilities.remote_batch_repeated_per_document_initiate
+          ? t('common.yes')
+          : t('common.no'),
+        native: manifest.capabilities.provider_native_batch_claimed ? t('common.yes') : t('common.no'),
+        single: manifest.capabilities.single_otp_pin_sad_batch_claimed
+          ? t('common.yes')
+          : t('common.no'),
+      })}
+    </InlineWarning>
+  );
+}
+
 export function RemoteBatchSigningPanel({
   currentAct,
   bookScope,
@@ -97,6 +117,10 @@ export function RemoteBatchSigningPanel({
   const credentialProviderRef = useRef<string | null>(providerId);
   const previousSealSignatureRef = useRef(sealSignature);
   const mountedRef = useRef(true);
+  const selectedProvider = useMemo(
+    () => providers.find((provider) => provider.id === providerId),
+    [providerId, providers],
+  );
 
   const clearRequestArtifacts = useCallback(() => {
     requestGenerationRef.current += 1;
@@ -465,6 +489,7 @@ export function RemoteBatchSigningPanel({
             />
           </Field>
         </div>
+        <RemoteBatchProviderManifest provider={selectedProvider} />
 
         {!canSubmit ? (
           <p className="field__hint">{t('signing.remoteBatch.selection.needMore')}</p>

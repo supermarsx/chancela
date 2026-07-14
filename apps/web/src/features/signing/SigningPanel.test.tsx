@@ -1487,7 +1487,41 @@ const officialHandoffSignedStatus: SignatureStatusView = {
 
 /** A provider-list row builder (matches `SignatureProviderView`). */
 function provider(id: string, label: string, family: string, configured: boolean) {
-  return { id, family, label, evidentiary_level: 'Qualified', configured };
+  return {
+    id,
+    family,
+    label,
+    evidentiary_level: 'Qualified',
+    configured,
+    manifest: {
+      readiness: {
+        configured,
+        environment: id === 'cmd' ? 'preprod' : 'sandbox',
+        sandbox: id === 'cmd' ? null : true,
+        production_blocked: true,
+        missing_local_config: configured ? [] : ['client_secret'],
+        authorization_mode: id === 'cmd' ? 'pin_otp' : 'service',
+      },
+      capabilities: {
+        remote_single_initiate_confirm: true,
+        remote_batch_repeated_per_document_initiate: true,
+        provider_native_batch_claimed: false,
+        single_otp_pin_sad_batch_claimed: false,
+      },
+      boundaries: {
+        live_provider_checked: false,
+        provider_approval_claimed: false,
+        legal_validity_claimed: false,
+        qualified_status_determined_at_listing: false,
+        trust_list_validation_performed_at_listing: false,
+      },
+      evidence_basis: [
+        'local_settings_metadata',
+        'environment_metadata',
+        'protected_credential_metadata',
+      ],
+    },
+  };
 }
 
 describe('SigningPanel — local PKCS#12 software certificate', () => {
@@ -1772,6 +1806,17 @@ describe('SigningPanel — CSC QTSP providers', () => {
         'Prestador remoto qualificado. A app recolhe apenas a referência e encaminha a autorização para o prestador.',
       ),
     ).toBeTruthy();
+    expect(screen.getAllByText(/Prontidão local:/).length).toBeGreaterThanOrEqual(2);
+    expect(
+      screen.getAllByText(
+        /Lote remoto: inícios repetidos por documento=Sim; lote nativo do prestador=Não; PIN\/OTP\/SAD único para lote=Não\./,
+      ).length,
+    ).toBeGreaterThanOrEqual(2);
+    expect(
+      screen.getAllByText(
+        /Só prontidão local: sem chamada ao prestador, aprovação do prestador, validade jurídica/,
+      ).length,
+    ).toBeGreaterThanOrEqual(2);
     // The unconfigured QTSP is offered disabled with an honest «não configurado» note.
     const ds = screen.getByRole('button', { name: 'Assinar com DigitalSign' });
     expect((ds as HTMLButtonElement).disabled).toBe(true);
@@ -2039,6 +2084,12 @@ describe('SigningPanel — remote batch initiation', () => {
     const region = await screen.findByLabelText('Início remoto por documento');
     const batch = within(region);
     expect(batch.getByText('Uma ativação por documento')).toBeTruthy();
+    expect(batch.getByText('Sem lote nativo do prestador')).toBeTruthy();
+    expect(
+      batch.getByText(
+        /prontidão local apenas\. Inícios repetidos por documento=Sim; lote nativo do prestador=Não; PIN\/OTP\/SAD único para todo o lote=Não/,
+      ),
+    ).toBeTruthy();
 
     fireEvent.change(batch.getByLabelText('ID do ato'), { target: { value: 'act-2' } });
     fireEvent.click(batch.getByRole('button', { name: 'Adicionar' }));

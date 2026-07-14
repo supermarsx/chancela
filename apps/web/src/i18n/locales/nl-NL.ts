@@ -2659,6 +2659,9 @@ export const nlNL: Catalog = {
   'signing.remoteBatch.result.confirmNormally': 'Bevestig in de normale flow van deze akte.',
   'signing.remoteBatch.result.noSecret':
     'Het antwoord toont geen credentials, codes of activeringen.',
+  'signing.remoteBatch.manifest.title': 'No provider-native batch',
+  'signing.remoteBatch.manifest.body':
+    '{provider}: local readiness only. Repeated per-document initiates={repeated}; provider-native batch={native}; one PIN/OTP/SAD for the whole batch={single}. This listing makes no live provider call, provider approval, legal validity, or Trusted List validation claim.',
   'signing.signed.qualifiedLabelCsc':
     'Gekwalificeerde elektronische handtekening (gekwalificeerd certificaat van een vertrouwensdienstverlener).',
   'signing.signed.localPkcs12Title': 'Notulen ondertekend met lokaal softwarecertificaat',
@@ -2864,6 +2867,23 @@ export const nlNL: Catalog = {
     'Gekwalificeerde externe aanbieder. De app verzamelt alleen de referentie en stuurt de autorisatie door naar de aanbieder.',
   'signing.provider.csc.unconfigured':
     'Externe aanbieder die door de server wordt vermeld, maar nog zonder actieve inloggegevens in deze installatie.',
+  'signing.provider.manifest.title': 'Local readiness:',
+  'signing.provider.manifest.configured': 'configured',
+  'signing.provider.manifest.unconfigured': 'not configured',
+  'signing.provider.manifest.environment.preprod': 'preprod environment',
+  'signing.provider.manifest.environment.prod': 'prod environment',
+  'signing.provider.manifest.environment.sandbox': 'sandbox environment',
+  'signing.provider.manifest.environment.unknown': 'environment not locally known',
+  'signing.provider.manifest.productionBlocked': 'production blocked',
+  'signing.provider.manifest.productionNotBlocked': 'production not blocked by local config',
+  'signing.provider.manifest.authorization.pinOtp': 'PIN/OTP',
+  'signing.provider.manifest.authorization.service': 'service authorization',
+  'signing.provider.manifest.authorization.user': 'user authorization',
+  'signing.provider.manifest.authorization.unknown': 'authorization not locally known',
+  'signing.provider.manifest.batchSemantics':
+    'Remote batch: repeated per-document initiates={repeated}; provider-native batch={native}; one PIN/OTP/SAD for batch={single}.',
+  'signing.provider.manifest.boundary':
+    'Local readiness only: no live provider call, provider approval, legal validity, qualified-status, or Trusted List validation claim at listing.',
   'signing.invites.title': 'Uitnodigingen voor externe ondertekening',
   'signing.invites.permissionNote':
     'Het beheer van externe uitnodigingen gebruikt dezelfde ondertekeningsrechten van dit boek.',
