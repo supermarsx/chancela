@@ -1,7 +1,7 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `11bbb32`,
+and implementation snapshot `350b720`,
 including coverage notes for the bounded PAdES DSS validation-time, PDF/UA v10
 scoped table-header evidence, retention due-candidate explicit evidence states,
 bounded archive/no-action evidence UI, duplicate-review guard/status surfacing, and
@@ -47,7 +47,9 @@ acts as source-linked technical visualization evidence only,
 plus local ASiC inspection endpoint and ASiC ZIP decompression-bound coverage,
 plus release workflow static
 assurance for the unsigned/local-only trust posture and production-package
-manifest-required validation. This plan is the build and
+manifest-required validation, plus synthetic seed dataset integration coverage
+over API-created entity/book/act/ledger/dashboard/RBAC/delegation paths. This
+plan is the build and
 test operating checklist for driving Chancela toward release confidence.
 
 ## Goals
@@ -812,11 +814,11 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `11bbb32`
+## Focused Gate Snapshot Through `350b720`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08` and checkpoint-promoted on 2026-07-14 for
-current implementation head `11bbb32`. This is not an exhaustive current
+current implementation head `350b720`. This is not an exhaustive current
 green-run claim; browser, Docker, desktop, package signing/notarization, image
 signing/attestation, and live-provider limits above still apply.
 
@@ -1761,7 +1763,19 @@ settingsDefaults.test.ts contracts.test.ts`.
   --workspace apps/web -- e2e/session.spec.ts e2e/first-launch-onboarding.spec.ts`.
   Treat the static/unit/focused markers as the pinned slice, not broad
   Playwright-browser-suite or browser-matrix proof; the browser suite is not exhaustive.
-- Current checkpoint metadata/static checks through `11bbb32`
+- Current working-tree synthetic seed dataset integration checks: focused
+  `cargo test -p chancela-api --test seed_dataset --locked` coverage builds a
+  fictional dev/test dataset through the real API router and validates entity,
+  book, act lifecycle, sealed-document readback, ledger integrity, dashboard
+  aggregate, scoped RBAC, active delegation, deterministic-shape, scale-up, and
+  SQLite backup/restore fixity evidence. The ignored feature-gated Postgres
+  lane reuses the same validation shape only when a live `DATABASE_URL` is
+  supplied. This is synthetic integration test evidence only; it is not
+  production seed data, external-provider coverage, legal-validity proof,
+  legal-capacity proof, production backup-policy certification,
+  RBAC/delegation completion, broad dashboard/business completeness, or spec
+  completion.
+- Current checkpoint metadata/static checks through `350b720`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and

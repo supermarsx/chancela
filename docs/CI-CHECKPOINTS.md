@@ -140,6 +140,18 @@ portability plus `restore_preflight` boundaries, SQLite-default
 feature/config-gated database backend selection markers, and the standalone
 desktop Cargo workspace.
 
+The synthetic seed dataset integration markers prove that
+`cargo test -p chancela-api --test seed_dataset --locked` builds a fictional
+dev/test dataset only through the real in-process API router, then validates
+entity, book, act lifecycle, sealed-document readback, ledger integrity,
+dashboard aggregate, scoped RBAC, active delegation, deterministic-shape,
+scale-up, and SQLite backup/restore fixity evidence. The feature-gated ignored
+Postgres lane reuses the same validation shape only when a live `DATABASE_URL`
+is supplied. These markers do not seed production data, use real records, call
+external providers, prove legal validity or legal capacity, certify dashboard
+or backup-policy completeness, complete RBAC/delegation policy, or make any
+spec area complete.
+
 The Postgres store, backend-selection, logical recovery, and local
 advisory-lock/fail-closed cluster write gate and promotion handoff markers prove
 source/test coverage for the off-by-default backend runtime paths, API/server
@@ -317,6 +329,14 @@ It intentionally reuses existing test surfaces:
   `operator_evidence_covered` suppression, dated-before-no-date
   `dashboard_limit` sorting, and the `contracts/dashboard.json` no-date
   fixture.
+- API synthetic seed dataset integration:
+  `cargo test -p chancela-api --test seed_dataset --locked` including
+  API-created synthetic entities, books, act lifecycle rows, structured
+  attendance/deliberations/convening evidence, sealed document readback, ledger
+  verification/integrity, dashboard aggregate readback, scoped RBAC,
+  delegation resolution, deterministic-shape/scale checks, and SQLite
+  backup/restore fixity. The ignored Postgres variant is live-DB gated and is
+  not default CI evidence.
 - API and web privacy control review reminders:
   `cargo test -p chancela-api --locked privacy_control_review_reminders_cover_missing_overdue_and_source_toggle`
   plus the focused web unit lane for

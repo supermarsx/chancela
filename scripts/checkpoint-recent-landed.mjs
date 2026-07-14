@@ -9662,12 +9662,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `11bbb32`",
+    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `350b720`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `11bbb32`",
+    "Focused Gate Snapshot Through `350b720`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -10292,8 +10292,23 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `11bbb32`",
+    "Current checkpoint metadata/static checks through `350b720`",
     "CI/E2E hardening plan current checkpoint checks marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Current working-tree synthetic seed dataset integration checks",
+    "CI/E2E hardening plan synthetic seed dataset checks marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "`cargo test -p chancela-api --test seed_dataset --locked`",
+    "CI/E2E hardening plan synthetic seed dataset command marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "production seed data, external-provider coverage, legal-validity proof",
+    "CI/E2E hardening plan synthetic seed dataset no-claim marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -10757,7 +10772,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `11bbb32ae6eebd6f689b03d7bac972973668ff19`",
+    "implementation snapshot `350b720de5f1259218a23b3aa1e30dab5e7822f1`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -10784,6 +10799,76 @@ function assertCheckpointMap() {
     "SPEC-COVERAGE.md",
     "release clean-source provenance gating, seeded role-drift\ndiagnostics",
     "spec coverage five-slice header marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "synthetic seed\ndataset integration coverage",
+    "spec coverage synthetic seed dataset header marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Current `350b720` keeps Data/Entity/Workflows/Documents & Archive/Roles &\n  Access/UX/CI **PARTIAL**",
+    "spec coverage synthetic seed dataset checkpoint marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "seed production data, use real identities or records, call external\n  providers",
+    "spec coverage synthetic seed dataset no-claim marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "The synthetic seed dataset integration markers prove",
+    "CI checkpoints synthetic seed dataset summary marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "API synthetic seed dataset integration",
+    "CI checkpoints synthetic seed dataset lane marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "do not seed production data, use real records, call\nexternal providers",
+    "CI checkpoints synthetic seed dataset no-claim marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/seed_dataset.rs",
+    "seed_generation_validates_full_system_on_sqlite",
+    "API synthetic seed dataset SQLite integration coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/seed_dataset.rs",
+    "seed_generation_is_deterministic_in_shape",
+    "API synthetic seed dataset deterministic shape coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/seed_dataset.rs",
+    "seed_generation_scales_up",
+    "API synthetic seed dataset scale-up coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/seed_dataset.rs",
+    "seed_generation_validates_full_system_on_postgres",
+    "API synthetic seed dataset ignored Postgres coverage marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/seed_dataset.rs",
+    "Every name, NIPC, address, and deliberation here is **fictional**",
+    "API synthetic seed dataset fictional-data boundary marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/seed_dataset.rs",
+    "delegation resolves as a delegated grant",
+    "API synthetic seed dataset delegation validation marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/seed_dataset.rs",
+    "dashboard surfaces a recent-events feed",
+    "API synthetic seed dataset dashboard validation marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/seed_dataset.rs",
+    "restored ledger HEAD equals the original (fixity)",
+    "API synthetic seed dataset backup restore fixity marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",

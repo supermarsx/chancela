@@ -1,6 +1,6 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-14 from current implementation snapshot `11bbb32ae6eebd6f689b03d7bac972973668ff19`,
+*Updated 2026-07-14 from current implementation snapshot `350b720de5f1259218a23b3aa1e30dab5e7822f1`,
 with committed evidence refreshes for the recently landed Signatures & Trust
 provider-credential, stored runtime credential resolution, stored PKCS#12,
 remote batch-initiation surfaces, and Docker/Compose runtime-hardening
@@ -163,7 +163,10 @@ then `6d0c3ec` dashboard backup recovery freshness advisory surfacing,
 checkpoint documentation, `0a83517` Postgres logical
 backup/restore/recovery with fixity and atomicity markers, and the
 `67302b0`/`ddc1764` local Postgres advisory-lock cluster write gate and
-fail-closed promotion handoff markers.
+fail-closed promotion handoff markers, followed by `350b720` synthetic seed
+dataset integration coverage for API-created entities, books, acts, ledger,
+dashboard aggregates, RBAC, delegation resolution, and SQLite backup/restore
+fixity.
 Earlier coverage text remains prior snapshot context. All top-level spec areas remain **PARTIAL**.
 This is an implementation and test coverage snapshot, not a legal certification,
 not production CMD approval, not DRE verification promotion, not full PDF/UA
@@ -193,6 +196,24 @@ being useful. The matrix below records the current factual coverage and the rema
 blockers.
 
 Implementation checkpoints covered here:
+
+- Current `350b720` keeps Data/Entity/Workflows/Documents & Archive/Roles &
+  Access/UX/CI **PARTIAL**: `cargo test -p chancela-api --test seed_dataset
+  --locked` now builds a synthetic, fictional dataset through the real API
+  router create/update/advance paths, spanning supported entity families,
+  books, act lifecycle states, structured attendance/deliberations/convening
+  evidence, sealed/archived document retrieval, ledger verification/integrity
+  counts, dashboard aggregate/readback checks, scoped Leitor RBAC, an
+  `act.advance` delegation with legal-basis text, deterministic-shape checks,
+  scale-up checks, and a SQLite backup/restore round-trip preserving ledger
+  head, domain counts, users, roles, and delegations. The feature-gated ignored
+  Postgres variant reuses the same generation/validation shape when a live
+  `DATABASE_URL` is provided, without claiming default CI live-Postgres
+  execution. This is dev/test synthetic integration evidence only: it does not
+  seed production data, use real identities or records, call external
+  providers, prove legal validity or legal capacity, certify
+  dashboard/business completeness, certify backup policy, complete
+  RBAC/delegation policy, or make any spec area complete.
 
 - Current `11bbb32` keeps Documents/Archive, UX, and CI **PARTIAL**: the web
   sealed-act document panel now exposes post-act `Certidao` and `Extrato`
