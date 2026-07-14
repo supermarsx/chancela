@@ -4,9 +4,15 @@
  * open-book route (`/livros/novo`) rather than an always-visible aside form (t13 item 7).
  */
 import { useDeferredValue, useMemo, useState } from 'react';
-import { useBooks } from '../../api/hooks';
+import { useBooks, useEntities } from '../../api/hooks';
 import { bookKindLabels, bookStateLabels } from '../../api/labels';
-import { BOOK_KINDS, type BookKind, type BookState, type BookView } from '../../api/types';
+import {
+  BOOK_KINDS,
+  type BookKind,
+  type BookState,
+  type BookView,
+  type Entity,
+} from '../../api/types';
 import { useT, type MessageKey } from '../../i18n';
 import {
   Badge,
@@ -99,6 +105,12 @@ function bookSearchText(book: BookView): string {
 export function BooksPage() {
   const t = useT();
   const books = useBooks();
+  const entities = useEntities();
+  const entitiesById = useMemo(() => {
+    const map = new Map<string, Entity>();
+    for (const entity of entities.data ?? []) map.set(entity.id, entity);
+    return map;
+  }, [entities.data]);
   const [search, setSearch] = useState('');
   const deferredSearch = useDeferredValue(search);
   const [stateFilter, setStateFilter] = useState<BookStateFilter>('all');
@@ -277,7 +289,12 @@ export function BooksPage() {
                 <p>{t('books.filters.empty.body')}</p>
               </EmptyState>
             ) : (
-              <BooksTable books={visibleBooks} />
+              <BooksTable
+                books={visibleBooks}
+                showEntity
+                entitiesById={entitiesById}
+                entitiesLoading={entities.isLoading}
+              />
             )}
           </div>
         )}

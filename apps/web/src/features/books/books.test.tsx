@@ -308,6 +308,30 @@ describe('BooksPage', () => {
     expect(screen.queryByLabelText('Tipo de livro')).toBeNull();
   });
 
+  it('shows the owning entity for each book, resolved to a linked name', async () => {
+    const books: BookView[] = [{ ...BOOK, id: 'book-ag', entity_id: 'ent-1' }];
+    vi.stubGlobal(
+      'fetch',
+      fetchTable([
+        { match: '/v1/entities', body: [ENTITY] },
+        { match: '/v1/books', body: books },
+      ]),
+    );
+    const { container } = renderWithProviders(<BooksPage />, ['/livros']);
+
+    // Owning-entity column header is present on the all-books list.
+    expect(await screen.findByText('Atas da Assembleia')).toBeTruthy();
+    expect(container.querySelector("th[data-book-column='Entity']")?.textContent).toBe('Entidade');
+
+    // entity_id resolves to the entity name, linked to its detail page.
+    const link = await screen.findByRole('link', { name: 'Encosto Estratégico, Lda.' });
+    expect(link.getAttribute('href')).toBe('/entidades/ent-1');
+    const entityCell = container.querySelector("td[data-book-column='Entity']");
+    expect(entityCell?.contains(link)).toBe(true);
+    // The raw id is not surfaced once the entity name is resolved.
+    expect(within(entityCell as HTMLElement).queryByText('ent-1')).toBeNull();
+  });
+
   it('filters the books list by search, state and type, then clears back to all rows', async () => {
     const books: BookView[] = [
       { ...BOOK, id: 'book-ag', purpose: 'Atas da Assembleia', state: 'Open' },

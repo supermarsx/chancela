@@ -3,12 +3,13 @@
  */
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import type { BookView } from '../../api/types';
+import type { BookView, Entity } from '../../api/types';
 import { bookKindLabels, bookStateLabels } from '../../api/labels';
 import { useT } from '../../i18n';
 import { Badge, EmptyState, Icon, Table, Tooltip, Truncate } from '../../ui';
+import { NipcBadge } from '../entities/NipcBadge';
 
-type BookColumn = 'Kind' | 'Purpose' | 'State' | 'Opening' | 'LastAct' | 'Actions';
+type BookColumn = 'Entity' | 'Kind' | 'Purpose' | 'State' | 'Opening' | 'LastAct' | 'Actions';
 
 function stateTone(state: BookView['state']) {
   if (state === 'Open') return 'ok' as const;
@@ -41,17 +42,70 @@ function openBookLabel(book: BookView, openLabel: string): string {
   return `${openLabel}: ${book.purpose ?? book.id}`;
 }
 
-export function BooksTable({ books }: { books: BookView[] }) {
+/**
+ * Resolves a book's owning entity to a selectable, linked reference. While the entities
+ * query is still loading we show a subtle placeholder (never a flash of the raw id); when
+ * the entity is missing we fall back to the id in a muted mono span rather than crash.
+ */
+function BookEntityRef({
+  book,
+  entitiesById,
+  loading,
+}: {
+  book: BookView;
+  entitiesById?: Map<string, Entity>;
+  loading: boolean;
+}) {
+  const entity = entitiesById?.get(book.entity_id);
+  if (entity) {
+    return (
+      <span className="books-table__entity">
+        <Link
+          className="truncate books-table__entity-link"
+          to={`/entidades/${entity.id}`}
+          title={entity.name}
+        >
+          {entity.name}
+        </Link>
+        {!entity.nipc_validated ? <NipcBadge /> : null}
+      </span>
+    );
+  }
+  if (loading) {
+    return (
+      <span className="books-table__entity-loading muted" aria-hidden="true">
+        …
+      </span>
+    );
+  }
+  return <Truncate text={book.entity_id} mono className="muted" />;
+}
+
+export function BooksTable({
+  books,
+  showEntity = false,
+  entitiesById,
+  entitiesLoading = false,
+}: {
+  books: BookView[];
+  /** Show the owning-entity column — the "all books" list where books span entities. */
+  showEntity?: boolean;
+  /** Entity lookup by id, used to resolve `entity_id` to a display name + NIPC flag. */
+  entitiesById?: Map<string, Entity>;
+  /** Entities query still loading — render a placeholder instead of the raw id. */
+  entitiesLoading?: boolean;
+}) {
   const t = useT();
   const openLabel = t('common.open');
   if (books.length === 0) {
     return <EmptyState title={t('books.empty')} />;
   }
   return (
-    <div className="books-table">
+    <div className={`books-table${showEntity ? ' books-table--with-entity' : ''}`}>
       <Table
         head={
           <tr>
+            {showEntity ? <th data-book-column="Entity">{t('books.entity')}</th> : null}
             <th data-book-column="Kind">{t('books.th.type')}</th>
             <th data-book-column="Purpose">{t('books.th.purpose')}</th>
             <th data-book-column="State">{t('books.th.state')}</th>
@@ -65,6 +119,15 @@ export function BooksTable({ books }: { books: BookView[] }) {
           const actionLabel = openBookLabel(book, openLabel);
           return (
             <tr key={book.id}>
+              {showEntity ? (
+                <BookTableCell column="Entity">
+                  <BookEntityRef
+                    book={book}
+                    entitiesById={entitiesById}
+                    loading={entitiesLoading}
+                  />
+                </BookTableCell>
+              ) : null}
               <BookTableCell column="Kind">
                 <Truncate text={bookKindLabels[book.kind]} />
               </BookTableCell>
