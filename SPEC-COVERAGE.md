@@ -3081,11 +3081,13 @@ behavior, legal disposal, or legal-effect claims.
   Signatário, Leitor, Platform Administrator, Tenant Administrator, explicit ROL-02 Company Owner,
   Corporate Secretary, Legal Counsel, Records Manager, Signatory, Reviewer, Auditor, Guest, and API
   Client.
-  Delegations carry `starts_at` and optional `legal_basis` evidence, persist to `delegations.json`,
-  and remain non-redelegable. Minimal guest/read-only callers now get redacted entity and registry
-  views plus book purpose/signatory/predecessor metadata, act free text/participant/evidence
-  metadata, and imported-document filename/digest/importer/download metadata. This is read-response
-  minimization, not anonymization, erasure, or full privacy lifecycle completion.
+  Delegations carry `starts_at`; new grants require bounded non-empty operator-supplied
+  `legal_basis` evidence, while legacy records missing `legal_basis` remain readable and displayed
+  as missing legacy records; delegation records persist to `delegations.json` and remain
+  non-redelegable. Minimal guest/read-only callers now get redacted entity and registry views plus
+  book purpose/signatory/predecessor metadata, act free text/participant/evidence metadata, and
+  imported-document filename/digest/importer/download metadata. This is read-response minimization,
+  not anonymization, erasure, or full privacy lifecycle completion.
 - **Privacy/DSR backend lifecycle:** `GET /v1/privacy/users/{id}/export` returns a user-scoped,
   non-secret JSON export with metadata, safe account fields, role assignments, and authored ledger
   event references. It is gated by `user.manage@Global` and explicitly excludes credential

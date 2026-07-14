@@ -588,7 +588,8 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - Guest/read-only users see redacted entity and registry data.
 - API-key principals inherit only their scoped grants.
 - Delegations respect `starts_at`, `expires_at`, non-redelegable behavior, and
-  legal-basis evidence.
+  bounded operator-supplied legal-basis evidence for new grants while legacy
+  missing-basis records remain readable.
 - Permission-denied UI states render useful blocked actions without leaking
   adjacent privileged data.
 
