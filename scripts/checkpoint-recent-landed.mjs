@@ -8743,7 +8743,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docker/Dockerfile.server",
-    "--features chancela-server/sqlcipher",
+    'ARG CARGO_FEATURES="chancela-server/sqlcipher"',
     "Docker SQLCipher server build default",
   );
   assertFileContains(
@@ -9312,7 +9312,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `b5525e9`",
+    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `a0140e4`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
@@ -9932,7 +9932,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `b5525e9`",
+    "Current checkpoint metadata/static checks through `a0140e4`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -10387,7 +10387,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `b5525e9628207116c583eeb1211e0154837ed592`",
+    "implementation snapshot `a0140e4955cb7f7826b4015557bf8f36ff8ccfed`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(

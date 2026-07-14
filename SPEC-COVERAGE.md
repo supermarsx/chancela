@@ -1,6 +1,6 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-14 from current implementation snapshot `b5525e9628207116c583eeb1211e0154837ed592`,
+*Updated 2026-07-14 from current implementation snapshot `a0140e4955cb7f7826b4015557bf8f36ff8ccfed`,
 with committed evidence refreshes for the recently landed Signatures & Trust
 provider-credential, stored runtime credential resolution, stored PKCS#12,
 remote batch-initiation surfaces, and Docker/Compose runtime-hardening
@@ -1781,13 +1781,17 @@ Implementation checkpoints covered here:
   imported-by/reviewer details, raw bytes, OCR text, or sensitive metadata, and
   they do not run OCR, canonical conversion, PDF/A/PDF/UA generation,
   signed-import validation, legal acceptance, or review mutation.
-- Current `b5525e9` keeps Workflows/UX/Documents/CI **PARTIAL**: this
-  checkpoint snapshot is anchored after the subsequent optional cache-layer
-  commit landed on top of `b9394ca`. The imported-document reminder slice above
-  remains the workflow behavior validated here; the cache layer is treated only
-  as the live implementation snapshot for checkpoint coherence, not as
-  production Redis/cache readiness, HA behavior, performance proof, or broader
-  architecture completion.
+- Current `a0140e4` keeps Architecture/CI **PARTIAL**: this checkpoint snapshot
+  is anchored after the Docker Postgres profile review fixes. The Dockerfile
+  default remains SQLCipher-capable through `ARG CARGO_FEATURES`, the Postgres
+  and Redis features are opt-in through the `postgres` compose profile, real
+  `docker/secrets/` values stay gitignored and outside the build context, Redis
+  is documented and wired as fail-open cache service rather than a hard app
+  startup dependency, and Postgres TLS/remote deployment remains future
+  hardening because the current backend uses `NoTls`. This is config/static
+  validation and documentation alignment only, not production Postgres
+  readiness, HA behavior, live database validation, migration completeness,
+  performance proof, or broader architecture completion.
 - Current working-tree workflow reminder policy keeps Workflows/UX/CI
   **PARTIAL**: settings now include `workflow.reminders` with `enabled`,
   `dashboard_limit`, `due_soon_days`, `attendance_lookahead_days`, and source
