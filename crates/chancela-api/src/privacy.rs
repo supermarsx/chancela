@@ -14,6 +14,7 @@ use axum::http::StatusCode;
 use chancela_authz::{Permission, RoleId, Scope};
 use chancela_core::{Book, BookState, LegalHold};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use time::format_description::well_known::Rfc3339;
 use time::{Date, Duration, Month, OffsetDateTime};
 use uuid::Uuid;
@@ -41,6 +42,8 @@ const RETENTION_POLICY_CREATED_KIND: &str = "privacy.retention.policy.created";
 const RETENTION_POLICY_UPDATED_KIND: &str = "privacy.retention.policy.updated";
 const RETENTION_EXECUTION_REQUESTED_KIND: &str = "privacy.retention.execution.requested";
 const RETENTION_EXECUTION_REVIEW_CLOSED_KIND: &str = "privacy.retention.execution.review.closed";
+const RETENTION_CANDIDATE_RESOLUTION_RECORDED_KIND: &str =
+    "privacy.retention.candidate.resolution.recorded";
 const ARCHIVE_RETENTION_POLICY_SCOPE: &str = "book_archive";
 const ARCHIVE_RETENTION_POLICY_CATEGORY: &str = "documents";
 const RETENTION_PRIOR_BOUNDED_ARCHIVE_NEXT_STEP: &str = "Prior bounded archive evidence is available for review; this due-candidate scan is read-only and requires separate governance approval before any operational action.";
@@ -54,6 +57,8 @@ pub(crate) const TRANSFER_CONTROLS_FILE: &str = "privacy-transfer-controls.json"
 pub(crate) const DSR_REQUESTS_FILE: &str = "privacy-dsr-requests.json";
 pub(crate) const RETENTION_POLICIES_FILE: &str = "retention-policies.json";
 pub(crate) const RETENTION_EXECUTIONS_FILE: &str = "privacy-retention-executions.json";
+pub(crate) const RETENTION_CANDIDATE_RESOLUTIONS_FILE: &str =
+    "privacy-retention-candidate-resolutions.json";
 const MAX_DSR_EXECUTION_NOTE_CHARS: usize = 4096;
 const MAX_DSR_REVIEW_CHARS: usize = 2048;
 const MAX_DSR_AFFECTED_RECORDS: usize = 32;
@@ -1671,6 +1676,39 @@ pub struct RetentionReviewClosureRequest {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RetentionCandidateResolutionRequest {
+    #[serde(default)]
+    pub candidate_fingerprint: Option<String>,
+    #[serde(default, alias = "resolution_disposition")]
+    pub disposition: Option<String>,
+    #[serde(default, alias = "resolution_note")]
+    pub note: Option<String>,
+    #[serde(default, alias = "resolution_evidence")]
+    pub evidence: Option<Vec<RetentionReviewClosureEvidenceInput>>,
+    #[serde(default)]
+    pub destructive_disposal_completed: Option<bool>,
+    #[serde(default)]
+    pub disposal_completed: Option<bool>,
+    #[serde(default)]
+    pub full_erasure_completed: Option<bool>,
+    #[serde(default)]
+    pub erasure_completed: Option<bool>,
+    #[serde(default)]
+    pub legal_hold_mutated: Option<bool>,
+    #[serde(default)]
+    pub legal_hold_resolved: Option<bool>,
+    #[serde(default)]
+    pub retention_policy_mutated: Option<bool>,
+    #[serde(default)]
+    pub retention_policy_changed: Option<bool>,
+    #[serde(default)]
+    pub legal_completion_claimed: Option<bool>,
+    #[serde(default)]
+    pub legal_disposal_completed: Option<bool>,
+}
+
+#[derive(Deserialize)]
 pub struct RetentionExecutionApprovalInput {
     #[serde(default)]
     pub approval_reference: Option<String>,
@@ -1745,6 +1783,8 @@ pub struct RetentionDueCandidatesReport {
     pub candidate_count: usize,
     pub suppressed_candidate_count: usize,
     pub suppressed_by_bounded_evidence_count: usize,
+    pub candidate_resolution_record_count: usize,
+    pub candidates_with_resolution_count: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub suppression_summary: Option<RetentionDueCandidatesSuppressionSummary>,
     pub candidates: Vec<RetentionDueCandidate>,
@@ -1759,6 +1799,7 @@ pub struct RetentionDueCandidatesSuppressionSummary {
 #[derive(Serialize)]
 pub struct RetentionDueCandidate {
     pub candidate_id: String,
+    pub candidate_fingerprint: String,
     pub scope: String,
     pub category: String,
     pub record_id: String,
@@ -1787,6 +1828,9 @@ pub struct RetentionDueCandidate {
     pub full_erasure_completed: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prior_execution: Option<RetentionDueCandidatePriorExecution>,
+    pub candidate_resolution_record_count: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub latest_resolution: Option<RetentionCandidateResolutionSummary>,
     pub next_step: String,
 }
 
@@ -1845,10 +1889,118 @@ struct ValidatedRetentionReviewClosure {
     evidence: Vec<RetentionOperatorEvidence>,
 }
 
+#[derive(Debug)]
+struct ValidatedRetentionCandidateResolution {
+    disposition: RetentionCandidateDisposition,
+    note: Option<String>,
+    evidence: Vec<RetentionOperatorEvidence>,
+}
+
 #[derive(Default, Deserialize)]
 pub(crate) struct RetentionExecutionListQuery {
     #[serde(default)]
     status: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RetentionCandidateDisposition {
+    EvidenceAcknowledged,
+    FollowUpRequired,
+    BlockedFollowUp,
+}
+
+impl RetentionCandidateDisposition {
+    fn parse(raw: &str) -> Result<Self, ApiError> {
+        match normalize_enum(raw).as_str() {
+            "evidence_acknowledged" => Ok(Self::EvidenceAcknowledged),
+            "follow_up_required" | "followup_required" => Ok(Self::FollowUpRequired),
+            "blocked_follow_up" | "blocked_followup" => Ok(Self::BlockedFollowUp),
+            _ => Err(ApiError::Unprocessable(
+                "invalid disposition; expected evidence_acknowledged, follow_up_required, or blocked_follow_up"
+                    .to_owned(),
+            )),
+        }
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct RetentionCandidateResolutionRecord {
+    pub id: String,
+    pub candidate_id: String,
+    pub candidate_fingerprint: String,
+    pub recorded_at: String,
+    pub recorded_by: String,
+    pub disposition: RetentionCandidateDisposition,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    pub evidence: Vec<RetentionOperatorEvidence>,
+    pub evidence_count: usize,
+    pub candidate: RetentionCandidateResolutionSnapshot,
+    pub evidence_only: bool,
+    pub destructive_disposal_completed: bool,
+    pub disposal_completed: bool,
+    pub full_erasure_completed: bool,
+    pub erasure_completed: bool,
+    pub legal_hold_mutated: bool,
+    pub legal_hold_resolved: bool,
+    pub retention_policy_mutated: bool,
+    pub retention_policy_changed: bool,
+    pub legal_completion_claimed: bool,
+    pub legal_disposal_completed: bool,
+    pub next_step: String,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct RetentionCandidateResolutionSnapshot {
+    pub candidate_id: String,
+    pub candidate_fingerprint: String,
+    pub scope: String,
+    pub category: String,
+    pub record_id: String,
+    pub book_id: String,
+    pub entity_id: String,
+    pub closing_date: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub due_date: Option<String>,
+    pub overdue: bool,
+    pub policy_id: String,
+    pub policy_name: String,
+    pub schedule_id: String,
+    pub retention_period: String,
+    pub disposal_action: RetentionDisposalAction,
+    pub destructive_action: bool,
+    pub outcome: String,
+    pub status: String,
+    pub candidate_evidence_state: RetentionEvidenceState,
+    pub legal_hold_blocker_count: usize,
+    pub required_approval_count: usize,
+    pub blocker_count: usize,
+    pub finding_count: usize,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct RetentionCandidateResolutionSummary {
+    pub id: String,
+    pub candidate_fingerprint: String,
+    pub recorded_at: String,
+    pub recorded_by: String,
+    pub disposition: RetentionCandidateDisposition,
+    pub evidence_count: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    pub evidence_only: bool,
+    pub destructive_disposal_completed: bool,
+    pub disposal_completed: bool,
+    pub full_erasure_completed: bool,
+    pub erasure_completed: bool,
+    pub legal_hold_mutated: bool,
+    pub legal_hold_resolved: bool,
+    pub retention_policy_mutated: bool,
+    pub retention_policy_changed: bool,
+    pub legal_completion_claimed: bool,
+    pub legal_disposal_completed: bool,
+    pub next_step: String,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -2274,6 +2426,26 @@ pub(crate) fn load_retention_execution_records(
     }
 }
 
+pub(crate) fn load_retention_candidate_resolution_records(
+    path: &FsPath,
+) -> Option<HashMap<String, RetentionCandidateResolutionRecord>> {
+    let bytes = std::fs::read(path).ok()?;
+    match serde_json::from_slice::<Vec<RetentionCandidateResolutionRecord>>(&bytes) {
+        Ok(list) => Some(
+            list.into_iter()
+                .map(|record| (record.id.clone(), record))
+                .collect(),
+        ),
+        Err(e) => {
+            eprintln!(
+                "warning: {} is not a valid retention candidate resolution document ({e}); ignoring it",
+                path.display()
+            );
+            None
+        }
+    }
+}
+
 pub(crate) fn write_dsr_requests_atomic(
     path: &FsPath,
     requests: &HashMap<DsrRequestId, DsrRequest>,
@@ -2435,6 +2607,29 @@ pub(crate) fn write_retention_execution_records_atomic(
     }
 }
 
+pub(crate) fn write_retention_candidate_resolution_records_atomic(
+    path: &FsPath,
+    records: &HashMap<String, RetentionCandidateResolutionRecord>,
+) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)?;
+        }
+    }
+    let mut list: Vec<&RetentionCandidateResolutionRecord> = records.values().collect();
+    list.sort_by(|a, b| a.recorded_at.cmp(&b.recorded_at).then(a.id.cmp(&b.id)));
+    let json = serde_json::to_vec_pretty(&list).map_err(std::io::Error::other)?;
+    let tmp = tmp_path(path, RETENTION_CANDIDATE_RESOLUTIONS_FILE);
+    std::fs::write(&tmp, &json)?;
+    match std::fs::rename(&tmp, path) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let _ = std::fs::remove_file(&tmp);
+            Err(e)
+        }
+    }
+}
+
 fn tmp_path(path: &FsPath, fallback: &str) -> PathBuf {
     let mut name = path
         .file_name()
@@ -2507,6 +2702,20 @@ fn persist_retention_execution_records_locked(
         write_retention_execution_records_atomic(path, records).map_err(|e| {
             ApiError::Internal(format!(
                 "failed to persist retention execution records: {e}"
+            ))
+        })?;
+    }
+    Ok(())
+}
+
+fn persist_retention_candidate_resolution_records_locked(
+    state: &AppState,
+    records: &HashMap<String, RetentionCandidateResolutionRecord>,
+) -> Result<(), ApiError> {
+    if let Some(path) = &state.retention_candidate_resolutions_path {
+        write_retention_candidate_resolution_records_atomic(path, records).map_err(|e| {
+            ApiError::Internal(format!(
+                "failed to persist retention candidate resolution records: {e}"
             ))
         })?;
     }
@@ -3320,6 +3529,54 @@ pub async fn list_retention_execution_records(
     Ok(Json(list.into_iter().cloned().collect()))
 }
 
+/// `GET /v1/privacy/retention-candidate-resolutions` — list evidence-only due-candidate disposition records.
+pub async fn list_retention_candidate_resolution_records(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+) -> Result<Json<Vec<RetentionCandidateResolutionRecord>>, ApiError> {
+    require_privacy_record_manage(&state, &actor).await?;
+    let records = state.retention_candidate_resolutions.read().await;
+    let mut list: Vec<&RetentionCandidateResolutionRecord> = records.values().collect();
+    list.sort_by(|a, b| a.recorded_at.cmp(&b.recorded_at).then(a.id.cmp(&b.id)));
+    Ok(Json(list.into_iter().cloned().collect()))
+}
+
+/// `POST /v1/privacy/retention-due-candidates/{candidate_id}/resolution` — record local evidence-only disposition.
+pub async fn record_retention_candidate_resolution(
+    State(state): State<AppState>,
+    Path(candidate_id): Path<String>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    Json(req): Json<serde_json::Value>,
+) -> Result<(StatusCode, Json<RetentionCandidateResolutionRecord>), ApiError> {
+    require_privacy_record_manage(&state, &actor).await?;
+    let actor_name = actor.resolve("api");
+    let candidate = rederive_active_retention_due_candidate(&state, &candidate_id).await?;
+    let req = serde_json::from_value::<RetentionCandidateResolutionRequest>(req)
+        .map_err(|e| ApiError::Unprocessable(format!("invalid candidate resolution body: {e}")))?;
+    let resolution = validate_retention_candidate_resolution(req, &candidate)?;
+    let record = build_retention_candidate_resolution_record(&actor_name, &candidate, resolution);
+
+    {
+        let mut records = state.retention_candidate_resolutions.write().await;
+        records.insert(record.id.clone(), record.clone());
+        persist_retention_candidate_resolution_records_locked(&state, &records)?;
+    }
+
+    record_privacy_event(
+        &state,
+        &format!("privacy:retention-candidate-resolution:{}", record.id),
+        RETENTION_CANDIDATE_RESOLUTION_RECORDED_KIND,
+        "Retention due-candidate evidence-only disposition recorded",
+        &actor_name,
+        &record,
+        &attestor,
+    )
+    .await?;
+
+    Ok((StatusCode::CREATED, Json(record)))
+}
+
 /// `POST /v1/privacy/retention-executions/{id}/review-closure` — close operator review evidence without executing disposal.
 pub async fn close_retention_execution_review(
     State(state): State<AppState>,
@@ -3387,8 +3644,11 @@ pub async fn list_retention_due_candidates(
     let candidate_policies = archive_retention_candidate_policies(&policies);
     let books = state.books.read().await;
     let prior_execution_records = state.retention_execution_records.read().await;
+    let candidate_resolution_records = state.retention_candidate_resolutions.read().await;
     let mut candidates = Vec::new();
     let mut suppressed_by_bounded_evidence_count = 0usize;
+    let mut candidate_resolution_record_count = 0usize;
+    let mut candidates_with_resolution_count = 0usize;
 
     for book in books
         .values()
@@ -3398,7 +3658,7 @@ pub async fn list_retention_due_candidates(
             continue;
         };
         for policy in &candidate_policies {
-            if let Some(candidate) = retention_due_candidate_for_book_policy(
+            if let Some(mut candidate) = retention_due_candidate_for_book_policy(
                 book,
                 termo.closing_date,
                 policy,
@@ -3409,6 +3669,14 @@ pub async fn list_retention_due_candidates(
                 if retention_due_candidate_has_bounded_evidence_suppression(&candidate) {
                     suppressed_by_bounded_evidence_count += 1;
                 } else {
+                    let matching_resolution_count = apply_candidate_resolution_projection(
+                        &mut candidate,
+                        &candidate_resolution_records,
+                    );
+                    candidate_resolution_record_count += matching_resolution_count;
+                    if matching_resolution_count > 0 {
+                        candidates_with_resolution_count += 1;
+                    }
                     candidates.push(candidate);
                 }
             }
@@ -3436,6 +3704,8 @@ pub async fn list_retention_due_candidates(
         candidate_count,
         suppressed_candidate_count,
         suppressed_by_bounded_evidence_count,
+        candidate_resolution_record_count,
+        candidates_with_resolution_count,
         suppression_summary,
         candidates,
     }))
@@ -3769,11 +4039,12 @@ fn retention_due_candidate_for_book_policy(
             execution_record.outcome,
         );
 
-    Some(RetentionDueCandidate {
+    let mut candidate = RetentionDueCandidate {
         candidate_id: format!(
             "{}:{}:{}:{}",
             ARCHIVE_RETENTION_POLICY_SCOPE, ARCHIVE_RETENTION_POLICY_CATEGORY, book.id, policy.id
         ),
+        candidate_fingerprint: String::new(),
         scope: ARCHIVE_RETENTION_POLICY_SCOPE.to_owned(),
         category: ARCHIVE_RETENTION_POLICY_CATEGORY.to_owned(),
         record_id,
@@ -3800,8 +4071,218 @@ fn retention_due_candidate_for_book_policy(
         destructive_disposal_completed: false,
         full_erasure_completed: false,
         prior_execution,
+        candidate_resolution_record_count: 0,
+        latest_resolution: None,
         next_step,
-    })
+    };
+    candidate.candidate_fingerprint = retention_due_candidate_fingerprint(&candidate);
+    Some(candidate)
+}
+
+fn apply_candidate_resolution_projection(
+    candidate: &mut RetentionDueCandidate,
+    records: &HashMap<String, RetentionCandidateResolutionRecord>,
+) -> usize {
+    let mut matches: Vec<&RetentionCandidateResolutionRecord> = records
+        .values()
+        .filter(|record| {
+            record.candidate_id == candidate.candidate_id
+                && record.candidate_fingerprint == candidate.candidate_fingerprint
+        })
+        .collect();
+    matches.sort_by(|a, b| a.recorded_at.cmp(&b.recorded_at).then(a.id.cmp(&b.id)));
+    let count = matches.len();
+    candidate.candidate_resolution_record_count = count;
+    candidate.latest_resolution = matches
+        .last()
+        .map(|record| retention_candidate_resolution_summary(record));
+    count
+}
+
+fn retention_candidate_resolution_summary(
+    record: &RetentionCandidateResolutionRecord,
+) -> RetentionCandidateResolutionSummary {
+    RetentionCandidateResolutionSummary {
+        id: record.id.clone(),
+        candidate_fingerprint: record.candidate_fingerprint.clone(),
+        recorded_at: record.recorded_at.clone(),
+        recorded_by: record.recorded_by.clone(),
+        disposition: record.disposition,
+        evidence_count: record.evidence_count,
+        note: record.note.clone(),
+        evidence_only: true,
+        destructive_disposal_completed: false,
+        disposal_completed: false,
+        full_erasure_completed: false,
+        erasure_completed: false,
+        legal_hold_mutated: false,
+        legal_hold_resolved: false,
+        retention_policy_mutated: false,
+        retention_policy_changed: false,
+        legal_completion_claimed: false,
+        legal_disposal_completed: false,
+        next_step: record.next_step.clone(),
+    }
+}
+
+fn retention_due_candidate_fingerprint(candidate: &RetentionDueCandidate) -> String {
+    let payload = serde_json::json!({
+        "candidate_id": &candidate.candidate_id,
+        "scope": &candidate.scope,
+        "category": &candidate.category,
+        "record_id": &candidate.record_id,
+        "book_id": &candidate.book_id,
+        "entity_id": &candidate.entity_id,
+        "closing_date": &candidate.closing_date,
+        "due_date": &candidate.due_date,
+        "overdue": candidate.overdue,
+        "policy_id": &candidate.policy_id,
+        "policy_name": &candidate.policy_name,
+        "schedule_id": &candidate.schedule_id,
+        "retention_period": &candidate.retention_period,
+        "disposal_action": candidate.disposal_action,
+        "destructive_action": candidate.destructive_action,
+        "legal_hold_blockers": &candidate.legal_hold_blockers,
+        "required_approvals": &candidate.required_approvals,
+        "blockers": &candidate.blockers,
+        "findings": &candidate.findings,
+        "outcome": &candidate.outcome,
+        "status": &candidate.status,
+        "candidate_evidence_state": candidate.candidate_evidence_state,
+        "prior_execution": &candidate.prior_execution,
+        "next_step": &candidate.next_step,
+    });
+    let bytes = serde_json::to_vec(&payload).unwrap_or_default();
+    let digest: [u8; 32] = Sha256::digest(&bytes).into();
+    crate::hex::hex(&digest)
+}
+
+fn retention_candidate_resolution_snapshot(
+    candidate: &RetentionDueCandidate,
+) -> RetentionCandidateResolutionSnapshot {
+    RetentionCandidateResolutionSnapshot {
+        candidate_id: candidate.candidate_id.clone(),
+        candidate_fingerprint: candidate.candidate_fingerprint.clone(),
+        scope: candidate.scope.clone(),
+        category: candidate.category.clone(),
+        record_id: candidate.record_id.clone(),
+        book_id: candidate.book_id.clone(),
+        entity_id: candidate.entity_id.clone(),
+        closing_date: candidate.closing_date.clone(),
+        due_date: candidate.due_date.clone(),
+        overdue: candidate.overdue,
+        policy_id: candidate.policy_id.clone(),
+        policy_name: candidate.policy_name.clone(),
+        schedule_id: candidate.schedule_id.clone(),
+        retention_period: candidate.retention_period.clone(),
+        disposal_action: candidate.disposal_action,
+        destructive_action: candidate.destructive_action,
+        outcome: candidate.outcome.clone(),
+        status: candidate.status.clone(),
+        candidate_evidence_state: candidate.candidate_evidence_state,
+        legal_hold_blocker_count: candidate.legal_hold_blockers.len(),
+        required_approval_count: candidate.required_approvals.len(),
+        blocker_count: candidate.blockers.len(),
+        finding_count: candidate.findings.len(),
+    }
+}
+
+async fn rederive_active_retention_due_candidate(
+    state: &AppState,
+    candidate_id: &str,
+) -> Result<RetentionDueCandidate, ApiError> {
+    let today = OffsetDateTime::now_utc().date();
+    let policies = state.retention_policies.read().await;
+    let candidate_policies = archive_retention_candidate_policies(&policies);
+    let books = state.books.read().await;
+    let prior_execution_records = state.retention_execution_records.read().await;
+
+    for book in books
+        .values()
+        .filter(|book| book.state == BookState::Closed && book.termo_encerramento.is_some())
+    {
+        let Some(termo) = book.termo_encerramento.as_ref() else {
+            continue;
+        };
+        for policy in &candidate_policies {
+            let Some(candidate) = retention_due_candidate_for_book_policy(
+                book,
+                termo.closing_date,
+                policy,
+                &policies,
+                &prior_execution_records,
+                today,
+            ) else {
+                continue;
+            };
+            if candidate.candidate_id != candidate_id {
+                continue;
+            }
+            if retention_due_candidate_has_bounded_evidence_suppression(&candidate) {
+                return Err(ApiError::Unprocessable(
+                    "candidate is no longer an active due candidate because prior bounded evidence is available"
+                        .to_owned(),
+                ));
+            }
+            return Ok(candidate);
+        }
+    }
+
+    Err(ApiError::NotFound)
+}
+
+fn build_retention_candidate_resolution_record(
+    actor_name: &str,
+    candidate: &RetentionDueCandidate,
+    resolution: ValidatedRetentionCandidateResolution,
+) -> RetentionCandidateResolutionRecord {
+    let evidence_count = resolution.evidence.len();
+    RetentionCandidateResolutionRecord {
+        id: Uuid::new_v4().to_string(),
+        candidate_id: candidate.candidate_id.clone(),
+        candidate_fingerprint: candidate.candidate_fingerprint.clone(),
+        recorded_at: now_rfc3339(),
+        recorded_by: actor_name.to_owned(),
+        disposition: resolution.disposition,
+        note: resolution.note,
+        evidence: resolution.evidence,
+        evidence_count,
+        candidate: retention_candidate_resolution_snapshot(candidate),
+        evidence_only: true,
+        destructive_disposal_completed: false,
+        disposal_completed: false,
+        full_erasure_completed: false,
+        erasure_completed: false,
+        legal_hold_mutated: false,
+        legal_hold_resolved: false,
+        retention_policy_mutated: false,
+        retention_policy_changed: false,
+        legal_completion_claimed: false,
+        legal_disposal_completed: false,
+        next_step: retention_candidate_resolution_next_step(candidate, resolution.disposition)
+            .to_owned(),
+    }
+}
+
+fn retention_candidate_resolution_next_step(
+    candidate: &RetentionDueCandidate,
+    disposition: RetentionCandidateDisposition,
+) -> &'static str {
+    match disposition {
+        RetentionCandidateDisposition::EvidenceAcknowledged => {
+            "Evidence-only disposition recorded; the due candidate remains available for separate governance review."
+        }
+        RetentionCandidateDisposition::FollowUpRequired => {
+            "Follow-up evidence recorded; the due candidate remains available for separate governance review."
+        }
+        RetentionCandidateDisposition::BlockedFollowUp => {
+            if retention_candidate_requires_follow_up_resolution(candidate) {
+                "Blocked follow-up evidence recorded; blockers remain active for separate governance review."
+            } else {
+                "Follow-up evidence recorded; the due candidate remains available for separate governance review."
+            }
+        }
+    }
 }
 
 fn retention_due_candidate_has_bounded_evidence_suppression(
@@ -4622,6 +5103,95 @@ fn validate_retention_review_closure(
     })
 }
 
+fn validate_retention_candidate_resolution(
+    raw: RetentionCandidateResolutionRequest,
+    candidate: &RetentionDueCandidate,
+) -> Result<ValidatedRetentionCandidateResolution, ApiError> {
+    let candidate_fingerprint = required_retention_segment(
+        raw.candidate_fingerprint,
+        "candidate_fingerprint",
+        MAX_RETENTION_FIELD_CHARS,
+    )?;
+    if candidate_fingerprint != candidate.candidate_fingerprint {
+        return Err(ApiError::Unprocessable(
+            "candidate_fingerprint is stale for the current due candidate".to_owned(),
+        ));
+    }
+    reject_true_flag(
+        raw.destructive_disposal_completed,
+        "destructive_disposal_completed",
+        "destructive disposal completion",
+    )?;
+    reject_true_flag(
+        raw.disposal_completed,
+        "disposal_completed",
+        "disposal completion",
+    )?;
+    reject_true_flag(
+        raw.full_erasure_completed,
+        "full_erasure_completed",
+        "full erasure completion",
+    )?;
+    reject_true_flag(
+        raw.erasure_completed,
+        "erasure_completed",
+        "erasure completion",
+    )?;
+    reject_true_flag(
+        raw.legal_hold_mutated,
+        "legal_hold_mutated",
+        "legal hold mutation",
+    )?;
+    reject_true_flag(
+        raw.legal_hold_resolved,
+        "legal_hold_resolved",
+        "legal hold resolution",
+    )?;
+    reject_true_flag(
+        raw.retention_policy_mutated,
+        "retention_policy_mutated",
+        "retention policy mutation",
+    )?;
+    reject_true_flag(
+        raw.retention_policy_changed,
+        "retention_policy_changed",
+        "retention policy change",
+    )?;
+    reject_true_flag(
+        raw.legal_completion_claimed,
+        "legal_completion_claimed",
+        "legal completion",
+    )?;
+    reject_true_flag(
+        raw.legal_disposal_completed,
+        "legal_disposal_completed",
+        "legal disposal completion",
+    )?;
+
+    let disposition = raw
+        .disposition
+        .as_deref()
+        .ok_or_else(|| ApiError::Unprocessable("disposition is required".to_owned()))
+        .and_then(RetentionCandidateDisposition::parse)?;
+    validate_retention_candidate_disposition(candidate, disposition)?;
+    let note = clean_optional_bounded(raw.note, "note", MAX_RETENTION_TEXT_CHARS)?;
+    if let Some(note) = &note {
+        reject_retention_candidate_resolution_claims(note, "note")?;
+    }
+    let evidence = sanitize_retention_candidate_resolution_evidence(raw.evidence)?;
+    if note.is_none() && evidence.is_empty() {
+        return Err(ApiError::Unprocessable(
+            "note or evidence is required".to_owned(),
+        ));
+    }
+
+    Ok(ValidatedRetentionCandidateResolution {
+        disposition,
+        note,
+        evidence,
+    })
+}
+
 fn sanitize_retention_review_closure_evidence(
     raw: Option<Vec<RetentionReviewClosureEvidenceInput>>,
 ) -> Result<Vec<RetentionOperatorEvidence>, ApiError> {
@@ -4651,6 +5221,60 @@ fn sanitize_retention_review_closure_evidence(
             Ok(RetentionOperatorEvidence { label, value })
         })
         .collect()
+}
+
+fn sanitize_retention_candidate_resolution_evidence(
+    raw: Option<Vec<RetentionReviewClosureEvidenceInput>>,
+) -> Result<Vec<RetentionOperatorEvidence>, ApiError> {
+    let Some(raw) = raw else {
+        return Ok(Vec::new());
+    };
+    if raw.len() > MAX_RETENTION_EXECUTION_EVIDENCE_ITEMS {
+        return Err(ApiError::Unprocessable(format!(
+            "evidence must include at most {MAX_RETENTION_EXECUTION_EVIDENCE_ITEMS} entries"
+        )));
+    }
+
+    raw.into_iter()
+        .map(|item| {
+            let label = required_retention_segment(
+                item.label,
+                "evidence.label",
+                MAX_RETENTION_EXECUTION_EVIDENCE_LABEL_CHARS,
+            )?;
+            reject_retention_candidate_resolution_claims(&label, "evidence.label")?;
+            let value = required_sensitive_checked_text(
+                item.value,
+                "evidence.value",
+                MAX_RETENTION_TEXT_CHARS,
+            )?;
+            reject_retention_candidate_resolution_claims(&value, "evidence.value")?;
+            Ok(RetentionOperatorEvidence { label, value })
+        })
+        .collect()
+}
+
+fn validate_retention_candidate_disposition(
+    candidate: &RetentionDueCandidate,
+    disposition: RetentionCandidateDisposition,
+) -> Result<(), ApiError> {
+    if disposition == RetentionCandidateDisposition::EvidenceAcknowledged
+        && retention_candidate_requires_follow_up_resolution(candidate)
+    {
+        return Err(ApiError::Unprocessable(
+            "blocked, destructive, legal-hold, or policy-blocked due candidates can only record follow-up evidence"
+                .to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn retention_candidate_requires_follow_up_resolution(candidate: &RetentionDueCandidate) -> bool {
+    candidate.status == retention_execution_status_wire(RetentionExecutionStatus::Blocked)
+        || candidate.destructive_action
+        || !candidate.legal_hold_blockers.is_empty()
+        || !candidate.blockers.is_empty()
+        || !candidate.findings.is_empty()
 }
 
 fn build_retention_execution_record(
@@ -5909,6 +6533,149 @@ fn reject_retention_review_closure_claims(value: &str, field: &str) -> Result<()
     } else {
         Ok(())
     }
+}
+
+fn reject_retention_candidate_resolution_claims(value: &str, field: &str) -> Result<(), ApiError> {
+    const CLAIM_FAMILIES: &[(&str, &[&str])] = &[
+        (
+            "deletion",
+            &[
+                "deleted",
+                "deletion",
+                "delete completed",
+                "delete complete",
+                "delete performed",
+                "records deleted",
+                "record deleted",
+            ],
+        ),
+        (
+            "anonymization",
+            &[
+                "anonymized",
+                "anonymised",
+                "anonymization",
+                "anonymisation",
+                "records anonymized",
+                "records anonymised",
+            ],
+        ),
+        (
+            "redaction",
+            &[
+                "redacted",
+                "redaction",
+                "document redacted",
+                "documents redacted",
+                "record redacted",
+                "records redacted",
+            ],
+        ),
+        (
+            "GDPR erasure",
+            &[
+                "gdpr erasure",
+                "gdpr erased",
+                "gdpr erase",
+                "full erasure",
+                "erased",
+                "erasure",
+                "erasure completed",
+                "erasure complete",
+                "erasure performed",
+            ],
+        ),
+        (
+            "legal hold mutation",
+            &[
+                "legal hold mutation",
+                "legal hold mutated",
+                "legal hold change",
+                "legal hold changed",
+                "legal hold update",
+                "legal hold updated",
+                "legal hold release",
+                "legal hold released",
+                "legal hold resolution",
+                "legal hold resolved",
+                "legal hold removal",
+                "legal hold removed",
+                "legal hold lift",
+                "legal hold lifted",
+                "hold mutation recorded",
+            ],
+        ),
+        (
+            "retention policy mutation",
+            &[
+                "retention policy mutation",
+                "retention policy mutated",
+                "retention policy change",
+                "retention policy changed",
+                "retention policy update",
+                "retention policy updated",
+                "retention policy amendment",
+                "retention policy amended",
+                "policy mutation",
+                "policy mutation recorded",
+                "policy changed",
+                "policy updated",
+            ],
+        ),
+        (
+            "legal disposal",
+            &[
+                "legal disposal",
+                "legally disposed",
+                "disposed",
+                "disposal completion",
+                "disposal completed",
+                "disposal complete",
+                "disposal performed",
+                "disposal approval",
+                "disposal approved",
+                "disposal resolution",
+                "disposal resolved",
+            ],
+        ),
+        (
+            "legal completion",
+            &[
+                "legal completion",
+                "legally completed",
+                "legal completed",
+                "completion approved by legal",
+                "completed by legal",
+            ],
+        ),
+        (
+            "legal approval",
+            &[
+                "legal approval",
+                "legal approved",
+                "legally approved",
+                "approved by legal",
+            ],
+        ),
+        (
+            "legal resolution",
+            &[
+                "legal resolution",
+                "legally resolved",
+                "legal resolved",
+                "resolved by legal",
+            ],
+        ),
+    ];
+    let normalized = value.to_ascii_lowercase();
+    for (family, terms) in CLAIM_FAMILIES {
+        if terms.iter().any(|term| normalized.contains(*term)) {
+            return Err(ApiError::Unprocessable(format!(
+                "{field} cannot claim {family}; candidate resolution records evidence only"
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn reject_path_like_value(value: &str, field: &str) -> Result<(), ApiError> {

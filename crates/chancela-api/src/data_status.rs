@@ -2174,7 +2174,8 @@ fn concern_for_root(root: &str) -> ConcernDef {
         | crate::privacy::BREACH_PLAYBOOKS_FILE
         | crate::privacy::TRANSFER_CONTROLS_FILE
         | crate::privacy::RETENTION_POLICIES_FILE
-        | crate::privacy::RETENTION_EXECUTIONS_FILE => ConcernDef {
+        | crate::privacy::RETENTION_EXECUTIONS_FILE
+        | crate::privacy::RETENTION_CANDIDATE_RESOLUTIONS_FILE => ConcernDef {
             id: "privacy",
             label: "Privacy sidecars",
             basis: UsageBasis::Filesystem,
@@ -2370,6 +2371,10 @@ mod tests {
         assert_eq!(concern_for_root("privacy-dpias.json").id, "privacy");
         assert_eq!(
             concern_for_root("privacy-retention-executions.json").id,
+            "privacy"
+        );
+        assert_eq!(
+            concern_for_root("privacy-retention-candidate-resolutions.json").id,
             "privacy"
         );
         assert_eq!(

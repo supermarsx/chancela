@@ -14,11 +14,13 @@ import {
   usePatchPrivacyTransferControl,
   usePrivacyBreachPlaybooks,
   usePrivacyDpias,
+  usePrivacyRetentionCandidateResolutions,
   usePrivacyRetentionDueCandidates,
   usePrivacyProcessors,
   usePrivacyRetentionExecutions,
   usePrivacyRetentionPolicies,
   usePrivacyTransferControls,
+  useRecordPrivacyRetentionCandidateResolution,
 } from '../../api/hooks';
 import {
   type BreachPlaybookView,
@@ -46,6 +48,9 @@ import {
   type PrivacyRecordStatus,
   type PrivacyRiskLevel,
   type ProcessorRecordView,
+  type RetentionCandidateDisposition,
+  type RetentionCandidateResolutionBody,
+  type RetentionCandidateResolutionRecord,
   type RetentionDisposalAction,
   type RetentionDryRunBody,
   type RetentionDryRunReport,
@@ -344,6 +349,55 @@ function retentionReviewClosureBody(
       },
     ],
     ...RETENTION_REVIEW_CLOSURE_FALSE_FLAGS,
+  };
+}
+
+function retentionCandidateResolutionDisposition(
+  candidate: RetentionDueCandidate,
+): RetentionCandidateDisposition {
+  if (
+    candidate.status === 'blocked' ||
+    candidate.destructive_action ||
+    candidate.legal_hold_blockers.length > 0 ||
+    candidate.blockers.length > 0 ||
+    candidate.findings.length > 0
+  ) {
+    return 'blocked_follow_up';
+  }
+  return 'evidence_acknowledged';
+}
+
+function retentionCandidateResolutionBody(
+  candidate: RetentionDueCandidate,
+): RetentionCandidateResolutionBody {
+  const disposition = retentionCandidateResolutionDisposition(candidate);
+  return {
+    candidate_fingerprint: candidate.candidate_fingerprint,
+    disposition,
+    note:
+      disposition === 'blocked_follow_up'
+        ? 'Seguimento bloqueado registado para evidencia local; sem alteracao dos registos fonte.'
+        : 'Disposicao de evidencia local registada; sem alteracao dos registos fonte.',
+    evidence: [
+      {
+        label: 'candidate_id',
+        value: candidate.candidate_id,
+      },
+      {
+        label: 'record_id',
+        value: candidate.record_id,
+      },
+    ],
+    destructive_disposal_completed: false,
+    disposal_completed: false,
+    full_erasure_completed: false,
+    erasure_completed: false,
+    legal_hold_mutated: false,
+    legal_hold_resolved: false,
+    retention_policy_mutated: false,
+    retention_policy_changed: false,
+    legal_completion_claimed: false,
+    legal_disposal_completed: false,
   };
 }
 
@@ -2360,17 +2414,25 @@ function RetentionDueCandidatesPanel({
   report,
   loading,
   error,
+  resolutionRecords,
+  resolutionRequestPending,
+  resolvingCandidateId,
   reviewRequestPending,
   requestingReviewCandidateId,
   executionRecords,
+  onRecordResolution,
   onRequestReview,
 }: {
   report: RetentionDueCandidatesReport | null;
   loading: boolean;
   error: unknown;
+  resolutionRecords: RetentionCandidateResolutionRecord[];
+  resolutionRequestPending: boolean;
+  resolvingCandidateId: string | null;
   reviewRequestPending: boolean;
   requestingReviewCandidateId: string | null;
   executionRecords: RetentionExecutionRecord[];
+  onRecordResolution: (candidate: RetentionDueCandidate) => Promise<void>;
   onRequestReview: (
     candidate: RetentionDueCandidate,
     executionMode?: 'review_only' | 'execute_supported',
@@ -2391,7 +2453,9 @@ function RetentionDueCandidatesPanel({
           <p className="muted">
             Gerado em {formatDateTime(report.generated_at)} · {report.scope} / {report.category} ·{' '}
             {report.candidate_count} candidato(s) ativo(s) · {suppressedByBoundedEvidenceCount}{' '}
-            suprimido(s) por evidência delimitada
+            suprimido(s) por evidência delimitada ·{' '}
+            {report.candidates_with_resolution_count} candidato(s) com disposição local ·{' '}
+            {resolutionRecords.length} registo(s) de disposição
           </p>
         ) : null}
         {report && report.suppressed_candidate_count > 0 ? (
@@ -2426,6 +2490,7 @@ function RetentionDueCandidatesPanel({
             {candidates.map((candidate) => {
               const queuedReview = retentionQueuedReviewForCandidate(candidate, executionRecords);
               const priorExecution = candidate.prior_execution;
+              const latestResolution = candidate.latest_resolution;
               const canRecordNoActionEvidence = retentionCandidateCanRecordNoActionEvidence(
                 candidate,
                 queuedReview,
@@ -2495,6 +2560,23 @@ function RetentionDueCandidatesPanel({
                           <span className="muted">
                             Próximo passo de evidência anterior: {priorExecution.evidence_next_step}
                           </span>
+                        </>
+                      ) : null}
+                      {latestResolution ? (
+                        <>
+                          <Badge tone="accent">Disposição local registada</Badge>
+                          <span>
+                            {latestResolution.disposition} · {latestResolution.id}
+                          </span>
+                          <span className="muted">
+                            Registado por {latestResolution.recorded_by} em{' '}
+                            {formatDateTime(latestResolution.recorded_at)}
+                          </span>
+                          <span className="muted">
+                            Evidências: {latestResolution.evidence_count} · flags operacionais:
+                            false
+                          </span>
+                          <span className="muted">{latestResolution.next_step}</span>
                         </>
                       ) : null}
                     </div>
@@ -2578,6 +2660,23 @@ function RetentionDueCandidatesPanel({
                   </td>
                   <td>
                     <div className="stack--tight">
+                      {latestResolution ? (
+                        <>
+                          <Badge tone="accent">Disposição local existente</Badge>
+                        </>
+                      ) : (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          icon={<Icon.Check />}
+                          disabled={resolutionRequestPending}
+                          onClick={() => void onRecordResolution(candidate)}
+                        >
+                          {resolvingCandidateId === candidate.candidate_id
+                            ? 'A registar disposição local'
+                            : 'Registar disposição local'}
+                        </Button>
+                      )}
                       {priorExecution ? (
                         <Badge tone="ok">Evidência delimitada existente</Badge>
                       ) : queuedReview ? (
@@ -2912,6 +3011,9 @@ function RetentionPolicyPanel({
   dueCandidatesReport,
   dueCandidatesLoading,
   dueCandidatesError,
+  candidateResolutionRecords,
+  candidateResolutionPending,
+  resolvingCandidateId,
   reviewRequestPending,
   requestingReviewCandidateId,
   executionRecords,
@@ -2921,6 +3023,7 @@ function RetentionPolicyPanel({
   onCreate,
   onPatch,
   onDryRun,
+  onRecordResolution,
   onRequestReview,
   onExecutionStatusFilterChange,
 }: {
@@ -2933,6 +3036,9 @@ function RetentionPolicyPanel({
   dueCandidatesReport: RetentionDueCandidatesReport | null;
   dueCandidatesLoading: boolean;
   dueCandidatesError: unknown;
+  candidateResolutionRecords: RetentionCandidateResolutionRecord[];
+  candidateResolutionPending: boolean;
+  resolvingCandidateId: string | null;
   reviewRequestPending: boolean;
   requestingReviewCandidateId: string | null;
   executionRecords: RetentionExecutionRecord[];
@@ -2942,6 +3048,7 @@ function RetentionPolicyPanel({
   onCreate: (body: CreateRetentionPolicyBody) => Promise<RetentionPolicyView>;
   onPatch: (id: string, body: PatchRetentionPolicyBody) => Promise<RetentionPolicyView>;
   onDryRun: (form: RetentionDryRunFormState) => Promise<void>;
+  onRecordResolution: (candidate: RetentionDueCandidate) => Promise<void>;
   onRequestReview: (
     candidate: RetentionDueCandidate,
     executionMode?: 'review_only' | 'execute_supported',
@@ -3123,9 +3230,13 @@ function RetentionPolicyPanel({
         report={dueCandidatesReport}
         loading={dueCandidatesLoading}
         error={dueCandidatesError}
+        resolutionRecords={candidateResolutionRecords}
+        resolutionRequestPending={candidateResolutionPending}
+        resolvingCandidateId={resolvingCandidateId}
         reviewRequestPending={reviewRequestPending}
         requestingReviewCandidateId={requestingReviewCandidateId}
         executionRecords={executionRecords}
+        onRecordResolution={onRecordResolution}
         onRequestReview={onRequestReview}
       />
       <RetentionDryRunPanel running={runningDryRun} report={dryRunReport} onDryRun={onDryRun} />
@@ -3148,12 +3259,16 @@ export function PrivacyComplianceSection() {
     RetentionExecutionStatus | 'all'
   >('all');
   const [retentionReviewCandidateId, setRetentionReviewCandidateId] = useState<string | null>(null);
+  const [retentionResolutionCandidateId, setRetentionResolutionCandidateId] = useState<
+    string | null
+  >(null);
   const processors = usePrivacyProcessors(canManage);
   const dpias = usePrivacyDpias(canManage);
   const breachPlaybooks = usePrivacyBreachPlaybooks(canManage);
   const transferControls = usePrivacyTransferControls(canManage);
   const retentionPolicies = usePrivacyRetentionPolicies(canManage);
   const retentionDueCandidates = usePrivacyRetentionDueCandidates(canManage);
+  const retentionCandidateResolutions = usePrivacyRetentionCandidateResolutions(canManage);
   const retentionExecutions = usePrivacyRetentionExecutions(
     retentionExecutionStatusFilter,
     canManage,
@@ -3169,6 +3284,7 @@ export function PrivacyComplianceSection() {
   const createRetentionPolicy = useCreatePrivacyRetentionPolicy();
   const patchRetentionPolicy = usePatchPrivacyRetentionPolicy();
   const dryRunRetentionPolicy = useDryRunPrivacyRetentionPolicy();
+  const recordRetentionCandidateResolution = useRecordPrivacyRetentionCandidateResolution();
   const toast = useToast();
 
   async function dryRunRetention(form: RetentionDryRunFormState) {
@@ -3219,6 +3335,21 @@ export function PrivacyComplianceSection() {
       toast.error(e);
     } finally {
       setRetentionReviewCandidateId(null);
+    }
+  }
+
+  async function recordRetentionResolution(candidate: RetentionDueCandidate) {
+    setRetentionResolutionCandidateId(candidate.candidate_id);
+    try {
+      await recordRetentionCandidateResolution.mutateAsync({
+        candidateId: candidate.candidate_id,
+        body: retentionCandidateResolutionBody(candidate),
+      });
+      toast.success('Disposição local de evidência registada.');
+    } catch (e) {
+      toast.error(e);
+    } finally {
+      setRetentionResolutionCandidateId(null);
     }
   }
 
@@ -3290,6 +3421,9 @@ export function PrivacyComplianceSection() {
         dueCandidatesReport={retentionDueCandidates.data ?? null}
         dueCandidatesLoading={retentionDueCandidates.isLoading}
         dueCandidatesError={retentionDueCandidates.error}
+        candidateResolutionRecords={retentionCandidateResolutions.data ?? []}
+        candidateResolutionPending={recordRetentionCandidateResolution.isPending}
+        resolvingCandidateId={retentionResolutionCandidateId}
         reviewRequestPending={dryRunRetentionPolicy.isPending}
         requestingReviewCandidateId={retentionReviewCandidateId}
         executionRecords={retentionExecutions.data ?? []}
@@ -3299,6 +3433,7 @@ export function PrivacyComplianceSection() {
         onCreate={(body) => createRetentionPolicy.mutateAsync(body)}
         onPatch={(id, body) => patchRetentionPolicy.mutateAsync({ id, body })}
         onDryRun={dryRunRetention}
+        onRecordResolution={recordRetentionResolution}
         onRequestReview={requestRetentionReview}
         onExecutionStatusFilterChange={setRetentionExecutionStatusFilter}
       />

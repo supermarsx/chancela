@@ -46,6 +46,9 @@ counts, state transitions). Together they pin both shape and semantics.
 | `privacy.breach-playbooks.json`| `[BreachPlaybookView]` — `GET /v1/privacy/breach-playbooks`                            | privacy breach playbook evidence register                          |
 | `privacy.transfer-controls.json`| `[TransferControlView]` — `GET /v1/privacy/transfer-controls`                         | privacy transfer-control evidence register                         |
 | `retention.policies.json`      | `[RetentionPolicyView]` — `GET /v1/privacy/retention-policies`                         | privacy retention policy register                                  |
+| `retention.due-candidates.json`| `RetentionDueCandidatesReport` — `GET /v1/privacy/retention-due-candidates`            | read-only retention due-candidate scan                             |
+| `retention.candidate-resolutions.json`| `[RetentionCandidateResolutionRecord]` — `GET /v1/privacy/retention-candidate-resolutions` | evidence-only candidate disposition register                       |
+| `retention.executions.json`    | `[RetentionExecutionRecord]` — `GET /v1/privacy/retention-executions`                  | retention execution evidence register                              |
 | `paper-book.import.json`       | `PaperBookImportReport` — `POST /v1/books/paper-import/validate`                       | historical paper-book import validation                            |
 | `api-key.list.json`            | `[ApiKeyView]` — `GET /v1/api-keys`                                                    | integration API-key lifecycle                                      |
 | `api-key.create.json`          | `ApiKeyCreated` — `POST /v1/api-keys` one-time secret response                         | integration API-key lifecycle                                      |

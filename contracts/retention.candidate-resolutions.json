@@ -1,0 +1,54 @@
+[
+  {
+    "id": "retention-candidate-resolution-1",
+    "candidate_id": "retention-candidate-unsupported",
+    "candidate_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "recorded_at": "2026-07-09T14:15:00Z",
+    "recorded_by": "privacy-manager",
+    "disposition": "blocked_follow_up",
+    "note": "Blocked follow-up evidence recorded for governance queue.",
+    "evidence": [
+      {
+        "label": "blocked_follow_up",
+        "value": "candidate remains blocked for governance review"
+      }
+    ],
+    "evidence_count": 1,
+    "candidate": {
+      "candidate_id": "retention-candidate-unsupported",
+      "candidate_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "scope": "book_archive",
+      "category": "documents",
+      "record_id": "archive-doc-blocked",
+      "book_id": "book-archive-blocked",
+      "entity_id": "entity-2",
+      "closing_date": "2023-02-10",
+      "overdue": false,
+      "policy_id": "retention-unsupported",
+      "policy_name": "Unsupported archival period",
+      "schedule_id": "archive-unsupported-v1",
+      "retention_period": "PXBROKEN",
+      "disposal_action": "review",
+      "destructive_action": false,
+      "outcome": "blocked_unsupported_period",
+      "status": "blocked",
+      "candidate_evidence_state": "blocked",
+      "legal_hold_blocker_count": 1,
+      "required_approval_count": 1,
+      "blocker_count": 1,
+      "finding_count": 1
+    },
+    "evidence_only": true,
+    "destructive_disposal_completed": false,
+    "disposal_completed": false,
+    "full_erasure_completed": false,
+    "erasure_completed": false,
+    "legal_hold_mutated": false,
+    "legal_hold_resolved": false,
+    "retention_policy_mutated": false,
+    "retention_policy_changed": false,
+    "legal_completion_claimed": false,
+    "legal_disposal_completed": false,
+    "next_step": "Blocked follow-up evidence recorded; blockers remain active for separate governance review."
+  }
+]

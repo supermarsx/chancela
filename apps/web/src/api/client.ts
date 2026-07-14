@@ -125,6 +125,8 @@ import type {
   PatchDpiaRecordBody,
   PatchProcessorRecordBody,
   PatchRetentionPolicyBody,
+  RetentionCandidateResolutionBody,
+  RetentionCandidateResolutionRecord,
   RetentionDryRunBody,
   RetentionDueCandidatesReport,
   RetentionDryRunReport,
@@ -922,6 +924,13 @@ export const api = {
     post<RetentionDryRunReport>('/v1/privacy/retention-policies/dry-run', body),
   listRetentionDueCandidates: () =>
     get<RetentionDueCandidatesReport>('/v1/privacy/retention-due-candidates'),
+  listRetentionCandidateResolutions: () =>
+    get<RetentionCandidateResolutionRecord[]>('/v1/privacy/retention-candidate-resolutions'),
+  recordRetentionCandidateResolution: (candidateId: string, body: RetentionCandidateResolutionBody) =>
+    post<RetentionCandidateResolutionRecord>(
+      `/v1/privacy/retention-due-candidates/${encodeURIComponent(candidateId)}/resolution`,
+      body,
+    ),
   listRetentionExecutions: (status?: RetentionExecutionStatus) =>
     get<RetentionExecutionRecord[]>(`/v1/privacy/retention-executions${query({ status })}`),
   closeRetentionExecutionReview: (id: string, body: CloseRetentionExecutionReviewBody) =>

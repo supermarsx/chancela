@@ -392,6 +392,10 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
         "/v1/acts/{id}/signature/local/pkcs12/sign",
         RouteClass::Gated,
     ), // POST signing.perform@Book (local software certificate)
+    (
+        "/v1/acts/{id}/signature/local/pkcs12/sign-stored",
+        RouteClass::Gated,
+    ), // POST signing.perform@Book (stored local software certificate)
     ("/v1/acts/{id}/signature/dss/attach", RouteClass::Gated), // POST signing.perform@Book
     (
         "/v1/acts/{id}/signature/dss/collect-revocation",
@@ -435,9 +439,22 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
         "/v1/signature/provider-credentials/status",
         RouteClass::Gated,
     ), // GET settings.read@Global (read-only credential storage metadata)
-    ("/v1/acts/{id}/signature", RouteClass::Gated), // GET act.read@Book
-    ("/v1/acts/{id}/document/signed", RouteClass::Gated), // GET act.read@Book
-    ("/v1/templates", RouteClass::Gated),           // GET act.read@Global
+    ("/v1/signature/provider-credentials", RouteClass::Gated), // GET settings.read@Global (metadata only)
+    (
+        "/v1/signature/provider-credentials/{mode}/{provider_id}/entries",
+        RouteClass::Gated,
+    ), // POST settings.manage@Global
+    (
+        "/v1/signature/provider-credentials/{mode}/{provider_id}/entries/reorder",
+        RouteClass::Gated,
+    ), // POST settings.manage@Global
+    (
+        "/v1/signature/provider-credentials/{mode}/{provider_id}/entries/{entry_id}",
+        RouteClass::Gated,
+    ), // PATCH/DELETE settings.manage@Global
+    ("/v1/acts/{id}/signature", RouteClass::Gated),            // GET act.read@Book
+    ("/v1/acts/{id}/document/signed", RouteClass::Gated),      // GET act.read@Book
+    ("/v1/templates", RouteClass::Gated),                      // GET act.read@Global
     // --- Ledger ---------------------------------------------------------------------------------
     ("/v1/ledger/events", RouteClass::Gated), // GET ledger.read@Global
     ("/v1/ledger/events/page", RouteClass::Gated), // GET ledger.read@Global
@@ -515,6 +532,14 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/privacy/retention-policies", RouteClass::Gated), // GET/POST user.manage|settings.manage@Global
     ("/v1/privacy/retention-policies/dry-run", RouteClass::Gated), // POST user.manage|settings.manage@Global, non-destructive
     ("/v1/privacy/retention-due-candidates", RouteClass::Gated), // GET user.manage|settings.manage@Global, read-only scanner
+    (
+        "/v1/privacy/retention-due-candidates/{candidate_id}/resolution",
+        RouteClass::Gated,
+    ), // POST user.manage|settings.manage@Global, evidence-only
+    (
+        "/v1/privacy/retention-candidate-resolutions",
+        RouteClass::Gated,
+    ), // GET user.manage|settings.manage@Global
     ("/v1/privacy/retention-executions", RouteClass::Gated), // GET user.manage|settings.manage@Global
     (
         "/v1/privacy/retention-executions/{id}/review-closure",

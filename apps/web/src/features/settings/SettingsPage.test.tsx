@@ -5,6 +5,8 @@ import {
   DEFAULT_SETTINGS,
   type PrivacyAdvisoryReviewStatus,
   type PrivacyAdvisoryReviewSummary,
+  type RetentionCandidateResolutionRecord,
+  type RetentionDueCandidatesReport,
 } from '../../api/types';
 import { renderWithProviders } from '../../test/utils';
 import { StaticPermissionsProvider, permissionsValue } from '../session/permissions';
@@ -263,16 +265,19 @@ const RETENTION_POLICY_ONE = {
   updated_by: 'amelia.marques',
 };
 
-const RETENTION_DUE_CANDIDATES_REPORT = {
+const RETENTION_DUE_CANDIDATES_REPORT: RetentionDueCandidatesReport = {
   generated_at: '2026-07-09T14:00:00Z',
   scope: 'book_archive',
   category: 'documents',
   candidate_count: 2,
   suppressed_candidate_count: 0,
   suppressed_by_bounded_evidence_count: 0,
+  candidate_resolution_record_count: 0,
+  candidates_with_resolution_count: 0,
   candidates: [
     {
       candidate_id: 'retention-candidate-1',
+      candidate_fingerprint: '1'.repeat(64),
       scope: 'book_archive',
       category: 'documents',
       record_id: 'archive-doc-1',
@@ -304,10 +309,12 @@ const RETENTION_DUE_CANDIDATES_REPORT = {
       would_execute: false,
       destructive_disposal_completed: false,
       full_erasure_completed: false,
+      candidate_resolution_record_count: 0,
       next_step: 'Review evidence only; no deletion or anonymization is performed.',
     },
     {
       candidate_id: 'retention-candidate-unsupported',
+      candidate_fingerprint: '2'.repeat(64),
       scope: 'book_archive',
       category: 'documents',
       record_id: 'archive-doc-blocked',
@@ -356,6 +363,7 @@ const RETENTION_DUE_CANDIDATES_REPORT = {
       would_execute: false,
       destructive_disposal_completed: false,
       full_erasure_completed: false,
+      candidate_resolution_record_count: 0,
       next_step: 'Correct the retention schedule; this scan records evidence only.',
     },
   ],
@@ -635,9 +643,10 @@ type RetentionDueCandidatesSuppressionSummaryMetadata = {
   suppressed_by_bounded_evidence_count: number;
   note: string;
 };
-type RetentionDueCandidatesReportMetadata = typeof RETENTION_DUE_CANDIDATES_REPORT & {
+type RetentionDueCandidatesReportMetadata = RetentionDueCandidatesReport & {
   suppression_summary?: RetentionDueCandidatesSuppressionSummaryMetadata;
 };
+type RetentionCandidateResolutionMetadata = RetentionCandidateResolutionRecord;
 
 function apiKeyIdFromUrl(url: string): string | undefined {
   return url.match(/\/v1\/api-keys\/([^/]+)/)?.[1];
@@ -652,6 +661,11 @@ function privacyRecordIdFromUrl(
 
 function retentionExecutionReviewClosureIdFromUrl(url: string): string | undefined {
   return url.match(/\/v1\/privacy\/retention-executions\/([^/]+)\/review-closure/)?.[1];
+}
+
+function retentionCandidateResolutionIdFromUrl(url: string): string | undefined {
+  const match = url.match(/\/v1\/privacy\/retention-due-candidates\/([^/]+)\/resolution/);
+  return match ? decodeURIComponent(match[1]) : undefined;
 }
 
 type TestSettings = typeof DEFAULT_SETTINGS;
@@ -1234,6 +1248,7 @@ function privacyFetch(
     RETENTION_EXECUTION_AWAITING,
     RETENTION_EXECUTION_EXECUTED,
   ],
+  initialRetentionCandidateResolutions: RetentionCandidateResolutionMetadata[] = [],
 ): {
   fn: typeof fetch;
   calls: Recorded[];
@@ -1269,6 +1284,9 @@ function privacyFetch(
   let retentionPolicies = initialRetentionPolicies.map((record) => ({ ...record }));
   let retentionDueCandidatesReport = cloneJson(initialRetentionDueCandidatesReport);
   let retentionExecutions = initialRetentionExecutions.map((record) => cloneJson(record));
+  let retentionCandidateResolutions = initialRetentionCandidateResolutions.map((record) =>
+    cloneJson(record),
+  );
 
   const fn = ((input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input.toString();
@@ -1737,6 +1755,117 @@ function privacyFetch(
           ? retentionExecutions.filter((record) => record.execution_status === status)
           : retentionExecutions;
       return Promise.resolve(jsonResponse(filtered));
+    }
+    if (url.includes('/v1/privacy/retention-candidate-resolutions')) {
+      return Promise.resolve(jsonResponse(retentionCandidateResolutions));
+    }
+    if (url.includes('/v1/privacy/retention-due-candidates/') && url.includes('/resolution')) {
+      if (method !== 'POST') {
+        return Promise.resolve(jsonResponse({ error: 'method not allowed' }, 405));
+      }
+      const candidateId = retentionCandidateResolutionIdFromUrl(url);
+      const candidate = retentionDueCandidatesReport.candidates.find(
+        (item) => item.candidate_id === candidateId,
+      );
+      if (!candidate) return Promise.resolve(jsonResponse({ error: 'not found' }, 404));
+      const body = JSON.parse(init?.body as string) as {
+        candidate_fingerprint: string;
+        disposition: 'evidence_acknowledged' | 'follow_up_required' | 'blocked_follow_up';
+        note?: string;
+        evidence?: { label: string; value: string }[];
+      };
+      const recorded: RetentionCandidateResolutionMetadata = {
+        id: `retention-candidate-resolution-${retentionCandidateResolutions.length + 1}`,
+        candidate_id: candidate.candidate_id,
+        candidate_fingerprint: body.candidate_fingerprint,
+        recorded_at: '2026-07-09T14:35:00Z',
+        recorded_by: 'amelia.marques',
+        disposition: body.disposition,
+        note: body.note,
+        evidence: body.evidence ?? [],
+        evidence_count: body.evidence?.length ?? 0,
+        candidate: {
+          candidate_id: candidate.candidate_id,
+          candidate_fingerprint: body.candidate_fingerprint,
+          scope: candidate.scope,
+          category: candidate.category,
+          record_id: candidate.record_id,
+          book_id: candidate.book_id,
+          entity_id: candidate.entity_id,
+          closing_date: candidate.closing_date,
+          due_date: candidate.due_date ?? undefined,
+          overdue: candidate.overdue,
+          policy_id: candidate.policy_id,
+          policy_name: candidate.policy_name,
+          schedule_id: candidate.schedule_id,
+          retention_period: candidate.retention_period,
+          disposal_action: candidate.disposal_action,
+          destructive_action: candidate.destructive_action,
+          outcome: candidate.outcome,
+          status: candidate.status,
+          candidate_evidence_state: candidate.candidate_evidence_state,
+          legal_hold_blocker_count: candidate.legal_hold_blockers.length,
+          required_approval_count: candidate.required_approvals.length,
+          blocker_count: candidate.blockers.length,
+          finding_count: candidate.findings.length,
+        },
+        evidence_only: true,
+        destructive_disposal_completed: false,
+        disposal_completed: false,
+        full_erasure_completed: false,
+        erasure_completed: false,
+        legal_hold_mutated: false,
+        legal_hold_resolved: false,
+        retention_policy_mutated: false,
+        retention_policy_changed: false,
+        legal_completion_claimed: false,
+        legal_disposal_completed: false,
+        next_step:
+          body.disposition === 'blocked_follow_up'
+            ? 'Blocked follow-up evidence recorded; blockers remain active for separate governance review.'
+            : 'Evidence-only disposition recorded; the due candidate remains available for separate governance review.',
+      };
+      retentionCandidateResolutions = [...retentionCandidateResolutions, recorded];
+      retentionDueCandidatesReport = {
+        ...retentionDueCandidatesReport,
+        candidate_resolution_record_count:
+          retentionDueCandidatesReport.candidate_resolution_record_count + 1,
+        candidates_with_resolution_count: retentionDueCandidatesReport.candidates.some(
+          (item) => item.candidate_id === candidateId && item.latest_resolution,
+        )
+          ? retentionDueCandidatesReport.candidates_with_resolution_count
+          : retentionDueCandidatesReport.candidates_with_resolution_count + 1,
+        candidates: retentionDueCandidatesReport.candidates.map((item) =>
+          item.candidate_id === candidateId
+            ? {
+                ...item,
+                candidate_resolution_record_count: item.candidate_resolution_record_count + 1,
+                latest_resolution: {
+                  id: recorded.id,
+                  candidate_fingerprint: recorded.candidate_fingerprint,
+                  recorded_at: recorded.recorded_at,
+                  recorded_by: recorded.recorded_by,
+                  disposition: recorded.disposition,
+                  evidence_count: recorded.evidence_count,
+                  note: recorded.note,
+                  evidence_only: true,
+                  destructive_disposal_completed: false,
+                  disposal_completed: false,
+                  full_erasure_completed: false,
+                  erasure_completed: false,
+                  legal_hold_mutated: false,
+                  legal_hold_resolved: false,
+                  retention_policy_mutated: false,
+                  retention_policy_changed: false,
+                  legal_completion_claimed: false,
+                  legal_disposal_completed: false,
+                  next_step: recorded.next_step,
+                },
+              }
+            : item,
+        ),
+      };
+      return Promise.resolve(jsonResponse(recorded, 201));
     }
     if (url.includes('/v1/privacy/retention-due-candidates')) {
       if (method !== 'GET') {
@@ -3290,6 +3419,124 @@ describe('SettingsPage', () => {
     expect(within(candidatesPanel!).getAllByText(/would_execute:\s*false/).length).toBeGreaterThan(
       0,
     );
+    expect(
+      within(candidatesPanel!).getAllByRole('button', { name: 'Registar disposição local' }).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it('records local evidence-only disposition for due retention candidates', async () => {
+    const { fn, calls } = privacyFetch();
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+
+    const candidatesPanel = (await screen.findByText('Candidatos de retenção vencidos')).closest(
+      'section',
+    );
+    expect(candidatesPanel).toBeTruthy();
+    const candidateRow = (await within(candidatesPanel!).findByText('archive-doc-1')).closest('tr');
+    expect(candidateRow).toBeTruthy();
+
+    fireEvent.click(
+      within(candidateRow!).getByRole('button', { name: 'Registar disposição local' }),
+    );
+
+    const resolutionPost = await waitFor(() => {
+      const call = calls.find(
+        (c) =>
+          c.method === 'POST' &&
+          c.url.endsWith('/v1/privacy/retention-due-candidates/retention-candidate-1/resolution'),
+      );
+      expect(call).toBeTruthy();
+      return call!;
+    });
+    expect(JSON.parse(resolutionPost.body as string)).toEqual({
+      candidate_fingerprint: '1'.repeat(64),
+      disposition: 'evidence_acknowledged',
+      note: 'Disposicao de evidencia local registada; sem alteracao dos registos fonte.',
+      evidence: [
+        {
+          label: 'candidate_id',
+          value: 'retention-candidate-1',
+        },
+        {
+          label: 'record_id',
+          value: 'archive-doc-1',
+        },
+      ],
+      destructive_disposal_completed: false,
+      disposal_completed: false,
+      full_erasure_completed: false,
+      erasure_completed: false,
+      legal_hold_mutated: false,
+      legal_hold_resolved: false,
+      retention_policy_mutated: false,
+      retention_policy_changed: false,
+      legal_completion_claimed: false,
+      legal_disposal_completed: false,
+    });
+    expect(
+      await within(candidateRow!).findByText(/evidence_acknowledged · retention-candidate-resolution-1/),
+    ).toBeTruthy();
+    expect(within(candidateRow!).getByText('Disposição local existente')).toBeTruthy();
+    expect(
+      calls.some(
+        (call) => call.method !== 'GET' && /\/(disposal|erasure|legal-hold)/.test(call.url),
+      ),
+    ).toBe(false);
+    expect(calls.some((call) => call.method === 'DELETE')).toBe(false);
+  });
+
+  it('records blocked follow-up disposition for unsafe due retention candidates', async () => {
+    const { fn, calls } = privacyFetch();
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+
+    const candidatesPanel = (await screen.findByText('Candidatos de retenção vencidos')).closest(
+      'section',
+    );
+    expect(candidatesPanel).toBeTruthy();
+    const blockedRow = (await within(candidatesPanel!).findByText('archive-doc-blocked')).closest(
+      'tr',
+    );
+    expect(blockedRow).toBeTruthy();
+
+    fireEvent.click(
+      within(blockedRow!).getByRole('button', { name: 'Registar disposição local' }),
+    );
+
+    const resolutionPost = await waitFor(() => {
+      const call = calls.find(
+        (c) =>
+          c.method === 'POST' &&
+          c.url.endsWith(
+            '/v1/privacy/retention-due-candidates/retention-candidate-unsupported/resolution',
+          ),
+      );
+      expect(call).toBeTruthy();
+      return call!;
+    });
+    const body = JSON.parse(resolutionPost.body as string);
+    expect(body).toMatchObject({
+      candidate_fingerprint: '2'.repeat(64),
+      disposition: 'blocked_follow_up',
+      note: 'Seguimento bloqueado registado para evidencia local; sem alteracao dos registos fonte.',
+      destructive_disposal_completed: false,
+      disposal_completed: false,
+      full_erasure_completed: false,
+      erasure_completed: false,
+      legal_hold_mutated: false,
+      legal_hold_resolved: false,
+      retention_policy_mutated: false,
+      retention_policy_changed: false,
+      legal_completion_claimed: false,
+      legal_disposal_completed: false,
+    });
+    expect(body.disposition).not.toBe('evidence_acknowledged');
+    expect(
+      await within(blockedRow!).findByText(/blocked_follow_up · retention-candidate-resolution-1/),
+    ).toBeTruthy();
   });
 
   it('shows already queued review state for a due retention candidate without posting again', async () => {

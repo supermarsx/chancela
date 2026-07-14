@@ -45,6 +45,7 @@ import {
   PRIVACY_RECORD_STATUSES,
   PRIVACY_RISK_LEVELS,
   RETENTION_DISPOSAL_ACTIONS,
+  RETENTION_CANDIDATE_DISPOSITIONS,
   RETENTION_EVIDENCE_STATES,
   RETENTION_EXECUTION_DECISION_STATES,
   RETENTION_EXECUTION_STATUSES,
@@ -186,6 +187,9 @@ import {
   type RetentionDueCandidatePriorExecution,
   type RetentionDueCandidatesReport,
   type RetentionDueCandidatesSuppressionSummary,
+  type RetentionCandidateResolutionRecord,
+  type RetentionCandidateResolutionSnapshot,
+  type RetentionCandidateResolutionSummary,
   type RetentionPolicyView,
   type RetentionExecutionApproval,
   type RetentionExecutionBlockerMetadata,
@@ -1103,11 +1107,65 @@ function assertRetentionDueCandidatePriorExecution(
   return priorExecution;
 }
 
+function assertRetentionCandidateResolutionSummary(
+  obj: unknown,
+  label: string,
+): RetentionCandidateResolutionSummary {
+  const summary = assertExactKeys<RetentionCandidateResolutionSummary>(
+    obj,
+    {
+      id: true,
+      candidate_fingerprint: true,
+      recorded_at: true,
+      recorded_by: true,
+      disposition: true,
+      evidence_count: true,
+      evidence_only: true,
+      destructive_disposal_completed: true,
+      disposal_completed: true,
+      full_erasure_completed: true,
+      erasure_completed: true,
+      legal_hold_mutated: true,
+      legal_hold_resolved: true,
+      retention_policy_mutated: true,
+      retention_policy_changed: true,
+      legal_completion_claimed: true,
+      legal_disposal_completed: true,
+      next_step: true,
+    },
+    label,
+    ['note'],
+  );
+  expect(summary.id.length, `${label}.id should be non-empty`).toBeGreaterThan(0);
+  expect(summary.candidate_fingerprint, `${label}.candidate_fingerprint`).toMatch(/^[0-9a-f]{64}$/);
+  assertTimestamp(summary.recorded_at, `${label}.recorded_at`);
+  expect(summary.recorded_by.length, `${label}.recorded_by`).toBeGreaterThan(0);
+  inEnum(RETENTION_CANDIDATE_DISPOSITIONS, summary.disposition, `${label}.disposition`);
+  expect(Number.isInteger(summary.evidence_count), `${label}.evidence_count`).toBe(true);
+  expect(summary.evidence_only, `${label}.evidence_only`).toBe(true);
+  expect(summary.destructive_disposal_completed, `${label}.destructive flag`).toBe(false);
+  expect(summary.disposal_completed, `${label}.disposal flag`).toBe(false);
+  expect(summary.full_erasure_completed, `${label}.erasure flag`).toBe(false);
+  expect(summary.erasure_completed, `${label}.erasure flag`).toBe(false);
+  expect(summary.legal_hold_mutated, `${label}.legal hold flag`).toBe(false);
+  expect(summary.legal_hold_resolved, `${label}.legal hold resolution flag`).toBe(false);
+  expect(summary.retention_policy_mutated, `${label}.policy flag`).toBe(false);
+  expect(summary.retention_policy_changed, `${label}.policy change flag`).toBe(false);
+  expect(summary.legal_completion_claimed, `${label}.legal completion flag`).toBe(false);
+  expect(summary.legal_disposal_completed, `${label}.legal disposal flag`).toBe(false);
+  expect(summary.next_step.length, `${label}.next_step`).toBeGreaterThan(0);
+  if (summary.note !== undefined) {
+    expect(summary.note.length, `${label}.note`).toBeGreaterThan(0);
+  }
+  return summary;
+}
+
 function assertRetentionDueCandidate(obj: unknown, label: string): RetentionDueCandidate {
   const candidate = assertExactKeys<RetentionDueCandidate>(
     obj,
     {
       candidate_id: true,
+      candidate_fingerprint: true,
       scope: true,
       category: true,
       record_id: true,
@@ -1133,15 +1191,19 @@ function assertRetentionDueCandidate(obj: unknown, label: string): RetentionDueC
       would_execute: true,
       destructive_disposal_completed: true,
       full_erasure_completed: true,
+      candidate_resolution_record_count: true,
       next_step: true,
     },
     label,
-    ['prior_execution'],
+    ['prior_execution', 'latest_resolution'],
   );
   expect(
     candidate.candidate_id.length,
     `${label}.candidate_id should be non-empty`,
   ).toBeGreaterThan(0);
+  expect(candidate.candidate_fingerprint, `${label}.candidate_fingerprint`).toMatch(
+    /^[0-9a-f]{64}$/,
+  );
   expect(candidate.scope.length, `${label}.scope should be non-empty`).toBeGreaterThan(0);
   expect(candidate.category.length, `${label}.category should be non-empty`).toBeGreaterThan(0);
   expect(candidate.record_id.length, `${label}.record_id should be non-empty`).toBeGreaterThan(0);
@@ -1203,6 +1265,24 @@ function assertRetentionDueCandidate(obj: unknown, label: string): RetentionDueC
       `${label}.prior_execution`,
     );
   }
+  expect(
+    Number.isInteger(candidate.candidate_resolution_record_count),
+    `${label}.candidate_resolution_record_count`,
+  ).toBe(true);
+  expect(
+    candidate.candidate_resolution_record_count,
+    `${label}.candidate_resolution_record_count`,
+  ).toBeGreaterThanOrEqual(0);
+  if (candidate.latest_resolution !== undefined) {
+    assertRetentionCandidateResolutionSummary(
+      candidate.latest_resolution,
+      `${label}.latest_resolution`,
+    );
+    expect(
+      candidate.candidate_resolution_record_count,
+      `${label}.candidate_resolution_record_count should include latest_resolution`,
+    ).toBeGreaterThan(0);
+  }
   expect(candidate.next_step.length, `${label}.next_step should be non-empty`).toBeGreaterThan(0);
   return candidate;
 }
@@ -1253,6 +1333,8 @@ function assertRetentionDueCandidatesReport(
       candidate_count: true,
       suppressed_candidate_count: true,
       suppressed_by_bounded_evidence_count: true,
+      candidate_resolution_record_count: true,
+      candidates_with_resolution_count: true,
       candidates: true,
     },
     label,
@@ -1271,6 +1353,14 @@ function assertRetentionDueCandidatesReport(
     `${label}.suppressed_by_bounded_evidence_count`,
   ).toBe(true);
   expect(
+    Number.isInteger(report.candidate_resolution_record_count),
+    `${label}.candidate_resolution_record_count`,
+  ).toBe(true);
+  expect(
+    Number.isInteger(report.candidates_with_resolution_count),
+    `${label}.candidates_with_resolution_count`,
+  ).toBe(true);
+  expect(
     report.candidate_count,
     `${label}.candidate_count counts active unsuppressed candidates only`,
   ).toBe(report.candidates.length);
@@ -1286,6 +1376,10 @@ function assertRetentionDueCandidatesReport(
     report.suppressed_candidate_count,
     `${label}.suppressed_candidate_count should cover bounded-evidence suppressions`,
   ).toBeGreaterThanOrEqual(report.suppressed_by_bounded_evidence_count);
+  expect(
+    report.candidate_resolution_record_count,
+    `${label}.candidate_resolution_record_count`,
+  ).toBeGreaterThanOrEqual(report.candidates_with_resolution_count);
   if (report.suppressed_candidate_count > 0) {
     expect(report.suppression_summary, `${label}.suppression_summary`).toBeDefined();
     const summary = assertRetentionDueCandidatesSuppressionSummary(
@@ -1303,6 +1397,133 @@ function assertRetentionDueCandidatesReport(
     assertRetentionDueCandidate(candidate, `${label}.candidates[${i}]`),
   );
   return report;
+}
+
+function assertRetentionCandidateResolutionSnapshot(
+  obj: unknown,
+  label: string,
+): RetentionCandidateResolutionSnapshot {
+  const snapshot = assertExactKeys<RetentionCandidateResolutionSnapshot>(
+    obj,
+    {
+      candidate_id: true,
+      candidate_fingerprint: true,
+      scope: true,
+      category: true,
+      record_id: true,
+      book_id: true,
+      entity_id: true,
+      closing_date: true,
+      overdue: true,
+      policy_id: true,
+      policy_name: true,
+      schedule_id: true,
+      retention_period: true,
+      disposal_action: true,
+      destructive_action: true,
+      outcome: true,
+      status: true,
+      candidate_evidence_state: true,
+      legal_hold_blocker_count: true,
+      required_approval_count: true,
+      blocker_count: true,
+      finding_count: true,
+    },
+    label,
+    ['due_date'],
+  );
+  expect(snapshot.candidate_id.length, `${label}.candidate_id`).toBeGreaterThan(0);
+  expect(snapshot.candidate_fingerprint, `${label}.candidate_fingerprint`).toMatch(
+    /^[0-9a-f]{64}$/,
+  );
+  inEnum(RETENTION_DISPOSAL_ACTIONS, snapshot.disposal_action, `${label}.disposal_action`);
+  inEnum(
+    RETENTION_EVIDENCE_STATES,
+    snapshot.candidate_evidence_state,
+    `${label}.candidate_evidence_state`,
+  );
+  for (const field of [
+    'legal_hold_blocker_count',
+    'required_approval_count',
+    'blocker_count',
+    'finding_count',
+  ] as const) {
+    expect(Number.isInteger(snapshot[field]), `${label}.${field}`).toBe(true);
+    expect(snapshot[field], `${label}.${field}`).toBeGreaterThanOrEqual(0);
+  }
+  return snapshot;
+}
+
+function assertRetentionCandidateResolutionRecord(
+  obj: unknown,
+  label: string,
+): RetentionCandidateResolutionRecord {
+  const record = assertExactKeys<RetentionCandidateResolutionRecord>(
+    obj,
+    {
+      id: true,
+      candidate_id: true,
+      candidate_fingerprint: true,
+      recorded_at: true,
+      recorded_by: true,
+      disposition: true,
+      evidence: true,
+      evidence_count: true,
+      candidate: true,
+      evidence_only: true,
+      destructive_disposal_completed: true,
+      disposal_completed: true,
+      full_erasure_completed: true,
+      erasure_completed: true,
+      legal_hold_mutated: true,
+      legal_hold_resolved: true,
+      retention_policy_mutated: true,
+      retention_policy_changed: true,
+      legal_completion_claimed: true,
+      legal_disposal_completed: true,
+      next_step: true,
+    },
+    label,
+    ['note'],
+  );
+  assertRetentionCandidateResolutionSummary(
+    {
+      id: record.id,
+      candidate_fingerprint: record.candidate_fingerprint,
+      recorded_at: record.recorded_at,
+      recorded_by: record.recorded_by,
+      disposition: record.disposition,
+      evidence_count: record.evidence_count,
+      ...(record.note !== undefined ? { note: record.note } : {}),
+      evidence_only: record.evidence_only,
+      destructive_disposal_completed: record.destructive_disposal_completed,
+      disposal_completed: record.disposal_completed,
+      full_erasure_completed: record.full_erasure_completed,
+      erasure_completed: record.erasure_completed,
+      legal_hold_mutated: record.legal_hold_mutated,
+      legal_hold_resolved: record.legal_hold_resolved,
+      retention_policy_mutated: record.retention_policy_mutated,
+      retention_policy_changed: record.retention_policy_changed,
+      legal_completion_claimed: record.legal_completion_claimed,
+      legal_disposal_completed: record.legal_disposal_completed,
+      next_step: record.next_step,
+    },
+    `${label}.summary`,
+  );
+  expect(record.candidate_id.length, `${label}.candidate_id`).toBeGreaterThan(0);
+  expect(Array.isArray(record.evidence), `${label}.evidence`).toBe(true);
+  expect(record.evidence_count, `${label}.evidence_count mirrors evidence`).toBe(
+    record.evidence.length,
+  );
+  record.evidence.forEach((evidence, i) =>
+    assertRetentionReviewClosureEvidence(evidence, `${label}.evidence[${i}]`),
+  );
+  const snapshot = assertRetentionCandidateResolutionSnapshot(record.candidate, `${label}.candidate`);
+  expect(snapshot.candidate_id, `${label}.candidate.candidate_id`).toBe(record.candidate_id);
+  expect(snapshot.candidate_fingerprint, `${label}.candidate.candidate_fingerprint`).toBe(
+    record.candidate_fingerprint,
+  );
+  return record;
 }
 
 function assertRetentionExecutionRequestedPolicy(
@@ -5524,6 +5745,20 @@ describe('contract fixtures parse through the real client', () => {
     expect(report.candidates[0].would_execute).toBe(false);
   });
 
+  it('retention.candidate-resolutions.json → RetentionCandidateResolutionRecord[] (GET /v1/privacy/retention-candidate-resolutions)', async () => {
+    stubFetch(fixture('retention.candidate-resolutions.json'));
+    const records: RetentionCandidateResolutionRecord[] =
+      await api.listRetentionCandidateResolutions();
+    expect(Array.isArray(records)).toBe(true);
+    expect(records.length).toBeGreaterThan(0);
+    const record = assertRetentionCandidateResolutionRecord(
+      records[0],
+      'RetentionCandidateResolutionRecord',
+    );
+    expect(record.disposition).toBe('blocked_follow_up');
+    expect(record.evidence_only).toBe(true);
+  });
+
   it('retention.executions.json → RetentionExecutionRecord[] (GET /v1/privacy/retention-executions)', async () => {
     stubFetch(fixture('retention.executions.json'));
     const executions: RetentionExecutionRecord[] = await api.listRetentionExecutions();
@@ -5757,6 +5992,7 @@ describe('contract fixtures — cross-cutting guarantees', () => {
       'privacy.transfer-controls.json',
       'retention.policies.json',
       'retention.due-candidates.json',
+      'retention.candidate-resolutions.json',
       'retention.executions.json',
       'paper-book.import.json',
       'paper-book.ocr-draft.json',

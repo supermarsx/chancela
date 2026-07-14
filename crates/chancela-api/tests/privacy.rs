@@ -29,6 +29,7 @@ const TRANSFER_CONTROLS_FILE: &str = "privacy-transfer-controls.json";
 const DSR_REQUESTS_FILE: &str = "privacy-dsr-requests.json";
 const RETENTION_POLICIES_FILE: &str = "retention-policies.json";
 const RETENTION_EXECUTIONS_FILE: &str = "privacy-retention-executions.json";
+const RETENTION_CANDIDATE_RESOLUTIONS_FILE: &str = "privacy-retention-candidate-resolutions.json";
 
 struct TempDir {
     dir: PathBuf,
@@ -2793,6 +2794,529 @@ async fn retention_due_candidates_get_is_non_mutating() {
         books_before,
         "GET must not mutate books"
     );
+}
+
+#[tokio::test]
+async fn retention_candidate_resolution_records_evidence_only_and_projects_latest() {
+    let tmp = TempDir::new();
+    let state = AppState::with_data_dir(tmp.dir.clone());
+    let (owner, owner_token) = bootstrap_owner(&state).await;
+    let book_id = insert_closed_book(&state, date(2000, Month::January, 15)).await;
+
+    let (status, created) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                "/v1/privacy/retention-policies",
+                archive_retention_policy_payload("archive", "P1D"),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "policy create: {created}");
+
+    let (status, due_before) = send(
+        state.clone(),
+        with_session(get("/v1/privacy/retention-due-candidates"), &owner_token),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "due candidates before: {due_before}"
+    );
+    let candidate = &due_before["candidates"][0];
+    let candidate_id = candidate["candidate_id"]
+        .as_str()
+        .expect("candidate id")
+        .to_owned();
+    let candidate_fingerprint = candidate["candidate_fingerprint"]
+        .as_str()
+        .expect("candidate fingerprint")
+        .to_owned();
+
+    let (status, recorded) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                &format!("/v1/privacy/retention-due-candidates/{candidate_id}/resolution"),
+                json!({
+                    "candidate_fingerprint": candidate_fingerprint,
+                    "disposition": "evidence_acknowledged",
+                    "note": "Evidence reviewed locally for follow-up queue.",
+                    "evidence": [
+                        {
+                            "label": "candidate_review",
+                            "value": "candidate evidence checked only"
+                        }
+                    ],
+                    "destructive_disposal_completed": false,
+                    "disposal_completed": false,
+                    "full_erasure_completed": false,
+                    "erasure_completed": false,
+                    "legal_hold_mutated": false,
+                    "legal_hold_resolved": false,
+                    "retention_policy_mutated": false,
+                    "retention_policy_changed": false,
+                    "legal_completion_claimed": false,
+                    "legal_disposal_completed": false
+                }),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "resolution record: {recorded}");
+    let resolution_id = recorded["id"].as_str().expect("resolution id").to_owned();
+    assert_eq!(recorded["candidate_id"], json!(candidate_id));
+    assert_eq!(recorded["candidate"]["record_id"], json!(book_id));
+    assert_eq!(recorded["disposition"], json!("evidence_acknowledged"));
+    assert_eq!(recorded["evidence_only"], json!(true));
+    assert_eq!(recorded["destructive_disposal_completed"], json!(false));
+    assert_eq!(recorded["disposal_completed"], json!(false));
+    assert_eq!(recorded["full_erasure_completed"], json!(false));
+    assert_eq!(recorded["erasure_completed"], json!(false));
+    assert_eq!(recorded["legal_hold_mutated"], json!(false));
+    assert_eq!(recorded["legal_hold_resolved"], json!(false));
+    assert_eq!(recorded["retention_policy_mutated"], json!(false));
+    assert_eq!(recorded["retention_policy_changed"], json!(false));
+    assert_eq!(recorded["legal_completion_claimed"], json!(false));
+    assert_eq!(recorded["legal_disposal_completed"], json!(false));
+    assert!(tmp.dir.join(RETENTION_CANDIDATE_RESOLUTIONS_FILE).is_file());
+
+    let (status, due_after) = send(
+        state.clone(),
+        with_session(get("/v1/privacy/retention-due-candidates"), &owner_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "due candidates after: {due_after}");
+    assert_eq!(due_after["candidate_count"], json!(1));
+    assert_eq!(due_after["candidate_resolution_record_count"], json!(1));
+    assert_eq!(due_after["candidates_with_resolution_count"], json!(1));
+    let candidate_after = &due_after["candidates"][0];
+    assert_eq!(candidate_after["candidate_id"], json!(candidate_id));
+    assert_eq!(
+        candidate_after["candidate_resolution_record_count"],
+        json!(1)
+    );
+    assert_eq!(
+        candidate_after["latest_resolution"]["id"],
+        json!(resolution_id)
+    );
+    assert_eq!(
+        candidate_after["latest_resolution"]["disposition"],
+        json!("evidence_acknowledged")
+    );
+    assert_eq!(
+        candidate_after["latest_resolution"]["destructive_disposal_completed"],
+        json!(false)
+    );
+
+    let (status, records) = send(
+        state.clone(),
+        with_session(
+            get("/v1/privacy/retention-candidate-resolutions"),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "resolution list: {records}");
+    let records = records.as_array().expect("resolution list");
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0]["id"], json!(resolution_id));
+
+    let (status, events) = send(
+        state.clone(),
+        with_session(
+            get("/v1/ledger/events?scope=privacy:retention-candidate-resolution:&limit=1000"),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "ledger events: {events}");
+    let events = events.as_array().expect("events");
+    assert!(events.iter().any(|event| {
+        event["kind"] == "privacy.retention.candidate.resolution.recorded"
+            && event["scope"]
+                == json!(format!(
+                    "privacy:retention-candidate-resolution:{resolution_id}"
+                ))
+            && event["actor"] == json!("owner")
+            && event.get("payload").is_none()
+    }));
+
+    let restarted = AppState::with_data_dir(tmp.dir.clone());
+    let restarted_token = open_session(&restarted, owner).await;
+    let (status, restarted_records) = send(
+        restarted,
+        with_session(
+            get("/v1/privacy/retention-candidate-resolutions"),
+            &restarted_token,
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "resolution list after restart: {restarted_records}"
+    );
+    assert_eq!(restarted_records.as_array().expect("records").len(), 1);
+    assert_eq!(restarted_records[0]["id"], json!(resolution_id));
+}
+
+#[tokio::test]
+async fn retention_candidate_resolution_rejects_stale_flags_and_overclaim_terms() {
+    let (state, _target, owner_token, _reader, _reader_token) = fixture_state().await;
+    insert_closed_book(&state, date(2000, Month::January, 15)).await;
+
+    let (status, created) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                "/v1/privacy/retention-policies",
+                archive_retention_policy_payload("delete", "P1D"),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "destructive policy: {created}");
+
+    let (status, due) = send(
+        state.clone(),
+        with_session(get("/v1/privacy/retention-due-candidates"), &owner_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "due candidates: {due}");
+    let candidate = &due["candidates"][0];
+    let candidate_id = candidate["candidate_id"].as_str().expect("candidate id");
+    let candidate_fingerprint = candidate["candidate_fingerprint"]
+        .as_str()
+        .expect("candidate fingerprint");
+
+    let uri = format!("/v1/privacy/retention-due-candidates/{candidate_id}/resolution");
+    let base = json!({
+        "candidate_fingerprint": candidate_fingerprint,
+        "disposition": "blocked_follow_up",
+        "note": "Blocked follow-up evidence recorded for governance queue."
+    });
+
+    let (status, bad_fingerprint) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                &uri,
+                json!({
+                    "candidate_fingerprint": "0".repeat(64),
+                    "disposition": "blocked_follow_up",
+                    "note": "Blocked follow-up evidence recorded for governance queue."
+                }),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(
+        bad_fingerprint["error"]
+            .as_str()
+            .expect("error")
+            .contains("stale")
+    );
+
+    let (status, acknowledged_blocked) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                &uri,
+                json!({
+                    "candidate_fingerprint": candidate_fingerprint,
+                    "disposition": "evidence_acknowledged",
+                    "note": "Evidence reviewed locally for follow-up queue."
+                }),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(
+        acknowledged_blocked["error"]
+            .as_str()
+            .expect("error")
+            .contains("can only record follow-up evidence")
+    );
+
+    let mut true_flag = base.clone();
+    true_flag["destructive_disposal_completed"] = json!(true);
+    let (status, true_flag_body) = send(
+        state.clone(),
+        with_session(post_json(&uri, true_flag), &owner_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(
+        true_flag_body["error"]
+            .as_str()
+            .expect("error")
+            .contains("cannot be true")
+    );
+
+    let (status, overclaim) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                &uri,
+                json!({
+                    "candidate_fingerprint": candidate_fingerprint,
+                    "disposition": "blocked_follow_up",
+                    "note": "Deleted records completed."
+                }),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(
+        overclaim["error"]
+            .as_str()
+            .expect("error")
+            .contains("cannot claim")
+    );
+
+    for (claim, body) in [
+        (
+            "records anonymized",
+            json!({
+                "candidate_fingerprint": candidate_fingerprint,
+                "disposition": "blocked_follow_up",
+                "note": "Records anonymized."
+            }),
+        ),
+        (
+            "document redacted",
+            json!({
+                "candidate_fingerprint": candidate_fingerprint,
+                "disposition": "blocked_follow_up",
+                "note": "Blocked follow-up evidence recorded for governance queue.",
+                "evidence": [
+                    {
+                        "label": "candidate_review",
+                        "value": "Document redacted."
+                    }
+                ]
+            }),
+        ),
+        (
+            "legal hold mutation recorded",
+            json!({
+                "candidate_fingerprint": candidate_fingerprint,
+                "disposition": "blocked_follow_up",
+                "note": "Legal hold mutation recorded."
+            }),
+        ),
+        (
+            "retention policy mutation recorded",
+            json!({
+                "candidate_fingerprint": candidate_fingerprint,
+                "disposition": "blocked_follow_up",
+                "note": "Blocked follow-up evidence recorded for governance queue.",
+                "evidence": [
+                    {
+                        "label": "candidate_review",
+                        "value": "Retention policy mutation recorded."
+                    }
+                ]
+            }),
+        ),
+        (
+            "GDPR erasure completed",
+            json!({
+                "candidate_fingerprint": candidate_fingerprint,
+                "disposition": "blocked_follow_up",
+                "note": "GDPR erasure completed."
+            }),
+        ),
+        (
+            "legal disposal performed",
+            json!({
+                "candidate_fingerprint": candidate_fingerprint,
+                "disposition": "blocked_follow_up",
+                "note": "Legal disposal performed."
+            }),
+        ),
+        (
+            "legal completion recorded",
+            json!({
+                "candidate_fingerprint": candidate_fingerprint,
+                "disposition": "blocked_follow_up",
+                "note": "Legal completion recorded."
+            }),
+        ),
+        (
+            "legal approval recorded",
+            json!({
+                "candidate_fingerprint": candidate_fingerprint,
+                "disposition": "blocked_follow_up",
+                "note": "Legal approval recorded."
+            }),
+        ),
+        (
+            "legal resolution recorded",
+            json!({
+                "candidate_fingerprint": candidate_fingerprint,
+                "disposition": "blocked_follow_up",
+                "note": "Legal resolution recorded."
+            }),
+        ),
+    ] {
+        let (status, rejected) = send(
+            state.clone(),
+            with_session(post_json(&uri, body), &owner_token),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{claim}: {rejected}"
+        );
+        assert!(
+            rejected["error"]
+                .as_str()
+                .expect("error")
+                .contains("cannot claim"),
+            "{claim}: {rejected}"
+        );
+    }
+
+    let (status, unknown) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                "/v1/privacy/retention-due-candidates/missing-candidate/resolution",
+                base,
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::NOT_FOUND,
+        "unknown candidate: {unknown}"
+    );
+    assert!(
+        state
+            .retention_candidate_resolutions
+            .read()
+            .await
+            .is_empty()
+    );
+}
+
+#[tokio::test]
+async fn retention_candidate_resolution_blocks_legal_hold_acknowledgement_but_allows_follow_up() {
+    let (state, _target, owner_token, _reader, _reader_token) = fixture_state().await;
+    insert_closed_book(&state, date(2000, Month::January, 15)).await;
+
+    let (status, archive_policy) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                "/v1/privacy/retention-policies",
+                archive_retention_policy_payload("archive", "P1D"),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::CREATED,
+        "archive policy: {archive_policy}"
+    );
+    let (status, hold_policy) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                "/v1/privacy/retention-policies",
+                archive_retention_policy_payload("legal_hold", "P99Y"),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::CREATED,
+        "legal hold policy: {hold_policy}"
+    );
+
+    let (status, due) = send(
+        state.clone(),
+        with_session(get("/v1/privacy/retention-due-candidates"), &owner_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "due candidates: {due}");
+    let candidate = &due["candidates"][0];
+    assert_eq!(candidate["status"], json!("blocked"));
+    assert!(
+        !candidate["legal_hold_blockers"]
+            .as_array()
+            .expect("legal hold blockers")
+            .is_empty()
+    );
+    let candidate_id = candidate["candidate_id"].as_str().expect("candidate id");
+    let candidate_fingerprint = candidate["candidate_fingerprint"]
+        .as_str()
+        .expect("candidate fingerprint");
+    let uri = format!("/v1/privacy/retention-due-candidates/{candidate_id}/resolution");
+
+    let (status, acknowledged) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                &uri,
+                json!({
+                    "candidate_fingerprint": candidate_fingerprint,
+                    "disposition": "evidence_acknowledged",
+                    "note": "Evidence reviewed locally for follow-up queue."
+                }),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(
+        acknowledged["error"]
+            .as_str()
+            .expect("error")
+            .contains("can only record follow-up evidence")
+    );
+
+    let (status, recorded) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                &uri,
+                json!({
+                    "candidate_fingerprint": candidate_fingerprint,
+                    "disposition": "blocked_follow_up",
+                    "note": "Blocked follow-up evidence recorded for governance queue.",
+                    "legal_hold_resolved": false
+                }),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "blocked follow-up: {recorded}");
+    assert_eq!(recorded["disposition"], json!("blocked_follow_up"));
+    assert_eq!(recorded["legal_hold_resolved"], json!(false));
+    assert_eq!(state.retention_candidate_resolutions.read().await.len(), 1);
 }
 
 #[tokio::test]

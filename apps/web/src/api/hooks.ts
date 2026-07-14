@@ -106,6 +106,8 @@ import type {
   PatchProcessorRecordBody,
   PatchRetentionPolicyBody,
   ProcessorRecordView,
+  RetentionCandidateResolutionBody,
+  RetentionCandidateResolutionRecord,
   RetentionDryRunBody,
   RetentionExecutionRecord,
   RetentionExecutionStatus,
@@ -224,6 +226,7 @@ export const keys = {
   privacyTransferControls: ['privacy', 'transfer-controls'] as const,
   privacyRetentionPolicies: ['privacy', 'retention-policies'] as const,
   privacyRetentionDueCandidates: ['privacy', 'retention-due-candidates'] as const,
+  privacyRetentionCandidateResolutions: ['privacy', 'retention-candidate-resolutions'] as const,
   privacyRetentionExecutions: (status: RetentionExecutionStatus | 'all' = 'all') =>
     ['privacy', 'retention-executions', status] as const,
 };
@@ -2539,6 +2542,31 @@ export function usePrivacyRetentionDueCandidates(enabled = true) {
     queryKey: keys.privacyRetentionDueCandidates,
     queryFn: () => api.listRetentionDueCandidates(),
     enabled,
+  });
+}
+
+export function usePrivacyRetentionCandidateResolutions(enabled = true) {
+  return useQuery({
+    queryKey: keys.privacyRetentionCandidateResolutions,
+    queryFn: () => api.listRetentionCandidateResolutions(),
+    enabled,
+  });
+}
+
+export function useRecordPrivacyRetentionCandidateResolution() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ candidateId, body }: { candidateId: string; body: RetentionCandidateResolutionBody }) =>
+      api.recordRetentionCandidateResolution(candidateId, body),
+    onSuccess: (recorded) => {
+      qc.setQueryData<RetentionCandidateResolutionRecord[]>(
+        keys.privacyRetentionCandidateResolutions,
+        (current = []) => [...current, recorded],
+      );
+      void qc.invalidateQueries({ queryKey: keys.privacyRetentionDueCandidates });
+      void qc.invalidateQueries({ queryKey: keys.privacyRetentionCandidateResolutions });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
   });
 }
 

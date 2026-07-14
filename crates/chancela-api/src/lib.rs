@@ -62,6 +62,8 @@
 //! - `GET|POST /v1/privacy/retention-policies`, `PATCH /v1/privacy/retention-policies/{id}`,
 //!   `POST /v1/privacy/retention-policies/dry-run`,
 //!   `GET /v1/privacy/retention-due-candidates`,
+//!   `POST /v1/privacy/retention-due-candidates/{candidate_id}/resolution`,
+//!   `GET /v1/privacy/retention-candidate-resolutions`,
 //!   `GET /v1/privacy/retention-executions`,
 //!   `POST /v1/privacy/retention-executions/{id}/review-closure` — bounded retention policy
 //!   register, non-destructive applicability reporting, recorded execution-request evidence, and
@@ -225,7 +227,7 @@ pub const DATA_DIR_ENV: &str = "CHANCELA_DATA_DIR";
 /// Handlers that take several locks acquire them in the fixed order **entities → books → acts
 /// → follow_ups → registry_extracts → registry_auto_updates → users → dsr_requests → processor_records →
 /// dpia_records → breach_playbooks → transfer_controls → retention_policies →
-/// retention_execution_records → ledger** to avoid deadlock. The `cae` and `sessions` locks
+/// retention_execution_records → retention_candidate_resolutions → ledger** to avoid deadlock. The `cae` and `sessions` locks
 /// are independent, short-lived locks not part of that chain (a handler acquires and releases one
 /// before touching the ordered locks, or after — never interleaved with them).
 #[derive(Clone, Default)]
@@ -322,6 +324,10 @@ pub struct AppState {
     /// `privacy-retention-executions.json`; records are non-destructive and ledger-audited.
     pub retention_execution_records:
         Arc<RwLock<HashMap<String, privacy::RetentionExecutionRecord>>>,
+    /// Evidence-only due-candidate disposition records. File-backed states load and write these
+    /// through `privacy-retention-candidate-resolutions.json`; they never perform disposal.
+    pub retention_candidate_resolutions:
+        Arc<RwLock<HashMap<String, privacy::RetentionCandidateResolutionRecord>>>,
     /// Non-destructive backup recovery drill/custody receipts. File-backed states load and write
     /// these through `backup-recovery-drills.json`; the receipt route calls restore preflight only.
     pub backup_recovery_drill_receipts: Arc<RwLock<Vec<BackupRecoveryDrillReceipt>>>,
@@ -340,6 +346,8 @@ pub struct AppState {
     pub retention_policies_path: Option<Arc<PathBuf>>,
     /// Where `privacy-retention-executions.json` is persisted, or `None` for in-memory evidence.
     pub retention_execution_records_path: Option<Arc<PathBuf>>,
+    /// Where `privacy-retention-candidate-resolutions.json` is persisted, or `None` for in-memory evidence.
+    pub retention_candidate_resolutions_path: Option<Arc<PathBuf>>,
     /// Where `backup-recovery-drills.json` is persisted, or `None` for in-memory receipts.
     pub backup_recovery_drill_receipts_path: Option<Arc<PathBuf>>,
     /// Where `notification-triage.json` is persisted, or `None` for in-memory triage.
@@ -624,6 +632,13 @@ impl AppState {
         let loaded_retention_execution_records =
             privacy::load_retention_execution_records(&retention_execution_records_path)
                 .unwrap_or_default();
+        let retention_candidate_resolutions_path =
+            dir.join(privacy::RETENTION_CANDIDATE_RESOLUTIONS_FILE);
+        let loaded_retention_candidate_resolutions =
+            privacy::load_retention_candidate_resolution_records(
+                &retention_candidate_resolutions_path,
+            )
+            .unwrap_or_default();
         let backup_recovery_drill_receipts_path =
             dir.join(backup_recovery::BACKUP_RECOVERY_DRILLS_FILE);
         let loaded_backup_recovery_drill_receipts =
@@ -677,6 +692,12 @@ impl AppState {
             retention_policies_path: Some(Arc::new(retention_policies_path)),
             retention_execution_records: Arc::new(RwLock::new(loaded_retention_execution_records)),
             retention_execution_records_path: Some(Arc::new(retention_execution_records_path)),
+            retention_candidate_resolutions: Arc::new(RwLock::new(
+                loaded_retention_candidate_resolutions,
+            )),
+            retention_candidate_resolutions_path: Some(Arc::new(
+                retention_candidate_resolutions_path,
+            )),
             backup_recovery_drill_receipts: Arc::new(RwLock::new(
                 loaded_backup_recovery_drill_receipts,
             )),
@@ -897,6 +918,7 @@ impl AppState {
                 dir.join(crate::privacy::TRANSFER_CONTROLS_FILE),
                 dir.join(crate::privacy::RETENTION_POLICIES_FILE),
                 dir.join(crate::privacy::RETENTION_EXECUTIONS_FILE),
+                dir.join(crate::privacy::RETENTION_CANDIDATE_RESOLUTIONS_FILE),
                 dir.join(crate::backup_recovery::BACKUP_RECOVERY_DRILLS_FILE),
                 dir.join(crate::notifications::NOTIFICATION_TRIAGE_FILE),
                 dir.join(crate::apikeys::API_KEYS_FILE),
@@ -977,6 +999,11 @@ impl AppState {
                     &dir.join(privacy::RETENTION_EXECUTIONS_FILE),
                 )
                 .unwrap_or_default();
+            *self.retention_candidate_resolutions.write().await =
+                privacy::load_retention_candidate_resolution_records(
+                    &dir.join(privacy::RETENTION_CANDIDATE_RESOLUTIONS_FILE),
+                )
+                .unwrap_or_default();
             *self.backup_recovery_drill_receipts.write().await =
                 backup_recovery::load_backup_recovery_drill_receipts(
                     &dir.join(backup_recovery::BACKUP_RECOVERY_DRILLS_FILE),
@@ -1034,6 +1061,7 @@ impl AppState {
         self.dpia_records.write().await.clear();
         self.retention_policies.write().await.clear();
         self.retention_execution_records.write().await.clear();
+        self.retention_candidate_resolutions.write().await.clear();
         self.backup_recovery_drill_receipts.write().await.clear();
         self.notification_triage.write().await.clear();
         self.sessions.write().await.clear();
@@ -1684,6 +1712,14 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/v1/privacy/retention-due-candidates",
             get(privacy::list_retention_due_candidates),
+        )
+        .route(
+            "/v1/privacy/retention-due-candidates/{candidate_id}/resolution",
+            post(privacy::record_retention_candidate_resolution),
+        )
+        .route(
+            "/v1/privacy/retention-candidate-resolutions",
+            get(privacy::list_retention_candidate_resolution_records),
         )
         .route(
             "/v1/privacy/retention-executions",

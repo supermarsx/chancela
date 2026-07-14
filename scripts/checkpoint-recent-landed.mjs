@@ -10540,8 +10540,8 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "legal disposal\n  completion, or GDPR erasure",
-    "spec coverage retention due-candidates no-resolution caveat marker",
+    "Candidate-level resolution records are a separate local evidence sidecar",
+    "spec coverage retention candidate-resolution evidence-only marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",

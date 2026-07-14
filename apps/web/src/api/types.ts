@@ -3297,6 +3297,13 @@ export const RETENTION_REVIEW_CLOSURE_DECISIONS = [
 ] as const;
 export type RetentionReviewClosureDecision = (typeof RETENTION_REVIEW_CLOSURE_DECISIONS)[number];
 
+export const RETENTION_CANDIDATE_DISPOSITIONS = [
+  'evidence_acknowledged',
+  'follow_up_required',
+  'blocked_follow_up',
+] as const;
+export type RetentionCandidateDisposition = (typeof RETENTION_CANDIDATE_DISPOSITIONS)[number];
+
 export const RETENTION_EVIDENCE_STATES = [
   'review_queued',
   'blocked',
@@ -3602,8 +3609,31 @@ export interface RetentionDueCandidatePriorExecution {
   next_step: string;
 }
 
+export interface RetentionCandidateResolutionSummary {
+  id: string;
+  candidate_fingerprint: string;
+  recorded_at: string;
+  recorded_by: string;
+  disposition: RetentionCandidateDisposition;
+  evidence_count: number;
+  note?: string;
+  evidence_only: true;
+  destructive_disposal_completed: false;
+  disposal_completed: false;
+  full_erasure_completed: false;
+  erasure_completed: false;
+  legal_hold_mutated: false;
+  legal_hold_resolved: false;
+  retention_policy_mutated: false;
+  retention_policy_changed: false;
+  legal_completion_claimed: false;
+  legal_disposal_completed: false;
+  next_step: string;
+}
+
 export interface RetentionDueCandidate {
   candidate_id: string;
+  candidate_fingerprint: string;
   scope: string;
   category: string;
   record_id: string;
@@ -3630,6 +3660,8 @@ export interface RetentionDueCandidate {
   destructive_disposal_completed: false;
   full_erasure_completed: false;
   prior_execution?: RetentionDueCandidatePriorExecution;
+  candidate_resolution_record_count: number;
+  latest_resolution?: RetentionCandidateResolutionSummary;
   next_step: string;
 }
 
@@ -3646,8 +3678,59 @@ export interface RetentionDueCandidatesReport {
   candidate_count: number;
   suppressed_candidate_count: number;
   suppressed_by_bounded_evidence_count: number;
+  candidate_resolution_record_count: number;
+  candidates_with_resolution_count: number;
   suppression_summary?: RetentionDueCandidatesSuppressionSummary;
   candidates: RetentionDueCandidate[];
+}
+
+export interface RetentionCandidateResolutionSnapshot {
+  candidate_id: string;
+  candidate_fingerprint: string;
+  scope: string;
+  category: string;
+  record_id: string;
+  book_id: string;
+  entity_id: string;
+  closing_date: string;
+  due_date?: string;
+  overdue: boolean;
+  policy_id: string;
+  policy_name: string;
+  schedule_id: string;
+  retention_period: string;
+  disposal_action: RetentionDisposalAction;
+  destructive_action: boolean;
+  outcome: string;
+  status: string;
+  candidate_evidence_state: RetentionEvidenceState;
+  legal_hold_blocker_count: number;
+  required_approval_count: number;
+  blocker_count: number;
+  finding_count: number;
+}
+
+export interface RetentionCandidateResolutionRecord extends RetentionCandidateResolutionSummary {
+  candidate_id: string;
+  evidence: RetentionReviewClosureEvidence[];
+  candidate: RetentionCandidateResolutionSnapshot;
+}
+
+export interface RetentionCandidateResolutionBody {
+  candidate_fingerprint: string;
+  disposition: RetentionCandidateDisposition;
+  note?: string;
+  evidence?: RetentionReviewClosureEvidence[];
+  destructive_disposal_completed?: false;
+  disposal_completed?: false;
+  full_erasure_completed?: false;
+  erasure_completed?: false;
+  legal_hold_mutated?: false;
+  legal_hold_resolved?: false;
+  retention_policy_mutated?: false;
+  retention_policy_changed?: false;
+  legal_completion_claimed?: false;
+  legal_disposal_completed?: false;
 }
 
 export type RetentionOperatorReviewDecision = 'review_required' | 'blocked' | 'execution_recorded';
