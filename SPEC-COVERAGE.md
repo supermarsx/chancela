@@ -1,6 +1,6 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-14 from current implementation snapshot `011123cfb7a9b564f2cf467a482f276d84900f57`,
+*Updated 2026-07-14 from current implementation snapshot `14d0f0cbabf01605117ebe9ae9d0b4ca886b329d`,
 with committed evidence refreshes for the recently landed Signatures & Trust
 provider-credential, stored runtime credential resolution, stored PKCS#12,
 remote batch-initiation surfaces, and Docker/Compose runtime-hardening
@@ -171,6 +171,11 @@ blockers.
 
 Implementation checkpoints covered here:
 
+- Current `14d0f0c` retention candidate-resolution checkpoint keeps
+  Legal/Compliance, Data, UX, and CI **PARTIAL**: candidate-level retention
+  disposition records are persisted as evidence-only sidecars, projected back
+  into due-candidate scans, covered by API/web/contract fixtures, and still do
+  not certify legal completion or destructive disposal.
 - Current `011123c` Signatures & Trust credential/batch checkpoint keeps
   Signatures/Trust, Data, UX, and CI **PARTIAL**: provider credentials now have
   entry-bound encrypted sidecar storage with priority-ordered entries,
