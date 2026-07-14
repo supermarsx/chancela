@@ -170,6 +170,28 @@ fn build_law_reference_coverage_report(
                             article.label
                         );
                     }
+                    Verification::AutomatedReview => {
+                        // Automated-review text is held to the same authenticity gate as Verified
+                        // (complete source + real body) but is explicitly NOT human-approved.
+                        assert!(
+                            article.source.is_complete(),
+                            "{} {}: automated-review article must keep complete provenance",
+                            spec.id,
+                            article.label
+                        );
+                        assert!(
+                            !article.body.trim().is_empty(),
+                            "{} {}: automated-review article must carry local corpus text",
+                            spec.id,
+                            article.label
+                        );
+                        assert!(
+                            !article.is_verified(),
+                            "{} {}: automated-review article must not read as human-Verified",
+                            spec.id,
+                            article.label
+                        );
+                    }
                     Verification::Pending => {
                         assert!(
                             !article.source.is_complete(),
@@ -241,6 +263,7 @@ fn diploma_status(diploma: &LawDiploma) -> Option<&'static str> {
 fn status_label(status: Verification) -> &'static str {
     match status {
         Verification::Verified => "Verified",
+        Verification::AutomatedReview => "AutomatedReview",
         Verification::Pending => "Pending",
     }
 }

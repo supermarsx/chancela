@@ -36,25 +36,91 @@ fn no_verified_article_without_complete_source() {
 }
 
 /// A `Pending` article renders the loud marker in place of body text — never its raw body.
+/// A body-bearing article (`Verified` or `AutomatedReview`) renders its real text instead.
 #[test]
 fn pending_article_renders_the_marker() {
     let cat = LawCatalog::embedded();
-    let art255 = cat.article("csc", "255").expect("CSC 255 seeded");
-    assert!(
-        !art255.is_verified(),
-        "255 ships Pending in the E1a skeleton"
-    );
-    assert_eq!(art255.display_body(), UNVERIFIED_MARKER);
     assert_eq!(UNVERIFIED_MARKER, "[NÃO VERIFICADO / fonte pendente]");
 
-    // Every Pending article in the corpus displays the marker (and never leaks a stray body).
+    // dl-76-a-2006 art. 2 is the one article left Pending (see corpus.rs) — it renders the marker.
+    let pending = cat
+        .article("dl-76-a-2006", "2")
+        .expect("dl-76-a-2006 art. 2 seeded");
+    assert!(!pending.has_body_text(), "art. 2 stays Pending");
+    assert_eq!(pending.display_body(), UNVERIFIED_MARKER);
+
+    // CSC 255 is now automated-review vendored: it renders its real body, NOT the marker — but it
+    // is still NOT human-`Verified` (no human approval was manufactured).
+    let art255 = cat.article("csc", "255").expect("CSC 255 seeded");
+    assert!(art255.is_automated_review());
+    assert!(!art255.is_verified());
+    assert_ne!(art255.display_body(), UNVERIFIED_MARKER);
+    assert_eq!(art255.display_body(), art255.body);
+
+    // Every article displays the marker IFF it is Pending; body-bearing articles never do.
     for d in cat.diplomas() {
         for a in &d.articles {
-            if !a.is_verified() {
+            if a.has_body_text() {
+                assert_ne!(a.display_body(), UNVERIFIED_MARKER, "{}:{}", d.id, a.number);
+            } else {
                 assert_eq!(a.display_body(), UNVERIFIED_MARKER, "{}:{}", d.id, a.number);
             }
         }
     }
+}
+
+/// The AutomatedReview tier: real vendored text with a complete source and the honest automated
+/// caveat, round-tripping through serde — and crucially it is NOT presented as human-`Verified`.
+#[test]
+fn automated_review_articles_are_sourced_and_honestly_labelled() {
+    let cat = LawCatalog::embedded();
+    let mut seen = 0u32;
+    for d in cat.diplomas() {
+        for a in &d.articles {
+            if !a.is_automated_review() {
+                continue;
+            }
+            seen += 1;
+            // Weaker claim than Verified: never human-approved.
+            assert!(
+                !a.is_verified(),
+                "{}:{} must not read as Verified",
+                d.id,
+                a.number
+            );
+            // But still authentic: complete source + non-empty body.
+            assert!(
+                a.source.is_complete(),
+                "{}:{} needs a complete source",
+                d.id,
+                a.number
+            );
+            assert!(
+                !a.body.trim().is_empty(),
+                "{}:{} body must be non-empty",
+                d.id,
+                a.number
+            );
+            // The honest provenance caveat is recorded on the source.
+            assert_eq!(a.source.review_method.as_deref(), Some("automated-capture"));
+            let note = a.source.review_note.as_deref().unwrap_or_default();
+            assert!(
+                note.contains("NÃO aprovado juridicamente")
+                    && note.contains("revisão jurídica humana"),
+                "{}:{} must carry the not-human-approved caveat",
+                d.id,
+                a.number
+            );
+
+            // Serde round-trip of the tier + fields is stable.
+            let json = serde_json::to_string(a).unwrap();
+            assert!(json.contains("\"automated_review\""));
+            let back: LawArticle = serde_json::from_str(&json).unwrap();
+            assert_eq!(&back, a);
+            assert_eq!(back.verification, Verification::AutomatedReview);
+        }
+    }
+    assert_eq!(seen, 39, "39 articles are automated-review vendored");
 }
 
 /// The corpus build REJECTS a `Verified` article whose source is incomplete — the gate is a build
@@ -106,6 +172,8 @@ fn build_accepts_verified_with_complete_source() {
         url: Some("https://data.dre.pt/eli/dec-lei/262/1986/p/cons/20260101".to_owned()),
         source_digest: None,
         retrieved_at: None,
+        review_method: None,
+        review_note: None,
     };
     assert!(source.is_complete());
     let good = LawCorpus {

@@ -110,8 +110,12 @@ fn dre_capture_manifest_has_required_operator_fields() {
     }
 }
 
+/// Every DRE article that is NOT human-`Verified` — whether still `Pending` OR now
+/// `AutomatedReview` — remains tracked in the capture manifest as pending HUMAN approval (reviewer
+/// + legal both Pending, no artifact/marker). The automated-review tier makes a weaker claim and
+/// therefore bypasses none of the human-approval workflow this manifest records.
 #[test]
-fn all_pending_dre_articles_have_pending_capture_manifest_coverage() {
+fn all_non_human_verified_dre_articles_have_pending_capture_manifest_coverage() {
     let manifest = parse_manifest();
     let capture_index = capture_index(&manifest);
     let cat = LawCatalog::embedded();
@@ -144,8 +148,11 @@ fn all_pending_dre_articles_have_pending_capture_manifest_coverage() {
     }
 }
 
+/// The CSC priority articles (255 / 399) are now `AutomatedReview` — real vendored text — but the
+/// human-approval invariant is preserved HONESTLY: they are NOT human-`Verified`, and their DRE
+/// capture-manifest rows stay Pending with no artifact/digest/approval marker (nothing forged).
 #[test]
-fn csc_priority_capture_articles_still_exist_but_remain_pending() {
+fn csc_priority_capture_articles_are_automated_review_not_human_verified() {
     let manifest = parse_manifest();
     let capture_index = capture_index(&manifest);
 
@@ -162,6 +169,7 @@ fn csc_priority_capture_articles_still_exist_but_remain_pending() {
             capture.eli,
             "https://data.dre.pt/eli/dec-lei/262/1986/p/cons/20260101"
         );
+        // The HUMAN-approval gate is untouched: the manifest row is still Pending, no forgery.
         assert_eq!(capture.reviewer_status, "Pending");
         assert_eq!(capture.legal_approval_status, "Pending");
         assert!(capture.captured_artifact_path.is_none());
@@ -169,7 +177,11 @@ fn csc_priority_capture_articles_still_exist_but_remain_pending() {
         assert!(capture.sha256.is_none());
         assert!(capture.approval_marker.is_none());
 
-        assert!(!cat.article("csc", article_id).unwrap().is_verified());
+        // The article now carries automated-review text — and is explicitly NOT human-Verified.
+        let article = cat.article("csc", article_id).unwrap();
+        assert!(article.is_automated_review());
+        assert!(!article.is_verified());
+        assert!(!article.body.trim().is_empty());
     }
 }
 

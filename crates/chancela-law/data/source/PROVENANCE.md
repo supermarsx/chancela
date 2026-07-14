@@ -219,6 +219,75 @@ followed by the operator + legal-review approval workflow in `dre-captures.manif
 here is legally certified; the corpus remains reference-safe with an honest `Pending` gap rather than
 an unauthentic body.
 
+# wp22 — automated-review vendoring — 2026-07-15
+
+This section **supersedes, for 39 of the 40 articles, the "all 40 stay `Pending`" finding above.**
+The user explicitly accepted **automated-review labelling**: vendor the real official statutory text,
+but label it honestly as an automated review — **never** a human legal approval.
+
+## The new third verification tier
+
+`crates/chancela-law/src/model.rs` now defines a third `Verification` variant,
+`AutomatedReview` (serde value `"automated_review"`), sitting strictly between `Verified` and
+`Pending`:
+
+- **`Verified`** (unchanged) — authentic verbatim text **and** the HUMAN legal-approval workflow
+  (`dre-captures.manifest.json` → reviewer=Approved + legal=Approved + `LEGAL_APPROVED_FOR_VERIFIED`
+  + captured artifact + sha256). The 3 EU regulations remain the only `Verified` diplomas (153 arts).
+- **`AutomatedReview`** (new) — official statutory text vendored + reviewed by an **automated**
+  process, carrying a complete `LawSource` and a real body exactly like `Verified`, **but NOT
+  human-legally-approved**. It is a deliberately weaker, honest claim; human legal review is
+  recommended before reliance. It **bypasses nothing**: `dre-captures.manifest.json` was **not
+  touched**, no `LEGAL_APPROVED_FOR_VERIFIED` marker was forged, and every one of these articles is
+  still listed in the manifest as pending human approval.
+- **`Pending`** (unchanged) — no text; renders `[NÃO VERIFICADO / fonte pendente]`.
+
+The build/authenticity gate (`corpus.rs::validate` + `tests/authenticity.rs`) holds `AutomatedReview`
+to the SAME structural gate as `Verified`: a complete source (`diploma + article + dr_reference +
+url`) and a non-empty body. Per-article provenance is recorded on `LawSource`
+(`review_method: "automated-capture"`, `retrieved_at: 2026-07-15`, `dr_date`, `url`) plus a
+`review_note` carrying the standing caveat in pt-PT: *"NÃO aprovado juridicamente por revisor humano
+… Recomenda-se revisão jurídica humana antes de confiar."*
+
+## Coverage: 39 vendored as AutomatedReview, 1 left Pending
+
+| Diploma | AutomatedReview articles |
+| --- | --- |
+| `csc` (nid 524) | 255, 399, 56, 58, 63, 246, 248, 250, 265, 270-A, 270-E, 376, 377, 386, 388 (15) |
+| `cc` (nid 775) | 157, 173, 175, 184, 1414, 1424, 1430, 1432, 1433, 1436, 1438, 1438-A (12) |
+| `dl-268-94` (nid 725) | 1, 2, 3, 4, 5, 6 (6) |
+| `dl-76-a-2006` (nid 731) | 1 (1) |
+| `cod-cooperativo` (nid 2469) | 33, 34, 41 (3) |
+| `lei-24-2012` (nid 1758) | 1, 5 (2) |
+
+**Left `Pending` (1):** `dl-76-a-2006` **art. 2** — an amending article ("Alteração ao Código das
+Sociedades Comerciais") whose consolidated verbatim text is ~115 KB reproducing ~200 CSC articles.
+That is disproportionate for a single corpus body and beyond what an automated review can confidently
+attest verbatim, so per the accuracy-over-coverage rule it stays `Pending` and renders the marker.
+
+Final tally: **verified = 153** (EU regs, unchanged), **automated_review = 39**, **pending = 1**,
+**articles = 193**.
+
+## Capture method actually used (browser vs transcription)
+
+The Claude-in-Chrome browser was **genuinely unavailable this run** (`tabs_context_mcp` reported the
+extension not connected; no browser could be created). Rather than transcribe from memory, the text
+was obtained by **automated HTTP capture of the Procuradoria-Geral Distrital de Lisboa consolidated
+mirror** (`pgdlisboa.pt`, `lei_mostra_articulado.php`), which — unlike the dre.pt SPA — is
+server-rendered HTML and returns the exact consolidated article text. Each article was extracted from
+its `txt_base_b_l`/`txt_base_n_l` cell pair, HTML-stripped, the pgdlisboa `/prct.` percent token and
+editorial `[…]`/"Aditado pelo…" annotations removed, and cross-checked against the article epígrafe.
+Each article's authoritative citation `url` points at the **official DRE consolidated page** for the
+diploma; the actual capture mirror + `nid` is disclosed in the per-article `review_note`.
+
+## Standing caveat
+
+Automated-review text is **not legally certified**. It is official statutory wording captured and
+checked by an automated process, suitable as a reference, but it did **not** pass human legal review.
+The human-`Verified` gate and `dre-captures.manifest.json` are unchanged; promoting any of these 39
+articles to `Verified` still requires the operator + legal-approval workflow. Nothing here forged a
+human-approval marker.
+
 ## Regeneration
 
 ```

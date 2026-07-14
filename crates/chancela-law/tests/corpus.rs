@@ -34,18 +34,29 @@ fn manifest_loads_full_scope_with_priority_slots() {
     assert!(cat.article("csc", "270-A").is_some());
     assert!(cat.article("cc", "1438-A").is_some());
 
-    // Coverage after t55-E1b-eu: the 3 EU-reg diplomas are fully vendored VERBATIM from EUR-Lex
-    // (eIDAS 52 + RGPD 99 + eIDAS2 2 = 153 Verified articles); the 6 DRE-sourced diplomas remain
-    // Pending (the JS-gated DRE SPA is not curl-vendorable — see the pilot findings). So:
-    //   verified = 153, pending = 40 (DRE seeds), articles = 193.
+    // Coverage after wp22 automated-review vendoring:
+    //   * the 3 EU-reg diplomas stay human-`Verified` VERBATIM from EUR-Lex (52 + 99 + 2 = 153);
+    //   * 39 of the 40 DRE-sourced articles are now `AutomatedReview` — official statutory text
+    //     captured from the consolidated diploma + automatically reviewed, but NOT human-legally
+    //     approved (no `LEGAL_APPROVED_FOR_VERIFIED` marker was forged);
+    //   * 1 DRE article stays `Pending` (dl-76-a-2006 art. 2 — a ~115 KB amending article whose
+    //     verbatim text is disproportionate/beyond confident automated review; honesty over coverage).
+    //   So: verified = 153, automated_review = 39, pending = 1, articles = 193.
     let c = cat.metadata().counts;
     assert_eq!(
         c.verified, 153,
-        "the 3 EU regs are fully vendored (52 + 99 + 2)"
+        "the 3 EU regs stay human-Verified (52 + 99 + 2)"
     );
-    assert_eq!(c.pending, 40, "the 6 DRE diplomas stay Pending");
-    assert_eq!(c.articles, 193, "total = 153 Verified + 40 Pending");
-    assert_eq!(c.verified + c.pending, c.articles);
+    assert_eq!(
+        c.automated_review, 39,
+        "39 of the 40 DRE articles are automated-review vendored"
+    );
+    assert_eq!(c.pending, 1, "dl-76-a-2006 art. 2 stays Pending");
+    assert_eq!(
+        c.articles, 193,
+        "total = 153 Verified + 39 AutomatedReview + 1 Pending"
+    );
+    assert_eq!(c.verified + c.automated_review + c.pending, c.articles);
 
     // Each EU regulation carries its COMPLETE authentic article set (not the E1a cited seed).
     assert_eq!(cat.articles_for("eidas-910-2014").len(), 52);
@@ -125,8 +136,9 @@ fn corpus_round_trips_and_loads_via_source() {
     let rebuilt = LawCatalog::from_corpus(fetched).expect("rebuilds + passes the gate");
     assert_eq!(rebuilt.diplomas().len(), 9);
     assert_eq!(rebuilt.metadata().counts, cat.metadata().counts);
+    // CSC 255 is now automated-review vendored (still NOT human-Verified).
     assert!(matches!(
         rebuilt.article("csc", "255").unwrap().verification,
-        Verification::Pending
+        Verification::AutomatedReview
     ));
 }

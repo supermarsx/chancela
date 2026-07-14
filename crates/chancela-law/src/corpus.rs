@@ -24,7 +24,13 @@ pub enum LawOrigin {
 pub struct LawCounts {
     pub diplomas: u32,
     pub articles: u32,
+    /// Human-approved authentic articles ([`Verification::Verified`]).
     pub verified: u32,
+    /// Automated-review authentic articles ([`Verification::AutomatedReview`]) — vendored + auto
+    /// reviewed, NOT human-legally-approved. Additive/defaulted so older serialized counts parse.
+    #[serde(default)]
+    pub automated_review: u32,
+    /// Placeholder articles with no vendored text ([`Verification::Pending`]).
     pub pending: u32,
 }
 
@@ -173,6 +179,7 @@ fn validate(corpus: &LawCorpus) -> Result<LawCounts, LawError> {
         diplomas: 0,
         articles: 0,
         verified: 0,
+        automated_review: 0,
         pending: 0,
     };
     for d in &corpus.diplomas {
@@ -207,6 +214,27 @@ fn validate(corpus: &LawCorpus) -> Result<LawCounts, LawError> {
                         )));
                     }
                     counts.verified += 1;
+                }
+                Verification::AutomatedReview => {
+                    // AutomatedReview carries real vendored text, so it is held to the SAME
+                    // structural authenticity gate as Verified (complete source + non-empty body).
+                    // It only makes a weaker claim about *who* reviewed it (an automated process,
+                    // not a human legal reviewer) — that distinction lives in the tier itself and
+                    // the source's review_method/review_note, not in a relaxed source check.
+                    if !a.source.is_complete() {
+                        return Err(LawError::Integrity(format!(
+                            "article {}:{} is AutomatedReview but its source is incomplete \
+                             (needs diploma + article + dr_reference + url)",
+                            d.id, a.number
+                        )));
+                    }
+                    if a.body.trim().is_empty() {
+                        return Err(LawError::Integrity(format!(
+                            "article {}:{} is AutomatedReview but its body is empty",
+                            d.id, a.number
+                        )));
+                    }
+                    counts.automated_review += 1;
                 }
                 Verification::Pending => counts.pending += 1,
             }

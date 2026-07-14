@@ -54,7 +54,7 @@ fn report(label: &str, md: &LawMetadata) {
     println!("  generated_at   : {}", md.generated_at);
     println!("  digest         : {}", md.digest);
     println!(
-        "  counts         : {} diplomas · {} articles ({} verified, {} pending)",
-        c.diplomas, c.articles, c.verified, c.pending
+        "  counts         : {} diplomas · {} articles ({} verified, {} automated-review, {} pending)",
+        c.diplomas, c.articles, c.verified, c.automated_review, c.pending
     );
 }

@@ -8,11 +8,15 @@
 //! plus a [`DreSource`] fetch trait for E1b / refresh.
 //!
 //! ## The authenticity gate (the whole point)
-//! Embedding *wrong* statute text is worse than a reference-only link. So an article is only
-//! [`Verification::Verified`] when its [`LawSource`] cites a complete authentic origin; the
-//! [`LawCatalog`] build **and** `tests/authenticity.rs` refuse a `Verified` article without one.
-//! Any article not yet authentically vendored ships [`Verification::Pending`] and renders the loud
-//! marker [`UNVERIFIED_MARKER`] — never a fabricated/recalled body.
+//! Embedding *wrong* statute text is worse than a reference-only link. So a body-bearing article
+//! (either [`Verification::Verified`] or [`Verification::AutomatedReview`]) is admitted only when
+//! its [`LawSource`] cites a complete authentic origin; the [`LawCatalog`] build **and**
+//! `tests/authenticity.rs` refuse a body-bearing article without one. `Verified` additionally
+//! requires HUMAN legal approval (the DRE capture manifest marker); [`Verification::AutomatedReview`]
+//! is vendored + automatically reviewed but NOT human-approved, and makes that weaker claim
+//! honestly (human legal review recommended). Any article not yet vendored ships
+//! [`Verification::Pending`] and renders the loud marker [`UNVERIFIED_MARKER`] — never a
+//! fabricated/recalled body.
 //!
 //! ## Seeding status (t55-E1a)
 //! This crate ships the buildable **skeleton**: the full in-scope diploma list (plan t55 §5) with

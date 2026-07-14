@@ -13,15 +13,18 @@
         "number": "255",
         "label": "Artigo 255.º",
         "heading": "Remuneração dos gerentes",
-        "body": "",
+        "body": "1 - Salvo disposição do contrato de sociedade em contrário, o gerente tem direito a uma remuneração, a fixar pelos sócios.\n2 - As remunerações dos sócios gerentes podem ser reduzidas pelo tribunal, a requerimento de qualquer sócio, em processo de inquérito judicial, quando forem gravemente desproporcionadas quer ao trabalho prestado quer à situação da sociedade.\n3 - Salvo cláusula expressa do contrato de sociedade, a remuneração dos gerentes não pode consistir, total ou parcialmente, em participação nos lucros da sociedade.",
         "source": {
           "diploma": "Decreto-Lei n.º 262/86, de 2 de setembro",
           "article": "Artigo 255.º",
-          "dr_reference": null,
-          "dr_date": null,
-          "url": null
+          "dr_reference": "Decreto-Lei n.º 262/86, de 2 de setembro (texto consolidado)",
+          "dr_date": "2026-01-01",
+          "url": "https://diariodarepublica.pt/dr/legislacao-consolidada/decreto-lei/1986-34443975",
+          "retrieved_at": "2026-07-15T00:00:00Z",
+          "review_method": "automated-capture",
+          "review_note": "Revisão automatizada (wp22): texto estatutário oficial obtido por captura automatizada do espelho consolidado da Procuradoria-Geral Distrital de Lisboa (pgdlisboa.pt, nid=524) em 2026-07-15 e verificado por processo automatizado. NÃO aprovado juridicamente por revisor humano (sem marcador LEGAL_APPROVED_FOR_VERIFIED). Recomenda-se revisão jurídica humana antes de confiar."
         },
-        "verification": "Pending",
+        "verification": "automated_review",
         "cross_refs": [
           "csc:399"
         ]
@@ -31,15 +34,18 @@
         "number": "399",
         "label": "Artigo 399.º",
         "heading": "Remuneração dos administradores",
-        "body": "",
+        "body": "1 - Compete à assembleia geral de accionistas ou a uma comissão por aquela nomeada fixar as remunerações de cada um dos administradores, tendo em conta as funções desempenhadas e a situação económica da sociedade.\n2 - A remuneração pode ser certa ou consistir parcialmente numa percentagem dos lucros de exercício, mas a percentagem máxima destinada aos administradores deve ser autorizada por cláusula do contrato de sociedade.\n3 - A percentagem referida no número anterior não incide sobre distribuições de reservas nem sobre qualquer parte do lucro do exercício que não pudesse, por lei, ser distribuída aos accionistas.",
         "source": {
           "diploma": "Decreto-Lei n.º 262/86, de 2 de setembro",
           "article": "Artigo 399.º",
-          "dr_reference": null,
-          "dr_date": null,
-          "url": null
+          "dr_reference": "Decreto-Lei n.º 262/86, de 2 de setembro (texto consolidado)",
+          "dr_date": "2026-01-01",
+          "url": "https://diariodarepublica.pt/dr/legislacao-consolidada/decreto-lei/1986-34443975",
+          "retrieved_at": "2026-07-15T00:00:00Z",
+          "review_method": "automated-capture",
+          "review_note": "Revisão automatizada (wp22): texto estatutário oficial obtido por captura automatizada do espelho consolidado da Procuradoria-Geral Distrital de Lisboa (pgdlisboa.pt, nid=524) em 2026-07-15 e verificado por processo automatizado. NÃO aprovado juridicamente por revisor humano (sem marcador LEGAL_APPROVED_FOR_VERIFIED). Recomenda-se revisão jurídica humana antes de confiar."
         },
-        "verification": "Pending",
+        "verification": "automated_review",
         "cross_refs": [
           "csc:255"
         ]
@@ -48,208 +54,247 @@
         "diploma_id": "csc",
         "number": "56",
         "label": "Artigo 56.º",
-        "heading": "",
-        "body": "",
+        "heading": "Deliberações nulas",
+        "body": "1 - São nulas as deliberações dos sócios:\na) Tomadas em assembleia geral não convocada, salvo se todos os sócios tiverem estado presentes ou representados;\nb) Tomadas mediante voto escrito sem que todos os sócios com direito de voto tenham sido convidados a exercer esse direito, a não ser que todos eles tenham dado por escrito o seu voto;\nc) Cujo conteúdo não esteja, por natureza, sujeito a deliberação dos sócios;\nd) Cujo conteúdo, directamente ou por actos de outros órgãos que determine ou permita, seja ofensivo dos bons costumes ou de preceitos legais que não possam ser derrogados, nem sequer por vontade unânime dos sócios.\n2 - Não se consideram convocadas as assembleias cujo aviso convocatório seja assinado por quem não tenha essa competência, aquelas de cujo aviso convocatório não constem o dia, hora e local da reunião e as que reúnam em dia, hora ou local diversos dos constantes do aviso.\n3 - A nulidade de uma deliberação nos casos previstos nas alíneas a) e b) do n.º 1 não pode ser invocada quando os sócios ausentes e não representados ou não participantes na deliberação por escrito tiverem posteriormente dado por escrito o seu assentimento à deliberação.",
         "source": {
           "diploma": "Decreto-Lei n.º 262/86, de 2 de setembro",
           "article": "Artigo 56.º",
-          "dr_reference": null,
-          "dr_date": null,
-          "url": null
+          "dr_reference": "Decreto-Lei n.º 262/86, de 2 de setembro (texto consolidado)",
+          "dr_date": "2026-01-01",
+          "url": "https://diariodarepublica.pt/dr/legislacao-consolidada/decreto-lei/1986-34443975",
+          "retrieved_at": "2026-07-15T00:00:00Z",
+          "review_method": "automated-capture",
+          "review_note": "Revisão automatizada (wp22): texto estatutário oficial obtido por captura automatizada do espelho consolidado da Procuradoria-Geral Distrital de Lisboa (pgdlisboa.pt, nid=524) em 2026-07-15 e verificado por processo automatizado. NÃO aprovado juridicamente por revisor humano (sem marcador LEGAL_APPROVED_FOR_VERIFIED). Recomenda-se revisão jurídica humana antes de confiar."
         },
-        "verification": "Pending",
+        "verification": "automated_review",
         "cross_refs": []
       },
       {
         "diploma_id": "csc",
         "number": "58",
         "label": "Artigo 58.º",
-        "heading": "",
-        "body": "",
+        "heading": "Deliberações anuláveis",
+        "body": "1 - São anuláveis as deliberações que:\na) Violem disposições quer da lei, quando ao caso não caiba a nulidade, nos termos do artigo 56.º, quer do contrato de sociedade;\nb) Sejam apropriadas para satisfazer o propósito de um dos sócios de conseguir, através do exercício do direito de voto, vantagens especiais para si ou para terceiros, em prejuízo da sociedade ou de outros sócios ou simplesmente de prejudicar aquela ou estes, a menos que se prove que as deliberações teriam sido tomadas mesmo sem os votos abusivos;\nc) Não tenham sido precedidas do fornecimento ao sócio de elementos mínimos de informação.\n2 - Quando as estipulações contratuais se limitarem a reproduzir preceitos legais, são estes considerados directamente violados, para os efeitos deste artigo e do artigo 56.º\n3 - Os sócios que tenham formado maioria em deliberação abrangida pela alínea b) do n.º 1 respondem solidariamente para com a sociedade ou para com os outros sócios pelos prejuízos causados.\n4 - Consideram-se, para efeitos deste artigo, elementos mínimos de informação:\na) As menções exigidas pelo artigo 377.º, n.º 8;\nb) A colocação de documentos para exame dos sócios no local e durante o tempo prescritos pela lei ou pelo contrato.",
         "source": {
           "diploma": "Decreto-Lei n.º 262/86, de 2 de setembro",
           "article": "Artigo 58.º",
-          "dr_reference": null,
-          "dr_date": null,
-          "url": null
+          "dr_reference": "Decreto-Lei n.º 262/86, de 2 de setembro (texto consolidado)",
+          "dr_date": "2026-01-01",
+          "url": "https://diariodarepublica.pt/dr/legislacao-consolidada/decreto-lei/1986-34443975",
+          "retrieved_at": "2026-07-15T00:00:00Z",
+          "review_method": "automated-capture",
+          "review_note": "Revisão automatizada (wp22): texto estatutário oficial obtido por captura automatizada do espelho consolidado da Procuradoria-Geral Distrital de Lisboa (pgdlisboa.pt, nid=524) em 2026-07-15 e verificado por processo automatizado. NÃO aprovado juridicamente por revisor humano (sem marcador LEGAL_APPROVED_FOR_VERIFIED). Recomenda-se revisão jurídica humana antes de confiar."
         },
-        "verification": "Pending",
+        "verification": "automated_review",
         "cross_refs": []
       },
       {
         "diploma_id": "csc",
         "number": "63",
         "label": "Artigo 63.º",
-        "heading": "",
-        "body": "",
+        "heading": "Actas",
+        "body": "1 - As deliberações dos sócios só podem ser provadas pelas actas das assembleias ou, quando sejam admitidas deliberações por escrito, pelos documentos donde elas constem.\n2 - A acta deve conter, pelo menos:\na) A identificação da sociedade, o lugar, o dia e a hora da reunião;\nb) O nome do presidente e, se os houver, dos secretários;\nc) Os nomes dos sócios presentes ou representados e o valor nominal das partes sociais, quotas ou acções de cada um, salvo nos casos em que a lei mande organizar lista de presenças, que deve ser anexada à acta;\nd) A ordem do dia constante da convocatória, salvo quando esta seja anexada à acta;\ne) Referência aos documentos e relatórios submetidos à assembleia;\nf) O teor das deliberações tomadas;\ng) Os resultados das votações;\nh) O sentido das declarações dos sócios, se estes o requererem.\n3 - Quando a acta deva ser assinada por todos os sócios que tomaram parte na assembleia e algum deles não o faça, podendo fazê-lo, deve a sociedade notificá-lo judicialmente para que, em prazo não inferior a oito dias, a assine; decorrido esse prazo, a acta tem a força probatória referida no n.º 1, desde que esteja assinada pela maioria dos sócios que tomaram parte na assembleia, sem prejuízo do direito dos que a não assinaram de invocarem em juízo a falsidade da acta.\n4 - Quando as deliberações dos sócios constem de escritura pública, de instrumento fora das notas ou de documento particular avulso, deve a gerência, o conselho de administração ou o conselho de administração executivo inscrever no respectivo livro a menção da sua existência.\n5 - Sempre que as actas sejam registadas em folhas soltas, deve a gerência ou a administração, o presidente da mesa da assembleia geral e o secretário, quando os houver, tomar as precauções e as medidas necessárias para impedir a sua falsificação.\n6 - As actas são lavradas por notário, em instrumento avulso, quando, no início da reunião, a assembleia assim o delibere ou ainda quando algum sócio o requeira em escrito dirigido à gerência, ao conselho de administração ou ao conselho de administração executivo da sociedade e entregue na sede social com cinco dias úteis de antecedência em relação à data da assembleia geral, suportando o sócio requerente as despesas notariais.\n7 - As actas apenas constantes de documentos particulares avulsos constituem princípio de prova embora estejam assinadas por todos os sócios que participaram na assembleia.\n8 - Nenhum sócio tem o dever de assinar as actas que não estejam consignadas no respectivo livro ou nas folhas soltas, devidamente numeradas e rubricadas.",
         "source": {
           "diploma": "Decreto-Lei n.º 262/86, de 2 de setembro",
           "article": "Artigo 63.º",
-          "dr_reference": null,
-          "dr_date": null,
-          "url": null
+          "dr_reference": "Decreto-Lei n.º 262/86, de 2 de setembro (texto consolidado)",
+          "dr_date": "2026-01-01",
+          "url": "https://diariodarepublica.pt/dr/legislacao-consolidada/decreto-lei/1986-34443975",
+          "retrieved_at": "2026-07-15T00:00:00Z",
+          "review_method": "automated-capture",
+          "review_note": "Revisão automatizada (wp22): texto estatutário oficial obtido por captura automatizada do espelho consolidado da Procuradoria-Geral Distrital de Lisboa (pgdlisboa.pt, nid=524) em 2026-07-15 e verificado por processo automatizado. NÃO aprovado juridicamente por revisor humano (sem marcador LEGAL_APPROVED_FOR_VERIFIED). Recomenda-se revisão jurídica humana antes de confiar."
         },
-        "verification": "Pending",
+        "verification": "automated_review",
         "cross_refs": []
       },
       {
         "diploma_id": "csc",
         "number": "246",
         "label": "Artigo 246.º",
-        "heading": "",
-        "body": "",
+        "heading": "Competência dos sócios",
+        "body": "1 - Dependem de deliberação dos sócios os seguintes actos, além de outros que a lei ou o contrato indicarem:\na) A chamada e a restituição de prestações suplementares;\nb) A amortização de quotas, a aquisição, a alienação e a oneração de quotas próprias e o consentimento para a divisão ou cessão de quotas;\nc) A exclusão de sócios;\nd) A destituição de gerentes e de membros do órgão de fiscalização;\ne) A aprovação do relatório de gestão e das contas do exercício, a atribuição de lucros e o tratamento dos prejuízos;\nf) A exoneração de responsabilidade dos gerentes ou membros do órgão de fiscalização;\ng) A proposição de acções pela sociedade contra gerentes, sócios ou membros do órgão de fiscalização, e bem assim a desistência e transacção nessas acções;\nh) A alteração do contrato de sociedade;\ni) A fusão, cisão, transformação e dissolução da sociedade e o regresso de sociedade dissolvida à actividade;\n2 - Se o contrato social não dispuser diversamente, compete também aos sócios deliberar sobre:\na) A designação de gerentes;\nb) A designação de membros do órgão de fiscalização;\nc) A alienação ou oneração de bens imóveis, a alienação, a oneração e a locação de estabelecimento;\nd) A subscrição ou aquisição de participações noutras sociedades e a sua alienação ou oneração.",
         "source": {
           "diploma": "Decreto-Lei n.º 262/86, de 2 de setembro",
           "article": "Artigo 246.º",
-          "dr_reference": null,
-          "dr_date": null,
-          "url": null
+          "dr_reference": "Decreto-Lei n.º 262/86, de 2 de setembro (texto consolidado)",
+          "dr_date": "2026-01-01",
+          "url": "https://diariodarepublica.pt/dr/legislacao-consolidada/decreto-lei/1986-34443975",
+          "retrieved_at": "2026-07-15T00:00:00Z",
+          "review_method": "automated-capture",
+          "review_note": "Revisão automatizada (wp22): texto estatutário oficial obtido por captura automatizada do espelho consolidado da Procuradoria-Geral Distrital de Lisboa (pgdlisboa.pt, nid=524) em 2026-07-15 e verificado por processo automatizado. NÃO aprovado juridicamente por revisor humano (sem marcador LEGAL_APPROVED_FOR_VERIFIED). Recomenda-se revisão jurídica humana antes de confiar."
         },
-        "verification": "Pending",
+        "verification": "automated_review",
         "cross_refs": []
       },
       {
         "diploma_id": "csc",
         "number": "248",
         "label": "Artigo 248.º",
-        "heading": "",
-        "body": "",
+        "heading": "Assembleias gerais",
+        "body": "1 - Às assembleias gerais das sociedades por quotas aplica-se o disposto sobre assembleias gerais das sociedades anónimas, em tudo o que não estiver especificamente regulado para aquelas.\n2 - Os direitos atribuídos nas sociedades anónimas a uma minoria de accionistas quanto à convocação e à inclusão de assuntos na ordem do dia podem ser sempre exercidos por qualquer sócio de sociedades por quotas.\n3 - A convocação das assembleias gerais compete a qualquer dos gerentes e deve ser feita por meio de carta registada, expedida com a antecedência mínima de quinze dias, a não ser que a lei ou o contrato de sociedade exijam outras formalidades ou estabeleçam prazo mais longo.\n4 - Salvo disposição diversa do contrato de sociedade, a presidência de cada assembleia geral pertence ao sócio nela presente que possuir ou representar maior fracção de capital, preferindo-se, em igualdade de circunstâncias, o mais velho.\n5 - Nenhum sócio pode ser privado, nem sequer por disposição do contrato, de participar na assembleia, ainda que esteja impedido de exercer o direito de voto.\n6 - As actas das assembleias gerais devem ser assinadas por todos os sócios que nelas tenham participado.",
         "source": {
           "diploma": "Decreto-Lei n.º 262/86, de 2 de setembro",
           "article": "Artigo 248.º",
-          "dr_reference": null,
-          "dr_date": null,
-          "url": null
+          "dr_reference": "Decreto-Lei n.º 262/86, de 2 de setembro (texto consolidado)",
+          "dr_date": "2026-01-01",
+          "url": "https://diariodarepublica.pt/dr/legislacao-consolidada/decreto-lei/1986-34443975",
+          "retrieved_at": "2026-07-15T00:00:00Z",
+          "review_method": "automated-capture",
+          "review_note": "Revisão automatizada (wp22): texto estatutário oficial obtido por captura automatizada do espelho consolidado da Procuradoria-Geral Distrital de Lisboa (pgdlisboa.pt, nid=524) em 2026-07-15 e verificado por processo automatizado. NÃO aprovado juridicamente por revisor humano (sem marcador LEGAL_APPROVED_FOR_VERIFIED). Recomenda-se revisão jurídica humana antes de confiar."
         },
-        "verification": "Pending",
+        "verification": "automated_review",
         "cross_refs": []
       },
       {
         "diploma_id": "csc",
         "number": "250",
         "label": "Artigo 250.º",
-        "heading": "",
-        "body": "",
+        "heading": "Votos",
+        "body": "1 - Conta-se um voto por cada cêntimo do valor nominal da quota.\n2 - É, no entanto, permitido que o contrato de sociedade atribua, como direito especial, dois votos por cada cêntimo de valor nominal da quota ou quotas de sócios que, no total, não correspondam a mais de 20% do capital.\n3 - Salvo disposição diversa da lei ou do contrato, as deliberações consideram-se tomadas se obtiverem a maioria dos votos emitidos, não se considerando como tal as abstenções.",
         "source": {
           "diploma": "Decreto-Lei n.º 262/86, de 2 de setembro",
           "article": "Artigo 250.º",
-          "dr_reference": null,
-          "dr_date": null,
-          "url": null
+          "dr_reference": "Decreto-Lei n.º 262/86, de 2 de setembro (texto consolidado)",
+          "dr_date": "2026-01-01",
+          "url": "https://diariodarepublica.pt/dr/legislacao-consolidada/decreto-lei/1986-34443975",
+          "retrieved_at": "2026-07-15T00:00:00Z",
+          "review_method": "automated-capture",
+          "review_note": "Revisão automatizada (wp22): texto estatutário oficial obtido por captura automatizada do espelho consolidado da Procuradoria-Geral Distrital de Lisboa (pgdlisboa.pt, nid=524) em 2026-07-15 e verificado por processo automatizado. NÃO aprovado juridicamente por revisor humano (sem marcador LEGAL_APPROVED_FOR_VERIFIED). Recomenda-se revisão jurídica humana antes de confiar."
         },
-        "verification": "Pending",
+        "verification": "automated_review",
         "cross_refs": []
       },
       {
         "diploma_id": "csc",
         "number": "265",
         "label": "Artigo 265.º",
-        "heading": "",
-        "body": "",
+        "heading": "Maioria necessária",
+        "body": "1 - As deliberações de alteração do contrato só podem ser tomadas por maioria de três quartos dos votos correspondentes ao capital social ou por número ainda mais elevado de votos exigido pelo contrato de sociedade.\n2 - É permitido estipular no contrato de sociedade que este só pode ser alterado, no todo ou em parte, com o voto favorável de um determinado sócio, enquanto este se mantiver na sociedade.\n3 - O disposto no n.º 1 deste artigo aplica-se à deliberação de fusão, de cisão e de transformação da sociedade.",
         "source": {
           "diploma": "Decreto-Lei n.º 262/86, de 2 de setembro",
           "article": "Artigo 265.º",
-          "dr_reference": null,
-          "dr_date": null,
-          "url": null
+          "dr_reference": "Decreto-Lei n.º 262/86, de 2 de setembro (texto consolidado)",
+          "dr_date": "2026-01-01",
+          "url": "https://diariodarepublica.pt/dr/legislacao-consolidada/decreto-lei/1986-34443975",
+          "retrieved_at": "2026-07-15T00:00:00Z",
+          "review_method": "automated-capture",
+          "review_note": "Revisão automatizada (wp22): texto estatutário oficial obtido por captura automatizada do espelho consolidado da Procuradoria-Geral Distrital de Lisboa (pgdlisboa.pt, nid=524) em 2026-07-15 e verificado por processo automatizado. NÃO aprovado juridicamente por revisor humano (sem marcador LEGAL_APPROVED_FOR_VERIFIED). Recomenda-se revisão jurídica humana antes de confiar."
         },
-        "verification": "Pending",
+        "verification": "automated_review",
         "cross_refs": []
       },
       {
         "diploma_id": "csc",
         "number": "270-A",
         "label": "Artigo 270.º-A",
-        "heading": "",
-        "body": "",
+        "heading": "Constituição",
+        "body": "1 - A sociedade unipessoal por quotas é constituída por um sócio único, pessoa singular ou colectiva, que é o titular da totalidade do capital social.\n2 - A sociedade unipessoal por quotas pode resultar da concentração na titularidade de um único sócio das quotas de uma sociedade por quotas, independentemente da causa da concentração.\n3 - A transformação prevista no número anterior efectua-se mediante declaração do sócio único na qual manifeste a sua vontade de transformar a sociedade em sociedade unipessoal por quotas, podendo essa declaração constar do próprio documento que titule a cessão de quotas.\n4 - Por força da transformação prevista no n.º 3 deixam de ser aplicáveis todas as disposições do contrato de sociedade que pressuponham a pluralidade de sócios.\n5 - O estabelecimento individual de responsabilidade limitada pode, a todo o tempo, transformar-se em sociedade unipessoal por quotas, mediante declaração escrita do interessado.",
         "source": {
           "diploma": "Decreto-Lei n.º 262/86, de 2 de setembro",
           "article": "Artigo 270.º-A",
-          "dr_reference": null,
-          "dr_date": null,
-          "url": null
+          "dr_reference": "Decreto-Lei n.º 262/86, de 2 de setembro (texto consolidado)",
+          "dr_date": "2026-01-01",
+          "url": "https://diariodarepublica.pt/dr/legislacao-consolidada/decreto-lei/1986-34443975",
+          "retrieved_at": "2026-07-15T00:00:00Z",
+          "review_method": "automated-capture",
+          "review_note": "Revisão automatizada (wp22): texto estatutário oficial obtido por captura automatizada do espelho consolidado da Procuradoria-Geral Distrital de Lisboa (pgdlisboa.pt, nid=524) em 2026-07-15 e verificado por processo automatizado. NÃO aprovado juridicamente por revisor humano (sem marcador LEGAL_APPROVED_FOR_VERIFIED). Recomenda-se revisão jurídica humana antes de confiar."
         },
-        "verification": "Pending",
+        "verification": "automated_review",
         "cross_refs": []
       },
       {
         "diploma_id": "csc",
         "number": "270-E",
         "label": "Artigo 270.º-E",
-        "heading": "",
-        "body": "",
+        "heading": "Decisões do sócio",
+        "body": "1 - Nas sociedades unipessoais por quotas o sócio único exerce as competências das assembleias gerais, podendo, designadamente, nomear gerentes.\n2 - As decisões do sócio de natureza igual às deliberações da assembleia geral devem ser registadas em acta por ele assinada.",
         "source": {
           "diploma": "Decreto-Lei n.º 262/86, de 2 de setembro",
           "article": "Artigo 270.º-E",
-          "dr_reference": null,
-          "dr_date": null,
-          "url": null
+          "dr_reference": "Decreto-Lei n.º 262/86, de 2 de setembro (texto consolidado)",
+          "dr_date": "2026-01-01",
+          "url": "https://diariodarepublica.pt/dr/legislacao-consolidada/decreto-lei/1986-34443975",
+          "retrieved_at": "2026-07-15T00:00:00Z",
+          "review_method": "automated-capture",
+          "review_note": "Revisão automatizada (wp22): texto estatutário oficial obtido por captura automatizada do espelho consolidado da Procuradoria-Geral Distrital de Lisboa (pgdlisboa.pt, nid=524) em 2026-07-15 e verificado por processo automatizado. NÃO aprovado juridicamente por revisor humano (sem marcador LEGAL_APPROVED_FOR_VERIFIED). Recomenda-se revisão jurídica humana antes de confiar."
         },
-        "verification": "Pending",
+        "verification": "automated_review",
         "cross_refs": []
       },
       {
         "diploma_id": "csc",
         "number": "376",
         "label": "Artigo 376.º",
-        "heading": "",
-        "body": "",
+        "heading": "Assembleia geral anual",
+        "body": "1 - A assembleia geral dos accionistas deve reunir no prazo de três meses a contar da data do encerramento do exercício ou no prazo de cinco meses a contar da mesma data quando se tratar de sociedades que devam apresentar contas consolidadas ou apliquem o método da equivalência patrimonial para:\na) Deliberar sobre o relatório de gestão e as contas do exercício;\nb) Deliberar sobre a proposta de aplicação de resultados;\nc) Proceder à apreciação geral da administração e fiscalização da sociedade e, se disso for caso e embora esses assuntos não constem da ordem do dia, proceder à destituição, dentro da sua competência, ou manifestar a sua desconfiança quanto a administradores;\nd) Proceder às eleições que sejam da sua competência.\n2 - O conselho de administração ou o conselho de administração executivo deve pedir a convocação da assembleia geral referida no número anterior e apresentar as propostas e documentação necessárias para que as deliberações sejam tomadas.\n3 - A violação do dever estabelecido pelo número anterior não impede a convocação posterior da assembleia, mas sujeita os infractores às sanções cominadas na lei.",
         "source": {
           "diploma": "Decreto-Lei n.º 262/86, de 2 de setembro",
           "article": "Artigo 376.º",
-          "dr_reference": null,
-          "dr_date": null,
-          "url": null
+          "dr_reference": "Decreto-Lei n.º 262/86, de 2 de setembro (texto consolidado)",
+          "dr_date": "2026-01-01",
+          "url": "https://diariodarepublica.pt/dr/legislacao-consolidada/decreto-lei/1986-34443975",
+          "retrieved_at": "2026-07-15T00:00:00Z",
+          "review_method": "automated-capture",
+          "review_note": "Revisão automatizada (wp22): texto estatutário oficial obtido por captura automatizada do espelho consolidado da Procuradoria-Geral Distrital de Lisboa (pgdlisboa.pt, nid=524) em 2026-07-15 e verificado por processo automatizado. NÃO aprovado juridicamente por revisor humano (sem marcador LEGAL_APPROVED_FOR_VERIFIED). Recomenda-se revisão jurídica humana antes de confiar."
         },
-        "verification": "Pending",
+        "verification": "automated_review",
         "cross_refs": []
       },
       {
         "diploma_id": "csc",
         "number": "377",
         "label": "Artigo 377.º",
-        "heading": "",
-        "body": "",
+        "heading": "Convocação e forma de realização da assembleia",
+        "body": "1 - As assembleias gerais são convocadas pelo presidente da mesa ou, nos casos especiais previstos na lei, pela comissão de auditoria, pelo conselho geral e de supervisão, pelo conselho fiscal ou pelo tribunal.\n2 - A convocatória deve ser publicada.\n3 - O contrato de sociedade pode exigir outras formas de comunicação aos accionistas e, quando sejam nominativas todas as acções da sociedade, pode substituir as publicações por cartas registadas ou, em relação aos accionistas que comuniquem previamente o seu consentimento, por correio electrónico com recibo de leitura.\n4 - Entre a última divulgação e a data da reunião da assembleia deve mediar, pelo menos, um mês, devendo mediar, entre a expedição das cartas registadas ou mensagens de correio electrónico referidas no n.º 3 e a data da reunião, pelo menos, 21 dias.\n5 - A convocatória, quer publicada, quer enviada por carta ou por correio electrónico, deve conter, pelo menos:\na) As menções exigidas pelo artigo 171.º;\nb) O lugar, o dia e a hora da reunião;\nc) A indicação da espécie, geral ou especial, da assembleia;\nd) Os requisitos a que porventura estejam subordinados a participação e o exercício do direito de voto;\ne) A ordem do dia;\nf) Se o voto por correspondência não for proibido pelos estatutos, descrição do modo como o mesmo se processa, incluindo o endereço, físico ou electrónico, as condições de segurança, o prazo para a recepção das declarações de voto e a data do cômputo das mesmas.\n6 - As assembleias são efectuadas:\na) Na sede da sociedade ou noutro local, escolhido pelo presidente da mesa dentro do território nacional, desde que as instalações desta não permitam a reunião em condições satisfatórias; ou\nb) Salvo disposição em contrário no contrato de sociedade, através de meios telemáticos, devendo a sociedade assegurar a autenticidade das declarações e a segurança das comunicações, procedendo ao registo do seu conteúdo e dos respectivos intervenientes.\n7 - O conselho fiscal, a comissão de auditoria ou o conselho geral e de supervisão só podem convocar a assembleia geral dos accionistas depois de ter, sem resultado, requerido a convocação ao presidente da mesa da assembleia geral, cabendo a esses órgãos, nesse caso, fixar a ordem do dia, bem como, se ocorrerem motivos que o justifiquem, escolher um local ou meio de reunião diverso da reunião física na sede, nos termos do número anterior.\n8 - O aviso convocatório deve mencionar claramente o assunto sobre o qual a deliberação será tomada. Quando este assunto for a alteração do contrato, deve mencionar as cláusulas a modificar, suprimir ou aditar e o texto integral das cláusulas propostas ou a indicação de que tal texto fica à disposição dos accionistas na sede social, a partir da data da publicação, sem prejuízo de na assembleia serem propostas pelos sócios redacções diferentes para as mesmas cláusulas ou serem deliberadas alterações de outras cláusulas que forem necessárias em consequência de alterações relativas a cláusulas mencionadas no aviso.",
         "source": {
           "diploma": "Decreto-Lei n.º 262/86, de 2 de setembro",
           "article": "Artigo 377.º",
-          "dr_reference": null,
-          "dr_date": null,
-          "url": null
+          "dr_reference": "Decreto-Lei n.º 262/86, de 2 de setembro (texto consolidado)",
+          "dr_date": "2026-01-01",
+          "url": "https://diariodarepublica.pt/dr/legislacao-consolidada/decreto-lei/1986-34443975",
+          "retrieved_at": "2026-07-15T00:00:00Z",
+          "review_method": "automated-capture",
+          "review_note": "Revisão automatizada (wp22): texto estatutário oficial obtido por captura automatizada do espelho consolidado da Procuradoria-Geral Distrital de Lisboa (pgdlisboa.pt, nid=524) em 2026-07-15 e verificado por processo automatizado. NÃO aprovado juridicamente por revisor humano (sem marcador LEGAL_APPROVED_FOR_VERIFIED). Recomenda-se revisão jurídica humana antes de confiar."
         },
-        "verification": "Pending",
+        "verification": "automated_review",
         "cross_refs": []
       },
       {
         "diploma_id": "csc",
         "number": "386",
         "label": "Artigo 386.º",
-        "heading": "",
-        "body": "",
+        "heading": "Maioria",
+        "body": "1 - A assembleia geral delibera por maioria dos votos emitidos, seja qual for a percentagem do capital social nela representado, salvo disposição diversa da lei ou do contrato; as abstenções não são contadas.\n2 - Na deliberação sobre a designação de titulares de órgãos sociais ou de revisores ou sociedades de revisores oficiais de contas, se houver várias propostas, fará vencimento aquela que tiver a seu favor maior número de votos.\n3 - A deliberação sobre algum dos assentos referidos no n.º 2 do artigo 383.º deve ser aprovada por dois terços dos votos emitidos, quer a assembleia reúna em primeira quer em segunda convocação.\n4 - Se, na assembleia reunida em segunda convocação, estiverem presentes ou representados accionistas detentores de, pelo menos, metade do capital social, a deliberação sobre algum dos assuntos referidos no n.º 2 do artigo 383.º pode ser tomada pela maioria dos votos emitidos.\n5 - Quando a lei ou o contrato exijam uma maioria qualificada, determinada em função do capital da sociedade, não são tidas em conta para o cálculo dessa maioria as acções cujos titulares estejam legalmente impedidos de votar, quer em geral quer no caso concreto, nem funcionam, a não ser que o contrato disponha diferentemente, as limitações de voto permitidas pelo artigo 384.º, n.º 2, alínea b).",
         "source": {
           "diploma": "Decreto-Lei n.º 262/86, de 2 de setembro",
           "article": "Artigo 386.º",
-          "dr_reference": null,
-          "dr_date": null,
-          "url": null
+          "dr_reference": "Decreto-Lei n.º 262/86, de 2 de setembro (texto consolidado)",
+          "dr_date": "2026-01-01",
+          "url": "https://diariodarepublica.pt/dr/legislacao-consolidada/decreto-lei/1986-34443975",
+          "retrieved_at": "2026-07-15T00:00:00Z",
+          "review_method": "automated-capture",
+          "review_note": "Revisão automatizada (wp22): texto estatutário oficial obtido por captura automatizada do espelho consolidado da Procuradoria-Geral Distrital de Lisboa (pgdlisboa.pt, nid=524) em 2026-07-15 e verificado por processo automatizado. NÃO aprovado juridicamente por revisor humano (sem marcador LEGAL_APPROVED_FOR_VERIFIED). Recomenda-se revisão jurídica humana antes de confiar."
         },
-        "verification": "Pending",
+        "verification": "automated_review",
         "cross_refs": []
       },
       {
         "diploma_id": "csc",
         "number": "388",
         "label": "Artigo 388.º",
-        "heading": "",
-        "body": "",
+        "heading": "Actas",
+        "body": "1 - Deve ser lavrada uma acta de cada reunião da assembleia geral.\n2 - As actas das reuniões da assembleia geral devem ser redigidas e assinadas por quem nelas tenha servido como presidente e secretário.\n3 - A assembleia pode, contudo, deliberar que a acta seja submetida à sua aprovação antes de assinada nos termos do número anterior.",
         "source": {
           "diploma": "Decreto-Lei n.º 262/86, de 2 de setembro",
           "article": "Artigo 388.º",
-          "dr_reference": null,
-          "dr_date": null,
-          "url": null
+          "dr_reference": "Decreto-Lei n.º 262/86, de 2 de setembro (texto consolidado)",
+          "dr_date": "2026-01-01",
+          "url": "https://diariodarepublica.pt/dr/legislacao-consolidada/decreto-lei/1986-34443975",
+          "retrieved_at": "2026-07-15T00:00:00Z",
+          "review_method": "automated-capture",
+          "review_note": "Revisão automatizada (wp22): texto estatutário oficial obtido por captura automatizada do espelho consolidado da Procuradoria-Geral Distrital de Lisboa (pgdlisboa.pt, nid=524) em 2026-07-15 e verificado por processo automatizado. NÃO aprovado juridicamente por revisor humano (sem marcador LEGAL_APPROVED_FOR_VERIFIED). Recomenda-se revisão jurídica humana antes de confiar."
         },
-        "verification": "Pending",
+        "verification": "automated_review",
         "cross_refs": []
       }
     ]
@@ -267,192 +312,228 @@
         "diploma_id": "cc",
         "number": "157",
         "label": "Artigo 157.º",
-        "heading": "",
-        "body": "",
+        "heading": "Campo de aplicação",
+        "body": "As disposições do presente capítulo são aplicáveis às associações que não tenham por fim o lucro económico dos associados, às fundações de interesse social, e ainda às sociedades, quando a analogia das situações o justifique.",
         "source": {
           "diploma": "Decreto-Lei n.º 47344, de 25 de novembro de 1966",
           "article": "Artigo 157.º",
-          "dr_reference": null,
-          "dr_date": null,
-          "url": null
+          "dr_reference": "Decreto-Lei n.º 47344, de 25 de novembro de 1966 (texto consolidado)",
+          "dr_date": "2026-01-01",
+          "url": "https://diariodarepublica.pt/dr/legislacao-consolidada/decreto-lei/1966-34509075",
+          "retrieved_at": "2026-07-15T00:00:00Z",
+          "review_method": "automated-capture",
+          "review_note": "Revisão automatizada (wp22): texto estatutário oficial obtido por captura automatizada do espelho consolidado da Procuradoria-Geral Distrital de Lisboa (pgdlisboa.pt, nid=775) em 2026-07-15 e verificado por processo automatizado. NÃO aprovado juridicamente por revisor humano (sem marcador LEGAL_APPROVED_FOR_VERIFIED). Recomenda-se revisão jurídica humana antes de confiar."
         },
-        "verification": "Pending",
+        "verification": "automated_review",
         "cross_refs": []
       },
       {
         "diploma_id": "cc",
         "number": "173",
         "label": "Artigo 173.º",
-        "heading": "",
-        "body": "",
+        "heading": "Convocação da assembleia",
+        "body": "1. A assembleia geral deve ser convocada pela administração nas circunstâncias fixadas pelos estatutos e, em qualquer caso, uma vez em cada ano para aprovação do balanço.\n2. A assembleia será ainda convocada sempre que a convocação seja requerida, com um fim legítimo, por um conjunto de associados não inferior à quinta parte da sua totalidade, se outro número não for estabelecido nos estatutos.\n3. Se a administração não convocar a assembleia nos casos em que deve fazê-lo, a qualquer associado é lícito efectuar a convocação.",
         "source": {
           "diploma": "Decreto-Lei n.º 47344, de 25 de novembro de 1966",
           "article": "Artigo 173.º",
-          "dr_reference": null,
-          "dr_date": null,
-          "url": null
+          "dr_reference": "Decreto-Lei n.º 47344, de 25 de novembro de 1966 (texto consolidado)",
+          "dr_date": "2026-01-01",
+          "url": "https://diariodarepublica.pt/dr/legislacao-consolidada/decreto-lei/1966-34509075",
+          "retrieved_at": "2026-07-15T00:00:00Z",
+          "review_method": "automated-capture",
+          "review_note": "Revisão automatizada (wp22): texto estatutário oficial obtido por captura automatizada do espelho consolidado da Procuradoria-Geral Distrital de Lisboa (pgdlisboa.pt, nid=775) em 2026-07-15 e verificado por processo automatizado. NÃO aprovado juridicamente por revisor humano (sem marcador LEGAL_APPROVED_FOR_VERIFIED). Recomenda-se revisão jurídica humana antes de confiar."
         },
-        "verification": "Pending",
+        "verification": "automated_review",
         "cross_refs": []
       },
       {
         "diploma_id": "cc",
         "number": "175",
         "label": "Artigo 175.º",
-        "heading": "",
-        "body": "",
+        "heading": "Funcionamento",
+        "body": "1. A assembleia não pode deliberar, em primeira convocação, sem a presença de metade, pelo menos, dos seus associados.\n2. Salvo o disposto nos números seguintes, as deliberações são tomadas por maioria absoluta de votos dos associados presentes.\n3. As deliberações sobre alterações dos estatutos exigem o voto favorável de três quartos do número dos associados presentes.\n4. As deliberações sobre a dissolução ou prorrogação da pessoa colectiva requerem o voto favorável de três quartos do número de todos os associados.\n5. Os estatutos podem exigir um número de votos superior ao fixado nas regras anteriores.",
         "source": {
           "diploma": "Decreto-Lei n.º 47344, de 25 de novembro de 1966",
           "article": "Artigo 175.º",
-          "dr_reference": null,
-          "dr_date": null,
-          "url": null
+          "dr_reference": "Decreto-Lei n.º 47344, de 25 de novembro de 1966 (texto consolidado)",
+          "dr_date": "2026-01-01",
+          "url": "https://diariodarepublica.pt/dr/legislacao-consolidada/decreto-lei/1966-34509075",
+          "retrieved_at": "2026-07-15T00:00:00Z",
+          "review_method": "automated-capture",
+          "review_note": "Revisão automatizada (wp22): texto estatutário oficial obtido por captura automatizada do espelho consolidado da Procuradoria-Geral Distrital de Lisboa (pgdlisboa.pt, nid=775) em 2026-07-15 e verificado por processo automatizado. NÃO aprovado juridicamente por revisor humano (sem marcador LEGAL_APPROVED_FOR_VERIFIED). Recomenda-se revisão jurídica humana antes de confiar."
         },
-        "verification": "Pending",
+        "verification": "automated_review",
         "cross_refs": []
       },
       {
         "diploma_id": "cc",
         "number": "184",
         "label": "Artigo 184.º",
-        "heading": "",
-        "body": "",
+        "heading": "Efeitos da extinção",
+        "body": "1. Extinta a associação, os poderes dos seus órgãos ficam limitados à prática dos actos meramente conservatórios e dos necessários, quer à liquidação do património social, quer à ultimação dos negócios pendentes; pelos actos restantes e pelos danos que deles advenham à associação respondem solidariamente os administradores que os praticarem.\n2. Pelas obrigações que os administradores contraírem, a associação só responde perante terceiros se estes estavam de boa fé e à extinção não tiver sido dada a devida publicidade.",
         "source": {
           "diploma": "Decreto-Lei n.º 47344, de 25 de novembro de 1966",
           "article": "Artigo 184.º",
-          "dr_reference": null,
-          "dr_date": null,
-          "url": null
+          "dr_reference": "Decreto-Lei n.º 47344, de 25 de novembro de 1966 (texto consolidado)",
+          "dr_date": "2026-01-01",
+          "url": "https://diariodarepublica.pt/dr/legislacao-consolidada/decreto-lei/1966-34509075",
+          "retrieved_at": "2026-07-15T00:00:00Z",
+          "review_method": "automated-capture",
+          "review_note": "Revisão automatizada (wp22): texto estatutário oficial obtido por captura automatizada do espelho consolidado da Procuradoria-Geral Distrital de Lisboa (pgdlisboa.pt, nid=775) em 2026-07-15 e verificado por processo automatizado. NÃO aprovado juridicamente por revisor humano (sem marcador LEGAL_APPROVED_FOR_VERIFIED). Recomenda-se revisão jurídica humana antes de confiar."
         },
-        "verification": "Pending",
+        "verification": "automated_review",
         "cross_refs": []
       },
       {
         "diploma_id": "cc",
         "number": "1414",
         "label": "Artigo 1414.º",
-        "heading": "",
-        "body": "",
+        "heading": "Princípio geral",
+        "body": "As fracções de que um edifício se compõe, em condições de constituírem unidades independentes, podem pertencer a proprietários diversos em regime de propriedade horizontal.",
         "source": {
           "diploma": "Decreto-Lei n.º 47344, de 25 de novembro de 1966",
           "article": "Artigo 1414.º",
-          "dr_reference": null,
-          "dr_date": null,
-          "url": null
+          "dr_reference": "Decreto-Lei n.º 47344, de 25 de novembro de 1966 (texto consolidado)",
+          "dr_date": "2026-01-01",
+          "url": "https://diariodarepublica.pt/dr/legislacao-consolidada/decreto-lei/1966-34509075",
+          "retrieved_at": "2026-07-15T00:00:00Z",
+          "review_method": "automated-capture",
+          "review_note": "Revisão automatizada (wp22): texto estatutário oficial obtido por captura automatizada do espelho consolidado da Procuradoria-Geral Distrital de Lisboa (pgdlisboa.pt, nid=775) em 2026-07-15 e verificado por processo automatizado. NÃO aprovado juridicamente por revisor humano (sem marcador LEGAL_APPROVED_FOR_VERIFIED). Recomenda-se revisão jurídica humana antes de confiar."
         },
-        "verification": "Pending",
+        "verification": "automated_review",
         "cross_refs": []
       },
       {
         "diploma_id": "cc",
         "number": "1424",
         "label": "Artigo 1424.º",
-        "heading": "",
-        "body": "",
+        "heading": "Encargos de conservação e fruição",
+        "body": "1 - Salvo disposição em contrário, as despesas necessárias à conservação e fruição das partes comuns do edifício e relativas ao pagamento de serviços de interesse comum são da responsabilidade dos condóminos proprietários das frações no momento das respetivas deliberações, sendo por estes pagas em proporção do valor das suas frações.\n2 - Sem prejuízo do disposto no número anterior, as despesas relativas ao pagamento de serviços de interesse comum podem, mediante disposição do regulamento de condomínio, aprovada, sem oposição, por maioria dos condóminos que representem a maioria do valor total do prédio, ficar a cargo dos condóminos em partes iguais ou em proporção à respetiva fruição, desde que devidamente especificadas e justificados os critérios que determinam a sua imputação.\n3 - As despesas relativas às partes comuns do prédio que sirvam exclusivamente algum dos condóminos ficam a cargo dos que delas se servem.\n4. Nas despesas dos ascensores só participam os condóminos cujas fracções por eles possam ser servidas.\n5 - Nas despesas relativas às rampas de acesso e às plataformas elevatórias, quando colocadas nos termos do n.º 3 do artigo seguinte, só participam os condóminos que tiverem procedido à referida colocação.\n6 - Caso o estado de conservação das partes comuns referidas no n.º 3 do artigo 1421.º afete o estado de conservação ou o uso das demais partes comuns do prédio, o condómino a favor de quem está afeto o uso exclusivo daquelas apenas suporta o valor das respetivas despesas de reparação na proporção indicada no n.º 1, salvo se tal necessidade decorrer de facto que lhe seja imputável.",
         "source": {
           "diploma": "Decreto-Lei n.º 47344, de 25 de novembro de 1966",
           "article": "Artigo 1424.º",
-          "dr_reference": null,
-          "dr_date": null,
-          "url": null
+          "dr_reference": "Decreto-Lei n.º 47344, de 25 de novembro de 1966 (texto consolidado)",
+          "dr_date": "2026-01-01",
+          "url": "https://diariodarepublica.pt/dr/legislacao-consolidada/decreto-lei/1966-34509075",
+          "retrieved_at": "2026-07-15T00:00:00Z",
+          "review_method": "automated-capture",
+          "review_note": "Revisão automatizada (wp22): texto estatutário oficial obtido por captura automatizada do espelho consolidado da Procuradoria-Geral Distrital de Lisboa (pgdlisboa.pt, nid=775) em 2026-07-15 e verificado por processo automatizado. NÃO aprovado juridicamente por revisor humano (sem marcador LEGAL_APPROVED_FOR_VERIFIED). Recomenda-se revisão jurídica humana antes de confiar."
         },
-        "verification": "Pending",
+        "verification": "automated_review",
         "cross_refs": []
       },
       {
         "diploma_id": "cc",
         "number": "1430",
         "label": "Artigo 1430.º",
-        "heading": "",
-        "body": "",
+        "heading": "Órgãos administrativos",
+        "body": "1. A administração das partes comuns do edifício compete à assembleia dos condóminos e a um administrador.\n2. Cada condómino tem na assembleia tantos votos quantas as unidades inteiras que couberem na percentagem ou permilagem a que o artigo 1418.º se refere.",
         "source": {
           "diploma": "Decreto-Lei n.º 47344, de 25 de novembro de 1966",
           "article": "Artigo 1430.º",
-          "dr_reference": null,
-          "dr_date": null,
-          "url": null
+          "dr_reference": "Decreto-Lei n.º 47344, de 25 de novembro de 1966 (texto consolidado)",
+          "dr_date": "2026-01-01",
+          "url": "https://diariodarepublica.pt/dr/legislacao-consolidada/decreto-lei/1966-34509075",
+          "retrieved_at": "2026-07-15T00:00:00Z",
+          "review_method": "automated-capture",
+          "review_note": "Revisão automatizada (wp22): texto estatutário oficial obtido por captura automatizada do espelho consolidado da Procuradoria-Geral Distrital de Lisboa (pgdlisboa.pt, nid=775) em 2026-07-15 e verificado por processo automatizado. NÃO aprovado juridicamente por revisor humano (sem marcador LEGAL_APPROVED_FOR_VERIFIED). Recomenda-se revisão jurídica humana antes de confiar."
         },
-        "verification": "Pending",
+        "verification": "automated_review",
         "cross_refs": []
       },
       {
         "diploma_id": "cc",
         "number": "1432",
         "label": "Artigo 1432.º",
-        "heading": "",
-        "body": "",
+        "heading": "Convocação e funcionamento da assembleia",
+        "body": "1 - A assembleia é convocada por meio de carta registada, enviada com 10 dias de antecedência, ou mediante aviso convocatório feito com a mesma antecedência, desde que haja recibo de recepção assinado pelos condóminos.\n2 - A convocatória indicada no n.º 1 é efetuada através de correio eletrónico para os condóminos que manifestem essa vontade em assembleia de condóminos realizada anteriormente, devendo essa manifestação de vontade ficar lavrada em ata com a indicação do respetivo endereço de correio eletrónico.\n3 - Na situação prevista no número anterior, o condómino deve enviar, pelo mesmo meio, recibo de receção do respetivo e-mail convocatório.\n4 - A convocatória deve indicar o dia, hora, local e ordem de trabalhos da reunião e informar sobre os assuntos cujas deliberações só podem ser aprovadas por unanimidade dos votos.\n5. As deliberações são tomadas, salvo disposição especial, por maioria dos votos representativos do capital investido.\n6 - Se não comparecer o número de condóminos suficiente para se obter vencimento e na convocatória não tiver sido desde logo fixada outra data, considera-se convocada nova reunião para uma semana depois, na mesma hora e local, podendo neste caso a assembleia deliberar por maioria de votos dos condóminos presentes, desde que estes representem, pelo menos, um quarto do valor total do prédio.\n7 - Sem prejuízo do disposto no número anterior, se estiverem reunidas as condições para garantir a presença, no próprio dia, de condóminos que representem um quarto do valor total do prédio, a convocatória pode ser feita para trinta minutos depois, no mesmo local.\n8 - As deliberações que careçam de ser aprovadas por unanimidade dos votos podem ser aprovadas por unanimidade dos condóminos presentes desde que estes representem, pelo menos, dois terços do capital investido, sob condição de aprovação da deliberação pelos condóminos ausentes, nos termos dos números seguintes.\n9 - As deliberações têm de ser comunicadas a todos os condóminos ausentes, no prazo de 30 dias, por carta registada com aviso de receção ou por correio eletrónico, aplicando-se, neste caso, o disposto nos n.os 2 e 3.\n10 - Os condóminos têm 90 dias após a recepção da carta referida no número anterior para comunicar, por escrito, à assembleia de condóminos o seu assentimento ou a sua discordância.\n11 - O silêncio dos condóminos é considerado como aprovação da deliberação comunicada nos termos do n.º 9.\n12 - Os condóminos não residentes devem comunicar, por escrito, ao administrador o seu domicílio ou o do seu representante.",
         "source": {
           "diploma": "Decreto-Lei n.º 47344, de 25 de novembro de 1966",
           "article": "Artigo 1432.º",
-          "dr_reference": null,
-          "dr_date": null,
-          "url": null
+          "dr_reference": "Decreto-Lei n.º 47344, de 25 de novembro de 1966 (texto consolidado)",
+          "dr_date": "2026-01-01",
+          "url": "https://diariodarepublica.pt/dr/legislacao-consolidada/decreto-lei/1966-34509075",
+          "retrieved_at": "2026-07-15T00:00:00Z",
+          "review_method": "automated-capture",
+          "review_note": "Revisão automatizada (wp22): texto estatutário oficial obtido por captura automatizada do espelho consolidado da Procuradoria-Geral Distrital de Lisboa (pgdlisboa.pt, nid=775) em 2026-07-15 e verificado por processo automatizado. NÃO aprovado juridicamente por revisor humano (sem marcador LEGAL_APPROVED_FOR_VERIFIED). Recomenda-se revisão jurídica humana antes de confiar."
         },
-        "verification": "Pending",
+        "verification": "automated_review",
         "cross_refs": []
       },
       {
         "diploma_id": "cc",
         "number": "1433",
         "label": "Artigo 1433.º",
-        "heading": "",
-        "body": "",
+        "heading": "Impugnação das deliberações",
+        "body": "1. As deliberações da assembleia contrárias à lei ou a regulamentos anteriormente aprovados são anuláveis a requerimento de qualquer condómino que as não tenha aprovado.\n2 - No prazo de 10 dias contado da deliberação, para os condóminos presentes, ou contado da sua comunicação, para os condóminos ausentes, pode ser exigida ao administrador a convocação de uma assembleia extraordinária, a ter lugar no prazo de 20 dias, para revogação das deliberações inválidas ou ineficazes.\n3 - No prazo de 30 dias contado nos termos do número anterior, pode qualquer condómino sujeitar a deliberação a um centro de arbitragem.\n4 - O direito de propor a acção de anulação caduca no prazo de 20 dias contados sobre a deliberação da assembleia extraordinária ou, caso esta não tenha sido solicitada, no prazo de 60 dias sobre a data da deliberação.\n5. Pode também ser requerida a suspensão das deliberações nos termos da lei de processo.\n6. A representação judiciária dos condóminos contra quem são propostas as acções compete ao administrador ou à pessoa que a assembleia designar para esse efeito.",
         "source": {
           "diploma": "Decreto-Lei n.º 47344, de 25 de novembro de 1966",
           "article": "Artigo 1433.º",
-          "dr_reference": null,
-          "dr_date": null,
-          "url": null
+          "dr_reference": "Decreto-Lei n.º 47344, de 25 de novembro de 1966 (texto consolidado)",
+          "dr_date": "2026-01-01",
+          "url": "https://diariodarepublica.pt/dr/legislacao-consolidada/decreto-lei/1966-34509075",
+          "retrieved_at": "2026-07-15T00:00:00Z",
+          "review_method": "automated-capture",
+          "review_note": "Revisão automatizada (wp22): texto estatutário oficial obtido por captura automatizada do espelho consolidado da Procuradoria-Geral Distrital de Lisboa (pgdlisboa.pt, nid=775) em 2026-07-15 e verificado por processo automatizado. NÃO aprovado juridicamente por revisor humano (sem marcador LEGAL_APPROVED_FOR_VERIFIED). Recomenda-se revisão jurídica humana antes de confiar."
         },
-        "verification": "Pending",
+        "verification": "automated_review",
         "cross_refs": []
       },
       {
         "diploma_id": "cc",
         "number": "1436",
         "label": "Artigo 1436.º",
-        "heading": "",
-        "body": "",
+        "heading": "Funções do administrador",
+        "body": "1 - São funções do administrador, além de outras que lhe sejam atribuídas pela assembleia:\na) Convocar a assembleia dos condóminos;\nb) Elaborar o orçamento das receitas e despesas relativas a cada ano;\nc) Verificar a existência do seguro contra o risco de incêndio, propondo à assembleia o montante do capital seguro;\nd) Cobrar as receitas e efectuar as despesas comuns;\ne) Verificar a existência do fundo comum de reserva;\nf) Exigir dos condóminos a sua quota-parte nas despesas aprovadas, incluindo os juros legais devidos e as sanções pecuniárias fixadas pelo regulamento do condomínio ou por deliberação da assembleia;\ng) Realizar os actos conservatórios dos direitos relativos aos bens comuns;\nh) Regular o uso das coisas comuns e a prestação dos serviços de interesse comum;\ni) Executar as deliberações da assembleia que não tenham sido objeto de impugnação, no prazo máximo de 15 dias úteis, ou no prazo que por aquela for fixado, salvo nos casos de impossibilidade devidamente fundamentada;\nj) Representar o conjunto dos condóminos perante as autoridades administrativas.\nl) Prestar contas à assembleia;\nm) Assegurar a execução do regulamento e das disposições legais e administrativas relativas ao condomínio;\nn) Guardar e manter todos os documentos que digam respeito ao condomínio.\no) Informar, por escrito ou por correio eletrónico, os condóminos sempre que o condomínio for citado ou notificado no âmbito de um processo judicial, processo arbitral, procedimento de injunção, procedimento contraordenacional ou procedimento administrativo;\np) Informar, pelo menos semestralmente e por escrito ou por correio eletrónico, os condóminos acerca dos desenvolvimentos de qualquer processo judicial, processo arbitral, procedimento de injunção, procedimento contraordenacional ou procedimento administrativo, salvo no que toca aos processos sujeitos a segredo de justiça ou a processos cuja informação deva, por outro motivo, ser mantida sob reserva;\nq) Emitir, no prazo máximo de 10 dias, declaração de dívida do condómino, sempre que tal seja solicitado pelo mesmo, nomeadamente para efeitos de alienação da fração.\nr) Intervir em todas as situações de urgência que o exijam, convocando de imediato assembleia extraordinária de condóminos para ratificação da sua atuação.\n2 - Sempre que estiver em causa deliberação da assembleia de condóminos relativamente a obras de conservação extraordinária ou que constituam inovação, a realizar no edifício ou no conjunto de edifícios, o administrador está obrigado a apresentar pelo menos três orçamentos de diferentes proveniências para a execução das mesmas, desde que o regulamento de condomínio ou a assembleia de condóminos não disponha de forma diferente.\n3 - O administrador de condomínio que não cumprir as funções que lhe são cometidas neste artigo, noutras disposições legais ou em deliberações da assembleia de condóminos é civilmente responsável pela sua omissão, sem prejuízo de eventual responsabilidade criminal, se aplicável.",
         "source": {
           "diploma": "Decreto-Lei n.º 47344, de 25 de novembro de 1966",
           "article": "Artigo 1436.º",
-          "dr_reference": null,
-          "dr_date": null,
-          "url": null
+          "dr_reference": "Decreto-Lei n.º 47344, de 25 de novembro de 1966 (texto consolidado)",
+          "dr_date": "2026-01-01",
+          "url": "https://diariodarepublica.pt/dr/legislacao-consolidada/decreto-lei/1966-34509075",
+          "retrieved_at": "2026-07-15T00:00:00Z",
+          "review_method": "automated-capture",
+          "review_note": "Revisão automatizada (wp22): texto estatutário oficial obtido por captura automatizada do espelho consolidado da Procuradoria-Geral Distrital de Lisboa (pgdlisboa.pt, nid=775) em 2026-07-15 e verificado por processo automatizado. NÃO aprovado juridicamente por revisor humano (sem marcador LEGAL_APPROVED_FOR_VERIFIED). Recomenda-se revisão jurídica humana antes de confiar."
         },
-        "verification": "Pending",
+        "verification": "automated_review",
         "cross_refs": []
       },
       {
         "diploma_id": "cc",
         "number": "1438",
         "label": "Artigo 1438.º",
-        "heading": "",
-        "body": "",
+        "heading": "Recurso dos actos do administrador",
+        "body": "Dos actos do administrador cabe recurso para a assembleia, a qual pode neste caso ser convocada pelo condómino recorrente.",
         "source": {
           "diploma": "Decreto-Lei n.º 47344, de 25 de novembro de 1966",
           "article": "Artigo 1438.º",
-          "dr_reference": null,
-          "dr_date": null,
-          "url": null
+          "dr_reference": "Decreto-Lei n.º 47344, de 25 de novembro de 1966 (texto consolidado)",
+          "dr_date": "2026-01-01",
+          "url": "https://diariodarepublica.pt/dr/legislacao-consolidada/decreto-lei/1966-34509075",
+          "retrieved_at": "2026-07-15T00:00:00Z",
+          "review_method": "automated-capture",
+          "review_note": "Revisão automatizada (wp22): texto estatutário oficial obtido por captura automatizada do espelho consolidado da Procuradoria-Geral Distrital de Lisboa (pgdlisboa.pt, nid=775) em 2026-07-15 e verificado por processo automatizado. NÃO aprovado juridicamente por revisor humano (sem marcador LEGAL_APPROVED_FOR_VERIFIED). Recomenda-se revisão jurídica humana antes de confiar."
         },
-        "verification": "Pending",
+        "verification": "automated_review",
         "cross_refs": []
       },
       {
         "diploma_id": "cc",
         "number": "1438-A",
         "label": "Artigo 1438.º-A",
-        "heading": "",
-        "body": "",
+        "heading": "Propriedade horizontal de conjuntos de edifícios",
+        "body": "O regime previsto neste capítulo pode ser aplicado, com as necessárias adaptações, a conjuntos de edifícios contíguos funcionalmente ligados entre si pela existência de partes comuns afectadas ao uso de todas ou algumas unidades ou fracções que os compõem.",
         "source": {
           "diploma": "Decreto-Lei n.º 47344, de 25 de novembro de 1966",
           "article": "Artigo 1438.º-A",
-          "dr_reference": null,
-          "dr_date": null,
-          "url": null
+          "dr_reference": "Decreto-Lei n.º 47344, de 25 de novembro de 1966 (texto consolidado)",
+          "dr_date": "2026-01-01",
+          "url": "https://diariodarepublica.pt/dr/legislacao-consolidada/decreto-lei/1966-34509075",
+          "retrieved_at": "2026-07-15T00:00:00Z",
+          "review_method": "automated-capture",
+          "review_note": "Revisão automatizada (wp22): texto estatutário oficial obtido por captura automatizada do espelho consolidado da Procuradoria-Geral Distrital de Lisboa (pgdlisboa.pt, nid=775) em 2026-07-15 e verificado por processo automatizado. NÃO aprovado juridicamente por revisor humano (sem marcador LEGAL_APPROVED_FOR_VERIFIED). Recomenda-se revisão jurídica humana antes de confiar."
         },
-        "verification": "Pending",
+        "verification": "automated_review",
         "cross_refs": []
       }
     ]
@@ -470,96 +551,114 @@
         "diploma_id": "dl-268-94",
         "number": "1",
         "label": "Artigo 1.º",
-        "heading": "",
-        "body": "",
+        "heading": "Deliberações da assembleia de condóminos",
+        "body": "1 - São obrigatoriamente lavradas atas das assembleias de condóminos, redigidas e assinadas por quem nelas tenha intervindo como presidente e subscritas por todos os condóminos nelas presentes.\n2 - A ata contém um resumo do que de essencial se tiver passado na assembleia de condóminos, indicando, designadamente, a data e o local da reunião, os condóminos presentes e ausentes, os assuntos apreciados, as decisões e as deliberações tomadas com o resultado de cada votação e o facto de a ata ter sido lida e aprovada.\n3 - A eficácia das deliberações depende da aprovação da respetiva ata, independentemente da mesma se encontrar assinada pelos condóminos.\n4 - As deliberações devidamente consignadas em ata são vinculativas tanto para os condóminos como para os terceiros titulares de direitos relativos às frações.\n5 - Incumbe ao administrador, ainda que provisório, guardar as atas e facultar a respetiva consulta, quer aos condóminos, quer aos terceiros a que se refere o número anterior.\n6 - A assinatura e a subscrição da ata podem ser efetuadas por assinatura eletrónica qualificada ou por assinatura manuscrita, aposta sobre o documento original ou sobre documento digitalizado que contenha outras assinaturas.\n7 - Para efeitos do disposto no presente artigo, vale como subscrição a declaração do condómino, enviada por correio eletrónico, para o endereço da administração do condomínio, em como concorda com o conteúdo da ata que lhe tenha sido remetida pela mesma via, declaração esta que deve ser junta, como anexo, ao original da ata.\n8 - Compete à administração do condomínio a escolha por um ou por vários dos meios previstos nos números anteriores, bem como a definição da ordem de recolha das assinaturas ou de recolha das declarações por via eletrónica, a fim de assegurar a aposição das assinaturas num único documento.",
         "source": {
           "diploma": "Decreto-Lei n.º 268/94, de 25 de outubro",
           "article": "Artigo 1.º",
-          "dr_reference": null,
-          "dr_date": null,
-          "url": null
+          "dr_reference": "Decreto-Lei n.º 268/94, de 25 de outubro (texto consolidado)",
+          "dr_date": "2026-01-01",
+          "url": "https://diariodarepublica.pt/dr/legislacao-consolidada/decreto-lei/1994-144575382",
+          "retrieved_at": "2026-07-15T00:00:00Z",
+          "review_method": "automated-capture",
+          "review_note": "Revisão automatizada (wp22): texto estatutário oficial obtido por captura automatizada do espelho consolidado da Procuradoria-Geral Distrital de Lisboa (pgdlisboa.pt, nid=725) em 2026-07-15 e verificado por processo automatizado. NÃO aprovado juridicamente por revisor humano (sem marcador LEGAL_APPROVED_FOR_VERIFIED). Recomenda-se revisão jurídica humana antes de confiar."
         },
-        "verification": "Pending",
+        "verification": "automated_review",
         "cross_refs": []
       },
       {
         "diploma_id": "dl-268-94",
         "number": "2",
         "label": "Artigo 2.º",
-        "heading": "",
-        "body": "",
+        "heading": "Documentos e notificações relativos ao condomínio",
+        "body": "1 - Deverão ficar depositadas, à guarda do administrador, as cópias autenticadas dos documentos utilizados para instruir o processo de constituição da propriedade horizontal, designadamente do projecto aprovado pela entidade pública competente.\n2 - O administrador tem o dever de guardar e dar a conhecer aos condóminos todas as notificações dirigidas ao condomínio, designadamente as provenientes das autoridades administrativas.",
         "source": {
           "diploma": "Decreto-Lei n.º 268/94, de 25 de outubro",
           "article": "Artigo 2.º",
-          "dr_reference": null,
-          "dr_date": null,
-          "url": null
+          "dr_reference": "Decreto-Lei n.º 268/94, de 25 de outubro (texto consolidado)",
+          "dr_date": "2026-01-01",
+          "url": "https://diariodarepublica.pt/dr/legislacao-consolidada/decreto-lei/1994-144575382",
+          "retrieved_at": "2026-07-15T00:00:00Z",
+          "review_method": "automated-capture",
+          "review_note": "Revisão automatizada (wp22): texto estatutário oficial obtido por captura automatizada do espelho consolidado da Procuradoria-Geral Distrital de Lisboa (pgdlisboa.pt, nid=725) em 2026-07-15 e verificado por processo automatizado. NÃO aprovado juridicamente por revisor humano (sem marcador LEGAL_APPROVED_FOR_VERIFIED). Recomenda-se revisão jurídica humana antes de confiar."
         },
-        "verification": "Pending",
+        "verification": "automated_review",
         "cross_refs": []
       },
       {
         "diploma_id": "dl-268-94",
         "number": "3",
         "label": "Artigo 3.º",
-        "heading": "",
-        "body": "",
+        "heading": "Informação",
+        "body": "1 - Na entrada do prédio ou conjunto de prédios ou em local de passagem comum aos condóminos deverá ser afixada a identificação do administrador em exercício ou de quem, a título provisório, desempenhe as funções deste.\n2 - Os condóminos devem informar o administrador do condomínio do seu número de contribuinte, morada, contactos telefónicos e endereço de correio eletrónico e atualizar tais informações sempre que as mesmas sejam objeto de alteração.\n3 - A alienação das frações deve ser objeto de comunicação ao administrador do condomínio pelo condómino alienante, por correio registado expedido no prazo máximo de 15 dias a contar da mesma, devendo esta informação conter o nome completo e o número de identificação fiscal do novo proprietário.\n4 - A falta de comunicação indicada no número anterior responsabiliza o condómino alienante pelo valor das despesas inerentes à identificação do novo proprietário e pelos encargos suportados com a mora no pagamento dos encargos que se vencerem após a alienação.",
         "source": {
           "diploma": "Decreto-Lei n.º 268/94, de 25 de outubro",
           "article": "Artigo 3.º",
-          "dr_reference": null,
-          "dr_date": null,
-          "url": null
+          "dr_reference": "Decreto-Lei n.º 268/94, de 25 de outubro (texto consolidado)",
+          "dr_date": "2026-01-01",
+          "url": "https://diariodarepublica.pt/dr/legislacao-consolidada/decreto-lei/1994-144575382",
+          "retrieved_at": "2026-07-15T00:00:00Z",
+          "review_method": "automated-capture",
+          "review_note": "Revisão automatizada (wp22): texto estatutário oficial obtido por captura automatizada do espelho consolidado da Procuradoria-Geral Distrital de Lisboa (pgdlisboa.pt, nid=725) em 2026-07-15 e verificado por processo automatizado. NÃO aprovado juridicamente por revisor humano (sem marcador LEGAL_APPROVED_FOR_VERIFIED). Recomenda-se revisão jurídica humana antes de confiar."
         },
-        "verification": "Pending",
+        "verification": "automated_review",
         "cross_refs": []
       },
       {
         "diploma_id": "dl-268-94",
         "number": "4",
         "label": "Artigo 4.º",
-        "heading": "",
-        "body": "",
+        "heading": "Fundo comum de reserva",
+        "body": "1 - É obrigatória a constituição, em cada condomínio, de um fundo comum de reserva para custear as despesas de conservação do edifício ou conjunto de edifícios.\n2 - Cada condómino contribui para esse fundo com uma quantia correspondente a, pelo menos, 10 % da sua quota-parte nas restantes despesas do condomínio.\n3 - No caso de, por deliberação da assembleia, o fundo comum de reserva ser utilizado para fim diverso do indicado no n.º 1, os condóminos devem assegurar o pagamento, no prazo máximo de 12 meses a contar da deliberação, da quotização extraordinária necessária à reposição do montante utilizado, aplicando-se o disposto no artigo 6.º no caso de não cumprimento dessa obrigação.\n4 - O fundo comum de reserva deve ser depositado em instituição bancária, competindo à assembleia de condóminos a respetiva administração.",
         "source": {
           "diploma": "Decreto-Lei n.º 268/94, de 25 de outubro",
           "article": "Artigo 4.º",
-          "dr_reference": null,
-          "dr_date": null,
-          "url": null
+          "dr_reference": "Decreto-Lei n.º 268/94, de 25 de outubro (texto consolidado)",
+          "dr_date": "2026-01-01",
+          "url": "https://diariodarepublica.pt/dr/legislacao-consolidada/decreto-lei/1994-144575382",
+          "retrieved_at": "2026-07-15T00:00:00Z",
+          "review_method": "automated-capture",
+          "review_note": "Revisão automatizada (wp22): texto estatutário oficial obtido por captura automatizada do espelho consolidado da Procuradoria-Geral Distrital de Lisboa (pgdlisboa.pt, nid=725) em 2026-07-15 e verificado por processo automatizado. NÃO aprovado juridicamente por revisor humano (sem marcador LEGAL_APPROVED_FOR_VERIFIED). Recomenda-se revisão jurídica humana antes de confiar."
         },
-        "verification": "Pending",
+        "verification": "automated_review",
         "cross_refs": []
       },
       {
         "diploma_id": "dl-268-94",
         "number": "5",
         "label": "Artigo 5.º",
-        "heading": "",
-        "body": "",
+        "heading": "Actualização do seguro",
+        "body": "1 - É obrigatória a actualização anual do seguro contra o risco de incêndio.\n2 - Compete à assembleia de condóminos deliberar o montante de cada actualização.\n3 - Se a assembleia não aprovar o montante da actualização, deve o administrador actualizar o seguro de acordo com o índice publicado trimestralmente pelo Instituto de Seguros de Portugal.",
         "source": {
           "diploma": "Decreto-Lei n.º 268/94, de 25 de outubro",
           "article": "Artigo 5.º",
-          "dr_reference": null,
-          "dr_date": null,
-          "url": null
+          "dr_reference": "Decreto-Lei n.º 268/94, de 25 de outubro (texto consolidado)",
+          "dr_date": "2026-01-01",
+          "url": "https://diariodarepublica.pt/dr/legislacao-consolidada/decreto-lei/1994-144575382",
+          "retrieved_at": "2026-07-15T00:00:00Z",
+          "review_method": "automated-capture",
+          "review_note": "Revisão automatizada (wp22): texto estatutário oficial obtido por captura automatizada do espelho consolidado da Procuradoria-Geral Distrital de Lisboa (pgdlisboa.pt, nid=725) em 2026-07-15 e verificado por processo automatizado. NÃO aprovado juridicamente por revisor humano (sem marcador LEGAL_APPROVED_FOR_VERIFIED). Recomenda-se revisão jurídica humana antes de confiar."
         },
-        "verification": "Pending",
+        "verification": "automated_review",
         "cross_refs": []
       },
       {
         "diploma_id": "dl-268-94",
         "number": "6",
         "label": "Artigo 6.º",
-        "heading": "",
-        "body": "",
+        "heading": "Dívidas por encargos de condomínio",
+        "body": "1 - A ata da reunião da assembleia de condóminos que tiver deliberado o montante das contribuições a pagar ao condomínio menciona o montante anual a pagar por cada condómino e a data de vencimento das respetivas obrigações.\n2 - A ata da reunião da assembleia de condóminos que reúna os requisitos indicados no n.º 1 constitui título executivo contra o proprietário que deixar de pagar, no prazo estabelecido, a sua quota-parte.\n3 - Consideram-se abrangidos pelo título executivo os juros de mora, à taxa legal, da obrigação dele constante, bem como as sanções pecuniárias, desde que aprovadas em assembleia de condóminos ou previstas no regulamento do condomínio.\n4 - O administrador deve instaurar ação judicial destinada a cobrar as quantias referidas nos n.os 1 e 3.\n5 - A ação judicial referida no número anterior deve ser instaurada no prazo de 90 dias a contar da data do primeiro incumprimento do condómino, salvo deliberação em contrário da assembleia de condóminos e desde que o valor em dívida seja igual ou superior ao valor do indexante dos apoios sociais do respetivo ano civil.",
         "source": {
           "diploma": "Decreto-Lei n.º 268/94, de 25 de outubro",
           "article": "Artigo 6.º",
-          "dr_reference": null,
-          "dr_date": null,
-          "url": null
+          "dr_reference": "Decreto-Lei n.º 268/94, de 25 de outubro (texto consolidado)",
+          "dr_date": "2026-01-01",
+          "url": "https://diariodarepublica.pt/dr/legislacao-consolidada/decreto-lei/1994-144575382",
+          "retrieved_at": "2026-07-15T00:00:00Z",
+          "review_method": "automated-capture",
+          "review_note": "Revisão automatizada (wp22): texto estatutário oficial obtido por captura automatizada do espelho consolidado da Procuradoria-Geral Distrital de Lisboa (pgdlisboa.pt, nid=725) em 2026-07-15 e verificado por processo automatizado. NÃO aprovado juridicamente por revisor humano (sem marcador LEGAL_APPROVED_FOR_VERIFIED). Recomenda-se revisão jurídica humana antes de confiar."
         },
-        "verification": "Pending",
+        "verification": "automated_review",
         "cross_refs": []
       }
     ]
@@ -577,16 +676,19 @@
         "diploma_id": "dl-76-a-2006",
         "number": "1",
         "label": "Artigo 1.º",
-        "heading": "",
-        "body": "",
+        "heading": "Objecto",
+        "body": "1 - O presente decreto-lei adopta medidas de simplificação e eliminação de actos e procedimentos registrais e notariais, tais como:\na) A eliminação da obrigatoriedade das escrituras públicas relativas aos actos da vida das empresas, ressalvando situações como aquelas em que seja exigida forma mais solene para a transmissão dos bens com que os sócios entram para a sociedade;\nb) A reformulação do regime e dos procedimentos do registo comercial, designadamente através da redução do número de actos sujeitos a registo, da prática de actos através do registo por depósito, da criação de um novo regime de registo de transmissão de quotas, da simplificação do regime da fusão e cisão de sociedades, da criação de condições para a plena utilização e aplicação dos sistemas informáticos e da reformulação de actos e procedimentos internos, sempre com garantia da segurança jurídica e da legalidade;\nc) A eliminação da obrigatoriedade de existência dos livros da escrituração mercantil de inventário, balanço, diário, razão e copiador e a eliminação da legalização dos livros de actas nas conservatórias do registo comercial;\nd) A criação de um procedimento especial de extinção imediata de entidades comerciais;\ne) A criação de procedimentos administrativos de dissolução e de liquidação de entidades comerciais da competência das conservatórias que consagra, designadamente, causas oficiosas de dissolução e liquidação por iniciativa do Estado, quando existam indicadores objectivos de que a entidade em causa não tem actividade efectiva embora permaneça juridicamente existente;\nf) O alargamento das entidades que podem reconhecer assinaturas em documentos e autenticar e traduzir documentos, permitindo que tanto os notários como os advogados, os solicitadores, as câmaras de comércio e indústria e as conservatórias possam fazê-lo;\ng) A alteração do regime dos custos da prática de actos da vida das empresas, criando condições para a sua redução e permitindo, designadamente, que as taxas e emolumentos cobrados nas conservatórias do registo comercial se tornem mais claros e apreensíveis para o utente, passando a incluir, num valor único e fixo de registo, os montantes antes cobrados avulsamente, como os emolumentos pessoais, as certidões, as publicações e as inscrições subsequentes no ficheiro central de pessoas colectivas;\nh) A eliminação da competência territorial das conservatórias do registo comercial a partir de 1 de Janeiro de 2007.\n2 - O presente decreto-lei visa ainda actualizar a legislação societária nacional, adoptando designadamente medidas para actualizar e flexibilizar os modelos de governo das sociedades anónimas.\n3 - Aprova-se ainda o regime jurídico dos procedimentos administrativos de dissolução e de liquidação de entidades comerciais, que se publica em anexo ao presente decreto-lei, do qual faz parte integrante.",
         "source": {
           "diploma": "Decreto-Lei n.º 76-A/2006, de 29 de março",
           "article": "Artigo 1.º",
-          "dr_reference": null,
-          "dr_date": null,
-          "url": null
+          "dr_reference": "Decreto-Lei n.º 76-A/2006, de 29 de março (texto consolidado)",
+          "dr_date": "2026-01-01",
+          "url": "https://diariodarepublica.pt/dr/detalhe/decreto-lei/76-a-2006-620286",
+          "retrieved_at": "2026-07-15T00:00:00Z",
+          "review_method": "automated-capture",
+          "review_note": "Revisão automatizada (wp22): texto estatutário oficial obtido por captura automatizada do espelho consolidado da Procuradoria-Geral Distrital de Lisboa (pgdlisboa.pt, nid=731) em 2026-07-15 e verificado por processo automatizado. NÃO aprovado juridicamente por revisor humano (sem marcador LEGAL_APPROVED_FOR_VERIFIED). Recomenda-se revisão jurídica humana antes de confiar."
         },
-        "verification": "Pending",
+        "verification": "automated_review",
         "cross_refs": []
       },
       {
@@ -620,48 +722,57 @@
         "diploma_id": "cod-cooperativo",
         "number": "33",
         "label": "Artigo 33.º",
-        "heading": "",
-        "body": "",
+        "heading": "Definição, composição e deliberações da assembleia geral",
+        "body": "1 - A assembleia geral é o órgão supremo da cooperativa, sendo as suas deliberações, tomadas nos termos legais e estatutários, obrigatórias para os restantes órgãos da cooperativa e para todos os seus membros.\n2 - Participam na assembleia geral todos os cooperadores e membros investidores no pleno gozo dos seus direitos.\n3 - Os estatutos da cooperativa podem prever assembleias gerais de delegados, os quais são eleitos nos termos do artigo 44.º do presente Código.",
         "source": {
           "diploma": "Lei n.º 119/2015, de 31 de agosto",
           "article": "Artigo 33.º",
-          "dr_reference": null,
-          "dr_date": null,
-          "url": null
+          "dr_reference": "Lei n.º 119/2015, de 31 de agosto (texto consolidado)",
+          "dr_date": "2026-01-01",
+          "url": "https://diariodarepublica.pt/dr/legislacao-consolidada/lei/2015-70139602",
+          "retrieved_at": "2026-07-15T00:00:00Z",
+          "review_method": "automated-capture",
+          "review_note": "Revisão automatizada (wp22): texto estatutário oficial obtido por captura automatizada do espelho consolidado da Procuradoria-Geral Distrital de Lisboa (pgdlisboa.pt, nid=2469) em 2026-07-15 e verificado por processo automatizado. NÃO aprovado juridicamente por revisor humano (sem marcador LEGAL_APPROVED_FOR_VERIFIED). Recomenda-se revisão jurídica humana antes de confiar."
         },
-        "verification": "Pending",
+        "verification": "automated_review",
         "cross_refs": []
       },
       {
         "diploma_id": "cod-cooperativo",
         "number": "34",
         "label": "Artigo 34.º",
-        "heading": "",
-        "body": "",
+        "heading": "Sessões ordinárias e extraordinárias da assembleia geral",
+        "body": "1 - A assembleia geral reúne em sessões ordinárias e extraordinárias.\n2 - A assembleia geral ordinária reúne obrigatoriamente duas vezes em cada ano, uma até 31 de março, para apreciação e votação das matérias referidas nas alíneas b) e c) do artigo 38.º deste Código, e outra até 31 de dezembro, para apreciação e votação das matérias referidas na alínea d) do mesmo artigo.\n3 - Sem prejuízo de a legislação complementar de cada ramo ou de os estatutos poderem dispor de maneira diferente, a assembleia geral extraordinária reúne quando convocada pelo presidente da mesa, por sua iniciativa, a pedido do órgão de administração ou de fiscalização, ou a requerimento de, pelo menos, cinco por cento dos membros da cooperativa, num mínimo de três.",
         "source": {
           "diploma": "Lei n.º 119/2015, de 31 de agosto",
           "article": "Artigo 34.º",
-          "dr_reference": null,
-          "dr_date": null,
-          "url": null
+          "dr_reference": "Lei n.º 119/2015, de 31 de agosto (texto consolidado)",
+          "dr_date": "2026-01-01",
+          "url": "https://diariodarepublica.pt/dr/legislacao-consolidada/lei/2015-70139602",
+          "retrieved_at": "2026-07-15T00:00:00Z",
+          "review_method": "automated-capture",
+          "review_note": "Revisão automatizada (wp22): texto estatutário oficial obtido por captura automatizada do espelho consolidado da Procuradoria-Geral Distrital de Lisboa (pgdlisboa.pt, nid=2469) em 2026-07-15 e verificado por processo automatizado. NÃO aprovado juridicamente por revisor humano (sem marcador LEGAL_APPROVED_FOR_VERIFIED). Recomenda-se revisão jurídica humana antes de confiar."
         },
-        "verification": "Pending",
+        "verification": "automated_review",
         "cross_refs": []
       },
       {
         "diploma_id": "cod-cooperativo",
         "number": "41",
         "label": "Artigo 41.º",
-        "heading": "",
-        "body": "",
+        "heading": "Voto plural",
+        "body": "1 - Os estatutos podem prever a atribuição de voto plural nas assembleias gerais de primeiro grau, desde que a cooperativa:\na) Possua pelo menos 20 cooperadores;\nb) Não seja uma cooperativa de produção operária, de artesanato, de pescas, de consumidores ou de solidariedade social.\n2 - Os estatutos só podem estabelecer que o voto plural seja atribuído em função da atividade do cooperador na cooperativa.\n3 - O número de votos atribuído a cada cooperador ou membro investidor, nos termos dos números anteriores, tem de possuir os seguintes limites:\na) Três, caso a cooperativa tenha até 50 cooperadores;\nb) Cinco, caso a cooperativa tenha mais de 50 cooperadores.\n4 - Não obstante a existência de voto plural nos estatutos, na votação das matérias constantes das alíneas g), h), i), j) e m) do artigo 38.º cada cooperador dispõe, somente, de um voto.\n5 - Na circunstância de membros investidores, nos termos previstos no artigo 20.º, pode ser atribuído voto plural, em condições e critérios a fixar pelos estatutos.\n6 - Sem prejuízo do disposto no número anterior, nenhum membro investidor pode ter direitos de voto superiores a 10 % do total de votos dos cooperadores.\n7 - Os membros investidores não podem, no total, ter direitos de voto superiores a 30 % do total de votos dos cooperadores.\n8 - É aplicável ao voto dos membros investidores, o disposto no n.º 4 do presente artigo.",
         "source": {
           "diploma": "Lei n.º 119/2015, de 31 de agosto",
           "article": "Artigo 41.º",
-          "dr_reference": null,
-          "dr_date": null,
-          "url": null
+          "dr_reference": "Lei n.º 119/2015, de 31 de agosto (texto consolidado)",
+          "dr_date": "2026-01-01",
+          "url": "https://diariodarepublica.pt/dr/legislacao-consolidada/lei/2015-70139602",
+          "retrieved_at": "2026-07-15T00:00:00Z",
+          "review_method": "automated-capture",
+          "review_note": "Revisão automatizada (wp22): texto estatutário oficial obtido por captura automatizada do espelho consolidado da Procuradoria-Geral Distrital de Lisboa (pgdlisboa.pt, nid=2469) em 2026-07-15 e verificado por processo automatizado. NÃO aprovado juridicamente por revisor humano (sem marcador LEGAL_APPROVED_FOR_VERIFIED). Recomenda-se revisão jurídica humana antes de confiar."
         },
-        "verification": "Pending",
+        "verification": "automated_review",
         "cross_refs": []
       }
     ]
@@ -679,32 +790,38 @@
         "diploma_id": "lei-24-2012",
         "number": "1",
         "label": "Artigo 1.º",
-        "heading": "",
-        "body": "",
+        "heading": "Objeto",
+        "body": "1 - A presente lei-quadro estabelece os princípios e as normas por que se regem as fundações.\n2 - As normas constantes da presente lei-quadro são de aplicação imperativa e prevalecem sobre as normas especiais atualmente em vigor, salvo na medida em que o contrário resulte expressamente da presente lei-quadro.",
         "source": {
           "diploma": "Lei n.º 24/2012, de 9 de julho",
           "article": "Artigo 1.º",
-          "dr_reference": null,
-          "dr_date": null,
-          "url": null
+          "dr_reference": "Lei n.º 24/2012, de 9 de julho (texto consolidado)",
+          "dr_date": "2026-01-01",
+          "url": "https://diariodarepublica.pt/dr/legislacao-consolidada/lei/2012-61239015",
+          "retrieved_at": "2026-07-15T00:00:00Z",
+          "review_method": "automated-capture",
+          "review_note": "Revisão automatizada (wp22): texto estatutário oficial obtido por captura automatizada do espelho consolidado da Procuradoria-Geral Distrital de Lisboa (pgdlisboa.pt, nid=1758) em 2026-07-15 e verificado por processo automatizado. NÃO aprovado juridicamente por revisor humano (sem marcador LEGAL_APPROVED_FOR_VERIFIED). Recomenda-se revisão jurídica humana antes de confiar."
         },
-        "verification": "Pending",
+        "verification": "automated_review",
         "cross_refs": []
       },
       {
         "diploma_id": "lei-24-2012",
         "number": "5",
         "label": "Artigo 5.º",
-        "heading": "",
-        "body": "",
+        "heading": "Fundações estrangeiras",
+        "body": "1 - A fundação criada ao abrigo de uma lei diferente da portuguesa que pretenda prosseguir de forma estável em Portugal os seus fins deve ter uma representação permanente em território português, conforme previsto na alínea b) do n.º 1 do artigo 4.º do Registo Nacional de Pessoas Coletivas, aprovado pelo Decreto-Lei n.º 129/98, de 13 de maio.\n2 - A abertura de representação permanente depende de prévia autorização da entidade competente para o reconhecimento e pressupõe a verificação dos requisitos estabelecidos na lei ao abrigo da qual a fundação foi criada ou, na falta destes, dos requisitos constantes do artigo 22.º\n3 - Às fundações abrangidas pela Convenção Europeia sobre o Reconhecimento da Personalidade Jurídica das Organizações Internacionais não Governamentais referida no n.º 1 do artigo 2.º aplica-se o regime nela previsto.",
         "source": {
           "diploma": "Lei n.º 24/2012, de 9 de julho",
           "article": "Artigo 5.º",
-          "dr_reference": null,
-          "dr_date": null,
-          "url": null
+          "dr_reference": "Lei n.º 24/2012, de 9 de julho (texto consolidado)",
+          "dr_date": "2026-01-01",
+          "url": "https://diariodarepublica.pt/dr/legislacao-consolidada/lei/2012-61239015",
+          "retrieved_at": "2026-07-15T00:00:00Z",
+          "review_method": "automated-capture",
+          "review_note": "Revisão automatizada (wp22): texto estatutário oficial obtido por captura automatizada do espelho consolidado da Procuradoria-Geral Distrital de Lisboa (pgdlisboa.pt, nid=1758) em 2026-07-15 e verificado por processo automatizado. NÃO aprovado juridicamente por revisor humano (sem marcador LEGAL_APPROVED_FOR_VERIFIED). Recomenda-se revisão jurídica humana antes de confiar."
         },
-        "verification": "Pending",
+        "verification": "automated_review",
         "cross_refs": []
       }
     ]

@@ -4,11 +4,16 @@
 //! and flips an article `Pending → Verified` **by editing `data/law_corpus.json`, not code**.
 //!
 //! ## The authenticity contract (the whole point)
-//! - A [`LawArticle`] is either [`Verification::Verified`] or [`Verification::Pending`].
-//! - An article may be `Verified` **only** if its [`LawSource`] is *complete* — it cites a real
-//!   origin (diploma + article + `dr_reference` + `url`). The corpus build ([`crate::LawCatalog`])
-//!   and the `tests/authenticity.rs` gate both refuse a `Verified` article without one, so no
-//!   fabricated/recalled statute text can ever be presented as law.
+//! - A [`LawArticle`] is [`Verification::Verified`] (human-approved authentic text),
+//!   [`Verification::AutomatedReview`] (automatically-vendored authentic text, NOT human-approved),
+//!   or [`Verification::Pending`] (no text).
+//! - An article may be `Verified` **or** `AutomatedReview` **only** if its [`LawSource`] is
+//!   *complete* — it cites a real origin (diploma + article + `dr_reference` + `url`). The corpus
+//!   build ([`crate::LawCatalog`]) and the `tests/authenticity.rs` gate both refuse a body-bearing
+//!   article without one, so no fabricated/recalled statute text can ever be presented as law.
+//! - `Verified` additionally requires the HUMAN legal-approval workflow (the DRE capture manifest's
+//!   `LEGAL_APPROVED_FOR_VERIFIED` marker); `AutomatedReview` makes the weaker, honest claim and
+//!   bypasses none of that gate.
 //! - A `Pending` article NEVER renders its (empty, never-guessed) `body`; it renders the loud
 //!   marker [`UNVERIFIED_MARKER`] via [`LawArticle::display_body`].
 
@@ -33,12 +38,29 @@ pub enum DiplomaKind {
     DiretivaUe,
 }
 
-/// Whether an article's `body` is authentically vendored (`Verified`) or still a placeholder
-/// (`Pending`). Serializes as `"Verified"` / `"Pending"`.
+/// Whether an article's `body` is human-approved authentic text (`Verified`), automated-review
+/// authentic text (`AutomatedReview`), or still a placeholder (`Pending`). Serializes as
+/// `"Verified"` / `"automated_review"` / `"Pending"`.
+///
+/// The three tiers make a strictly ordered, honest claim about the body:
+/// `Verified` > `AutomatedReview` > `Pending`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Verification {
-    /// The `body` is authentic verbatim text with a complete [`LawSource`].
+    /// The `body` is authentic verbatim text with a complete [`LawSource`], **and** it has passed
+    /// the HUMAN legal-approval workflow (the DRE capture manifest's `LEGAL_APPROVED_FOR_VERIFIED`
+    /// marker with reviewer + legal both Approved). The strongest claim.
     Verified,
+    /// The `body` is official statutory text that was vendored and reviewed by an **automated**
+    /// process (browser / HTTP capture of the consolidated diploma plus automated fidelity checks),
+    /// carrying a complete [`LawSource`] and a non-empty `body` exactly like [`Verified`] — **but it
+    /// is NOT human-legally-approved**: no reviewer signed the `LEGAL_APPROVED_FOR_VERIFIED` marker.
+    /// It is strictly weaker than [`Verified`] (which is human-approved) and strictly stronger than
+    /// [`Pending`] (which has no text). **Human legal review is recommended before reliance.**
+    ///
+    /// It bypasses NOTHING in the human-`Verified` gate: it makes a weaker, honest claim, and the
+    /// DRE capture manifest still lists these articles as pending human approval.
+    #[serde(rename = "automated_review")]
+    AutomatedReview,
     /// The `body` is not yet vendored; the article renders [`UNVERIFIED_MARKER`].
     Pending,
 }
@@ -70,6 +92,16 @@ pub struct LawSource {
     /// When the source was retrieved (RFC 3339). Additive/optional.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub retrieved_at: Option<String>,
+    /// The review method that produced an [`Verification::AutomatedReview`] body — e.g.
+    /// `"automated-capture"`. Records that the text came from an automated (non-human) process.
+    /// Additive/optional; a human-`Verified` or `Pending` article omits it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub review_method: Option<String>,
+    /// The standing honest caveat carried by [`Verification::AutomatedReview`] text: automated
+    /// review only, **NOT** human-legally-approved, human legal review recommended before reliance.
+    /// Additive/optional; omitted from serialized output when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub review_note: Option<String>,
 }
 
 impl LawSource {
@@ -84,6 +116,8 @@ impl LawSource {
             url: None,
             source_digest: None,
             retrieved_at: None,
+            review_method: None,
+            review_note: None,
         }
     }
 
@@ -125,15 +159,30 @@ pub struct LawArticle {
 }
 
 impl LawArticle {
-    /// Whether this article is authentically vendored.
+    /// Whether this article is HUMAN-approved authentic text ([`Verification::Verified`]). This is
+    /// the strict human-approval predicate — an [`Verification::AutomatedReview`] article is **not**
+    /// `is_verified()`, because it makes the weaker, honest automated-review claim.
     pub fn is_verified(&self) -> bool {
         matches!(self.verification, Verification::Verified)
     }
 
-    /// The body to render/return: the verbatim text once `Verified`, otherwise the loud
+    /// Whether this article is automated-review authentic text ([`Verification::AutomatedReview`]):
+    /// vendored + automatically reviewed, but NOT human-legally-approved.
+    pub fn is_automated_review(&self) -> bool {
+        matches!(self.verification, Verification::AutomatedReview)
+    }
+
+    /// Whether this article carries a rendered `body` (either human-`Verified` or
+    /// automated-review), as opposed to a `Pending` placeholder.
+    pub fn has_body_text(&self) -> bool {
+        !matches!(self.verification, Verification::Pending)
+    }
+
+    /// The body to render/return: the verbatim text when the article carries body text
+    /// ([`Verification::Verified`] or [`Verification::AutomatedReview`]), otherwise the loud
     /// [`UNVERIFIED_MARKER`]. **Never** returns a `Pending` article's raw (un-sourced) body.
     pub fn display_body(&self) -> &str {
-        if self.is_verified() {
+        if self.has_body_text() {
             &self.body
         } else {
             UNVERIFIED_MARKER
