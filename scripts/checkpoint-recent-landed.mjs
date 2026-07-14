@@ -9462,7 +9462,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `ddc1764`",
+    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `dc4095f`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
@@ -10082,7 +10082,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `ddc1764`",
+    "Current checkpoint metadata/static checks through `dc4095f`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -10537,7 +10537,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `ddc176497f0b8837d357e35161ec2c260a793ac2`",
+    "implementation snapshot `dc4095fa403dae7efe41f2089a113bb042b19ad4`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -10612,7 +10612,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Current `ddc1764` keeps Data/Architecture/CI **PARTIAL**",
+    "Current `dc4095f` keeps Data/Architecture/CI **PARTIAL**",
     "spec coverage Postgres store checkpoint marker",
   );
   assertFileContains(
@@ -10687,7 +10687,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current `ddc1764` Postgres store runtime, backend-selection, logical\n  recovery, and cluster write-gating checks",
+    "Current `dc4095f` Postgres store runtime, backend-selection, logical\n  recovery, cluster write-gating, and covered follower-feed checks",
     "CI/E2E hardening plan Postgres store/backend-selection checks marker",
   );
   assertFileContains(
@@ -10722,7 +10722,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-api/Cargo.toml",
-    "postgres = [\"chancela-store/postgres\"]",
+    "postgres = [\"chancela-store/postgres\", \"dep:postgres\"]",
     "API postgres feature gate marker",
   );
   assertFileContains(

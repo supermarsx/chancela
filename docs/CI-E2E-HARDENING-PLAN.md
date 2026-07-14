@@ -1,7 +1,7 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `ddc1764`,
+and implementation snapshot `dc4095f`,
 including coverage notes for the bounded PAdES DSS validation-time, PDF/UA v10
 scoped table-header evidence, retention due-candidate explicit evidence states,
 bounded archive/no-action evidence UI, duplicate-review guard/status surfacing, and
@@ -893,8 +893,8 @@ settingsDefaults.test.ts contracts.test.ts`.
   (`cargo test -p chancela-store --locked --features sqlcipher sqlcipher`) now
   has a Windows CI lane that installs pinned Strawberry Perl before Rust/Cargo so
   vendored OpenSSL sees a Windows-native Perl first on `PATH`.
-- Current `ddc1764` Postgres store runtime, backend-selection, logical
-  recovery, and cluster write-gating checks: static/source markers pin the off-by-default `postgres`
+- Current `dc4095f` Postgres store runtime, backend-selection, logical
+  recovery, cluster write-gating, and covered follower-feed checks: static/source markers pin the off-by-default `postgres`
   feature, `PostgresBackend::open`, advisory-locked single writer, boot `load`
   replay, request-serving `Tx` write methods, runtime `Store` read projections,
   `CHANCELA_DB_BACKEND`, `DATABASE_URL_FILE`, `resolve_backend_selection`,
@@ -910,13 +910,19 @@ settingsDefaults.test.ts contracts.test.ts`.
   before durable append, `write_gate_allows` keeping a promoted node read-only
   until handoff, `cluster_promotion_handoff` reloading and re-verifying durable
   state, `NotLeader` to HTTP 503 mapping, and ignored live Postgres election /
-  failover tests gated by `DATABASE_URL`. This is marker/static coverage plus
-  local advisory-lock/fail-closed gating and opt-in live-test scaffolding only;
+  failover tests gated by `DATABASE_URL`. The wp16 P1 markers pin the
+  `LISTEN chancela_ledger`/seq-poll follower feed, verified-prefix delta apply,
+  aggregate snapshot publish gate, full-reload fallback, nullable
+  `/health.cluster` covered-feed lag scope, store tail/notify helper contracts,
+  and ignored live LISTEN/NOTIFY scaffolding gated by `DATABASE_URL`. This is
+  marker/static coverage plus local advisory-lock/fail-closed gating, covered
+  read-model feed coverage, and opt-in live-test scaffolding only;
   SQLite remains the default, Postgres selection is feature/config gated,
   default CI does not run against a live Postgres database, and only per-book
   portability paths plus the SQLite-temp-file `restore_preflight` drill still
   fail closed with `UnsupportedOnPostgres`. It is not production Postgres
-  readiness, live DB validation, migration completeness, production HA
+  readiness, global read-freshness certification for settings/users/roles/
+  sidecars, live DB validation, migration completeness, production HA
   readiness, consensus correctness, split-brain impossibility, live failover
   certification, cloud deployment readiness, TLS/remote PG readiness,
   multi-node operational certification, backup-policy/RPO/RTO certification,
@@ -1728,7 +1734,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   --workspace apps/web -- e2e/session.spec.ts e2e/first-launch-onboarding.spec.ts`.
   Treat the static/unit/focused markers as the pinned slice, not broad
   Playwright-browser-suite or browser-matrix proof; the browser suite is not exhaustive.
-- Current checkpoint metadata/static checks through `ddc1764`
+- Current checkpoint metadata/static checks through `dc4095f`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
