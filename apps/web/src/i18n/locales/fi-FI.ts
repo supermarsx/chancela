@@ -4572,7 +4572,7 @@ export const fiFI: Catalog = {
   'data.status.tab.backup.desc': 'Toiminnallinen varmuuskopio, palautusharjoitukset sekä palautuksen ja handoffin esitarkistukset.',
   'data.status.tab.keys': 'Avaimet ja nollaus',
   'data.status.tab.keys.desc': 'Tietokannan salausavaimen kierto sekä nollaus- tai uudelleenaloitustoiminnot.',
-  'data.status.help.recoveryDrill': 'Palautusharjoitus tarkistaa ja kirjaa, voiko varmuuskopion avata ja lukea hallitussa paikallisessa harjoituksessa. Se ei suorita todellista palautusta, takaa tulevaa käyttökelpoisuutta eikä todista ulkoista säilytystä.',
+  'data.status.help.recoveryDrill': 'Palautusharjoitus tarkistaa ja kirjaa, voiko varmuuskopion avata ja lukea hallitussa paikallisessa harjoituksessa. Se ei suorita todellista palautusta, takaa tulevaa käyttökelpoisuutta eikä varmista ulkoista säilytystä.',
   'data.status.help.keyRotation': 'Kierto korvaa pysyvän tietokannan SQLCipher-salausavaimen säilyttäen tiedot. Esitarkistus on vain luku; suoritus soveltaa rekeyn.',
   'data.status.help.exportCleanup': 'Poistaa vain vanhoja paikallisia vientitiedostoja määritetyn käytännön mukaan. Tämä ei ole laillinen poisto, GDPR-täyttymys eikä arkiston poisto.',
   'data.status.help.crashCleanup': 'Poistaa vanhoja paikallisia kaatumisdiagnostiikkoja levyltä. Se ei vaikuta ledgeriin eikä toimialuedataan.',

@@ -4565,7 +4565,7 @@ export const svSE: Catalog = {
   'data.status.tab.backup.desc': 'Driftsäkerhetskopia, återställningsövningar samt förkontroller för återställning och handoff.',
   'data.status.tab.keys': 'Nycklar och återställning',
   'data.status.tab.keys.desc': 'Rotation av databasens krypteringsnyckel samt nollställnings- eller börja om-åtgärder.',
-  'data.status.help.recoveryDrill': 'En återställningsövning kontrollerar och registrerar om en säkerhetskopia kan öppnas och läsas i en kontrollerad lokal övning. Den utför ingen verklig återställning, garanterar inte framtida användbarhet och bevisar inte förvaring utanför platsen.',
+  'data.status.help.recoveryDrill': 'En återställningsövning kontrollerar och registrerar om en säkerhetskopia kan öppnas och läsas i en kontrollerad lokal övning. Den utför ingen verklig återställning, garanterar inte framtida användbarhet och validerar inte förvaring utanför platsen.',
   'data.status.help.keyRotation': 'Rotationen ersätter den varaktiga databasens SQLCipher-krypteringsnyckel medan data behålls. Förkontrollen är skrivskyddad; körningen tillämpar rekey.',
   'data.status.help.exportCleanup': 'Tar bort endast gamla lokala exportfiler enligt den konfigurerade policyn. Det är inte juridisk radering, GDPR-slutförande eller arkivradering.',
   'data.status.help.crashCleanup': 'Tar bort gamla lokala kraschdiagnoser som lagrats på disk. Det påverkar inte liggaren eller domändata.',

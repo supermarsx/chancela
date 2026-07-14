@@ -4571,7 +4571,7 @@ export const plPL: Catalog = {
   'data.status.tab.backup.desc': 'Kopia operacyjna, próby odzyskiwania oraz wstępne kontrole przywracania i przekazania.',
   'data.status.tab.keys': 'Klucze i resetowanie',
   'data.status.tab.keys.desc': 'Rotacja klucza szyfrowania bazy danych oraz operacje resetowania lub rozpoczęcia od nowa.',
-  'data.status.help.recoveryDrill': 'Próba odzyskiwania sprawdza i zapisuje, czy kopię zapasową można otworzyć i odczytać w kontrolowanej lokalnej próbie. Nie wykonuje rzeczywistego przywracania, nie gwarantuje przyszłej użyteczności ani nie dowodzi przechowywania poza siedzibą.',
+  'data.status.help.recoveryDrill': 'Próba odzyskiwania sprawdza i zapisuje, czy kopię zapasową można otworzyć i odczytać w kontrolowanej lokalnej próbie. Nie wykonuje rzeczywistego przywracania, nie gwarantuje przyszłej użyteczności ani nie potwierdza przechowywania poza siedzibą.',
   'data.status.help.keyRotation': 'Rotacja zastępuje klucz szyfrowania SQLCipher trwałej bazy danych, zachowując dane. Kontrola wstępna jest tylko do odczytu; wykonanie stosuje rekey.',
   'data.status.help.exportCleanup': 'Usuwa tylko stare lokalne pliki eksportu zgodnie ze skonfigurowaną polityką. To nie jest usunięcie prawne, zakończenie RODO ani usunięcie archiwum.',
   'data.status.help.crashCleanup': 'Usuwa stare lokalne diagnostyki awarii zapisane na dysku. Nie narusza księgi ani danych domeny.',

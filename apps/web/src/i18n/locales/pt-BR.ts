@@ -4563,7 +4563,7 @@ export const ptBR: Catalog = {
   'data.status.tab.backup.desc': 'Backup operacional, ensaios de recuperação e pré-validações de restauração e handoff.',
   'data.status.tab.keys': 'Chaves e redefinição',
   'data.status.tab.keys.desc': 'Rotação da chave de criptografia do banco de dados e operações de redefinição ou recomeço.',
-  'data.status.help.recoveryDrill': 'Um ensaio de recuperação verifica e registra se uma cópia de backup pode ser aberta e lida em um ensaio local controlado. Não executa uma restauração real, não garante uso futuro nem comprova custódia off-site.',
+  'data.status.help.recoveryDrill': 'Um ensaio de recuperação verifica e registra se uma cópia de backup pode ser aberta e lida em um ensaio local controlado. Não executa uma restauração real, não garante uso futuro nem valida custódia off-site.',
   'data.status.help.keyRotation': 'A rotação substitui a chave de criptografia SQLCipher do banco de dados durável, mantendo os dados. A verificação prévia é somente leitura; a execução aplica o rekey.',
   'data.status.help.exportCleanup': 'Remove apenas arquivos de exportação locais antigos conforme a política configurada. Não é exclusão legal, conclusão de LGPD nem eliminação de arquivo.',
   'data.status.help.crashCleanup': 'Remove diagnósticos locais de falhas antigas salvos em disco. Não afeta o ledger nem os dados de domínio.',

@@ -4615,7 +4615,7 @@ export const deDE: Catalog = {
   'data.status.tab.backup.desc': 'Betriebssicherung, Wiederherstellungsübungen sowie Restore- und Handoff-Vorprüfungen.',
   'data.status.tab.keys': 'Schlüssel und Zurücksetzen',
   'data.status.tab.keys.desc': 'Rotation des Datenbank-Verschlüsselungsschlüssels sowie Zurücksetzen- oder Neustart-Vorgänge.',
-  'data.status.help.recoveryDrill': 'Eine Wiederherstellungsübung prüft und dokumentiert, ob eine Sicherung in einer kontrollierten lokalen Übung geöffnet und gelesen werden kann. Sie führt keine echte Wiederherstellung aus, garantiert keine künftige Nutzbarkeit und belegt keine Offsite-Verwahrung.',
+  'data.status.help.recoveryDrill': 'Eine Wiederherstellungsübung prüft und dokumentiert, ob eine Sicherung in einer kontrollierten lokalen Übung geöffnet und gelesen werden kann. Sie führt keine echte Wiederherstellung aus, garantiert keine künftige Nutzbarkeit und validiert keine Offsite-Verwahrung.',
   'data.status.help.keyRotation': 'Die Rotation ersetzt den SQLCipher-Verschlüsselungsschlüssel der dauerhaften Datenbank unter Erhalt der Daten. Die Vorprüfung ist schreibgeschützt; die Ausführung wendet den Rekey an.',
   'data.status.help.exportCleanup': 'Entfernt nur alte lokale Exportdateien gemäß der konfigurierten Richtlinie. Dies ist keine rechtliche Löschung, kein DSGVO-Abschluss und keine Archivlöschung.',
   'data.status.help.crashCleanup': 'Entfernt alte lokale Absturzdiagnosen von der Festplatte. Das Ledger und die Domänendaten bleiben unberührt.',

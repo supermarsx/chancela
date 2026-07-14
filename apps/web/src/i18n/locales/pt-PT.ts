@@ -4571,7 +4571,7 @@ export const ptPT = {
   'data.status.tab.backup.desc': 'Backup operacional, ensaios de recuperação e pré-validações de restauro e handoff.',
   'data.status.tab.keys': 'Chaves e reposição',
   'data.status.tab.keys.desc': 'Rotação da chave de cifra da base de dados e operações de reposição ou recomeço.',
-  'data.status.help.recoveryDrill': 'Um ensaio de recuperação verifica e regista se uma cópia de backup pode ser aberta e lida num ensaio local controlado. Não executa um restauro real, não garante uso futuro nem comprova custódia off-site.',
+  'data.status.help.recoveryDrill': 'Um ensaio de recuperação verifica e regista se uma cópia de backup pode ser aberta e lida num ensaio local controlado. Não executa um restauro real, não garante uso futuro nem valida custódia off-site.',
   'data.status.help.keyRotation': 'A rotação substitui a chave de cifra SQLCipher da base de dados durável, mantendo os dados. A verificação prévia é só de leitura; a execução aplica o rekey.',
   'data.status.help.exportCleanup': 'Remove apenas ficheiros de exportação locais antigos segundo a política configurada. Não é apagamento legal, conclusão RGPD nem eliminação de arquivo.',
   'data.status.help.crashCleanup': 'Remove diagnósticos locais de falhas antigas guardados em disco. Não afeta o ledger nem os dados de domínio.',

@@ -4594,7 +4594,7 @@ export const itIT: Catalog = {
   'data.status.tab.backup.desc': 'Backup operativo, esercitazioni di ripristino e pre-verifiche di ripristino e handoff.',
   'data.status.tab.keys': 'Chiavi e reimpostazione',
   'data.status.tab.keys.desc': 'Rotazione della chiave di cifratura del database e operazioni di reimpostazione o riavvio.',
-  'data.status.help.recoveryDrill': 'Un’esercitazione di ripristino controlla e registra se una copia di backup può essere aperta e letta in una prova locale controllata. Non esegue un ripristino reale, non garantisce l’utilizzabilità futura né dimostra la custodia off-site.',
+  'data.status.help.recoveryDrill': 'Un’esercitazione di ripristino controlla e registra se una copia di backup può essere aperta e letta in una prova locale controllata. Non esegue un ripristino reale, non garantisce l’utilizzabilità futura né valida la custodia off-site.',
   'data.status.help.keyRotation': 'La rotazione sostituisce la chiave di cifratura SQLCipher del database durevole mantenendo i dati. La pre-verifica è di sola lettura; l’esecuzione applica il rekey.',
   'data.status.help.exportCleanup': 'Rimuove solo i vecchi file di esportazione locali secondo la politica configurata. Non è cancellazione legale, completamento GDPR né eliminazione di archivio.',
   'data.status.help.crashCleanup': 'Rimuove le vecchie diagnostiche di crash locali salvate su disco. Non tocca il ledger né i dati di dominio.',

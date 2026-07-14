@@ -4561,7 +4561,7 @@ export const daDK: Catalog = {
   'data.status.tab.backup.desc': 'Driftssikkerhedskopi, gendannelsesøvelser og forhåndstjek af gendannelse/handoff.',
   'data.status.tab.keys': 'Nøgler og nulstilling',
   'data.status.tab.keys.desc': 'Rotation af databasens krypteringsnøgle samt nulstillings- eller forfra-handlinger.',
-  'data.status.help.recoveryDrill': 'En gendannelsesøvelse kontrollerer og registrerer, om en sikkerhedskopi kan åbnes og læses i en kontrolleret lokal øvelse. Den udfører ikke en reel gendannelse, garanterer ikke fremtidig brugbarhed og beviser ikke opbevaring uden for stedet.',
+  'data.status.help.recoveryDrill': 'En gendannelsesøvelse kontrollerer og registrerer, om en sikkerhedskopi kan åbnes og læses i en kontrolleret lokal øvelse. Den udfører ikke en reel gendannelse, garanterer ikke fremtidig brugbarhed og validerer ikke opbevaring uden for stedet.',
   'data.status.help.keyRotation': 'Rotation udskifter den varige databases SQLCipher-krypteringsnøgle, mens dataene bevares. Forhåndstjekket er skrivebeskyttet; udførelsen anvender rekey.',
   'data.status.help.exportCleanup': 'Fjerner kun gamle lokale eksportfiler i henhold til den konfigurerede politik. Det er ikke juridisk sletning, GDPR-afslutning eller arkivsletning.',
   'data.status.help.crashCleanup': 'Fjerner gamle lokale nedbrudsdiagnoser gemt på disken. Det påvirker ikke ledgeren eller domænedataene.',

@@ -4591,7 +4591,7 @@ export const esES: Catalog = {
   'data.status.tab.backup.desc': 'Copia operativa, ensayos de recuperación y comprobaciones previas de restauración y handoff.',
   'data.status.tab.keys': 'Claves y restablecimiento',
   'data.status.tab.keys.desc': 'Rotación de la clave de cifrado de la base de datos y operaciones de restablecimiento o reinicio.',
-  'data.status.help.recoveryDrill': 'Un ensayo de recuperación comprueba y registra si una copia de seguridad puede abrirse y leerse en un ensayo local controlado. No realiza una restauración real, no garantiza la usabilidad futura ni prueba la custodia externa.',
+  'data.status.help.recoveryDrill': 'Un ensayo de recuperación comprueba y registra si una copia de seguridad puede abrirse y leerse en un ensayo local controlado. No realiza una restauración real, no garantiza la usabilidad futura ni valida la custodia externa.',
   'data.status.help.keyRotation': 'La rotación sustituye la clave de cifrado SQLCipher de la base de datos duradera, conservando los datos. La comprobación previa es de solo lectura; la ejecución aplica el rekey.',
   'data.status.help.exportCleanup': 'Elimina solo archivos de exportación locales antiguos según la política configurada. No es borrado legal, cumplimiento del RGPD ni eliminación de archivo.',
   'data.status.help.crashCleanup': 'Elimina diagnósticos locales de fallos antiguos guardados en disco. No afecta al ledger ni a los datos de dominio.',

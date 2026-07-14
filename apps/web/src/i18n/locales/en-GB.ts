@@ -4515,7 +4515,7 @@ export const enGB: Catalog = {
   'data.status.tab.backup.desc': 'Operational backup, recovery drills and restore/handoff preflights.',
   'data.status.tab.keys': 'Keys and reset',
   'data.status.tab.keys.desc': 'Database encryption key rotation and reset or start-over operations.',
-  'data.status.help.recoveryDrill': 'A recovery drill checks and records whether a backup copy can be opened and read in a controlled local drill. It does not perform a live restore, guarantee future usability, or prove off-site custody.',
+  'data.status.help.recoveryDrill': 'A recovery drill checks and records whether a backup copy can be opened and read in a controlled local drill. It does not perform a live restore, guarantee future usability, or validate off-site custody.',
   'data.status.help.keyRotation': 'Rotation replaces the durable database’s SQLCipher encryption key while keeping the data. The preflight is read-only; execution applies the rekey.',
   'data.status.help.exportCleanup': 'Removes only old local export files per the configured policy. It is not legal erasure, GDPR completion or archive deletion.',
   'data.status.help.crashCleanup': 'Removes old local crash diagnostics stored on disk. It does not touch the ledger or domain data.',

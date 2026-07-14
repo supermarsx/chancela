@@ -4597,7 +4597,7 @@ export const nlNL: Catalog = {
   'data.status.tab.backup.desc': 'Operationele back-up, hersteloefeningen en voorcontroles voor herstel en handoff.',
   'data.status.tab.keys': 'Sleutels en herstel',
   'data.status.tab.keys.desc': 'Rotatie van de databaseversleutelingssleutel en reset- of opnieuw-beginnen-bewerkingen.',
-  'data.status.help.recoveryDrill': 'Een hersteloefening controleert en registreert of een back-upkopie in een gecontroleerde lokale oefening kan worden geopend en gelezen. De oefening voert geen echt herstel uit, garandeert geen toekomstige bruikbaarheid en bewijst geen bewaring buiten de locatie.',
+  'data.status.help.recoveryDrill': 'Een hersteloefening controleert en registreert of een back-upkopie in een gecontroleerde lokale oefening kan worden geopend en gelezen. De oefening voert geen echt herstel uit, garandeert geen toekomstige bruikbaarheid en valideert geen bewaring buiten de locatie.',
   'data.status.help.keyRotation': 'Rotatie vervangt de SQLCipher-versleutelingssleutel van de duurzame database met behoud van de gegevens. De voorcontrole is alleen-lezen; de uitvoering past de rekey toe.',
   'data.status.help.exportCleanup': 'Verwijdert alleen oude lokale exportbestanden volgens het geconfigureerde beleid. Het is geen wettelijke wissing, AVG-afronding of archiefverwijdering.',
   'data.status.help.crashCleanup': 'Verwijdert oude lokale crashdiagnostiek die op schijf is opgeslagen. Het raakt het grootboek en de domeingegevens niet aan.',

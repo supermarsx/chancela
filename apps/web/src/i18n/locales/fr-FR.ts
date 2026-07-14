@@ -4609,7 +4609,7 @@ export const frFR: Catalog = {
   'data.status.tab.backup.desc': 'Sauvegarde opérationnelle, exercices de récupération et pré-vérifications de restauration et de handoff.',
   'data.status.tab.keys': 'Clés et réinitialisation',
   'data.status.tab.keys.desc': 'Rotation de la clé de chiffrement de la base de données et opérations de réinitialisation ou de reprise.',
-  'data.status.help.recoveryDrill': 'Un exercice de récupération vérifie et consigne si une copie de sauvegarde peut être ouverte et lue lors d’un exercice local contrôlé. Il n’effectue pas de restauration réelle, ne garantit pas l’utilisabilité future et ne prouve pas la conservation hors site.',
+  'data.status.help.recoveryDrill': 'Un exercice de récupération vérifie et consigne si une copie de sauvegarde peut être ouverte et lue lors d’un exercice local contrôlé. Il n’effectue pas de restauration réelle, ne garantit pas l’utilisabilité future et ne valide pas la conservation hors site.',
   'data.status.help.keyRotation': 'La rotation remplace la clé de chiffrement SQLCipher de la base de données durable tout en conservant les données. La pré-vérification est en lecture seule ; l’exécution applique le rekey.',
   'data.status.help.exportCleanup': 'Supprime uniquement les anciens fichiers d’export locaux selon la politique configurée. Ce n’est pas un effacement légal, un achèvement RGPD ni une suppression d’archive.',
   'data.status.help.crashCleanup': 'Supprime les anciens diagnostics de plantage locaux stockés sur le disque. N’affecte ni le registre ni les données de domaine.',
