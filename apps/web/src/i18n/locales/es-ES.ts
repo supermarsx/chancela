@@ -248,6 +248,8 @@ export const esES: Catalog = {
   'notifications.reminder.annual.assoc.title': 'Junta general anual pendiente',
   'notifications.reminder.annual.fundacao.title': 'Revisión anual pendiente',
   'notifications.reminder.annual.cooperativa.title': 'Junta general anual pendiente',
+  'notifications.reminder.annual.condominio.title':
+    'Junta anual de comunidad de propietarios pendiente',
   'notifications.reminder.annual.body':
     'No hay ningún acta anual sellada ni archivada para {entity_name} antes del {due_date}. Este recordatorio es orientativo y procede de {source_rule}.',
   'notifications.reminder.annual.action': 'Abrir entidad',

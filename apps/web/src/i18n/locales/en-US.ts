@@ -246,6 +246,7 @@ export const enUS: Catalog = {
   'notifications.reminder.annual.assoc.title': 'Annual general meeting pending',
   'notifications.reminder.annual.fundacao.title': 'Annual review pending',
   'notifications.reminder.annual.cooperativa.title': 'Annual general meeting pending',
+  'notifications.reminder.annual.condominio.title': 'Annual condominium assembly pending',
   'notifications.reminder.annual.body':
     'There is no sealed or archived annual act for {entity_name} by {due_date}. This reminder is advisory and comes from {source_rule}.',
   'notifications.reminder.annual.action': 'Open entity',

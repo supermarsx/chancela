@@ -436,6 +436,53 @@ describe('buildDashboardNotifications', () => {
     expect(items[0]?.detail).not.toContain('attendance_reference');
   });
 
+  it('renders condominium annual reminders with localized advisory copy and entity action', () => {
+    const items = buildDashboardNotifications(
+      dashboard({
+        reminders: [
+          reminder({
+            due_date: '',
+            status: 'Pending',
+            severity: 'Advisory',
+            reason: 'Raw backend condominium fallback.',
+            entity_id: 'condo-1',
+            entity_name: 'Condomínio Horizonte',
+            source_rule: 'condominio-annual',
+            source_profile: 'condominio-dl268',
+            params: {
+              preset_id: 'condominio-annual',
+              calendar_preset_support: 'unsupported',
+              local_due_date_rule_configured: 'false',
+              local_due_date_calculated: 'false',
+              legal_deadline_calculated: 'false',
+            },
+            action: {
+              kind: 'open_entity',
+              label_key: 'notifications.reminder.annual.action',
+              api_href: '/v1/entities/condo-1',
+              route: '/entidades/condo-1',
+            },
+          }),
+        ],
+      }),
+      t,
+    );
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      kind: 'reminder',
+      tone: 'neutral',
+      badge: 'Pendente',
+      title: 'Assembleia anual de condomínio pendente',
+      action: { href: '/entidades/condo-1', label: 'Abrir entidade' },
+    });
+    expect(items[0]?.title).not.toBe('Condomínio Horizonte');
+    expect(items[0]?.detail).toContain('Condomínio Horizonte');
+    expect(items[0]?.detail).toContain('Sem data');
+    expect(items[0]?.detail).not.toContain('Raw backend condominium fallback');
+    expect(items[0]?.meta).toContain('Sem data');
+  });
+
   it('preserves absent-owner generated document and dispatch-evidence targets', () => {
     const items = buildDashboardNotifications(
       dashboard({

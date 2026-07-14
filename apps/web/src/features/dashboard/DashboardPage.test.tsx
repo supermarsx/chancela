@@ -594,19 +594,23 @@ describe('DashboardPage', () => {
 
     const queue = await screen.findByRole('list', { name: 'Fila de trabalho do painel' });
     const item = within(queue).getByRole('listitem');
-    const link = within(item).getByRole('link', { name: 'Condomínio Horizonte' });
+    expect(within(item).getByText('Assembleia anual de condomínio pendente')).toBeTruthy();
+    const link = within(item).getByRole('link', { name: 'Abrir entidade' });
     expect(link.getAttribute('href')).toBe('/entidades/condo-1');
     expect(within(item).getByText('Pendente')).toBeTruthy();
     expect(within(item).getByText('Sem data')).toBeTruthy();
     expect(
-      within(item).getByText(/no local due-date rule or fiscal-year offset is configured\/encoded/),
+      within(item).getByText(
+        'Não há ato anual selado ou arquivado para Condomínio Horizonte em Sem data. O lembrete é consultivo e deriva de condominio-annual.',
+      ),
     ).toBeTruthy();
-    expect(within(item).getByText(/does not calculate a legal deadline/)).toBeTruthy();
     expect(within(item).getByText('Fonte condominio-annual / condominio-dl268')).toBeTruthy();
     expect(
       within(item).getByText('Calendário do perfil: sem regra local consultiva; fonte por rever'),
     ).toBeTruthy();
     const itemText = item.textContent ?? '';
+    expect(itemText).not.toContain('The condominium calendar preset');
+    expect(itemText).not.toContain('does not calculate a legal deadline');
     expect(itemText).not.toContain('Profile calendar unsupported / pending_source_review');
     expect(itemText).not.toContain('pending_source_review');
   });

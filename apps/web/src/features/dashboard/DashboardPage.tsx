@@ -51,6 +51,7 @@ interface WorkQueueItem {
   detail: string;
   meta: string[];
   href?: string;
+  actionLabel?: string;
 }
 
 interface ActivityItem {
@@ -451,6 +452,16 @@ const ALERT_COPY: Partial<Record<string, { title: MessageKey; body: MessageKey }
   },
 };
 
+const REMINDER_COPY: Partial<
+  Record<string, { title: MessageKey; body: MessageKey; action: MessageKey }>
+> = {
+  'condominio-annual': {
+    title: 'notifications.reminder.annual.condominio.title',
+    body: 'notifications.reminder.annual.body',
+    action: 'notifications.reminder.annual.action',
+  },
+};
+
 function alertWorkQueueItem(alert: DashboardAlert, index: number, t: TFunction): WorkQueueItem {
   const code = alert.code.trim();
   const copy = ALERT_COPY[code];
@@ -542,6 +553,10 @@ function buildWorkQueue({
     };
     const titleKey = messageKey(reminder.i18n?.title_key);
     const bodyKey = messageKey(reminder.i18n?.body_key);
+    const copy = REMINDER_COPY[sourceRule];
+    const effectiveTitleKey = titleKey ?? copy?.title;
+    const effectiveBodyKey = bodyKey ?? copy?.body;
+    const actionKey = copy?.action;
     const planMeta = profileCalendarPlanMeta(reminder, t);
 
     items.push({
@@ -550,14 +565,15 @@ function buildWorkQueue({
       sortTime,
       badge: reminderStatusLabel(reminder.status, t),
       tone: reminderTone(reminder),
-      title: titleKey ? t(titleKey, params) : entityName,
-      detail: bodyKey ? t(bodyKey, params) : reason,
+      title: effectiveTitleKey ? t(effectiveTitleKey, params) : entityName,
+      detail: effectiveBodyKey ? t(effectiveBodyKey, params) : reason,
       meta: [
         reminderDateMeta(reminder.due_date, t),
         t('dashboard.workQueue.source', { rule: sourceRule, profile: sourceProfile }),
         ...(planMeta ? [planMeta] : []),
       ],
       href: routeFromReminder(reminder),
+      actionLabel: actionKey ? t(actionKey, params) : undefined,
     });
   }
 
@@ -614,7 +630,9 @@ function OperatorWorkQueue({ items }: { items: WorkQueueItem[] }) {
             <div className="dashboard-workqueue__head">
               <Badge tone={item.tone}>{item.badge}</Badge>
               <span className="dashboard-workqueue__title">{item.title}</span>
-              {item.href ? <WorkQueueActionLink href={item.href} label={item.title} /> : null}
+              {item.href ? (
+                <WorkQueueActionLink href={item.href} label={item.actionLabel ?? item.title} />
+              ) : null}
             </div>
             <p className="dashboard-workqueue__detail muted">{item.detail}</p>
             <div className="dashboard-workqueue__meta">

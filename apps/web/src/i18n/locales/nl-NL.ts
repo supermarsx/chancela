@@ -246,6 +246,8 @@ export const nlNL: Catalog = {
   'notifications.reminder.annual.fundacao.title': 'Jaarlijkse evaluatie in behandeling',
   'notifications.reminder.annual.cooperativa.title':
     'Jaarlijkse algemene vergadering in behandeling',
+  'notifications.reminder.annual.condominio.title':
+    'Jaarlijkse VvE-vergadering in behandeling',
   'notifications.reminder.annual.body':
     'Er zijn geen verzegelde of gearchiveerde jaarlijkse notulen voor {entity_name} tegen {due_date}. Deze herinnering is adviserend en komt voort uit {source_rule}.',
   'notifications.reminder.annual.action': 'Entiteit openen',

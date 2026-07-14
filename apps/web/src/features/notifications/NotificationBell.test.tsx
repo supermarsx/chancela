@@ -244,6 +244,47 @@ describe('NotificationBell', () => {
     ).toBeNull();
   });
 
+  it('shows condominium annual reminders in the popup with localized title and action', async () => {
+    vi.stubGlobal(
+      'fetch',
+      fetchTable([
+        {
+          match: '/v1/dashboard',
+          body: dashboard({
+            reminders: [
+              actionableReminder({
+                due_date: '',
+                status: 'Pending',
+                reason: 'Raw backend condominium fallback.',
+                entity_id: 'condo-1',
+                entity_name: 'Condomínio Horizonte',
+                source_rule: 'condominio-annual',
+                source_profile: 'condominio-dl268',
+                action: {
+                  kind: 'open_entity',
+                  label_key: 'notifications.reminder.annual.action',
+                  api_href: '/v1/entities/condo-1',
+                  route: '/entidades/condo-1',
+                },
+              }),
+            ],
+          }),
+        },
+      ]),
+    );
+
+    renderWithProviders(<NotificationBell />, ['/']);
+
+    fireEvent.click(await screen.findByRole('button', { name: '1 notificações pendentes' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Notificações' });
+    expect(within(dialog).getByText('Assembleia anual de condomínio pendente')).toBeTruthy();
+    expect(within(dialog).queryByText('Raw backend condominium fallback.')).toBeNull();
+
+    const action = within(dialog).getByRole('link', { name: 'Abrir entidade' });
+    expect(action.getAttribute('href')).toBe('/entidades/condo-1');
+  });
+
   it('closes the popup when clicking outside the bell and popup', async () => {
     vi.stubGlobal('fetch', fetchTable([{ match: '/v1/dashboard', body: dashboard() }]));
 

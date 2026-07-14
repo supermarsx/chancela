@@ -251,6 +251,8 @@ export const frFR: Catalog = {
   'notifications.reminder.annual.assoc.title': 'Assemblée générale annuelle en attente',
   'notifications.reminder.annual.fundacao.title': 'Revue annuelle en attente',
   'notifications.reminder.annual.cooperativa.title': 'Assemblée générale annuelle en attente',
+  'notifications.reminder.annual.condominio.title':
+    'Assemblée annuelle de copropriété en attente',
   'notifications.reminder.annual.body':
     'Aucun procès-verbal annuel scellé ou archivé n’existe pour {entity_name} au {due_date}. Ce rappel est indicatif et provient de {source_rule}.',
   'notifications.reminder.annual.action': 'Ouvrir l’entité',

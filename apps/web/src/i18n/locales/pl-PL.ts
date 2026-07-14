@@ -247,6 +247,8 @@ export const plPL: Catalog = {
   'notifications.reminder.annual.assoc.title': 'Oczekujące zwyczajne walne zgromadzenie',
   'notifications.reminder.annual.fundacao.title': 'Oczekujący przegląd roczny',
   'notifications.reminder.annual.cooperativa.title': 'Oczekujące zwyczajne walne zgromadzenie',
+  'notifications.reminder.annual.condominio.title':
+    'Oczekujące roczne zebranie wspólnoty mieszkaniowej',
   'notifications.reminder.annual.body':
     'Do dnia {due_date} nie ma zapieczętowanego ani zarchiwizowanego protokołu rocznego dla podmiotu {entity_name}. To przypomnienie ma charakter doradczy i pochodzi z {source_rule}.',
   'notifications.reminder.annual.action': 'Otwórz podmiot',

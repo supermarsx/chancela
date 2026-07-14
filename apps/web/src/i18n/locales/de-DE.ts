@@ -250,6 +250,8 @@ export const deDE: Catalog = {
   'notifications.reminder.annual.assoc.title': 'Jährliche Mitgliederversammlung ausstehend',
   'notifications.reminder.annual.fundacao.title': 'Jährliche Prüfung ausstehend',
   'notifications.reminder.annual.cooperativa.title': 'Jährliche Generalversammlung ausstehend',
+  'notifications.reminder.annual.condominio.title':
+    'Jährliche Wohnungseigentümerversammlung ausstehend',
   'notifications.reminder.annual.body':
     'Für {entity_name} gibt es bis zum {due_date} kein versiegeltes oder archiviertes Jahresprotokoll. Diese Erinnerung ist ein Hinweis und stammt aus {source_rule}.',
   'notifications.reminder.annual.action': 'Rechtsträger öffnen',

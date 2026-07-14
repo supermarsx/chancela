@@ -253,6 +253,7 @@ export const ptPT = {
   'notifications.reminder.annual.assoc.title': 'Assembleia geral anual pendente',
   'notifications.reminder.annual.fundacao.title': 'Revisão anual pendente',
   'notifications.reminder.annual.cooperativa.title': 'Assembleia geral anual pendente',
+  'notifications.reminder.annual.condominio.title': 'Assembleia anual de condomínio pendente',
   'notifications.reminder.annual.body':
     'Não há ato anual selado ou arquivado para {entity_name} em {due_date}. O lembrete é consultivo e deriva de {source_rule}.',
   'notifications.reminder.annual.action': 'Abrir entidade',

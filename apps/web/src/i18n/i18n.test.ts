@@ -59,6 +59,18 @@ describe('catalog completeness matrix', () => {
     expect(enUS['dashboard.workQueue.status.pending']).toBe('Pending');
   });
 
+  it('keeps condominium annual reminder titles localized', () => {
+    expect(ptPT['notifications.reminder.annual.condominio.title']).toBe(
+      'Assembleia anual de condomínio pendente',
+    );
+    expect(enUS['notifications.reminder.annual.condominio.title']).toBe(
+      'Annual condominium assembly pending',
+    );
+    expect(deDE['notifications.reminder.annual.condominio.title']).not.toBe(
+      ptPT['notifications.reminder.annual.condominio.title'],
+    );
+  });
+
   it('keeps delegation legal-basis copy local-evidence only', () => {
     expect(ptPT['rbac.deleg.legalBasis.label']).toBe('Base/evidência local');
     expect(ptPT['rbac.deleg.legalBasis.hint']).toContain('não certifica suficiência legal');

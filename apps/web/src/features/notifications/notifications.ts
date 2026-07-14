@@ -117,6 +117,11 @@ const REMINDER_COPY: Record<string, ReminderCopy> = {
     body: 'notifications.reminder.annual.body',
     action: 'notifications.reminder.annual.action',
   },
+  'condominio-annual': {
+    title: 'notifications.reminder.annual.condominio.title',
+    body: 'notifications.reminder.annual.body',
+    action: 'notifications.reminder.annual.action',
+  },
   'act-attendance-missing': {
     title: 'notifications.reminder.act.attendance.title',
     body: 'notifications.reminder.act.attendance.body',

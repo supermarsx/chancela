@@ -250,6 +250,8 @@ export const itIT: Catalog = {
   'notifications.reminder.annual.assoc.title': 'Assemblea generale annuale in sospeso',
   'notifications.reminder.annual.fundacao.title': 'Revisione annuale in sospeso',
   'notifications.reminder.annual.cooperativa.title': 'Assemblea generale annuale in sospeso',
+  'notifications.reminder.annual.condominio.title':
+    'Assemblea annuale di condominio in sospeso',
   'notifications.reminder.annual.body':
     'Non esiste un verbale annuale sigillato o archiviato per {entity_name} entro {due_date}. Questo promemoria è a titolo consultivo e proviene da {source_rule}.',
   'notifications.reminder.annual.action': 'Apri entità',

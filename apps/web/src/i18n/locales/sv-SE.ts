@@ -247,6 +247,8 @@ export const svSE: Catalog = {
   'notifications.reminder.annual.assoc.title': 'Årligt föreningsmöte väntar',
   'notifications.reminder.annual.fundacao.title': 'Årlig granskning väntar',
   'notifications.reminder.annual.cooperativa.title': 'Årlig föreningsstämma väntar',
+  'notifications.reminder.annual.condominio.title':
+    'Årsmöte i bostadsrättsförening väntar',
   'notifications.reminder.annual.body':
     'Det finns inget förseglat eller arkiverat årligt protokoll för {entity_name} senast {due_date}. Påminnelsen är rådgivande och kommer från {source_rule}.',
   'notifications.reminder.annual.action': 'Öppna enhet',

@@ -245,6 +245,7 @@ export const daDK: Catalog = {
   'notifications.reminder.annual.assoc.title': 'Årlig generalforsamling afventer',
   'notifications.reminder.annual.fundacao.title': 'Årlig gennemgang afventer',
   'notifications.reminder.annual.cooperativa.title': 'Årlig generalforsamling afventer',
+  'notifications.reminder.annual.condominio.title': 'Årligt ejerforeningsmøde afventer',
   'notifications.reminder.annual.body':
     'Der er ingen forseglet eller arkiveret årlig protokol for {entity_name} inden {due_date}. Denne påmindelse er vejledende og kommer fra {source_rule}.',
   'notifications.reminder.annual.action': 'Åbn enhed',

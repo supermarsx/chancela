@@ -247,6 +247,7 @@ export const fiFI: Catalog = {
   'notifications.reminder.annual.assoc.title': 'Vuosikokous odottaa',
   'notifications.reminder.annual.fundacao.title': 'Vuositarkastus odottaa',
   'notifications.reminder.annual.cooperativa.title': 'Osuuskunnan vuosikokous odottaa',
+  'notifications.reminder.annual.condominio.title': 'Taloyhtiön vuosikokous odottaa',
   'notifications.reminder.annual.body':
     'Yhteisölle {entity_name} ei ole sinetöityä tai arkistoitua vuosipöytäkirjaa määräaikaan {due_date} mennessä. Tämä muistutus on neuvoa-antava ja perustuu sääntöön {source_rule}.',
   'notifications.reminder.annual.action': 'Avaa yhteisö',
