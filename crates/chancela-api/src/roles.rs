@@ -116,12 +116,9 @@ pub(crate) fn write_roles_atomic(path: &Path, catalog: &RoleCatalog) -> std::io:
 /// Persist the live role catalog through to `roles.json` when the state is file-backed. A no-op for
 /// pure in-memory state (`roles_path` is `None`). Call after any catalog mutation (E4).
 pub(crate) async fn persist_roles(state: &AppState) -> Result<(), ApiError> {
-    if let Some(path) = &state.roles_path {
-        let roles = state.roles.read().await;
-        write_roles_atomic(path, &roles)
-            .map_err(|e| ApiError::Internal(format!("failed to persist roles: {e}")))?;
-    }
-    Ok(())
+    // wp16 P3b: route to the active source (Postgres `roles` table, else `roles.json`). File
+    // behaviour on SQLite/single-node is unchanged.
+    crate::sidecar_store::persist_roles(state).await
 }
 
 fn tmp_path(path: &Path, fallback: &str) -> PathBuf {
@@ -560,14 +557,10 @@ fn assignment_views(assignments: &[RoleAssignment]) -> Vec<RoleAssignmentView> {
         .collect()
 }
 
-/// Persist `users.json` after a role-assignment change (mirrors `users::persist`, which is private).
+/// Persist the user directory after a role-assignment change (mirrors `users::persist`, which is
+/// private). wp16 P3b: routes to the active source (Postgres `users` table, else `users.json`).
 async fn persist_users(state: &AppState) -> Result<(), ApiError> {
-    if let Some(path) = &state.users_path {
-        let users = state.users.read().await;
-        crate::users::write_users_atomic(path, &users)
-            .map_err(|e| ApiError::Internal(format!("failed to persist users: {e}")))?;
-    }
-    Ok(())
+    crate::sidecar_store::persist_users(state).await
 }
 
 /// Append a chained `role.*` audit event (honest actor, never any secret material). Mirrors the
@@ -919,6 +912,8 @@ pub async fn assign_role(
         &attestor,
     )
     .await?;
+    // wp16 P3b: signal other nodes to drop the target's cached authority (no-op on single-node).
+    state.publish_role_changed(target_uid.0);
     Ok(Json(assignment_views(&assignments)))
 }
 
@@ -984,6 +979,8 @@ pub async fn unassign_role(
         &attestor,
     )
     .await?;
+    // wp16 P3b: signal other nodes to drop the target's cached authority (no-op on single-node).
+    state.publish_role_changed(target_uid.0);
     Ok(Json(assignment_views(&assignments)))
 }
 

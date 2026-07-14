@@ -2354,11 +2354,10 @@ pub async fn put_settings(
     stamp_signing_provider_metadata(&state, &mut settings);
     settings.validate()?;
 
-    // Persist before we acknowledge success, so we never report a write we did not make.
-    if let Some(path) = &state.persist_path {
-        write_settings_atomic(path, &settings)
-            .map_err(|e| ApiError::Internal(format!("failed to persist settings: {e}")))?;
-    }
+    // Persist before we acknowledge success, so we never report a write we did not make. wp16 P3b:
+    // routes to the active source (Postgres `settings` row, else `settings.json`). File behaviour on
+    // SQLite/single-node is unchanged.
+    crate::sidecar_store::persist_settings(&state, &settings).await?;
 
     // Actor precedence (contract §2.8): a valid session wins; else the `?actor=` override; else
     // the document's own default actor.

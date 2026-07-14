@@ -301,6 +301,13 @@ impl AppState {
                 };
                 self.cluster_swap_delta_state(candidate, snapshot).await;
                 self.cluster_invalidate_caches(&delta).await;
+                // wp16 P3b: the ledger delta also covers this tick's user/role/delegation/settings/
+                // credential mutations (each such mutation appended a ledger event), so refresh the
+                // DB-backed sidecars this feed does not otherwise carry, keeping a follower's shared
+                // auth/config state consistent with the leader.
+                if self.sidecars_db_backed {
+                    crate::sidecar_store::reload_into_state(self, &store).await;
+                }
                 {
                     let ledger = self.ledger.read().await;
                     crate::refresh_degraded(self, &ledger).await;
@@ -406,6 +413,12 @@ impl AppState {
             }
         };
         self.cluster_swap_loaded_state(loaded, signed).await;
+        // wp16 P3b: a full durable reload must also refresh the DB-backed sidecars (users/roles/
+        // delegations/settings/credentials) so a follower recovering from a rejected delta does not
+        // keep stale shared auth/config state.
+        if self.sidecars_db_backed {
+            crate::sidecar_store::reload_into_state(self, store).await;
+        }
         self.cache.invalidate(&crate::cache::CacheKey::CaeCatalog);
         {
             let ledger = self.ledger.read().await;

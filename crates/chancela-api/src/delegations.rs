@@ -132,12 +132,9 @@ pub(crate) fn write_delegations_atomic(
 /// Persist the live delegation table through to `delegations.json` when the state is file-backed.
 /// A no-op for pure in-memory state (`delegations_path` is `None`). Call after any mutation (E4).
 pub(crate) async fn persist_delegations(state: &AppState) -> Result<(), ApiError> {
-    if let Some(path) = &state.delegations_path {
-        let delegations = state.delegations.read().await;
-        write_delegations_atomic(path, &delegations)
-            .map_err(|e| ApiError::Internal(format!("failed to persist delegations: {e}")))?;
-    }
-    Ok(())
+    // wp16 P3b: route to the active source (Postgres `delegations` table, else `delegations.json`).
+    // File behaviour on SQLite/single-node is unchanged.
+    crate::sidecar_store::persist_delegations(state).await
 }
 
 fn tmp_path(path: &Path) -> PathBuf {
@@ -318,6 +315,8 @@ pub async fn grant_delegation(
         &attestor,
     )
     .await?;
+    // wp16 P3b: the grantee's effective authority changed — signal other nodes (no-op on single-node).
+    state.publish_role_changed(grantee.0);
     Ok((StatusCode::CREATED, Json(view)))
 }
 
@@ -368,6 +367,8 @@ pub async fn revoke_delegation(
         &attestor,
     )
     .await?;
+    // wp16 P3b: the grantee's effective authority changed — signal other nodes (no-op on single-node).
+    state.publish_role_changed(updated.inner.to.0);
     Ok(Json(view))
 }
 

@@ -268,12 +268,9 @@ fn tmp_path(path: &Path) -> PathBuf {
 }
 
 async fn persist(state: &AppState) -> Result<(), ApiError> {
-    if let Some(path) = &state.users_path {
-        let users = state.users.read().await;
-        write_users_atomic(path, &users)
-            .map_err(|e| ApiError::Internal(format!("failed to persist users: {e}")))?;
-    }
-    Ok(())
+    // wp16 P3b: route to the active source (Postgres `users` table, else `users.json`). File behaviour
+    // on SQLite/single-node is unchanged.
+    crate::sidecar_store::persist_users(state).await
 }
 
 /// `POST /v1/users` — create a profile. **Bootstrap (t41):** when no users exist yet, callable

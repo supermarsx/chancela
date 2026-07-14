@@ -38,7 +38,7 @@
 //! every read/put/clear returns [`ProviderCredentialError::CorruptSidecar`] until an operator
 //! intervenes.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -47,6 +47,8 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 use zeroize::Zeroizing;
+
+use chancela_store::Store;
 
 use crate::secretstore::{
     CredentialKeyReadOnlyStatus, CredentialKeySource, CredentialKeyStatusFailure,
@@ -599,6 +601,100 @@ fn write_sidecar_atomic(path: &Path, records: &RecordMap) -> Result<(), Provider
     }
 }
 
+// --- Postgres blob storage (wp16 P3b) -----------------------------------------------------------
+
+/// Read + decode every encrypted credential record from the shared `provider_credentials` DB table
+/// into a [`RecordMap`]. Each row's `record_blob` is the opaque serialized [`EncryptedCredentialRecord`]
+/// (AEAD ciphertext only — the store never decrypts it); this only relocates where the ciphertext
+/// lives, so the wp13 envelope/AAD is untouched. A store error or a malformed blob is reported as a
+/// reason string so the caller can fail closed (mirrors [`load_sidecar`]).
+fn load_records_from_db(store: &Store) -> Result<RecordMap, String> {
+    let rows = store
+        .read_credential_records()
+        .map_err(|e| format!("failed to read provider credentials from the durable store: {e}"))?;
+    let mut records = RecordMap::new();
+    for row in rows {
+        if CredentialMode::from_wire(&row.mode).is_none() {
+            return Err(format!(
+                "durable store references unknown credential mode {:?}",
+                row.mode
+            ));
+        }
+        let record: EncryptedCredentialRecord =
+            serde_json::from_slice(&row.record_blob).map_err(|e| {
+                format!(
+                    "durable provider-credential record ({}, {}) is not a valid credential record: {e}",
+                    row.mode, row.provider_id
+                )
+            })?;
+        records.insert((row.mode.clone(), row.provider_id.clone()), record);
+    }
+    Ok(records)
+}
+
+/// Reconcile `records` into the shared `provider_credentials` table in one transaction: upsert every
+/// record's opaque encrypted blob and delete any DB row whose `(mode, provider_id)` is no longer
+/// present (mirrors the whole-file atomic write, so a cleared record never lingers). Serializes every
+/// blob **before** taking the transaction so a serialization failure never half-applies. Fails closed
+/// on any store error.
+fn write_records_to_db(store: &Store, records: &RecordMap) -> Result<(), ProviderCredentialError> {
+    let mut rows = Vec::with_capacity(records.len());
+    for ((mode, provider_id), record) in records {
+        let blob = serde_json::to_vec(record).map_err(|e| db_error("serialize", e.to_string()))?;
+        rows.push((
+            mode.clone(),
+            provider_id.clone(),
+            i64::from(record.key_version),
+            record_updated_at(record),
+            blob,
+        ));
+    }
+    let existing = store
+        .read_credential_records()
+        .map_err(|e| db_error("read", e.to_string()))?;
+    let present: HashSet<(&str, &str)> = records
+        .keys()
+        .map(|(mode, provider_id)| (mode.as_str(), provider_id.as_str()))
+        .collect();
+    store
+        .persist(|tx| {
+            for (mode, provider_id, key_version, updated_at, blob) in &rows {
+                tx.put_credential_record(mode, provider_id, *key_version, updated_at, blob)?;
+            }
+            for row in &existing {
+                if !present.contains(&(row.mode.as_str(), row.provider_id.as_str())) {
+                    tx.delete_credential_record(&row.mode, &row.provider_id)?;
+                }
+            }
+            Ok(())
+        })
+        .map_err(|e| db_error("persist", e.to_string()))
+}
+
+/// The non-secret `updated_at` metadata column for a record row: the newest entry `updated_at`, or
+/// the current time when no entry carries one. Informational only (each envelope self-describes its
+/// key version); never used for decryption.
+fn record_updated_at(record: &EncryptedCredentialRecord) -> String {
+    record
+        .entries
+        .iter()
+        .map(|entry| entry.updated_at.clone())
+        .filter(|stamp| !stamp.is_empty())
+        .max()
+        .unwrap_or_else(now_rfc3339)
+}
+
+/// Map a durable-store credential-blob failure onto the existing [`ProviderCredentialError::Io`] arm
+/// (so the write/status handlers keep their fail-closed mapping without a new variant). Never carries
+/// secret material — only the store's own error text.
+fn db_error(action: &'static str, detail: String) -> ProviderCredentialError {
+    ProviderCredentialError::Io {
+        action,
+        path: PathBuf::from("provider_credentials (durable store)"),
+        source: std::io::Error::other(detail),
+    }
+}
+
 fn sidecar_tmp_path(path: &Path) -> PathBuf {
     use rand_core::{OsRng, RngCore};
     let mut random = [0u8; 8];
@@ -716,6 +812,17 @@ enum Backing {
         /// deterministically on hosts without an OS key store.
         db_key: Option<Zeroizing<Vec<u8>>>,
     },
+    /// wp16 P3b — Postgres-backed: the encrypted credential **blobs** live in the shared
+    /// `provider_credentials` DB table (so every cluster node resolves the same credentials) instead
+    /// of the `provider-credentials.enc.json` file. The wp13 crypto envelope + root-key resolution are
+    /// unchanged — the root key still resolves from `data_dir` (the sealed root /
+    /// `CHANCELA_CREDENTIAL_KEY_FILE` source); only the ciphertext storage moves. `db_key` is always
+    /// `None` here — Postgres has no SQLCipher-derived key.
+    Db {
+        store: Store,
+        data_dir: PathBuf,
+        db_key: Option<Zeroizing<Vec<u8>>>,
+    },
 }
 
 /// The provider-credential store wired into [`crate::AppState`]: the loaded encrypted records plus a
@@ -789,6 +896,35 @@ impl ProviderCredentialStore {
         }
     }
 
+    /// wp16 P3b — load a Postgres-backed credential store: the encrypted blobs come from (and persist
+    /// to) the shared `provider_credentials` DB table instead of the file sidecar, so every cluster
+    /// node resolves the same credentials. Root-key resolution is unchanged (it still uses `data_dir`
+    /// / `CHANCELA_CREDENTIAL_KEY_FILE`; there is no SQLCipher-derived key on Postgres). A DB read
+    /// error or a malformed blob records the reason so every later op fails closed, exactly like a
+    /// corrupt file sidecar.
+    pub fn load_db_backed(store: Store, data_dir: &Path, strict: bool) -> Self {
+        let records = match load_records_from_db(&store) {
+            Ok(records) => Ok(records),
+            Err(reason) => {
+                eprintln!(
+                    "warning: {reason}; the provider-credential store is failing closed until the \
+                     durable records are repaired"
+                );
+                Err(reason)
+            }
+        };
+        Self {
+            backing: Backing::Db {
+                store,
+                data_dir: data_dir.to_path_buf(),
+                db_key: None,
+            },
+            strict,
+            records: Mutex::new(records),
+            secretstore: Mutex::new(None),
+        }
+    }
+
     /// Whether strict credential storage is enabled for this store.
     pub fn strict(&self) -> bool {
         self.strict
@@ -815,6 +951,9 @@ impl ProviderCredentialStore {
             }
             Backing::DataDir {
                 data_dir, db_key, ..
+            }
+            | Backing::Db {
+                data_dir, db_key, ..
             } => crate::secretstore::inspect_key_source_read_only(data_dir, db_key.is_some()),
         }
     }
@@ -831,6 +970,9 @@ impl ProviderCredentialStore {
         }
         let (data_dir, db_key) = match &self.backing {
             Backing::DataDir {
+                data_dir, db_key, ..
+            }
+            | Backing::Db {
                 data_dir, db_key, ..
             } => (data_dir.as_path(), db_key.as_ref()),
             Backing::InMemory => return Err(SecretStoreError::NoKeySource.into()),
@@ -1275,7 +1417,34 @@ impl ProviderCredentialStore {
     fn persist(&self, records: &RecordMap) -> Result<(), ProviderCredentialError> {
         match &self.backing {
             Backing::DataDir { sidecar, .. } => write_sidecar_atomic(sidecar, records),
+            // wp16 P3b: reconcile the encrypted blobs into the shared `provider_credentials` table.
+            Backing::Db { store, .. } => write_records_to_db(store, records),
             Backing::InMemory => Ok(()),
+        }
+    }
+
+    /// wp16 P3b — re-read the encrypted credential records from the shared DB table into memory (a
+    /// follower reloading after a leader's credential write). A no-op for the file / in-memory
+    /// backings. A read failure fails the store closed (records ⇒ the error reason) rather than
+    /// silently emptying it, matching the corrupt-sidecar discipline. Only the Postgres follower
+    /// change-feed calls this.
+    #[cfg(feature = "postgres")]
+    pub(crate) fn reload_from_db(&self) {
+        let Backing::Db { store, .. } = &self.backing else {
+            return;
+        };
+        let refreshed = match load_records_from_db(store) {
+            Ok(records) => Ok(records),
+            Err(reason) => {
+                eprintln!(
+                    "warning: {reason}; the provider-credential store is failing closed until the \
+                     durable records are repaired"
+                );
+                Err(reason)
+            }
+        };
+        if let Ok(mut guard) = self.records.lock() {
+            *guard = refreshed;
         }
     }
 
@@ -1284,6 +1453,30 @@ impl ProviderCredentialStore {
     #[cfg(test)]
     pub(crate) fn load_with_db_key(data_dir: &Path, db_key: &[u8], strict: bool) -> Self {
         Self::load_inner(data_dir, Some(Zeroizing::new(db_key.to_vec())), strict)
+    }
+
+    /// Test-only DB-backed constructor that pre-seeds the derived-root DB key so the crypto core
+    /// resolves deterministically on hosts without an OS key store — the DB-blob analogue of
+    /// [`load_with_db_key`](Self::load_with_db_key). Used by the `#[ignore]` live-Postgres credential
+    /// round-trip so the wp13 envelope is exercised against the real `provider_credentials` table.
+    #[cfg(test)]
+    pub(crate) fn load_db_backed_with_db_key(
+        store: Store,
+        data_dir: &Path,
+        db_key: &[u8],
+        strict: bool,
+    ) -> Self {
+        let records = load_records_from_db(&store).unwrap_or_else(|_| RecordMap::new());
+        Self {
+            backing: Backing::Db {
+                store,
+                data_dir: data_dir.to_path_buf(),
+                db_key: Some(Zeroizing::new(db_key.to_vec())),
+            },
+            strict,
+            records: Mutex::new(Ok(records)),
+            secretstore: Mutex::new(None),
+        }
     }
 
     /// Test-only in-memory store with an explicit strict flag and no key source.

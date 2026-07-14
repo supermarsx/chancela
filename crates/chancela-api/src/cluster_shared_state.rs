@@ -336,6 +336,17 @@ impl crate::AppState {
     /// evict the node-local session copy for a revoke, drop the shared catalog projection for a role
     /// change. Fail-open by nature: doing nothing on an unknown/duplicate event is safe (the
     /// authoritative check is always the shared store / in-memory state).
+    /// wp16 P3b — publish a cross-node [`InvalidationEvent::RoleChanged`] for `user_id` after a
+    /// mutation that changes that principal's effective authority (a role (un)assignment, or a
+    /// delegation granted to / revoked from them). Best-effort and a **no-op on single-node** (the
+    /// default local bus), so a Redis-backed cluster's followers drop their node-local session /
+    /// permission copy and re-derive from the shared (DB-backed) role/delegation sidecars.
+    pub(crate) fn publish_role_changed(&self, user_id: Uuid) {
+        self.cluster_shared
+            .invalidation
+            .publish(&InvalidationEvent::RoleChanged { user_id });
+    }
+
     pub(crate) async fn apply_invalidation(&self, event: &InvalidationEvent) {
         match event {
             InvalidationEvent::SessionRevoked { token } => {

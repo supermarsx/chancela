@@ -148,6 +148,10 @@ mod secretstore;
 mod secretstore_persist;
 mod session;
 mod settings;
+// wp16 P3b: backend-conditional storage seam for the five non-ledger file sidecars (users/roles/
+// delegations/settings/provider-credentials). File-backed on SQLite (single-node byte-identical),
+// DB-backed on Postgres so all nodes share them.
+mod sidecar_store;
 mod signature;
 mod signature_pkcs12_stored;
 mod sync_handoff;
@@ -433,6 +437,12 @@ pub struct AppState {
     /// behaviour, byte-identical). Set only by [`AppState::with_data_dir`]/[`AppState::from_env`];
     /// every mutation write-through goes through [`AppState::persist_write_through`].
     pub store: Option<Store>,
+    /// wp16 P3b — whether the five non-ledger sidecars (users/roles/delegations/settings/
+    /// provider-credentials) are DB-backed (shared across cluster nodes) rather than file-backed.
+    /// `true` **only** for the Postgres backend; `false` (the [`Default`]) keeps the byte-identical
+    /// file behaviour on SQLite/embedded single-node. Set once at startup from the resolved backend;
+    /// [`crate::sidecar_store`] and the follower change-feed read it to pick file vs DB per sidecar.
+    pub sidecars_db_backed: bool,
     /// The live document read model (t48 / DOC-01): generated documents (PDF/A-2u bytes +
     /// metadata) keyed by the owning [`ActId`]. Book instruments (termos) key on their book id
     /// cast into an `ActId`. Mirrors `acts`/`books`: an in-memory read model backed by the durable
@@ -775,6 +785,17 @@ impl AppState {
         // store, must fail startup closed rather than silently fall back to ephemeral in-memory.
         let resolved_backend = database::resolve_backend_selection(&dir, &database_encryption)?;
         let require_durable_store = encrypted_store || resolved_backend.requires_durability;
+        // wp16 P3b: the five non-ledger sidecars are DB-backed only on Postgres (shared across nodes);
+        // SQLite/embedded keeps the byte-identical file path. Computed before the selection is moved
+        // into `open_backend`.
+        #[cfg(feature = "postgres")]
+        let sidecars_db_backed = matches!(
+            resolved_backend.selection,
+            chancela_store::StoreBackendSelection::Postgres { .. }
+        );
+        #[cfg(not(feature = "postgres"))]
+        let sidecars_db_backed = false;
+        state.sidecars_db_backed = sidecars_db_backed;
         match Store::open_backend(resolved_backend.selection) {
             Ok(store) => match store.load() {
                 Ok(loaded) => {
@@ -841,6 +862,22 @@ impl AppState {
             }
         }
 
+        // wp16 P3b: on Postgres the five non-ledger sidecars live in the DB (shared across nodes), so
+        // make the DB tables authoritative — load users/roles/delegations/settings from the store
+        // (replacing the file-derived defaults) and seed/migrate the role catalog back into the DB.
+        // A store error here fails startup closed (Postgres already requires durability). No-op on
+        // SQLite (`sidecars_db_backed == false`), keeping single-node byte-identical.
+        if sidecars_db_backed {
+            if let Some(store) = state.store.clone() {
+                sidecar_store::hydrate_from_store(&mut state, &store).map_err(|source| {
+                    AppStateInitError::StoreLoad {
+                        data_dir: dir.clone(),
+                        source,
+                    }
+                })?;
+            }
+        }
+
         // Resolve the CC co-location signal (t58-e2 / CC-B) from the environment the desktop shell
         // set before it spawned this embedded server (t58-e3). Absent (a remote server) ⇒ `false`.
         state.local_signing = signature::local_signing_from_env();
@@ -863,8 +900,17 @@ impl AppState {
         // key source or a corrupt sidecar. Strict mode defaults off; the `credential_storage_strict`
         // settings selector that also feeds it arrives in S4, so only the env override applies here.
         let credential_strict = secretstore::strict_from_env(false);
-        state.provider_credentials =
-            Arc::new(ProviderCredentialStore::load(&dir, credential_strict));
+        // wp16 P3b: on Postgres, the encrypted credential *blobs* live in the `provider_credentials`
+        // DB table (shared across nodes) instead of `provider-credentials.enc.json`. The wp13 crypto
+        // envelope + root-key resolution are unchanged — only the ciphertext storage moves; the root
+        // key still comes from `CHANCELA_CREDENTIAL_KEY_FILE` / the data-dir sealed root. SQLite keeps
+        // the file sidecar unchanged.
+        state.provider_credentials = Arc::new(match (sidecars_db_backed, state.store.clone()) {
+            (true, Some(store)) => {
+                ProviderCredentialStore::load_db_backed(store, &dir, credential_strict)
+            }
+            _ => ProviderCredentialStore::load(&dir, credential_strict),
+        });
         Ok(state)
     }
 
