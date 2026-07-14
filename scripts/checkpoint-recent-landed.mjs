@@ -9272,7 +9272,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `b2ceed0`",
+    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `6a2c91e`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
@@ -9892,7 +9892,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `b2ceed0`",
+    "Current checkpoint metadata/static checks through `6a2c91e`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -10347,7 +10347,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `b2ceed09e0b51506eb258f4808aa53e686075a3e`",
+    "implementation snapshot `6a2c91e9f3bc406f63608b7ac199168a0fa13e20`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -10364,6 +10364,11 @@ function assertCheckpointMap() {
     "scripts/check-spec-coverage.mjs",
     "\"scripts/checkpoint-recent-landed.mjs\"",
     "spec coverage checker checkpoint-only path allowlist marker",
+  );
+  assertFileContains(
+    "scripts/check-spec-coverage.mjs",
+    "\"docs/ARCHITECTURE.md\"",
+    "spec coverage checker architecture checkpoint path allowlist marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
@@ -10384,6 +10389,36 @@ function assertCheckpointMap() {
     "SPEC-COVERAGE.md",
     "Seeded role drift diagnostic",
     "spec coverage seeded role drift bullet marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "explicit ROL-02 seeded role archetypes",
+    "spec coverage ROL-02 seeded archetype header marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Company Owner, Corporate Secretary, Legal Counsel,\n  Records Manager, Signatory, and Reviewer",
+    "spec coverage ROL-02 seeded archetype names marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "local RBAC seed/default coverage only, not\n  legal-capacity proof",
+    "spec coverage ROL-02 no-legal-authority caveat marker",
+  );
+  assertFileContains(
+    "docs/ARCHITECTURE.md",
+    "Fifteen seeded defaults with deterministic ids",
+    "architecture seeded role catalog count marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Current working-tree ROL-02 seeded role archetype checks",
+    "CI/E2E hardening plan ROL-02 seeded role checks marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "`cargo test -p chancela-api --locked seeded_role`",
+    "CI/E2E hardening plan ROL-02 API seeded role command marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",

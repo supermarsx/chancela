@@ -471,10 +471,11 @@ trusted-list *status*, not probative-value assertions.
   coverage: `Global` covers all; `Entity(E)` covers itself + books it owns; `Book(B)` covers only
   itself. A scoped grant can never satisfy a `Global` check. Unknown book → fail-closed.
 - **Roles as data** (`role.rs`) — `Role { id, name, permission_set, protected }` + a `RoleCatalog`.
-  Nine seeded defaults with deterministic ids: **Proprietário/Owner** (all perms, protected,
-  undeletable), **Gestor**, **Signatário**, **Leitor**, **Platform Administrator**,
-  **Tenant Administrator**, **Auditor**, **Guest**, and **API Client**. Protected roles cannot be
-  edited or deleted.
+  Fifteen seeded defaults with deterministic ids: **Proprietário/Owner** (all perms, protected,
+  undeletable), legacy **Gestor**, **Signatário**, and **Leitor**, explicit ROL-02 **Company
+  Owner**, **Corporate Secretary**, **Legal Counsel**, **Records Manager**, **Signatory**, and
+  **Reviewer**, plus **Platform Administrator**, **Tenant Administrator**, **Auditor**, **Guest**,
+  and **API Client**. Protected roles cannot be edited or deleted.
 - **Delegation** (`delegation.rs`) — one permission at a scope, `starts_at`, optional expiry,
   optional `legal_basis` evidence/rationale, revocable.
 - **Effective authority + invariants** (`lib.rs`) — `effective_permissions(...)` builds a

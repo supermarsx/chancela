@@ -1,7 +1,7 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `b2ceed0`,
+and implementation snapshot `6a2c91e`,
 including coverage notes for the bounded PAdES DSS validation-time, PDF/UA v10
 scoped table-header evidence, retention due-candidate explicit evidence states,
 bounded archive/no-action evidence UI, duplicate-review guard/status surfacing, and
@@ -13,7 +13,8 @@ local OCR/canonical rehearsal report, and reviewed conversion execution artifact
 CSC quota/delegation/revocation and standalone agenda-item template parity,
 retained-export cleanup dry-run planning, first-class template catalog metadata lint,
 external-signing workflow-only envelope UI, workflow reminder policy, and
-structured platform-log forwarded-ingest/failure-audit slices, plus data-status
+structured platform-log forwarded-ingest/failure-audit slices, ROL-02 seeded
+role archetype explicitness, plus data-status
 sidecar classification, read-only local DGLAB interchange manifest API
 scaffolding and BookDetail JSON download,
 local sync/handoff preflight readiness reporting over existing evidence only,
@@ -1597,6 +1598,19 @@ settingsDefaults.test.ts contracts.test.ts`.
   does not auto-reconcile roles, grant permissions, or weaken authorization; it
   grants nothing on load and does not complete
   tenant/sync/ZK/archive/retention/compliance work.
+- Current working-tree ROL-02 seeded role archetype checks: focused
+  `cargo test -p chancela-authz --locked` pins the seeded catalog at 15 roles,
+  preserving the stable Owner/Gestor/Signatário/Leitor/platform/tenant/auditor/
+  guest/api-client ids while adding explicit Company Owner, Corporate Secretary,
+  Legal Counsel, Records Manager, Signatory, and Reviewer ids. New archetype
+  permission tests pin explicit permission arrays and deny meta/delegation,
+  `user.manage`, `settings.manage`, `platform.logs.write`, `ledger.recover`,
+  `data.wipe`, and `data.start_over`. Focused API coverage is
+  `cargo test -p chancela-api --locked seeded_role`, proving missing seeded
+  roles insert without clobbering customized seeded API Client/non-Owner roles.
+  This is local RBAC seed/default coverage only; it does not prove legal
+  capacity, tenant/group policy, HR authority, access-policy certification,
+  sync/ZK, retention/disposal, or encryption completion.
 - Current working-tree archive readability/ZK caveat checks: focused
   `chancela-archive` coverage pins manifest-only `readability_caveats`, old v1
   conservative defaults when the caveat block is missing, rejection of unknown
@@ -1636,7 +1650,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   --workspace apps/web -- e2e/session.spec.ts e2e/first-launch-onboarding.spec.ts`.
   Treat the static/unit/focused markers as the pinned slice, not broad
   Playwright-browser-suite or browser-matrix proof; the browser suite is not exhaustive.
-- Current checkpoint metadata/static checks through `b2ceed0`
+- Current checkpoint metadata/static checks through `6a2c91e`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and

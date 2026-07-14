@@ -27,6 +27,7 @@ const expectedSpecs = [
 const allowedStatuses = new Set(["PARTIAL", "BLOCKED", "COMPLETE"]);
 const checkpointPaths = new Set([
   "SPEC-COVERAGE.md",
+  "docs/ARCHITECTURE.md",
   "docs/CI-CHECKPOINTS.md",
   "docs/CI-E2E-HARDENING-PLAN.md",
   "scripts/check-spec-coverage.mjs",

@@ -1,6 +1,6 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-14 from current implementation snapshot `b2ceed09e0b51506eb258f4808aa53e686075a3e`,
+*Updated 2026-07-14 from current implementation snapshot `6a2c91e9f3bc406f63608b7ac199168a0fa13e20`,
 with committed evidence refreshes for the recently landed Signatures & Trust
 provider-credential, stored runtime credential resolution, stored PKCS#12,
 remote batch-initiation surfaces, and Docker/Compose runtime-hardening
@@ -148,7 +148,8 @@ retention review-closure slice through `869e02f` (`6724d07` API route,
 `d95a9f5` contract/client coverage, `c6e668d` Settings closure action, and
 `869e02f` route-mocked browser proof), followed by `148106c` read-only
 sync/handoff preflight reporting and `e8bcd19` archive filter reset icon
-semantics, followed by `d981694` web signed-act technical metadata comparison.
+semantics, followed by `d981694` web signed-act technical metadata comparison,
+then `6a2c91e` explicit ROL-02 seeded role archetypes.
 Earlier coverage text remains prior snapshot context. All top-level spec areas remain **PARTIAL**.
 This is an implementation and test coverage snapshot, not a legal certification,
 not production CMD approval, not DRE verification promotion, not full PDF/UA
@@ -413,6 +414,19 @@ Implementation checkpoints covered here:
   guarantees, a generalized observability sink, retention/deletion execution
   semantics beyond the visible 512-entry local tail bound, or a legal/compliance
   claim.
+- Current `6a2c91e` keeps Data/Roles/CI **PARTIAL**: ROL-02 default role
+  archetypes are explicit in the seeded catalog. Existing stable ids for
+  Proprietário/Owner, Gestor, Signatário, Leitor, Platform Administrator,
+  Tenant Administrator, Auditor, Guest, and API Client are preserved; additive
+  deterministic ids seed Company Owner, Corporate Secretary, Legal Counsel,
+  Records Manager, Signatory, and Reviewer. New archetype permissions are
+  pinned directly, with deny-list tests for meta, platform-log, destructive,
+  recovery, settings-management, and user-management authority; API seeding
+  still inserts only missing non-Owner seeded roles and does not clobber
+  customized seeds. This is local RBAC seed/default coverage only, not
+  legal-capacity proof, tenant/group policy, HR authority, access-policy
+  certification, or automatic reconciliation of customized persisted non-Owner
+  roles.
 - Working tree keeps Data/Architecture/CI **PARTIAL**: data-status filesystem
   telemetry now classifies `platform-logs.json` under `platform_logs` and
   `backup-recovery-drills.json` under `backup_recovery_drills`, while preserving
@@ -760,7 +774,7 @@ Implementation checkpoints covered here:
   advisory review signal only, not chronology certification, ownership
   determination, legal validity, AI/MCP completion, registry/provider assurance,
   or source certification.
-- Current `b2ceed0` keeps AI/MCP/Legal/Compliance/Data/CI **PARTIAL**: MCP now
+- `b2ceed0` kept AI/MCP/Legal/Compliance/Data/CI **PARTIAL**: MCP now
   advertises the read-only
   `chancela://mcp/privacy-control-review-summary` resource. With no arguments it
   returns local input-shape guidance and no-claim boundaries; with
@@ -2984,7 +2998,9 @@ behavior, legal disposal, or legal-effect claims.
   `POST /v1/api-keys/{id}/rotate`, shown-once create/rotate secrets, audit ledger events,
   per-key HTTP token-bucket enforcement, settings UI, and API/MCP bearer tests.
 - **Roles, delegations, guest/minimal redaction:** The seeded role catalog now covers Owner, Gestor,
-  Signatário, Leitor, Platform Administrator, Tenant Administrator, Auditor, Guest, and API Client.
+  Signatário, Leitor, Platform Administrator, Tenant Administrator, explicit ROL-02 Company Owner,
+  Corporate Secretary, Legal Counsel, Records Manager, Signatory, Reviewer, Auditor, Guest, and API
+  Client.
   Delegations carry `starts_at` and optional `legal_basis` evidence, persist to `delegations.json`,
   and remain non-redelegable. Minimal guest/read-only callers now get redacted entity and registry
   views plus book purpose/signatory/predecessor metadata, act free text/participant/evidence
