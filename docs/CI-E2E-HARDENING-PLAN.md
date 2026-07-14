@@ -628,6 +628,13 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 
 - CMD, CC, and CSC setup paths stay explicit about provider/hardware/onboarding
   requirements.
+- Provider credentials now have encrypted, entry-bound storage and operator
+  management UI coverage for CMD, CSC/QTSP, SCAP, and local PKCS#12 entries.
+  The API/UI evidence is write-only for secrets, priority ordered, and fail-closed
+  for missing key source, strict non-confidential protection, malformed sidecars,
+  incomplete stored records, disabled stored records, or authorization-mode
+  mismatches. It does not prove production credential custody, provider approval,
+  live provider readiness, or legal sufficiency.
 - Local/co-located CC batch signing is represented in the web UI for sealed acts
   through the desktop/local CC path and `POST /v1/signature/cc/batch-sign`,
   with optional transient PIN submission, per-document results, auth-mode/event
@@ -635,13 +642,21 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
   local CC batch UI evidence only: not CMD batch signing, not CSC/QTSP remote
   batch signing, not provider-certified remote batch signing, and not
   SCAP-verified representative authority or legal-capacity proof.
-- `chancela-signing` core exposes repeated per-document remote-session
-  orchestration helpers over the existing `RemoteSigningSource`
-  initiate/confirm one-digest flow. Each document still opens and confirms its
-  own remote session/activation. This is core-only: no API route, no web UI;
-  not provider-certified remote batch, not single OTP/PIN/SAD authorizing
-  multiple documents, not CMD multiple-sign, not CSC/QTSP multi-hash/SAD batch,
-  and not SCAP/legal-capacity proof.
+- `POST /v1/signature/remote/{provider}/batch-initiate` exposes the repeated
+  per-document remote-session helper through the API and SigningPanel UI. Each
+  valid act opens its own pending remote session/activation and returns
+  `auth_mode: "per_document_activation"`; later activation/confirmation still
+  happens through the normal single-document CMD or CSC/QTSP confirm route.
+  Invalid act preconditions are isolated into redacted per-document error rows,
+  while duplicate IDs and over-cap requests fail before provider or pending-row
+  creation. Focused proof spans `cargo test -p chancela-api --test
+  remote_signing --locked`, `client.test.ts`, `SigningPanel.test.tsx`, and
+  route-stubbed `apps/web/e2e/remote-signing-pending-session.spec.ts` coverage
+  for per-document pending rows without credential echo. This is not
+  provider-certified remote batch, not provider-native multi-document
+  authorization, not single OTP/PIN/SAD authorizing multiple documents, not CMD
+  multiple-sign, not CSC/QTSP multi-hash/SAD batch, and not SCAP/legal-capacity
+  proof.
 - `GET /v1/acts/{id}/signature` returns additive pending-session provider
   metadata so the web can resume already-open CMD or CSC/QTSP sessions after
   reload and call the matching confirm endpoint. This is reload
@@ -651,7 +666,7 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
   remote confirm for CSC/QTSP pending sessions and dedicated CMD confirm for
   legacy CMD pending sessions after reload, with fake activation/OTP values.
   No production provider approval, live CSC readiness, trust-list/legal
-  validation, SCAP/legal-capacity verification, remote batch,
+  validation, SCAP/legal-capacity verification, provider-native remote batch,
   qualified-signature certification, act finalization, or legal-validity claim
   is made.
 - Trust policy rejects unknown, withdrawn, stale, or invalid TSL states before
@@ -1495,7 +1510,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   --workspace apps/web -- e2e/session.spec.ts e2e/first-launch-onboarding.spec.ts`.
   Treat the static/unit/focused markers as the pinned slice, not broad
   Playwright-browser-suite or browser-matrix proof; the browser suite is not exhaustive.
-- Current checkpoint metadata/static checks through `869e02f`
+- Current checkpoint metadata/static checks through `fb31d06`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
@@ -1582,12 +1597,22 @@ settingsDefaults.test.ts contracts.test.ts`.
   SCAP-verified representative authority, legal-capacity proof,
   trust-list/provider validation, legal validity/effect/sufficiency, or act
   finalization/legal signing acceptance, plus
+  encrypted provider-credential entry storage and management UI markers for
+  sidecar plaintext absence, entry-bound AEAD authentication, write-only create
+  and response payloads, Settings priority/reorder/enable/delete controls,
+  stored CMD/CSC runtime resolution, stored SCAP prod resolution, stored-only
+  PKCS#12 priority/failover and wrong-identity fail-safe markers, plus
   `chancela-signing` repeated remote-session helper/types/tests for per-document
-  `RemoteSigningSource` initiate/confirm activation and core-only no-batch-claim
-  boundary markers, plus pending-session provider identity bridge markers for
+  `RemoteSigningSource` initiate/confirm activation and API/UI
+  `POST /v1/signature/remote/{provider}/batch-initiate` markers for
+  per-document pending-session initiation, `per_document_activation`,
+  duplicate/over-cap no-pending-row guards, redacted per-document errors, and
+  no credential echo, plus pending-session provider identity bridge markers for
   additive `GET /v1/acts/{id}/signature` provider metadata and reload
   CMD/CSC-QTSP confirm routing, including route-stubbed Playwright browser
-  proof for reload adoption/routing only, plus ASiC inspect
+  proof for reload adoption/routing only plus route-stubbed remote
+  batch-initiate browser proof for per-document pending rows without credential
+  echo, plus ASiC inspect
   route/base64/fixity/
   malformed-ZIP/unsafe-path checks, bounded profile/member/manifest/signature
   diagnostics, `technical_validation` from `validate_asic_container` across

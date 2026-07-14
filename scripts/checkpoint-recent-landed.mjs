@@ -3322,6 +3322,211 @@ function assertCheckpointMap() {
     "signing core repeated remote-session secret-free pending coverage",
   );
   assertFileContains(
+    "crates/chancela-api/src/secretstore_persist.rs",
+    "sidecar_never_contains_plaintext_secret",
+    "provider credentials encrypted sidecar no-plaintext coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/secretstore_persist.rs",
+    "relocating_a_ciphertext_between_entries_fails_authentication",
+    "provider credentials entry-bound AEAD coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/provider_credentials_write.rs",
+    "secrets_never_appear_in_responses",
+    "provider credentials write API redacted response coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/provider_credentials_write.rs",
+    "create_update_delete_round_trip",
+    "provider credentials write API lifecycle coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    '"/v1/signature/provider-credentials"',
+    "provider credentials management route marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/ProviderCredentialsSection.tsx",
+    "Security posture mirrors the backend (plan §3/§6): secrets are WRITE-ONLY",
+    "web provider credentials write-only posture marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/ProviderCredentialsSection.test.tsx",
+    "renders provider groups, entries in priority order, and configured field badges",
+    "web provider credentials priority/configured-field coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/ProviderCredentialsSection.test.tsx",
+    "sends a write-only create body with the secret in `set`",
+    "web provider credentials write-only create coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/cmd_signing.rs",
+    "cmd_initiate_uses_stored_application_id_with_env_cleared",
+    "API stored CMD credential runtime coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/cmd_signing.rs",
+    "cmd_stored_application_id_beats_env_application_id",
+    "API stored CMD beats env coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/cmd_signing.rs",
+    "cmd_partial_stored_record_fails_without_env_mixing",
+    "API partial stored CMD fails closed coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/remote_signing.rs",
+    "csc_stored_service_credentials_beat_env_and_mark_provider_configured",
+    "API stored CSC service credential runtime coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/remote_signing.rs",
+    "csc_stored_access_token_credentials_drive_user_runtime_auth",
+    "API stored CSC user credential runtime coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/remote_signing.rs",
+    "csc_partial_stored_record_fails_without_env_or_di_mixing",
+    "API partial stored CSC fails closed coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/scap.rs",
+    "scap_prod_uses_stored_credentials_with_credential_env_cleared",
+    "API stored SCAP prod runtime coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/scap.rs",
+    "scap_stored_credentials_win_over_env",
+    "API stored SCAP beats env coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/scap.rs",
+    "scap_incomplete_stored_credentials_fail_closed_without_env_fallback",
+    "API incomplete stored SCAP fails closed coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/scap.rs",
+    "scap_disabled_stored_credentials_fail_closed_without_env_fallback",
+    "API disabled stored SCAP fails closed coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/scap.rs",
+    "scap_preprod_mock_ignores_stored_credentials_and_never_verifies",
+    "API SCAP preprod ignores stored credentials coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/signature_pkcs12_stored.rs",
+    "pub async fn sign_local_pkcs12_stored_signature",
+    "API stored PKCS12 signing route handler marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/signature_pkcs12_stored.rs",
+    "highest_priority_enabled_entry_is_selected",
+    "stored PKCS12 priority selection coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/signature_pkcs12_stored.rs",
+    "disabling_the_top_entry_falls_over_to_the_next",
+    "stored PKCS12 disabled-entry failover coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/signature_pkcs12_stored.rs",
+    "wrong_stored_passphrase_is_terminal_and_does_not_fail_over",
+    "stored PKCS12 wrong-passphrase fail-safe coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/signature_pkcs12_stored.rs",
+    "stored_sign_rejects_local_key_id_selection_the_delegate_cannot_honor",
+    "stored PKCS12 wrong-identity fail-safe coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    '"/v1/acts/{id}/signature/local/pkcs12/sign-stored"',
+    "API stored PKCS12 signing route marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/signature.rs",
+    "pub struct RemoteBatchInitiateRequest",
+    "API remote batch request DTO marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/signature.rs",
+    "pub struct RemoteBatchInitiateResponse",
+    "API remote batch response DTO marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/signature.rs",
+    "`POST /v1/signature/remote/{provider}/batch-initiate` — open one independent two-phase remote",
+    "API remote batch route no-provider-native marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/signature.rs",
+    "it does not claim provider-native batch, single SAD, single OTP, or single PIN",
+    "API remote batch no single authorization marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    '"/v1/signature/remote/{provider}/batch-initiate"',
+    "API remote batch route marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/remote_signing.rs",
+    "csc_batch_initiate_with_stored_service_credentials_creates_independent_pending_sessions",
+    "API CSC remote batch per-document pending coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/remote_signing.rs",
+    "cmd_batch_initiate_uses_stored_application_id_without_env_or_settings",
+    "API CMD remote batch stored credential coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/remote_signing.rs",
+    "remote_batch_initiate_isolates_invalid_act_precondition_failure",
+    "API remote batch invalid-act isolation coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/remote_signing.rs",
+    "remote_batch_initiate_duplicate_act_ids_422_without_pending_rows",
+    "API remote batch duplicate no-pending coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/remote_signing.rs",
+    "remote_batch_initiate_over_cap_422_without_provider_or_pending_rows",
+    "API remote batch over-cap no-provider coverage",
+  );
+  assertFileContains(
+    "apps/web/src/api/types.ts",
+    "`POST /v1/signature/remote/{provider}/batch-initiate` opens one independent",
+    "web remote batch type no-provider-native marker",
+  );
+  assertFileContains(
+    "apps/web/src/api/client.test.ts",
+    "initiates remote signing sessions with the batch endpoint and exact request body",
+    "web client remote batch request coverage",
+  );
+  assertFileContains(
+    "apps/web/src/api/client.test.ts",
+    "/v1/signature/remote/multi%2Fcert%20prod/batch-initiate",
+    "web client remote batch provider encoding marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/signing/SigningPanel.test.tsx",
+    "submits per-document remote initiate payloads and renders redacted pending/error rows",
+    "web SigningPanel remote batch pending/error coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/signing/SigningPanel.test.tsx",
+    "clears provider-bound credentials and stale remote batch results on provider switch",
+    "web SigningPanel remote batch stale secret clear coverage",
+  );
+  assertFileContains(
+    "apps/web/e2e/remote-signing-pending-session.spec.ts",
+    "remote batch initiate opens per-document pending sessions without credential echo",
+    "web route-stubbed remote batch no-credential-echo coverage",
+  );
+  assertFileContains(
     "crates/chancela-api/src/signature.rs",
     "pub struct PendingInfo",
     "API pending signature info response marker",
@@ -3408,23 +3613,38 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Core repeated remote-session orchestration seam",
+    "Repeated remote-session API/UI seam",
     "spec coverage repeated remote-session seam marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "core-only: no API route, no web UI",
-    "spec coverage repeated remote-session core-only no-claim marker",
+    "POST /v1/signature/remote/{provider}/batch-initiate` plus SigningPanel UI\n  expose that as repeated pending-session initiation",
+    "spec coverage repeated remote-session API/UI marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "provider-certified remote batch, not single OTP/PIN/SAD authorizing multiple\n  documents, not CMD multiple-sign, not CSC/QTSP multi-hash/SAD batch, and not\n  SCAP/legal-capacity proof",
+    "provider-native multi-document authorization, not single\n  OTP/PIN/SAD authorizing multiple documents, not CMD multiple-sign, not\n  CSC/QTSP multi-hash/SAD batch, and not SCAP/legal-capacity proof",
     "spec coverage repeated remote-session remote-batch no-claim marker",
   );
   assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Current `fb31d06` Signatures & Trust credential/batch checkpoint keeps",
+    "spec coverage credential/batch checkpoint marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "encrypted local credential storage, runtime credential selection, stored-only\n  local PKCS#12 technical signing, and route-stubbed/per-document remote\n  pending-session initiation only",
+    "spec coverage credential/batch no-overclaim marker",
+  );
+  assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Each document still opens and confirms its\n  own remote session/activation",
+    "`POST /v1/signature/remote/{provider}/batch-initiate` exposes the repeated\n  per-document remote-session helper through the API and SigningPanel UI",
     "CI/E2E hardening repeated remote-session per-document marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Provider credentials now have encrypted, entry-bound storage and operator\n  management UI coverage",
+    "CI/E2E hardening provider credentials marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -3443,8 +3663,13 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "core-only no-API/no-web boundary",
-    "CI checkpoints repeated remote-session core-only marker",
+    "`POST /v1/signature/remote/{provider}/batch-initiate` markers for\nper-document pending-session initiation",
+    "CI checkpoints remote batch initiate marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "encrypted provider-credential entry storage and Settings management markers",
+    "CI checkpoints provider credentials marker",
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
@@ -9025,7 +9250,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `869e02f`",
+    "Current checkpoint metadata/static checks through `fb31d06`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -9455,7 +9680,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `7fcf5ef5f1c2fbd5b9eb26d6aac5c1240144a365`",
+    "implementation snapshot `fb31d06caf167241c255158fc965a403adb2f398`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(

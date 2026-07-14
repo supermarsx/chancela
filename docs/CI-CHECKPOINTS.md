@@ -87,6 +87,12 @@ remote documents, CMD multiple-sign, CSC/QTSP multi-hash/SAD batch,
 SCAP-verified representative authority, legal-capacity proof,
 trust-list/provider validation, legal validity/effect/sufficiency, or act
 finalization/legal signing acceptance,
+encrypted provider-credential entry storage and Settings management markers for
+CMD, CSC/QTSP, SCAP, and local PKCS#12, including write-only secret responses,
+sidecar plaintext absence, entry-bound AEAD authentication, priority/reorder/
+enable/delete flows, strict non-confidential-store blocking, stored CMD/CSC
+runtime credential resolution, stored SCAP prod resolution, stored-only PKCS#12
+priority/failover and wrong-identity fail-safe markers,
 manual-signature original-reference metadata markers for core required-before-mutation
 and immutable seal metadata coverage, API guest/minimal redaction coverage,
 focused Ata editor manual seal validation tests, `act.sealed` contract coverage,
@@ -98,9 +104,13 @@ signature validity, provider-backed signing, PAdES/PDF-A certification, or legal
 archive certification,
 `chancela-signing` core repeated per-document remote-session orchestration
 markers for `RemoteSigningSource` initiate/confirm one-digest flow,
-per-document activation, helper/types/tests, core-only no-API/no-web boundary,
-and no provider-certified remote batch / single OTP/PIN/SAD / CMD
-multiple-sign / CSC/QTSP multi-hash/SAD / SCAP/legal-capacity claim,
+per-document activation, helper/types/tests, API/UI
+`POST /v1/signature/remote/{provider}/batch-initiate` markers for
+per-document pending-session initiation, `per_document_activation`, redacted
+per-document errors, duplicate/over-cap no-pending-row guards, and no
+credential echo, with no provider-certified remote batch / provider-native
+multi-document authorization / single OTP/PIN/SAD / CMD multiple-sign /
+CSC/QTSP multi-hash/SAD / SCAP/legal-capacity claim,
 pending-session provider identity bridge markers for additive
 `GET /v1/acts/{id}/signature` metadata (`provider_id`, `family`, and optional
 `activation_hint`) plus web reload adoption routing to the dedicated CMD
@@ -162,6 +172,25 @@ It intentionally reuses existing test surfaces:
   `npm run check:live-provider-assurance`
 - API local PKCS#12 signing:
   `cargo test -p chancela-api --test local_pkcs12_signing --locked`
+- API stored CMD/CSC runtime resolution and remote batch initiation:
+  `cargo test -p chancela-api --test remote_signing --locked` including
+  stored CSC service/access-token runtime credentials, stored CMD
+  batch-initiate configuration, per-document pending-session creation,
+  invalid-act isolation, duplicate/over-cap no-pending-row guards, and
+  signing-permission refusal before provider calls.
+- API stored SCAP prod runtime credential resolution:
+  `cargo test -p chancela-api --test scap --locked` including stored-over-env
+  prod credentials, incomplete/disabled stored credential fail-closed behavior,
+  and preprod mock behavior that ignores stored SCAP credentials and never
+  verifies legal capacity.
+- Web remote batch and provider credential management unit proof:
+  `npm run test --workspace apps/web -- src/api/client.test.ts
+  src/features/signing/SigningPanel.test.tsx` pins the encoded
+  `POST /v1/signature/remote/{provider}/batch-initiate` client route,
+  per-document pending/error rows without credential echo, stale-result
+  clearing, and provider-bound credential clearing. The provider credential UI
+  unit proof is `npm run test --workspace apps/web --
+  src/features/settings/ProviderCredentialsSection.test.tsx`.
 - API bounded retention execution:
   `cargo test -p chancela-api --test privacy --locked retention_`
   including explicit non-destructive evidence states, due-candidate prior
@@ -546,12 +575,12 @@ canonical paper-book conversion,
 paper-book canonical act/document/archive-package creation, paper-book PDF/A/PDF-UA,
 paper-book signature/seal creation, paper-book OCR/conversion behavior beyond the
 bounded reviewed metadata/execution-artifact slices, legal effect for mutable
-draft acts created from accepted OCR drafts, CMD batch
-signing, CSC/QTSP remote batch signing, provider-certified remote batch signing,
-single OTP/PIN/SAD authorizing multiple documents, CMD multiple-sign,
-CSC/QTSP multi-hash/SAD batch, SCAP-verified representative authority,
-legal-capacity proof, API/web coverage for the core-only repeated
-remote-session helper, or legal effect for local CC batch UI evidence. The
+draft acts created from accepted OCR drafts, provider-native CMD batch
+signing, provider-native CSC/QTSP multi-hash/SAD batch signing,
+provider-certified remote batch signing, single OTP/PIN/SAD authorizing
+multiple documents, CMD multiple-sign, SCAP-verified representative authority,
+legal-capacity proof, production/live remote batch readiness, or legal effect
+for local CC or repeated remote batch-initiate UI evidence. The
 Arquivo markers prove bounded UI/API/browser paging, persisted-store SQL paging
 after reload/memory clear, and filtered first-page export behavior only; export
 remains bounded to the current filtered newest-first page after limit
@@ -573,12 +602,23 @@ private-key material, and keeps the envelope open as operator-supplied
 technical workflow evidence only; they do not prove provider calls, trust-list
 checks, QES/qualified status, legal validity, provider completion, act
 finalization, provider-backed slot signing, or full envelope legal completion.
+The remote batch-initiate markers prove only repeated per-document
+pending-session initiation through
+`POST /v1/signature/remote/{provider}/batch-initiate`: each valid act gets its
+own pending session, activation hint, expiry, and later single-document
+CMD/CSC-QTSP confirm path. They do not prove provider-certified remote batch,
+provider-native multi-document authorization, one OTP/PIN/SAD for multiple
+documents, CMD multiple-sign, CSC/QTSP multi-hash/SAD batch, production
+provider approval, SCAP/legal-capacity verification, act finalization, or legal
+validity. The focused route-stubbed browser proof for that slice is in
+`apps/web/e2e/remote-signing-pending-session.spec.ts` and asserts
+per-document pending rows without credential echo.
 The pending-session provider identity bridge markers prove only that additive
 pending-session metadata can route an already-open CMD or CSC/QTSP session
 after reload to the matching confirm endpoint; they do not prove production
 provider approval, live CSC readiness, trust-list/legal validation,
-SCAP/legal-capacity verification, remote batch, qualified-signature
-certification, act finalization, or legal-validity.
+SCAP/legal-capacity verification, qualified-signature certification, act
+finalization, or legal-validity.
 Focused browser execution for that slice is
 `npm run test:browser --workspace apps/web -- e2e/remote-signing-pending-session.spec.ts`;
 it is route-stubbed reload adoption/routing only and uses fake activation/OTP
