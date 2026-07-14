@@ -1,6 +1,6 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-14 from current implementation snapshot `2ae54ae4bc8a9918ca13e93dad416d4bcca30082`,
+*Updated 2026-07-14 from current implementation snapshot `27b8e8262c9c95abd597ca72c728d3dd9e120130`,
 with committed evidence refreshes for the recently landed Signatures & Trust
 provider-credential, stored runtime credential resolution, stored PKCS#12,
 remote batch-initiation surfaces, and Docker/Compose runtime-hardening
@@ -565,7 +565,7 @@ Implementation checkpoints covered here:
   append, production backup policy, RPO/RTO certification, disaster-recovery
   readiness, off-site custody proof, SQLCipher-at-rest proof, legal archive
   certification, FULL coverage, or new CAE provider/legal behavior.
-- Current `2ae54ae` keeps Template Catalog/UX/CI **PARTIAL**: the embedded template
+- Current `27b8e82` keeps Template Catalog/UX/CI **PARTIAL**: the embedded template
   catalog now loads 104 JSON template assets (104 total / 44 CSC), including
   standalone
   `procuracao-representacao/v1` instruments for commercial companies,
