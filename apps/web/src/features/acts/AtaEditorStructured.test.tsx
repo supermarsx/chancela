@@ -9,6 +9,10 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { AtaEditorPage, actDocumentPanelTargetFromLocation } from './AtaEditorPage';
+import {
+  buildAiProvenanceReviewPacket,
+  formatAiProvenanceReviewPacket,
+} from './aiProvenanceReviewPacket';
 import { ataFieldHelp } from './fieldHelp';
 import { makeClient } from '../../test/utils';
 import { ToastProvider } from '../../ui/toast';
@@ -460,6 +464,105 @@ describe('AtaEditorPage — AI human review gate', () => {
     };
   }
 
+  it('builds a deterministic review packet without raw sensitive review fields', () => {
+    const sensitiveSources = [
+      {
+        path: '/draft',
+        source_type: 'ai_suggestion',
+        source_label: 'SECRET_DRAFT_BODY',
+        human_verified: false,
+        human_verification_status: 'pending_human_verification',
+        authoritative_source_claimed: false,
+        legal_validity_claimed: false,
+      },
+      {
+        path: '/draft/title',
+        source_type: 'caller_supplied',
+        source_label: 'SECRET_TITLE_ARGUMENT',
+        human_verified: true,
+        human_verification_status: 'accepted_by_human',
+        authoritative_source_claimed: true,
+        legal_validity_claimed: false,
+      },
+      {
+        path: '/draft/missing',
+        source_type: null,
+        source_label: 'SECRET_MISSING_LABEL',
+        human_verified: true,
+        human_verification_status: null,
+        authoritative_source_claimed: false,
+        legal_validity_claimed: false,
+      },
+    ] as unknown as AiStatementSources;
+    const provenance: AiProvenance = {
+      source: 'mcp',
+      tool: 'draft_act',
+      statement_source: 'SECRET_OPERATOR_INSTRUCTION',
+      human_verification: {
+        status: 'accepted_by_human',
+        actor: 'reviewer.secret@example.pt',
+        reviewed_at: '2026-07-14T10:00:00Z',
+        note: 'SECRET_REVIEW_NOTE',
+      },
+      statement_sources: sensitiveSources,
+    };
+
+    const packet = buildAiProvenanceReviewPacket(provenance);
+
+    expect(packet).toEqual({
+      schema_version: 'ai-provenance-review-packet/v1',
+      generated_from: 'act.ai_provenance',
+      source: 'mcp',
+      tool: 'draft_act',
+      statement_source_present: true,
+      human_review: {
+        status: 'accepted_by_human',
+        actor_present: true,
+        reviewed_at_present: true,
+        note_present: true,
+      },
+      statement_sources: {
+        total: 3,
+        counts_by_source_type: {
+          ai_suggestion: 1,
+          caller_supplied: 1,
+          missing: 1,
+        },
+        counts_by_review_status: {
+          accepted_by_human: 1,
+          missing: 1,
+          pending_human_verification: 1,
+        },
+        missing: {
+          row_count: 1,
+          rows: [{ index: 2, path: '/draft/missing' }],
+        },
+        pending_or_unverified_row_count: 2,
+        claim_flagged_row_count: 1,
+      },
+      no_claim_flags: {
+        legal_validity: false,
+        source_certification: false,
+        provider_assurance: false,
+        trust_validation: false,
+        external_validation: false,
+        signature_qualification: false,
+        mcp_completion: false,
+        ai_quality: false,
+      },
+    });
+    expect(Object.values(packet.no_claim_flags).every((value) => value === false)).toBe(true);
+
+    const serialized = formatAiProvenanceReviewPacket(provenance);
+    expect(serialized).toBe(`${JSON.stringify(packet, null, 2)}\n`);
+    expect(serialized).not.toContain('SECRET_DRAFT_BODY');
+    expect(serialized).not.toContain('SECRET_TITLE_ARGUMENT');
+    expect(serialized).not.toContain('SECRET_MISSING_LABEL');
+    expect(serialized).not.toContain('SECRET_OPERATOR_INSTRUCTION');
+    expect(serialized).not.toContain('reviewer.secret@example.pt');
+    expect(serialized).not.toContain('SECRET_REVIEW_NOTE');
+  });
+
   it('renders grouped provenance summary by source_type', async () => {
     const shared = stateful(actWithAiReview(aiReviewStatementSources));
     vi.stubGlobal('fetch', shared.fetchImpl);
@@ -576,6 +679,26 @@ describe('AtaEditorPage — AI human review gate', () => {
 
       expect(await screen.findByText('Sem fontes de declaração registadas.')).toBeTruthy();
     }
+  });
+
+  it('copies the deterministic review packet as stable pretty JSON', async () => {
+    const withAi = actWithAiReview(aiReviewStatementSources);
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+    const shared = stateful(withAi);
+    vi.stubGlobal('fetch', shared.fetchImpl);
+    renderEditor();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Copiar pacote de revisão' }));
+
+    await waitFor(() =>
+      expect(writeText).toHaveBeenCalledWith(
+        formatAiProvenanceReviewPacket(withAi.ai_provenance!),
+      ),
+    );
   });
 
   it('records reject and accept decisions and only enables Signing after acceptance', async () => {

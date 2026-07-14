@@ -73,6 +73,7 @@ import {
 } from '../../api/types';
 import { formatAtaNumber } from '../../format';
 import { useT } from '../../i18n';
+import { formatAiProvenanceReviewPacket } from './aiProvenanceReviewPacket';
 import {
   Badge,
   Button,
@@ -1469,12 +1470,15 @@ function AiHumanReviewPanel({
   onVerify: (decision: HumanVerificationDecision) => void;
 }) {
   const t = useT();
+  const toast = useToast();
   const noteId = useId();
   const provenanceId = useId();
+  const [copiedPacket, setCopiedPacket] = useState(false);
   const verification = provenance.human_verification;
   const statusLabel = t(aiHumanVerificationLabel(verification.status));
   const reviewedAt = verification.reviewed_at;
   const statementSources = provenance.statement_sources ?? [];
+  const reviewPacketJson = formatAiProvenanceReviewPacket(provenance);
   const missingLabel = t('acts.aiReview.missing');
   const sourceTypeCounts = Array.from(
     statementSources.reduce<Map<string, number>>((counts, source) => {
@@ -1500,10 +1504,29 @@ function AiHumanReviewPanel({
       source.authoritative_source_claimed === true || source.legal_validity_claimed === true,
   ).length;
 
+  async function copyReviewPacket() {
+    try {
+      await navigator.clipboard.writeText(reviewPacketJson);
+      setCopiedPacket(true);
+      window.setTimeout(() => setCopiedPacket(false), 1500);
+      toast.success(t('acts.aiReview.packet.copied'));
+    } catch {
+      toast.error(t('acts.aiReview.packet.copyFailed'));
+    }
+  }
+
   return (
     <div className="stack--tight ai-review">
       <div className="row-wrap ai-review__status">
         <Badge tone={aiHumanVerificationTone(verification.status)}>{statusLabel}</Badge>
+        <Button
+          type="button"
+          variant="ghost"
+          icon={copiedPacket ? <Icon.Check /> : <Icon.Copy />}
+          onClick={() => void copyReviewPacket()}
+        >
+          {copiedPacket ? t('acts.aiReview.packet.copiedButton') : t('acts.aiReview.packet.copy')}
+        </Button>
       </div>
       <p className="muted">{t('acts.aiReview.body')}</p>
 
