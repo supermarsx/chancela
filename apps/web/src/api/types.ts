@@ -3572,12 +3572,7 @@ export interface DpiaRecordView extends PrivacyRegisterRecordBase {
 }
 
 export type DpiaTemplateFieldType =
-  | 'text'
-  | 'textarea'
-  | 'checklist'
-  | 'date'
-  | 'evidence_reference'
-  | 'review_note';
+  'text' | 'textarea' | 'checklist' | 'date' | 'evidence_reference' | 'review_note';
 
 export interface DpiaTemplateChecklistItem {
   id: string;
@@ -7105,8 +7100,20 @@ export interface StartOverBookResult {
 export const DATA_PERSISTENCE_MODES = ['durable', 'in_memory', 'fallback_in_memory'] as const;
 export type DataPersistenceMode = (typeof DATA_PERSISTENCE_MODES)[number];
 
+export const DATA_DURABLE_BACKEND_FAMILIES = ['sqlite', 'postgres'] as const;
+export type DataDurableBackendFamily = (typeof DATA_DURABLE_BACKEND_FAMILIES)[number];
+
+export const DATA_SIDECAR_STORAGE_MODES = ['file', 'database', 'in_memory'] as const;
+export type DataSidecarStorageMode = (typeof DATA_SIDECAR_STORAGE_MODES)[number];
+
 /** How a usage row was measured. */
-export const DATA_USAGE_BASES = ['filesystem', 'sqlite_logical_payload', 'sqlite_file'] as const;
+export const DATA_USAGE_BASES = [
+  'filesystem',
+  'logical_payload',
+  'sidecar_logical_payload',
+  'sqlite_logical_payload',
+  'sqlite_file',
+] as const;
 export type DataUsageBasis = (typeof DATA_USAGE_BASES)[number];
 
 export const DATA_PAYLOAD_ESTIMATE_METHODS = ['local_loaded_payload_estimate'] as const;
@@ -7116,6 +7123,8 @@ export interface DataPersistenceStatus {
   mode: DataPersistenceMode;
   data_dir_configured: boolean;
   durable_store_open: boolean;
+  active_backend_family: DataDurableBackendFamily | null;
+  sidecar_storage_mode: DataSidecarStorageMode;
   database_encryption_configured: boolean;
   store_schema_version: number | null;
   ledger_length: number;
@@ -7140,6 +7149,7 @@ export interface DataPermissionStatus {
   create_file: DataPermissionCheck;
   write_file: DataPermissionCheck;
   delete_probe_file: DataPermissionCheck;
+  durable_store_open: DataPermissionCheck;
   sqlite_store_open: DataPermissionCheck;
 }
 
@@ -7169,6 +7179,9 @@ export interface DataUsageConcern {
 export interface DataUsageStatus {
   total_bytes: number;
   filesystem: DataUsageConcern[];
+  logical_payload: DataUsageConcern[];
+  sidecars: DataUsageConcern[];
+  largest_payload_table?: DataPayloadStats;
   sqlite_logical: DataUsageConcern[];
   sqlite_largest_payload_table?: DataPayloadStats;
   scan_errors: string[];

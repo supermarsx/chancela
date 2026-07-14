@@ -51,12 +51,29 @@ pub struct PersistenceStatus {
     pub mode: PersistenceMode,
     pub data_dir_configured: bool,
     pub durable_store_open: bool,
+    pub active_backend_family: Option<DurableBackendFamily>,
+    pub sidecar_storage_mode: SidecarStorageMode,
     pub database_encryption_configured: bool,
     pub database_encryption: DatabaseEncryptionStatus,
     pub store_schema_version: Option<i64>,
     pub ledger_length: u64,
     pub ledger_verified: Option<bool>,
     pub degraded: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DurableBackendFamily {
+    Sqlite,
+    Postgres,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SidecarStorageMode {
+    File,
+    Database,
+    InMemory,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -132,6 +149,7 @@ pub struct PermissionStatus {
     pub create_file: PermissionCheck,
     pub write_file: PermissionCheck,
     pub delete_probe_file: PermissionCheck,
+    pub durable_store_open: PermissionCheck,
     pub sqlite_store_open: PermissionCheck,
 }
 
@@ -146,6 +164,11 @@ pub struct PermissionCheck {
 pub struct UsageStatus {
     pub total_bytes: u64,
     pub filesystem: Vec<ConcernUsage>,
+    pub logical_payload: Vec<ConcernUsage>,
+    pub sidecars: Vec<ConcernUsage>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub largest_payload_table: Option<DataPayloadStats>,
+    /// Backwards-compatible alias for older web/contract clients.
     pub sqlite_logical: Vec<ConcernUsage>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sqlite_largest_payload_table: Option<DataPayloadStats>,
@@ -174,6 +197,7 @@ pub struct ConcernUsage {
 #[serde(rename_all = "snake_case")]
 pub enum UsageConcernKind {
     SqliteLogicalTable,
+    SidecarLogicalStore,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -252,6 +276,8 @@ impl fmt::Debug for DataKeyRotationExecuteRequest {
 #[serde(rename_all = "snake_case")]
 pub enum UsageBasis {
     Filesystem,
+    LogicalPayload,
+    SidecarLogicalPayload,
     #[allow(dead_code)]
     SqliteLogicalPayload,
     SqliteFile,
@@ -415,6 +441,18 @@ pub async fn get_data_status(
     let data_dir_configured = data_dir.is_some();
     let store = state.store.clone();
     let durable_store_open = store.is_some();
+    let active_backend_family = durable_store_open.then_some(if state.sidecars_db_backed {
+        DurableBackendFamily::Postgres
+    } else {
+        DurableBackendFamily::Sqlite
+    });
+    let sidecar_storage_mode = if state.sidecars_db_backed {
+        SidecarStorageMode::Database
+    } else if data_dir_configured {
+        SidecarStorageMode::File
+    } else {
+        SidecarStorageMode::InMemory
+    };
     let mode = match (data_dir_configured, durable_store_open) {
         (_, true) => PersistenceMode::Durable,
         (true, false) => PersistenceMode::FallbackInMemory,
@@ -425,8 +463,14 @@ pub async fn get_data_status(
     let degraded = *state.degraded.read().await;
     let database_encryption_configured = state.database_encryption_configured;
     let database_encryption_key_source = state.database_encryption_key_source;
+    let mut sidecar_scan_errors = Vec::new();
+    let sidecars = if state.sidecars_db_backed {
+        db_backed_sidecar_usage(&state, &mut sidecar_scan_errors).await
+    } else {
+        Vec::new()
+    };
 
-    let (fs, database_encryption) = match data_dir {
+    let (mut fs, database_encryption) = match data_dir {
         Some(dir) => task::spawn_blocking(move || {
             let database_encryption = inspect_database_encryption(
                 Some(&dir),
@@ -446,6 +490,8 @@ pub async fn get_data_status(
             ),
         ),
     };
+    fs.usage.sidecars = sidecars;
+    fs.usage.scan_errors.append(&mut sidecar_scan_errors);
 
     Ok(Json(DataStatusResponse {
         generated_at: now_rfc3339(),
@@ -453,6 +499,8 @@ pub async fn get_data_status(
             mode,
             data_dir_configured,
             durable_store_open,
+            active_backend_family,
+            sidecar_storage_mode,
             database_encryption_configured,
             database_encryption,
             store_schema_version: durable_store_open
@@ -1406,6 +1454,15 @@ fn inspect_unconfigured_data_dir(durable_store_open: bool) -> FsInspection {
             create_file: unchecked("no data directory configured"),
             write_file: unchecked("no data directory configured"),
             delete_probe_file: unchecked("no data directory configured"),
+            durable_store_open: PermissionCheck {
+                ok: durable_store_open,
+                checked: true,
+                message: if durable_store_open {
+                    "durable store is open".to_owned()
+                } else {
+                    "durable store is not open because no data directory is configured".to_owned()
+                },
+            },
             sqlite_store_open: PermissionCheck {
                 ok: durable_store_open,
                 checked: true,
@@ -1420,6 +1477,9 @@ fn inspect_unconfigured_data_dir(durable_store_open: bool) -> FsInspection {
         usage: UsageStatus {
             total_bytes: 0,
             filesystem: Vec::new(),
+            logical_payload: Vec::new(),
+            sidecars: Vec::new(),
+            largest_payload_table: None,
             sqlite_logical: Vec::new(),
             sqlite_largest_payload_table: None,
             scan_errors: Vec::new(),
@@ -1447,6 +1507,11 @@ fn inspect_data_dir(dir: PathBuf, store: Option<chancela_store::Store>) -> FsIns
     if let Some(store) = store.as_ref() {
         usage.sqlite_logical = scan_sqlite_logical_usage(store, &mut usage.scan_errors);
         usage.sqlite_largest_payload_table = largest_sqlite_payload_table(&usage.sqlite_logical);
+        usage.logical_payload = neutral_logical_usage(&usage.sqlite_logical);
+        usage.largest_payload_table = usage
+            .sqlite_largest_payload_table
+            .as_ref()
+            .map(neutral_payload_stats);
     }
     scan_errors.append(&mut usage.scan_errors);
     usage.scan_errors = scan_errors;
@@ -1554,6 +1619,15 @@ fn probe_permissions(dir: &Path, durable_store_open: bool) -> PermissionStatus {
         create_file,
         write_file,
         delete_probe_file,
+        durable_store_open: PermissionCheck {
+            ok: durable_store_open,
+            checked: true,
+            message: if durable_store_open {
+                "durable store is open".to_owned()
+            } else {
+                "durable store is not open".to_owned()
+            },
+        },
         sqlite_store_open: PermissionCheck {
             ok: durable_store_open,
             checked: true,
@@ -1575,6 +1649,9 @@ fn scan_filesystem_usage(dir: &Path) -> UsageStatus {
         return UsageStatus {
             total_bytes: 0,
             filesystem: Vec::new(),
+            logical_payload: Vec::new(),
+            sidecars: Vec::new(),
+            largest_payload_table: None,
             sqlite_logical: Vec::new(),
             sqlite_largest_payload_table: None,
             scan_errors,
@@ -1604,6 +1681,9 @@ fn scan_filesystem_usage(dir: &Path) -> UsageStatus {
     UsageStatus {
         total_bytes,
         filesystem,
+        logical_payload: Vec::new(),
+        sidecars: Vec::new(),
+        largest_payload_table: None,
         sqlite_logical: Vec::new(),
         sqlite_largest_payload_table: None,
         scan_errors,
@@ -1976,6 +2056,186 @@ fn largest_sqlite_payload_table(usage: &[ConcernUsage]) -> Option<DataPayloadSta
             )
         })
         .cloned()
+}
+
+fn neutral_logical_usage(sqlite_usage: &[ConcernUsage]) -> Vec<ConcernUsage> {
+    sqlite_usage
+        .iter()
+        .cloned()
+        .map(|mut concern| {
+            concern.basis = UsageBasis::LogicalPayload;
+            if let Some(stats) = concern.payload_stats.as_mut() {
+                stats.estimate_basis = UsageBasis::LogicalPayload;
+            }
+            if concern.kind == Some(UsageConcernKind::SqliteLogicalTable) {
+                if let Some(table) = concern.relative_roots.first() {
+                    concern.label = format!("Database table: {table}");
+                }
+            }
+            concern
+        })
+        .collect()
+}
+
+fn neutral_payload_stats(stats: &DataPayloadStats) -> DataPayloadStats {
+    let mut stats = stats.clone();
+    stats.estimate_basis = UsageBasis::LogicalPayload;
+    stats
+}
+
+async fn db_backed_sidecar_usage(
+    state: &AppState,
+    scan_errors: &mut Vec<String>,
+) -> Vec<ConcernUsage> {
+    let users = {
+        let users = state.users.read().await;
+        sidecar_logical_concern(
+            "users",
+            "DB-backed sidecar: users",
+            users.len() as u64,
+            users
+                .values()
+                .map(json_len_estimate)
+                .fold(0_u64, u64::saturating_add),
+            vec![crate::users::USERS_FILE],
+            true,
+        )
+    };
+    let roles = {
+        let roles = state.roles.read().await;
+        sidecar_logical_concern(
+            "roles",
+            "DB-backed sidecar: roles",
+            roles.len() as u64,
+            roles
+                .iter()
+                .map(json_len_estimate)
+                .fold(0_u64, u64::saturating_add),
+            vec![crate::roles::ROLES_FILE],
+            true,
+        )
+    };
+    let delegations = {
+        let delegations = state.delegations.read().await;
+        sidecar_logical_concern(
+            "delegations",
+            "DB-backed sidecar: delegations",
+            delegations.len() as u64,
+            delegations
+                .values()
+                .map(json_len_estimate)
+                .fold(0_u64, u64::saturating_add),
+            vec![crate::delegations::DELEGATIONS_FILE],
+            true,
+        )
+    };
+    let settings = {
+        let settings = state.settings.read().await;
+        sidecar_logical_concern(
+            "settings",
+            "DB-backed sidecar: settings",
+            1,
+            json_len_estimate(&*settings),
+            vec![crate::settings::SETTINGS_FILE],
+            true,
+        )
+    };
+    let provider_credentials = match state.store.clone() {
+        Some(store) => match task::spawn_blocking(move || store.read_credential_records()).await {
+            Ok(Ok(records)) => {
+                let bytes = records
+                    .iter()
+                    .map(|record| {
+                        record.mode.len() as u64
+                            + record.provider_id.len() as u64
+                            + record.updated_at.len() as u64
+                            + std::mem::size_of_val(&record.key_version) as u64
+                            + record.record_blob.len() as u64
+                    })
+                    .fold(0_u64, u64::saturating_add);
+                sidecar_logical_concern(
+                    "provider_credentials",
+                    "DB-backed sidecar: provider credentials",
+                    records.len() as u64,
+                    bytes,
+                    vec![crate::secretstore_persist::CREDENTIAL_SIDECAR_FILE],
+                    true,
+                )
+            }
+            Ok(Err(e)) => {
+                scan_errors.push(format!(
+                    "failed to read DB-backed provider credential sidecar telemetry: {e}"
+                ));
+                sidecar_logical_concern(
+                    "provider_credentials",
+                    "DB-backed sidecar: provider credentials",
+                    0,
+                    0,
+                    vec![crate::secretstore_persist::CREDENTIAL_SIDECAR_FILE],
+                    false,
+                )
+            }
+            Err(e) => {
+                scan_errors.push(format!(
+                    "provider credential sidecar telemetry worker failed: {e}"
+                ));
+                sidecar_logical_concern(
+                    "provider_credentials",
+                    "DB-backed sidecar: provider credentials",
+                    0,
+                    0,
+                    vec![crate::secretstore_persist::CREDENTIAL_SIDECAR_FILE],
+                    false,
+                )
+            }
+        },
+        None => {
+            scan_errors.push(
+                "DB-backed provider credential sidecar telemetry unavailable: durable store is not open"
+                    .to_owned(),
+            );
+            sidecar_logical_concern(
+                "provider_credentials",
+                "DB-backed sidecar: provider credentials",
+                0,
+                0,
+                vec![crate::secretstore_persist::CREDENTIAL_SIDECAR_FILE],
+                false,
+            )
+        }
+    };
+
+    vec![users, roles, delegations, settings, provider_credentials]
+}
+
+fn sidecar_logical_concern(
+    id: &str,
+    label: &str,
+    row_count: u64,
+    bytes: u64,
+    roots: Vec<&str>,
+    exact: bool,
+) -> ConcernUsage {
+    ConcernUsage {
+        id: id.to_owned(),
+        kind: Some(UsageConcernKind::SidecarLogicalStore),
+        label: label.to_owned(),
+        bytes,
+        basis: UsageBasis::SidecarLogicalPayload,
+        exact,
+        file_count: 0,
+        directory_count: 0,
+        row_count: Some(row_count),
+        payload_stats: Some(DataPayloadStats {
+            table_name: id.to_owned(),
+            estimated_payload_bytes: bytes,
+            row_count,
+            average_bytes_per_row: (row_count > 0).then(|| bytes / row_count),
+            estimate_method: PayloadEstimateMethod::LocalLoadedPayloadEstimate,
+            estimate_basis: UsageBasis::SidecarLogicalPayload,
+        }),
+        relative_roots: roots.into_iter().map(str::to_owned).collect(),
+    }
 }
 
 fn json_len_estimate(value: &impl Serialize) -> u64 {

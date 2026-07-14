@@ -27,6 +27,8 @@ const durableStatus: DataStatusResponse = {
     mode: 'durable',
     data_dir_configured: true,
     durable_store_open: true,
+    active_backend_family: 'sqlite',
+    sidecar_storage_mode: 'file',
     database_encryption_configured: true,
     store_schema_version: 7,
     ledger_length: 42,
@@ -43,6 +45,7 @@ const durableStatus: DataStatusResponse = {
     create_file: { ok: true, checked: true, message: 'probe file can be created' },
     write_file: { ok: true, checked: true, message: 'probe file can be written' },
     delete_probe_file: { ok: true, checked: true, message: 'probe file can be deleted' },
+    durable_store_open: { ok: true, checked: true, message: 'durable store is open' },
     sqlite_store_open: { ok: true, checked: true, message: 'durable SQLite store is open' },
   },
   usage: {
@@ -89,6 +92,68 @@ const durableStatus: DataStatusResponse = {
         relative_roots: ['exports'],
       },
     ],
+    logical_payload: [
+      {
+        id: 'ledger',
+        label: 'Ledger payloads',
+        bytes: 1024,
+        basis: 'logical_payload',
+        exact: false,
+        file_count: 0,
+        directory_count: 0,
+        row_count: 3,
+        relative_roots: ['ledger_events'],
+      },
+      {
+        id: 'sqlite_table_ledger_events',
+        kind: 'sqlite_logical_table',
+        label: 'Database table ledger_events',
+        bytes: 768,
+        basis: 'logical_payload',
+        exact: false,
+        file_count: 0,
+        directory_count: 0,
+        row_count: 3,
+        payload_stats: {
+          table_name: 'ledger_events',
+          estimated_payload_bytes: 768,
+          row_count: 3,
+          average_bytes_per_row: 256,
+          estimate_method: 'local_loaded_payload_estimate',
+          estimate_basis: 'logical_payload',
+        },
+        relative_roots: ['ledger_events'],
+      },
+      {
+        id: 'sqlite_table_entity_enrichment_cache_with_a_very_long_table_name',
+        kind: 'sqlite_logical_table',
+        label: 'Database table entity_enrichment_cache_with_a_very_long_table_name',
+        bytes: 256,
+        basis: 'logical_payload',
+        exact: false,
+        file_count: 0,
+        directory_count: 0,
+        row_count: 12,
+        payload_stats: {
+          table_name: 'entity_enrichment_cache_with_a_very_long_table_name',
+          estimated_payload_bytes: 256,
+          row_count: 12,
+          average_bytes_per_row: 21,
+          estimate_method: 'local_loaded_payload_estimate',
+          estimate_basis: 'logical_payload',
+        },
+        relative_roots: ['entity_enrichment_cache_with_a_very_long_table_name'],
+      },
+    ],
+    sidecars: [],
+    largest_payload_table: {
+      table_name: 'ledger_events',
+      estimated_payload_bytes: 768,
+      row_count: 3,
+      average_bytes_per_row: 256,
+      estimate_method: 'local_loaded_payload_estimate',
+      estimate_basis: 'logical_payload',
+    },
     sqlite_logical: [
       {
         id: 'ledger',
@@ -160,6 +225,8 @@ const inMemoryStatus: DataStatusResponse = {
     mode: 'in_memory',
     data_dir_configured: false,
     durable_store_open: false,
+    active_backend_family: null,
+    sidecar_storage_mode: 'in_memory',
     database_encryption_configured: false,
     store_schema_version: null,
     ledger_length: 0,
@@ -176,6 +243,11 @@ const inMemoryStatus: DataStatusResponse = {
     create_file: { ok: false, checked: false, message: 'no data directory configured' },
     write_file: { ok: false, checked: false, message: 'no data directory configured' },
     delete_probe_file: { ok: false, checked: false, message: 'no data directory configured' },
+    durable_store_open: {
+      ok: false,
+      checked: true,
+      message: 'durable store is not open because no data directory is configured',
+    },
     sqlite_store_open: {
       ok: false,
       checked: true,
@@ -185,6 +257,8 @@ const inMemoryStatus: DataStatusResponse = {
   usage: {
     total_bytes: 0,
     filesystem: [],
+    logical_payload: [],
+    sidecars: [],
     sqlite_logical: [],
     scan_errors: [],
   },
@@ -205,6 +279,7 @@ const permissionStatus: DataStatusResponse = {
       checked: false,
       message: 'delete probe skipped because the probe file could not be created',
     },
+    durable_store_open: { ok: false, checked: true, message: 'durable store is not open' },
     sqlite_store_open: { ok: false, checked: true, message: 'durable SQLite store is not open' },
   },
 };
@@ -485,6 +560,8 @@ describe('GestaoDadosSection', () => {
     expect(await screen.findByText('Durável')).toBeTruthy();
     expect(screen.getByText('F:\\ChancelaData')).toBeTruthy();
     expect(screen.getByText('Durável aberto')).toBeTruthy();
+    expect(screen.getByText('sqlite')).toBeTruthy();
+    expect(screen.getByText('file')).toBeTruthy();
     expect(screen.getByText('7')).toBeTruthy();
     expect(screen.getByText('42')).toBeTruthy();
     expect(screen.getByText('Database')).toBeTruthy();
@@ -515,7 +592,7 @@ describe('GestaoDadosSection', () => {
     const ledgerRow = within(usageSection).getByText('Ledger payloads').closest('li')!;
     expect(within(ledgerRow).getByText('Linhas: 3')).toBeTruthy();
     const sqliteGroup = within(usageSection)
-      .getByRole('heading', { name: 'SQLite lógico' })
+      .getByRole('heading', { name: 'Payload lógico durável' })
       .closest('.data-status-usage-group')!;
     const tablePayloads = sqliteGroup.querySelector('.data-status-sqlite-table-list')!;
     expect(tablePayloads).toBeTruthy();
@@ -578,7 +655,7 @@ describe('GestaoDadosSection', () => {
       expect.stringContaining('Criar ficheiro'),
       expect.stringContaining('Escrever ficheiro'),
       expect.stringContaining('Apagar ficheiro de teste'),
-      expect.stringContaining('SQLite aberto'),
+      expect.stringContaining('Loja durável'),
     ]);
     expect(screen.getByText('directory can be read')).toBeTruthy();
     expect(screen.getByText('probe file cannot be created: denied')).toBeTruthy();

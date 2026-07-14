@@ -154,7 +154,7 @@ const MODE_LABEL: Record<DataPersistenceMode, MessageKey> = {
   fallback_in_memory: 'data.status.mode.fallback_in_memory',
 };
 
-const BASIS_LABEL: Record<DataUsageBasis, MessageKey> = {
+const BASIS_LABEL: Partial<Record<DataUsageBasis, MessageKey>> = {
   filesystem: 'data.status.basis.filesystem',
   sqlite_file: 'data.status.basis.sqlite_file',
   sqlite_logical_payload: 'data.status.basis.sqlite_logical_payload',
@@ -165,13 +165,13 @@ const SQLITE_TABLE_ID_PREFIX = 'sqlite_table_';
 
 const PERMISSION_ROWS: {
   key: keyof DataPermissionStatus;
-  label: MessageKey;
+  label: MessageKey | string;
 }[] = [
   { key: 'read_dir', label: 'data.status.permission.read_dir' },
   { key: 'create_file', label: 'data.status.permission.create_file' },
   { key: 'write_file', label: 'data.status.permission.write_file' },
   { key: 'delete_probe_file', label: 'data.status.permission.delete_probe_file' },
-  { key: 'sqlite_store_open', label: 'data.status.permission.sqlite_store_open' },
+  { key: 'durable_store_open', label: 'Loja durável' },
 ];
 
 function formatTimestamp(value: string, locale: string): string {
@@ -243,6 +243,19 @@ function permissionLabel(check: DataPermissionCheck, t: TFunction): string {
   return check.ok ? t('data.status.permission.ok') : t('data.status.permission.warn');
 }
 
+function messageOrText(label: MessageKey | string, t: TFunction): string {
+  return label.startsWith('data.') || label.startsWith('common.')
+    ? t(label as MessageKey)
+    : label;
+}
+
+function basisLabel(basis: DataUsageBasis, t: TFunction): string {
+  if (basis === 'logical_payload') return 'payload lógico durável';
+  if (basis === 'sidecar_logical_payload') return 'payload lógico sidecar';
+  const key = BASIS_LABEL[basis];
+  return key ? t(key) : basis.replaceAll('_', ' ');
+}
+
 function permissionSummary(
   permissions: DataPermissionStatus,
   t: TFunction,
@@ -259,7 +272,7 @@ function permissionSummary(
 
 function concernMetaItems(concern: DataUsageConcern, t: TFunction, locale: string): string[] {
   const parts = [
-    t(BASIS_LABEL[concern.basis]),
+    basisLabel(concern.basis, t),
     t(concern.exact ? 'data.status.exact' : 'data.status.estimated'),
     t('data.status.files', {
       count: new Intl.NumberFormat(locale).format(concern.file_count),
@@ -1230,15 +1243,17 @@ function UsageList({
 
 function SqliteTablePayloadList({
   concerns,
+  ariaLabel,
   locale,
   t,
 }: {
   concerns: DataUsageConcern[];
+  ariaLabel: string;
   locale: string;
   t: TFunction;
 }) {
   return (
-    <ul className="data-status-sqlite-table-list" aria-label={t('data.status.usage.sqliteLogical')}>
+    <ul className="data-status-sqlite-table-list" aria-label={ariaLabel}>
       {concerns.map((concern) => {
         const stats = sqlitePayloadStats(concern);
         const label = stats.table_name || sqliteTableLabel(concern);
@@ -1287,11 +1302,13 @@ function SqliteTablePayloadList({
 function SqliteLogicalUsageList({
   concerns,
   largestPayloadTable,
+  label,
   locale,
   t,
 }: {
   concerns: DataUsageConcern[];
   largestPayloadTable?: DataPayloadStats;
+  label: string;
   locale: string;
   t: TFunction;
 }) {
@@ -1323,7 +1340,12 @@ function SqliteLogicalUsageList({
         <UsageList concerns={summaryConcerns} locale={locale} t={t} />
       ) : null}
       {tableConcerns.length > 0 ? (
-        <SqliteTablePayloadList concerns={tableConcerns} locale={locale} t={t} />
+        <SqliteTablePayloadList
+          concerns={tableConcerns}
+          ariaLabel={label}
+          locale={locale}
+          t={t}
+        />
       ) : null}
     </div>
   );
@@ -1382,6 +1404,16 @@ function DataStatusPanel({
       : '';
   const hasExportCleanupPreview = exportCleanupPreviewToken.length > 0;
   const permissions = data ? permissionSummary(data.permissions, t) : null;
+  const logicalUsage =
+    data && data.usage.logical_payload.length > 0
+      ? data.usage.logical_payload
+      : (data?.usage.sqlite_logical ?? []);
+  const largestPayloadTable =
+    data?.usage.largest_payload_table ?? data?.usage.sqlite_largest_payload_table;
+  const logicalUsageLabel = 'Payload lógico durável';
+  const showSidecars =
+    Boolean(data) &&
+    (data!.persistence.sidecar_storage_mode === 'database' || data!.usage.sidecars.length > 0);
   const canClean = Boolean(
     dataPath &&
     data?.data_dir.exists &&
@@ -1546,6 +1578,22 @@ function DataStatusPanel({
               </dd>
             </div>
             <div>
+              <dt>Backend durável</dt>
+              <dd>
+                <Badge tone={data.persistence.active_backend_family ? 'ok' : 'neutral'}>
+                  {data.persistence.active_backend_family ?? '—'}
+                </Badge>
+              </dd>
+            </div>
+            <div>
+              <dt>Sidecars</dt>
+              <dd>
+                <Badge tone={data.persistence.sidecar_storage_mode === 'database' ? 'ok' : 'neutral'}>
+                  {data.persistence.sidecar_storage_mode}
+                </Badge>
+              </dd>
+            </div>
+            <div>
               <dt>{t('data.status.encryption')}</dt>
               <dd>
                 <StatusBadge value={data.persistence.database_encryption_configured} t={t} />
@@ -1622,7 +1670,7 @@ function DataStatusPanel({
                     key={row.key}
                     className={`data-status-probe data-status-probe--${permissionTone(check)}`}
                   >
-                    <span className="data-status-probe__label">{t(row.label)}</span>
+                    <span className="data-status-probe__label">{messageOrText(row.label, t)}</span>
                     <Badge tone={permissionTone(check)}>{permissionLabel(check, t)}</Badge>
                     {check.message ? (
                       <span className="data-status-probe__message">{check.message}</span>
@@ -1648,14 +1696,21 @@ function DataStatusPanel({
                 <UsageList concerns={data.usage.filesystem} locale={locale} t={t} />
               </div>
               <div className="data-status-usage-group">
-                <h5>{t('data.status.usage.sqliteLogical')}</h5>
+                <h5>{logicalUsageLabel}</h5>
                 <SqliteLogicalUsageList
-                  concerns={data.usage.sqlite_logical}
-                  largestPayloadTable={data.usage.sqlite_largest_payload_table}
+                  concerns={logicalUsage}
+                  largestPayloadTable={largestPayloadTable}
+                  label={logicalUsageLabel}
                   locale={locale}
                   t={t}
                 />
               </div>
+              {showSidecars ? (
+                <div className="data-status-usage-group">
+                  <h5>Sidecars duráveis</h5>
+                  <UsageList concerns={data.usage.sidecars} locale={locale} t={t} />
+                </div>
+              ) : null}
             </div>
 
             {data.usage.scan_errors.length > 0 ? (

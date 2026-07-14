@@ -25,7 +25,9 @@ import {
   CAE_REVISIONS,
   CAE_ROLES,
   DATA_PAYLOAD_ESTIMATE_METHODS,
+  DATA_DURABLE_BACKEND_FAMILIES,
   DATA_PERSISTENCE_MODES,
+  DATA_SIDECAR_STORAGE_MODES,
   DATA_USAGE_BASES,
   DSR_REQUEST_OUTCOMES,
   DSR_REQUEST_STATUSES,
@@ -865,10 +867,7 @@ function assertDpiaAdvisoryReview(obj: unknown, label: string): DpiaAdvisoryRevi
   return summary;
 }
 
-function assertDpiaTemplateChecklistItem(
-  obj: unknown,
-  label: string,
-): DpiaTemplateChecklistItem {
+function assertDpiaTemplateChecklistItem(obj: unknown, label: string): DpiaTemplateChecklistItem {
   const item = assertExactKeys<DpiaTemplateChecklistItem>(
     obj,
     {
@@ -6120,6 +6119,8 @@ describe('contract fixtures parse through the real client', () => {
         mode: true,
         data_dir_configured: true,
         durable_store_open: true,
+        active_backend_family: true,
+        sidecar_storage_mode: true,
         database_encryption_configured: true,
         store_schema_version: true,
         ledger_length: true,
@@ -6129,6 +6130,18 @@ describe('contract fixtures parse through the real client', () => {
       'DataStatusResponse.persistence',
     );
     inEnum(DATA_PERSISTENCE_MODES, persistence.mode, 'DataStatusResponse.persistence.mode');
+    if (persistence.active_backend_family !== null) {
+      inEnum(
+        DATA_DURABLE_BACKEND_FAMILIES,
+        persistence.active_backend_family,
+        'DataStatusResponse.persistence.active_backend_family',
+      );
+    }
+    inEnum(
+      DATA_SIDECAR_STORAGE_MODES,
+      persistence.sidecar_storage_mode,
+      'DataStatusResponse.persistence.sidecar_storage_mode',
+    );
     expect(typeof persistence.data_dir_configured).toBe('boolean');
     expect(typeof persistence.durable_store_open).toBe('boolean');
     expect(typeof persistence.database_encryption_configured).toBe('boolean');
@@ -6157,6 +6170,7 @@ describe('contract fixtures parse through the real client', () => {
         create_file: true,
         write_file: true,
         delete_probe_file: true,
+        durable_store_open: true,
         sqlite_store_open: true,
       },
       'DataStatusResponse.permissions',
@@ -6172,19 +6186,32 @@ describe('contract fixtures parse through the real client', () => {
       'DataStatusResponse.permissions.delete_probe_file',
     );
     assertDataPermissionCheck(
+      permissions.durable_store_open,
+      'DataStatusResponse.permissions.durable_store_open',
+    );
+    assertDataPermissionCheck(
       permissions.sqlite_store_open,
       'DataStatusResponse.permissions.sqlite_store_open',
     );
 
     const usage = assertExactKeys<DataUsageStatus>(
       status.usage,
-      { total_bytes: true, filesystem: true, sqlite_logical: true, scan_errors: true },
+      {
+        total_bytes: true,
+        filesystem: true,
+        logical_payload: true,
+        sidecars: true,
+        sqlite_logical: true,
+        scan_errors: true,
+      },
       'DataStatusResponse.usage',
-      ['sqlite_largest_payload_table'],
+      ['largest_payload_table', 'sqlite_largest_payload_table'],
     );
     expect(Number.isInteger(usage.total_bytes), 'usage.total_bytes integer').toBe(true);
     expect(usage.total_bytes, 'usage.total_bytes non-negative').toBeGreaterThanOrEqual(0);
     expect(Array.isArray(usage.filesystem)).toBe(true);
+    expect(Array.isArray(usage.logical_payload)).toBe(true);
+    expect(Array.isArray(usage.sidecars)).toBe(true);
     expect(Array.isArray(usage.sqlite_logical)).toBe(true);
     expect(Array.isArray(usage.scan_errors)).toBe(true);
     for (const concern of usage.filesystem) {
@@ -6193,6 +6220,25 @@ describe('contract fixtures parse through the real client', () => {
     for (const concern of usage.sqlite_logical) {
       assertDataUsageConcern(concern, 'DataStatusResponse.usage.sqlite_logical[]');
     }
+    for (const concern of usage.logical_payload) {
+      assertDataUsageConcern(concern, 'DataStatusResponse.usage.logical_payload[]');
+    }
+    for (const concern of usage.sidecars) {
+      assertDataUsageConcern(concern, 'DataStatusResponse.usage.sidecars[]');
+      expect(concern.kind).toBe('sidecar_logical_store');
+      expect(concern.basis).toBe('sidecar_logical_payload');
+    }
+    const neutralPayload = usage.logical_payload.find(
+      (concern) => concern.kind === 'sqlite_logical_table',
+    );
+    expect(neutralPayload, 'fixture should include a neutral logical payload row').toBeTruthy();
+    expect(neutralPayload?.payload_stats?.estimate_basis).toBe('logical_payload');
+    const sidecarPayload = usage.sidecars.find((concern) => concern.id === 'provider_credentials');
+    expect(
+      sidecarPayload,
+      'fixture should include DB-backed provider credential telemetry',
+    ).toBeTruthy();
+    expect(sidecarPayload?.payload_stats?.estimate_basis).toBe('sidecar_logical_payload');
     const tablePayload = usage.sqlite_logical.find(
       (concern) => concern.kind === 'sqlite_logical_table',
     );
@@ -6201,6 +6247,14 @@ describe('contract fixtures parse through the real client', () => {
     expect(tablePayload?.payload_stats?.estimate_basis).toBe('sqlite_logical_payload');
     expect(tablePayload?.payload_stats?.estimated_payload_bytes).toBe(tablePayload?.bytes);
     expect(tablePayload?.payload_stats?.row_count).toBe(tablePayload?.row_count);
+    if (usage.largest_payload_table !== undefined) {
+      const largest = assertDataPayloadStats(
+        usage.largest_payload_table,
+        'DataStatusResponse.usage.largest_payload_table',
+      );
+      expect(largest.estimate_method).toBe('local_loaded_payload_estimate');
+      expect(largest.estimate_basis).toBe('logical_payload');
+    }
     if (usage.sqlite_largest_payload_table !== undefined) {
       const largest = assertDataPayloadStats(
         usage.sqlite_largest_payload_table,
