@@ -3098,7 +3098,7 @@ function RetentionExecutionReviewQueue({
                 onStatusFilterChange(e.target.value as RetentionExecutionStatus | 'all')
               }
               options={[
-                { value: 'all', label: t('settings.privacy.execution.status.all') },
+                { value: 'all', label: t('settings.privacy.status.all') },
                 ...statusOptions,
               ]}
             />
