@@ -1,0 +1,87 @@
+# wp16 — multi-node (single-writer leader + read-followers) OVERLAY for the `postgres` profile.
+#
+# This is an ADDITIVE overlay: it adds one scaled app service (`chancela-cluster`) and does not touch
+# the base file's single-node `chancela` service. Use it together with the base compose so the shared
+# `postgres`, `redis`, secrets, and network already exist:
+#
+#   docker compose \
+#     -f docker/docker-compose.yml -f docker/docker-compose.cluster.yml \
+#     --profile postgres --profile cluster up --build
+#
+# The N replicas point at ONE Postgres. Exactly one is elected the writer via the advisory lock
+# (`CHANCELA_NODE_ROLE=auto`); the rest serve reads and 307-redirect writes to the leader. This is the
+# precise inversion of the base file's "never scale the writer": it is safe to scale the *service*
+# because only one *instance* ever writes (see docs/HA-FAILOVER.md).
+#
+# Ingress: put a leader-aware load balancer in front (route writes to the leader via /health role,
+# reads to any node), or rely on 307 redirects for direct clients that follow cross-host redirects.
+# The replicas deliberately do NOT publish a fixed host port (replicas cannot share one); the LB owns
+# ingress. Scale with:  docker compose ... up --scale chancela-cluster=3
+#
+# ⚠️ Non-ledger sidecars (wp16 §8.2): the five file sidecars (users/roles/delegations/settings/
+# provider-credentials) are DB-backed on Postgres (wp16 P3b), so they are shared across replicas. The
+# remaining on-disk state (CAE/law/TSL caches) is regenerable per node. Sessions + rate-limits are
+# shared via Redis (required in multi-node). Do NOT run multi-node for legal data before the soak run
+# documented in docs/HA-FAILOVER.md.
+
+services:
+  chancela-cluster:
+    profiles:
+      - cluster
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.server
+      args:
+        CARGO_FEATURES: "chancela-server/sqlcipher chancela-server/postgres chancela-server/redis"
+    image: ${CHANCELA_POSTGRES_IMAGE:-chancela-server:postgres}
+    # --- identical container hardening posture to the base app service ---
+    user: "65532:65532"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
+    environment:
+      CHANCELA_ADDR: 0.0.0.0:8080
+      CHANCELA_DATA_DIR: /var/lib/chancela
+      CHANCELA_DB_BACKEND: postgres
+      DATABASE_URL_FILE: /run/secrets/database_url
+      # Redis is REQUIRED in multi-node: cluster-wide sessions + global sign-in rate-limits.
+      REDIS_URL: redis://redis:6379
+      CHANCELA_CREDENTIAL_KEY_FILE: /run/secrets/credential_key
+      # Elect via the advisory lock: one leader, the rest followers.
+      CHANCELA_NODE_ROLE: auto
+      # Leader self-fence watchdog: re-verify lock+epoch every 3s and step down (fail-closed) on any
+      # partition / wedge. Set below CHANCELA_NODE_STALE_AFTER (10s) so a fenced leader stops writing
+      # well before followers would still treat its advertised address as fresh.
+      CHANCELA_LEADER_WATCHDOG_INTERVAL: "3"
+      # NOTE: CHANCELA_ADVERTISED_URL must be a per-node externally-reachable URL for 307 redirects.
+      # Compose replicas share this environment, so for real 307 ingress prefer a leader-aware LB that
+      # reads /health role, or run one service per node with a distinct advertised URL each.
+    secrets:
+      - database_url
+      - credential_key
+    volumes:
+      - chancela-cluster-data:/var/lib/chancela
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "/usr/bin/busybox", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 3s
+      start_period: 10s
+      retries: 3
+    deploy:
+      # SAFE to scale here (unlike the base single-node service): the advisory-lock election makes
+      # N-1 of these followers. Raise via `--scale chancela-cluster=N`.
+      replicas: ${CHANCELA_CLUSTER_REPLICAS:-3}
+
+volumes:
+  # Shared cache volume for the replicas. Ledger + the five sidecars are authoritative in Postgres;
+  # only regenerable caches live here.
+  chancela-cluster-data:

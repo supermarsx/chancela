@@ -1800,6 +1800,21 @@ impl Store {
         }
     }
 
+    /// **wp16 P4 — proactive fail-closed step-down.** Flip this node to follower and disable writes
+    /// *without* waiting for the next write or supervisor verify to discover a lost lock — used by the
+    /// leader self-fence watchdog when it cannot prove leadership within its deadline (a partition to
+    /// Postgres, a wedged/hung writer session, or an outright verify failure). Idempotent. Backed by
+    /// atomic role flags, so it succeeds even while the writer connection is held/wedged by a stalled
+    /// `persist`/`verify` (the fence must never itself block on the resource it is fencing). No-op on
+    /// SQLite (single-node is always its own leader; there is nothing to step down from).
+    pub fn cluster_step_down(&self) {
+        match &self.backend {
+            Backend::Sqlite(_) => {}
+            #[cfg(feature = "postgres")]
+            Backend::Postgres(backend) => backend.step_down(),
+        }
+    }
+
     /// Attempt promotion (follower → leader). SQLite is already the leader. Postgres tries the
     /// advisory lock; on success it bumps the epoch and returns `Ok(true)` — the caller MUST then run
     /// the catch-up + chain re-verify handoff (§4.2) before the first append.

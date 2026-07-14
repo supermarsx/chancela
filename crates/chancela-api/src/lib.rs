@@ -110,6 +110,14 @@ mod cluster_route;
 // invalidation. Compiled in every build; every backend defaults to a local no-op so single-node is
 // byte-identical. Redis-backed (cluster-wide, fail-closed) only with the `redis` feature + REDIS_URL.
 mod cluster_shared_state;
+// wp16 P4: leader self-fence watchdog — a deadline-bounded periodic re-verify of lock+epoch that
+// proactively steps a partitioned/wedged leader down (fail-closed) without waiting for the next write.
+// Compiled in every build; inert unless the durable backend is an electing one (Postgres).
+mod cluster_watchdog;
+// wp16 P4: consolidated chaos / failover / split-brain / freshness / redirect / session-coherence
+// resilience suite (test-only; live multi-node scenarios `#[ignore]` requiring DATABASE_URL).
+#[cfg(test)]
+mod cluster_chaos_tests;
 #[allow(dead_code)]
 mod credential_resolve;
 mod dashboard;
@@ -2118,6 +2126,10 @@ pub fn app(state: AppState, web_dist: Option<PathBuf>) -> Router {
     // change on another node evicts this node's local session copy + permission-shaped caches. Inert
     // unless a Redis invalidation bus is active (redis feature + REDIS_URL); single-node spawns nothing.
     cluster_shared_state::spawn_invalidation_listener(state.clone());
+    // wp16 P4: mount the leader self-fence watchdog (deadline-bounded periodic lock+epoch re-verify →
+    // proactive fail-closed step-down of a partitioned / wedged leader). Inert unless the backend is an
+    // electing one (Postgres); no-op on SQLite / in-memory.
+    cluster_watchdog::spawn_leader_watchdog(state.clone());
     let api = router(state);
     let app = match web_dist {
         Some(dir) => {
