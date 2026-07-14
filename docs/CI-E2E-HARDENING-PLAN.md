@@ -1,7 +1,7 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `dc4095f`,
+and implementation snapshot `ffe8043`,
 including coverage notes for the bounded PAdES DSS validation-time, PDF/UA v10
 scoped table-header evidence, retention due-candidate explicit evidence states,
 bounded archive/no-action evidence UI, duplicate-review guard/status surfacing, and
@@ -893,7 +893,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   (`cargo test -p chancela-store --locked --features sqlcipher sqlcipher`) now
   has a Windows CI lane that installs pinned Strawberry Perl before Rust/Cargo so
   vendored OpenSSL sees a Windows-native Perl first on `PATH`.
-- Current `dc4095f` Postgres store runtime, backend-selection, logical
+- Current `ffe8043` Postgres store runtime, backend-selection, logical
   recovery, cluster write-gating, and covered follower-feed checks: static/source markers pin the off-by-default `postgres`
   feature, `PostgresBackend::open`, advisory-locked single writer, boot `load`
   replay, request-serving `Tx` write methods, runtime `Store` read projections,
@@ -1734,7 +1734,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   --workspace apps/web -- e2e/session.spec.ts e2e/first-launch-onboarding.spec.ts`.
   Treat the static/unit/focused markers as the pinned slice, not broad
   Playwright-browser-suite or browser-matrix proof; the browser suite is not exhaustive.
-- Current checkpoint metadata/static checks through `dc4095f`
+- Current checkpoint metadata/static checks through `ffe8043`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and

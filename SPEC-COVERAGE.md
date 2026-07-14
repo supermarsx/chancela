@@ -1,6 +1,6 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-14 from current implementation snapshot `dc4095fa403dae7efe41f2089a113bb042b19ad4`,
+*Updated 2026-07-14 from current implementation snapshot `ffe8043f39ab5639b9503ae164ff528abd3aebaf`,
 with committed evidence refreshes for the recently landed Signatures & Trust
 provider-credential, stored runtime credential resolution, stored PKCS#12,
 remote batch-initiation surfaces, and Docker/Compose runtime-hardening
@@ -442,7 +442,7 @@ Implementation checkpoints covered here:
   legal-capacity proof, tenant/group policy, HR authority, access-policy
   certification, or automatic reconciliation of customized persisted non-Owner
   roles.
-- Current `dc4095f` keeps Data/Architecture/CI **PARTIAL**: the
+- Current `ffe8043` keeps Data/Architecture/CI **PARTIAL**: the
   off-by-default `postgres` feature covers the request-serving store runtime
   write/read paths from `547408e` and backend selection from `cec169c`: schema
   DDL from the shared schema constants, `meta` schema/instance stamping, boot
@@ -478,7 +478,7 @@ Implementation checkpoints covered here:
   Static/pure tests pin the role transition, write-gate, handoff length, and
   503 mapping, while live Postgres election/failover tests remain ignored and
   gated by `DATABASE_URL`. Default CI still does not run against a live Postgres
-  database. The wp16 P1 feed slice from `6bc0b5c`/`dc4095f` adds a covered
+  database. The wp16 P1 feed slice from `6bc0b5c`/`ffe8043` adds a covered
   follower change-feed: durable appends emit best-effort `NOTIFY
   chancela_ledger`, followers reconcile by dedicated `LISTEN` plus seq-poll,
   deltas publish only after verified-prefix continuity and aggregate snapshot

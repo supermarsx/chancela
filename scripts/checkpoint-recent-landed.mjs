@@ -4315,23 +4315,43 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/settings/PrivacyComplianceSection.tsx",
+    "settings.privacy.dueCandidates.recordNoAction",
+    "Settings retention due-candidate bounded no-action evidence copy key",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/locales/pt-PT.ts",
     "Registar evidência sem ação",
-    "Settings retention due-candidate bounded no-action evidence copy",
+    "Settings retention due-candidate bounded no-action PT copy",
   );
   assertFileContains(
     "apps/web/src/features/settings/PrivacyComplianceSection.tsx",
+    "settings.privacy.dueCandidates.recordArchive",
+    "Settings retention due-candidate bounded archive evidence copy key",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/locales/pt-PT.ts",
     "Registar evidência de arquivo",
-    "Settings retention due-candidate bounded archive evidence copy",
+    "Settings retention due-candidate bounded archive PT copy",
   );
   assertFileContains(
     "apps/web/src/features/settings/PrivacyComplianceSection.tsx",
-    "Regista apenas evidência delimitada de no-action; não aprova nem executa",
-    "Settings retention due-candidate bounded no-action caveat copy",
+    "settings.privacy.dueCandidates.noActionHint",
+    "Settings retention due-candidate bounded no-action caveat copy key",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/locales/pt-PT.ts",
+    "Regista apenas evidência delimitada de no-action; não aprova nem executa descarte.",
+    "Settings retention due-candidate bounded no-action PT caveat copy",
   );
   assertFileContains(
     "apps/web/src/features/settings/PrivacyComplianceSection.tsx",
-    "Regista apenas evidência delimitada de arquivo; não aprova nem executa",
-    "Settings retention due-candidate bounded archive caveat copy",
+    "settings.privacy.dueCandidates.archiveHint",
+    "Settings retention due-candidate bounded archive caveat copy key",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/locales/pt-PT.ts",
+    "Regista apenas evidência delimitada de arquivo; não aprova nem executa descarte.",
+    "Settings retention due-candidate bounded archive PT caveat copy",
   );
   assertFileContains(
     "apps/web/src/features/settings/PrivacyComplianceSection.tsx",
@@ -4350,13 +4370,23 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/settings/PrivacyComplianceSection.tsx",
+    "settings.privacy.dueCandidates.reviewQueued",
+    "Settings retention due-candidate queued-review status copy key",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/locales/pt-PT.ts",
     "Revisão já na fila",
-    "Settings retention due-candidate queued-review status marker",
+    "Settings retention due-candidate queued-review PT status copy",
   );
   assertFileContains(
     "apps/web/src/features/settings/PrivacyComplianceSection.tsx",
+    "settings.privacy.dueCandidates.boundedEvidenceExists",
+    "Settings retention due-candidate projected evidence action-suppression copy key",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/locales/pt-PT.ts",
     "Evidência delimitada existente",
-    "Settings retention due-candidate projected evidence action-suppression marker",
+    "Settings retention due-candidate projected evidence PT action-suppression copy",
   );
   assertFileContains(
     "apps/web/src/features/settings/PrivacyComplianceSection.tsx",
@@ -4370,8 +4400,13 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/settings/PrivacyComplianceSection.tsx",
-    "Pedido em {formatDateTime(queuedReview.requested_at)}",
-    "Settings retention due-candidate queued-review time marker",
+    "settings.privacy.dueCandidates.requestedAt",
+    "Settings retention due-candidate queued-review time copy key",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/locales/pt-PT.ts",
+    "Pedido em {date}",
+    "Settings retention due-candidate queued-review PT time copy",
   );
   assertFileContains(
     "apps/web/src/api/hooks.ts",
@@ -4625,8 +4660,13 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/settings/PrivacyComplianceSection.tsx",
+    "settings.privacy.execution.recordReview",
+    "Settings retention review-closure action copy key",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/locales/pt-PT.ts",
     "Registar revisão operacional",
-    "Settings retention review-closure action copy marker",
+    "Settings retention review-closure PT action copy",
   );
   assertFileContains(
     "apps/web/src/features/settings/SettingsPage.test.tsx",
@@ -4730,8 +4770,13 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/settings/PrivacyComplianceSection.tsx",
-    "Sem submissão à",
-    "settings DPIA receipt no-authority-filing UI marker",
+    "settings.privacy.evidence.dpiaReceiptNote",
+    "settings DPIA receipt no-authority-filing UI copy key",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/locales/pt-PT.ts",
+    "Sem submissão à autoridade",
+    "settings DPIA receipt no-authority-filing PT copy",
   );
   assertFileContains(
     "crates/chancela-api/src/lib.rs",
@@ -4790,8 +4835,13 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/settings/PrivacyComplianceSection.tsx",
+    "settings.privacy.guidance.title",
+    "Settings DPIA template guidance panel title key",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/locales/pt-PT.ts",
     "Modelo DPIA local",
-    "Settings DPIA template guidance panel marker",
+    "Settings DPIA template guidance PT panel title",
   );
   assertFileContains(
     "apps/web/src/features/settings/SettingsPage.test.tsx",
@@ -9462,7 +9512,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `dc4095f`",
+    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `ffe8043`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
@@ -10082,7 +10132,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `dc4095f`",
+    "Current checkpoint metadata/static checks through `ffe8043`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -10537,7 +10587,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `dc4095fa403dae7efe41f2089a113bb042b19ad4`",
+    "implementation snapshot `ffe8043f39ab5639b9503ae164ff528abd3aebaf`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -10612,7 +10662,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Current `dc4095f` keeps Data/Architecture/CI **PARTIAL**",
+    "Current `ffe8043` keeps Data/Architecture/CI **PARTIAL**",
     "spec coverage Postgres store checkpoint marker",
   );
   assertFileContains(
@@ -10687,7 +10737,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current `dc4095f` Postgres store runtime, backend-selection, logical\n  recovery, cluster write-gating, and covered follower-feed checks",
+    "Current `ffe8043` Postgres store runtime, backend-selection, logical\n  recovery, cluster write-gating, and covered follower-feed checks",
     "CI/E2E hardening plan Postgres store/backend-selection checks marker",
   );
   assertFileContains(
