@@ -37,9 +37,10 @@ pub use assignment::RoleAssignment;
 pub use delegation::{Delegation, UserId};
 pub use permission::Permission;
 pub use role::{
-    API_CLIENT_ROLE_ID, AUDITOR_ROLE_ID, GESTOR_ROLE_ID, GUEST_ROLE_ID, LEITOR_ROLE_ID,
-    OWNER_ROLE_ID, PLATFORM_ADMIN_ROLE_ID, Role, RoleCatalog, RoleId, SIGNATARIO_ROLE_ID,
-    TENANT_ADMIN_ROLE_ID, default_roles,
+    API_CLIENT_ROLE_ID, AUDITOR_ROLE_ID, COMPANY_OWNER_ROLE_ID, CORPORATE_SECRETARY_ROLE_ID,
+    GESTOR_ROLE_ID, GUEST_ROLE_ID, LEGAL_COUNSEL_ROLE_ID, LEITOR_ROLE_ID, OWNER_ROLE_ID,
+    PLATFORM_ADMIN_ROLE_ID, RECORDS_MANAGER_ROLE_ID, REVIEWER_ROLE_ID, Role, RoleCatalog, RoleId,
+    SIGNATARIO_ROLE_ID, SIGNATORY_ROLE_ID, TENANT_ADMIN_ROLE_ID, default_roles,
 };
 pub use scope::{BookId, BookScope, EntityId, NoBooks, Scope, scope_covers};
 

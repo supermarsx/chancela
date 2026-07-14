@@ -3,9 +3,10 @@
 //! A [`Role`] is a named, editable set of permissions — not a fixed enum. The *catalog* of verbs is
 //! code ([`crate::Permission`]); which verbs a role grants is stored data. A conservative catalog is
 //! seeded on a fresh install: **Owner** (protected — all permissions, locked, undeletable),
-//! **Gestor**, **Signatário**, **Leitor**, **Platform Administrator**, **Tenant Administrator**,
-//! **Auditor**, **Guest** and **API Client**. Each seeded role has a **deterministic** id so
-//! assignments, migration and the protected-Owner checks are stable across seeds and processes.
+//! **Gestor**, **Signatário**, **Leitor**, spec-required company archetypes, **Platform
+//! Administrator**, **Tenant Administrator**, **Auditor**, **Guest** and **API Client**. Each seeded
+//! role has a **deterministic** id so assignments, migration and the protected-Owner checks are
+//! stable across seeds and processes.
 
 use std::collections::{BTreeSet, HashMap};
 
@@ -45,6 +46,22 @@ pub const AUDITOR_ROLE_ID: RoleId = RoleId(Uuid::from_u128(0x61756469746f7200_00
 pub const GUEST_ROLE_ID: RoleId = RoleId(Uuid::from_u128(0x6775657374000000_0000000000000008));
 /// Stable id of the seeded **API Client** role.
 pub const API_CLIENT_ROLE_ID: RoleId = RoleId(Uuid::from_u128(0x617069636c6e7400_0000000000000009));
+/// Stable id of the seeded **Company Owner** role.
+pub const COMPANY_OWNER_ROLE_ID: RoleId =
+    RoleId(Uuid::from_u128(0x636f6f776e720000_000000000000000a));
+/// Stable id of the seeded **Corporate Secretary** role.
+pub const CORPORATE_SECRETARY_ROLE_ID: RoleId =
+    RoleId(Uuid::from_u128(0x636f727073656300_000000000000000b));
+/// Stable id of the seeded **Legal Counsel** role.
+pub const LEGAL_COUNSEL_ROLE_ID: RoleId =
+    RoleId(Uuid::from_u128(0x6c65676c636e7300_000000000000000c));
+/// Stable id of the seeded **Records Manager** role.
+pub const RECORDS_MANAGER_ROLE_ID: RoleId =
+    RoleId(Uuid::from_u128(0x7265636d67720000_000000000000000d));
+/// Stable id of the seeded **Signatory** role.
+pub const SIGNATORY_ROLE_ID: RoleId = RoleId(Uuid::from_u128(0x7369676e74727900_000000000000000e));
+/// Stable id of the seeded **Reviewer** role.
+pub const REVIEWER_ROLE_ID: RoleId = RoleId(Uuid::from_u128(0x7265766965777200_000000000000000f));
 
 /// A role: a named, editable permission-set. `protected` marks the Owner super-role — its
 /// `permission_set` is locked and it is undeletable (see [`Role::can_be_deleted`] /
@@ -333,6 +350,171 @@ impl Role {
             protected: false,
         }
     }
+
+    /// The seeded **Company Owner** role: an explicit company-level operational owner archetype.
+    /// It pins operational permissions directly without inheriting protected Owner or RBAC meta
+    /// authority.
+    #[must_use]
+    pub fn company_owner() -> Self {
+        Role {
+            id: COMPANY_OWNER_ROLE_ID,
+            name: "Company Owner".to_owned(),
+            permission_set: [
+                Permission::EntityRead,
+                Permission::EntityCreate,
+                Permission::EntityUpdate,
+                Permission::EntityRegistryImport,
+                Permission::EntityArchive,
+                Permission::BookRead,
+                Permission::BookOpen,
+                Permission::BookClose,
+                Permission::BookExport,
+                Permission::BookImport,
+                Permission::BookStartOver,
+                Permission::BookReopen,
+                Permission::ActRead,
+                Permission::ActDraft,
+                Permission::ActEdit,
+                Permission::ActAdvance,
+                Permission::ActArchive,
+                Permission::SigningPerform,
+                Permission::DocumentGenerate,
+                Permission::CaeRead,
+                Permission::CaeRefresh,
+                Permission::LawRead,
+                Permission::LawManage,
+                Permission::SettingsRead,
+                Permission::LedgerRead,
+                Permission::DataBackup,
+                Permission::DataExport,
+            ]
+            .into_iter()
+            .collect(),
+            protected: false,
+        }
+    }
+
+    /// The seeded **Corporate Secretary** role: governance drafting and signing workflow support,
+    /// without entity, user, role, settings, recovery or data authority.
+    #[must_use]
+    pub fn corporate_secretary() -> Self {
+        Role {
+            id: CORPORATE_SECRETARY_ROLE_ID,
+            name: "Corporate Secretary".to_owned(),
+            permission_set: [
+                Permission::EntityRead,
+                Permission::BookRead,
+                Permission::BookExport,
+                Permission::ActRead,
+                Permission::ActDraft,
+                Permission::ActEdit,
+                Permission::ActAdvance,
+                Permission::SigningPerform,
+                Permission::DocumentGenerate,
+                Permission::LedgerRead,
+                Permission::CaeRead,
+                Permission::LawRead,
+                Permission::SettingsRead,
+            ]
+            .into_iter()
+            .collect(),
+            protected: false,
+        }
+    }
+
+    /// The seeded **Legal Counsel** role: advisory read access without law-management or workflow
+    /// mutation authority.
+    #[must_use]
+    pub fn legal_counsel() -> Self {
+        Role {
+            id: LEGAL_COUNSEL_ROLE_ID,
+            name: "Legal Counsel".to_owned(),
+            permission_set: [
+                Permission::EntityRead,
+                Permission::BookRead,
+                Permission::ActRead,
+                Permission::LedgerRead,
+                Permission::CaeRead,
+                Permission::LawRead,
+                Permission::SettingsRead,
+            ]
+            .into_iter()
+            .collect(),
+            protected: false,
+        }
+    }
+
+    /// The seeded **Records Manager** role: records intake/export and archival workflow support,
+    /// excluding destructive, recovery, settings and RBAC authority.
+    #[must_use]
+    pub fn records_manager() -> Self {
+        Role {
+            id: RECORDS_MANAGER_ROLE_ID,
+            name: "Records Manager".to_owned(),
+            permission_set: [
+                Permission::EntityRead,
+                Permission::EntityArchive,
+                Permission::BookRead,
+                Permission::BookOpen,
+                Permission::BookClose,
+                Permission::BookExport,
+                Permission::BookImport,
+                Permission::ActRead,
+                Permission::ActArchive,
+                Permission::DocumentGenerate,
+                Permission::LedgerRead,
+                Permission::DataExport,
+                Permission::CaeRead,
+                Permission::LawRead,
+                Permission::SettingsRead,
+            ]
+            .into_iter()
+            .collect(),
+            protected: false,
+        }
+    }
+
+    /// The seeded **Signatory** role: an explicit English archetype for spec ROL-02 with a pinned
+    /// signing workflow permission set.
+    #[must_use]
+    pub fn signatory() -> Self {
+        Role {
+            id: SIGNATORY_ROLE_ID,
+            name: "Signatory".to_owned(),
+            permission_set: [
+                Permission::EntityRead,
+                Permission::BookRead,
+                Permission::ActRead,
+                Permission::LedgerRead,
+                Permission::ActAdvance,
+                Permission::SigningPerform,
+                Permission::DocumentGenerate,
+            ]
+            .into_iter()
+            .collect(),
+            protected: false,
+        }
+    }
+
+    /// The seeded **Reviewer** role: review/approval workflow support without signing authority.
+    #[must_use]
+    pub fn reviewer() -> Self {
+        Role {
+            id: REVIEWER_ROLE_ID,
+            name: "Reviewer".to_owned(),
+            permission_set: [
+                Permission::EntityRead,
+                Permission::BookRead,
+                Permission::ActRead,
+                Permission::LedgerRead,
+                Permission::ActAdvance,
+                Permission::DocumentGenerate,
+            ]
+            .into_iter()
+            .collect(),
+            protected: false,
+        }
+    }
 }
 
 /// The seeded default roles, in a stable order. The original four ids/order are preserved first for
@@ -344,6 +526,12 @@ pub fn default_roles() -> Vec<Role> {
         Role::gestor(),
         Role::signatario(),
         Role::leitor(),
+        Role::company_owner(),
+        Role::corporate_secretary(),
+        Role::legal_counsel(),
+        Role::records_manager(),
+        Role::signatory(),
+        Role::reviewer(),
         Role::platform_administrator(),
         Role::tenant_administrator(),
         Role::auditor(),
@@ -419,11 +607,17 @@ impl FromIterator<Role> for RoleCatalog {
 mod tests {
     use super::*;
 
-    fn editable_seeded_roles() -> [Role; 8] {
-        [
+    fn editable_seeded_roles() -> Vec<Role> {
+        vec![
             Role::gestor(),
             Role::signatario(),
             Role::leitor(),
+            Role::company_owner(),
+            Role::corporate_secretary(),
+            Role::legal_counsel(),
+            Role::records_manager(),
+            Role::signatory(),
+            Role::reviewer(),
             Role::platform_administrator(),
             Role::tenant_administrator(),
             Role::auditor(),
@@ -432,11 +626,17 @@ mod tests {
         ]
     }
 
-    fn non_admin_seeded_roles() -> [Role; 6] {
-        [
+    fn non_admin_seeded_roles() -> Vec<Role> {
+        vec![
             Role::gestor(),
             Role::signatario(),
             Role::leitor(),
+            Role::company_owner(),
+            Role::corporate_secretary(),
+            Role::legal_counsel(),
+            Role::records_manager(),
+            Role::signatory(),
+            Role::reviewer(),
             Role::auditor(),
             Role::guest(),
             Role::api_client(),
@@ -533,7 +733,7 @@ mod tests {
     #[test]
     fn seeded_catalog_includes_spec_roles_by_stable_id() {
         let cat = RoleCatalog::seeded_defaults();
-        assert_eq!(cat.len(), 9);
+        assert_eq!(cat.len(), 15);
 
         for (id, raw, name) in [
             (
@@ -577,11 +777,192 @@ mod tests {
                 0x617069636c6e7400_0000000000000009,
                 "API Client",
             ),
+            (
+                COMPANY_OWNER_ROLE_ID,
+                0x636f6f776e720000_000000000000000a,
+                "Company Owner",
+            ),
+            (
+                CORPORATE_SECRETARY_ROLE_ID,
+                0x636f727073656300_000000000000000b,
+                "Corporate Secretary",
+            ),
+            (
+                LEGAL_COUNSEL_ROLE_ID,
+                0x6c65676c636e7300_000000000000000c,
+                "Legal Counsel",
+            ),
+            (
+                RECORDS_MANAGER_ROLE_ID,
+                0x7265636d67720000_000000000000000d,
+                "Records Manager",
+            ),
+            (
+                SIGNATORY_ROLE_ID,
+                0x7369676e74727900_000000000000000e,
+                "Signatory",
+            ),
+            (
+                REVIEWER_ROLE_ID,
+                0x7265766965777200_000000000000000f,
+                "Reviewer",
+            ),
         ] {
             assert_eq!(id.0, Uuid::from_u128(raw), "{name} id changed");
             assert_eq!(cat.get(id).unwrap().name, name);
         }
         assert_eq!(cat.owner().unwrap().id, OWNER_ROLE_ID);
+    }
+
+    #[test]
+    fn explicit_company_archetypes_have_pinned_conservative_defaults() {
+        assert_eq!(
+            Role::company_owner().permission_set,
+            permissions([
+                Permission::EntityRead,
+                Permission::EntityCreate,
+                Permission::EntityUpdate,
+                Permission::EntityRegistryImport,
+                Permission::EntityArchive,
+                Permission::BookRead,
+                Permission::BookOpen,
+                Permission::BookClose,
+                Permission::BookExport,
+                Permission::BookImport,
+                Permission::BookStartOver,
+                Permission::BookReopen,
+                Permission::ActRead,
+                Permission::ActDraft,
+                Permission::ActEdit,
+                Permission::ActAdvance,
+                Permission::ActArchive,
+                Permission::SigningPerform,
+                Permission::DocumentGenerate,
+                Permission::CaeRead,
+                Permission::CaeRefresh,
+                Permission::LawRead,
+                Permission::LawManage,
+                Permission::SettingsRead,
+                Permission::LedgerRead,
+                Permission::DataBackup,
+                Permission::DataExport,
+            ])
+        );
+        assert_eq!(
+            Role::corporate_secretary().permission_set,
+            permissions([
+                Permission::EntityRead,
+                Permission::BookRead,
+                Permission::BookExport,
+                Permission::ActRead,
+                Permission::ActDraft,
+                Permission::ActEdit,
+                Permission::ActAdvance,
+                Permission::SigningPerform,
+                Permission::DocumentGenerate,
+                Permission::LedgerRead,
+                Permission::CaeRead,
+                Permission::LawRead,
+                Permission::SettingsRead,
+            ])
+        );
+        assert_eq!(
+            Role::legal_counsel().permission_set,
+            permissions([
+                Permission::EntityRead,
+                Permission::BookRead,
+                Permission::ActRead,
+                Permission::LedgerRead,
+                Permission::CaeRead,
+                Permission::LawRead,
+                Permission::SettingsRead,
+            ])
+        );
+        assert_eq!(
+            Role::records_manager().permission_set,
+            permissions([
+                Permission::EntityRead,
+                Permission::EntityArchive,
+                Permission::BookRead,
+                Permission::BookOpen,
+                Permission::BookClose,
+                Permission::BookExport,
+                Permission::BookImport,
+                Permission::ActRead,
+                Permission::ActArchive,
+                Permission::DocumentGenerate,
+                Permission::LedgerRead,
+                Permission::DataExport,
+                Permission::CaeRead,
+                Permission::LawRead,
+                Permission::SettingsRead,
+            ])
+        );
+        assert_eq!(
+            Role::signatory().permission_set,
+            permissions([
+                Permission::EntityRead,
+                Permission::BookRead,
+                Permission::ActRead,
+                Permission::LedgerRead,
+                Permission::ActAdvance,
+                Permission::SigningPerform,
+                Permission::DocumentGenerate,
+            ])
+        );
+        assert_eq!(
+            Role::reviewer().permission_set,
+            permissions([
+                Permission::EntityRead,
+                Permission::BookRead,
+                Permission::ActRead,
+                Permission::LedgerRead,
+                Permission::ActAdvance,
+                Permission::DocumentGenerate,
+            ])
+        );
+
+        assert!(
+            !Role::reviewer()
+                .permission_set
+                .contains(&Permission::SigningPerform),
+            "Reviewer does not receive signing.perform by default"
+        );
+    }
+
+    #[test]
+    fn explicit_company_archetypes_exclude_sensitive_platform_and_meta_authority() {
+        for role in [
+            Role::company_owner(),
+            Role::corporate_secretary(),
+            Role::legal_counsel(),
+            Role::records_manager(),
+            Role::signatory(),
+            Role::reviewer(),
+        ] {
+            for forbidden in [
+                Permission::RoleManage,
+                Permission::RoleAssign,
+                Permission::DelegationGrant,
+                Permission::DelegationRevoke,
+                Permission::UserManage,
+                Permission::SettingsManage,
+                Permission::PlatformLogsWrite,
+                Permission::LedgerRecover,
+                Permission::DataWipe,
+                Permission::DataStartOver,
+            ] {
+                assert!(
+                    !role.permission_set.contains(&forbidden),
+                    "{} unexpectedly holds {forbidden}",
+                    role.name
+                );
+            }
+        }
+    }
+
+    fn permissions(perms: impl IntoIterator<Item = Permission>) -> BTreeSet<Permission> {
+        perms.into_iter().collect()
     }
 
     #[test]

@@ -1301,6 +1301,15 @@ mod tests {
 
         assert!(ensure_seeded_defaults(&mut cat));
         assert_eq!(cat.len(), chancela_authz::default_roles().len());
+        assert!(cat.get(chancela_authz::COMPANY_OWNER_ROLE_ID).is_some());
+        assert!(
+            cat.get(chancela_authz::CORPORATE_SECRETARY_ROLE_ID)
+                .is_some()
+        );
+        assert!(cat.get(chancela_authz::LEGAL_COUNSEL_ROLE_ID).is_some());
+        assert!(cat.get(chancela_authz::RECORDS_MANAGER_ROLE_ID).is_some());
+        assert!(cat.get(chancela_authz::SIGNATORY_ROLE_ID).is_some());
+        assert!(cat.get(chancela_authz::REVIEWER_ROLE_ID).is_some());
         assert!(cat.get(chancela_authz::PLATFORM_ADMIN_ROLE_ID).is_some());
         assert!(cat.get(chancela_authz::TENANT_ADMIN_ROLE_ID).is_some());
         assert!(cat.get(chancela_authz::AUDITOR_ROLE_ID).is_some());
