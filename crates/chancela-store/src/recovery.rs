@@ -787,7 +787,7 @@ impl Store {
     /// List the isolated import namespace (verified + quarantined), newest first — the api's import
     /// feed. Read-only; the bundle bytes are fetched separately via [`Store::imported_bundle`].
     pub fn imported_books(&self) -> Result<Vec<ImportRecord>, StoreError> {
-        let guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let guard = self.conn().lock().unwrap_or_else(|e| e.into_inner());
         let mut stmt = guard.prepare(
             "SELECT import_id, entity_id, book_id, source_instance_id, bundle_digest, verdict, \
              break_json, collided, imported_at FROM imported_books ORDER BY imported_at DESC, rowid DESC",
@@ -837,7 +837,7 @@ impl Store {
     /// Fetch the retained, read-only `.zip` bytes of one import (for inspection / re-export /
     /// compare), or `None` if the import id is unknown.
     pub fn imported_bundle(&self, import_id: &str) -> Result<Option<Vec<u8>>, StoreError> {
-        let guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let guard = self.conn().lock().unwrap_or_else(|e| e.into_inner());
         let mut stmt =
             guard.prepare("SELECT bundle_bytes FROM imported_books WHERE import_id = ?1")?;
         Ok(stmt
@@ -1095,7 +1095,7 @@ impl Store {
         // Atomic db swap plus sidecar replacement: free the live file, write the verified snapshot,
         // replace sidecar roots from the staging dir, then reopen the connection.
         {
-            let mut guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+            let mut guard = self.conn().lock().unwrap_or_else(|e| e.into_inner());
             let placeholder = rusqlite::Connection::open_in_memory()?;
             let old = std::mem::replace(&mut *guard, placeholder);
             drop(old); // release the OS handle so the file can be replaced (Windows-safe)
@@ -1594,7 +1594,7 @@ impl Store {
 
     /// Read one book aggregate by id.
     fn book_by_id(&self, id: BookId) -> Result<Option<Book>, StoreError> {
-        let guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let guard = self.conn().lock().unwrap_or_else(|e| e.into_inner());
         let mut stmt = guard.prepare("SELECT json FROM books WHERE id = ?1")?;
         stmt.query_row(params![id.to_string()], |row| row.get::<_, String>(0))
             .optional()?
@@ -1604,7 +1604,7 @@ impl Store {
 
     /// Read one entity's raw row json by id (kept as-is so the bundle stores the exact PUBLIC bytes).
     fn entity_json(&self, id: String) -> Result<Option<String>, StoreError> {
-        let guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let guard = self.conn().lock().unwrap_or_else(|e| e.into_inner());
         let mut stmt = guard.prepare("SELECT json FROM entities WHERE id = ?1")?;
         Ok(stmt
             .query_row(params![id], |row| row.get::<_, String>(0))
@@ -1613,7 +1613,7 @@ impl Store {
 
     /// Read all acts of a book, ordered by id (deterministic bundle order).
     fn acts_for_book(&self, book_id: BookId) -> Result<Vec<Act>, StoreError> {
-        let guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let guard = self.conn().lock().unwrap_or_else(|e| e.into_inner());
         let mut stmt = guard.prepare("SELECT json FROM acts WHERE book_id = ?1 ORDER BY id")?;
         let rows = stmt.query_map(params![book_id.to_string()], |row| row.get::<_, String>(0))?;
         let mut acts = Vec::new();
@@ -1701,7 +1701,7 @@ impl Store {
 
     /// Whether `book_id` already exists as a live book OR an imported book (collision detection).
     fn book_exists_anywhere(&self, book_id: &str) -> Result<bool, StoreError> {
-        let guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let guard = self.conn().lock().unwrap_or_else(|e| e.into_inner());
         let live: i64 = guard.query_row(
             "SELECT COUNT(*) FROM books WHERE id = ?1",
             params![book_id],
