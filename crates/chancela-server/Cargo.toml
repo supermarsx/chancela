@@ -27,6 +27,9 @@ sqlcipher = ["chancela-api/sqlcipher", "chancela-store/sqlcipher"]
 # Docker/self-hosted image enables this; the default build stays SQLite-only. At runtime the backend
 # is still selected by CHANCELA_DB_BACKEND (sqlite unless postgres is explicitly requested).
 postgres = ["chancela-api/postgres", "chancela-store/postgres"]
+# wp14 Phase 4: build the server binary with the OPTIONAL Redis cache-aside available. OFF by
+# default; when on, the cache is still inert unless REDIS_URL is set at runtime (else NullCache).
+redis = ["chancela-api/redis"]
 
 [dependencies]
 chancela-api = { workspace = true }

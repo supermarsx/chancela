@@ -93,6 +93,7 @@ mod backup_recovery;
 mod batch_signing;
 mod books;
 mod bundles;
+mod cache;
 mod cae;
 mod chronology;
 #[allow(dead_code)]
@@ -537,6 +538,18 @@ pub struct AppState {
     /// confidential. `Default` is an in-memory, no-key-source store that refuses every write. Held
     /// behind an `Arc` so cloning the state shares the one set of interior locks.
     pub provider_credentials: Arc<ProviderCredentialStore>,
+    /// wp14 Phase 4 — the in-process [`Ledger::verify`](chancela_ledger::Ledger::verify) memo (the
+    /// real single-node cache win). Caches the `O(n)` chain-verify verdict keyed by the ledger head
+    /// hash + length, so the dashboard / integrity hot path is `O(1)` over an unchanged chain; a new
+    /// append changes the head, so it self-invalidates. Shared across clones (moka is internally
+    /// `Arc`); verify semantics are unchanged — this is a transparent memo. See [`cache`].
+    pub verify_cache: cache::VerifyMemo,
+    /// wp14 Phase 4 — the OPTIONAL cache-aside backend (default [`cache::NullCache`], a no-op). An
+    /// off-by-default Redis backend (`redis` feature + `REDIS_URL`) caches a couple of rarely-mutated
+    /// catalog projections; it is **fail-open** and inert when absent, so the app is byte-identical
+    /// without it. Honest scope: single-node reads are RAM-served, so this is primarily a shared
+    /// cache for a future multi-instance deployment — not a single-node speed-up. See [`cache`].
+    pub cache: cache::SharedCache,
 }
 
 impl AppState {
@@ -814,6 +827,10 @@ impl AppState {
         state.csc_providers = Arc::new(signature::load_csc_providers_from_env());
         state.paper_book_ocr_command =
             paper_import::PaperBookOcrCommandConfig::from_env().map(Arc::new);
+        // wp14 Phase 4: resolve the OPTIONAL cache-aside backend from the environment (Redis when the
+        // `redis` feature is built AND REDIS_URL/REDIS_URL_FILE is set; otherwise the no-op NullCache).
+        // The in-process verify memo is separate and always on.
+        state.cache = cache::SharedCache::from_env();
         // Signature-provider credential store (t77 S2): read the encrypted sidecar now (no key file
         // is created at boot — resolution is deferred to the first store), fail-closed on a missing
         // key source or a corrupt sidecar. Strict mode defaults off; the `credential_storage_strict`

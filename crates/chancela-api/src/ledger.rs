@@ -187,7 +187,10 @@ pub async fn verify_ledger(
     // RBAC (t64-E3): the chain-verify probe is `ledger.read` at Global.
     require_permission(&state, &actor, Permission::LedgerRead, Scope::Global).await?;
     let ledger = state.ledger.read().await;
-    Ok(match ledger.verify() {
+    // wp14 Phase 4: serve the O(n) chain-verify verdict from the in-process memo (keyed by the
+    // ledger head + length). Transparent memo of `ledger.verify()`; the error is already rendered to
+    // a String by the memo.
+    Ok(match state.verify_cache.verdict(&ledger) {
         Ok(length) => Json(VerifyResponse {
             valid: true,
             length,
@@ -196,7 +199,7 @@ pub async fn verify_ledger(
         Err(e) => Json(VerifyResponse {
             valid: false,
             length: ledger.len() as u64,
-            error: Some(e.to_string()),
+            error: Some(e),
         }),
     })
 }

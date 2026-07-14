@@ -174,6 +174,18 @@ argon2 = "0.5"
 # chacha20 + poly1305; independent of the der-0.7 pins (no ASN.1 crates). See t29.md §3.
 chacha20poly1305 = "0.10"
 
+# --- Optional cache layer (wp14 Phase 4) -----------------------------------------------
+# moka: an in-process concurrent cache — powers the `Ledger::verify()` verdict memo (the real
+# single-node speed-up) and the in-process cache-aside impl. Pure Rust; `sync` feature only (no
+# tokio/`future` backend needed — our Cache trait is synchronous). Pulls crossbeam-epoch (already
+# in the lock). See .orchestration/plans/wp14.md §5.
+moka = { version = "0.12", default-features = false, features = ["sync"] }
+# redis: the OPTIONAL Redis cache-aside backend (chancela-api's off-by-default `redis` feature).
+# `default-features = false` keeps only the synchronous connection (no async/tokio, no TLS) — a
+# tiny surface used via the version-stable `redis::cmd(..).query(..)` API. Pinned to 1.2 (1.3 needs
+# rustc 1.88, above the workspace MSRV of 1.85). Absent feature ⇒ not compiled at all.
+redis = { version = "1.2", default-features = false }
+
 [profile.release]
 lto = "thin"
 strip = true

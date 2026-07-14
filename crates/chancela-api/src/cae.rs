@@ -229,6 +229,11 @@ pub struct CaeRefreshQuery {
 const DEFAULT_SEARCH_LIMIT: usize = 50;
 const MAX_SEARCH_LIMIT: usize = 500;
 
+/// wp14 Phase 4: TTL for the optional `GET /v1/cae` catalog-metadata cache-aside entry. Short — the
+/// catalog rarely changes and every supersede explicitly invalidates the key, so the TTL is only a
+/// safety net against a missed invalidation.
+const CAE_CATALOG_CACHE_TTL_SECS: u64 = 300;
+
 // --- Handlers -----------------------------------------------------------------------------
 
 /// `GET /v1/cae/{code}` `?revision=Rev3|Rev4` — resolve a code to its designation, level,
@@ -279,7 +284,27 @@ pub async fn list_cae(
                 .collect();
             Json(hits).into_response()
         }
-        _ => Json(CaeCatalogView::from(cae.metadata())).into_response(),
+        _ => {
+            // wp14 Phase 4: cache-aside on the (rarely-mutated) catalog metadata projection. Serve
+            // cached JSON bytes on a hit; on a miss, serialize, populate with a short TTL, and return.
+            // Fail-open + inert unless Redis is configured (default NullCache ⇒ this is a plain
+            // compute-and-return). Invalidated on a catalog supersede (see `finish_chain_refresh`).
+            let cache_key = crate::cache::CacheKey::CaeCatalog;
+            if let Some(bytes) = state.cache.get(&cache_key) {
+                return crate::cache::json_bytes_response(bytes);
+            }
+            match serde_json::to_vec(&CaeCatalogView::from(cae.metadata())) {
+                Ok(bytes) => {
+                    state.cache.set(
+                        &cache_key,
+                        &bytes,
+                        std::time::Duration::from_secs(CAE_CATALOG_CACHE_TTL_SECS),
+                    );
+                    crate::cache::json_bytes_response(bytes)
+                }
+                Err(_) => Json(CaeCatalogView::from(cae.metadata())).into_response(),
+            }
+        }
     }
 }
 
@@ -529,6 +554,9 @@ async fn finish_chain_refresh(
         // A source superseded: swap the live catalog, then attribute the update in the ledger with
         // the obtain's provenance (mechanism + artifact digest) recorded on the event.
         *state.cae.write().await = catalog;
+        // wp14 Phase 4: the catalog changed → drop the cached `GET /v1/cae` metadata projection so
+        // the next read repopulates from the new catalog (no-op for the default NullCache).
+        state.cache.invalidate(&crate::cache::CacheKey::CaeCatalog);
         let actor = actor.resolve("api");
         let payload = serde_json::to_vec(&json!({
             "digest": metadata.digest,
@@ -606,6 +634,8 @@ async fn legacy_refresh(
     let metadata = CaeCatalogView::from(&outcome.metadata);
     if outcome.updated {
         *state.cae.write().await = catalog;
+        // wp14 Phase 4: invalidate the cached catalog-metadata projection on a supersede (see above).
+        state.cache.invalidate(&crate::cache::CacheKey::CaeCatalog);
         let actor = actor.resolve("api");
         let payload = serde_json::to_vec(&json!({
             "digest": metadata.digest,
