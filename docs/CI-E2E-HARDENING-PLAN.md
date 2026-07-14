@@ -1,7 +1,7 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `0a83517`,
+and implementation snapshot `ddc1764`,
 including coverage notes for the bounded PAdES DSS validation-time, PDF/UA v10
 scoped table-header evidence, retention due-candidate explicit evidence states,
 bounded archive/no-action evidence UI, duplicate-review guard/status surfacing, and
@@ -17,6 +17,7 @@ external-signing workflow-only envelope UI, workflow reminder policy, and
 structured platform-log forwarded-ingest/failure-audit slices, ROL-02 seeded
 role archetype explicitness, Postgres store runtime write/read marker coverage,
 Postgres logical backup/restore/recovery marker coverage,
+local advisory-lock cluster write gating and fail-closed promotion handoff markers,
 SQLite-default feature/config-gated backend selection, DPIA template/guidance
 checkpoint coverage,
 plus data-status
@@ -892,8 +893,8 @@ settingsDefaults.test.ts contracts.test.ts`.
   (`cargo test -p chancela-store --locked --features sqlcipher sqlcipher`) now
   has a Windows CI lane that installs pinned Strawberry Perl before Rust/Cargo so
   vendored OpenSSL sees a Windows-native Perl first on `PATH`.
-- Current `0a83517` Postgres store runtime, backend-selection, and logical
-  recovery checks: static/source markers pin the off-by-default `postgres`
+- Current `ddc1764` Postgres store runtime, backend-selection, logical
+  recovery, and cluster write-gating checks: static/source markers pin the off-by-default `postgres`
   feature, `PostgresBackend::open`, advisory-locked single writer, boot `load`
   replay, request-serving `Tx` write methods, runtime `Store` read projections,
   `CHANCELA_DB_BACKEND`, `DATABASE_URL_FILE`, `resolve_backend_selection`,
@@ -904,14 +905,22 @@ settingsDefaults.test.ts contracts.test.ts`.
   `execute_recovery_batch`, pure `pg_backup` fixity/cross-backend/rollback
   checks, and ignored `DATABASE_URL` tests for runtime round trips, logical
   backup/restore, recovery/start-over, corrupt-restore refusal, and
-  SQLite-bundle refusal. This is marker/static coverage plus opt-in live-test
-  scaffolding only; SQLite remains the default, Postgres selection is
-  feature/config gated, default CI does not run against a live Postgres
-  database, and only per-book portability paths plus the SQLite-temp-file
-  `restore_preflight` drill still fail closed with `UnsupportedOnPostgres`. It
-  is not production Postgres readiness, live DB validation, migration
-  completeness, HA/cloud deployment, TLS readiness, backup-policy/RPO/RTO
-  certification, legal/DR certification, or external sync readiness.
+  SQLite-bundle refusal. The wp16 P0 markers pin the local advisory-lock
+  cluster write gate and fail-closed promotion handoff: `cluster_assert_writable`
+  before durable append, `write_gate_allows` keeping a promoted node read-only
+  until handoff, `cluster_promotion_handoff` reloading and re-verifying durable
+  state, `NotLeader` to HTTP 503 mapping, and ignored live Postgres election /
+  failover tests gated by `DATABASE_URL`. This is marker/static coverage plus
+  local advisory-lock/fail-closed gating and opt-in live-test scaffolding only;
+  SQLite remains the default, Postgres selection is feature/config gated,
+  default CI does not run against a live Postgres database, and only per-book
+  portability paths plus the SQLite-temp-file `restore_preflight` drill still
+  fail closed with `UnsupportedOnPostgres`. It is not production Postgres
+  readiness, live DB validation, migration completeness, production HA
+  readiness, consensus correctness, split-brain impossibility, live failover
+  certification, cloud deployment readiness, TLS/remote PG readiness,
+  multi-node operational certification, backup-policy/RPO/RTO certification,
+  legal/DR certification, or external sync readiness.
 - Recent 2026-07-10 focused checks through `783538c`: `npm run
   check:encrypted-build-defaults`, `cargo metadata --locked --format-version 1
   --features "chancela-server/sqlcipher chancela-cli/sqlcipher" --no-deps`,
@@ -1719,7 +1728,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   --workspace apps/web -- e2e/session.spec.ts e2e/first-launch-onboarding.spec.ts`.
   Treat the static/unit/focused markers as the pinned slice, not broad
   Playwright-browser-suite or browser-matrix proof; the browser suite is not exhaustive.
-- Current checkpoint metadata/static checks through `0a83517`
+- Current checkpoint metadata/static checks through `ddc1764`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
@@ -1779,8 +1788,9 @@ settingsDefaults.test.ts contracts.test.ts`.
   markers, and
   post-act `Certidao`/`Extrato` sealed-provenance semantic lint markers,
   Postgres store runtime/logical recovery source/test markers,
-  SQLite-default feature/config-gated backend selector markers, and
-  no-production-readiness caveats,
+  local advisory-lock cluster write-gate and fail-closed promotion handoff
+  markers, SQLite-default feature/config-gated backend selector markers, and
+  no-production-readiness/HA-readiness caveats,
   delegation legal-basis requirement, trimmed storage, legacy missing-basis
   display, and no legal/HR/SCAP/access-policy certification caveats,
   plus metadata-only

@@ -9462,7 +9462,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `0a83517`",
+    "Updated 2026-07-14 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `ddc1764`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
@@ -10082,7 +10082,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `0a83517`",
+    "Current checkpoint metadata/static checks through `ddc1764`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -10537,7 +10537,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `0a83517b09797558f32974a9f7bed48dc6746a98`",
+    "implementation snapshot `ddc176497f0b8837d357e35161ec2c260a793ac2`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -10612,7 +10612,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Current `0a83517` keeps Data/Architecture/CI **PARTIAL**",
+    "Current `ddc1764` keeps Data/Architecture/CI **PARTIAL**",
     "spec coverage Postgres store checkpoint marker",
   );
   assertFileContains(
@@ -10627,7 +10627,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "not production Postgres readiness, live\n  DB validation, migration completeness, HA/cloud deployment, TLS readiness",
+    "not production Postgres readiness, live\n  DB validation, migration completeness, production HA readiness, consensus",
     "spec coverage Postgres no-production-readiness caveat marker",
   );
   assertFileContains(
@@ -10687,7 +10687,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current `0a83517` Postgres store runtime, backend-selection, and logical\n  recovery checks",
+    "Current `ddc1764` Postgres store runtime, backend-selection, logical\n  recovery, and cluster write-gating checks",
     "CI/E2E hardening plan Postgres store/backend-selection checks marker",
   );
   assertFileContains(
@@ -10697,7 +10697,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Postgres store runtime/logical recovery source/test markers,\n  SQLite-default feature/config-gated backend selector markers",
+    "Postgres store runtime/logical recovery source/test markers,\n  local advisory-lock cluster write-gate and fail-closed promotion handoff\n  markers, SQLite-default feature/config-gated backend selector markers",
     "CI/E2E hardening plan database backend selector checkpoint marker",
   );
   assertFileContains(
@@ -10707,7 +10707,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "The Postgres store, backend-selection, and logical recovery markers prove\nsource/test coverage for the off-by-default backend runtime paths, API/server\nselector, and app-level logical backup/restore/recovery paths only",
+    "The Postgres store, backend-selection, logical recovery, and local\nadvisory-lock/fail-closed cluster write gate and promotion handoff markers prove\nsource/test coverage for the off-by-default backend runtime paths, API/server\nselector, app-level logical backup/restore/recovery paths, pre-append\nwrite-gate refusal",
     "CI checkpoints Postgres/backend selector bounded marker",
   );
   assertFileContains(
@@ -10849,6 +10849,111 @@ function assertCheckpointMap() {
     "crates/chancela-store/tests/postgres_backend.rs",
     "#[ignore = \"requires a live PostgreSQL at DATABASE_URL\"]",
     "store Postgres live database ignore marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "local Postgres advisory-lock cluster write gate and\nfail-closed promotion handoff markers",
+    "spec coverage Postgres cluster write gate header marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "live Postgres election/failover tests remain ignored and\n  gated by `DATABASE_URL`",
+    "spec coverage Postgres live failover gated marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "local advisory-lock/fail-closed gating only",
+    "spec coverage Postgres local advisory-lock gate caveat marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "live PG election/failover tests\nremain ignored unless `DATABASE_URL` points at a throwaway database",
+    "CI checkpoints Postgres live failover DATABASE_URL gate marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "store.cluster_assert_writable()",
+    "API cluster write gate pre-append marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "cluster write gate refused the append",
+    "API cluster write gate refusal context marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "StoreError::NotLeader => Self::not_leader_error()",
+    "API NotLeader to 503 mapping marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/cluster.rs",
+    "pub(crate) async fn cluster_promotion_handoff(&self) -> Result<(), ApiError>",
+    "API cluster promotion handoff marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/cluster.rs",
+    "handoff_ledger_len_validation_fails_closed_on_mismatch",
+    "API cluster handoff length fail-closed coverage marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/cluster.rs",
+    "cluster_not_leader_error_maps_to_503",
+    "API cluster not-leader 503 coverage marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/src/lib.rs",
+    "pub fn cluster_assert_writable(&self) -> Result<(), StoreError>",
+    "store cluster assert writable facade marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/src/lib.rs",
+    "pub fn cluster_enable_writes(&self)",
+    "store cluster enable writes facade marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/src/lib.rs",
+    "pub fn cluster_disable_writes(&self)",
+    "store cluster disable writes facade marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/src/lib.rs",
+    "pub fn cluster_try_promote(&self) -> Result<bool, StoreError>",
+    "store cluster try promote facade marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/src/lib.rs",
+    "pub fn cluster_durable_max_seq(&self) -> Result<Option<i64>, StoreError>",
+    "store cluster durable max seq facade marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/src/pg_cluster.rs",
+    "pub(crate) fn write_gate_allows(verified_leader: bool, writes_enabled: bool) -> bool",
+    "store Postgres cluster write gate function marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/src/pg_cluster.rs",
+    "fn write_gate_stays_closed_until_handoff_enables_writes()",
+    "store Postgres write gate handoff coverage marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/src/pg_cluster.rs",
+    "fn election_exactly_one_leader()",
+    "store Postgres live election coverage marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/src/pg_cluster.rs",
+    "fn failover_promotes_follower_and_bumps_epoch()",
+    "store Postgres live failover coverage marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/src/pg_cluster.rs",
+    "fn epoch_is_monotonic_across_promotions()",
+    "store Postgres live epoch coverage marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/src/pg_cluster.rs",
+    "#[ignore = \"requires a live Postgres (set DATABASE_URL)\"]",
+    "store Postgres cluster live tests ignore marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",

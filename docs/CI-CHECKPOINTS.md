@@ -129,19 +129,27 @@ i18n leakage guards, external-signing stored slot evidence rendering,
 operator technical evidence form submission, identity-requirement-tagged
 evidence rows, `PATCH` slot payloads that omit `complete:true`, validator
 fixtures, off-by-default Postgres store runtime write/read markers, Postgres
-logical backup/restore/recovery source and test markers, ignored `DATABASE_URL`
-live tests, and remaining `UnsupportedOnPostgres` per-book portability plus
-`restore_preflight` boundaries, SQLite-default feature/config-gated database
-backend selection markers, and the standalone desktop Cargo workspace.
+logical backup/restore/recovery source and test markers, local advisory-lock
+cluster write-gate and fail-closed promotion handoff markers, ignored
+`DATABASE_URL` live tests, and remaining `UnsupportedOnPostgres` per-book
+portability plus `restore_preflight` boundaries, SQLite-default
+feature/config-gated database backend selection markers, and the standalone
+desktop Cargo workspace.
 
-The Postgres store, backend-selection, and logical recovery markers prove
+The Postgres store, backend-selection, logical recovery, and local
+advisory-lock/fail-closed cluster write gate and promotion handoff markers prove
 source/test coverage for the off-by-default backend runtime paths, API/server
-selector, and app-level logical backup/restore/recovery paths only. SQLite
-remains the default backend; Postgres selection is feature/config gated through
-`CHANCELA_DB_BACKEND=postgres` plus exactly one `DATABASE_URL` or
-`DATABASE_URL_FILE` source; default CI still does not run against a live
-Postgres database. They do not prove production Postgres readiness, live DB
-validation, migration completeness, HA/cloud deployment, TLS readiness,
+selector, app-level logical backup/restore/recovery paths, pre-append
+write-gate refusal, promotion handoff reloading/re-verification, and HTTP 503
+`NotLeader` mapping only. SQLite remains the default backend; Postgres
+selection is feature/config gated through `CHANCELA_DB_BACKEND=postgres` plus
+exactly one `DATABASE_URL` or `DATABASE_URL_FILE` source; default CI still does
+not run against a live Postgres database, and live PG election/failover tests
+remain ignored unless `DATABASE_URL` points at a throwaway database. They do
+not prove production Postgres readiness, live DB validation, migration
+completeness, production HA readiness, consensus correctness, split-brain
+impossibility, live failover certification, cloud deployment readiness,
+TLS/remote PG readiness, multi-node operational certification,
 backup-policy/RPO/RTO certification, legal/DR certification, or external sync
 readiness.
 
