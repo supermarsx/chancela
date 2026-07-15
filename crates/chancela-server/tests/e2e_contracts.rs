@@ -200,6 +200,70 @@ async fn live_responses_match_the_canonical_contracts() {
         "template catalog exposes built-in provenance/editability: {templates}"
     );
 
+    // User-authored template lifecycle (template.summary.json, template.import-verdict.json,
+    // template.export.json). One authored spec drives all three wire shapes: creating it returns
+    // the `TemplateSummary`; re-importing the same id as a dry-run hits the uniqueness preflight and
+    // returns the populated `{ok:false, error:{code,field,message}}` conflict verdict (no persist);
+    // exporting it returns the canonical spec JSON (lossless re-import). The id carries a `/`, so the
+    // export path percent-encodes it.
+    let authored_template = json!({
+        "id": "user-encosto-ata/v1",
+        "family": "CommercialCompany",
+        "stage": "Ata",
+        "channels": ["Physical"],
+        "signature_policy": "QualifiedPreferred",
+        "rule_pack_id": "csc-art63/v2",
+        "locale": "pt-PT",
+        "blocks": [
+            { "kind": "Heading", "level": 1, "template": "Ata n.º {{ ata_number }}" },
+            {
+                "kind": "Paragraph",
+                "template": "Reunida a assembleia em {{ meeting_date | long_date }}."
+            }
+        ]
+    });
+
+    let (status, template_summary) = h
+        .post_json_auth("/v1/templates", authored_template.clone(), &token)
+        .await;
+    assert_eq!(status, 201, "create user template: {template_summary}");
+    assert_shape(
+        "template.summary",
+        &template_summary,
+        &contract("template.summary.json"),
+    );
+
+    // Re-importing the same id as a dry-run: the uniqueness preflight rejects it with a populated
+    // conflict verdict (200, `ok:false`), without persisting anything.
+    let (status, import_verdict) = h
+        .post_json_auth(
+            "/v1/templates/import?dry_run=true",
+            authored_template,
+            &token,
+        )
+        .await;
+    assert_eq!(status, 200, "template import dry-run: {import_verdict}");
+    assert_eq!(
+        import_verdict["ok"], false,
+        "dry-run of an already-persisted id conflicts: {import_verdict}"
+    );
+    assert_shape(
+        "template.import-verdict",
+        &import_verdict,
+        &contract("template.import-verdict.json"),
+    );
+
+    // Exporting the authored template returns its canonical spec JSON.
+    let (status, template_export) = h
+        .get_json_auth("/v1/templates/user-encosto-ata%2Fv1/export", &token)
+        .await;
+    assert_eq!(status, 200, "export user template: {template_export}");
+    assert_shape(
+        "template.export",
+        &template_export,
+        &contract("template.export.json"),
+    );
+
     // The ledger feed + dashboard (ledger.events.json, dashboard.json).
     let (status, events) = h.get_json("/v1/ledger/events").await;
     assert_eq!(status, 200);
