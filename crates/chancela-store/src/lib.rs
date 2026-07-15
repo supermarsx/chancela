@@ -224,6 +224,15 @@ pub enum StoreError {
         #[source]
         source: rusqlite::Error,
     },
+    /// A per-subject erasure target named a collection that is not on the erasable-tables allowlist
+    /// ([`ERASABLE_TABLES`]). Rejected **before** any `DELETE` runs, so the interpolated table name
+    /// can never be attacker-controlled (SQL-injection guard; wp26 GDPR erasure). Every erasable
+    /// table keys on a natural `id` column.
+    #[error("collection {collection} is not an erasable subject-data table")]
+    UnknownErasableCollection {
+        /// The rejected collection name.
+        collection: String,
+    },
 }
 
 impl From<AppendError> for StoreError {
@@ -1666,6 +1675,82 @@ pub struct StoredCredentialRecord {
     pub record_blob: Vec<u8>,
 }
 
+/// One `subject_keys` row (schema v18, wp26 GDPR crypto-erasure).
+///
+/// `wrapped_dek` is the **OPAQUE** wrapped per-subject DEK blob produced by the API's secretstore
+/// crypto layer (never a plaintext key; the store never wraps, unwraps, or interprets it). A live
+/// subject has `erased_at == None`; a crypto-erased subject has `erased_at == Some(..)` and an
+/// **empty** `wrapped_dek` (the wrapping bytes were overwritten by [`Tx::destroy_subject_key`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SubjectKeyRow {
+    /// The data subject's identifier (UUID); the primary key.
+    pub subject_id: String,
+    /// The opaque wrapped-DEK bytes. Empty once the DEK has been crypto-erased.
+    pub wrapped_dek: Vec<u8>,
+    /// The key version the DEK was wrapped under (non-secret rotation marker).
+    pub key_version: i64,
+    /// RFC 3339 creation timestamp.
+    pub created_at: String,
+    /// RFC 3339 crypto-erasure timestamp, or `None` while the DEK is live.
+    pub erased_at: Option<String>,
+}
+
+/// One target of a per-subject erasure: a single row (`id`) in an erasable `collection`.
+///
+/// `collection` is validated against [`ERASABLE_TABLES`] before any `DELETE` runs (SQL-injection
+/// guard); an unknown collection is rejected with [`StoreError::UnknownErasableCollection`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EraseTarget {
+    /// The erasable table name (must be on [`ERASABLE_TABLES`]).
+    pub collection: String,
+    /// The `id` of the row to delete within `collection`.
+    pub id: String,
+}
+
+/// The outcome of erasing one [`EraseTarget`]: how many rows the `DELETE` removed (`0` when the id
+/// was already absent — an idempotent no-op, not an error).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EraseOutcome {
+    /// The collection the target named.
+    pub collection: String,
+    /// The id the target named.
+    pub id: String,
+    /// The number of rows deleted (`0` or `1` for an `id`-keyed table).
+    pub deleted: u64,
+}
+
+/// The report of a single-transaction [`Store::erase_subject`]: the subject and every per-target
+/// [`EraseOutcome`], in the order the targets were supplied.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EraseReport {
+    /// The subject whose rows were erased.
+    pub subject_id: String,
+    /// The per-target deletion outcomes.
+    pub outcomes: Vec<EraseOutcome>,
+}
+
+/// The allowlist of tables a per-subject erasure may `DELETE` from (wp26 GDPR erasure).
+///
+/// Every entry keys on a natural `id` column (so the shared `DELETE FROM {collection} WHERE id = ?`
+/// is well-formed) and holds erasable subject personal data (§1.1 of the wp26 plan): the user
+/// directory + role/delegation/template sidecars, and the non-canonical `imported_documents` /
+/// `follow_ups` rows. This is a **closed** set: [`Tx::erase_subject_rows`] rejects any collection
+/// not listed here **before** interpolating it into SQL, so the interpolated table name can never be
+/// attacker-controlled.
+///
+/// Deliberately excluded: `generated_document_dispatch_evidence` (composite `(document_id,
+/// idempotency_key)` primary key, no `id` column) and every sealed/canonical legal record
+/// (`entities`, `books`, `acts`, `documents`, `signed_documents`, …), which are retained under GDPR
+/// Art. 17(3) and handled as preflight carve-outs, never deleted here.
+pub const ERASABLE_TABLES: &[&str] = &[
+    "users",
+    "roles",
+    "delegations",
+    "user_templates",
+    "imported_documents",
+    "follow_ups",
+];
+
 impl Store {
     /// Open (creating if absent) `<data_dir>/chancela.db`, set `journal_mode=WAL` and
     /// `foreign_keys=ON`, run the idempotent [`schema::ALL`] migration, and record/read
@@ -3001,6 +3086,72 @@ impl Store {
             out.push(row?);
         }
         Ok(out)
+    }
+
+    /// Read one subject DEK-wrapping row ([`SubjectKeyRow`]) outside a transaction, or `None` when
+    /// unknown. The non-tx read used by the erasure preflight and by standalone store tests; the
+    /// in-transaction read is [`Tx::get_subject_key_tx`]. `wrapped_dek` is returned verbatim (opaque
+    /// bytes; the store never unwraps it) and is empty once the DEK has been crypto-erased.
+    pub fn get_subject_key(&self, subject_id: &str) -> Result<Option<SubjectKeyRow>, StoreError> {
+        #[cfg(feature = "postgres")]
+        if let Backend::Postgres(backend) = &self.backend {
+            return backend.subject_key(subject_id);
+        }
+        let guard = self.locked_conn()?;
+        let mut stmt = guard.prepare(
+            "SELECT subject_id, wrapped_dek, key_version, created_at, erased_at \
+             FROM subject_keys WHERE subject_id = ?1",
+        )?;
+        stmt.query_row(params![subject_id], |row| {
+            Ok(SubjectKeyRow {
+                subject_id: row.get(0)?,
+                wrapped_dek: row.get(1)?,
+                key_version: row.get(2)?,
+                created_at: row.get(3)?,
+                erased_at: row.get(4)?,
+            })
+        })
+        .optional()
+        .map_err(StoreError::from)
+    }
+
+    /// Erase one subject's rows across multiple erasable collections in a single all-or-rollback
+    /// transaction, returning an [`EraseReport`]. A convenience for standalone store tests and
+    /// preflight-free deletes; the API's full erasure workflow instead composes
+    /// [`Tx::erase_subject_rows`] + [`Tx::destroy_subject_key`] + a `subject.erased` `append_event`
+    /// inside one `persist` closure itself (so those primitives stay independently callable).
+    ///
+    /// Every target's `collection` is validated against [`ERASABLE_TABLES`] before any `DELETE`; an
+    /// unknown collection rolls the whole transaction back with
+    /// [`StoreError::UnknownErasableCollection`] and deletes nothing.
+    pub fn erase_subject(
+        &self,
+        subject_id: &str,
+        targets: &[EraseTarget],
+    ) -> Result<EraseReport, StoreError> {
+        let outcomes = self.persist_result(|tx| tx.erase_subject_rows(targets))?;
+        Ok(EraseReport {
+            subject_id: subject_id.to_string(),
+            outcomes,
+        })
+    }
+
+    /// Reclaim freed pages / dead tuples so physically deleted PII does not linger in unallocated
+    /// storage (wp26 GDPR erasure — "irrecoverable" requires this step, plan §2.3). Runs **outside**
+    /// any transaction: SQLite `VACUUM` cannot run inside a transaction, and Postgres `VACUUM` must
+    /// run in its own implicit transaction. On SQLite this rewrites the database file; on Postgres it
+    /// runs `VACUUM (FULL, ANALYZE)` (a full rewrite that returns dead-tuple space to the OS, plus a
+    /// statistics refresh).
+    pub fn vacuum(&self) -> Result<(), StoreError> {
+        #[cfg(feature = "postgres")]
+        if let Backend::Postgres(backend) = &self.backend {
+            return backend.vacuum_full();
+        }
+        let guard = self.locked_conn()?;
+        // VACUUM cannot run inside a transaction; `locked_conn` hands back the raw connection (no
+        // enclosing tx), so `execute` runs it directly.
+        guard.execute("VACUUM", [])?;
+        Ok(())
     }
 
     /// Run a single transaction: append exactly one event row and upsert zero or more changed
@@ -4769,6 +4920,160 @@ impl Tx<'_> {
             }
         }
         Ok(())
+    }
+
+    // ── wp26 — per-subject GDPR erasure primitives (subject_keys + multi-collection erase) ─────────
+
+    /// Upsert one subject DEK-wrapping row (`subject_keys`, keyed by `subject_id`, schema v18).
+    ///
+    /// `wrapped_dek` is stored **verbatim** as opaque bytes — the API's secretstore wraps/unwraps the
+    /// per-subject DEK; the store neither wraps, unwraps, nor interprets it. A fresh insert leaves
+    /// `erased_at` NULL (the DEK is live); re-inserting a subject id replaces the wrapped DEK and
+    /// **clears** `erased_at` (a rewrap re-arms the subject). Idempotent on `subject_id`.
+    pub fn put_subject_key(
+        &self,
+        subject_id: &str,
+        wrapped_dek: &[u8],
+        key_version: i64,
+        created_at: &str,
+    ) -> Result<(), StoreError> {
+        match &self.kind {
+            TxKind::Sqlite(_) => {
+                self.raw()?.execute(
+                    "INSERT OR REPLACE INTO subject_keys \
+                     (subject_id, wrapped_dek, key_version, created_at, erased_at) \
+                     VALUES (?1, ?2, ?3, ?4, NULL)",
+                    params![subject_id, wrapped_dek, key_version, created_at],
+                )?;
+            }
+            #[cfg(feature = "postgres")]
+            TxKind::Postgres(cell) => {
+                cell.borrow_mut().execute(
+                    "INSERT INTO subject_keys \
+                     (subject_id, wrapped_dek, key_version, created_at, erased_at) \
+                     VALUES ($1, $2, $3, $4, NULL) \
+                     ON CONFLICT (subject_id) DO UPDATE SET \
+                     wrapped_dek = EXCLUDED.wrapped_dek, key_version = EXCLUDED.key_version, \
+                     created_at = EXCLUDED.created_at, erased_at = NULL",
+                    &[&subject_id, &wrapped_dek, &key_version, &created_at],
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Crypto-erase one subject's DEK: overwrite `wrapped_dek` with an **empty** blob and stamp
+    /// `erased_at` (RFC 3339). Once the wrapping bytes no longer exist in the live row — and, after a
+    /// [`Store::vacuum`], no longer exist in any freed page/dead tuple — every ciphertext sealed under
+    /// that DEK is cryptographically irrecoverable. A no-op when `subject_id` is unknown.
+    pub fn destroy_subject_key(&self, subject_id: &str, erased_at: &str) -> Result<(), StoreError> {
+        // The empty blob is the erased marker: the opaque wrapping bytes are physically replaced, not
+        // merely flagged, so the DEK cannot be reconstructed from the row.
+        let empty: &[u8] = &[];
+        match &self.kind {
+            TxKind::Sqlite(_) => {
+                self.raw()?.execute(
+                    "UPDATE subject_keys SET wrapped_dek = ?1, erased_at = ?2 WHERE subject_id = ?3",
+                    params![empty, erased_at, subject_id],
+                )?;
+            }
+            #[cfg(feature = "postgres")]
+            TxKind::Postgres(cell) => {
+                cell.borrow_mut().execute(
+                    "UPDATE subject_keys SET wrapped_dek = $1, erased_at = $2 WHERE subject_id = $3",
+                    &[&empty, &erased_at, &subject_id],
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Read one subject DEK-wrapping row within the current transaction, or `None` when unknown.
+    pub fn get_subject_key_tx(
+        &self,
+        subject_id: &str,
+    ) -> Result<Option<SubjectKeyRow>, StoreError> {
+        const SQL: &str = "SELECT subject_id, wrapped_dek, key_version, created_at, erased_at \
+             FROM subject_keys WHERE subject_id = ?1";
+        match &self.kind {
+            TxKind::Sqlite(_) => {
+                let raw = self.raw()?;
+                let mut stmt = raw.prepare(SQL)?;
+                stmt.query_row(params![subject_id], |row| {
+                    Ok(SubjectKeyRow {
+                        subject_id: row.get(0)?,
+                        wrapped_dek: row.get(1)?,
+                        key_version: row.get(2)?,
+                        created_at: row.get(3)?,
+                        erased_at: row.get(4)?,
+                    })
+                })
+                .optional()
+                .map_err(StoreError::from)
+            }
+            #[cfg(feature = "postgres")]
+            TxKind::Postgres(cell) => {
+                let row = cell
+                    .borrow_mut()
+                    .query_opt(&crate::dialect::rewrite_placeholders(SQL), &[&subject_id])?;
+                Ok(row.map(|row| SubjectKeyRow {
+                    subject_id: row.get(0),
+                    wrapped_dek: row.get(1),
+                    key_version: row.get(2),
+                    created_at: row.get(3),
+                    erased_at: row.get(4),
+                }))
+            }
+        }
+    }
+
+    /// Delete one row per [`EraseTarget`] and report the affected count per target, within the
+    /// current transaction. Each target runs `DELETE FROM {collection} WHERE id = ?`.
+    ///
+    /// `collection` is validated against [`ERASABLE_TABLES`] **before** it is interpolated into the
+    /// statement — an unknown collection is rejected with [`StoreError::UnknownErasableCollection`]
+    /// and no `DELETE` runs (SQL-injection guard). A target whose id is absent contributes
+    /// `deleted = 0` (idempotent no-op, not an error). Intended to be composed inside one `persist`
+    /// closure alongside [`Tx::destroy_subject_key`] and a `subject.erased` `append_event` so the
+    /// whole erasure is a single all-or-rollback commit.
+    pub fn erase_subject_rows(
+        &self,
+        targets: &[EraseTarget],
+    ) -> Result<Vec<EraseOutcome>, StoreError> {
+        // Validate every collection up front so a rejected target fails the whole transaction before
+        // any row is deleted (all-or-nothing; no partial destruction on a bad target).
+        for target in targets {
+            if !ERASABLE_TABLES.contains(&target.collection.as_str()) {
+                return Err(StoreError::UnknownErasableCollection {
+                    collection: target.collection.clone(),
+                });
+            }
+        }
+        let mut outcomes = Vec::with_capacity(targets.len());
+        for target in targets {
+            // `target.collection` is proven to be an `ERASABLE_TABLES` entry above, so interpolating
+            // it is safe; the `id` is always bound as a parameter.
+            let deleted: u64 = match &self.kind {
+                TxKind::Sqlite(_) => {
+                    let affected = self.raw()?.execute(
+                        &format!("DELETE FROM {} WHERE id = ?1", target.collection),
+                        params![target.id],
+                    )?;
+                    affected as u64
+                }
+                #[cfg(feature = "postgres")]
+                TxKind::Postgres(cell) => cell.borrow_mut().execute(
+                    &format!("DELETE FROM {} WHERE id = $1", target.collection),
+                    &[&target.id],
+                )?,
+            };
+            outcomes.push(EraseOutcome {
+                collection: target.collection.clone(),
+                id: target.id.clone(),
+                deleted,
+            });
+        }
+        Ok(outcomes)
     }
 
     /// Upsert the SIGNED PDF variant for an act (`signed_documents`, keyed by `act_id`, schema v4).

@@ -74,7 +74,15 @@
 ///   `(id, json)` table mirroring the four domain aggregates, holding the operator-authored
 ///   `TemplateSpecDto` JSON. Forward-only, additive: existing databases gain the table via [`ALL`]
 ///   and advance their stamp on next open.
-pub const SCHEMA_VERSION: i64 = 17;
+/// - **v18** — adds `subject_keys`: the per-subject Data-Encryption-Key (DEK) wrapping table for
+///   GDPR crypto-erasure (wp26). One row per data subject holding the **opaque** wrapped DEK blob
+///   produced by the API's secretstore crypto layer (never plaintext; the store never interprets
+///   it), its key version, and a nullable `erased_at`. Crypto-erasure destroys the DEK by
+///   overwriting `wrapped_dek` with an empty blob and stamping `erased_at`, making every ciphertext
+///   sealed under that DEK (live rows and backups alike) cryptographically irrecoverable.
+///   Forward-only, additive: existing databases gain the table via [`ALL`] and advance their stamp
+///   on next open.
+pub const SCHEMA_VERSION: i64 = 18;
 
 /// `meta` — small key/value table for the `schema_version` stamp and the app version.
 pub const CREATE_META: &str = "\
@@ -636,6 +644,26 @@ CREATE TABLE IF NOT EXISTS user_templates (
     json TEXT NOT NULL
 ) STRICT;";
 
+/// `subject_keys` — the per-subject Data-Encryption-Key (DEK) wrapping table (schema v18, wp26 GDPR
+/// crypto-erasure).
+///
+/// One row per data subject. `wrapped_dek` is the **OPAQUE** wrapped-DEK blob produced by the API's
+/// secretstore crypto layer (XChaCha20-Poly1305 envelope over the subject DEK, wrapped by the
+/// internally-derived root): it never holds a plaintext key, and the store neither wraps, unwraps,
+/// nor interprets it — exactly like `provider_credentials.record_blob`, only its **storage** lives
+/// here. `key_version` is the non-secret rotation marker. `erased_at` is NULL while the subject's
+/// DEK is live; crypto-erasure overwrites `wrapped_dek` with an **empty** blob and stamps
+/// `erased_at` (RFC 3339), after which — combined with `VACUUM` — the wrapping bytes no longer exist
+/// and every ciphertext sealed under that DEK becomes irrecoverable.
+pub const CREATE_SUBJECT_KEYS: &str = "\
+CREATE TABLE IF NOT EXISTS subject_keys (
+    subject_id  TEXT PRIMARY KEY,
+    wrapped_dek BLOB NOT NULL,
+    key_version INTEGER NOT NULL,
+    created_at  TEXT NOT NULL,
+    erased_at   TEXT
+) STRICT;";
+
 /// Every DDL statement, in dependency order, for [`crate::Store::open`] to execute on boot.
 pub const ALL: &[&str] = &[
     CREATE_META,
@@ -683,4 +711,5 @@ pub const ALL: &[&str] = &[
     CREATE_SETTINGS,
     CREATE_PROVIDER_CREDENTIALS,
     CREATE_USER_TEMPLATES,
+    CREATE_SUBJECT_KEYS,
 ];

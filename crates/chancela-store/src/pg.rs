@@ -891,6 +891,36 @@ impl PostgresBackend {
             .collect())
     }
 
+    /// wp26 — read one `subject_keys` row (the Postgres twin of the non-tx
+    /// [`crate::Store::get_subject_key`]). `wrapped_dek` (BYTEA) is returned verbatim.
+    pub(crate) fn subject_key(
+        &self,
+        subject_id: &str,
+    ) -> Result<Option<crate::SubjectKeyRow>, StoreError> {
+        let mut client = self.read()?;
+        let row = client.query_opt(
+            "SELECT subject_id, wrapped_dek, key_version, created_at, erased_at \
+             FROM subject_keys WHERE subject_id = $1",
+            &[&subject_id],
+        )?;
+        Ok(row.map(|row| crate::SubjectKeyRow {
+            subject_id: row.get(0),
+            wrapped_dek: row.get(1),
+            key_version: row.get(2),
+            created_at: row.get(3),
+            erased_at: row.get(4),
+        }))
+    }
+
+    /// wp26 — `VACUUM (FULL, ANALYZE)` to return dead-tuple space (freed by an erasure's `DELETE`s)
+    /// to the OS. Runs via a pooled connection's simple-query path so it executes in its own implicit
+    /// transaction (`VACUUM` cannot run inside an explicit transaction block).
+    pub(crate) fn vacuum_full(&self) -> Result<(), StoreError> {
+        let mut client = self.read()?;
+        client.batch_execute("VACUUM (FULL, ANALYZE)")?;
+        Ok(())
+    }
+
     pub(crate) fn signed_document_for_act(
         &self,
         act_id: ActId,

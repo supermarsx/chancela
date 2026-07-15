@@ -19,14 +19,15 @@ use chancela_core::{
 use chancela_ledger::{ChainId, Event, Ledger, LedgerError};
 use chancela_registry::{RegistryExtract, RegistryProvenance};
 use chancela_store::{
-    GeneratedDocumentDispatchEvidenceUpsert, LedgerEventPageQuery, LedgerEventUpperBound,
-    PaperBookOcrConversionDossierUpsert, PaperBookOcrConversionExecutionArtifactUpsert, Store,
-    StoreError, StoreKeyRotationStatus, StoreOpenOptions, StoredCredentialRecord, StoredDocument,
-    StoredFollowUp, StoredFollowUpStatus, StoredGeneratedDocumentDispatchEvidence,
-    StoredImportedDocument, StoredImportedDocumentMeta, StoredImportedDocumentReviewStatus,
-    StoredPaperBookImport, StoredPaperBookImportMeta, StoredPaperBookOcrConversionDossier,
-    StoredPaperBookOcrConversionExecutionArtifact, StoredPaperBookOcrDraft,
-    StoredPaperBookOcrPageSpan, StoredPaperBookOcrReviewStatus, StoredPaperBookOcrStatus,
+    EraseTarget, GeneratedDocumentDispatchEvidenceUpsert, LedgerEventPageQuery,
+    LedgerEventUpperBound, PaperBookOcrConversionDossierUpsert,
+    PaperBookOcrConversionExecutionArtifactUpsert, Store, StoreError, StoreKeyRotationStatus,
+    StoreOpenOptions, StoredCredentialRecord, StoredDocument, StoredFollowUp, StoredFollowUpStatus,
+    StoredGeneratedDocumentDispatchEvidence, StoredImportedDocument, StoredImportedDocumentMeta,
+    StoredImportedDocumentReviewStatus, StoredPaperBookImport, StoredPaperBookImportMeta,
+    StoredPaperBookOcrConversionDossier, StoredPaperBookOcrConversionExecutionArtifact,
+    StoredPaperBookOcrDraft, StoredPaperBookOcrPageSpan, StoredPaperBookOcrReviewStatus,
+    StoredPaperBookOcrStatus,
 };
 #[cfg(not(feature = "sqlcipher"))]
 use chancela_store::{StoreDatabaseFormat, StoreKeyConfigStatus, StoreKeyOpsPlan};
@@ -1542,9 +1543,10 @@ fn schema_version_is_current() {
     // conversion execution artifacts landed as schema v14; imported-document review history landed
     // as schema v15; the non-ledger sidecar stores (users/roles/delegations/settings/
     // provider_credentials — wp16 P3b) landed as schema v16; the user-authored template store
-    // (user_templates — wp23) landed as schema v17.
+    // (user_templates — wp23) landed as schema v17; the per-subject DEK-wrapping table
+    // (subject_keys — wp26 GDPR crypto-erasure) landed as schema v18.
     // A fresh DB is stamped with the current version.
-    assert_eq!(chancela_store::schema::SCHEMA_VERSION, 17);
+    assert_eq!(chancela_store::schema::SCHEMA_VERSION, 18);
     let dir = TempDir::new();
     Store::open(dir.path()).expect("open fresh");
     let raw = rusqlite::Connection::open(dir.path().join("chancela.db")).unwrap();
@@ -3233,4 +3235,241 @@ fn credential_records_preserve_opaque_bytes_and_order() {
     assert_eq!(csc.record_blob, csc_blob);
     assert_eq!(csc.provider_id, "encosto-estrategico");
     assert_eq!(csc.key_version, 1);
+}
+
+// --- wp26: per-subject GDPR erasure primitives (subject_keys + multi-collection erase + vacuum) ---
+
+#[test]
+fn subject_key_roundtrips_and_crypto_erase_empties_wrapped_dek() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+
+    let subject_id = "8f3b1e2a-0c4d-4e6f-9a1b-2c3d4e5f6a7b"; // Amélia Marques' subject UUID
+    assert!(
+        store.get_subject_key(subject_id).unwrap().is_none(),
+        "unknown subject reads as None"
+    );
+
+    // A deliberately non-UTF8 opaque wrapped-DEK blob to prove the store preserves the wrapping bytes
+    // exactly and never treats the record as text.
+    let wrapped_dek: Vec<u8> = vec![0x00, 0xFF, 0xFE, 0x10, 0x80, 0x81, 0x7F];
+    store
+        .persist(|tx| tx.put_subject_key(subject_id, &wrapped_dek, 1, "2026-07-15T09:00:00Z"))
+        .expect("put subject key");
+
+    let live = store
+        .get_subject_key(subject_id)
+        .unwrap()
+        .expect("row present");
+    assert_eq!(live.subject_id, subject_id);
+    assert_eq!(live.wrapped_dek, wrapped_dek);
+    assert_eq!(live.key_version, 1);
+    assert_eq!(live.created_at, "2026-07-15T09:00:00Z");
+    assert_eq!(live.erased_at, None, "a live DEK has no erasure stamp");
+
+    // The in-transaction read agrees with the non-tx read.
+    store
+        .persist(|tx| {
+            let seen = tx.get_subject_key_tx(subject_id)?.expect("tx read present");
+            assert_eq!(seen.wrapped_dek, wrapped_dek);
+            assert_eq!(seen.erased_at, None);
+            Ok(())
+        })
+        .expect("tx read");
+
+    // Crypto-erase: the wrapping bytes are physically overwritten with an empty blob and erased_at
+    // is stamped. Destroying an unknown subject is a no-op (no error, no row created).
+    store
+        .persist(|tx| {
+            tx.destroy_subject_key(subject_id, "2026-07-15T10:00:00Z")?;
+            tx.destroy_subject_key("no-such-subject", "2026-07-15T10:00:00Z")?;
+            Ok(())
+        })
+        .expect("destroy subject key");
+
+    let erased = store
+        .get_subject_key(subject_id)
+        .unwrap()
+        .expect("erased row still present");
+    assert!(
+        erased.wrapped_dek.is_empty(),
+        "crypto-erase must empty the wrapped DEK, leaving no wrapping bytes: {:?}",
+        erased.wrapped_dek
+    );
+    assert_eq!(
+        erased.erased_at.as_deref(),
+        Some("2026-07-15T10:00:00Z"),
+        "erased_at marks the DEK destroyed"
+    );
+    assert!(
+        store.get_subject_key("no-such-subject").unwrap().is_none(),
+        "destroying an unknown subject must not create a row"
+    );
+
+    // The erased state is durable across reopen.
+    drop(store);
+    let reopened = Store::open(dir.path()).expect("reopen");
+    let after = reopened.get_subject_key(subject_id).unwrap().unwrap();
+    assert!(after.wrapped_dek.is_empty());
+    assert_eq!(after.erased_at.as_deref(), Some("2026-07-15T10:00:00Z"));
+}
+
+#[test]
+fn put_subject_key_rewrap_replaces_blob_and_rearms_erased_at() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let subject_id = "a1b2c3d4-e5f6-4718-9a0b-1c2d3e4f5061";
+
+    store
+        .persist(|tx| {
+            tx.put_subject_key(subject_id, b"dek-v1", 1, "2026-07-15T09:00:00Z")?;
+            tx.destroy_subject_key(subject_id, "2026-07-15T10:00:00Z")
+        })
+        .expect("put + erase");
+    assert!(
+        store
+            .get_subject_key(subject_id)
+            .unwrap()
+            .unwrap()
+            .erased_at
+            .is_some()
+    );
+
+    // Re-wrapping (a fresh put) replaces the blob and clears the erasure stamp — the subject is live
+    // again, idempotent on the id (no duplicate row).
+    store
+        .persist(|tx| tx.put_subject_key(subject_id, b"dek-v2", 2, "2026-07-15T11:00:00Z"))
+        .expect("rewrap");
+    let row = store.get_subject_key(subject_id).unwrap().unwrap();
+    assert_eq!(row.wrapped_dek, b"dek-v2");
+    assert_eq!(row.key_version, 2);
+    assert_eq!(row.erased_at, None, "a rewrap re-arms the subject");
+}
+
+#[test]
+fn erase_subject_deletes_across_collections_and_vacuum_succeeds() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+
+    // Seed erasable subject rows across several id-keyed collections (Amélia Marques of Encosto
+    // Estratégico Lda). Ids are the subject's per-collection row ids the API would enumerate.
+    let user_id = "u-amelia";
+    let role_id = "r-amelia-personal";
+    let deleg_id = "d-amelia";
+    let template_id = "t-amelia";
+    store
+        .persist(|tx| {
+            tx.upsert_user(user_id, r#"{"username":"amelia.marques"}"#)?;
+            tx.upsert_role(role_id, r#"{"holder":"amelia.marques"}"#)?;
+            tx.upsert_delegation(deleg_id, r#"{"grantee":"amelia.marques"}"#)?;
+            tx.upsert_user_template(template_id, r#"{"author":"amelia.marques"}"#)?;
+            // An unrelated user that must survive the erasure untouched.
+            tx.upsert_user("u-rui", r#"{"username":"rui.secretario"}"#)?;
+            Ok(())
+        })
+        .expect("seed subject rows");
+
+    let targets = vec![
+        EraseTarget {
+            collection: "users".to_owned(),
+            id: user_id.to_owned(),
+        },
+        EraseTarget {
+            collection: "roles".to_owned(),
+            id: role_id.to_owned(),
+        },
+        EraseTarget {
+            collection: "delegations".to_owned(),
+            id: deleg_id.to_owned(),
+        },
+        EraseTarget {
+            collection: "user_templates".to_owned(),
+            id: template_id.to_owned(),
+        },
+        // An absent id contributes deleted=0 (idempotent no-op).
+        EraseTarget {
+            collection: "follow_ups".to_owned(),
+            id: "fu-absent".to_owned(),
+        },
+    ];
+    let report = store
+        .erase_subject("amelia.marques", &targets)
+        .expect("erase subject");
+
+    assert_eq!(report.subject_id, "amelia.marques");
+    assert_eq!(report.outcomes.len(), targets.len());
+    for outcome in report.outcomes.iter().take(4) {
+        assert_eq!(
+            outcome.deleted, 1,
+            "seeded row {outcome:?} should delete exactly one"
+        );
+    }
+    assert_eq!(
+        report.outcomes[4].deleted, 0,
+        "an absent id is an idempotent no-op"
+    );
+
+    // Follow-up reads confirm the subject's rows are gone and the unrelated user survived.
+    assert!(store.users().unwrap().iter().all(|(id, _)| id != user_id));
+    assert!(store.roles().unwrap().is_empty());
+    assert!(store.delegations().unwrap().is_empty());
+    assert!(
+        store.users().unwrap().iter().any(|(id, _)| id == "u-rui"),
+        "unrelated user must survive"
+    );
+
+    // VACUUM runs Ok after the deletes (reclaims the freed pages so the PII bytes do not linger).
+    store.vacuum().expect("vacuum after erasure");
+
+    // The database remains openable and consistent after the vacuum rewrite.
+    drop(store);
+    let reopened = Store::open(dir.path()).expect("reopen after vacuum");
+    assert_eq!(reopened.users().unwrap().len(), 1);
+}
+
+#[test]
+fn erase_subject_rejects_unknown_collection_and_deletes_nothing() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    store
+        .persist(|tx| tx.upsert_user("u-amelia", r#"{"username":"amelia.marques"}"#))
+        .expect("seed user");
+
+    // A target naming a non-allowlisted collection (a SQL-injection attempt on the interpolated
+    // table name) must be rejected before any DELETE runs.
+    let targets = vec![
+        EraseTarget {
+            collection: "users".to_owned(),
+            id: "u-amelia".to_owned(),
+        },
+        EraseTarget {
+            collection: "events; DROP TABLE users --".to_owned(),
+            id: "x".to_owned(),
+        },
+    ];
+    let err = store.erase_subject("amelia.marques", &targets).unwrap_err();
+    assert!(
+        matches!(err, StoreError::UnknownErasableCollection { ref collection }
+            if collection == "events; DROP TABLE users --"),
+        "unexpected error: {err:?}"
+    );
+
+    // All-or-nothing: the valid target's row must NOT have been deleted (the transaction rolled back).
+    assert_eq!(
+        store.users().unwrap().len(),
+        1,
+        "a rejected target must roll back the whole erasure, deleting nothing"
+    );
+
+    // The append-only ledger table is never a valid erasure target either.
+    let ledger_target = vec![EraseTarget {
+        collection: "events".to_owned(),
+        id: "1".to_owned(),
+    }];
+    assert!(matches!(
+        store
+            .erase_subject("amelia.marques", &ledger_target)
+            .unwrap_err(),
+        StoreError::UnknownErasableCollection { .. }
+    ));
 }

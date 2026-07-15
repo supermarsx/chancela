@@ -23,7 +23,7 @@ use chancela_core::ActId;
 use chancela_ledger::Ledger;
 use chancela_store::recovery::ResetScope;
 use chancela_store::{
-    LedgerEventPageQuery, PendingCmdSession, Store, StoreBackendSelection, StoreError,
+    EraseTarget, LedgerEventPageQuery, PendingCmdSession, Store, StoreBackendSelection, StoreError,
     StoredDocument, StoredFollowUp, StoredFollowUpStatus, StoredGeneratedDocumentDispatchEvidence,
     StoredImportedDocument, StoredImportedDocumentMeta, StoredImportedDocumentReviewStatus,
     StoredPaperBookImport, StoredPaperBookImportMeta, StoredPaperBookOcrConversionDossier,
@@ -1465,4 +1465,98 @@ fn sslmode_prefer_opens_and_roundtrips_on_postgres() {
         loaded.chain_status.is_ok(),
         "replayed chain verifies over the prefer connection"
     );
+}
+
+/// wp26 — the per-subject GDPR erasure primitives on Postgres: `subject_keys` roundtrip +
+/// crypto-erase (BYTEA `wrapped_dek` emptied, `erased_at` stamped), a multi-collection
+/// `erase_subject`, the unknown-collection SQL-injection guard, and `VACUUM (FULL, ANALYZE)`.
+/// SQLite parity lives in `store.rs`; this proves the Postgres arms behave identically.
+#[test]
+#[ignore = "requires a live PostgreSQL at DATABASE_URL"]
+fn subject_erasure_primitives_roundtrip_on_postgres() {
+    let Some(isolated) = isolated_postgres("subject-erasure") else {
+        return;
+    };
+    let database_url = isolated.url();
+    let store = Store::open_backend(StoreBackendSelection::Postgres { database_url })
+        .expect("open postgres backend");
+
+    let subject_id = "8f3b1e2a-0c4d-4e6f-9a1b-2c3d4e5f6a7b";
+    assert!(store.get_subject_key(subject_id).unwrap().is_none());
+
+    // subject_keys roundtrip + crypto-erase.
+    let wrapped_dek: Vec<u8> = vec![0x00, 0xFF, 0xFE, 0x10, 0x80, 0x81, 0x7F];
+    store
+        .persist(|tx| tx.put_subject_key(subject_id, &wrapped_dek, 1, "2026-07-15T09:00:00Z"))
+        .expect("put subject key");
+    let live = store
+        .get_subject_key(subject_id)
+        .unwrap()
+        .expect("row present");
+    assert_eq!(live.wrapped_dek, wrapped_dek);
+    assert_eq!(live.erased_at, None);
+    store
+        .persist(|tx| tx.destroy_subject_key(subject_id, "2026-07-15T10:00:00Z"))
+        .expect("destroy subject key");
+    let erased = store.get_subject_key(subject_id).unwrap().unwrap();
+    assert!(
+        erased.wrapped_dek.is_empty(),
+        "wrapped DEK emptied on erase"
+    );
+    assert_eq!(erased.erased_at.as_deref(), Some("2026-07-15T10:00:00Z"));
+
+    // Multi-collection erase across id-keyed sidecar tables.
+    store
+        .persist(|tx| {
+            tx.upsert_user("u-amelia", r#"{"username":"amelia.marques"}"#)?;
+            tx.upsert_role("r-amelia", r#"{"holder":"amelia.marques"}"#)?;
+            tx.upsert_user("u-rui", r#"{"username":"rui.secretario"}"#)?;
+            Ok(())
+        })
+        .expect("seed subject rows");
+    let targets = vec![
+        EraseTarget {
+            collection: "users".to_owned(),
+            id: "u-amelia".to_owned(),
+        },
+        EraseTarget {
+            collection: "roles".to_owned(),
+            id: "r-amelia".to_owned(),
+        },
+        EraseTarget {
+            collection: "follow_ups".to_owned(),
+            id: "fu-absent".to_owned(),
+        },
+    ];
+    let report = store
+        .erase_subject("amelia.marques", &targets)
+        .expect("erase subject");
+    assert_eq!(report.outcomes[0].deleted, 1);
+    assert_eq!(report.outcomes[1].deleted, 1);
+    assert_eq!(report.outcomes[2].deleted, 0, "absent id is a no-op");
+    assert!(store.users().unwrap().iter().any(|(id, _)| id == "u-rui"));
+    assert!(store.roles().unwrap().is_empty());
+
+    // Unknown-collection guard rolls the whole transaction back.
+    let bad = vec![
+        EraseTarget {
+            collection: "users".to_owned(),
+            id: "u-rui".to_owned(),
+        },
+        EraseTarget {
+            collection: "events; DROP TABLE users --".to_owned(),
+            id: "x".to_owned(),
+        },
+    ];
+    assert!(matches!(
+        store.erase_subject("amelia.marques", &bad).unwrap_err(),
+        StoreError::UnknownErasableCollection { .. }
+    ));
+    assert!(
+        store.users().unwrap().iter().any(|(id, _)| id == "u-rui"),
+        "a rejected target must delete nothing"
+    );
+
+    // VACUUM (FULL, ANALYZE) runs Ok outside a transaction.
+    store.vacuum().expect("vacuum on postgres");
 }
