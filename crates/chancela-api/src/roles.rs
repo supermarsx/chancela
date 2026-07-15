@@ -29,7 +29,8 @@ use uuid::Uuid;
 use chancela_authz::{
     BookId as AuthzBookId, Delegation, EntityId as AuthzEntityId, GESTOR_ROLE_ID, OWNER_ROLE_ID,
     Permission, Role, RoleAssignment, RoleCatalog, RoleId, Scope, ScopedPermissionSet,
-    UserId as AuthzUserId, count_owner_admin_holders, effective_permissions, last_owner_guard,
+    TenantId as AuthzTenantId, UserId as AuthzUserId, count_owner_admin_holders,
+    effective_permissions, last_owner_guard,
 };
 
 use crate::AppState;
@@ -349,14 +350,24 @@ pub async fn last_owner_guard_ok(state: &AppState) -> bool {
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum ScopeInput {
     Global,
-    Entity { id: Uuid },
-    Book { id: Uuid },
+    /// A tenant scope (wp26 tenancy): `{"kind":"tenant","id":".."}`. Lets an operator assign/delegate
+    /// at the tenant isolation boundary so a Tenant Administrator is finally backed by a real scope.
+    Tenant {
+        id: Uuid,
+    },
+    Entity {
+        id: Uuid,
+    },
+    Book {
+        id: Uuid,
+    },
 }
 
 impl From<ScopeInput> for Scope {
     fn from(s: ScopeInput) -> Self {
         match s {
             ScopeInput::Global => Scope::Global,
+            ScopeInput::Tenant { id } => Scope::Tenant(AuthzTenantId(id)),
             ScopeInput::Entity { id } => Scope::Entity(AuthzEntityId(id)),
             ScopeInput::Book { id } => Scope::Book(AuthzBookId(id)),
         }

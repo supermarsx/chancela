@@ -360,7 +360,9 @@ fn collect_event_entity_ids(
         match &link.chain {
             ChainId::Company(raw) => add_entity_id(raw, entity_ids, &mut ids),
             ChainId::Book(raw) => add_book_entity_id(raw, book_entity_ids, &mut ids),
-            ChainId::Global | ChainId::Application => {}
+            // A tenant chain spans many entities and names none directly — it contributes no single
+            // entity id to this per-entity index (wp26).
+            ChainId::Tenant(_) | ChainId::Global | ChainId::Application => {}
         }
     }
 

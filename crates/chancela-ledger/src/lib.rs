@@ -105,17 +105,25 @@ impl std::fmt::Display for EventId {
 ///
 /// - [`ChainId::Global`] → `"global"` — the primary spine every event shares.
 /// - [`ChainId::Application`] → `"application"` — the application-audit chain.
+/// - [`ChainId::Tenant`]`(uuid)` → `"tenant:{uuid}"` — a per-tenant chain (wp26 tenancy, spec 05
+///   DAT-01). Additive and forward-only: only events whose scope carries a `tenant:{id}` segment
+///   join one, so **pre-adoption events are never retro-assigned to a tenant chain** (they are
+///   immutable; a re-hash would destroy tamper-evidence). Honest limitation: tenant history begins
+///   at adoption, not at instance genesis.
 /// - [`ChainId::Company`]`(uuid)` → `"company:{uuid}"` — a per-company book-action chain.
 /// - [`ChainId::Book`]`(uuid)` → `"book:{uuid}"` — a per-book book-action chain.
 ///
-/// `Global` is intrinsic and never appears in an event's [`Event::links`]; the other three are
-/// the non-global chains carried as links.
+/// `Global` is intrinsic and never appears in an event's [`Event::links`]; the others are the
+/// non-global chains carried as links.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ChainId {
     /// The global chain: the primary spine of every event (`seq`/`prev_hash`/`hash`).
     Global,
     /// The application-audit chain (settings / users / CAE / law / backups).
     Application,
+    /// A per-tenant chain (wp26), keyed by the tenant's UUID string. Only events scoped with a
+    /// `tenant:{id}` segment join it; existing events never do.
+    Tenant(String),
     /// A per-company book-action chain, keyed by the entity's UUID string.
     Company(String),
     /// A per-book book-action chain, keyed by the book's UUID string.
@@ -147,7 +155,9 @@ impl ChainId {
         match self {
             ChainId::Book(_) => Some("book.opened"),
             ChainId::Company(_) => Some("entity.created"),
-            ChainId::Global | ChainId::Application => None,
+            // A tenant chain fixes no genesis kind: its first event is simply the first tenant-scoped
+            // event at adoption (there is no single canonical "tenant created" seal in the chain).
+            ChainId::Tenant(_) | ChainId::Global | ChainId::Application => None,
         }
     }
 }
@@ -157,6 +167,7 @@ impl fmt::Display for ChainId {
         match self {
             ChainId::Global => f.write_str("global"),
             ChainId::Application => f.write_str("application"),
+            ChainId::Tenant(id) => write!(f, "tenant:{id}"),
             ChainId::Company(id) => write!(f, "company:{id}"),
             ChainId::Book(id) => write!(f, "book:{id}"),
         }
@@ -204,7 +215,12 @@ impl FromStr for ChainId {
             "global" => Ok(ChainId::Global),
             "application" => Ok(ChainId::Application),
             other => {
-                if let Some(id) = other.strip_prefix("company:") {
+                if let Some(id) = other.strip_prefix("tenant:") {
+                    if id.is_empty() {
+                        return Err(ChainIdParseError(other.to_owned()));
+                    }
+                    Ok(ChainId::Tenant(id.to_owned()))
+                } else if let Some(id) = other.strip_prefix("company:") {
                     if id.is_empty() {
                         return Err(ChainIdParseError(other.to_owned()));
                     }
@@ -489,9 +505,16 @@ impl Ledger {
         // Filter out empty segment values (SCOPE-01): an `entity:` or `book:` prefix with no ID
         // after it must not create a chain with an empty id (which would be a spurious chain and
         // could confuse chain verification). An empty entity/book id is treated as absent.
+        let tenant_id = segment_value(scope, "tenant:").filter(|s| !s.is_empty());
         let entity_id = segment_value(scope, "entity:").filter(|s| !s.is_empty());
         let book_id = segment_value(scope, "book:").filter(|s| !s.is_empty());
         let mut chains = Vec::new();
+        // wp26: a `tenant:{tid}` segment adds the per-tenant chain, additively, alongside whatever
+        // company/book chains the rest of the scope implies. Only events whose scope carries this
+        // segment join a tenant chain — existing (pre-adoption) events never do.
+        if let Some(tid) = tenant_id {
+            chains.push(ChainId::Tenant(tid.to_owned()));
+        }
         if let Some(eid) = entity_id {
             chains.push(ChainId::Company(eid.to_owned()));
             if let Some(bid) = book_id {
@@ -500,9 +523,9 @@ impl Ledger {
         } else if let Some(bid) = book_id {
             // Entity-less `book:{bid}/act:{aid}` fallback: the book chain only (company unknown).
             chains.push(ChainId::Book(bid.to_owned()));
-        } else if uuid::Uuid::parse_str(scope).is_ok() {
+        } else if tenant_id.is_none() && uuid::Uuid::parse_str(scope).is_ok() {
             chains.push(ChainId::Company(scope.to_owned()));
-        } else {
+        } else if chains.is_empty() {
             chains.push(ChainId::Application);
         }
         chains.sort();
@@ -1967,6 +1990,27 @@ mod tests {
         assert_eq!(
             Ledger::memberships(&act_scope(E1, B1, A1), "act.sealed"),
             vec![book(B1), company(E1)]
+        );
+    }
+
+    #[test]
+    fn membership_tenant_segment_adds_a_tenant_chain_additively() {
+        const T1: &str = "77777777-7777-4777-8777-777777777777";
+        // A tenant-scoped entity event joins BOTH the tenant chain and the company chain.
+        // Canonical order sorts "company:.." before "tenant:..".
+        assert_eq!(
+            Ledger::memberships(&format!("tenant:{T1}/entity:{E1}"), "entity.created"),
+            vec![company(E1), ChainId::Tenant(T1.to_owned())]
+        );
+        // A bare tenant scope yields just the tenant chain — never the application fallback.
+        assert_eq!(
+            Ledger::memberships(&format!("tenant:{T1}"), "tenant.created"),
+            vec![ChainId::Tenant(T1.to_owned())]
+        );
+        // Round-trip through the canonical string.
+        assert_eq!(
+            format!("tenant:{T1}").parse::<ChainId>().unwrap(),
+            ChainId::Tenant(T1.to_owned())
         );
     }
 

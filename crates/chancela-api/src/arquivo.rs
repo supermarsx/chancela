@@ -1375,6 +1375,7 @@ fn chain_kind_label(chain: &ChainId) -> &'static str {
     match chain {
         ChainId::Global => "Global",
         ChainId::Application => "Aplicacao",
+        ChainId::Tenant(_) => "Tenant",
         ChainId::Company(_) => "Entidade",
         ChainId::Book(_) => "Livro",
     }
@@ -1403,6 +1404,7 @@ impl LabelSources {
         match chain {
             ChainId::Global => "Registo global".to_owned(),
             ChainId::Application => "Cadeia de auditoria da aplicacao".to_owned(),
+            ChainId::Tenant(id) => format!("Tenant {}", short_id(id)),
             ChainId::Company(id) => match self.entities.get(id) {
                 Some((name, _)) => format!("{} - {name}", chain_kind_label(chain)),
                 None => format!("Entidade {}", short_id(id)),
@@ -1428,7 +1430,8 @@ impl LabelSources {
                     .get(entity_id)
                     .map(|(name, nipc)| (name.clone(), Some(nipc.clone())))
             }),
-            ChainId::Global | ChainId::Application => None,
+            // A tenant chain names no single entity for a document header (wp26).
+            ChainId::Tenant(_) | ChainId::Global | ChainId::Application => None,
         }
     }
 }
