@@ -5520,17 +5520,10 @@ fn pdf_accessibility_evidence_from_model(
     let report_json: Value = serde_json::from_str(&report.to_json()).map_err(|e| {
         ApiError::Internal(format!("PDF accessibility report JSON parse failed: {e}"))
     })?;
-    if report_json
+    let pdf_ua_claimed = report_json
         .get("pdf_ua_claimed")
         .and_then(Value::as_bool)
-        .unwrap_or(false)
-    {
-        return Ok(unavailable_pdf_accessibility_evidence(
-            doc,
-            act_id,
-            "pdf_accessibility_report_claimed_pdf_ua_unsupported_by_api_policy",
-        ));
-    }
+        .unwrap_or(false);
     let report_version = report_json.get("version").and_then(Value::as_u64);
     let pdf_ua_blockers = report_json
         .get("pdf_ua_blockers")
@@ -5551,7 +5544,7 @@ fn pdf_accessibility_evidence_from_model(
         act_id: act_id.map(|id| id.to_string()),
         template_id: doc.template_id.clone(),
         report_source: "chancela_doc_pdfa_accessibility_report",
-        pdf_ua_claimed: false,
+        pdf_ua_claimed,
         dglab_certification_claimed: false,
         legal_validity_claimed: false,
         report_version,
@@ -5637,7 +5630,7 @@ fn document_bundle_evidence_index(
             archive_path_pattern: PDF_ACCESSIBILITY_ARCHIVE_PATH_PATTERN,
             evidence_status: pdf_accessibility.evidence_status,
             status_scope: TECHNICAL_METADATA_ONLY,
-            pdf_ua_claimed: false,
+            pdf_ua_claimed: pdf_accessibility.pdf_ua_claimed,
             dglab_certification_claimed: false,
             legal_validity_claimed: false,
             pdf_ua_blockers: pdf_accessibility.pdf_ua_blockers.clone(),

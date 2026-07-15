@@ -1577,7 +1577,7 @@ fn pdf_accessibility_archive_attachment(
         bytes,
         content_type: JSON_CONTENT_TYPE,
         evidence_status: evidence.evidence_status,
-        pdf_ua_claimed: false,
+        pdf_ua_claimed: evidence.pdf_ua_claimed,
         dglab_certification_claimed: false,
         legal_validity_claimed: false,
         pdf_ua_blockers: evidence.pdf_ua_blockers,
@@ -1996,6 +1996,9 @@ fn pdf_accessibility_report_archive_index(
         .iter()
         .filter(|attachment| attachment.evidence_status == PDF_ACCESSIBILITY_REPORT_UNAVAILABLE)
         .count();
+    let pdf_ua_claimed = attachment_indexes
+        .iter()
+        .any(|attachment| attachment.pdf_ua_claimed);
     let attachment_status = if attachments_total == 0 {
         "no_pdf_accessibility_evidence_attached"
     } else if attached_count == attachments_total {
@@ -2015,7 +2018,7 @@ fn pdf_accessibility_report_archive_index(
         attached_count,
         unavailable_count,
         status_scope: TECHNICAL_METADATA_ONLY,
-        pdf_ua_claimed: false,
+        pdf_ua_claimed,
         dglab_certification_claimed: false,
         legal_validity_claimed: false,
         attachments: attachment_indexes,

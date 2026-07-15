@@ -2042,7 +2042,7 @@ async fn archive_package_reports_unsigned_documents_without_placeholder_pdf_acce
     );
     assert_eq!(
         evidence_index["pdf_accessibility_reports"]["pdf_ua_claimed"],
-        false
+        true
     );
     assert_eq!(
         evidence_index["pdf_accessibility_reports"]["dglab_certification_claimed"],
@@ -2062,7 +2062,7 @@ async fn archive_package_reports_unsigned_documents_without_placeholder_pdf_acce
                 && entry["path"] == pdf_accessibility_path
                 && entry["content_type"] == "application/json"
                 && entry["evidence_status"] == "pdf_accessibility_report_attached"
-                && entry["pdf_ua_claimed"] == false
+                && entry["pdf_ua_claimed"] == true
                 && entry["dglab_certification_claimed"] == false
                 && entry["legal_validity_claimed"] == false
         }),
@@ -2115,10 +2115,9 @@ async fn archive_package_reports_unsigned_documents_without_placeholder_pdf_acce
     assert!(
         !evidence_index_text.contains("pdfuaid")
             && !evidence_index_text.contains("DGLAB")
-            && !evidence_index_text.contains("\"pdf_ua_claimed\":true")
             && !evidence_index_text.contains("\"dglab_certification_claimed\":true")
             && !evidence_index_text.contains("\"legal_validity_claimed\":true"),
-        "evidence index must not carry PDF/UA, DGLAB, or legal-validity claims: {evidence_index}"
+        "evidence index must not carry DGLAB or legal-validity claims: {evidence_index}"
     );
 
     let accessibility = member_json(&members, &pdf_accessibility_path);
@@ -2127,26 +2126,23 @@ async fn archive_package_reports_unsigned_documents_without_placeholder_pdf_acce
         accessibility["evidence_status"],
         "pdf_accessibility_report_attached"
     );
-    assert_eq!(accessibility["pdf_ua_claimed"], false);
+    assert_eq!(accessibility["pdf_ua_claimed"], true);
     assert_eq!(accessibility["dglab_certification_claimed"], false);
     assert_eq!(accessibility["legal_validity_claimed"], false);
-    assert_eq!(accessibility["report_version"], json!(11));
+    assert_eq!(accessibility["report_version"], json!(12));
     assert_eq!(
         accessibility["accessibility_report_json"]["version"],
-        json!(11)
+        json!(12)
     );
     let blocker_delta = &accessibility["accessibility_report_json"]["pdf_ua_blocker_delta"];
     assert_eq!(
         blocker_delta["delta_basis"],
         "local_chancela_doc_writer_evidence_only"
     );
-    assert_eq!(blocker_delta["pdf_ua_claimed"], false);
-    assert_eq!(blocker_delta["cleared_count"], json!(12));
-    assert_eq!(blocker_delta["remaining_count"], json!(1));
-    assert_eq!(
-        blocker_delta["remaining_blockers"],
-        json!(["limited_tagged_structure"])
-    );
+    assert_eq!(blocker_delta["pdf_ua_claimed"], true);
+    assert_eq!(blocker_delta["cleared_count"], json!(13));
+    assert_eq!(blocker_delta["remaining_count"], json!(0));
+    assert_eq!(blocker_delta["remaining_blockers"], json!([]));
     assert!(
         blocker_delta["cleared_blockers"]
             .as_array()
@@ -2164,24 +2160,23 @@ async fn archive_package_reports_unsigned_documents_without_placeholder_pdf_acce
     );
     assert_eq!(
         accessibility["accessibility_report_json"]["pdf_ua_claimed"],
-        false
+        true
     );
-    assert!(
+    assert_eq!(
         accessibility["pdf_ua_blockers"]
             .as_array()
-            .expect("PDF/UA blockers")
-            .contains(&json!("limited_tagged_structure")),
-        "PDF accessibility blockers are projected: {accessibility}"
+            .expect("PDF/UA blockers"),
+        &Vec::<Value>::new(),
+        "conforming document has no remaining PDF/UA blockers: {accessibility}"
     );
     let accessibility_text =
         String::from_utf8_lossy(members.get(&pdf_accessibility_path).expect("sidecar bytes"));
     assert!(
         !accessibility_text.contains("pdfuaid")
             && !accessibility_text.contains("DGLAB")
-            && !accessibility_text.contains("\"pdf_ua_claimed\":true")
             && !accessibility_text.contains("\"dglab_certification_claimed\":true")
             && !accessibility_text.contains("\"legal_validity_claimed\":true"),
-        "PDF accessibility sidecar remains technical and no-claim: {accessibility}"
+        "PDF accessibility sidecar never carries DGLAB or legal-validity claims: {accessibility}"
     );
 
     let report = member_json(&members, &evidence_path);
@@ -2247,6 +2242,7 @@ async fn archive_package_reports_book_only_pdf_accessibility_evidence_unavailabl
     assert_eq!(reports["attachments_total"], json!(attachments.len()));
     assert_eq!(reports["attached_count"], json!(0));
     assert_eq!(reports["unavailable_count"], json!(attachments.len()));
+    assert_eq!(reports["pdf_ua_claimed"], false);
     assert!(
         !attachments.is_empty(),
         "book-only archive must report unavailable book-level accessibility evidence: {reports}"

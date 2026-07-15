@@ -6713,7 +6713,7 @@ mod tests {
         );
         assert_eq!(
             report["evidence_index"]["pdf_accessibility"]["pdf_ua_claimed"],
-            false
+            true
         );
         assert_eq!(
             report["evidence_index"]["pdf_accessibility"]["dglab_certification_claimed"],
@@ -6757,10 +6757,9 @@ mod tests {
         assert!(
             !evidence_index_text.contains("pdfuaid")
                 && !evidence_index_text.contains("DGLAB")
-                && !evidence_index_text.contains("\"pdf_ua_claimed\":true")
                 && !evidence_index_text.contains("\"dglab_certification_claimed\":true")
                 && !evidence_index_text.contains("\"legal_validity_claimed\":true"),
-            "evidence index must not carry PDF/UA, DGLAB, or legal-validity claims: {report}"
+            "evidence index must not carry DGLAB or legal-validity claims: {report}"
         );
         assert_eq!(report["canonical_pdf"]["present"], true);
         assert_eq!(report["canonical_pdf"]["media_type"], "application/pdf");
@@ -6772,16 +6771,16 @@ mod tests {
             report["pdf_accessibility"]["evidence_status"],
             "pdf_accessibility_report_attached"
         );
-        assert_eq!(report["pdf_accessibility"]["pdf_ua_claimed"], false);
+        assert_eq!(report["pdf_accessibility"]["pdf_ua_claimed"], true);
         assert_eq!(
             report["pdf_accessibility"]["dglab_certification_claimed"],
             false
         );
         assert_eq!(report["pdf_accessibility"]["legal_validity_claimed"], false);
-        assert_eq!(report["pdf_accessibility"]["report_version"], json!(11));
+        assert_eq!(report["pdf_accessibility"]["report_version"], json!(12));
         assert_eq!(
             report["pdf_accessibility"]["accessibility_report_json"]["version"],
-            json!(11)
+            json!(12)
         );
         let table_semantics =
             &report["pdf_accessibility"]["accessibility_report_json"]["tagged_structure"]["tables"];
@@ -6794,24 +6793,23 @@ mod tests {
         );
         assert_eq!(
             report["pdf_accessibility"]["accessibility_report_json"]["pdf_ua_claimed"],
-            false
+            true
         );
-        assert!(
+        assert_eq!(
             report["pdf_accessibility"]["pdf_ua_blockers"]
                 .as_array()
-                .expect("accessibility blockers")
-                .contains(&json!("limited_tagged_structure")),
-            "PDF/UA blockers are projected from the doc report: {report}"
+                .expect("accessibility blockers"),
+            &Vec::<serde_json::Value>::new(),
+            "conforming document has no remaining PDF/UA blockers: {report}"
         );
         let accessibility_text =
             serde_json::to_string(&report["pdf_accessibility"]).expect("accessibility JSON");
         assert!(
             !accessibility_text.contains("pdfuaid")
                 && !accessibility_text.contains("DGLAB")
-                && !accessibility_text.contains("\"pdf_ua_claimed\":true")
                 && !accessibility_text.contains("\"dglab_certification_claimed\":true")
                 && !accessibility_text.contains("\"legal_validity_claimed\":true"),
-            "accessibility evidence remains technical and no-claim: {report}"
+            "accessibility evidence never carries DGLAB or legal-validity claims: {report}"
         );
         assert_eq!(
             report["fixity"]["canonical_pdf_sha256"],
