@@ -207,13 +207,40 @@ and `LifecycleStage` (`Convocatoria`, `TermoAbertura`, `Reuniao`, `Deliberacao`,
 `Certidao`, `Extrato`, `TermoEncerramento`). Core stays a leaf; `created_at` is caller-supplied.
 Both the PDF writer and the web preview consume the same model.
 
-### PDF/A-2u writer (`crates/chancela-doc`)
+### PDF/A-2u writer, PDF/UA-1 claim, and the selfcheck gate (`crates/chancela-doc`)
 
 `pdfa::write(&DocumentModel) -> Vec<u8>`: embeds Noto Serif as Type0/Identity-H/CIDFontType2 with
 a mandatory `/ToUnicode` CMap (the "u" conformance), an sRGB `/OutputIntents` ICC profile, and an
 uncompressed XMP `/Metadata` stream (`pdfaid:part=2`, `conformance=U`). **Deterministic**: the
 trailer `/ID` is SHA-256 over XMP + page streams (never clock/RNG), so the same model reproduces
 byte-identical output and a stable `pdf_digest`.
+
+**PDF/UA-1 claim (gated, honest):** when the rendered document is fully conformant — a
+non-skipping tagged heading hierarchy and no untagged real content, on top of the
+always-emitted tagged structure — the XMP additionally carries the PDF/UA-1 (ISO 14289-1)
+identifier (`pdfuaid:part=1`) plus the mandatory `pdfaExtension` schema description for the
+`pdfuaid` namespace (a non-predefined schema used inside a PDF/A file must describe itself).
+A document that doesn't clear the bar stays plain PDF/A-2U — there is no fabricated claim and
+no silent downgrade of the PDF/A metadata either way.
+
+**The enforced in-repo gate is `crates/chancela-doc/src/selfcheck.rs`**, run on every
+`pdfa::write()` call. For every document it asserts `/MarkInfo /Marked true`, a
+`/StructTreeRoot` with a non-empty `/RoleMap`, catalog `/Lang`, `/ViewerPreferences
+/DisplayDocTitle true`, and that no text-showing operator sits outside a marked-content scope;
+when the XMP carries the `pdfuaid` identifier it additionally asserts the extension-schema
+description and that the tagged heading hierarchy never skips a level. There is deliberately no
+native PDF/UA validator wired into CI (distroless ethos) — `selfcheck::verify` is the gate, and
+it fails closed (`DocError::Conformance`).
+
+**veraPDF is opt-in, not CI-gated:** `verapdf --flavour ua1 doc.pdf` (exit 0 == PDF/UA-1
+conformant) and `verapdf --flavour 2u doc.pdf` (PDF/A-2U) are the external validators for anyone
+who wants a second, independent opinion; nothing in CI installs or invokes veraPDF.
+
+**Signed-file caveat (deferred G14):** the PDF/UA claim is scoped to the document exactly as
+`pdfa::write` produces it — **before** `chancela-pades::sign_pdf` runs. The signature widget
+`chancela-pades` injects is invisible, appearance-less, and untagged (see the seal-hook
+constraint below), which sits outside the v1 UA claim. The **signed** artifact is not asserted
+PDF/UA-1 conformant; only the pre-signature document carries that claim.
 
 **The seal-hook / signable-shape constraint (D2):** the writer forces a classic cross-reference
 table (not a stream) and emits **no Info dict, no AcroForm, no encryption** — the exact byte shape
