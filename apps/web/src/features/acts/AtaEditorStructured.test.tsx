@@ -9,6 +9,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { AtaEditorPage, actDocumentPanelTargetFromLocation } from './AtaEditorPage';
+import { ACT_CONVENING_GUIDANCE_HASH, ACT_CONVENING_GUIDANCE_ID } from './anchors';
 import {
   buildAiProvenanceReviewPacket,
   formatAiProvenanceReviewPacket,
@@ -172,12 +173,12 @@ function stateful(
   return { fetchImpl, patches, seals, verifications };
 }
 
-function renderEditor() {
+function renderEditor(initialEntry = '/atas/act-1') {
   return render(
     <QueryClientProvider client={makeClient()}>
       <ToastProvider>
         <StaticPermissionsProvider value={ALLOW_ALL_PERMISSIONS}>
-          <MemoryRouter initialEntries={['/atas/act-1']}>
+          <MemoryRouter initialEntries={[initialEntry]}>
             <Routes>
               <Route path="/atas/:id" element={<AtaEditorPage />} />
             </Routes>
@@ -297,6 +298,34 @@ describe('AtaEditorPage — mesa presidente unblocks the seal', () => {
     expect(pageText).not.toMatch(/suficiência jurídica confirmada/i);
     expect(pageText).not.toMatch(/entrega externa válida confirmada/i);
     expect(pageText).not.toMatch(/workflow concluído/i);
+  });
+
+  it('maps the convening guidance hash to the existing convening advisory section', async () => {
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: scrollIntoView,
+    });
+    const withMissingNoticeMetadata = {
+      ...baseAct,
+      meeting_date: null,
+      mesa: { presidente: 'Ana', secretarios: [] },
+    };
+    const shared = stateful(withMissingNoticeMetadata);
+    vi.stubGlobal('fetch', shared.fetchImpl);
+
+    renderEditor(`/atas/act-1${ACT_CONVENING_GUIDANCE_HASH}`);
+
+    expect(await screen.findByText('Aviso local da convocatória estatutária')).toBeTruthy();
+    const target = document.getElementById(ACT_CONVENING_GUIDANCE_ID);
+    expect(target).toBeTruthy();
+    expect(within(target as HTMLElement).getByText('Convocatória')).toBeTruthy();
+    expect(target?.textContent).toContain(
+      'Registe a data da reunião para calcular a data local de aviso.',
+    );
+    await waitFor(() =>
+      expect(scrollIntoView).toHaveBeenCalledWith({ block: 'start', behavior: 'smooth' }),
+    );
   });
 
   it('clears the mesa-presidente compliance error once the chair is filled and saved', async () => {

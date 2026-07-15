@@ -15,7 +15,7 @@
  * The SIG-03 manual-signature warning (UX-41) shows during signing because there is no
  * qualified-signature backend yet — sealing attests a manual signature.
  */
-import { useEffect, useId, useState, type FormEvent } from 'react';
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import {
@@ -99,6 +99,7 @@ import { ataFieldHelp } from './fieldHelp';
 import { ActDocumentPanel, type ActDocumentPanelTarget } from '../documents/ActDocumentPanel';
 import { SigningPanel } from '../signing/SigningPanel';
 import { GateButton, scopeBook, type CanScope } from '../session/permissions';
+import { ACT_CONVENING_GUIDANCE_HASH, ACT_CONVENING_GUIDANCE_ID } from './anchors';
 
 // Working (editable) copy of the mutable act fields. Scalars are held as strings for the
 // inputs (empty ⇒ absent on save); the structured collections are held as their wire
@@ -2106,6 +2107,7 @@ export function AtaEditorPage() {
     useState<ManualSignatureOriginalReferenceDraft>(() =>
       emptyManualSignatureOriginalReferenceDraft(),
     );
+  const handledConveningHashRef = useRef<string | null>(null);
 
   // Seed the working copy once per act identity; refetches of the same act (after an
   // advance/seal) update the read-only header via the cache without clobbering edits.
@@ -2117,6 +2119,30 @@ export function AtaEditorPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [act.data?.id]);
+
+  useEffect(() => {
+    if (location.hash !== ACT_CONVENING_GUIDANCE_HASH) {
+      handledConveningHashRef.current = null;
+      return;
+    }
+    if (!act.data || !draft) return;
+    const targetKey = `${act.data.id}:${location.hash}`;
+    if (handledConveningHashRef.current === targetKey) return;
+
+    const scrollTarget = () => {
+      document.getElementById(ACT_CONVENING_GUIDANCE_ID)?.scrollIntoView({
+        block: 'start',
+        behavior: 'smooth',
+      });
+    };
+
+    if (typeof window.requestAnimationFrame === 'function') {
+      window.requestAnimationFrame(scrollTarget);
+    } else {
+      window.setTimeout(scrollTarget, 0);
+    }
+    handledConveningHashRef.current = targetKey;
+  }, [act.data, draft, location.hash]);
 
   if (act.isLoading || !draft) {
     return (
@@ -2432,18 +2458,20 @@ export function AtaEditorPage() {
             </div>
           </Card>
 
-          <Card title={t('acts.convening')}>
-            <p className="field__hint">{t('acts.convening.hint')}</p>
-            <ConvocationNoticeAdvisoryCue
-              meetingDate={draft.meeting_date}
-              convening={draft.convening}
-            />
-            <ConveningEditor
-              convening={draft.convening}
-              disabled={readOnly}
-              onChange={(next) => set('convening', next)}
-            />
-          </Card>
+          <div id={ACT_CONVENING_GUIDANCE_ID} data-testid={ACT_CONVENING_GUIDANCE_ID}>
+            <Card title={t('acts.convening')}>
+              <p className="field__hint">{t('acts.convening.hint')}</p>
+              <ConvocationNoticeAdvisoryCue
+                meetingDate={draft.meeting_date}
+                convening={draft.convening}
+              />
+              <ConveningEditor
+                convening={draft.convening}
+                disabled={readOnly}
+                onChange={(next) => set('convening', next)}
+              />
+            </Card>
+          </div>
 
           <Card title={t('acts.mesa')}>
             <MesaEditor

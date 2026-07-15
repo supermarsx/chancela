@@ -5,6 +5,7 @@ import type {
   LedgerEventView,
 } from '../../api/types';
 import type { MessageKey, TFunction, TParams } from '../../i18n';
+import { actConveningGuidanceRoute } from '../acts/anchors';
 
 export type NotificationKind = 'alert' | 'reminder' | 'operation';
 export type NotificationTone = 'neutral' | 'accent' | 'warn' | 'error';
@@ -338,6 +339,13 @@ function importedDocumentReviewRoute(
   return `${url.pathname}${url.search}${url.hash}`;
 }
 
+function isConveningNoticeReminder(reminder: DashboardReminder): boolean {
+  return (
+    reminder.action?.kind === 'open_act_convening_notice' ||
+    reminder.source_rule.trim() === 'act-convening-notice'
+  );
+}
+
 function routeFromTargetId(prefix: string, id: string | null | undefined): string | undefined {
   const trimmed = id?.trim();
   return trimmed ? `${prefix}/${trimmed}` : undefined;
@@ -363,7 +371,13 @@ function actionFromMetadata(
 ): NotificationAction | undefined {
   if (!action) return undefined;
   const href =
-    action.kind === 'open_imported_document_review'
+    action.kind === 'open_act_convening_notice'
+      ? actConveningGuidanceRoute(
+          frontendRouteFromApi(action.route) ??
+            frontendRouteFromApi(action.api_href) ??
+            (paramText(params, 'act_id') ? `/atas/${paramText(params, 'act_id')}` : undefined),
+        )
+      : action.kind === 'open_imported_document_review'
       ? importedDocumentReviewRoute(
           frontendRouteFromApi(action.route) ??
             (paramText(params, 'act_id') ? `/atas/${paramText(params, 'act_id')}` : undefined),
@@ -478,8 +492,11 @@ function actionFromReminderTarget(
 ): NotificationAction | undefined {
   const actId = paramId(reminder.params, 'act_id');
   if (actId) {
+    const href = isConveningNoticeReminder(reminder)
+      ? (actConveningGuidanceRoute(`/atas/${actId}`) ?? `/atas/${actId}`)
+      : `/atas/${actId}`;
     return routeAction(
-      `/atas/${actId}`,
+      href,
       preferredLabel ?? 'notifications.action.openAct',
       t,
       params,

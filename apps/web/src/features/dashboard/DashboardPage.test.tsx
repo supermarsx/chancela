@@ -905,7 +905,7 @@ describe('DashboardPage', () => {
     const link = within(item).getByRole('link', {
       name: 'Rever convocatória',
     });
-    expect(link.getAttribute('href')).toBe('/atas/act-notice-1');
+    expect(link.getAttribute('href')).toBe('/atas/act-notice-1#convening-guidance');
     expect(
       within(item).getByText(
         'Os estatutos registam 10 dias de antecedência para Ata de aprovação de contas de Acme, S.A. com reunião marcada para 2026-03-30; a data local de aviso é 2026-03-20. A evidência de expedição registada não demonstra essa antecedência. Aviso consultivo local; não afirma suficiência legal, entrega externa ou conclusão do workflow.',
@@ -971,7 +971,7 @@ describe('DashboardPage', () => {
     const link = within(item).getByRole('link', {
       name: 'Rever convocatória',
     });
-    expect(link.getAttribute('href')).toBe('/atas/act-notice-1');
+    expect(link.getAttribute('href')).toBe('/atas/act-notice-1#convening-guidance');
     expect(
       within(item).getByText(
         'Os metadados estatutários locais registam 10 dias de antecedência para Ata de aprovação de contas de Acme, S.A., mas a data da reunião ainda não está registada. A data local de aviso não pode ser calculada até a data da reunião ser registada. Registe a data da reunião e reveja a evidência de expedição. Aviso consultivo local; não afirma suficiência legal, cálculo de prazo legal, entrega externa, conclusão do workflow nem aceitação por registo, DRE ou fornecedor.',

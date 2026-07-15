@@ -31,6 +31,7 @@ import {
   Tooltip,
 } from '../../ui';
 import { LedgerTable } from '../ledger/LedgerTable';
+import { actConveningGuidanceRoute } from '../acts/anchors';
 import './DashboardPage.css';
 
 const RECENT_EVENTS_LIMIT = 10;
@@ -368,6 +369,21 @@ function importedDocumentReviewRoute(
   return `${url.pathname}${url.search}${url.hash}`;
 }
 
+function reminderActRoute(reminder: DashboardReminder): string | undefined {
+  return (
+    frontendRouteFromApi(reminder.action?.route) ??
+    frontendRouteFromApi(reminder.action?.api_href) ??
+    (reminder.params?.act_id?.trim() ? `/atas/${reminder.params.act_id.trim()}` : undefined)
+  );
+}
+
+function isConveningNoticeReminder(reminder: DashboardReminder): boolean {
+  return (
+    reminder.action?.kind === 'open_act_convening_notice' ||
+    reminder.source_rule.trim() === 'act-convening-notice'
+  );
+}
+
 function routeFromAlert(alert: DashboardAlert): string | undefined {
   const metadataRoute =
     frontendRouteFromApi(alert.action?.route) ?? frontendRouteFromApi(alert.action?.api_href);
@@ -385,6 +401,11 @@ function routeFromAlert(alert: DashboardAlert): string | undefined {
 }
 
 function routeFromReminder(reminder: DashboardReminder): string | undefined {
+  if (isConveningNoticeReminder(reminder)) {
+    const route = actConveningGuidanceRoute(reminderActRoute(reminder));
+    if (route) return route;
+  }
+
   if (reminder.action?.kind === 'open_imported_document_review') {
     const actRoute =
       frontendRouteFromApi(reminder.action.route) ??
