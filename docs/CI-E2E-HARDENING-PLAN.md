@@ -1,10 +1,11 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `fc17700`,
+and implementation snapshot `e08605e`,
 including coverage notes for the mobile companion foundation docs/scripts,
 destructive erasure preflight/approve/execute route wiring plus local gate
-evidence, append-only rectification/restriction ledger annotation kinds, the
+evidence, append-only rectification/restriction ledger annotation routes and
+remedy classification framing, the
 settled PDF/UA v12 gated-claim lane, XAdES
 C14N/digest-agility/B/T/LT/ASiC evidence, archive PDF accessibility
 propagation, the MCP document/archive PDF accessibility v12
@@ -990,11 +991,11 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `fc17700`
+## Focused Gate Snapshot Through `e08605e`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08` and checkpoint-promoted on 2026-07-15 for
-current implementation head `fc17700`. This is not an exhaustive current
+current implementation head `e08605e`. This is not an exhaustive current
 green-run claim; the full-server E2E claim below is limited to local
 `chancela-server --features e2e` after auth harness alignment, and browser,
 Docker, desktop, production package signing/notarization, production image
@@ -1207,13 +1208,15 @@ settingsDefaults.test.ts contracts.test.ts`.
   local API gate evidence only: no physical deletion, anonymization, backup or
   archive rewrite, legal GDPR compliance/completion, legal disposal approval,
   production key custody, or spec-completion claim is made.
-- GDPR sealed-record annotation checkpoint through `fc17700`: focused ledger
-  tests pin append-only subject rectification and processing-restriction
-  annotation kinds for statutory-retention cases, preserving prior sealed/signed
-  event bytes, hashes, and payload digests while verification advances. This is
-  append-only ledger evidence only: no deletion, anonymization, mutation of
-  sealed/signed historical events, legal GDPR compliance/completion, legal
-  disposal approval, or spec-completion claim is made.
+- GDPR sealed-record annotation/remedy checkpoint through `e08605e`: focused
+  API tests pin `58b7e55` append-only subject rectification and
+  processing-restriction annotation routes/kinds plus preflight
+  `remedy=annotation` classification for statutory-retention cases, preserving
+  prior sealed/signed event bytes, hashes, and payload digests while
+  verification advances. `e08605e` documents the retained-record remedy framing.
+  This is append-only privacy remedy evidence only: no deletion, anonymization,
+  mutation of sealed/signed historical events, legal GDPR compliance/completion,
+  legal disposal approval, or spec-completion claim is made.
 - Current working-tree retained-export cleanup UX checks: focused API/core
   markers pin export dry-run `would_delete_files`, `would_delete_directories`,
   and `would_delete_bytes` planning with `deleted_files`, `deleted_directories`,
@@ -2422,7 +2425,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   production-readiness, TLS/key-custody, vulnerability-free scan, SBOM,
   signature/attestation, HA/failover/RPO/RTO, legal/DR certification, cloud
   deployment readiness, or spec-completion claim is made.
-- Current checkpoint metadata/static checks through `fc17700`
+- Current checkpoint metadata/static checks through `e08605e`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
