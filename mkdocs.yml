@@ -117,4 +117,5 @@ nav:
   - Extras: extras.md
   - Reference:
       - Architecture overview: ARCHITECTURE.md
+      - Mobile companion (foundation): mobile.md
       - Specification (repo): https://github.com/supermarsx/chancela/blob/main/spec.md
