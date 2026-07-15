@@ -563,9 +563,16 @@ describe('DashboardPage', () => {
 
     const queue = await screen.findByRole('list', { name: 'Fila de trabalho do painel' });
     expect(within(queue).getByText('Atrasado')).toBeTruthy();
-    expect(within(queue).getByRole('link', { name: 'Encosto Estratégico, S.A.' })).toBeTruthy();
+    const item = within(queue).getByRole('listitem');
+    expect(within(item).getByText('Assembleia geral anual pendente')).toBeTruthy();
+    const link = within(item).getByRole('link', { name: 'Abrir entidade' });
+    expect(link.getAttribute('href')).toBe('/entidades/entity-1');
     expect(within(queue).getByText('Data 2026-03-31')).toBeTruthy();
-    expect(within(queue).getByText(/does not claim a legal deadline/)).toBeTruthy();
+    expect(
+      within(queue).getByText(
+        'Não há ato anual selado ou arquivado para Encosto Estratégico, S.A. em 2026-03-31. O lembrete é consultivo e deriva de csc-art376-annual.',
+      ),
+    ).toBeTruthy();
     expect(within(queue).getByText('Fonte csc-art376-annual / csc-commercial')).toBeTruthy();
     expect(
       within(queue).getByText(
@@ -573,11 +580,94 @@ describe('DashboardPage', () => {
       ),
     ).toBeTruthy();
     const queueText = queue.textContent ?? '';
+    expect(queueText).not.toContain('The commercial-company calendar preset');
+    expect(queueText).not.toContain('does not claim a legal deadline');
     expect(queueText).not.toContain('Profile calendar supported / pending_source_review');
     expect(queueText).not.toContain('pending_source_review');
     await openDashboardTab('Últimos eventos');
     expect(await screen.findByText('kind-1')).toBeTruthy();
     expect(screen.getAllByRole('row')).toHaveLength(2);
+  });
+
+  it('localizes all non-condominium annual profile-calendar reminders in the work queue', async () => {
+    const annualCases = [
+      {
+        rule: 'csc-art376-annual',
+        profile: 'csc-commercial',
+        entityId: 'entity-csc',
+        entityName: 'Sociedade Azul, S.A.',
+        dueDate: '2026-03-31',
+        title: 'Assembleia geral anual pendente',
+      },
+      {
+        rule: 'assoc-annual',
+        profile: 'association-annual',
+        entityId: 'entity-assoc',
+        entityName: 'Associação Norte',
+        dueDate: '2026-04-30',
+        title: 'Assembleia geral anual pendente',
+      },
+      {
+        rule: 'fundacao-annual',
+        profile: 'foundation-annual',
+        entityId: 'entity-fundacao',
+        entityName: 'Fundação Delta',
+        dueDate: '2026-05-31',
+        title: 'Revisão anual pendente',
+      },
+      {
+        rule: 'cooperativa-annual',
+        profile: 'cooperative-annual',
+        entityId: 'entity-coop',
+        entityName: 'Cooperativa Sul',
+        dueDate: '2026-06-30',
+        title: 'Assembleia geral anual pendente',
+      },
+    ] as const;
+    const dashboard: Dashboard = {
+      ...baseDashboard,
+      reminders: annualCases.map((annualCase) => ({
+        due_date: annualCase.dueDate,
+        severity: 'Advisory',
+        status: 'DueSoon',
+        reason: `Raw fallback for ${annualCase.rule}.`,
+        entity_id: annualCase.entityId,
+        entity_name: annualCase.entityName,
+        source_rule: annualCase.rule,
+        source_profile: annualCase.profile,
+        profile_calendar_plan: profileCalendarPlan('supported'),
+      })),
+    };
+
+    vi.stubGlobal('fetch', fetchTable([{ match: '/v1/dashboard', body: dashboard }]));
+    renderDashboard();
+    await openDashboardTab('Fila de trabalho');
+
+    const queue = await screen.findByRole('list', { name: 'Fila de trabalho do painel' });
+    expect(within(queue).getAllByRole('listitem')).toHaveLength(4);
+
+    for (const annualCase of annualCases) {
+      const source = within(queue).getByText(`Fonte ${annualCase.rule} / ${annualCase.profile}`);
+      const item = source.closest('li');
+      expect(item).toBeTruthy();
+      if (!item) throw new Error(`Missing work-queue item for ${annualCase.rule}`);
+
+      expect(within(item).getByText(annualCase.title)).toBeTruthy();
+      expect(
+        within(item).getByText(
+          `Não há ato anual selado ou arquivado para ${annualCase.entityName} em ${annualCase.dueDate}. O lembrete é consultivo e deriva de ${annualCase.rule}.`,
+        ),
+      ).toBeTruthy();
+      expect(within(item).getByText(`Data ${annualCase.dueDate}`)).toBeTruthy();
+      const link = within(item).getByRole('link', { name: 'Abrir entidade' });
+      expect(link.getAttribute('href')).toBe(`/entidades/${annualCase.entityId}`);
+      const itemText = item.textContent ?? '';
+      expect(itemText).not.toContain(`Raw fallback for ${annualCase.rule}`);
+      expect(itemText).not.toContain('legal deadline');
+      expect(itemText).not.toContain('DRE');
+      expect(itemText).not.toContain('provider');
+      expect(itemText).not.toContain('registry');
+    }
   });
 
   it('renders condominium fixed-date profile-calendar reminders as advisory work', async () => {
@@ -1418,13 +1508,14 @@ describe('DashboardPage', () => {
     const queue = await screen.findByRole('list', { name: 'Fila de trabalho do painel' });
     const items = within(queue).getAllByRole('listitem');
     expect(items).toHaveLength(5);
-    expect(items.map((item) => within(item).getByRole('link').getAttribute('aria-label'))).toEqual([
-      longName,
-      'Data Incerta, S.A.',
-      'Quase Vence, Lda.',
-      'Próxima, Lda.',
-      'Sem Data, Lda.',
+    expect(items.map((item) => within(item).getByRole('link').getAttribute('href'))).toEqual([
+      '/entidades/entity-overdue',
+      '/entidades/entity-invalid',
+      '/entidades/entity-due-soon',
+      '/entidades/entity-upcoming',
+      '/entidades/entity-missing',
     ]);
+    expect(within(items[0]).getByText(longName, { exact: false })).toBeTruthy();
     expect(within(items[1]).getByText('Data inválida')).toBeTruthy();
     expect(within(items[4]).getByText('Sem data')).toBeTruthy();
   });

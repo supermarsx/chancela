@@ -459,6 +459,26 @@ const ALERT_COPY: Partial<Record<string, { title: MessageKey; body: MessageKey }
 const REMINDER_COPY: Partial<
   Record<string, { title: MessageKey; body: MessageKey; action: MessageKey }>
 > = {
+  'csc-art376-annual': {
+    title: 'notifications.reminder.annual.csc.title',
+    body: 'notifications.reminder.annual.body',
+    action: 'notifications.reminder.annual.action',
+  },
+  'assoc-annual': {
+    title: 'notifications.reminder.annual.assoc.title',
+    body: 'notifications.reminder.annual.body',
+    action: 'notifications.reminder.annual.action',
+  },
+  'fundacao-annual': {
+    title: 'notifications.reminder.annual.fundacao.title',
+    body: 'notifications.reminder.annual.body',
+    action: 'notifications.reminder.annual.action',
+  },
+  'cooperativa-annual': {
+    title: 'notifications.reminder.annual.cooperativa.title',
+    body: 'notifications.reminder.annual.body',
+    action: 'notifications.reminder.annual.action',
+  },
   'condominio-annual': {
     title: 'notifications.reminder.annual.condominio.title',
     body: 'notifications.reminder.annual.body',
