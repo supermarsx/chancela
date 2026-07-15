@@ -118,6 +118,7 @@ pub struct TemplateLawReference {
 /// `key` is a literal PT label and `value` interpolates a record field). A row whose `value`
 /// renders empty is omitted — this is how optional/absent fields (e.g. a missing NIPC) disappear.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct KvRowSpec {
     /// minijinja template for the row label (left column).
     pub key: String,
@@ -148,7 +149,7 @@ pub struct KvRowSpec {
 /// conditional blocks (`{% if channel == 'Telematic' %}…{% endif %}`) and optional sections for
 /// free, without a schema-level condition.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind")]
+#[serde(tag = "kind", deny_unknown_fields)]
 pub enum BlockSpec {
     /// A heading whose text is a minijinja template.
     Heading {

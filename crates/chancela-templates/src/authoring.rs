@@ -176,8 +176,8 @@ pub fn validate_user_template(json: &str) -> Result<TemplateSpec, TemplateValida
         });
     }
 
-    // 2. Strict parse. The registry DTO is `deny_unknown_fields`, so serde already rejects unknown
-    //    keys, missing required fields, and bad enum values for family/stage/channels/signature.
+    // 2. Strict parse. The registry DTO and nested block specs are `deny_unknown_fields`, so serde
+    //    rejects unknown keys, missing required fields, and bad enum values.
     let dto: crate::TemplateSpecDto =
         serde_json::from_str(json).map_err(|e| TemplateValidationError::Malformed {
             field: None,
@@ -367,6 +367,32 @@ mod tests {
         let err = validate_user_template(json).unwrap_err();
         assert_eq!(err.code(), "malformed");
         assert!(matches!(err, TemplateValidationError::Malformed { .. }));
+    }
+
+    #[test]
+    fn unknown_block_field_is_malformed() {
+        let json = r#"{"id":"user-x/v1","family":"Association","stage":"Ata","channels":[],
+            "signature_policy":"ManualAttested","rule_pack_id":"assoc-cc/v1","locale":"pt-PT",
+            "blocks":[{"kind":"Paragraph","template":"Olá.","templat":"ignored typo"}]}"#;
+        let err = validate_user_template(json).unwrap_err();
+        assert_eq!(err.code(), "malformed");
+        assert!(matches!(
+            err,
+            TemplateValidationError::Malformed { msg, .. } if msg.contains("templat")
+        ));
+    }
+
+    #[test]
+    fn unknown_key_value_row_field_is_malformed() {
+        let json = r#"{"id":"user-x/v1","family":"Association","stage":"Ata","channels":[],
+            "signature_policy":"ManualAttested","rule_pack_id":"assoc-cc/v1","locale":"pt-PT",
+            "blocks":[{"kind":"KeyValue","rows":[{"key":"Canal","value":"{{ channel }}","valu":"ignored typo"}]}]}"#;
+        let err = validate_user_template(json).unwrap_err();
+        assert_eq!(err.code(), "malformed");
+        assert!(matches!(
+            err,
+            TemplateValidationError::Malformed { msg, .. } if msg.contains("valu")
+        ));
     }
 
     #[test]
