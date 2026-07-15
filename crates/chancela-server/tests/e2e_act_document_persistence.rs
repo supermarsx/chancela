@@ -48,6 +48,38 @@ fn sha256_hex(bytes: &[u8]) -> String {
     digest.iter().map(|b| format!("{b:02x}")).collect()
 }
 
+const E2E_PASSWORD: &str = "Teste-Forte7!X";
+
+async fn bootstrap_password_session(h: &ServerHarness) -> (String, String) {
+    let (status, user) = h
+        .post_json(
+            "/v1/users",
+            json!({
+                "username": "e2e.operator",
+                "display_name": "E2E Operator",
+                "password": E2E_PASSWORD
+            }),
+        )
+        .await;
+    assert_eq!(status, 201, "create password-backed e2e user: {user}");
+    let user_id = user["id"].as_str().expect("user id").to_owned();
+    let token = open_password_session(h, &user_id).await;
+    (user_id, token)
+}
+
+async fn open_password_session(h: &ServerHarness, user_id: &str) -> String {
+    let (status, session) = h
+        .post_json(
+            "/v1/session",
+            json!({ "user_id": user_id, "password": E2E_PASSWORD }),
+        )
+        .await;
+    assert_eq!(status, 200, "open password-backed e2e session: {session}");
+    let token = session["token"].as_str().expect("session token").to_owned();
+    h.set_default_token(&token);
+    token
+}
+
 #[derive(Debug)]
 struct GeneratedDocRow {
     id: String,
@@ -114,6 +146,47 @@ async fn fill_condominium_absent_owner_contents(h: &ServerHarness, act_id: &str,
     assert_eq!(status, 200, "patch condominium absent-owner act: {body}");
 }
 
+async fn fill_generated_convening_act_contents(h: &ServerHarness, act_id: &str, token: &str) {
+    let (status, body) = h
+        .patch_json_auth(
+            &format!("/v1/acts/{act_id}"),
+            json!({
+                "meeting_date": "2026-03-30",
+                "meeting_time": "10:00",
+                "place": "Sede social",
+                "mesa": { "presidente": "Ana Presidente", "secretarios": ["Rui Secretario"] },
+                "agenda": [{ "number": 1, "text": "Aprovacao das contas" }],
+                "attendance_reference": "Lista de presencas",
+                "deliberations": "Aprovadas as contas do exercicio.",
+                "convening": {
+                    "convener": "Ana Presidente",
+                    "convener_capacity": "Administrator",
+                    "dispatch_date": "2026-03-01",
+                    "antecedence_days": 21,
+                    "channel": "Email",
+                    "evidence_reference": "doc:convocatoria-2026-03-01",
+                    "recipients": [
+                        {
+                            "name": "Ana Sócia",
+                            "contact": "ana@example.test",
+                            "channel": "Email",
+                            "reference": "MSG-1"
+                        },
+                        {
+                            "name": "Bruno Sócio",
+                            "contact": "bruno@example.test",
+                            "channel": "Email",
+                            "reference": "MSG-2"
+                        }
+                    ]
+                }
+            }),
+            token,
+        )
+        .await;
+    assert_eq!(status, 200, "patch generated-convening act: {body}");
+}
+
 fn assert_patched_act_view(act: &Value) {
     assert_eq!(act["title"], "Ata patch persistida antes do selo");
     assert_eq!(act["meeting_date"], "2026-04-02");
@@ -152,6 +225,154 @@ fn assert_canonical_bundle(
     );
 }
 
+fn generated_convening_alerts(dashboard: &Value) -> Vec<&Value> {
+    dashboard["reminders"]
+        .as_array()
+        .expect("dashboard reminders array")
+        .iter()
+        .filter(|alert| alert["source_rule"] == "generated-convening-dispatch-evidence")
+        .collect()
+}
+
+fn assert_generated_convening_reminder_suppressed(dashboard: &Value) {
+    assert!(
+        generated_convening_alerts(dashboard).is_empty(),
+        "covered generated-convening evidence should suppress reminder: {dashboard}"
+    );
+}
+
+fn assert_generated_dispatch_no_claim_flags(entry: &Value) {
+    assert_eq!(entry["status_scope"], "technical_metadata_only");
+    for flag in [
+        "sending_performed_by_chancela",
+        "delivery_confirmed",
+        "dispatch_completed",
+        "legal_notice_completion_claimed",
+        "legal_sufficiency_claimed",
+        "provider_execution_claimed",
+        "registry_filing_claimed",
+        "bundle_readiness_claimed",
+        "dglab_certification_claimed",
+        "legal_archive_acceptance_claimed",
+        "proof_bytes_included",
+        "operator_note_included",
+    ] {
+        assert_eq!(entry[flag], false, "{flag} must remain false: {entry}");
+    }
+    assert_eq!(entry["completion_basis"], "none");
+}
+
+fn assert_generated_dispatch_record_metadata_only(record: &Value) {
+    for flag in [
+        "sending_performed_by_chancela",
+        "delivery_confirmed",
+        "legal_notice_completion_claimed",
+        "legal_sufficiency_claimed",
+        "dispatch_completed",
+        "bytes_included",
+        "operator_note_included",
+    ] {
+        assert_eq!(record[flag], false, "{flag} must remain false: {record}");
+    }
+    assert_eq!(record["completion_basis"], "none");
+    assert!(
+        record.get("idempotency_key").is_none() && record.get("fingerprint").is_none(),
+        "stable evidence identifiers must stay out of preservation records: {record}"
+    );
+}
+
+fn assert_generated_convening_bundle_index(
+    bundle: &Value,
+    act_id: &str,
+    ata_doc_id: &str,
+    ata_digest: &str,
+    ata_len: usize,
+    notice_id: &str,
+    operator_note: &str,
+    idempotency_key: &str,
+) {
+    assert_canonical_bundle(bundle, act_id, ata_doc_id, ata_digest, ata_len);
+    assert_eq!(
+        bundle["validation_report"]["evidence_index"]["document_id"], ata_doc_id,
+        "generated notice must not replace the canonical Ata in bundle evidence index: {bundle}"
+    );
+
+    let generated_dispatch =
+        bundle["validation_report"]["evidence_index"]["generated_dispatch_evidence"]
+            .as_array()
+            .expect("generated dispatch evidence index");
+    assert_eq!(
+        generated_dispatch.len(),
+        1,
+        "one generated convening notice is indexed: {bundle}"
+    );
+    let entry = &generated_dispatch[0];
+    assert_eq!(
+        entry["evidence_kind"],
+        "generated_document_dispatch_evidence_metadata"
+    );
+    assert_eq!(
+        entry["metadata_schema"],
+        "chancela-generated-document-dispatch-evidence-metadata/v1"
+    );
+    assert_eq!(entry["generated_document_id"], notice_id);
+    assert_eq!(entry["act_id"], act_id);
+    assert_eq!(entry["template_id"], "csc-convocatoria-ag/v1");
+    assert_eq!(
+        entry["generated_document_download"],
+        format!("/v1/documents/generated/{notice_id}")
+    );
+    assert_eq!(
+        entry["dispatch_evidence_status"]["status"],
+        "operator_evidence_covered"
+    );
+    assert_eq!(
+        entry["dispatch_evidence_status"]["dispatch_completed"],
+        false
+    );
+    assert_eq!(
+        entry["dispatch_evidence_status"]["completion_basis"],
+        "none"
+    );
+    assert_eq!(
+        entry["coverage"]["required_recipients"],
+        json!(["Ana Sócia", "Bruno Sócio"])
+    );
+    assert_eq!(
+        entry["coverage"]["recorded_recipients"],
+        json!(["Ana Sócia", "Bruno Sócio"])
+    );
+    assert_eq!(entry["coverage"]["missing_recipients"], json!([]));
+    assert_eq!(entry["coverage"]["all_required_recipients_covered"], true);
+    assert_generated_dispatch_no_claim_flags(entry);
+
+    let records = entry["records"].as_array().expect("dispatch records");
+    assert_eq!(records.len(), 1, "one operator evidence record indexed");
+    let record = &records[0];
+    assert_eq!(record["dispatched_at"], "2026-03-01T09:00:00Z");
+    assert_eq!(record["channel"], "Email");
+    assert_eq!(record["reference"], "MSG-1");
+    assert_eq!(
+        record["evidence_reference"],
+        "archive:generated-convening-notice-dispatch"
+    );
+    assert_eq!(record["recipients"], json!(["Ana Sócia", "Bruno Sócio"]));
+    assert_generated_dispatch_record_metadata_only(record);
+
+    let index_text = serde_json::to_string(&bundle["validation_report"]["evidence_index"])
+        .expect("bundle evidence index serializes");
+    assert!(
+        !index_text.contains(operator_note) && !index_text.contains("\"operator_note\":"),
+        "operator notes stay out of preservation evidence: {index_text}"
+    );
+    assert!(
+        !index_text.contains(idempotency_key)
+            && !index_text.contains("\"idempotency_key\":")
+            && !index_text.contains("\"fingerprint\":"),
+        "stable evidence identifiers stay out of preservation evidence: {index_text}"
+    );
+}
+
 async fn sealed_csc_act(h: &ServerHarness) -> (String, String, Value) {
     let token = bootstrap_session(h).await;
     let entity_id = create_entity(
@@ -169,13 +390,376 @@ async fn sealed_csc_act(h: &ServerHarness) -> (String, String, Value) {
     advance_to_signing(h, &act_id, Some(&token)).await;
 
     let (status, sealed) = h
-        .post_json_auth(&format!("/v1/acts/{act_id}/seal"), json!({}), &token)
+        .post_json_auth(
+            &format!("/v1/acts/{act_id}/seal"),
+            json!({
+                "manual_signature_original_reference": {
+                    "storage_reference": "Arquivo A / Pasta 2026 / Ata convocada"
+                }
+            }),
+            &token,
+        )
         .await;
     assert_eq!(status, 200, "seal: {sealed}");
     assert_eq!(sealed["act"]["state"], "Sealed");
     assert_eq!(sealed["ata_number"], 1);
 
     (token, act_id, sealed)
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[cfg_attr(
+    not(feature = "e2e"),
+    ignore = "composed-system e2e: spawns the real server binary (run with --features e2e)"
+)]
+async fn generated_convening_notice_dispatch_evidence_persists_and_indexes_without_replacing_ata() {
+    let mut h = ServerHarness::start().await;
+    let (user_id, token) = bootstrap_password_session(&h).await;
+
+    let entity_id = create_entity(
+        &h,
+        "Encosto Estrategico, S.A.",
+        "503004642",
+        "Lisboa",
+        "SociedadeAnonima",
+        &token,
+    )
+    .await;
+    let book_id = open_book(&h, &entity_id, &token).await;
+    let act_id = draft_act(&h, &book_id, "Ata da AG anual convocada", Some(&token)).await;
+    fill_generated_convening_act_contents(&h, &act_id, &token).await;
+    advance_to_signing(&h, &act_id, Some(&token)).await;
+
+    let (status, sealed) = h
+        .post_json_auth(
+            &format!("/v1/acts/{act_id}/seal"),
+            json!({
+                "manual_signature_original_reference": {
+                    "storage_reference": "Arquivo A / Pasta 2026 / Ata convocada"
+                }
+            }),
+            &token,
+        )
+        .await;
+    assert_eq!(status, 200, "seal generated-convening act: {sealed}");
+    let ata_doc = &sealed["document"];
+    assert_eq!(ata_doc["template_id"], "csc-ata-ag/v1");
+    let ata_doc_id = ata_doc["id"].as_str().expect("ata document id").to_owned();
+    let ata_digest = ata_doc["pdf_digest"]
+        .as_str()
+        .expect("ata document digest")
+        .to_owned();
+
+    let (status, ctype, ata_pdf) = get_bytes(&h, &format!("/v1/acts/{act_id}/document")).await;
+    assert_eq!(status, 200, "sealed Ata downloads");
+    assert!(ctype.starts_with("application/pdf"), "ctype={ctype}");
+    assert!(ata_pdf.starts_with(b"%PDF-"), "sealed Ata bytes are a PDF");
+    assert_eq!(sha256_hex(&ata_pdf), ata_digest);
+
+    let (status, notice) = h
+        .post_json_auth(
+            &format!("/v1/acts/{act_id}/document/generate?template_id=csc-convocatoria-ag/v1"),
+            json!({}),
+            &token,
+        )
+        .await;
+    assert_eq!(status, 201, "generated convening notice: {notice}");
+    assert_eq!(notice["act_id"], act_id);
+    assert_eq!(notice["template_id"], "csc-convocatoria-ag/v1");
+    assert_eq!(
+        notice["dispatch_evidence_status"]["status"],
+        "required_pending"
+    );
+    assert_eq!(notice["dispatch_evidence_status"]["required"], true);
+    assert_eq!(
+        notice["dispatch_evidence_status"]["evidence_attached"],
+        false
+    );
+    assert_eq!(
+        notice["dispatch_evidence_status"]["dispatch_completed"],
+        false
+    );
+    assert_eq!(
+        notice["dispatch_evidence_status"]["completion_basis"],
+        "none"
+    );
+    assert_eq!(
+        notice["dispatch_evidence_status"]["required_recipients"],
+        json!(["Ana Sócia", "Bruno Sócio"])
+    );
+    let notice_id = notice["id"].as_str().expect("notice id").to_owned();
+    assert_ne!(notice_id, ata_doc_id, "generated notice is not the Ata");
+    let notice_digest = notice["pdf_digest"]
+        .as_str()
+        .expect("notice document digest")
+        .to_owned();
+
+    let (status, headers, notice_pdf) =
+        get_bytes_with_headers(&h, &format!("/v1/documents/generated/{notice_id}")).await;
+    assert_eq!(status, 200, "generated convening notice downloads");
+    assert!(notice_pdf.starts_with(b"%PDF-"), "notice bytes are a PDF");
+    assert_eq!(sha256_hex(&notice_pdf), notice_digest);
+    assert_eq!(
+        headers
+            .get("x-chancela-template-id")
+            .and_then(|v| v.to_str().ok()),
+        Some("csc-convocatoria-ag/v1")
+    );
+    assert_eq!(
+        headers
+            .get("x-chancela-dispatch-evidence-status")
+            .and_then(|v| v.to_str().ok()),
+        Some("required_pending")
+    );
+    assert_eq!(
+        headers
+            .get("x-chancela-dispatch-evidence-required")
+            .and_then(|v| v.to_str().ok()),
+        Some("true")
+    );
+    assert_eq!(
+        headers
+            .get("x-chancela-dispatch-evidence-attached")
+            .and_then(|v| v.to_str().ok()),
+        Some("false")
+    );
+    assert_eq!(
+        headers
+            .get("x-chancela-dispatch-completed")
+            .and_then(|v| v.to_str().ok()),
+        Some("false")
+    );
+
+    let (status, _ctype, current_ata) = get_bytes(&h, &format!("/v1/acts/{act_id}/document")).await;
+    assert_eq!(status, 200, "Ata still downloads after notice generation");
+    assert_eq!(
+        current_ata, ata_pdf,
+        "generated notice must not replace canonical Ata bytes"
+    );
+
+    let (status, dashboard) = h.get_json("/v1/dashboard").await;
+    assert_eq!(
+        status, 200,
+        "dashboard before dispatch evidence: {dashboard}"
+    );
+    let alerts = generated_convening_alerts(&dashboard);
+    assert_eq!(
+        alerts.len(),
+        1,
+        "one generated-convening dispatch reminder before evidence: {dashboard}"
+    );
+    let alert = alerts[0];
+    assert_eq!(
+        alert["source_rule"],
+        "generated-convening-dispatch-evidence"
+    );
+    assert_eq!(alert["source_profile"], "generated-convening-notice");
+    assert_eq!(alert["status"], "Pending");
+    assert_eq!(alert["severity"], "Advisory");
+    assert_eq!(
+        alert["action"]["route"],
+        format!(
+            "/atas/{act_id}?generated_document_id={notice_id}&focus=dispatch-evidence#generated-dispatch-evidence"
+        )
+    );
+    assert_eq!(
+        alert["action"]["api_href"],
+        format!("/v1/documents/generated/{notice_id}/dispatch-evidence")
+    );
+    assert_eq!(
+        alert["params"]["dispatch_evidence_status"],
+        "required_pending"
+    );
+    assert_eq!(alert["params"]["required_recipient_count"], "2");
+    assert_eq!(alert["params"]["recorded_recipient_count"], "0");
+    assert_eq!(
+        alert["params"]["missing_recipients"],
+        "Ana Sócia, Bruno Sócio"
+    );
+    for key in [
+        "dispatch_completed",
+        "sending_performed_by_chancela",
+        "delivery_confirmed",
+        "legal_notice_completion_claimed",
+        "legal_sufficiency_claimed",
+    ] {
+        assert_eq!(alert["params"][key], "false", "{key} must remain false");
+    }
+    assert_eq!(alert["params"]["completion_basis"], "none");
+
+    let operator_note =
+        "unique generated convening server note 2026-07-15T09:45:00Z idempotency sentinel";
+    let (status, evidence) = h
+        .post_json_auth(
+            &format!("/v1/documents/generated/{notice_id}/dispatch-evidence"),
+            json!({
+                "actor": "operator.bundle",
+                "dispatched_at": "2026-03-01T09:00:00Z",
+                "channel": "Email",
+                "reference": "MSG-1",
+                "recipients": ["Ana Sócia", "Bruno Sócio"],
+                "evidence_reference": "archive:generated-convening-notice-dispatch",
+                "operator_note": operator_note
+            }),
+            &token,
+        )
+        .await;
+    assert_eq!(
+        status, 201,
+        "record generated notice dispatch evidence: {evidence}"
+    );
+    assert_eq!(
+        evidence["dispatch_evidence_status"]["status"],
+        "operator_evidence_covered"
+    );
+    assert_eq!(
+        evidence["dispatch_evidence_status"]["dispatch_completed"],
+        false
+    );
+    assert_eq!(
+        evidence["dispatch_evidence_status"]["completion_basis"],
+        "none"
+    );
+    assert_eq!(
+        evidence["dispatch_evidence_status"]["recorded_recipients"],
+        json!(["Ana Sócia", "Bruno Sócio"])
+    );
+    assert_eq!(
+        evidence["dispatch_evidence_status"]["missing_recipients"],
+        json!([])
+    );
+    let idempotency_key = evidence["evidence"]["idempotency_key"]
+        .as_str()
+        .expect("dispatch evidence idempotency key")
+        .to_owned();
+    assert_eq!(evidence["evidence"]["document_id"], notice_id);
+    assert_eq!(evidence["evidence"]["act_id"], act_id);
+    assert_eq!(
+        evidence["evidence"]["template_id"],
+        "csc-convocatoria-ag/v1"
+    );
+    assert_eq!(evidence["evidence"]["operator_note"], operator_note);
+    for flag in [
+        "sending_performed_by_chancela",
+        "delivery_confirmed",
+        "legal_notice_completion_claimed",
+        "legal_sufficiency_claimed",
+        "bytes_in_payload",
+    ] {
+        assert_eq!(
+            evidence["evidence"][flag], false,
+            "{flag} must remain false in operator metadata evidence"
+        );
+    }
+
+    let (status, evidence_list) = h
+        .get_json_auth(
+            &format!("/v1/documents/generated/{notice_id}/dispatch-evidence"),
+            &token,
+        )
+        .await;
+    assert_eq!(
+        status, 200,
+        "read generated notice dispatch evidence: {evidence_list}"
+    );
+    assert_eq!(evidence_list["document_id"], notice_id);
+    assert_eq!(evidence_list["act_id"], act_id);
+    assert_eq!(evidence_list["template_id"], "csc-convocatoria-ag/v1");
+    assert_eq!(
+        evidence_list["dispatch_evidence_status"]["status"],
+        "operator_evidence_covered"
+    );
+    let rows = evidence_list["evidence"].as_array().expect("evidence rows");
+    assert_eq!(rows.len(), 1, "one evidence row persists");
+    assert_eq!(rows[0]["idempotency_key"], idempotency_key);
+    assert_eq!(rows[0]["operator_note"], operator_note);
+
+    let (status, dashboard_after) = h.get_json("/v1/dashboard").await;
+    assert_eq!(
+        status, 200,
+        "dashboard after dispatch evidence: {dashboard_after}"
+    );
+    assert_generated_convening_reminder_suppressed(&dashboard_after);
+
+    let (status, bundle) = h
+        .get_json(&format!("/v1/acts/{act_id}/document/bundle"))
+        .await;
+    assert_eq!(status, 200, "bundle after dispatch evidence: {bundle}");
+    assert_generated_convening_bundle_index(
+        &bundle,
+        &act_id,
+        &ata_doc_id,
+        &ata_digest,
+        ata_pdf.len(),
+        &notice_id,
+        operator_note,
+        &idempotency_key,
+    );
+
+    h.restart().await;
+    let token = open_password_session(&h, &user_id).await;
+
+    let (status, _ctype, reloaded_ata) =
+        get_bytes(&h, &format!("/v1/acts/{act_id}/document")).await;
+    assert_eq!(status, 200, "canonical Ata downloads after restart");
+    assert_eq!(reloaded_ata, ata_pdf);
+
+    let (status, headers, reloaded_notice) =
+        get_bytes_with_headers(&h, &format!("/v1/documents/generated/{notice_id}")).await;
+    assert_eq!(status, 200, "generated notice downloads after restart");
+    assert_eq!(reloaded_notice, notice_pdf);
+    assert_eq!(
+        headers
+            .get("x-chancela-dispatch-evidence-status")
+            .and_then(|v| v.to_str().ok()),
+        Some("operator_evidence_covered")
+    );
+    assert_eq!(
+        headers
+            .get("x-chancela-dispatch-evidence-attached")
+            .and_then(|v| v.to_str().ok()),
+        Some("true")
+    );
+    assert_eq!(
+        headers
+            .get("x-chancela-dispatch-completed")
+            .and_then(|v| v.to_str().ok()),
+        Some("false")
+    );
+
+    let (status, reloaded_evidence) = h
+        .get_json_auth(
+            &format!("/v1/documents/generated/{notice_id}/dispatch-evidence"),
+            &token,
+        )
+        .await;
+    assert_eq!(
+        status, 200,
+        "generated notice dispatch evidence reloads: {reloaded_evidence}"
+    );
+    assert_eq!(reloaded_evidence, evidence_list);
+
+    let (status, reloaded_bundle) = h
+        .get_json(&format!("/v1/acts/{act_id}/document/bundle"))
+        .await;
+    assert_eq!(
+        status, 200,
+        "bundle after generated-convening restart: {reloaded_bundle}"
+    );
+    assert_generated_convening_bundle_index(
+        &reloaded_bundle,
+        &act_id,
+        &ata_doc_id,
+        &ata_digest,
+        ata_pdf.len(),
+        &notice_id,
+        operator_note,
+        &idempotency_key,
+    );
+
+    let (status, dashboard_reloaded) = h.get_json("/v1/dashboard").await;
+    assert_eq!(status, 200, "dashboard after restart: {dashboard_reloaded}");
+    assert_generated_convening_reminder_suppressed(&dashboard_reloaded);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
