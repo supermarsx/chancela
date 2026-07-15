@@ -1,0 +1,128 @@
+# syntax=docker/dockerfile:1
+#
+# chancela-server — HARDENED container image (wp24-E).
+#
+# This is an ADDITIVE, security-tightened variant of docker/Dockerfile.server.
+# It does not replace the existing image; it goes further on the container-
+# hardening baseline. Build it with docker-compose.hardened.yml, which pairs it
+# with a matching runtime posture (read-only rootfs, dropped capabilities,
+# internal networks, resource + pids + logging caps).
+#
+# What this variant adds on top of docker/Dockerfile.server:
+#   - EVERY base image is pinned by DIGEST (immutable), not a moving tag.
+#   - OCI image labels record source, licence, and the pinned base digest.
+#   - The final stage stays distroless + non-root (UID/GID 65532); it carries
+#     only the server binary, the static web build, and a single static busybox
+#     used solely by the healthcheck (see the tradeoff note below).
+#
+# Build context is the REPO ROOT so the Dockerfile can see the whole workspace:
+#   docker build -f Dockerfile.hardened -t chancela-server:hardened .
+# or, preferred, via compose:
+#   docker compose -f docker-compose.hardened.yml build
+#
+# Base image digests below were resolved with:
+#   docker buildx imagetools inspect <image:tag> --format '{{.Manifest.Digest}}'
+# Refresh them deliberately (see docs/security/hardened-docker.md — "Refreshing
+# pinned digests") rather than reverting to floating tags. Digests pin the
+# multi-arch manifest index, so the build still resolves the right per-arch
+# layer on amd64/arm64.
+
+########################  Stage 1: Rust build  ########################
+# rust:1-slim-bookworm
+FROM rust:1-slim-bookworm@sha256:6d220bf85c74e842a79da63997af8d2e74455c0b8847d8bb3a5888572334991d AS rust-build
+WORKDIR /build
+
+# Cargo features compiled into `chancela-server`. Defaults to the SQLCipher-only
+# single-node (SQLite) build. The Postgres+Redis compose service overrides this
+# at build time with:
+#   --build-arg CARGO_FEATURES="chancela-server/sqlcipher chancela-server/postgres chancela-server/redis"
+ARG CARGO_FEATURES="chancela-server/sqlcipher"
+
+# Build-only native deps. Pinned apt behaviour: no recommends, lists cleaned in
+# the same layer so nothing leaks into the (discarded) build stage cache.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends pkg-config libpcsclite-dev perl make \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy the whole workspace. .dockerignore keeps the context minimal: it excludes
+# target, node_modules, dist, apps/desktop, .git, .orchestration, and
+# docker/secrets, so no VCS history or secret ever enters the build context.
+COPY . .
+
+# BuildKit cache mounts keep the cargo registry and target dir warm across
+# builds without persisting them into an image layer. --locked forbids any
+# Cargo.lock drift, so the build is reproducible from the committed lockfile.
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/build/target \
+    cargo build --release -p chancela-server --locked --features "${CARGO_FEATURES}" \
+    && cp target/release/chancela-server /chancela-server
+
+########################  Stage 2: Web build  ########################
+# node:22-slim
+FROM node:22-slim@sha256:6c74791e557ce11fc957704f6d4fe134a7bc8d6f5ca4403205b2966bd488f6b3 AS web-build
+WORKDIR /app
+
+# Install dependencies first so the npm layer is cached independently of source
+# changes, using the committed root npm lockfile (npm ci = lockfile-exact).
+COPY package.json package-lock.json ./
+COPY apps/web/package.json apps/web/
+# npm can omit Rollup's platform-native optional package when the lockfile was
+# authored on another OS. Install the exact optional version Rollup declares so
+# Vite can load its Linux native binding in this container.
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --no-audit --no-fund \
+    && npm install --no-save --no-audit --no-fund \
+        @rollup/rollup-linux-x64-gnu@$(node -p "require('./node_modules/rollup/package.json').optionalDependencies['@rollup/rollup-linux-x64-gnu']")
+
+# Build the web workspace (@chancela/web) -> apps/web/dist.
+COPY . .
+RUN npm run build --workspace apps/web
+
+########################  Stage 3: Runtime  ########################
+# gcr.io/distroless/cc-debian12:nonroot — no shell, no package manager, no libc
+# tooling; ships a preconfigured non-root user (UID/GID 65532).
+FROM gcr.io/distroless/cc-debian12:nonroot@sha256:66aa873a4a14fb164aa01296058efd8253744606d72715e45acface073359faa AS runtime
+
+# OCI provenance labels. These describe the image without embedding any secret.
+LABEL org.opencontainers.image.title="chancela-server (hardened)" \
+      org.opencontainers.image.description="Hardened, distroless, non-root chancela-server image" \
+      org.opencontainers.image.source="https://github.com/chancela/chancela" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.base.name="gcr.io/distroless/cc-debian12:nonroot" \
+      org.opencontainers.image.base.digest="sha256:66aa873a4a14fb164aa01296058efd8253744606d72715e45acface073359faa"
+
+# TRADEOFF (documented in docs/security/hardened-docker.md): distroless is
+# shell-less. The container healthcheck needs a tiny HTTP client, so we copy a
+# SINGLE static busybox binary (pinned by digest). busybox is a multi-call
+# binary that includes an `sh` applet, so this is the one place a shell exists
+# in the final image. It is a single ~1 MB static file with no package manager
+# and no writable install; the server process runs unprivileged with a
+# read-only root filesystem, so the applet cannot be used to persist changes.
+# The clean long-term fix is a dedicated `chancela-server healthcheck`
+# subcommand (tracked separately); until then this is the minimal client.
+# busybox:uclibc
+COPY --from=busybox:uclibc@sha256:eea4ff5612c911abd1d0e9ed47ba642547b01c3490877d9c1bb5fd6346462da4 /bin/busybox /usr/bin/busybox
+
+COPY --from=rust-build /chancela-server /usr/local/bin/chancela-server
+COPY --from=web-build /app/apps/web/dist /srv/web
+# Seed the durable data dir owned by the non-root runtime user so an empty named
+# volume mounts writable. No application data or secret is baked in.
+COPY --chown=nonroot:nonroot docker/.chancela-data.keep /var/lib/chancela/.keep
+
+# Bind on all interfaces inside the container; the host maps only loopback.
+ENV CHANCELA_ADDR=0.0.0.0:8080
+# Durable store path (persistent named volume in compose). Operators may
+# override it, but production containers should keep this on a persistent mount.
+ENV CHANCELA_DATA_DIR=/var/lib/chancela
+# Point the server at the web build copied to /srv/web above.
+ENV CHANCELA_WEB_DIST=/srv/web
+EXPOSE 8080
+
+# Numeric non-root user/group. Numeric (not a name) so Kubernetes/`runAsNonRoot`
+# and Docker can enforce it without resolving /etc/passwd.
+USER 65532:65532
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD ["/usr/bin/busybox", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health"]
+
+ENTRYPOINT ["/usr/local/bin/chancela-server"]

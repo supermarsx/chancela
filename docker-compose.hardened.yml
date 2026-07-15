@@ -1,0 +1,267 @@
+# chancela-server — HARDENED compose profiles (wp24-E).
+#
+# ADDITIVE variant of docker/docker-compose.yml. It pairs Dockerfile.hardened
+# with a tightened runtime posture and does NOT replace the existing compose.
+# Run it from the REPO ROOT (build context is the repo root):
+#
+#   Single node (SQLite, no external DB):
+#     docker compose -f docker-compose.hardened.yml --profile single-node up --build
+#
+#   Self-hosted Postgres durability backend + Redis cache-aside:
+#     # first create the real secret files from the committed templates:
+#     cp docker/secrets/postgres_password.example docker/secrets/postgres_password
+#     cp docker/secrets/database_url.example      docker/secrets/database_url
+#     cp docker/secrets/credential_key.example    docker/secrets/credential_key
+#     docker compose -f docker-compose.hardened.yml --profile postgres up --build
+#
+# Full rationale + system requirements: docs/security/hardened-docker.md
+#
+# HONEST SCOPE (unchanged from docker/DEPLOYMENT-PROFILES.md): this is a
+# SINGLE-WRITER, single-node deployment. The `postgres` profile is a durability
+# upgrade (PG-native backup/inspection tooling), NOT horizontal scale or HA.
+# Exactly one `chancela` instance may ever write. Never scale it.
+name: chancela-hardened
+
+# ---------------------------------------------------------------------------
+# Reusable hardening blocks (YAML merge anchors).
+# ---------------------------------------------------------------------------
+
+# Full app-container hardening: our own code, so it gets the maximal posture.
+x-app-hardening: &app-hardening
+  read_only: true                 # immutable root fs; nothing writes to the image layer
+  cap_drop: [ALL]                 # drop every Linux capability; add none back
+  security_opt:
+    - no-new-privileges:true      # setuid binaries cannot escalate privileges
+    # seccomp and AppArmor use the Docker daemon defaults (a restrictive syscall
+    # filter + docker-default AppArmor profile). See docs for a custom profile.
+  init: true                      # tini as PID 1 → reaps zombies, forwards signals
+  ulimits:                        # (pids cap lives in deploy.resources.limits.pids)
+    nofile:
+      soft: 1024
+      hard: 2048
+  logging:                        # cap log growth so a chatty/attacked container
+    driver: json-file             # cannot exhaust host disk
+    options:
+      max-size: "10m"
+      max-file: "3"
+  restart: unless-stopped
+
+# Lighter posture for the official stateful images (postgres/redis). Their own
+# entrypoints already drop privileges to an internal user and need to write to
+# their data dirs, so we do NOT force read-only rootfs / cap_drop ALL on them
+# (that breaks initdb / the entrypoint's user switch). We still add the safe,
+# non-breaking hardening: no-new-privileges, PID 1 reaping, pids + log + fd caps.
+x-infra-hardening: &infra-hardening
+  security_opt:
+    - no-new-privileges:true
+  init: true
+  ulimits:
+    nofile:
+      soft: 1024
+      hard: 2048
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+  restart: unless-stopped
+
+services:
+  # -----------------------------------------------------------------------
+  # single-node: one SQLite-backed server. No external database.
+  # -----------------------------------------------------------------------
+  server:
+    <<: *app-hardening
+    profiles: [single-node]
+    build:
+      context: .
+      dockerfile: Dockerfile.hardened
+    image: ${CHANCELA_SERVER_IMAGE:-chancela-server:hardened}
+    user: "65532:65532"
+    environment:
+      CHANCELA_ADDR: 0.0.0.0:8080
+      CHANCELA_DATA_DIR: /var/lib/chancela
+    ports:
+      - target: 8080
+        published: "${CHANCELA_HOST_PORT:-8080}"
+        host_ip: 127.0.0.1          # loopback only; not reachable off-host
+    tmpfs:
+      # Writable scratch with a hard size cap so /tmp cannot exhaust host memory.
+      - /tmp:size=64m
+    volumes:
+      # Durable SQLite store + JSON sidecars on a named volume (the only writable
+      # persistent path; the image creates it owned by UID 65532).
+      - chancela-data:/var/lib/chancela
+    networks: [edge]
+    healthcheck:
+      test: ["CMD", "/usr/bin/busybox", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 3s
+      start_period: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1g
+          pids: 256
+        reservations:
+          memory: 256m
+
+  # -----------------------------------------------------------------------
+  # postgres profile: PG durability backend + Redis cache + the app.
+  #
+  # SINGLE-WRITER by design (see header + docker/DEPLOYMENT-PROFILES.md).
+  # -----------------------------------------------------------------------
+  postgres:
+    <<: *infra-hardening
+    profiles: [postgres]
+    # postgres:16-alpine — pinned by digest (refresh deliberately; see docs).
+    image: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
+    # cap_drop ALL then add back ONLY what the official entrypoint needs to
+    # chown the data dir and drop from root to the internal `postgres` user.
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+    environment:
+      POSTGRES_DB: ${CHANCELA_PG_DB:-chancela}
+      POSTGRES_USER: ${CHANCELA_PG_USER:-chancela}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+    tmpfs:
+      - /tmp:size=64m
+      - /var/run/postgresql:size=16m   # unix socket dir; keeps rootfs writes off
+    volumes:
+      # Put this on ENCRYPTED storage (LUKS / encrypted block device): vanilla
+      # Postgres has no whole-DB encryption, so at-rest protection is volume
+      # level, NOT SQLCipher file-level ciphertext. See DEPLOYMENT-PROFILES.md.
+      - chancela-pgdata:/var/lib/postgresql/data
+    networks: [backend]              # internal network only; never published
+    expose:
+      - "5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${CHANCELA_PG_USER:-chancela} -d ${CHANCELA_PG_DB:-chancela}"]
+      interval: 10s
+      timeout: 5s
+      start_period: 15s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1g
+          pids: 256
+        reservations:
+          memory: 256m
+
+  redis:
+    <<: *infra-hardening
+    profiles: [postgres]
+    # redis:7-alpine — pinned by digest.
+    image: redis:7-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
+    # Cache-aside only: the app is fully correct with Redis down (fail-open).
+    command:
+      ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETGID, SETUID]   # entrypoint chowns /data + drops to `redis`
+    tmpfs:
+      - /tmp:size=32m
+    volumes:
+      - chancela-redisdata:/data
+    networks: [backend]
+    expose:
+      - "6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      start_period: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 320m
+          pids: 256
+        reservations:
+          memory: 64m
+
+  chancela:
+    <<: *app-hardening
+    profiles: [postgres]
+    build:
+      context: .
+      dockerfile: Dockerfile.hardened
+      args:
+        CARGO_FEATURES: "chancela-server/sqlcipher chancela-server/postgres chancela-server/redis"
+    image: ${CHANCELA_POSTGRES_IMAGE:-chancela-server:hardened-postgres}
+    user: "65532:65532"
+    environment:
+      CHANCELA_ADDR: 0.0.0.0:8080
+      # Writable data volume still required on Postgres: the credential sidecar
+      # (provider-credentials.enc.json) + CAE/law/TSL caches + JSON sidecars.
+      CHANCELA_DATA_DIR: /var/lib/chancela
+      CHANCELA_DB_BACKEND: postgres
+      DATABASE_URL_FILE: /run/secrets/database_url
+      REDIS_URL: redis://redis:6379
+      # REQUIRED on Postgres: the provider-credential store root key (no
+      # SQLCipher DerivedFromDbKey source). Delivered as a docker secret file.
+      CHANCELA_CREDENTIAL_KEY_FILE: /run/secrets/credential_key
+    secrets:
+      - database_url
+      - credential_key
+    ports:
+      - target: 8080
+        published: "${CHANCELA_HOST_PORT:-8080}"
+        host_ip: 127.0.0.1
+    tmpfs:
+      - /tmp:size=64m
+    volumes:
+      - chancela-app-data:/var/lib/chancela
+    networks: [edge, backend]        # edge to publish loopback; backend to reach DB
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/usr/bin/busybox", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 3s
+      start_period: 10s
+      retries: 3
+    deploy:
+      # SINGLE WRITER — never raise this (see header / DEPLOYMENT-PROFILES.md).
+      replicas: 1
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1g
+          pids: 256
+        reservations:
+          memory: 256m
+
+networks:
+  # App ingress network. The app publishes only 127.0.0.1:${CHANCELA_HOST_PORT}.
+  edge:
+    driver: bridge
+  # Database/cache network with NO route to the host or the outside world.
+  # Postgres and Redis are reachable only by the app over this network.
+  backend:
+    driver: bridge
+    internal: true
+
+volumes:
+  chancela-data:
+  chancela-pgdata:
+  chancela-redisdata:
+  chancela-app-data:
+
+# File-based docker secrets. Real files are gitignored (see
+# docker/secrets/.gitignore); only the *.example templates are committed. The
+# password inside database_url MUST match postgres_password.
+secrets:
+  postgres_password:
+    file: ./docker/secrets/postgres_password
+  database_url:
+    file: ./docker/secrets/database_url
+  credential_key:
+    file: ./docker/secrets/credential_key
