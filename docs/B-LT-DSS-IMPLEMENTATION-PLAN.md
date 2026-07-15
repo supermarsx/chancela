@@ -1,8 +1,27 @@
 # PAdES B-LT / DSS Local Status
 
-Updated 2026-07-10. This records the implemented local DSS/archive-timestamp
-slice and the remaining production B-LT/B-LTA gaps. It is not a claim of legal long-term
-validation.
+Updated 2026-07-15. This records the implemented local DSS/archive-timestamp
+slice, the new offline full-chain LTV *verifier*, and the remaining production
+B-LT/B-LTA gaps. It is not a claim of legal long-term validation.
+
+## Validation vs. issuance boundary (read first)
+
+Keep two axes crisp:
+
+- **Offline vs. online.** `chancela-pades` is a leaf crate: it verifies only the
+  material already embedded in the PDF, with no network and no trust anchors. It
+  now offers an offline full-chain LTV *verifier* (see below). The *live*
+  population of that material — fetching and validating OCSP/CRL, building the
+  signer chain to a live TSL anchor — is done online by `chancela-signing`
+  (`dss_collect`) and `chancela-tsl` (LOTL/certpath). `chancela-pades` never
+  fetches, never anchors trust, and must not depend on `chancela-tsl`.
+- **Validation vs. issuance.** Everything above is *validation*. Qualified
+  *issuance* (a private key + qualified certificate, and qualified timestamps)
+  remains external to Chancela — it is conferred by a QTSP (via CMD/SCMD, a CSC
+  v2 QTSP, or a CC smartcard) and a qualified TSA endpoint, not by this code.
+
+The offline verifier reports embedded LTV *completeness*, not a qualified-status
+or legal long-term-validation conclusion.
 
 ## Current State
 
@@ -34,6 +53,24 @@ validation.
 - Empty DSS revocation evidence is rejected rather than overclaiming support.
 - Higher layers surface embedded DSS/VRI counts and hashes as local technical
   evidence only, not as a production B-LT or legal LTV claim.
+- `chancela-pades` now exposes an **offline full-chain LTV verifier**
+  (`verify_ltv_offline` -> `LtvVerificationReport`). With no network and using
+  only embedded material, it: (a) reuses `validate_pdf_signature` to locate and
+  cryptographically verify the signer's own CMS signature and read the embedded
+  signer certificate; (b) walks the embedded `/DSS /Certs` and **rebuilds the
+  signer certificate chain** by issuer/subject-name plus key-identifier linkage,
+  requiring each selected issuer to be a CA, and reports the chain length and
+  whether it terminates in a self-issued root **present among the embedded
+  certs** (internal consistency + coverage, explicitly **not** a trust-anchor
+  claim — anchoring stays online in `chancela-tsl`); (c) confirms each non-root
+  link is **covered** by an embedded OCSP response (SHA-256 `CertID` matching the
+  link's issuer name/key hash + serial) or CRL (issuer match + serial not
+  listed), reporting per-link `uncovered_links`; and (d) verifies the
+  `/DocTimeStamp` **renewal chain** is contiguous (each archive timestamp's RFC
+  3161 imprint validates over its `/ByteRange`, which covers the prior revision
+  including its DSS, and each successive timestamp covers strictly more of the
+  file). It does **not** fetch revocation, does **not** cryptographically
+  re-verify each CA link's signature, and does **not** anchor trust.
 
 ## Implemented Local Slice
 
@@ -70,18 +107,36 @@ acceptance, legal long-term validation, or B-LT/B-LTA sufficiency.
   is persisted as local technical evidence; stale/mismatched tokens are
   rejected without changing the signed-PDF digest or appending an event; sealed
   acts without a signed PDF return `409`.
+- Offline full-chain LTV verifier: a two-level chain (root CA -> CA-issued
+  signer leaf) with a complete embedded `/DSS` (chain certs + matching OCSP or
+  CRL per link) reports `verified_offline = true` with all links covered; a DSS
+  whose embedded OCSP names a different serial reports the signer link in
+  `uncovered_links` with `verified_offline = false`; a `/DocTimeStamp` renewal
+  over the DSS revision reports a contiguous renewal chain; and a signed PDF with
+  no embedded `/DSS` is not verified offline.
 
 ## Remaining Blockers
 
-Production-grade PAdES B-LT/B-LTA and legal LTV still need:
+The offline verifier closes the "does the embedded LTV material hang together
+offline?" question inside `chancela-pades`. Production-grade PAdES B-LT/B-LTA and
+legal LTV still need work that lives **outside** this leaf crate:
 
+- live B-LT *population*: fetching + validating OCSP/CRL and building the signer
+  chain to a live TSL anchor (`chancela-signing` `dss_collect` + `chancela-tsl`
+  LOTL/certpath), then embedding that material via `add_dss_revision*`;
 - production OCSP/CRL source configuration and operating policy;
+- cryptographic CA-link signature re-verification and **trust anchoring** to a
+  verified LOTL/TSL (online; `chancela-tsl` — deliberately not in the leaf
+  verifier);
 - end-to-end QTSP/TSL policy decisions for the signing and timestamping context;
-- multi-signature VRI handling;
+- qualified *issuance*: qualified certificate + key and qualified timestamps
+  from an external QTSP/TSA (CMD/SCMD, CSC v2, or CC smartcard) — cannot be
+  closed in-repo;
 - interoperability validation against external validators;
 - production B-LTA timestamp renewal policy and provider/trust operating
   controls.
 
 Until those gaps are closed, Chancela must describe the implemented feature as
-local caller-supplied DSS/VRI plus `/DocTimeStamp` preservation and reporting,
-not production B-LT, B-LTA, or legal long-term validation.
+local caller-supplied DSS/VRI plus `/DocTimeStamp` preservation, reporting, and
+**offline embedded-completeness verification** — not production B-LT, B-LTA, live
+trust anchoring, or legal long-term validation.

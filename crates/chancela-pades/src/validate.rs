@@ -8,9 +8,12 @@ use std::collections::BTreeSet;
 
 use cms::content_info::ContentInfo;
 use cms::signed_data::SignedData;
-use der::Decode;
 use der::asn1::ObjectIdentifier;
+use der::{Decode, Encode};
 use sha2::{Digest, Sha256};
+use x509_cert::certificate::Certificate;
+use x509_cert::crl::CertificateList;
+use x509_cert::ext::pkix::{AuthorityKeyIdentifier, BasicConstraints, SubjectKeyIdentifier};
 
 use crate::archive_timestamp::{self, DocTimeStampReport};
 use crate::dss::{self, DssReport};
@@ -576,4 +579,921 @@ fn detect_signature_timestamp(cms_der: &[u8]) -> Result<bool, PadesError> {
 /// Convert a ByteRange integer to `usize`, rejecting negatives.
 fn usize_of(v: i64) -> Result<usize, PadesError> {
     usize::try_from(v).map_err(|_| PadesError::InvalidByteRange)
+}
+
+// =====================================================================================
+// Offline full-chain LTV verifier over embedded /DSS + /DocTimeStamp (wp26 E9, SIG-21).
+//
+// This is a **leaf-crate, no-network** check. It confirms the long-term-validation material a
+// B-LT/B-LTA signature already carries is internally complete: it rebuilds the signer certificate
+// chain from the certificates embedded in `/DSS /Certs`, confirms every non-root link is backed by
+// an embedded OCSP response or CRL, and checks the `/DocTimeStamp` renewal chain is contiguous. It
+// does NOT fetch revocation data, does NOT cryptographically re-verify each CA link's signature, and
+// does NOT anchor the chain to a trusted list — trust anchoring and live path/revocation validation
+// stay with the online caller (`chancela-signing` + `chancela-tsl`). The signer's *own* signature is
+// still cryptographically verified, via [`validate_pdf_signature`], before any of this runs.
+// =====================================================================================
+
+/// DER OID content octets for `id-sha256` (2.16.840.1.101.3.4.2.1). OCSP `CertID` hashes computed
+/// with any other algorithm (notably the RFC 6960 default SHA-1) are treated as "not matched" here,
+/// because this leaf crate only links `sha2` and must not add a dependency to hash SHA-1.
+const SHA256_OID_CONTENT: [u8; 9] = [0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01];
+
+/// Honest scope statement carried in every [`LtvVerificationReport`]. This is a technical,
+/// structural + revocation-completeness result over embedded material — **not** a trust decision,
+/// qualified-status finding, or legal long-term-validation claim.
+pub const LTV_OFFLINE_SCOPE_NOTE: &str = "Offline structural + revocation-completeness check over \
+embedded PAdES LTV material only: the signer certificate chain is rebuilt from the embedded /DSS \
+certificates (issuer/subject name + key-identifier linkage), each non-root link is confirmed covered \
+by an embedded OCSP response or CRL, and the /DocTimeStamp renewal chain is checked for contiguity. \
+It does not fetch revocation data, does not cryptographically re-verify each CA link's signature, and \
+does not anchor the chain to a trusted list; live path building, revocation, and trust anchoring \
+remain the online caller's responsibility (chancela-signing + chancela-tsl). This reports embedded \
+LTV completeness, not a qualified-status or legal long-term-validation conclusion.";
+
+/// Why a rebuilt signer-chain link is not backed by embedded long-term-validation material.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum LtvUncoveredReason {
+    /// No embedded `/DSS /Certs` certificate issued this one, so the chain could not be extended to
+    /// a self-issued root. The embedded material is structurally incomplete.
+    IssuerNotEmbedded,
+    /// The issuer certificate is embedded, but no embedded OCSP response or CRL covers this link
+    /// (matching CertID / issuer + non-revoked serial). The revocation material is incomplete.
+    NoEmbeddedRevocation,
+}
+
+/// A signer-chain link whose offline long-term-validation coverage is incomplete.
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub struct LtvUncoveredLink {
+    /// Position of the certificate in the rebuilt chain (`0` = signer leaf).
+    pub index: usize,
+    /// Subject distinguished name of the certificate (RFC 4514 string).
+    pub subject: String,
+    /// Lowercase hex of the certificate serial number.
+    pub serial_hex: String,
+    /// Why this link is not covered.
+    pub reason: LtvUncoveredReason,
+}
+
+/// Offline long-term-validation completeness report for a B-LT/B-LTA signature (wp26 E9).
+///
+/// Produced by [`verify_ltv_offline`] using only the material embedded in the PDF. See
+/// [`LTV_OFFLINE_SCOPE_NOTE`] (also carried in [`Self::scope_note`]) for the honest scope boundary:
+/// this is structural + revocation completeness, not trust anchoring or a legal LTV claim.
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub struct LtvVerificationReport {
+    /// Number of certificates in the chain rebuilt from the signer, inclusive (`1` when the signer
+    /// is itself self-issued, i.e. there was no separate CA to embed).
+    pub signer_chain_len: usize,
+    /// Whether the rebuilt chain terminates in a self-issued (root) certificate that is present
+    /// among the embedded `/DSS /Certs`. Offline this states internal consistency + coverage, **not**
+    /// that the root is a *trusted* anchor — trust anchoring is the online caller's job.
+    pub chain_terminates_in_embedded_root: bool,
+    /// Whether every non-root link that has an embedded issuer is covered by an embedded OCSP/CRL.
+    pub all_links_revocation_covered: bool,
+    /// Links whose coverage is incomplete (missing issuer and/or missing revocation), signer-first.
+    pub uncovered_links: Vec<LtvUncoveredLink>,
+    /// Number of embedded `/DocTimeStamp` archive-timestamp revisions.
+    pub doc_timestamp_count: usize,
+    /// Whether the `/DocTimeStamp` renewal chain is contiguous: every archive timestamp's RFC 3161
+    /// imprint validates over its `/ByteRange` (which, being a later incremental revision, covers the
+    /// prior revision including its DSS), and each successive timestamp covers strictly more of the
+    /// file than the previous one. Vacuously `false` when there is no archive timestamp.
+    pub renewal_chain_contiguous: bool,
+    /// Whether the signature is LTV-complete offline: the chain was rebuilt to an embedded root and
+    /// every link is revocation-covered (`chain_terminates_in_embedded_root && uncovered_links empty`).
+    /// This is **not** a trust or qualified-status verdict; see [`Self::scope_note`].
+    pub verified_offline: bool,
+    /// Honest scope statement (equal to [`LTV_OFFLINE_SCOPE_NOTE`]).
+    pub scope_note: &'static str,
+}
+
+/// Verify — **offline, no network** — that a B-LT/B-LTA signature carries complete long-term
+/// validation material: rebuild the signer chain from embedded `/DSS` certificates, confirm each
+/// non-root link is covered by an embedded OCSP/CRL, and check the `/DocTimeStamp` renewal chain.
+///
+/// The signer's own CMS signature and `/ByteRange` coverage are verified first (via
+/// [`validate_pdf_signature`]); this then walks only the material embedded in the PDF. It performs no
+/// trust anchoring and no live fetching — see [`LtvVerificationReport`] and [`LTV_OFFLINE_SCOPE_NOTE`].
+///
+/// Returns `Err` for the same reasons as [`validate_pdf_signature`] (no signature, malformed
+/// ByteRange/Contents, CMS failure) or if the embedded `/DSS` structure is malformed.
+pub fn verify_ltv_offline(signed_pdf: &[u8]) -> Result<LtvVerificationReport, PadesError> {
+    // 1. Locate + cryptographically verify the signer's own signature, and reuse its signer cert +
+    //    DSS/DocTimeStamp reports. Any tampering or bad CMS fails here before we look at LTV material.
+    let base = validate_pdf_signature(signed_pdf)?;
+    let doc =
+        lopdf::Document::load_mem(signed_pdf).map_err(|e| PadesError::PdfParse(e.to_string()))?;
+
+    // 2. Collect the DER blobs embedded in /DSS /Certs, /OCSPs, /CRLs.
+    let cert_ders = dss_stream_blobs(&doc, b"Certs")?;
+    let ocsp_ders = dss_stream_blobs(&doc, b"OCSPs")?;
+    let crl_ders = dss_stream_blobs(&doc, b"CRLs")?;
+
+    let embedded: Vec<ChainCert> = cert_ders
+        .iter()
+        .filter_map(|d| ChainCert::parse(d))
+        .collect();
+
+    // 3. Rebuild the signer path from the embedded certs and record per-link revocation coverage.
+    let mut chain_len = 0usize;
+    let mut terminates = false;
+    let mut uncovered: Vec<LtvUncoveredLink> = Vec::new();
+
+    if let Some(signer) = ChainCert::parse(&base.cades.signer_cert_der) {
+        let mut visited: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
+        let mut current = signer;
+        loop {
+            chain_len += 1;
+            let index = chain_len - 1;
+            let node_key = (current.subject_der.clone(), current.serial.clone());
+            let seen = visited.contains(&node_key);
+            visited.push(node_key);
+
+            if current.is_self_issued() {
+                terminates = true;
+                break;
+            }
+            if seen || chain_len > 32 {
+                // Defensive cycle / runaway guard: stop without claiming a root was reached.
+                uncovered.push(current.uncovered(index, LtvUncoveredReason::IssuerNotEmbedded));
+                break;
+            }
+
+            match embedded.iter().find(|cand| {
+                cand.subject_der == current.issuer_der
+                    && cand.is_ca
+                    && aki_ski_match(&current, cand)
+            }) {
+                Some(issuer) => {
+                    if !link_revocation_covered(&current, issuer, &ocsp_ders, &crl_ders) {
+                        uncovered.push(
+                            current.uncovered(index, LtvUncoveredReason::NoEmbeddedRevocation),
+                        );
+                    }
+                    current = issuer.clone();
+                }
+                None => {
+                    uncovered.push(current.uncovered(index, LtvUncoveredReason::IssuerNotEmbedded));
+                    break;
+                }
+            }
+        }
+    }
+
+    let all_links_revocation_covered = !uncovered
+        .iter()
+        .any(|u| u.reason == LtvUncoveredReason::NoEmbeddedRevocation);
+
+    // 4. Verify the /DocTimeStamp renewal chain (B-LTA) from the archive-timestamp report.
+    let doc_timestamp_count = base.doc_timestamps.count;
+    let renewal_chain_contiguous = renewal_chain_contiguous(&base.doc_timestamps);
+
+    // 5. Offline LTV completeness verdict: chain rebuilt to an embedded root + every link covered.
+    let verified_offline = chain_len >= 1 && terminates && uncovered.is_empty();
+
+    Ok(LtvVerificationReport {
+        signer_chain_len: chain_len,
+        chain_terminates_in_embedded_root: terminates,
+        all_links_revocation_covered,
+        uncovered_links: uncovered,
+        doc_timestamp_count,
+        renewal_chain_contiguous,
+        verified_offline,
+        scope_note: LTV_OFFLINE_SCOPE_NOTE,
+    })
+}
+
+/// A parsed embedded certificate with the fields the offline chain rebuild + coverage checks need.
+#[derive(Clone)]
+struct ChainCert {
+    cert: Certificate,
+    /// DER of the subject `Name`.
+    subject_der: Vec<u8>,
+    /// DER of the issuer `Name`.
+    issuer_der: Vec<u8>,
+    /// Serial number bytes (canonical, sign-normalized on comparison).
+    serial: Vec<u8>,
+    /// Raw `subjectPublicKey` BIT STRING value (for OCSP `issuerKeyHash` matching).
+    public_key: Vec<u8>,
+    /// `subjectKeyIdentifier`, if present.
+    ski: Option<Vec<u8>>,
+    /// `authorityKeyIdentifier` keyIdentifier, if present.
+    aki: Option<Vec<u8>>,
+    /// Whether `basicConstraints` marks this a CA (required of any selected issuer).
+    is_ca: bool,
+}
+
+impl ChainCert {
+    fn parse(der: &[u8]) -> Option<Self> {
+        let cert = Certificate::from_der(der).ok()?;
+        let tbs = &cert.tbs_certificate;
+        let subject_der = tbs.subject.to_der().ok()?;
+        let issuer_der = tbs.issuer.to_der().ok()?;
+        let serial = tbs.serial_number.as_bytes().to_vec();
+        let public_key = tbs
+            .subject_public_key_info
+            .subject_public_key
+            .as_bytes()?
+            .to_vec();
+        let ski = tbs
+            .get::<SubjectKeyIdentifier>()
+            .ok()
+            .flatten()
+            .map(|(_, s)| s.0.as_bytes().to_vec());
+        let aki = tbs
+            .get::<AuthorityKeyIdentifier>()
+            .ok()
+            .flatten()
+            .and_then(|(_, a)| a.key_identifier.map(|k| k.as_bytes().to_vec()));
+        let is_ca = tbs
+            .get::<BasicConstraints>()
+            .ok()
+            .flatten()
+            .map(|(_, b)| b.ca)
+            .unwrap_or(false);
+        Some(ChainCert {
+            cert,
+            subject_der,
+            issuer_der,
+            serial,
+            public_key,
+            ski,
+            aki,
+            is_ca,
+        })
+    }
+
+    fn is_self_issued(&self) -> bool {
+        self.subject_der == self.issuer_der
+    }
+
+    fn uncovered(&self, index: usize, reason: LtvUncoveredReason) -> LtvUncoveredLink {
+        LtvUncoveredLink {
+            index,
+            subject: self.cert.tbs_certificate.subject.to_string(),
+            serial_hex: String::from_utf8(pdf::to_hex(&self.serial)).unwrap_or_default(),
+            reason,
+        }
+    }
+}
+
+/// Whether a candidate issuer's subjectKeyIdentifier is consistent with the child's
+/// authorityKeyIdentifier. Absent identifiers do not block the link (name match still applies).
+fn aki_ski_match(child: &ChainCert, candidate: &ChainCert) -> bool {
+    match (&child.aki, &candidate.ski) {
+        (Some(aki), Some(ski)) => aki == ski,
+        _ => true,
+    }
+}
+
+/// Whether `child` (issued by `issuer`) is covered by an embedded OCSP response or CRL.
+fn link_revocation_covered(
+    child: &ChainCert,
+    issuer: &ChainCert,
+    ocsp_ders: &[Vec<u8>],
+    crl_ders: &[Vec<u8>],
+) -> bool {
+    ocsp_ders
+        .iter()
+        .any(|o| ocsp_covers_link(o, issuer, &child.serial))
+        || crl_ders
+            .iter()
+            .any(|c| crl_covers_link(c, issuer, &child.serial))
+}
+
+/// Whether an embedded OCSP response carries a `SingleResponse` whose `CertID` matches this link:
+/// SHA-256 `issuerNameHash`/`issuerKeyHash` over the issuer, and the child's serial number.
+fn ocsp_covers_link(ocsp_der: &[u8], issuer: &ChainCert, child_serial: &[u8]) -> bool {
+    let expected_name = Sha256::digest(&issuer.subject_der);
+    let expected_key = Sha256::digest(&issuer.public_key);
+    let want_serial = norm_serial(child_serial);
+    for id in ocsp_certids(ocsp_der) {
+        if id.alg_oid != SHA256_OID_CONTENT {
+            continue;
+        }
+        if id.name_hash == expected_name.as_slice()
+            && id.key_hash == expected_key.as_slice()
+            && norm_serial(&id.serial) == want_serial
+        {
+            return true;
+        }
+    }
+    false
+}
+
+/// Whether an embedded CRL is issued by this link's issuer and does not list the child's serial as
+/// revoked (an affirmative "not revoked as of this CRL" for that issuer). No signature or validity
+/// check is performed here — that is the online caller's job.
+fn crl_covers_link(crl_der: &[u8], issuer: &ChainCert, child_serial: &[u8]) -> bool {
+    let Ok(crl) = CertificateList::from_der(crl_der) else {
+        return false;
+    };
+    let Ok(crl_issuer_der) = crl.tbs_cert_list.issuer.to_der() else {
+        return false;
+    };
+    if crl_issuer_der != issuer.subject_der {
+        return false;
+    }
+    let want_serial = norm_serial(child_serial);
+    let listed = crl
+        .tbs_cert_list
+        .revoked_certificates
+        .unwrap_or_default()
+        .iter()
+        .any(|r| norm_serial(r.serial_number.as_bytes()) == want_serial);
+    !listed
+}
+
+/// One OCSP `CertID`, as raw bytes pulled out of a `SingleResponse`.
+struct OcspCertId {
+    alg_oid: Vec<u8>,
+    name_hash: Vec<u8>,
+    key_hash: Vec<u8>,
+    serial: Vec<u8>,
+}
+
+/// Extract every `SingleResponse.certID` from an OCSP response's `BasicOCSPResponse`. Navigates the
+/// DER structurally (RFC 6960) with a minimal walker so this leaf crate needs no `x509-ocsp` dep.
+fn ocsp_certids(der: &[u8]) -> Vec<OcspCertId> {
+    fn inner(der: &[u8]) -> Option<Vec<OcspCertId>> {
+        // OCSPResponse ::= SEQUENCE { responseStatus ENUMERATED, [0] EXPLICIT responseBytes }
+        let (_, ocsp, _) = der_tlv(der)?;
+        let response_bytes = der_children(ocsp)
+            .into_iter()
+            .find(|(tag, _)| *tag == 0xA0)
+            .map(|(_, c)| c)?;
+        // responseBytes [0] EXPLICIT wraps ResponseBytes ::= SEQUENCE { responseType, response OCTET }
+        let (_, rb, _) = der_tlv(response_bytes)?;
+        let basic_octet = der_children(rb)
+            .into_iter()
+            .find(|(tag, _)| *tag == 0x04)
+            .map(|(_, c)| c)?;
+        // OCTET STRING content = BasicOCSPResponse ::= SEQUENCE { tbsResponseData, .. }
+        let (_, basic, _) = der_tlv(basic_octet)?;
+        let (tbs_tag, tbs, _) = der_tlv(basic)?;
+        if tbs_tag != 0x30 {
+            return None;
+        }
+        // ResponseData: first universal SEQUENCE child is `responses` (version/responderID/producedAt
+        // carry context or GeneralizedTime tags, so they do not collide).
+        let responses = der_children(tbs)
+            .into_iter()
+            .find(|(tag, _)| *tag == 0x30)
+            .map(|(_, c)| c)?;
+        let mut ids = Vec::new();
+        for (tag, single) in der_children(responses) {
+            if tag != 0x30 {
+                continue;
+            }
+            if let Some((0x30, certid)) = der_children(single).into_iter().next() {
+                if let Some(id) = parse_certid(certid) {
+                    ids.push(id);
+                }
+            }
+        }
+        Some(ids)
+    }
+    inner(der).unwrap_or_default()
+}
+
+/// Parse the four fields of a `CertID ::= SEQUENCE { AlgorithmIdentifier, OCTET, OCTET, INTEGER }`.
+fn parse_certid(content: &[u8]) -> Option<OcspCertId> {
+    let children = der_children(content);
+    let alg = children.iter().find(|(tag, _)| *tag == 0x30)?;
+    let alg_oid = der_children(alg.1)
+        .into_iter()
+        .find(|(tag, _)| *tag == 0x06)
+        .map(|(_, c)| c.to_vec())?;
+    let octets: Vec<Vec<u8>> = children
+        .iter()
+        .filter(|(tag, _)| *tag == 0x04)
+        .map(|(_, c)| c.to_vec())
+        .collect();
+    if octets.len() < 2 {
+        return None;
+    }
+    let serial = children
+        .iter()
+        .find(|(tag, _)| *tag == 0x02)
+        .map(|(_, c)| c.to_vec())?;
+    Some(OcspCertId {
+        alg_oid,
+        name_hash: octets[0].clone(),
+        key_hash: octets[1].clone(),
+        serial,
+    })
+}
+
+/// Parse one definite-length DER TLV at the start of `b`; returns `(tag, content, rest)`.
+fn der_tlv(b: &[u8]) -> Option<(u8, &[u8], &[u8])> {
+    if b.len() < 2 {
+        return None;
+    }
+    let tag = b[0];
+    let len_byte = b[1];
+    let (content_start, len) = if len_byte < 0x80 {
+        (2usize, len_byte as usize)
+    } else {
+        let n = (len_byte & 0x7f) as usize;
+        if n == 0 || n > 4 || b.len() < 2 + n {
+            return None;
+        }
+        let mut len = 0usize;
+        for &x in &b[2..2 + n] {
+            len = (len << 8) | x as usize;
+        }
+        (2 + n, len)
+    };
+    let end = content_start.checked_add(len)?;
+    if end > b.len() {
+        return None;
+    }
+    Some((tag, &b[content_start..end], &b[end..]))
+}
+
+/// Split a constructed value's content bytes into its `(tag, content)` TLV children.
+fn der_children(mut content: &[u8]) -> Vec<(u8, &[u8])> {
+    let mut out = Vec::new();
+    while !content.is_empty() {
+        match der_tlv(content) {
+            Some((tag, c, rest)) => {
+                out.push((tag, c));
+                content = rest;
+            }
+            None => break,
+        }
+    }
+    out
+}
+
+/// Strip leading zero bytes so DER-INTEGER serials (which may carry a sign-padding `0x00`) compare
+/// equal regardless of encoding. Serials are positive, so this is safe.
+fn norm_serial(s: &[u8]) -> &[u8] {
+    let mut i = 0;
+    while i + 1 < s.len() && s[i] == 0 {
+        i += 1;
+    }
+    &s[i..]
+}
+
+/// Whether the `/DocTimeStamp` renewal chain is contiguous: at least one archive timestamp, every
+/// imprint valid over its `/ByteRange`, and each successive timestamp covers strictly more of the
+/// file (so a later timestamp covers the earlier revision — including its DSS).
+fn renewal_chain_contiguous(dts: &DocTimeStampReport) -> bool {
+    if dts.count == 0 || dts.validations.len() != dts.count {
+        return false;
+    }
+    let mut prev_end = 0i64;
+    for v in &dts.validations {
+        if v.status != archive_timestamp::DocTimeStampSemanticStatus::Valid {
+            return false;
+        }
+        let Some([_, _, s2, l2]) = v.byte_range else {
+            return false;
+        };
+        let Some(end) = s2.checked_add(l2) else {
+            return false;
+        };
+        if end <= prev_end {
+            return false;
+        }
+        prev_end = end;
+    }
+    true
+}
+
+/// Collect the raw DER content of every stream referenced by `/DSS /<key>` (`Certs`/`OCSPs`/`CRLs`)
+/// in the latest catalog. Mirrors the extraction in [`crate::dss`] but returns the bytes.
+fn dss_stream_blobs(doc: &lopdf::Document, key: &[u8]) -> Result<Vec<Vec<u8>>, PadesError> {
+    let Some(catalog) = document_catalog(doc) else {
+        return Ok(Vec::new());
+    };
+    let Ok(dss_obj) = catalog.get(b"DSS") else {
+        return Ok(Vec::new());
+    };
+    let (_, dss_obj) = doc
+        .dereference(dss_obj)
+        .map_err(|e| PadesError::MalformedStructure(format!("DSS reference is invalid: {e}")))?;
+    let Ok(dss) = dss_obj.as_dict() else {
+        return Ok(Vec::new());
+    };
+    let Ok(array_obj) = dss.get(key) else {
+        return Ok(Vec::new());
+    };
+    let (_, array_obj) = doc.dereference(array_obj).map_err(|e| {
+        PadesError::MalformedStructure(format!(
+            "DSS /{} reference is invalid: {e}",
+            String::from_utf8_lossy(key)
+        ))
+    })?;
+    let Ok(array) = array_obj.as_array() else {
+        return Ok(Vec::new());
+    };
+    let mut blobs = Vec::with_capacity(array.len());
+    for item in array {
+        let (_, item) = doc.dereference(item).map_err(|e| {
+            PadesError::MalformedStructure(format!(
+                "DSS /{} entry reference is invalid: {e}",
+                String::from_utf8_lossy(key)
+            ))
+        })?;
+        let stream = item.as_stream().map_err(|_| {
+            PadesError::MalformedStructure(format!(
+                "DSS /{} entry is not a stream",
+                String::from_utf8_lossy(key)
+            ))
+        })?;
+        blobs.push(stream.content.clone());
+    }
+    Ok(blobs)
+}
+
+#[cfg(test)]
+mod ltv_tests {
+    //! Inline offline full-chain LTV verifier tests (wp26 E9).
+    //!
+    //! These are self-contained (they cannot reach `crate::tests`' private helpers): they mint a
+    //! real two-level chain (root CA -> CA-issued signer leaf), sign a PDF with the leaf, embed a
+    //! complete `/DSS` (chain certs + OCSP/CRL per link), and drive [`verify_ltv_offline`]. OCSP/CRL
+    //! material is minted to match the link so coverage is genuine, not fixture-shaped.
+
+    use std::str::FromStr;
+    use std::time::Duration as StdDuration;
+
+    use der::asn1::{Any, BitString, ObjectIdentifier, OctetString};
+    use der::oid::AssociatedOid;
+    use der::{Decode, Encode};
+    use rsa::rand_core::OsRng;
+    use rsa::{RsaPrivateKey, RsaPublicKey};
+    use sha2::{Digest, Sha256};
+    use x509_cert::certificate::{TbsCertificate, Version};
+    use x509_cert::crl::{CertificateList, TbsCertList};
+    use x509_cert::ext::pkix::BasicConstraints;
+    use x509_cert::ext::{Extension, Extensions};
+    use x509_cert::name::Name;
+    use x509_cert::serial_number::SerialNumber;
+    use x509_cert::spki::{AlgorithmIdentifierOwned, SubjectPublicKeyInfoOwned};
+    use x509_cert::time::{Time, Validity};
+
+    use chancela_cades::{
+        RawSignature, SignatureAlgorithm, assemble_cades_b, signed_attributes_digest,
+    };
+
+    use super::{Certificate, LtvUncoveredReason, verify_ltv_offline};
+    use crate::dss::{DssEvidence, add_dss_revision};
+    use crate::sign::{SignOptions, sign_pdf};
+    use crate::{add_doc_timestamp_revision, inspect_doc_timestamps};
+
+    const OID_SHA256_WITH_RSA: ObjectIdentifier =
+        ObjectIdentifier::new_unwrap("1.2.840.113549.1.1.11");
+    const SHA256_DIGEST_INFO_PREFIX: [u8; 19] = [
+        0x30, 0x31, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01,
+        0x05, 0x00, 0x04, 0x20,
+    ];
+    const LEAF_SERIAL: u8 = 0x2a;
+
+    fn fixed_time() -> time::OffsetDateTime {
+        time::OffsetDateTime::from_unix_timestamp(1_750_000_000).unwrap()
+    }
+
+    fn sha256(data: &[u8]) -> [u8; 32] {
+        Sha256::digest(data).into()
+    }
+
+    fn rsa_sig_alg() -> AlgorithmIdentifierOwned {
+        AlgorithmIdentifierOwned {
+            oid: OID_SHA256_WITH_RSA,
+            parameters: Some(Any::null()),
+        }
+    }
+
+    fn sign_rsa_digest_info(key: &RsaPrivateKey, digest: &[u8; 32]) -> Vec<u8> {
+        let mut digest_info = SHA256_DIGEST_INFO_PREFIX.to_vec();
+        digest_info.extend_from_slice(digest);
+        key.sign(rsa::Pkcs1v15Sign::new_unprefixed(), &digest_info)
+            .expect("rsa sign")
+    }
+
+    fn rsa_key() -> (RsaPrivateKey, SubjectPublicKeyInfoOwned) {
+        let key = RsaPrivateKey::new(&mut OsRng, 2048).expect("rsa keygen");
+        let spki = SubjectPublicKeyInfoOwned::from_key(RsaPublicKey::from(&key)).expect("spki");
+        (key, spki)
+    }
+
+    fn basic_constraints_ca() -> Extensions {
+        let bc = BasicConstraints {
+            ca: true,
+            path_len_constraint: None,
+        };
+        vec![Extension {
+            extn_id: BasicConstraints::OID,
+            critical: true,
+            extn_value: OctetString::new(bc.to_der().expect("bc der")).expect("octet"),
+        }]
+    }
+
+    fn make_cert(
+        subject_cn: &str,
+        issuer_cn: &str,
+        serial: u8,
+        spki: SubjectPublicKeyInfoOwned,
+        extensions: Option<Extensions>,
+        signer_key: &RsaPrivateKey,
+    ) -> Vec<u8> {
+        let sig_alg = rsa_sig_alg();
+        let tbs = TbsCertificate {
+            version: Version::V3,
+            serial_number: SerialNumber::new(&[serial]).expect("serial"),
+            signature: sig_alg.clone(),
+            issuer: Name::from_str(&format!("CN={issuer_cn}")).expect("issuer"),
+            validity: Validity::from_now(StdDuration::from_secs(3650 * 24 * 3600))
+                .expect("validity"),
+            subject: Name::from_str(&format!("CN={subject_cn}")).expect("subject"),
+            subject_public_key_info: spki,
+            issuer_unique_id: None,
+            subject_unique_id: None,
+            extensions,
+        };
+        let tbs_der = tbs.to_der().expect("tbs der");
+        let signature = sign_rsa_digest_info(signer_key, &sha256(&tbs_der));
+        let cert = Certificate {
+            tbs_certificate: tbs,
+            signature_algorithm: sig_alg,
+            signature: BitString::from_bytes(&signature).expect("bitstring"),
+        };
+        cert.to_der().expect("cert der")
+    }
+
+    /// Mint (root CA cert DER, leaf cert DER, leaf private key). The leaf is issued by the CA.
+    fn mint_chain() -> (Vec<u8>, Vec<u8>, RsaPrivateKey) {
+        let (ca_key, ca_spki) = rsa_key();
+        let ca_der = make_cert(
+            "Encosto CA Root",
+            "Encosto CA Root",
+            0x01,
+            ca_spki,
+            Some(basic_constraints_ca()),
+            &ca_key,
+        );
+        let (leaf_key, leaf_spki) = rsa_key();
+        let leaf_der = make_cert(
+            "Amelia Marques Signer",
+            "Encosto CA Root",
+            LEAF_SERIAL,
+            leaf_spki,
+            None,
+            &ca_key,
+        );
+        (ca_der, leaf_der, leaf_key)
+    }
+
+    fn base_pdf() -> Vec<u8> {
+        let objects: [(u32, &str); 3] = [
+            (1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            (2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+            (
+                3,
+                "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << >> >>",
+            ),
+        ];
+        let mut buf: Vec<u8> = Vec::new();
+        buf.extend_from_slice(b"%PDF-1.7\n%\xE2\xE3\xCF\xD3\n");
+        let mut offsets = Vec::new();
+        for (id, body) in &objects {
+            offsets.push((*id, buf.len()));
+            buf.extend_from_slice(format!("{id} 0 obj\n{body}\nendobj\n").as_bytes());
+        }
+        let xref_off = buf.len();
+        buf.extend_from_slice(b"xref\n0 4\n0000000000 65535 f\r\n");
+        for id in 1..=3u32 {
+            let off = offsets.iter().find(|(i, _)| *i == id).unwrap().1;
+            buf.extend_from_slice(format!("{off:010} 00000 n\r\n").as_bytes());
+        }
+        buf.extend_from_slice(b"trailer\n<< /Size 4 /Root 1 0 R >>\n");
+        buf.extend_from_slice(format!("startxref\n{xref_off}\n%%EOF\n").as_bytes());
+        buf
+    }
+
+    fn sign_pdf_with_leaf(pdf: &[u8], leaf_der: &[u8], leaf_key: &RsaPrivateKey) -> Vec<u8> {
+        let signing_time = fixed_time();
+        sign_pdf(pdf, &SignOptions::default(), |digest| {
+            let attrs = signed_attributes_digest(digest, leaf_der, signing_time)?;
+            let raw = RawSignature::new(
+                SignatureAlgorithm::RsaPkcs1Sha256,
+                sign_rsa_digest_info(leaf_key, &attrs),
+                leaf_der.to_vec(),
+                vec![],
+            );
+            assemble_cades_b(&raw, digest, signing_time)
+        })
+        .expect("sign_pdf")
+    }
+
+    /// Minimal DER TLV (definite length).
+    fn tlv(tag: u8, content: &[u8]) -> Vec<u8> {
+        let mut v = vec![tag];
+        let len = content.len();
+        if len < 0x80 {
+            v.push(len as u8);
+        } else {
+            let bytes = len.to_be_bytes();
+            let first = bytes.iter().position(|&b| b != 0).unwrap();
+            v.push(0x80 | (bytes.len() - first) as u8);
+            v.extend_from_slice(&bytes[first..]);
+        }
+        v.extend_from_slice(content);
+        v
+    }
+
+    /// Build a minimal RFC 6960 OCSP response with one SingleResponse whose SHA-256 CertID names
+    /// `issuer_der` and `serial`. Only the fields the offline verifier navigates are populated.
+    fn make_ocsp(issuer_der: &[u8], serial: &[u8]) -> Vec<u8> {
+        let issuer = Certificate::from_der(issuer_der).expect("issuer der");
+        let name_der = issuer.tbs_certificate.subject.to_der().expect("name der");
+        let key = issuer
+            .tbs_certificate
+            .subject_public_key_info
+            .subject_public_key
+            .as_bytes()
+            .expect("pubkey")
+            .to_vec();
+        let sha256_oid = [0x60u8, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01];
+        let alg = tlv(0x30, &[tlv(0x06, &sha256_oid), tlv(0x05, &[])].concat());
+        let cert_id = tlv(
+            0x30,
+            &[
+                alg,
+                tlv(0x04, &Sha256::digest(&name_der)),
+                tlv(0x04, &Sha256::digest(&key)),
+                tlv(0x02, serial),
+            ]
+            .concat(),
+        );
+        let single = tlv(0x30, &cert_id);
+        let responses = tlv(0x30, &single);
+        let response_data = tlv(0x30, &responses);
+        let basic = tlv(0x30, &response_data);
+        let ocsp_basic_oid = [0x2bu8, 0x06, 0x01, 0x05, 0x05, 0x07, 0x30, 0x01, 0x01];
+        let response_bytes = tlv(
+            0x30,
+            &[tlv(0x06, &ocsp_basic_oid), tlv(0x04, &basic)].concat(),
+        );
+        tlv(
+            0x30,
+            &[tlv(0x0A, &[0x00]), tlv(0xA0, &response_bytes)].concat(),
+        )
+    }
+
+    /// Build a CRL issued by `issuer_der`'s subject with an empty revoked list.
+    fn make_crl(issuer_der: &[u8], signer_key: &RsaPrivateKey) -> Vec<u8> {
+        let issuer = Certificate::from_der(issuer_der).expect("issuer der");
+        let sig_alg = rsa_sig_alg();
+        let tbs = TbsCertList {
+            version: Version::V2,
+            signature: sig_alg.clone(),
+            issuer: issuer.tbs_certificate.subject.clone(),
+            this_update: Time::try_from(std::time::SystemTime::now()).expect("time"),
+            next_update: None,
+            revoked_certificates: None,
+            crl_extensions: None,
+        };
+        let tbs_der = tbs.to_der().expect("tbs crl der");
+        let signature = sign_rsa_digest_info(signer_key, &sha256(&tbs_der));
+        let crl = CertificateList {
+            tbs_cert_list: tbs,
+            signature_algorithm: sig_alg,
+            signature: BitString::from_bytes(&signature).expect("bitstring"),
+        };
+        crl.to_der().expect("crl der")
+    }
+
+    fn fixture_timestamp_token() -> Vec<u8> {
+        let tsa = chancela_tsa::TsaClient::new(chancela_tsa::MockTsaTransport::from_fixture());
+        let req = chancela_tsa::TimestampRequest::new(chancela_tsa::mock::FIXTURE_DIGEST)
+            .with_nonce(chancela_tsa::mock::FIXTURE_NONCE)
+            .without_certificate();
+        tsa.stamp(&req).expect("fixture token").token_der
+    }
+
+    fn doc_timestamp_token_for(pdf: &[u8]) -> Vec<u8> {
+        let placeholder =
+            add_doc_timestamp_revision(pdf, &fixture_timestamp_token()).expect("placeholder DTS");
+        let report = inspect_doc_timestamps(&placeholder).expect("inspect placeholder");
+        let digest = report.validations[0]
+            .document_digest
+            .expect("DocTimeStamp digest");
+        let mut token = fixture_timestamp_token();
+        let width = chancela_tsa::mock::FIXTURE_DIGEST.len();
+        let pos = token
+            .windows(width)
+            .position(|w| w == chancela_tsa::mock::FIXTURE_DIGEST)
+            .expect("fixture imprint");
+        token[pos..pos + width].copy_from_slice(&digest);
+        token
+    }
+
+    #[test]
+    fn complete_embedded_dss_verifies_offline_via_ocsp() {
+        let (ca_der, leaf_der, leaf_key) = mint_chain();
+        let signed = sign_pdf_with_leaf(&base_pdf(), &leaf_der, &leaf_key);
+        let evidence = DssEvidence {
+            certificates: vec![leaf_der.clone(), ca_der.clone()],
+            ocsp_responses: vec![make_ocsp(&ca_der, &[LEAF_SERIAL])],
+            crls: vec![],
+        };
+        let with_dss = add_dss_revision(&signed, &evidence).expect("DSS append");
+
+        let report = verify_ltv_offline(&with_dss).expect("verify LTV");
+        assert_eq!(report.signer_chain_len, 2, "signer -> CA root");
+        assert!(report.chain_terminates_in_embedded_root);
+        assert!(report.all_links_revocation_covered);
+        assert!(
+            report.uncovered_links.is_empty(),
+            "{:?}",
+            report.uncovered_links
+        );
+        assert!(report.verified_offline);
+        assert!(!report.scope_note.to_lowercase().contains("valor probat"));
+    }
+
+    #[test]
+    fn complete_embedded_dss_verifies_offline_via_crl() {
+        let (ca_der, leaf_der, leaf_key) = mint_chain();
+        let signed = sign_pdf_with_leaf(&base_pdf(), &leaf_der, &leaf_key);
+        let evidence = DssEvidence {
+            certificates: vec![leaf_der.clone(), ca_der.clone()],
+            ocsp_responses: vec![],
+            crls: vec![make_crl(&ca_der, &leaf_key)],
+        };
+        let with_dss = add_dss_revision(&signed, &evidence).expect("DSS append");
+
+        let report = verify_ltv_offline(&with_dss).expect("verify LTV");
+        assert!(report.all_links_revocation_covered);
+        assert!(report.verified_offline);
+        assert!(report.uncovered_links.is_empty());
+    }
+
+    #[test]
+    fn missing_link_revocation_is_reported_uncovered() {
+        let (ca_der, leaf_der, leaf_key) = mint_chain();
+        let signed = sign_pdf_with_leaf(&base_pdf(), &leaf_der, &leaf_key);
+        // OCSP names a different serial, so it does not cover the signer leaf.
+        let evidence = DssEvidence {
+            certificates: vec![leaf_der.clone(), ca_der.clone()],
+            ocsp_responses: vec![make_ocsp(&ca_der, &[0x2b])],
+            crls: vec![],
+        };
+        let with_dss = add_dss_revision(&signed, &evidence).expect("DSS append");
+
+        let report = verify_ltv_offline(&with_dss).expect("verify LTV");
+        assert_eq!(report.signer_chain_len, 2);
+        assert!(
+            report.chain_terminates_in_embedded_root,
+            "CA root still reached"
+        );
+        assert!(!report.all_links_revocation_covered);
+        assert_eq!(report.uncovered_links.len(), 1);
+        assert_eq!(report.uncovered_links[0].index, 0, "signer leaf uncovered");
+        assert_eq!(
+            report.uncovered_links[0].reason,
+            LtvUncoveredReason::NoEmbeddedRevocation
+        );
+        assert!(!report.verified_offline);
+    }
+
+    #[test]
+    fn blta_doc_timestamp_renewal_chain_is_contiguous() {
+        let (ca_der, leaf_der, leaf_key) = mint_chain();
+        let signed = sign_pdf_with_leaf(&base_pdf(), &leaf_der, &leaf_key);
+        let evidence = DssEvidence {
+            certificates: vec![leaf_der.clone(), ca_der.clone()],
+            ocsp_responses: vec![make_ocsp(&ca_der, &[LEAF_SERIAL])],
+            crls: vec![],
+        };
+        let with_dss = add_dss_revision(&signed, &evidence).expect("DSS append");
+        let token = doc_timestamp_token_for(&with_dss);
+        let with_dts = add_doc_timestamp_revision(&with_dss, &token).expect("DTS append");
+
+        let report = verify_ltv_offline(&with_dts).expect("verify LTV");
+        assert!(report.doc_timestamp_count >= 1);
+        assert!(report.renewal_chain_contiguous);
+        // The signer chain + revocation coverage still hold after the archive timestamp.
+        assert!(report.verified_offline);
+    }
+
+    #[test]
+    fn no_dss_is_not_verified_offline() {
+        let (_ca_der, leaf_der, leaf_key) = mint_chain();
+        let signed = sign_pdf_with_leaf(&base_pdf(), &leaf_der, &leaf_key);
+        let report = verify_ltv_offline(&signed).expect("verify LTV");
+        // The signer leaf is CA-issued but no issuer/revocation is embedded: incomplete offline.
+        assert!(!report.verified_offline);
+        assert!(!report.chain_terminates_in_embedded_root);
+        assert_eq!(report.doc_timestamp_count, 0);
+        assert!(!report.renewal_chain_contiguous);
+    }
 }

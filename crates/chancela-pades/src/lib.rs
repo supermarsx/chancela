@@ -20,6 +20,18 @@
 //!   trust, or claim B-LT sufficiency. It can also append and report caller-supplied
 //!   `/DocTimeStamp` archive timestamp revisions via [`add_doc_timestamp_revision`] /
 //!   [`inspect_doc_timestamps`], without renewal policy or B-LTA/legal LTV claims.
+//! - **Offline LTV completeness verification** — [`verify_ltv_offline`] checks, with **no network**
+//!   and using only the material embedded in the PDF, that a B-LT/B-LTA signature is long-term
+//!   *complete offline*: it rebuilds the signer certificate chain from the embedded `/DSS /Certs`
+//!   (issuer/subject-name + key-identifier linkage), confirms each non-root link is covered by an
+//!   embedded OCSP response or CRL, and verifies the `/DocTimeStamp` renewal chain is contiguous
+//!   (each archive timestamp covers the prior revision, including its DSS). It **verifies embedded
+//!   LTV completeness**; it does **not** fetch or refresh revocation, does **not** cryptographically
+//!   re-verify each CA link's signature, and does **not** anchor the chain to a trusted list. Live
+//!   B-LT population (fetching/validating OCSP/CRL, building the chain to a live TSL anchor) and
+//!   trust anchoring stay in `chancela-signing` (`dss_collect`) + `chancela-tsl` (LOTL/certpath);
+//!   qualified *issuance* remains external (QTSP). This is a technical completeness result, not a
+//!   qualified-status or legal long-term-validation claim.
 //!
 //! ## Layering
 //!
@@ -68,4 +80,7 @@ pub use sign::{
     MAX_CONTENTS_BYTES, PreparedSignature, SignOptions, add_signature_timestamp, embed_signature,
     prepare_signature, prepare_signature_with_appearance, sign_pdf, sign_pdf_with_appearance,
 };
-pub use validate::{PdfSignatureReport, validate_pdf_signature};
+pub use validate::{
+    LTV_OFFLINE_SCOPE_NOTE, LtvUncoveredLink, LtvUncoveredReason, LtvVerificationReport,
+    PdfSignatureReport, validate_pdf_signature, verify_ltv_offline,
+};
