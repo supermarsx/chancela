@@ -85,7 +85,9 @@ absent-owner communication dispatch-evidence recording, and generated
 absent-owner evidence UI and dashboard absent-owner dispatch-evidence reminders,
 condominium annual profile-calendar Jan 15 local advisory markers plus
 dashboard-only annual reminder localization markers for CSC, association,
-foundation, and cooperative profile-calendar rules,
+foundation, and cooperative profile-calendar rules, convocation-notice local
+WFL/legal-calendar advisory markers for `act-convening-notice` open-act
+reminders,
 compact validator-report actions, template provenance UI, release clean-source
 provenance gating, local CC batch-signing UI markers for BatchSigningPanel,
 `useCcBatchSign`, `POST /v1/signature/cc/batch-sign`, optional transient PIN
@@ -676,6 +678,22 @@ imported-document review notification/export browser E2E marker plus the
 guardrail acknowledgement payload, ordered review-history rendering, and
 canonical act-document download assertions; Playwright execution remains in the
 browser jobs so this recent-landed lane stays focused.
+
+Convocation-notice advisory markers pin the local statute/convening evidence
+slice only: core `STATUTE/convocation-notice-*` warnings for missing,
+unverifiable, or too-short convening evidence; suppression when dispatch or
+recorded antecedence satisfies `Entity.statute.convocation_notice_days`; API
+dashboard `act-convening-notice` reminders with computed `notice_due_date`,
+`meeting_date`, dispatch/antecedence params, empty `law_refs`,
+`open_act_convening_notice` routing, and false legal-sufficiency,
+external-delivery, and workflow-completion claim params; and dashboard/
+notification localized copy that hides raw backend fallback text. These markers
+remain local WFL/legal-calendar advisory evidence only. They do not claim legal
+authority, legal sufficiency, provider/certification execution, external
+delivery, workflow completion, DRE/source-authority verification, registry
+acceptance, legal effect, or legal/compliance completion. The dashboard reminder
+still needs `meeting_date` to compute `notice_due_date`, and core still warns
+when convening evidence is missing or unverifiable.
 
 Imported-document review reminder markers pin the API dashboard reminder unit
 coverage for act-scoped imports still in `operator_review_required`,

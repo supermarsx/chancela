@@ -1,9 +1,10 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `711c7a4`,
-including coverage notes for condominium annual local advisory Jan 15
-profile-calendar depth, dashboard annual profile-calendar reminder localization,
+and implementation snapshot `982cc9a`,
+including coverage notes for convocation-notice local WFL/legal-calendar
+advisory reminders, condominium annual local advisory Jan 15 profile-calendar
+depth, dashboard annual profile-calendar reminder localization,
 automated-review dashboard contract surfacing, archive active-filter count
 refinement, all-filtered archive export streaming/caps,
 automated-review law corpus evidence and UI tier surfacing, MCP workflow
@@ -887,11 +888,11 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `711c7a4`
+## Focused Gate Snapshot Through `982cc9a`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08` and checkpoint-promoted on 2026-07-15 for
-current implementation head `711c7a4`. This is not an exhaustive current
+current implementation head `982cc9a`. This is not an exhaustive current
 green-run claim; browser, Docker, desktop, package signing/notarization, image
 signing/attestation, and live-provider limits above still apply.
 
@@ -1821,6 +1822,27 @@ settingsDefaults.test.ts contracts.test.ts`.
   only: no backend/calendar policy, contract, provider, legal/compliance, DRE
   source-authority, external delivery/calendar-sync/webhook, workflow completion,
   or legal-effect claim is implemented.
+- Current `982cc9a` convocation-notice advisory checks: focused
+  `cargo test -p chancela-core --locked convocation_notice`, `cargo test -p
+  chancela-api --locked convocation_notice`, `npm run test --workspace apps/web
+  -- DashboardPage.test.tsx notifications.test.ts`, `npm run build --workspace
+  apps/web`, `cargo fmt --check`, and `git diff --check` coverage pins local
+  statute/convening advisory depth only. Core compares
+  `Entity.statute.convocation_notice_days` with `Act.convening`
+  antecedence/dispatch metadata, warning for missing/unverifiable evidence or
+  too-short notice and suppressing the warning when evidence satisfies the
+  configured day count. The API dashboard emits `act-convening-notice` open-act
+  reminders with `meeting_date`, computed `notice_due_date`, dispatch/antecedence
+  params, empty `law_refs`, localized
+  `notifications.reminder.act.conveningNotice.*` copy, and false
+  legal-sufficiency/external-delivery/workflow-completion claim params; web
+  dashboard and notification tests pin localized act routing and raw-backend
+  fallback suppression. Residual limitation: dashboard reminder emission needs
+  `meeting_date` to compute `notice_due_date`, and core still emits advisory
+  warnings for missing or unverifiable convening evidence. This adds no
+  legal-authority, legal-sufficiency, provider, certification, external
+  delivery, workflow-completion, DRE/source-authority, registry acceptance,
+  legal effect, or legal/compliance completion claim.
 - Current imported-document review reminder checks: focused `cargo test -p
   chancela-api --lib --locked imported_document_review_reminder` coverage pins
   metadata-only dashboard reminder emission for act-scoped imports whose review
@@ -1955,14 +1977,15 @@ settingsDefaults.test.ts contracts.test.ts`.
   full RBAC/delegation-policy completion, tenant authorization proof,
   legal-capacity verification, broad security certification, or spec
   completion.
-- Current checkpoint metadata/static checks through `711c7a4`
+- Current checkpoint metadata/static checks through `982cc9a`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
   `git diff --check -- SPEC-COVERAGE.md docs\CI-E2E-HARDENING-PLAN.md
   docs\CI-CHECKPOINTS.md scripts\checkpoint-recent-landed.mjs`.
   These pin the spec snapshot,
-  hardening-plan head, dashboard annual reminder localization, automated-review
+  hardening-plan head, convocation-notice advisory reminders, dashboard annual
+  reminder localization, automated-review
   dashboard contract surfacing, Arquivo advanced-filter count badge,
   all-filtered archive export streaming/cap scope, MCP meeting
   metadata extraction review resource, PDF table-structure semantics, export save-prompt

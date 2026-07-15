@@ -1,8 +1,9 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-15 from current implementation snapshot `711c7a4cfd240d28bde98b1d8b4aa85fbb5413f7`,
-with committed evidence refreshes for the recently landed condominium annual
-local advisory due-date depth, automated-review dashboard contract surface,
+*Updated 2026-07-15 from current implementation snapshot `982cc9acb944b54072d87e3dbaa8e879dae42bce`,
+with committed evidence refreshes for the recently landed convocation-notice
+local WFL/legal-calendar advisory reminder slice, condominium annual local
+advisory due-date depth, automated-review dashboard contract surface,
 archive filter refinement, all-filtered archive export, automated-review law
 corpus UI tier, MCP workflow provenance local JSON/text summary, key-custody
 readiness UI/contract surfacing, data key-rotation receipt history, and the earlier Signatures & Trust
@@ -192,7 +193,8 @@ focused web assertions for the honest badge and caveat tooltip, plus `3a41187`
 condominium annual local advisory due-date coverage, `a7125b3`
 all-filtered archive export scope coverage, `040ce48` streamed all-filtered
 archive export/cap coverage, and `711c7a4` dashboard annual profile-calendar
-reminder localization.
+reminder localization, followed by `982cc9a` convocation-notice local
+advisory reminders.
 Earlier coverage text remains prior snapshot context. All top-level spec areas remain **PARTIAL**.
 This is an implementation and test coverage snapshot, not a legal certification,
 not production CMD approval, not DRE verification promotion, not full PDF/UA
@@ -255,6 +257,31 @@ Implementation checkpoints covered here:
   legal/compliance status, DRE/source authority, external delivery/calendar sync
   or webhook behavior, workflow completion, or any legal/compliance completion
   claim.
+
+- Current `982cc9a` keeps Workflows/Legal/Compliance/UX/API/CI **PARTIAL**:
+  the core rule pack now compares `Entity.statute.convocation_notice_days`
+  against recorded `Act.convening` evidence and emits advisory warnings for
+  missing/unverifiable evidence or recorded/computed notice antecedence below
+  the configured day count, while suppressing the advisory when dispatch or
+  recorded antecedence evidence satisfies the configured period. The API
+  dashboard now surfaces open-act reminders with
+  `source_rule=act-convening-notice`, `notice_due_date`, `meeting_date`, dispatch/antecedence
+  params, `open_act_convening_notice` routing, localized
+  `notifications.reminder.act.conveningNotice.*` copy, empty `law_refs`, and
+  explicit no-claim params for local-advisory-only, legal sufficiency, external
+  delivery, and workflow completion. Web dashboard and notification-center
+  tests pin localized act routing and suppress raw backend fallback copy; the
+  shipped locales carry the new advisory strings. Focused evidence passed:
+  `cargo test -p chancela-core --locked convocation_notice`, `cargo test -p
+  chancela-api --locked convocation_notice`, `npm run test --workspace apps/web
+  -- DashboardPage.test.tsx notifications.test.ts`, `npm run build --workspace
+  apps/web`, `cargo fmt --check`, and `git diff --check`. This is local
+  WFL/legal-calendar advisory depth only: it adds no legal-authority,
+  legal-sufficiency, provider, certification, external-delivery,
+  workflow-completion, DRE/source-authority, registry-acceptance, legal-effect,
+  or legal/compliance completion claim. Residual limitation: the dashboard
+  reminder needs `meeting_date` to compute `notice_due_date`, and core still
+  emits the advisory for missing or unverifiable convening evidence.
 
 - Recent `7ab3ab7` keeps Legal/Compliance/UX/API/CI **PARTIAL**:
   automated-review law references now flow from API/dashboard and law-corpus

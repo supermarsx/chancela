@@ -10421,12 +10421,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `711c7a4`",
+    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `982cc9a`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `711c7a4`",
+    "Focused Gate Snapshot Through `982cc9a`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -11066,7 +11066,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `711c7a4`",
+    "Current checkpoint metadata/static checks through `982cc9a`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -11601,7 +11601,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `711c7a4cfd240d28bde98b1d8b4aa85fbb5413f7`",
+    "implementation snapshot `982cc9acb944b54072d87e3dbaa8e879dae42bce`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -12078,6 +12078,101 @@ function assertCheckpointMap() {
     "apps/web/src/i18n/i18n.test.ts",
     "keeps condominium annual reminder titles localized",
     "i18n condominium annual reminder title test marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Current `982cc9a` keeps Workflows/Legal/Compliance/UX/API/CI **PARTIAL**",
+    "spec coverage convocation-notice advisory checkpoint marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "This is local WFL/legal-calendar advisory depth only",
+    "spec coverage convocation-notice local advisory caveat marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "dashboard reminder needs `meeting_date` to compute `notice_due_date`",
+    "spec coverage convocation-notice meeting-date limitation marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Current `982cc9a` convocation-notice advisory checks",
+    "CI/E2E hardening plan convocation-notice advisory marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "dashboard reminder emission needs `meeting_date` to compute `notice_due_date`",
+    "CI/E2E hardening plan convocation-notice limitation marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "Convocation-notice advisory markers pin the local statute/convening evidence\nslice only",
+    "CI checkpoints convocation-notice advisory marker",
+  );
+  assertFileContains(
+    "crates/chancela-core/src/rules.rs",
+    "statute_convocation_notice_missing_or_unverifiable_evidence_warns",
+    "core convocation-notice missing evidence warning coverage",
+  );
+  assertFileContains(
+    "crates/chancela-core/src/rules.rs",
+    "statute_convocation_notice_sufficient_dispatch_evidence_passes",
+    "core convocation-notice sufficient evidence suppression coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/dashboard.rs",
+    "convocation_notice_missing_evidence_surfaces_local_advisory_reminder",
+    "API dashboard convocation-notice missing evidence reminder coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/dashboard.rs",
+    "convocation_notice_sufficient_evidence_is_suppressed",
+    "API dashboard convocation-notice sufficient evidence suppression coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/dashboard.rs",
+    "source_rule: \"act-convening-notice\".to_owned()",
+    "API dashboard convocation-notice source-rule marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/dashboard.rs",
+    "(\"notice_due_date\", notice_due_date_text)",
+    "API dashboard convocation-notice due-date param marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/dashboard.rs",
+    "(\"legal_sufficiency_claimed\", \"false\".to_owned())",
+    "API dashboard convocation-notice legal-sufficiency no-claim marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/dashboard.rs",
+    "\"open_act_convening_notice\"",
+    "API dashboard convocation-notice action marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/dashboard/DashboardPage.tsx",
+    "'act-convening-notice': {\n    title: 'notifications.reminder.act.conveningNotice.title'",
+    "dashboard convocation-notice localized copy marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/notifications/notifications.ts",
+    "'act-convening-notice': {\n    title: 'notifications.reminder.act.conveningNotice.title'",
+    "notification-center convocation-notice localized copy marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/dashboard/DashboardPage.test.tsx",
+    "renders convocation-notice act reminders with local advisory copy and act routing",
+    "dashboard convocation-notice advisory routing test marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/notifications/notifications.test.ts",
+    "renders convocation-notice reminders as local advisory act work",
+    "notification-center convocation-notice advisory test marker",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/locales/en-US.ts",
+    "Local advisory only; no legal sufficiency, external delivery, or workflow completion is claimed.",
+    "en-US convocation-notice no-claim copy marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
