@@ -421,7 +421,7 @@ dependencies = [
 
 [[package]]
 name = "chancela-api"
-version = "0.1.0"
+version = "26.1.0"
 dependencies = [
  "argon2",
  "axum",
@@ -477,7 +477,7 @@ dependencies = [
 
 [[package]]
 name = "chancela-apikey"
-version = "0.1.0"
+version = "26.1.0"
 dependencies = [
  "chancela-authz",
  "rand_core 0.6.4",
@@ -490,7 +490,7 @@ dependencies = [
 
 [[package]]
 name = "chancela-archive"
-version = "0.1.0"
+version = "26.1.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -503,7 +503,7 @@ dependencies = [
 
 [[package]]
 name = "chancela-authz"
-version = "0.1.0"
+version = "26.1.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -513,7 +513,7 @@ dependencies = [
 
 [[package]]
 name = "chancela-cades"
-version = "0.1.0"
+version = "26.1.0"
 dependencies = [
  "cms",
  "der",
@@ -531,7 +531,7 @@ dependencies = [
 
 [[package]]
 name = "chancela-cae"
-version = "0.1.0"
+version = "26.1.0"
 dependencies = [
  "lopdf",
  "reqwest",
@@ -544,7 +544,7 @@ dependencies = [
 
 [[package]]
 name = "chancela-cli"
-version = "0.1.0"
+version = "26.1.0"
 dependencies = [
  "chancela-api",
  "chancela-authz",
@@ -560,7 +560,7 @@ dependencies = [
 
 [[package]]
 name = "chancela-cmd"
-version = "0.1.0"
+version = "26.1.0"
 dependencies = [
  "base64",
  "chancela-cades",
@@ -579,7 +579,7 @@ dependencies = [
 
 [[package]]
 name = "chancela-core"
-version = "0.1.0"
+version = "26.1.0"
 dependencies = [
  "chancela-ledger",
  "serde",
@@ -592,7 +592,7 @@ dependencies = [
 
 [[package]]
 name = "chancela-csc"
-version = "0.1.0"
+version = "26.1.0"
 dependencies = [
  "base64",
  "chancela-cades",
@@ -615,7 +615,7 @@ dependencies = [
 
 [[package]]
 name = "chancela-doc"
-version = "0.1.0"
+version = "26.1.0"
 dependencies = [
  "chancela-cades",
  "chancela-core",
@@ -632,7 +632,7 @@ dependencies = [
 
 [[package]]
 name = "chancela-law"
-version = "0.1.0"
+version = "26.1.0"
 dependencies = [
  "reqwest",
  "serde",
@@ -643,7 +643,7 @@ dependencies = [
 
 [[package]]
 name = "chancela-ledger"
-version = "0.1.0"
+version = "26.1.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -655,7 +655,7 @@ dependencies = [
 
 [[package]]
 name = "chancela-mcp"
-version = "0.1.0"
+version = "26.1.0"
 dependencies = [
  "axum",
  "chancela-api",
@@ -670,7 +670,7 @@ dependencies = [
 
 [[package]]
 name = "chancela-pades"
-version = "0.1.0"
+version = "26.1.0"
 dependencies = [
  "chancela-cades",
  "chancela-tsa",
@@ -691,7 +691,7 @@ dependencies = [
 
 [[package]]
 name = "chancela-registry"
-version = "0.1.0"
+version = "26.1.0"
 dependencies = [
  "reqwest",
  "scraper",
@@ -704,7 +704,7 @@ dependencies = [
 
 [[package]]
 name = "chancela-scap"
-version = "0.1.0"
+version = "26.1.0"
 dependencies = [
  "base64",
  "chancela-cades",
@@ -719,7 +719,7 @@ dependencies = [
 
 [[package]]
 name = "chancela-server"
-version = "0.1.0"
+version = "26.1.0"
 dependencies = [
  "axum",
  "chancela-api",
@@ -737,7 +737,7 @@ dependencies = [
 
 [[package]]
 name = "chancela-signing"
-version = "0.1.0"
+version = "26.1.0"
 dependencies = [
  "base64",
  "chancela-cades",
@@ -773,7 +773,7 @@ dependencies = [
 
 [[package]]
 name = "chancela-smartcard"
-version = "0.1.0"
+version = "26.1.0"
 dependencies = [
  "chancela-cades",
  "cryptoki",
@@ -788,7 +788,7 @@ dependencies = [
 
 [[package]]
 name = "chancela-store"
-version = "0.1.0"
+version = "26.1.0"
 dependencies = [
  "argon2",
  "chacha20poly1305",
@@ -811,7 +811,7 @@ dependencies = [
 
 [[package]]
 name = "chancela-templates"
-version = "0.1.0"
+version = "26.1.0"
 dependencies = [
  "chancela-core",
  "minijinja",
@@ -822,7 +822,7 @@ dependencies = [
 
 [[package]]
 name = "chancela-tsa"
-version = "0.1.0"
+version = "26.1.0"
 dependencies = [
  "cms",
  "der",
@@ -843,7 +843,7 @@ dependencies = [
 
 [[package]]
 name = "chancela-tsl"
-version = "0.1.0"
+version = "26.1.0"
 dependencies = [
  "der",
  "p256",
@@ -862,7 +862,7 @@ dependencies = [
 
 [[package]]
 name = "chancela-xades"
-version = "0.1.0"
+version = "26.1.0"
 dependencies = [
  "base64",
  "chancela-cades",

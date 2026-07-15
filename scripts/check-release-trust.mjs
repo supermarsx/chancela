@@ -547,9 +547,9 @@ function validateDockerStatus(status, { expectedMode }) {
 function devPackageFixture() {
   return {
     summary: {
-      package: "chancela-0.1.0-linux-x64.tar.gz",
+      package: "chancela-26.1.0-linux-x64.tar.gz",
       packageSha256: "a".repeat(64),
-      version: "0.1.0",
+      version: "26.1.0",
       platform: "linux",
       arch: "x64",
       source: {
@@ -574,7 +574,7 @@ function devPackageFixture() {
       },
     },
     manifest: {
-      version: "0.1.0",
+      version: "26.1.0",
       platform: "linux",
       arch: "x64",
       gitCommit: "b".repeat(40),
@@ -1130,7 +1130,7 @@ function runSelfTest() {
     });
 
     const packageNameMismatch = structuredClone(packageBoundSummary);
-    packageNameMismatch.package = "chancela-0.1.0-windows-x64.tar.gz";
+    packageNameMismatch.package = "chancela-26.1.0-windows-x64.tar.gz";
     expectFail(
       () =>
         validatePackageSummary(packageNameMismatch, {
