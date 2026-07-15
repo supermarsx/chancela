@@ -128,15 +128,16 @@ pub(crate) async fn persist_users(state: &AppState) -> Result<(), ApiError> {
         let Some(store) = state.store.as_ref() else {
             return Ok(());
         };
-        let rows = {
-            let users = state.users.read().await;
-            let mut rows = Vec::with_capacity(users.len());
-            for user in users.values() {
-                let json = serde_json::to_string(user).map_err(|e| serialize_error("user", e))?;
-                rows.push((user.id.0.to_string(), json));
-            }
-            rows
-        };
+        let users = state.users.read().await;
+        let mut rows = Vec::with_capacity(users.len());
+        for user in users.values() {
+            let json = serde_json::to_string(user).map_err(|e| serialize_error("user", e))?;
+            rows.push((user.id.0.to_string(), json));
+        }
+        // Keep the sidecar read lock held until the authoritative DB snapshot has been
+        // reconciled. This preserves the file-backed path's snapshot-to-durable-write
+        // exclusion: a concurrent writer cannot mutate auth state and persist it while
+        // this older whole-table snapshot is still able to commit last.
         reconcile_documents(store, DocumentTable::Users, rows)
             .map_err(|e| AppState::map_store_write_error("failed to persist users", e))?;
         return Ok(());
@@ -155,15 +156,15 @@ pub(crate) async fn persist_roles(state: &AppState) -> Result<(), ApiError> {
         let Some(store) = state.store.as_ref() else {
             return Ok(());
         };
-        let rows = {
-            let roles = state.roles.read().await;
-            let mut rows = Vec::with_capacity(roles.len());
-            for role in roles.iter() {
-                let json = serde_json::to_string(role).map_err(|e| serialize_error("role", e))?;
-                rows.push((role.id.0.to_string(), json));
-            }
-            rows
-        };
+        let roles = state.roles.read().await;
+        let mut rows = Vec::with_capacity(roles.len());
+        for role in roles.iter() {
+            let json = serde_json::to_string(role).map_err(|e| serialize_error("role", e))?;
+            rows.push((role.id.0.to_string(), json));
+        }
+        // Keep the sidecar read lock held until the authoritative DB snapshot has been
+        // reconciled so stale whole-table role snapshots cannot commit after newer
+        // role mutations.
         reconcile_documents(store, DocumentTable::Roles, rows)
             .map_err(|e| AppState::map_store_write_error("failed to persist roles", e))?;
         return Ok(());
@@ -183,16 +184,16 @@ pub(crate) async fn persist_delegations(state: &AppState) -> Result<(), ApiError
         let Some(store) = state.store.as_ref() else {
             return Ok(());
         };
-        let rows = {
-            let delegations = state.delegations.read().await;
-            let mut rows = Vec::with_capacity(delegations.len());
-            for delegation in delegations.values() {
-                let json = serde_json::to_string(delegation)
-                    .map_err(|e| serialize_error("delegation", e))?;
-                rows.push((delegation.id.0.to_string(), json));
-            }
-            rows
-        };
+        let delegations = state.delegations.read().await;
+        let mut rows = Vec::with_capacity(delegations.len());
+        for delegation in delegations.values() {
+            let json =
+                serde_json::to_string(delegation).map_err(|e| serialize_error("delegation", e))?;
+            rows.push((delegation.id.0.to_string(), json));
+        }
+        // Keep the sidecar read lock held until the authoritative DB snapshot has been
+        // reconciled so stale whole-table delegation snapshots cannot commit after
+        // newer delegation mutations.
         reconcile_documents(store, DocumentTable::Delegations, rows)
             .map_err(|e| AppState::map_store_write_error("failed to persist delegations", e))?;
         return Ok(());
