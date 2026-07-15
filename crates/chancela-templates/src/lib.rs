@@ -32,6 +32,7 @@ use chancela_core::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+pub mod authoring;
 pub mod catalog_metadata_lint;
 pub mod thresholds;
 pub use thresholds::{
@@ -612,6 +613,20 @@ fn build_env() -> minijinja::Environment<'static> {
     // on an unknown id (typo-safe). See the `thresholds` module.
     env.add_function("threshold", thresholds::threshold_function);
     env
+}
+
+/// Compile-check a single author template string under the author-facing [`build_env`] (the
+/// `long_date`/`channel_label`/`role_label` filters and the `threshold` function are in scope).
+///
+/// This *parses/compiles* the source only — it never evaluates it, so it neither reads a record
+/// context nor resolves any `threshold("<id>")` id (unknown-threshold detection is a separate pass
+/// over [`scan_threshold_references`]). Returns the minijinja error text on a syntax error. Used by
+/// [`authoring::validate_user_template`] to reject a template that would not compile at render time.
+pub(crate) fn compile_template_str(src: &str) -> Result<(), String> {
+    build_env()
+        .template_from_str(src)
+        .map(|_| ())
+        .map_err(|e| format!("{e:#}"))
 }
 
 fn render_block(
