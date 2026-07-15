@@ -9480,6 +9480,41 @@ function assertCheckpointMap() {
     "act working-copy export save prompt coverage",
   );
   assertFileContains(
+    "crates/chancela-api/src/dashboard.rs",
+    "fn law_verification_wire(v: Verification) -> &'static str",
+    "dashboard law verification wire helper marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/dashboard.rs",
+    "review_method: article.source.review_method.clone()",
+    "dashboard automated-review method propagation marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/dto.rs",
+    "pub review_method: Option<String>",
+    "dashboard law reference review method DTO marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/law.rs",
+    "pub automated_review_count: usize",
+    "law diploma automated-review count marker",
+  );
+  assertFileContains(
+    "contracts/dashboard.json",
+    "\"verification\": \"automated_review\"",
+    "dashboard contract automated-review law ref marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "assert_eq!(body[\"counts\"][\"automated_review\"], 39);",
+    "API law corpus automated-review count coverage marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/dashboard.rs",
+    "alert.law_refs[0].review_method.as_deref()",
+    "dashboard law ref review method coverage marker",
+  );
+  assertFileContains(
     "apps/web/src/features/ledger/LedgerPage.test.tsx",
     "exports the selected audit format with the current filters through the save helper",
     "ledger archive filtered export format coverage",
@@ -9500,9 +9535,29 @@ function assertCheckpointMap() {
     "ledger archive filter and clear-control coverage",
   );
   assertFileContains(
+    "apps/web/src/features/ledger/LedgerPage.test.tsx",
+    "expect(advanced.open).toBe(false);",
+    "ledger archive advanced filters collapsed by default coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/ledger/LedgerPage.test.tsx",
+    "expect(within(advanced).getByLabelText('Filtros ativos: 8')).toBeTruthy();",
+    "ledger archive advanced filter active count coverage",
+  );
+  assertFileContains(
     "apps/web/src/features/ledger/LedgerPage.tsx",
     "icon={<Icon.FilterClear />}",
     "ledger archive filter-clear icon implementation marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/ledger/LedgerPage.tsx",
+    "className=\"ledger-advanced-filters__summary\"",
+    "ledger archive advanced filter summary marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/ledger/LedgerPage.tsx",
+    "className=\"ledger-advanced-filters__count\"",
+    "ledger archive advanced filter count marker",
   );
   assertFileContains(
     "apps/web/src/ui/icons.tsx",
@@ -9518,6 +9573,11 @@ function assertCheckpointMap() {
     "apps/web/src/features/ledger/LedgerPage.test.tsx",
     "expect(iconPaths).not.toContain('M6 6l12 12M18 6 6 18');",
     "ledger archive filter-clear no-close-icon regression coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/ledger/LedgerPage.test.tsx",
+    "ledger-advanced-filters__summary",
+    "ledger archive advanced summary responsive CSS coverage",
   );
   assertFileContains(
     "apps/web/src/features/ledger/LedgerPage.test.tsx",
@@ -9650,6 +9710,21 @@ function assertCheckpointMap() {
     "CI checkpoints ledger archive bounded export marker",
   );
   assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "collapsed advanced-filter summary plus active-filter count badge markers",
+    "CI checkpoints ledger archive active-filter count marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "automated-review dashboard law-reference contract markers",
+    "CI checkpoints automated-review dashboard contract marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Current `3715089` automated-review dashboard contract checks",
+    "CI/E2E hardening automated-review dashboard checks marker",
+  );
+  assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
     "apps/web/e2e/ledger-archive-boundedness.spec.ts",
     "CI/E2E hardening ledger archive browser proof marker",
@@ -9661,13 +9736,13 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current working-tree archive filter reset-icon checks",
-    "CI/E2E hardening archive filter reset icon checks marker",
+    "Current `baad7b4` archive filter refinement checks",
+    "CI/E2E hardening archive filter refinement checks marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "`Icon.FilterClear` funnel/clear SVG paths",
-    "CI/E2E hardening archive filter reset icon path marker",
+    "compact\n  active-filter count badge in the advanced-filter summary",
+    "CI/E2E hardening archive active-filter count marker",
   );
   assertFileContains(
     "apps/web/src/features/recovery/LivrosIntegridadeSection.test.tsx",
@@ -10156,12 +10231,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `9402174`",
+    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `3715089`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `9402174`",
+    "Focused Gate Snapshot Through `3715089`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -10801,7 +10876,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `9402174`",
+    "Current checkpoint metadata/static checks through `3715089`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -11331,13 +11406,33 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `94021741477dd04dbfc89d4479c75daedb5f3e94`",
+    "implementation snapshot `37150897adcd6ad72d1847d4d464a9f0ad45697e`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Current `9402174` keeps Legal/Compliance, Template Catalog, and CI",
-    "spec coverage automated-review law corpus current checkpoint marker",
+    "Current `3715089` keeps Legal/Compliance/UX/API/CI **PARTIAL**",
+    "spec coverage automated-review dashboard current checkpoint marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "dashboard contract fixture now shows automated-review\n  refs such as `dl-76-a-2006:1` and `csc:399`",
+    "spec coverage automated-review dashboard fixture marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Recent `baad7b4` keeps Data/Archive/UX/CI **PARTIAL**",
+    "spec coverage archive filter refinement current checkpoint marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "advanced-filter summary now exposes a compact active-filter count badge",
+    "spec coverage archive active-filter count marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Recent `9402174` keeps Legal/Compliance, Template Catalog, and CI",
+    "spec coverage automated-review law corpus recent checkpoint marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",

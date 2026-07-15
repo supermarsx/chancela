@@ -1,8 +1,10 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `9402174`,
-including coverage notes for automated-review law corpus evidence, MCP workflow
+and implementation snapshot `3715089`,
+including coverage notes for automated-review dashboard contract surfacing,
+archive active-filter count refinement,
+automated-review law corpus evidence, MCP workflow
 provenance local JSON/text summary,
 key-custody readiness UI/contract surfacing,
 data key-rotation receipt history,
@@ -713,6 +715,7 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
   bare-array compatible.
 - Ledger archive list/export share server-backed chain, scope/search, kind,
   actor, date-range, and limit filters. The web UI keeps Livro-style filters,
+  a collapsed advanced-filter summary with a compact active-filter count badge,
   an icon-only accessible clear-filters control backed by the shared
   `FilterClear` funnel/clear glyph, and export choices for canonical PDF/A plus
   JSON/TXT/CSV/HTML audit/interchange formats. Only PDF/A is the canonical
@@ -882,11 +885,11 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `9402174`
+## Focused Gate Snapshot Through `3715089`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08` and checkpoint-promoted on 2026-07-15 for
-current implementation head `9402174`. This is not an exhaustive current
+current implementation head `3715089`. This is not an exhaustive current
 green-run claim; browser, Docker, desktop, package signing/notarization, image
 signing/attestation, and live-provider limits above still apply.
 
@@ -1737,16 +1740,22 @@ settingsDefaults.test.ts contracts.test.ts`.
   connector compatibility, legal validity, DGLAB/archive certification,
   signing/notarization/attestation, deployment readiness, or external-system
   readiness is implemented or proven.
-- Current working-tree archive filter reset-icon checks: focused
+- Current `baad7b4` archive filter refinement checks: focused
   `npm run test --workspace apps/web -- LedgerPage.test.tsx` coverage pins the
   Arquivo icon-only clear-filters button with tooltip/accessibility label, empty
   text content, disabled state, `Icon.FilterClear` funnel/clear SVG paths, and
-  absence of the generic close-icon paths. `LedgerPage.tsx` now uses
-  `Icon.FilterClear`, and `icons.tsx` defines the shared single-stroke glyph.
-  This remains archive UI clarity/accessibility regression coverage only: no
-  ledger query semantics, export behavior, evidence preservation, archive
-  certification, legal acceptance, signature validation, ledger mutation, or
-  production custody claim is implemented or proven.
+  absence of the generic close-icon paths. It also pins collapsed
+  `details.ledger-advanced-filters.filter-advanced` by default, the compact
+  active-filter count badge in the advanced-filter summary once filters are
+  active, and responsive summary/body CSS. `LedgerPage.tsx` continues to use
+  `Icon.FilterClear`, the export dropdown remains `pdfa`/`txt`/`json`/`csv`/
+  `html`, server-backed filters and lazy newest-first paging remain intact, and
+  archive-document export remains bounded to the current filtered first page
+  with no `before_seq`. This remains archive UI clarity/accessibility and
+  bounded current-page export regression coverage only: no all-record export,
+  non-PDF/A evidence preservation, archive certification, legal acceptance,
+  signature validation, ledger mutation, or production custody claim is
+  implemented or proven.
 - Current working-tree workflow reminder policy checks: focused `cargo test -p
   chancela-api --locked reminder_` coverage pins `workflow.reminders` defaults
   (enabled, dashboard limit 5, due-soon 45 days, attendance lookahead 45 days,
@@ -1850,6 +1859,16 @@ settingsDefaults.test.ts contracts.test.ts`.
   upload path/schema exposure. This is discoverability and redacted summary
   access only, not raw report download, provider execution, legal validation,
   trust validation, or certification.
+- Current `3715089` automated-review dashboard contract checks: focused API and
+  contract markers pin `DashboardLawReference.review_method` / `review_note`,
+  `law_verification_wire` emitting the `automated_review` serde wire value,
+  `LawSourceView` review metadata, per-diploma `automated_review_count`, and
+  dashboard fixture law refs such as `dl-76-a-2006:1` and `csc:399` carrying
+  complete source URLs plus `automated-capture` caveats. This is honest
+  automated-review provenance surfacing only: no human legal approval,
+  Pending-to-Verified promotion, DRE authority verification, legal correctness,
+  dashboard legal guidance completion, or legal validity/effect claim is
+  implemented or proven.
 - Current working-tree password-required auth checks: focused static markers pin
   `create_user_requires_password_and_persists_hardened_hash`,
   `create_user_rejects_missing_or_weak_password_with_policy_errors`,
@@ -1891,14 +1910,14 @@ settingsDefaults.test.ts contracts.test.ts`.
   full RBAC/delegation-policy completion, tenant authorization proof,
   legal-capacity verification, broad security certification, or spec
   completion.
-- Current checkpoint metadata/static checks through `9402174`
+- Current checkpoint metadata/static checks through `3715089`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
   `git diff --check -- SPEC-COVERAGE.md docs\CI-E2E-HARDENING-PLAN.md
   docs\CI-CHECKPOINTS.md scripts\checkpoint-recent-landed.mjs`.
   These pin the spec snapshot,
-  hardening-plan head, MCP meeting metadata extraction review resource, PDF table-structure semantics, export save-prompt
+  hardening-plan head, automated-review dashboard contract surfacing, Arquivo advanced-filter count badge, MCP meeting metadata extraction review resource, PDF table-structure semantics, export save-prompt
   routing, dashboard dates tab, notification footer icon-only action, and
   clarified platform operations UI, user/signatory email capture, and compact
   Data Management cleanup controls, platform-log cleanup target/row markers,

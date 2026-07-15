@@ -608,7 +608,9 @@ markers plus BookDetail JSON-save markers,
 release clean-source provenance gate markers, seeded role drift API/UI markers,
 archive readability/ZK caveat markers, template `FamilyChannelMismatch` markers,
 MCP trust-catalog structured-filter and redacted external-validator summary
-markers, MCP workflow provenance review prompt/resource plus deterministic
+markers, automated-review dashboard law-reference contract markers for
+`automated_review`, `review_method`, `review_note`, and
+`automated_review_count`, MCP workflow provenance review prompt/resource plus deterministic
 local workflow/human-review/evidence-marker summary/no-raw-echo/no-call/no-claim
 markers, MCP draft-vs-signed comparison review prompt/resource plus deterministic
 local comparison report/no-call/no-claim markers, dashboard guest
@@ -632,6 +634,7 @@ and load-more coverage, `Store::ledger_events_page` persisted-pager markers,
 API after-reload/memory-clear store-pager coverage, shared list/export search
 (`q`), chain/scope filter, and limit normalization markers, numeric
 `next_cursor` typing, Livro-style filters, icon-only clear-control markers,
+collapsed advanced-filter summary plus active-filter count badge markers,
 JSON/TXT/CSV/HTML export-format markers, and canonical-only PDF/A evidence
 boundaries, plus route-stubbed `/arquivo` browser proof in
 `apps/web/e2e/ledger-archive-boundedness.spec.ts` for bounded first-page rows,

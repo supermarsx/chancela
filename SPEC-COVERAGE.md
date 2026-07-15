@@ -1,7 +1,8 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-15 from current implementation snapshot `94021741477dd04dbfc89d4479c75daedb5f3e94`,
-with committed evidence refreshes for the recently landed automated-review law
+*Updated 2026-07-15 from current implementation snapshot `37150897adcd6ad72d1847d4d464a9f0ad45697e`,
+with committed evidence refreshes for the recently landed automated-review
+dashboard contract surface, archive filter refinement, automated-review law
 corpus tier, MCP workflow provenance local JSON/text summary, key-custody
 readiness UI/contract surfacing, data key-rotation receipt history, and the earlier Signatures & Trust
 provider-credential, stored runtime credential resolution, stored PKCS#12,
@@ -182,7 +183,9 @@ and `b86adb3` deterministic local template law-reference audit coverage against
 the embedded corpus, followed by `3a42f02` bounded platform-log cleanup target
 coverage, `7f9930a` local-only remote provider readiness manifest coverage,
 `eb1a846` MCP workflow provenance review over caller-supplied local JSON or
-text evidence only, and `9402174` automated-review law-corpus vendoring.
+text evidence only, `3715089` automated-review dashboard contract surfacing,
+`baad7b4` archive filter refinement, and `9402174` automated-review law-corpus
+vendoring.
 Earlier coverage text remains prior snapshot context. All top-level spec areas remain **PARTIAL**.
 This is an implementation and test coverage snapshot, not a legal certification,
 not production CMD approval, not DRE verification promotion, not full PDF/UA
@@ -213,7 +216,45 @@ blockers.
 
 Implementation checkpoints covered here:
 
-- Current `9402174` keeps Legal/Compliance, Template Catalog, and CI
+- Current `3715089` keeps Legal/Compliance/UX/API/CI **PARTIAL**: dashboard
+  law-reference payloads now preserve the law corpus' third authenticity tier
+  instead of flattening automated-review articles into Pending. The API emits
+  the stable `automated_review` wire value through `DashboardLawReference`,
+  carries `review_method` and `review_note` only for automated-review refs,
+  keeps Verified/Pending/Missing refs without that metadata, and exposes
+  `LawSourceView.review_method` / `review_note` plus per-diploma
+  `automated_review_count` without promoting automated captures to
+  human-`Verified`. The dashboard contract fixture now shows automated-review
+  refs such as `dl-76-a-2006:1` and `csc:399` with complete source URLs,
+  `automated-capture` method metadata, and the human-review caveat. Focused
+  API markers pin 153 Verified / 39 automated-review / 1 Pending corpus counts,
+  complete-source automated-review article bodies, Pending body suppression,
+  citation resolver tier preservation, and dashboard law-ref method/note
+  propagation. This is honest provenance surfacing for already vendored law
+  text only: it does not certify legal correctness, add human legal approval,
+  verify DRE source authority, complete the law/template audit, complete
+  dashboard legal guidance, or make any legal validity/effect claim.
+
+- Recent `baad7b4` keeps Data/Archive/UX/CI **PARTIAL**: the general
+  Arquivo filters remain server-backed and collapsed by default, while the
+  advanced-filter summary now exposes a compact active-filter count badge only
+  when filters are active. The slice preserves newest-first lazy paging through
+  `GET /v1/ledger/events/page` with default `limit=100`, `order=desc`, and
+  older pages via `before_seq`; preserves the export dropdown for `pdfa`, `txt`,
+  `json`, `csv`, and `html`; keeps the icon-only clear-filters control; and
+  keeps backend archive export bounded to the current filtered first page with
+  `before_seq` rejected/omitted. Focused web coverage pins the collapsed
+  `details.ledger-advanced-filters.filter-advanced`, active count `8` badge,
+  responsive summary/body CSS, filtered export request, and no-clear-icon
+  regression; the companion Data Management unit slice still passes. Backend
+  archive/pager/store checks passed separately, and the server E2E path compiled
+  while remaining ignored/feature-gated. This is archive filter ergonomics and
+  bounded current-page browsing/export evidence only: it does not claim
+  all-record export, preserved evidence for non-PDF/A formats, archive
+  certification, DGLAB/legal archive acceptance, signature validation, ledger
+  mutation, production custody, or full Data/Archive/UX/CI completion.
+
+- Recent `9402174` keeps Legal/Compliance, Template Catalog, and CI
   **PARTIAL**: the law corpus now distinguishes human-`Verified`,
   `AutomatedReview`, and `Pending` articles, and vendors 39 of 40 previously
   Pending DRE-sourced articles with complete source metadata and non-empty body
