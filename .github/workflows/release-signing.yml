@@ -1,0 +1,474 @@
+name: Release signing (opt-in)
+
+# Opt-in, secret-gated signing pipeline. This workflow is INERT by default: with
+# no signing identity configured it pushes nothing, signs nothing, and records an
+# honest "unsigned / not performed" status for every artifact. It performs real
+# signing ONLY when the operator supplies the credentials documented in
+# docs/release-signing.md, and the recorded releaseTrust reflects exactly what ran.
+#
+# It is deliberately a SEPARATE workflow from ci.yml / release.yml: those pipelines
+# are guarded to always record unsigned-dev / local-ci and must never carry signing
+# commands. This workflow is the single place where signing is activated.
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: >-
+          Existing GitHub release tag (e.g. v26.1.0) whose desktop/binary artifacts
+          should be downloaded and code-signed/notarized. Leave blank to skip
+          desktop artifact signing.
+        required: false
+        type: string
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-signing-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Container image signing + provenance/SBOM attestation with cosign.
+  #
+  # Enabled only when a registry repository is configured (RELEASE_IMAGE_REPOSITORY)
+  # AND either keyless OIDC is opted in (RELEASE_SIGNING_COSIGN_KEYLESS=true) or a
+  # key pair secret is present (COSIGN_PRIVATE_KEY). Otherwise every step below is
+  # skipped and an honest unsigned/not_pushed/not_attested status is recorded.
+  # ---------------------------------------------------------------------------
+  container:
+    name: Container image signing + attestation
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write # push image + signatures to GHCR using GITHUB_TOKEN
+      id-token: write # cosign keyless OIDC identity token (Fulcio); unused unless keyless is enabled
+    env:
+      STATUS_FILE: dist/release-signing/container-signing-status.json
+      IMAGE_SBOM: dist/release-signing/chancela-server-image-sbom.cdx.json
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Resolve container signing configuration
+        id: cfg
+        env:
+          IMAGE_REPOSITORY: ${{ vars.RELEASE_IMAGE_REPOSITORY }}
+          KEYLESS: ${{ vars.RELEASE_SIGNING_COSIGN_KEYLESS }}
+          HAVE_COSIGN_KEY: ${{ secrets.COSIGN_PRIVATE_KEY != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          enabled=false
+          mode=none
+          registry_host=""
+          if [ -n "${IMAGE_REPOSITORY:-}" ]; then
+            registry_host="${IMAGE_REPOSITORY%%/*}"
+            if [ "${KEYLESS:-}" = "true" ]; then
+              enabled=true
+              mode=keyless
+            elif [ "${HAVE_COSIGN_KEY:-}" = "true" ]; then
+              enabled=true
+              mode=key
+            fi
+          fi
+          {
+            echo "enabled=$enabled"
+            echo "mode=$mode"
+            echo "repository=${IMAGE_REPOSITORY:-}"
+            echo "registry_host=$registry_host"
+            echo "run_url=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo "identity=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/.github/workflows/release-signing.yml@${GITHUB_REF}"
+          } >> "$GITHUB_OUTPUT"
+          if [ "$enabled" != "true" ]; then
+            echo "Container signing not configured: set repository/actions variable RELEASE_IMAGE_REPOSITORY and RELEASE_SIGNING_COSIGN_KEYLESS=true (keyless), or add the COSIGN_PRIVATE_KEY secret (key-based). The image will not be pushed or signed." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Container signing enabled ($mode) for ${IMAGE_REPOSITORY}." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Set up Buildx
+        if: steps.cfg.outputs.enabled == 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to container registry
+        if: steps.cfg.outputs.enabled == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ steps.cfg.outputs.registry_host }}
+          username: ${{ secrets.REGISTRY_USERNAME || github.actor }}
+          password: ${{ secrets.REGISTRY_PASSWORD || secrets.GITHUB_TOKEN }}
+
+      - name: Build and push server image (with provenance + SBOM)
+        if: steps.cfg.outputs.enabled == 'true'
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.server
+          push: true
+          provenance: true
+          sbom: true
+          tags: |
+            ${{ steps.cfg.outputs.repository }}:${{ github.ref_name }}
+            ${{ steps.cfg.outputs.repository }}:sha-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+
+      - name: Install cosign
+        if: steps.cfg.outputs.enabled == 'true'
+        uses: sigstore/cosign-installer@v3
+
+      - name: Generate image SBOM (syft, CycloneDX)
+        if: steps.cfg.outputs.enabled == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$(dirname "$IMAGE_SBOM")"
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$PWD/$(dirname "$IMAGE_SBOM"):/out" \
+            anchore/syft:v1.9.0 \
+            "registry:${{ steps.cfg.outputs.repository }}@${{ steps.build.outputs.digest }}" \
+            -o "cyclonedx-json=/out/$(basename "$IMAGE_SBOM")"
+
+      - name: Sign image (cosign keyless / OIDC)
+        if: steps.cfg.outputs.enabled == 'true' && steps.cfg.outputs.mode == 'keyless'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cosign sign --yes "${{ steps.cfg.outputs.repository }}@${{ steps.build.outputs.digest }}"
+
+      - name: Sign image (cosign key-based)
+        if: steps.cfg.outputs.enabled == 'true' && steps.cfg.outputs.mode == 'key'
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cosign sign --yes --key env://COSIGN_PRIVATE_KEY \
+            "${{ steps.cfg.outputs.repository }}@${{ steps.build.outputs.digest }}"
+
+      - name: Attest image SBOM (cosign keyless / OIDC)
+        if: steps.cfg.outputs.enabled == 'true' && steps.cfg.outputs.mode == 'keyless'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cosign attest --yes --type cyclonedx --predicate "$IMAGE_SBOM" \
+            "${{ steps.cfg.outputs.repository }}@${{ steps.build.outputs.digest }}"
+
+      - name: Attest image SBOM (cosign key-based)
+        if: steps.cfg.outputs.enabled == 'true' && steps.cfg.outputs.mode == 'key'
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cosign attest --yes --type cyclonedx --key env://COSIGN_PRIVATE_KEY \
+            --predicate "$IMAGE_SBOM" \
+            "${{ steps.cfg.outputs.repository }}@${{ steps.build.outputs.digest }}"
+
+      - name: Record signed container status
+        if: steps.cfg.outputs.enabled == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/release-signing-status.mjs container \
+            --output "$STATUS_FILE" \
+            --image "${{ steps.cfg.outputs.repository }}@${{ steps.build.outputs.digest }}" \
+            --pushed --signed --attested \
+            --digest "${{ steps.build.outputs.digest }}" \
+            --run-url "${{ steps.cfg.outputs.run_url }}" \
+            --identity "${{ steps.cfg.outputs.identity }}" \
+            --signer "cosign ${{ steps.cfg.outputs.mode }} (${{ github.workflow }})" \
+            --predicate-type "https://cyclonedx.org/bom" \
+            --registry "${{ steps.cfg.outputs.registry_host }}" \
+            --repository "${{ steps.cfg.outputs.repository }}"
+
+      - name: Record unsigned container status
+        if: steps.cfg.outputs.enabled != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/release-signing-status.mjs container \
+            --output "$STATUS_FILE" \
+            --image "chancela-server (not pushed)"
+
+      - name: Validate container trust declaration
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/check-release-trust.mjs docker --input "$STATUS_FILE"
+
+      - name: Upload container signing status
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chancela-container-signing-status-${{ github.run_id }}-${{ github.run_attempt }}
+          path: dist/release-signing/
+          if-no-files-found: ignore
+          retention-days: 30
+
+  # ---------------------------------------------------------------------------
+  # SBOM on release: generate a CycloneDX SBOM of the source tree and attach it to
+  # the GitHub release. Enabled only for a tag/release context (tag push, or a
+  # workflow_dispatch that names an existing release_tag).
+  # ---------------------------------------------------------------------------
+  sbom-release:
+    name: Release SBOM attachment
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # upload the SBOM asset to the GitHub release
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve release tag
+        id: rel
+        env:
+          INPUT_TAG: ${{ github.event.inputs.release_tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag=""
+          if [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
+            tag="${GITHUB_REF_NAME}"
+          elif [ -n "${INPUT_TAG:-}" ]; then
+            tag="${INPUT_TAG}"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if [ -z "$tag" ]; then
+            echo "No release tag in context; SBOM will be generated but not attached to a release." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Generate source SBOM (syft, CycloneDX)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/release-signing
+          docker run --rm \
+            -v "$PWD:/src" \
+            -v "$PWD/dist/release-signing:/out" \
+            anchore/syft:v1.9.0 \
+            dir:/src \
+            -o cyclonedx-json=/out/chancela-source-sbom.cdx.json
+
+      - name: Attach SBOM to release
+        if: steps.rel.outputs.tag != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.rel.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release upload "$TAG" dist/release-signing/chancela-source-sbom.cdx.json --clobber
+          echo "Attached chancela-source-sbom.cdx.json to release $TAG." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload SBOM artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chancela-source-sbom-${{ github.run_id }}-${{ github.run_attempt }}
+          path: dist/release-signing/chancela-source-sbom.cdx.json
+          if-no-files-found: ignore
+          retention-days: 30
+
+  # ---------------------------------------------------------------------------
+  # Desktop / binary code signing + notarization hooks.
+  #
+  # Downloads the artifacts of an existing release (release_tag input, or the tag
+  # that triggered this run) and code-signs them WHEN the platform signing identity
+  # secret is present:
+  #   * Windows Authenticode  -> WINDOWS_CODE_SIGN_PKCS12_BASE64 (+ _PASSWORD)
+  #   * macOS codesign+notarize -> APPLE_CERTIFICATE (+ password, identity, notary creds)
+  # When the identity secret is absent, the sign step is SKIPPED with a notice and an
+  # honest "unsigned" status is recorded. Tauri's native signing env is also honored
+  # if you build bundles here (see docs/release-signing.md).
+  # ---------------------------------------------------------------------------
+  desktop:
+    name: Desktop code signing (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write # re-attach signed artifacts to the release
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Resolve desktop signing context
+        id: ctx
+        shell: bash
+        env:
+          INPUT_TAG: ${{ github.event.inputs.release_tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HAVE_WIN_CERT: ${{ secrets.WINDOWS_CODE_SIGN_PKCS12_BASE64 != '' }}
+          HAVE_APPLE_CERT: ${{ secrets.APPLE_CERTIFICATE != '' }}
+        run: |
+          set -euo pipefail
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            platform=windows
+          else
+            platform=macos
+          fi
+          tag=""
+          if [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
+            tag="${GITHUB_REF_NAME}"
+          elif [ -n "${INPUT_TAG:-}" ]; then
+            tag="${INPUT_TAG}"
+          fi
+
+          mkdir -p dist/release-signing artifacts
+          have_artifacts=false
+          if [ -n "$tag" ]; then
+            if [ "$platform" = "windows" ]; then
+              patterns=(--pattern '*.exe' --pattern '*.msi')
+            else
+              patterns=(--pattern '*.dmg' --pattern '*.app.tar.gz')
+            fi
+            if gh release download "$tag" --dir artifacts "${patterns[@]}"; then
+              if [ -n "$(ls -A artifacts 2>/dev/null)" ]; then
+                have_artifacts=true
+              fi
+            else
+              echo "No matching desktop artifacts found on release $tag for $platform." >> "$GITHUB_STEP_SUMMARY"
+            fi
+          fi
+          {
+            echo "platform=$platform"
+            echo "tag=$tag"
+            echo "have_artifacts=$have_artifacts"
+            echo "have_win_cert=${HAVE_WIN_CERT:-false}"
+            echo "have_apple_cert=${HAVE_APPLE_CERT:-false}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Sign Windows artifacts (Authenticode)
+        id: sign-windows
+        if: >-
+          runner.os == 'Windows' &&
+          steps.ctx.outputs.have_artifacts == 'true' &&
+          steps.ctx.outputs.have_win_cert == 'true'
+        env:
+          PKCS12_BASE64: ${{ secrets.WINDOWS_CODE_SIGN_PKCS12_BASE64 }}
+          PKCS12_PASSWORD: ${{ secrets.WINDOWS_CODE_SIGN_PASSWORD }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pfx = Join-Path $env:RUNNER_TEMP 'code-sign.pfx'
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:PKCS12_BASE64))
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Recurse -Filter signtool.exe |
+            Where-Object { $_.FullName -match 'x64' } | Select-Object -First 1
+          if (-not $signtool) { throw 'signtool.exe not found on runner' }
+          Get-ChildItem artifacts -Include *.exe,*.msi -Recurse | ForEach-Object {
+            & $signtool.FullName sign /f $pfx /p $env:PKCS12_PASSWORD `
+              /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 $_.FullName
+            if ($LASTEXITCODE -ne 0) { throw "signtool failed for $($_.FullName)" }
+          }
+          Remove-Item $pfx -Force
+          "signed=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Sign + notarize macOS artifacts
+        id: sign-macos
+        if: >-
+          runner.os == 'macOS' &&
+          steps.ctx.outputs.have_artifacts == 'true' &&
+          steps.ctx.outputs.have_apple_cert == 'true'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          keychain="$RUNNER_TEMP/codesign.keychain-db"
+          keychain_pw="$(openssl rand -base64 24)"
+          cert_path="$RUNNER_TEMP/apple-cert.p12"
+          echo "$APPLE_CERTIFICATE" | base64 --decode > "$cert_path"
+          security create-keychain -p "$keychain_pw" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_pw" "$keychain"
+          security import "$cert_path" -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$keychain"
+          security list-keychain -d user -s "$keychain"
+          security set-key-partition-list -S apple-tool:,apple: -k "$keychain_pw" "$keychain" >/dev/null
+          rm -f "$cert_path"
+
+          ticket=""
+          while IFS= read -r -d '' artifact; do
+            codesign --force --options runtime --timestamp \
+              --sign "$APPLE_SIGNING_IDENTITY" --keychain "$keychain" "$artifact"
+            xcrun notarytool submit "$artifact" \
+              --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
+            xcrun stapler staple "$artifact" || true
+            ticket="notarized:$(basename "$artifact")"
+          done < <(find artifacts \( -name '*.dmg' -o -name '*.app.tar.gz' \) -print0)
+
+          security delete-keychain "$keychain" || true
+          {
+            echo "signed=true"
+            echo "notarized=true"
+            echo "ticket=$ticket"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Record desktop signing status
+        shell: bash
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          platform="${{ steps.ctx.outputs.platform }}"
+          artifact_name="$(ls artifacts 2>/dev/null | head -n1 || true)"
+          [ -n "$artifact_name" ] || artifact_name="chancela-desktop-$platform"
+          args=(desktop --output "dist/release-signing/desktop-signing-status-$platform.json" \
+            --platform "$platform" --artifact "$artifact_name" --run-url "$RUN_URL")
+          if [ "$platform" = "windows" ] && [ "${{ steps.sign-windows.outputs.signed }}" = "true" ]; then
+            args+=(--signed --signer "Windows Authenticode certificate")
+          fi
+          if [ "$platform" = "macos" ] && [ "${{ steps.sign-macos.outputs.signed }}" = "true" ]; then
+            args+=(--signed --signer "Apple Developer ID Application")
+            if [ "${{ steps.sign-macos.outputs.notarized }}" = "true" ]; then
+              args+=(--notarized --notarization-ticket "${{ steps.sign-macos.outputs.ticket }}")
+            fi
+          fi
+          node scripts/release-signing-status.mjs "${args[@]}"
+          if ! grep -q '"status": "signed"' "dist/release-signing/desktop-signing-status-$platform.json"; then
+            echo "No $platform code-signing identity configured; artifacts left unsigned (honest status recorded)." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Re-attach signed artifacts to release
+        if: >-
+          steps.ctx.outputs.have_artifacts == 'true' &&
+          (steps.sign-windows.outputs.signed == 'true' || steps.sign-macos.outputs.signed == 'true')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.ctx.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          find artifacts -type f -print0 | xargs -0 -I{} gh release upload "$TAG" "{}" --clobber
+
+      - name: Upload desktop signing status
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chancela-desktop-signing-status-${{ matrix.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: dist/release-signing/
+          if-no-files-found: ignore
+          retention-days: 30
