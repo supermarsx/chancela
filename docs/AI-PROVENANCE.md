@@ -45,6 +45,16 @@ human verification and does not echo raw workflow text, uploaded bytes, contacts
 credentials, secrets, access codes, reviewer values, document identifiers,
 digests, or raw caller payloads.
 
+The Ata editor workflow provenance review panel is a browser-side companion to
+that resource, not a browser MCP client. It builds a deterministic local
+`arguments.workflow_evidence` object from the already loaded act/compliance
+state and copies a payload for `chancela://mcp/workflow-provenance-review`.
+That copied object contains aggregate lifecycle, human-review, evidence-marker,
+missing/unknown, and compliance counts only. It does not echo raw IDs, names,
+emails, titles, deliberations, access codes, reviewer notes, document labels,
+or digests, and the browser does not call MCP, the API bridge, AI providers, or
+hidden providers when rendering or copying it.
+
 `chancela://mcp/meeting-metadata-extraction-review` follows the same boundary.
 With no arguments it returns static human-review guidance. With
 `arguments.meeting_document` as caller-supplied JSON or text metadata, it returns

@@ -28,6 +28,7 @@ const expectedSpecs = [
 const allowedStatuses = new Set(["PARTIAL", "BLOCKED", "COMPLETE"]);
 const checkpointPaths = new Set([
   ".github/workflows/ci.yml",
+  ".github/funding.yml",
   "SPEC-COVERAGE.md",
   "apps/web/vite.config.ts",
   "docs/AI-PROVENANCE.md",

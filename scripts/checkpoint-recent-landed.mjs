@@ -10635,12 +10635,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `628b613`",
+    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `2d84112`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `628b613`",
+    "Focused Gate Snapshot Through `2d84112`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -11305,7 +11305,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `628b613`",
+    "Current checkpoint metadata/static checks through `2d84112`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -11840,8 +11840,68 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `628b61361f9d6a65b3bc8e6a4bba56a4a0445dfb`",
+    "implementation snapshot `2d8411204ea1f09db21e3a74eca98366e6e20c51`",
     "spec coverage current implementation snapshot marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Current `2d84112` keeps AI/MCP, Workflows, UX, and CI **PARTIAL**",
+    "spec coverage workflow provenance panel current checkpoint marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "copies a local payload shaped for\n  `chancela://mcp/workflow-provenance-review` with\n  `arguments.workflow_evidence`",
+    "spec coverage workflow provenance local copy payload marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "no raw act IDs, book IDs, document identifiers, names, emails, contacts,\n  titles, deliberation text, access codes, reviewer values, operator notes,\n  document labels, payload digests, attachment digests, or raw caller payloads",
+    "spec coverage workflow provenance no raw sensitive values marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "The panel and copy action run in the browser only and do not call\n  MCP, the API bridge, AI providers, hidden providers, legal services, registries,\n  trust services, or external validators",
+    "spec coverage workflow provenance no browser MCP/API/provider call marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "No-claim flags remain false for\n  AI-01, AI-02, full AI/MCP completion",
+    "spec coverage workflow provenance AI no-claim marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Current `0954b53` keeps CI/Documents/UX **PARTIAL**",
+    "spec coverage generated-document fixture checkpoint marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "`npm run test:web:coverage` is green again after fixture alignment",
+    "spec coverage web coverage fixture restored marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Current `6b33517` CI assurance waiver guard keeps CI **PARTIAL**",
+    "spec coverage CI waiver checkpoint hash marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Current `2d84112` Ata editor workflow provenance panel checks",
+    "CI/E2E hardening plan workflow provenance panel checkpoint marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Current `0954b53` generated-document fixture alignment checks",
+    "CI/E2E hardening plan generated-document fixture checkpoint marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "Ata editor\nworkflow provenance review panel that copies a sanitized local\n`arguments.workflow_evidence` payload",
+    "CI checkpoints workflow provenance panel marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "generated-document fixture alignment that keeps `npm run test:web:coverage`\ngreen",
+    "CI checkpoints generated-document coverage fixture marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
@@ -13054,6 +13114,11 @@ function assertCheckpointMap() {
     "CI assurance waiver checker debt marker",
   );
   assertFileContains(
+    "scripts/check-spec-coverage.mjs",
+    '".github/funding.yml"',
+    "spec coverage checker metadata-only funding path marker",
+  );
+  assertFileContains(
     "package.json",
     "\"check:ci-assurance-waivers\": \"node scripts/check-ci-assurance-waivers.mjs\"",
     "CI assurance waiver package script marker",
@@ -13077,6 +13142,56 @@ function assertCheckpointMap() {
     "apps/web/vite.config.ts",
     "CI waiver ci.coverage.thresholds.non_web_unit",
     "web Vitest coverage threshold waiver comment marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/workflowProvenanceReviewPacket.ts",
+    "export const MCP_WORKFLOW_PROVENANCE_REVIEW_URI = 'chancela://mcp/workflow-provenance-review';",
+    "web workflow provenance MCP URI marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/workflowProvenanceReviewPacket.ts",
+    "ai_01_complete: false,\n  ai_02_complete: false,\n  full_ai_mcp_completion: false",
+    "web workflow provenance no AI/MCP completion flags marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/workflowProvenanceReviewPacket.ts",
+    "raw_values_echoed: false",
+    "web workflow provenance raw-value no-echo marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/workflowProvenanceReviewPacket.ts",
+    "api_from_mcp: false,\n  non_stdio_transport: false",
+    "web workflow provenance no MCP/API transport marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/workflowProvenanceReviewPacket.ts",
+    "formatWorkflowProvenanceReviewCopyPayload",
+    "web workflow provenance copy payload formatter marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/workflowProvenanceReviewPacket.test.ts",
+    "builds deterministic aggregate workflow evidence without raw values",
+    "web workflow provenance aggregate no-raw test marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/AtaEditorStructured.test.tsx",
+    "renders workflow provenance counts and copies an aggregate MCP payload without raw values",
+    "web workflow provenance panel copy test marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/AtaEditorPage.tsx",
+    "<WorkflowProvenanceReviewPanel act={a} complianceReport={compliance.data} />",
+    "web workflow provenance panel render marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/CompliancePanel.test.tsx",
+    "/v1/acts/act-1/documents/generated",
+    "web generated-document coverage fixture marker",
+  );
+  assertFileContains(
+    "docs/AI-PROVENANCE.md",
+    "The Ata editor workflow provenance review panel is a browser-side companion to\nthat resource, not a browser MCP client",
+    "AI provenance browser workflow panel boundary marker",
   );
   assertFileContains(
     ".github/workflows/ci.yml",

@@ -62,8 +62,12 @@ Minutas create/edit/import/export/delete UI actions, plus composed-server
 template fixture E2E wiring,
 live-provider static assurance,
 MCP resource/prompt coverage including workflow provenance review
-guidance plus caller-supplied local JSON/text summary counts, draft-vs-signed
-comparison review guidance, and the
+guidance plus caller-supplied local JSON/text summary counts, the Ata editor
+workflow provenance review panel that copies a sanitized local
+`arguments.workflow_evidence` payload for
+`chancela://mcp/workflow-provenance-review` without raw IDs, names, emails,
+titles, deliberations, access codes, digests, browser MCP calls, AI-01/AI-02,
+or full AI/MCP completion claims, draft-vs-signed comparison review guidance, and the
 `chancela://mcp/meeting-metadata-extraction-review` local review aid over
 caller-supplied meeting JSON/text metadata, the bounded local
 provenance panel with deterministic local counts and a deterministic
@@ -112,6 +116,8 @@ generated-convening dispatch-evidence E2E coverage, real-backend
 generated-convening dispatch-evidence browser proof, a full composed-server E2E
 local pass after auth harness alignment, and generated
 absent-owner/generated-convening evidence UI and dashboard dispatch-evidence reminders,
+generated-document fixture alignment that keeps `npm run test:web:coverage`
+green for the current Ata editor/generated-document query path,
 condominium annual profile-calendar Jan 15 local advisory markers plus
 dashboard-only annual reminder localization markers for CSC, association,
 foundation, and cooperative profile-calendar rules, convocation act-review

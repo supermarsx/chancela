@@ -1,8 +1,10 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `628b613`,
-including coverage notes for the full ignored Postgres store backend sweep with
+and implementation snapshot `2d84112`,
+including coverage notes for the Ata editor workflow provenance review panel,
+generated-document coverage fixture alignment, CI coverage-waiver debt guard,
+and the full ignored Postgres store backend sweep with
 per-test child database isolation, child database cleanup, logical restore
 JSON text-to-jsonb binding, and backend-only SCAP-backed signer-capacity evidence
 persistence for local PKCS#12 signing, wp23 user-template authoring groundwork
@@ -353,6 +355,19 @@ test operating checklist for driving Chancela toward release confidence.
   MCP-completion flags false. Treat it as human review guidance only, not
   AI/MCP completion, source certification, trust validation, extraction
   certification, or provider/legal assurance.
+- The current Ata editor workflow provenance panel is browser-side local review
+  UI only. It derives deterministic aggregate workflow lifecycle,
+  AI-human-review, evidence-marker, missing/unknown, and compliance counts from
+  already loaded act/compliance state, then copies a sanitized
+  `arguments.workflow_evidence` payload for
+  `chancela://mcp/workflow-provenance-review`. It does not echo raw IDs,
+  names, emails, titles, deliberations, access codes, document labels,
+  reviewer notes, payload or attachment digests, or raw caller payloads; the
+  browser does not call MCP, the API bridge, AI providers, hidden providers,
+  legal services, registries, trust services, or external validators. Treat it
+  as local aggregate review/copy evidence only: no AI-01, AI-02, full AI/MCP,
+  source-certification, extraction-accuracy, workflow-completion, legal,
+  provider, trust, non-stdio transport, or release-readiness claim is made.
 - The current MCP draft-vs-signed comparison slice adds the static
   `draft_signed_comparison_review_checklist` prompt and
   `chancela://mcp/draft-signed-comparison-review` resource. With no arguments
@@ -943,11 +958,11 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `628b613`
+## Focused Gate Snapshot Through `2d84112`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08` and checkpoint-promoted on 2026-07-15 for
-current implementation head `628b613`. This is not an exhaustive current
+current implementation head `2d84112`. This is not an exhaustive current
 green-run claim; the full-server E2E claim below is limited to local
 `chancela-server --features e2e` after auth harness alignment, and browser,
 Docker, desktop, package signing/notarization, image signing/attestation, and
@@ -1386,6 +1401,26 @@ settingsDefaults.test.ts contracts.test.ts`.
   legal validity, no source certification, no workflow completion, no provider
   assurance, no trust validation, no external validation, and no extraction
   accuracy certification.
+- Current `2d84112` Ata editor workflow provenance panel checks: focused web
+  tests passed for
+  `apps/web/src/features/acts/workflowProvenanceReviewPacket.test.ts` and
+  `apps/web/src/features/acts/AtaEditorStructured.test.tsx` as part of the
+  implementation validation, alongside web lint/build, MCP resource tests, and
+  `git diff --check`. These tests pin the local
+  `chancela://mcp/workflow-provenance-review` copy payload, deterministic
+  aggregate lifecycle/human-review/evidence-marker/missing/compliance counts,
+  visible panel rows, i18n keys, no raw ID/name/email/title/deliberation/access
+  code/digest echo, false no-claim flags, and no browser MCP/API/AI-provider
+  call path. This remains a route/local-state web proof only: no provider/live
+  AI calls, non-stdio MCP transport, workflow completion, source certification,
+  extraction accuracy, legal validity, release readiness, AI-01, AI-02, or full
+  AI/MCP completion.
+- Current `0954b53` generated-document fixture alignment checks: the
+  CompliancePanel/Ata editor test fixture now stubs
+  `/v1/acts/{id}/documents/generated`, matching the generated-document query
+  path so `npm run test:web:coverage` is green again. This restores the
+  apps/web Vitest/V8 coverage gate only; it does not add browser, desktop,
+  Docker, live-provider, or release-coverage threshold breadth.
 - Current working-tree law corpus automated-review checks: focused local corpus
   coverage now has a third `AutomatedReview` tier for automatically vendored
   statutory text that is complete enough to render but explicitly not
@@ -2222,14 +2257,16 @@ settingsDefaults.test.ts contracts.test.ts`.
   does not claim production Postgres readiness, TLS readiness, HA readiness,
   migration completeness, RPO/RTO certification, split-brain prevention,
   failover certification, legal/DR certification, or spec completion.
-- Current checkpoint metadata/static checks through `628b613`
+- Current checkpoint metadata/static checks through `2d84112`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
   `git diff --check -- SPEC-COVERAGE.md docs\CI-E2E-HARDENING-PLAN.md
   docs\CI-CHECKPOINTS.md scripts\checkpoint-recent-landed.mjs`.
   These pin the spec snapshot,
-  hardening-plan head, backend-only SCAP-backed local PKCS#12
+  hardening-plan head, browser workflow provenance review panel and sanitized
+  local MCP payload markers, generated-document coverage fixture alignment,
+  CI coverage-waiver static debt guard, backend-only SCAP-backed local PKCS#12
   `scap_capacity_evidence` persistence, `not_checked_by_scap` fallback,
   preprod/mock `declared_capacity_by_provider`, prod-fixture
   `verified_by_scap`, mismatched declared-capacity 422 refusal, local
