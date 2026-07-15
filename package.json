@@ -1,6 +1,6 @@
 {
   "name": "chancela",
-  "version": "0.1.0",
+  "version": "26.1.0",
   "private": true,
   "type": "module",
   "description": "Portugal-compliant livro de atas and corporate acts ledger/archive platform.",

@@ -13,7 +13,7 @@ import { Button } from '../ui';
 import { Copy, Check, Refresh } from '../ui/icons';
 import { isTauri } from '../desktop/tauri';
 import { relaunchApp } from '../desktop/relaunch';
-import { UI_VERSION } from '../api/versionCheck';
+import { UI_VERSION, displayVersion } from '../api/versionCheck';
 import { useT } from '../i18n';
 
 /**
@@ -41,7 +41,7 @@ export function buildDiagnostics(args: {
     `Data: ${now.toISOString()}`,
     `Rota: ${href}`,
     `Ambiente: ${environment}`,
-    `Versão da interface: ${UI_VERSION}`,
+    `Versão da interface: ${displayVersion(UI_VERSION)}`,
     `User agent: ${userAgent}`,
     '',
     `Erro: ${error ? `${error.name}: ${error.message}` : '(desconhecido)'}`,

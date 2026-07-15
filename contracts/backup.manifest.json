@@ -2,7 +2,7 @@
   "path": "/data/backups/chancela-backup-20260707T120000Z.zip",
   "bytes": 12345,
   "created_at": "2026-07-07T12:00:00Z",
-  "app_version": "0.1.0",
+  "app_version": "26.1.0",
   "store_schema_version": 2,
   "ledger_length": 42,
   "ledger_head": "0000000000000000000000000000000000000000000000000000000000000000",

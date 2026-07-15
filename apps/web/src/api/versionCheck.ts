@@ -12,6 +12,18 @@ import { api } from './client';
 /** The UI build version, for callers that want to display it (e.g. the Sobre section). */
 export const UI_VERSION: string = __APP_VERSION__;
 
+/**
+ * Render a CalVer manifest version (`YY.N.0`, e.g. `26.1.0`) as its user-facing
+ * `YY.N` surface by dropping a trailing `.0` — manifests keep the 3-part semver
+ * that Cargo/npm/Tauri require, while displays show the shorter release label.
+ * A version without a trailing `.0` (e.g. a server reporting `9.9.9`) is returned
+ * unchanged, so this is safe to apply to any version string, including the
+ * server's `/health` value.
+ */
+export function displayVersion(version: string): string {
+  return version.replace(/\.0$/, '');
+}
+
 /** Fire-and-forget: warn in the console when the server version differs from this UI build. */
 export async function checkServerVersion(): Promise<void> {
   try {

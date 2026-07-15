@@ -1,6 +1,6 @@
 [package]
 name = "chancela-desktop"
-version = "0.1.0"
+version = "26.1.0"
 description = "Chancela desktop shell (Tauri v2)"
 authors = ["Chancela contributors"]
 license = "MIT"

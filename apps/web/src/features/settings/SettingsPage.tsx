@@ -77,7 +77,7 @@ import {
   type WorkflowReminderSourceSettings,
   type WorkflowSettings,
 } from '../../api/types';
-import { UI_VERSION } from '../../api/versionCheck';
+import { UI_VERSION, displayVersion } from '../../api/versionCheck';
 import { useT } from '../../i18n';
 import type { MessageKey } from '../../i18n';
 import { grainStore } from '../../theme/grainStore';
@@ -2160,12 +2160,14 @@ export function SettingsPage() {
               <dl className="deflist">
                 <div>
                   <dt>{t('settings.about.serverVersion')}</dt>
-                  <dd className="mono">{health.data?.version ?? '—'}</dd>
+                  <dd className="mono">
+                    {health.data?.version ? displayVersion(health.data.version) : '—'}
+                  </dd>
                 </div>
                 <div>
                   <dt>{t('settings.about.uiVersion')}</dt>
                   <dd className="mono">
-                    {UI_VERSION}
+                    {displayVersion(UI_VERSION)}
                     {health.data?.version && health.data.version !== UI_VERSION && (
                       <>
                         {' '}

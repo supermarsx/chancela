@@ -1,6 +1,6 @@
 {
   "name": "@chancela/web",
-  "version": "0.1.0",
+  "version": "26.1.0",
   "private": true,
   "type": "module",
   "description": "Chancela web shell — Livro de Atas Digital (editorial dark-green/white theme placeholder).",
