@@ -22,6 +22,11 @@ interface SourceReference {
   verification: 'Verified' | 'Pending' | null;
 }
 
+type ConveningAdvisoryView = NonNullable<ComplianceReport['convening_advisories']>[number];
+
+const CONVENING_NOTICE_NO_CLAIMS =
+  'Aviso consultivo local sobre metadados registados; não afirma suficiência jurídica, entrega externa válida nem conclusão do workflow.';
+
 const SOURCE_CONTAINER_KEYS = [
   'source',
   'sources',
@@ -327,6 +332,29 @@ function WrittenResolutionEvidenceReview({
   );
 }
 
+function conveningAdvisoryNextRecord(advisory: ConveningAdvisoryView): string {
+  if (advisory.code === 'convening.statute_notice.missing_actual' || advisory.actual_days == null) {
+    return 'Confirme a data da reunião e registe data/meio de expedição, antecedência efetiva e prova conservada.';
+  }
+
+  return 'Reveja a antecedência registada face ao limiar estatutário local e associe a prova de expedição conservada.';
+}
+
+function ConveningAdvisoryGuidance({ advisory }: { advisory: ConveningAdvisoryView }) {
+  return (
+    <dl className="deflist deflist--tight" aria-label="Orientação local da convocatória">
+      <div>
+        <dt>Próximo registo local</dt>
+        <dd>{conveningAdvisoryNextRecord(advisory)}</dd>
+      </div>
+      <div>
+        <dt>Limites do aviso</dt>
+        <dd>{CONVENING_NOTICE_NO_CLAIMS}</dd>
+      </div>
+    </dl>
+  );
+}
+
 export function CompliancePanel({ report }: { report: ComplianceReport }) {
   const t = useT();
   const conveningAdvisories = report.convening_advisories ?? [];
@@ -394,6 +422,7 @@ export function CompliancePanel({ report }: { report: ComplianceReport }) {
                 <code className="mono">{advisory.threshold_id}</code>
               </div>
               <p className="issue__message">{advisory.message}</p>
+              <ConveningAdvisoryGuidance advisory={advisory} />
               <SourceReferences references={sourceReferences(advisory)} />
             </li>
           ))}

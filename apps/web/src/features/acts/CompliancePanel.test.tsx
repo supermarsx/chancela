@@ -435,6 +435,48 @@ describe('AtaEditorPage seal gating', () => {
     expect(container.querySelector('.empty')).toBeNull();
   });
 
+  it('adds next-record guidance for missing convocation notice metadata without legal claims', () => {
+    const report: ComplianceReport = {
+      rule_pack: 'csc-art63/v2',
+      family: 'CommercialCompany',
+      statute_overlay: true,
+      issues: [],
+      errors: 0,
+      warnings: 0,
+      seal_allowed: true,
+      convening_advisories: [
+        {
+          code: 'convening.statute_notice.missing_actual',
+          severity: 'Warning',
+          message:
+            'Os estatutos registados exigem convocatória com pelo menos 8 dias de antecedência; a ata não regista antecedência verificável. Aviso não bloqueante.',
+          threshold_id: 'entity.statute.convocation_notice_days',
+          actual_days: null,
+          minimum_days: 8,
+        },
+      ],
+    };
+
+    renderPanel(report);
+
+    expect(screen.getByLabelText('Orientação local da convocatória')).toBeTruthy();
+    expect(screen.getByText('Próximo registo local')).toBeTruthy();
+    expect(
+      screen.getByText(
+        'Confirme a data da reunião e registe data/meio de expedição, antecedência efetiva e prova conservada.',
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        'Aviso consultivo local sobre metadados registados; não afirma suficiência jurídica, entrega externa válida nem conclusão do workflow.',
+      ),
+    ).toBeTruthy();
+    const pageText = document.body.textContent ?? '';
+    expect(pageText).not.toMatch(/suficiência jurídica confirmada/i);
+    expect(pageText).not.toMatch(/entrega externa válida confirmada/i);
+    expect(pageText).not.toMatch(/workflow concluído/i);
+  });
+
   it('disables the seal action and lists issues when compliance has errors', async () => {
     const report: ComplianceReport = {
       rule_pack: 'csc-art63/v2',

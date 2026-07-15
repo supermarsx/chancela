@@ -222,6 +222,10 @@ const WRITTEN_RESOLUTION_FALSE_CLAIM_FLAGS = {
   authority_certified_claimed: false,
 } as const;
 
+const CONVOCATION_NOTICE_ADVISORY_TITLE = 'Aviso local da convocatória estatutária';
+const CONVOCATION_NOTICE_NO_CLAIMS =
+  'Apenas metadados locais; não afirma suficiência jurídica, entrega externa válida nem conclusão do workflow.';
+
 function writtenResolutionReviewStatusOptions(
   t: ReturnType<typeof useT>,
 ): { value: WrittenResolutionReviewStatus; label: string }[] {
@@ -1250,6 +1254,43 @@ function WrittenResolutionReceiptEditor({
         </form>
       ) : null}
     </div>
+  );
+}
+
+function convocationNoticeEvidenceMissing(convening: DraftConvening): boolean {
+  return (
+    convening.dispatch_date.trim() === '' ||
+    convening.channel === '' ||
+    convening.antecedence_days.trim() === '' ||
+    convening.evidence_reference.trim() === ''
+  );
+}
+
+function ConvocationNoticeAdvisoryCue({
+  meetingDate,
+  convening,
+}: {
+  meetingDate: string;
+  convening: DraftConvening;
+}) {
+  const missingMeetingDate = meetingDate.trim() === '';
+  const missingEvidence = convocationNoticeEvidenceMissing(convening);
+  if (!missingMeetingDate && !missingEvidence) return null;
+
+  return (
+    <InlineWarning tone="info" title={CONVOCATION_NOTICE_ADVISORY_TITLE}>
+      <ul className="stack--tight">
+        {missingMeetingDate ? (
+          <li>Registe a data da reunião para calcular a data local de aviso.</li>
+        ) : null}
+        {missingEvidence ? (
+          <li>
+            Registe data/meio de expedição, antecedência efetiva e referência da prova conservada.
+          </li>
+        ) : null}
+      </ul>
+      <p className="muted">{CONVOCATION_NOTICE_NO_CLAIMS}</p>
+    </InlineWarning>
   );
 }
 
@@ -2393,6 +2434,10 @@ export function AtaEditorPage() {
 
           <Card title={t('acts.convening')}>
             <p className="field__hint">{t('acts.convening.hint')}</p>
+            <ConvocationNoticeAdvisoryCue
+              meetingDate={draft.meeting_date}
+              convening={draft.convening}
+            />
             <ConveningEditor
               convening={draft.convening}
               disabled={readOnly}

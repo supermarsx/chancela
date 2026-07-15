@@ -275,6 +275,30 @@ describe('AtaEditorPage — mesa presidente unblocks the seal', () => {
     });
   });
 
+  it('surfaces missing convocation notice metadata as local advisory guidance only', async () => {
+    const withMissingNoticeMetadata = {
+      ...baseAct,
+      meeting_date: null,
+      mesa: { presidente: 'Ana', secretarios: [] },
+    };
+    const shared = stateful(withMissingNoticeMetadata);
+    vi.stubGlobal('fetch', shared.fetchImpl);
+    renderEditor();
+
+    expect(await screen.findByText('Aviso local da convocatória estatutária')).toBeTruthy();
+    const pageText = document.body.textContent ?? '';
+    expect(pageText).toContain('Registe a data da reunião para calcular a data local de aviso.');
+    expect(pageText).toContain(
+      'Registe data/meio de expedição, antecedência efetiva e referência da prova conservada.',
+    );
+    expect(pageText).toContain(
+      'Apenas metadados locais; não afirma suficiência jurídica, entrega externa válida nem conclusão do workflow.',
+    );
+    expect(pageText).not.toMatch(/suficiência jurídica confirmada/i);
+    expect(pageText).not.toMatch(/entrega externa válida confirmada/i);
+    expect(pageText).not.toMatch(/workflow concluído/i);
+  });
+
   it('clears the mesa-presidente compliance error once the chair is filled and saved', async () => {
     const shared = stateful(baseAct);
     vi.stubGlobal('fetch', shared.fetchImpl);
