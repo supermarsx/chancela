@@ -22,12 +22,29 @@
 
 ## What is Chancela
 
-Chancela is a self-hosted platform for keeping the **livro de atas** (book of minutes) and
-related **atos societários** of Portuguese collective entities — commercial companies,
-condominiums, associations, foundations and cooperatives. Acts are drafted, deliberated,
-sealed into an **append-only, hash-chained ledger**, and preserved as fixity-checked
-archives, all from a single Rust domain core that runs offline on the desktop, as a
-self-hosted server, or in the browser.
+Chancela is a self-hostable platform for keeping a Portuguese-style **livro de atas** (corporate
+minute book) and the **atos societários** — the minutes and resolutions of a company or other
+entity's governing bodies — that belong in it. Its job is to help you draft, review, and preserve
+those records through a controlled lifecycle — **draft → seal → archive** — so that what a general
+assembly, board, or management body decided stays organized, attributable to the people who
+authored it, and hard to alter after the fact. User-authored templates give each entity type its
+own house style, while role-based access with delegation keeps drafting and sealing in the right
+hands.
+
+Once an act is sealed it is written to an **append-only, hash-chained ledger** that can be
+re-verified on demand: because each entry is chained to the one before it, later tampering breaks
+the chain and becomes detectable. That makes Chancela a records-integrity tool — it keeps an
+organized, tamper-evident history of corporate decisions, but it does **not** claim legal validity
+or replace notarial and legal requirements. For the acts that call for signatures, it integrates
+**qualified and advanced electronic signatures** (PAdES / XAdES / CAdES) over Portuguese rails —
+**Chave Móvel Digital** and **Cartão de Cidadão** — through external providers.
+
+Everything runs on infrastructure you control. Chancela stores its data in **SQLite or PostgreSQL**,
+deploys single-node or multi-node, and is reachable through a web client, a **Tauri** desktop app,
+and an **API / MCP** surface. Per-book export/import with fixity verification, GDPR tooling, and
+open data formats keep your records portable rather than locked in. It is aimed at the entities and
+professionals — companies, associations, condominiums, cooperatives, foundations — that need an
+organized, self-controlled, and tamper-evident record of what their bodies decided.
 
 ## Key capabilities
 
