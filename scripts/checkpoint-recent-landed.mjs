@@ -10895,12 +10895,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `8bbe944`",
+    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `93175c0`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `8bbe944`",
+    "Focused Gate Snapshot Through `93175c0`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -11580,7 +11580,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `8bbe944`",
+    "Current checkpoint metadata/static checks through `93175c0`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -11825,13 +11825,18 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current `8bbe944` LOTL/member-state bootstrap checkpoint",
-    "CI/E2E hardening plan LOTL/member-state checkpoint marker",
+    "Current `93175c0` signing trust validation checkpoint",
+    "CI/E2E hardening plan signing trust validation checkpoint marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "authentication/bootstrap evidence only:\n  it is not production trust-list validity",
-    "CI/E2E hardening plan LOTL no-overclaim marker",
+    "bounded technical validation evidence only: it is\n  not production trust-list validity",
+    "CI/E2E hardening plan signing validation no-overclaim marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "qualified-status determination, eIDAS/QES compliance, legal\n  trust certification",
+    "CI/E2E hardening plan signing validation legal boundary marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -12165,18 +12170,28 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `8bbe944e17bb0dc6663d3341da715a9e0faad5e0`",
+    "implementation snapshot `93175c0b862c7a723e3e0096b18cd34ccb6d0f38`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Current `8bbe944` keeps Signatures/Trust/CI **PARTIAL**",
-    "spec coverage LOTL current checkpoint marker",
+    "Current `93175c0` keeps Signatures/Trust/CI **PARTIAL**",
+    "spec coverage signing trust validation current checkpoint marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "authentication/bootstrap evidence only: it does not claim production\n  trust-list validity",
-    "spec coverage LOTL no-overclaim marker",
+    "bounded technical validation evidence only: it does not\n  claim production trust-list validity",
+    "spec coverage signing validation no-overclaim marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "Signing DSS/trust-validation checkpoint: `93175c0` is the current\n  implementation snapshot",
+    "CI checkpoints signing validation current snapshot marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "does not claim production trust-list validity, legal certificate path/\n  revocation policy sufficiency",
+    "CI checkpoints signing validation no-overclaim marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",

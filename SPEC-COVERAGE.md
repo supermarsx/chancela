@@ -1,6 +1,6 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-15 from current implementation snapshot `8bbe944e17bb0dc6663d3341da715a9e0faad5e0`,
+*Updated 2026-07-15 from current implementation snapshot `93175c0b862c7a723e3e0096b18cd34ccb6d0f38`,
 with committed evidence refreshes for mobile API base URL indirection and
 shell detection, subject DEK secret-store binding, the settled PDF/UA v12 gated-claim lane,
 XAdES C14N/digest-agility/B/T/LT/ASiC evidence, archive PDF accessibility
@@ -12,6 +12,10 @@ recently landed full ignored Postgres store backend sweep with per-test child
 database isolation, logical restore JSON text-to-jsonb binding,
 child-database cleanup proof, and the backend-only
 SCAP-backed signer-capacity evidence persistence for local PKCS#12 signing,
+revocation cache graceful offline fallback, full-chain PAdES DSS evidence
+assembly from validated chains plus revocation material, live end-entity signer
+path validation, TSL-resolved revocation trust-decision reporting, and exported
+signer trust validation surface,
 real-backend
 generated-convening dispatch-evidence browser proof, full composed-server E2E
 local pass after auth harness alignment, focused composed-server
@@ -1936,18 +1940,21 @@ Implementation checkpoints covered here:
   official DGLAB export, government filing, import path, disposal execution,
   DGLAB certification, legal archival certification, PDF/A/PAdES/PDF-UA
   certification, authority approval, or legal archive acceptance is implemented.
-- Current `8bbe944` keeps Signatures/Trust/CI **PARTIAL**: `chancela-tsl`
-  now replaces the LOTL stub with live EU LOTL ingestion and member-state
-  TSL traversal APIs. The implementation authenticates the LOTL against pinned
-  OJEU signing anchors, selects a member-state pointer such as `PT`, and
-  authenticates the member-state TSL against the signer certificate carried by
-  that authenticated LOTL pointer. Local source/test markers cover pointer
-  selection, fail-closed empty-anchor and missing-signer-certificate paths, and
-  the double-gated ignored live LOTL-to-PT bootstrap test. This is
-  authentication/bootstrap evidence only: it does not claim production
-  trust-list validity, certificate path/revocation policy validation, qualified
-  status, legal trust certification, provider approval, or full spec
-  completion; statuses remain PARTIAL=11.
+- Current `93175c0` keeps Signatures/Trust/CI **PARTIAL**: the implementation
+  snapshot includes the prior `8bbe944` `chancela-tsl` LOTL/member-state
+  bootstrap, `6292d75` revocation cache and offline fallback, `ead1aaa`
+  full-chain PAdES DSS evidence assembly from validated chain plus revocation
+  material, `9be5e00` live end-entity signer-path validation with
+  TSL-resolved revocation trust-decision reporting, and `93175c0` public
+  signer trust validation export. Local source/test markers cover LOTL pointer
+  selection, fail-closed empty-anchor and missing-signer-certificate paths, the
+  double-gated ignored live LOTL-to-PT bootstrap test, cache/fallback behavior,
+  DSS evidence collection seams, and technical signer trust validation
+  reporting. This is bounded technical validation evidence only: it does not
+  claim production trust-list validity, legal certificate path/revocation policy
+  sufficiency, qualified status, eIDAS/QES compliance, legal trust
+  certification, provider approval, or full spec completion; statuses remain
+  PARTIAL=11.
 - Current `33e70bb` keeps Signatures/Trust/CI **PARTIAL**: the TSL XML-DSig
   verifier now resolves bounded same-document `URI="#id"` references when a
   unique matching element is present in the supported minimal TSL shape, rejects

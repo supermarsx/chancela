@@ -1,7 +1,7 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `8bbe944`,
+and implementation snapshot `93175c0`,
 including coverage notes for the settled PDF/UA v12 gated-claim lane, XAdES
 C14N/digest-agility/B/T/LT/ASiC evidence, archive PDF accessibility
 propagation, the MCP document/archive PDF accessibility v12
@@ -10,7 +10,11 @@ workflow provenance review panel, generated-document coverage fixture alignment,
 CI coverage-waiver debt guard, and the full ignored Postgres store backend sweep with
 per-test child database isolation, child database cleanup, logical restore
 JSON text-to-jsonb binding, and backend-only SCAP-backed signer-capacity evidence
-persistence for local PKCS#12 signing, wp23 user-template authoring groundwork
+persistence for local PKCS#12 signing, revocation cache graceful offline
+fallback, full-chain PAdES DSS evidence assembly from validated chains plus
+revocation material, live end-entity signer-path validation, TSL-resolved
+revocation trust-decision reporting, exported signer trust validation surface,
+wp23 user-template authoring groundwork
 for store CRUD, `template.manage`, strict authoring validation, API
 CRUD/export/import, merged catalog contracts, i18n key coverage, and Minutas
 create/edit/import/export/delete UI actions, plus composed-server template
@@ -982,11 +986,11 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `8bbe944`
+## Focused Gate Snapshot Through `93175c0`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08` and checkpoint-promoted on 2026-07-15 for
-current implementation head `8bbe944`. This is not an exhaustive current
+current implementation head `93175c0`. This is not an exhaustive current
 green-run claim; the full-server E2E claim below is limited to local
 `chancela-server --features e2e` after auth harness alignment, and browser,
 Docker, desktop, production package signing/notarization, production image
@@ -1878,14 +1882,16 @@ settingsDefaults.test.ts contracts.test.ts`.
   policy validation, legal trust certification, production trust-list validity,
   multiple-reference support for the TSL importer, or transform-chain support
   for the TSL importer.
-- Current `8bbe944` LOTL/member-state bootstrap checkpoint: static
-  `chancela-tsl` markers pin live EU LOTL ingestion, member-state pointer
-  selection, member-state TSL authentication against the signer certificate
-  carried by the authenticated LOTL pointer, and the double-gated ignored
-  live LOTL-to-PT network test. This is authentication/bootstrap evidence only:
-  it is not production trust-list validity, certificate path/revocation policy
-  validation, qualified-status determination, legal trust certification, live
-  provider approval, or full trust implementation.
+- Current `93175c0` signing trust validation checkpoint: static markers pin
+  the prior `8bbe944` live EU LOTL/member-state bootstrap, `6292d75`
+  revocation cache and graceful offline fallback, `ead1aaa` full-chain PAdES
+  DSS evidence assembly from validated chain plus revocation material,
+  `9be5e00` live end-entity signer-path validation with TSL-resolved
+  revocation trust-decision reporting, and `93175c0` public signer trust
+  validation export. This is bounded technical validation evidence only: it is
+  not production trust-list validity, legal certificate path/revocation policy
+  sufficiency, qualified-status determination, eIDAS/QES compliance, legal
+  trust certification, live provider approval, or full trust implementation.
 - Current `50854dd` XAdES reconciliation checks: `chancela-xades` now pins real
   in-crate XML C14N against W3C REC-derived vectors, duplicate-`Id` fail-closed
   guards, multiple-reference XML-DSig packaging, SHA-384/512 digest agility for
@@ -2389,7 +2395,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   production-readiness, TLS/key-custody, vulnerability-free scan, SBOM,
   signature/attestation, HA/failover/RPO/RTO, legal/DR certification, cloud
   deployment readiness, or spec-completion claim is made.
-- Current checkpoint metadata/static checks through `8bbe944`
+- Current checkpoint metadata/static checks through `93175c0`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
