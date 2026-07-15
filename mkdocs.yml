@@ -44,22 +44,22 @@ theme:
 extra_css:
   - assets/extra.css
 
-# Keep nav + anchor checks strict (so a nav entry pointing at a missing peer
-# file, or a broken cross-page anchor, still fails `--strict`). Downgrade only
-# plain "not found" links to info: peer-owned pages (e.g.
-# security/hardened-docker.md) intentionally link to repo-root files
-# (Dockerfile.hardened, docker/…) that live outside docs_dir and are not part of
-# the built site. Those are not ours to edit.
+# Strict link validation. Every in-site link must resolve to a real page and a
+# real anchor, or the build fails. Links that intentionally point outside the
+# built site (repo-root files like Dockerfile.hardened, docker/secrets/README.md)
+# are now written as absolute `https://github.com/supermarsx/chancela/blob/main/…`
+# URLs — mkdocs treats those as external and does not link-check them, so strict
+# mode passes while still catching any future broken *local* link or anchor.
 validation:
   nav:
     omitted_files: info
     not_found: warn
     absolute_links: warn
   links:
-    not_found: info
+    not_found: warn
     anchors: warn
-    absolute_links: info
-    unrecognized_links: info
+    absolute_links: warn
+    unrecognized_links: warn
 
 markdown_extensions:
   - abbr

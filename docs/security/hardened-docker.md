@@ -3,16 +3,16 @@
 This page documents the **hardened** container artifacts for `chancela-server`
 and how to run them safely:
 
-- [`Dockerfile.hardened`](../../Dockerfile.hardened) — a security-tightened,
+- [`Dockerfile.hardened`](https://github.com/supermarsx/chancela/blob/main/Dockerfile.hardened) — a security-tightened,
   digest-pinned, distroless, non-root image.
-- [`docker-compose.hardened.yml`](../../docker-compose.hardened.yml) — hardened
+- [`docker-compose.hardened.yml`](https://github.com/supermarsx/chancela/blob/main/docker-compose.hardened.yml) — hardened
   runtime profiles (`single-node` and `postgres`).
 
 These are **additive** variants. They do not replace the existing
 `docker/Dockerfile.server` and `docker/docker-compose.yml`; they layer a
 stricter posture on top. For the deployment-profile scope and its honest limits
-(single-writer, single-node, no HA), see
-[`docker/DEPLOYMENT-PROFILES.md`](../../docker/DEPLOYMENT-PROFILES.md).
+(single-writer, single-node, no HA), see the
+[Deployment overview](../deployment.md).
 
 > Scope note: these profiles are single-host, single-writer deployments. They
 > improve container posture; they are not a complete production architecture and
@@ -242,7 +242,7 @@ cannot authenticate. Example (fictional) `database_url`:
 postgres://chancela:S0me-long-random-value@postgres:5432/chancela?sslmode=disable
 ```
 
-Full details: [`docker/secrets/README.md`](../../docker/secrets/README.md).
+Full details: [`docker/secrets/README.md`](https://github.com/supermarsx/chancela/blob/main/docker/secrets/README.md).
 
 ### The credential root key
 
@@ -261,8 +261,8 @@ encrypted block device). This is disk-level: a DB superuser or a live memory dum
 still sees plaintext — a materially weaker guarantee than SQLCipher. TLS to
 Postgres (`sslmode=verify-full`) is **not** wired in this lane (the backend uses
 `NoTls` on the local compose network); a remote Postgres needs a future TLS
-connector first. See
-[`docker/DEPLOYMENT-PROFILES.md`](../../docker/DEPLOYMENT-PROFILES.md) for the
+connector first. See the
+[Deployment overview](../deployment.md) for the
 full at-rest discussion.
 
 ---
@@ -367,8 +367,8 @@ profile causes hard-to-diagnose runtime failures.
   before a major upgrade.
 - **Single writer.** Never scale the writer service (`server` / `chancela`). The
   app holds authoritative state in memory and allocates the ledger sequence in
-  process; two writers against one store violate the design. See
-  [`docker/DEPLOYMENT-PROFILES.md`](../../docker/DEPLOYMENT-PROFILES.md).
+  process; two writers against one store violate the design. See the
+  [Deployment overview](../deployment.md).
 - **Loopback ingress.** The published port binds `127.0.0.1` only. For real
   ingress, put a TLS-terminating reverse proxy in front rather than publishing
   the port on `0.0.0.0`.

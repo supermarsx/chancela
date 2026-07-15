@@ -198,7 +198,7 @@ hash-chain) before writing.
     Multi-node is single-writer HA with automatic failover for crashes — **not**
     zero-RTO and not multi-writer. A documented real-cluster soak run is required
     before running it for legal data. See
-    [`docs/HA-FAILOVER.md`](https://github.com/supermarsx/chancela/blob/main/docs/HA-FAILOVER.md).
+    [High availability & failover](HA-FAILOVER.md).
 
 ## Building the image on its own
 

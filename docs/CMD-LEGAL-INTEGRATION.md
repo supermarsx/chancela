@@ -120,40 +120,40 @@ operator-facing documentation:
 
 - eIDAS consolidated Regulation, especially Article 25 legal effect, Article 22
   trusted lists, and the qualified-signature/QSCD structure:
-  https://eur-lex.europa.eu/legal-content/EN/TXT/HTML/?uri=CELEX%3A02014R0910-20241018
+  <https://eur-lex.europa.eu/legal-content/EN/TXT/HTML/?uri=CELEX%3A02014R0910-20241018>
 - European Commission EU trusted lists policy page:
-  https://digital-strategy.ec.europa.eu/en/policies/eu-trusted-lists
+  <https://digital-strategy.ec.europa.eu/en/policies/eu-trusted-lists>
 - European Commission EU/EEA Trusted List Browser:
-  https://eidas.ec.europa.eu/efda/tl-browser/
+  <https://eidas.ec.europa.eu/efda/tl-browser/>
 - European Commission DSS project reference:
-  https://ec.europa.eu/digital-building-blocks/sites/spaces/DIGITAL/pages/467109107/Digital%2BSignature%2BService%2B-%2BDSS
+  <https://ec.europa.eu/digital-building-blocks/sites/spaces/DIGITAL/pages/467109107/Digital%2BSignature%2BService%2B-%2BDSS>
 - European Commission DSS validation demonstration/reference:
-  https://ec.europa.eu/digital-building-blocks/DSS/webapp-demo/validation
+  <https://ec.europa.eu/digital-building-blocks/DSS/webapp-demo/validation>
 - GNS eIDAS supervisory page:
-  https://www.gns.gov.pt/pt/regulamento-eidas-entidade
+  <https://www.gns.gov.pt/pt/regulamento-eidas-entidade>
 - GNS national trusted-list page:
-  https://www.gns.gov.pt/pt/regulamento-eidas-lista
+  <https://www.gns.gov.pt/pt/regulamento-eidas-lista>
 - GNS trusted-lists index:
-  https://www.gns.gov.pt/pt/trusted-lists
+  <https://www.gns.gov.pt/pt/trusted-lists>
 - Autenticacao.gov qualified digital-signature overview:
-  https://www.autenticacao.gov.pt/assinatura-digital/assinatura-digital-qualificada
+  <https://www.autenticacao.gov.pt/assinatura-digital/assinatura-digital-qualificada>
 - Autenticacao.gov CMD signature page:
-  https://www.autenticacao.gov.pt/cmd-assinatura
+  <https://www.autenticacao.gov.pt/cmd-assinatura>
 - Autenticacao.gov CMD signature activation:
-  https://www.autenticacao.gov.pt/ativar-a-assinatura-digital-da-chave-movel-digital
+  <https://www.autenticacao.gov.pt/ativar-a-assinatura-digital-da-chave-movel-digital>
 - Autenticacao.gov CMD policy and qualified-signature information:
-  https://www.autenticacao.gov.pt/politicas-e-informacao-sobre-chave-movel-digital
+  <https://www.autenticacao.gov.pt/politicas-e-informacao-sobre-chave-movel-digital>
 - Autenticacao.gov CC digital-signature page:
-  https://www.autenticacao.gov.pt/cartao-cidadao/assinatura-digital
+  <https://www.autenticacao.gov.pt/cartao-cidadao/assinatura-digital>
 - Autenticacao.gov integration overview:
-  https://www.autenticacao.gov.pt/integrar-com-o-autenticacao-gov
+  <https://www.autenticacao.gov.pt/integrar-com-o-autenticacao-gov>
 - Autenticacao.gov entity-integration request page:
-  https://www.autenticacao.gov.pt/integracao-entidade
+  <https://www.autenticacao.gov.pt/integracao-entidade>
 - Autenticacao.gov desktop application manual, including middleware and
   application integration:
-  https://amagovpt.github.io/docs.autenticacao.gov/user_manual.html
+  <https://amagovpt.github.io/docs.autenticacao.gov/user_manual.html>
 - Autenticacao.gov middleware SDK manual, including CMD/CC integration notes:
-  https://amagovpt.github.io/docs.autenticacao.gov/manual_sdk.html
+  <https://amagovpt.github.io/docs.autenticacao.gov/manual_sdk.html>
 
 ## Implementation Implications
 
