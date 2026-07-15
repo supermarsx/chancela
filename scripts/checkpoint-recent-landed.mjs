@@ -6598,6 +6598,21 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-core/src/profile.rs",
+    "CONDOMINIUM_ANNUAL_ADVISORY_DATE: AnnualFixedDate = AnnualFixedDate { month: 1, day: 15 }",
+    "core condominium annual Jan 15 advisory anchor marker",
+  );
+  assertFileContains(
+    "crates/chancela-core/src/profile.rs",
+    "ProfileCalendarDueRule::AnnualFixedDate",
+    "core profile-calendar annual fixed-date rule marker",
+  );
+  assertFileContains(
+    "crates/chancela-core/src/profile.rs",
+    'ProfileCalendarDueBasis::AnnualFixedDate => "annual_fixed_date"',
+    "core profile-calendar annual fixed-date due-basis marker",
+  );
+  assertFileContains(
+    "crates/chancela-core/src/profile.rs",
     "ProfileCalendarSourceStatus::PendingUnverified",
     "core profile-calendar pending law-source marker",
   );
@@ -6623,7 +6638,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-api/src/dashboard.rs",
-    "does not calculate a legal deadline for this preset",
+    "not calculate a legal deadline for this preset",
     "dashboard profile-calendar unsupported-preset no-deadline copy marker",
   );
   assertFileContains(
@@ -6633,18 +6648,38 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-api/src/dashboard.rs",
-    "unsupported_profile_calendar_without_due_offset_surfaces_no_due_date_advisory",
-    "dashboard profile-calendar unsupported-preset no-date coverage marker",
+    "condominium_profile_calendar_surfaces_fixed_annual_date_advisory",
+    "dashboard condominium profile-calendar fixed-date coverage marker",
   );
   assertFileContains(
     "apps/web/src/features/dashboard/DashboardPage.test.tsx",
-    "renders unsupported profile-calendar presets as pending no-due-date advisories",
-    "web dashboard profile-calendar unsupported-preset advisory coverage marker",
+    "renders condominium fixed-date profile-calendar reminders as advisory work",
+    "web dashboard condominium fixed-date advisory coverage marker",
   );
   assertFileContains(
     "contracts/dashboard.json",
     '"source_rule": "condominio-annual"',
-    "dashboard contract profile-calendar unsupported-preset advisory fixture marker",
+    "dashboard contract condominium profile-calendar advisory fixture marker",
+  );
+  assertFileContains(
+    "contracts/dashboard.json",
+    '"due_date": "2026-01-15"',
+    "dashboard contract condominium Jan 15 advisory date marker",
+  );
+  assertFileContains(
+    "contracts/dashboard.json",
+    '"annual_fixed_month": "1"',
+    "dashboard contract condominium annual fixed month marker",
+  );
+  assertFileContains(
+    "contracts/dashboard.json",
+    '"annual_fixed_day": "15"',
+    "dashboard contract condominium annual fixed day marker",
+  );
+  assertFileContains(
+    "contracts/dashboard.json",
+    '"due_basis": "annual_fixed_date"',
+    "dashboard contract condominium annual fixed due-basis marker",
   );
   assertFileContains(
     "contracts/dashboard.json",
@@ -6653,8 +6688,8 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "contracts/dashboard.json",
-    '"unsupported_reason": "missing_local_due_date_rule"',
-    "dashboard contract profile-calendar unsupported no-rule metadata fixture marker",
+    '"unsupported_reason": null',
+    "dashboard contract profile-calendar supported no-unsupported-reason marker",
   );
   assertFileContains(
     "crates/chancela-api/src/dashboard.rs",
@@ -6748,14 +6783,14 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-api/src/dashboard.rs",
-    "reminder_generated_absent_owner_no_due_date_does_not_evict_dated_reminders_before_limit",
+    "reminder_generated_absent_owner_no_due_date_does_not_evict_earliest_dated_reminder",
     "dashboard absent-owner no-date limit ordering coverage marker",
   );
   assertFileContainsNormalized(
     "crates/chancela-api/src/dashboard.rs",
-    `assert_eq!(reminders[0].source_rule, "csc-art376-annual");
-        assert_eq!(reminders[0].due_date, "2026-03-31");`,
-    "dashboard absent-owner no-date reminder does not evict dated reminder marker",
+    `assert_eq!(reminders[0].source_rule, "condominio-annual");
+        assert_eq!(reminders[0].due_date, "2026-01-15");`,
+    "dashboard absent-owner no-date reminder keeps earliest dated reminder marker",
   );
   assertFileContains(
     "crates/chancela-api/src/dashboard.rs",
@@ -9776,7 +9811,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current `7ab3ab7` automated-review law corpus UI checks",
+    "Recent `7ab3ab7` automated-review law corpus UI checks",
     "CI/E2E hardening automated-review law corpus UI checks marker",
   );
   assertFileContains(
@@ -9791,7 +9826,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current `baad7b4` archive filter refinement checks",
+    "Recent `baad7b4` archive filter refinement checks",
     "CI/E2E hardening archive filter refinement checks marker",
   );
   assertFileContains(
@@ -10286,12 +10321,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `7ab3ab7`",
+    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `3a41187`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `7ab3ab7`",
+    "Focused Gate Snapshot Through `3a41187`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -10931,7 +10966,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `7ab3ab7`",
+    "Current checkpoint metadata/static checks through `3a41187`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -11201,12 +11236,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current working-tree workflow reminder policy checks",
+    "Current `3a41187` workflow reminder/calendar checks",
     "CI/E2E hardening plan workflow reminder policy checks marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "focused `cargo test -p\n  chancela-api --locked reminder_` coverage",
+    "focused `cargo test -p\n  chancela-core --locked profile_calendar`, `cargo test -p chancela-api\n  --locked profile_calendar`, and `cargo test -p chancela-api --locked\n  reminder_` coverage",
     "CI/E2E hardening plan workflow reminder API command marker",
   );
   assertFileContains(
@@ -11226,7 +11261,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "typed local advisory profile-calendar plan\n  distinguishes rule kind, support/review/source status",
+    "condominium `condominio-annual` local fixed Jan 15 advisory date",
+    "CI/E2E hardening plan condominium fixed-date advisory marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "typed\n  local advisory profile-calendar plan\n  distinguishes rule kind, support/review/source status",
     "CI/E2E hardening plan typed profile-calendar plan marker",
   );
   assertFileContains(
@@ -11236,7 +11276,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "no new legal-calendar rules, law-source\n  authority, threshold verification",
+    "no legal-calendar\n  authority, law-source authority, threshold verification",
     "CI/E2E hardening plan workflow reminder caveat marker",
   );
   assertFileContains(
@@ -11461,12 +11501,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `7ab3ab7d9bf39d370a51a93558150f4badcb6cb2`",
+    "implementation snapshot `3a41187a354605971f801ada166a4f48d21ec133`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Current `7ab3ab7` keeps Legal/Compliance/UX/API/CI **PARTIAL**",
+    "Recent `7ab3ab7` keeps Legal/Compliance/UX/API/CI **PARTIAL**",
     "spec coverage automated-review law UI current checkpoint marker",
   );
   assertFileContains(
@@ -11826,7 +11866,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "it does not\n  mark the condominium preset supported, calculate or add a due date, add law\n  references, claim legal-calendar authority or compliance status",
+    "the later\n  `3a41187` slice owns the fixed-date local advisory rule",
+    "spec coverage condominium annual reminder follow-on marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "The combined\n  condominium reminder evidence still does not claim a legal deadline,\n  legal-calendar authority, compliance status, provider execution, DRE/source\n  authority verification",
     "spec coverage condominium annual reminder no-claim marker",
   );
   assertFileContains(
@@ -13479,7 +13524,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Current working-tree workflow reminder policy keeps Workflows/UX/CI\n  **PARTIAL**",
+    "Current `3a41187` workflow reminder/calendar policy keeps Workflows/UX/CI\n  **PARTIAL**",
     "spec coverage workflow reminder policy checkpoint marker",
   );
   assertFileContains(
@@ -13549,6 +13594,11 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
+    "The condominium\n  `condominio-annual` preset is now a supported local fixed-date advisory for\n  Jan 15 with `due_basis=annual_fixed_date`",
+    "spec coverage condominium fixed-date advisory marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
     "Structural law references remain\n  Pending/unverified metadata",
     "spec coverage profile-calendar pending law-source marker",
   );
@@ -13559,7 +13609,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "they do not add legal-calendar rules, law-source authority, threshold\n  verification, external delivery/email/ICS/CalDAV/webhook",
+    "they do not add legal-calendar authority, law-source authority, threshold\n  verification, external delivery/email/ICS/CalDAV/webhook",
     "spec coverage workflow reminder caveat marker",
   );
   assertFileContains(

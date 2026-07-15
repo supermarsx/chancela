@@ -1,8 +1,9 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-15 from current implementation snapshot `7ab3ab7d9bf39d370a51a93558150f4badcb6cb2`,
-with committed evidence refreshes for the recently landed automated-review
-dashboard contract surface, archive filter refinement, automated-review law
+*Updated 2026-07-15 from current implementation snapshot `3a41187a354605971f801ada166a4f48d21ec133`,
+with committed evidence refreshes for the recently landed condominium annual
+local advisory due-date depth, automated-review dashboard contract surface,
+archive filter refinement, automated-review law
 corpus UI tier, MCP workflow provenance local JSON/text summary, key-custody
 readiness UI/contract surfacing, data key-rotation receipt history, and the earlier Signatures & Trust
 provider-credential, stored runtime credential resolution, stored PKCS#12,
@@ -187,7 +188,8 @@ text evidence only, `3715089` automated-review dashboard contract surfacing,
 `baad7b4` archive filter refinement, `9402174` automated-review law-corpus
 vendoring, `49c8313` automated-review law contract synchronization, and
 `72df5c0` automated-review law corpus UI tier surfacing, with `7ab3ab7`
-focused web assertions for the honest badge and caveat tooltip.
+focused web assertions for the honest badge and caveat tooltip, plus `3a41187`
+condominium annual local advisory due-date coverage.
 Earlier coverage text remains prior snapshot context. All top-level spec areas remain **PARTIAL**.
 This is an implementation and test coverage snapshot, not a legal certification,
 not production CMD approval, not DRE verification promotion, not full PDF/UA
@@ -218,7 +220,26 @@ blockers.
 
 Implementation checkpoints covered here:
 
-- Current `7ab3ab7` keeps Legal/Compliance/UX/API/CI **PARTIAL**:
+- Current `3a41187` keeps Workflows/UX/API/CI **PARTIAL**: the
+  `condominio-annual` profile-calendar preset now has a deterministic local
+  advisory Jan 15 anchor through `CONDOMINIUM_ANNUAL_ADVISORY_DATE` and
+  `ProfileCalendarDueRule::AnnualFixedDate`. Dashboard/API/contract/web
+  surfaces now expose the fixed-date reminder as `2026-01-15` with
+  `annual_fixed_month=1`, `annual_fixed_day=15`, `due_basis=annual_fixed_date`,
+  `local_due_date_rule_configured=true`, and
+  `local_due_date_calculated=true`, and typed profile-calendar metadata keeps
+  the condominium rule `supported` while preserving
+  `review_status=pending_source_review` and
+  `source_status=pending_unverified`. Focused evidence covers core
+  profile-calendar evaluation, API dashboard profile-calendar/reminder output,
+  dashboard contract shape, notification rendering, and web build/type
+  integration. This is local advisory calendar depth only: it does not create a
+  legal deadline, legal-calendar authority, compliance status, provider
+  execution, DRE/source-authority verification, legal review, external
+  delivery/calendar sync/webhook, workflow completion, or any legal/compliance
+  completion claim.
+
+- Recent `7ab3ab7` keeps Legal/Compliance/UX/API/CI **PARTIAL**:
   automated-review law references now flow from API/dashboard and law-corpus
   contracts into the Legislação reader as a distinct third tier, not as
   human-`Verified` and not as `Pending`. The earlier `3715089` API/dashboard
@@ -2170,10 +2191,12 @@ Implementation checkpoints covered here:
   `notifications.reminder.annual.condominio.title` and the existing annual
   entity action across all shipped locales. Focused web tests pin the localized
   title/action path and no fallback to the raw backend reason or entity-name
-  title for this reminder. This is web copy/i18n coverage only: it does not
-  mark the condominium preset supported, calculate or add a due date, add law
-  references, claim legal-calendar authority or compliance status, trigger
-  external delivery/calendar/webhook behavior, or complete any workflow.
+  title for this reminder. This was web copy/i18n coverage only; the later
+  `3a41187` slice owns the fixed-date local advisory rule. The combined
+  condominium reminder evidence still does not claim a legal deadline,
+  legal-calendar authority, compliance status, provider execution, DRE/source
+  authority verification, external delivery/calendar/webhook behavior, or
+  workflow completion.
 - Prior `c83f278` keeps Data/Roles/UX/CI **PARTIAL**: new delegation grants
   now require bounded non-empty operator-supplied `legal_basis` evidence, trim
   the submitted value before storage, and preserve legacy delegation records
@@ -2183,7 +2206,7 @@ Implementation checkpoints covered here:
   is local operator-supplied evidence only: it does not verify legal authority,
   HR authority, SCAP/representative capacity, tenant access-policy
   certification, legal sufficiency, or full access-policy completion.
-- Current working-tree workflow reminder policy keeps Workflows/UX/CI
+- Current `3a41187` workflow reminder/calendar policy keeps Workflows/UX/CI
   **PARTIAL**: settings now include `workflow.reminders` with `enabled`,
   `dashboard_limit`, `due_soon_days`, `attendance_lookahead_days`, and source
   toggles for `profile_calendar`, `act_follow_ups`, `attendance_hygiene`, and
@@ -2197,11 +2220,14 @@ Implementation checkpoints covered here:
   reminder status now uses absolute calendar-day deltas across year boundaries.
   Profile-calendar reminders expose a typed local advisory plan and matching
   coverage/status params (`rule_kind`, support/review/source status, local
-  due-rule/calculation flags, supported due-year/basis/fiscal-year offset
-  fields, and explicit no-claim flags). Structural law references remain
-  Pending/unverified metadata; they do not establish a verified source or
-  legal authority. Unsupported presets remain pending no-date advisories with
-  no due-year or due-basis.
+  due-rule/calculation flags, supported due-year/basis/fiscal-year offset or
+  fixed-date fields, and explicit no-claim flags). The condominium
+  `condominio-annual` preset is now a supported local fixed-date advisory for
+  Jan 15 with `due_basis=annual_fixed_date`, while remaining pending source
+  review and pending/unverified. Structural law references remain
+  Pending/unverified metadata; they do not establish a verified source or legal
+  authority. Unsupported presets remain pending no-date advisories with no
+  due-year or due-basis.
   This is policy/default/UI/checkpoint coverage only, not full reminder or
   calendar completion.
 - `225f5c6` keeps Signatures **PARTIAL**: external-signing envelopes can require
@@ -4553,7 +4579,7 @@ behavior, legal disposal, or legal-effect claims.
   next steps; they do not certify legal-hold handling, approve disposal, prove archival completion,
   prove attendance, or validate meeting legality.
 - Workflow reminder settings are bounded local dashboard policy controls over existing advisory
-  reminder families only; they do not add legal-calendar rules, law-source authority, threshold
+  reminder families only; they do not add legal-calendar authority, law-source authority, threshold
   verification, external delivery/email/ICS/CalDAV/webhook, workflow completion, attendance proof,
   compliance gates, or legal sufficiency.
 - Dashboard summary caps, hidden-item counts, and registered-entity single-line/no-overflow table

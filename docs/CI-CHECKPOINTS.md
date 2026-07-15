@@ -83,6 +83,7 @@ manifest API and BookDetail JSON-download markers, generated-document by-id
 download route plus sealed post-act certidao/extrato template generation UI,
 absent-owner communication dispatch-evidence recording, and generated
 absent-owner evidence UI and dashboard absent-owner dispatch-evidence reminders,
+condominium annual profile-calendar Jan 15 local advisory markers,
 compact validator-report actions, template provenance UI, release clean-source
 provenance gating, local CC batch-signing UI markers for BatchSigningPanel,
 `useCcBatchSign`, `POST /v1/signature/cc/batch-sign`, optional transient PIN
@@ -360,6 +361,20 @@ It intentionally reuses existing test surfaces:
   `operator_evidence_covered` suppression, dated-before-no-date
   `dashboard_limit` sorting, and the `contracts/dashboard.json` no-date
   fixture.
+- API/web condominium annual profile-calendar advisory:
+  `cargo test -p chancela-core --locked profile_calendar`, `cargo test -p
+  chancela-api --locked profile_calendar`, and `cargo test -p chancela-api
+  --locked reminder_` pin the deterministic `condominio-annual` local fixed
+  Jan 15 advisory date, `annual_fixed_date` due rule, `annual_fixed_month=1`,
+  `annual_fixed_day=15`, supported typed profile-calendar metadata, pending
+  source review, pending/unverified source status, and false legal/compliance/
+  provider/DRE authority flags. Web contract/dashboard/notification coverage
+  pins the `2026-01-15` dashboard fixture, localized notification copy, entity
+  action, and no raw legal-claim fallback. These markers are local advisory
+  calendar evidence only: no legal deadline, legal-calendar authority,
+  compliance status, provider execution, DRE/source-authority verification,
+  external delivery/calendar/webhook, or workflow completion is claimed. The
+  spec matrix remains `PARTIAL=11`.
 - API synthetic seed dataset integration:
   `cargo test -p chancela-api --test seed_dataset --locked` including
   API-created synthetic entities, books, act lifecycle rows, structured

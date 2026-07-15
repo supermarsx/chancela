@@ -1,9 +1,10 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `7ab3ab7`,
-including coverage notes for automated-review dashboard contract surfacing,
-archive active-filter count refinement,
+and implementation snapshot `3a41187`,
+including coverage notes for condominium annual local advisory Jan 15
+profile-calendar depth, automated-review dashboard contract surfacing, archive
+active-filter count refinement,
 automated-review law corpus evidence and UI tier surfacing, MCP workflow
 provenance local JSON/text summary,
 key-custody readiness UI/contract surfacing,
@@ -885,11 +886,11 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `7ab3ab7`
+## Focused Gate Snapshot Through `3a41187`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08` and checkpoint-promoted on 2026-07-15 for
-current implementation head `7ab3ab7`. This is not an exhaustive current
+current implementation head `3a41187`. This is not an exhaustive current
 green-run claim; browser, Docker, desktop, package signing/notarization, image
 signing/attestation, and live-provider limits above still apply.
 
@@ -1740,7 +1741,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   connector compatibility, legal validity, DGLAB/archive certification,
   signing/notarization/attestation, deployment readiness, or external-system
   readiness is implemented or proven.
-- Current `baad7b4` archive filter refinement checks: focused
+- Recent `baad7b4` archive filter refinement checks: focused
   `npm run test --workspace apps/web -- LedgerPage.test.tsx` coverage pins the
   Arquivo icon-only clear-filters button with tooltip/accessibility label, empty
   text content, disabled state, `Icon.FilterClear` funnel/clear SVG paths, and
@@ -1756,28 +1757,34 @@ settingsDefaults.test.ts contracts.test.ts`.
   non-PDF/A evidence preservation, archive certification, legal acceptance,
   signature validation, ledger mutation, or production custody claim is
   implemented or proven.
-- Current working-tree workflow reminder policy checks: focused `cargo test -p
-  chancela-api --locked reminder_` coverage pins `workflow.reminders` defaults
+- Current `3a41187` workflow reminder/calendar checks: focused `cargo test -p
+  chancela-core --locked profile_calendar`, `cargo test -p chancela-api
+  --locked profile_calendar`, and `cargo test -p chancela-api --locked
+  reminder_` coverage pins `workflow.reminders` defaults
   (enabled, dashboard limit 5, due-soon 45 days, attendance lookahead 45 days,
   all sources enabled), dashboard policy application to the existing
   profile-calendar, act-follow-up, and attendance-hygiene advisory reminder
   families, `enabled=false` suppression of reminder output without removing
   other dashboard current-work data, per-source suppression limited to the
   matching local reminder family, numeric limit/window behavior, and absolute
-  calendar-day reminder status across year boundaries. Focused `cargo test -p
-  chancela-api --locked profile_calendar_` coverage pins the new
-  profile-calendar metadata. The typed local advisory profile-calendar plan
+  calendar-day reminder status across year boundaries, plus the deterministic
+  condominium `condominio-annual` local fixed Jan 15 advisory date. The typed
+  local advisory profile-calendar plan
   distinguishes rule kind, support/review/source status, due-rule shape,
-  evaluated fiscal-year basis, and explicit no-claim flags for supported
-  local-rule presets and unsupported pending/no-date presets. Structural law
+  evaluated fiscal-year or fixed-date basis, and explicit no-claim flags for
+  supported local-rule presets and unsupported pending/no-date presets.
+  Structural law
   references remain Pending/unverified metadata, not verified law sources or
   legal authority; legal-authority, external delivery/calendar-sync/webhook,
   compliance-status, and workflow-completion claim flags remain false. Focused
   `settingsDefaults.test.ts` and `SettingsPage.test.tsx` coverage pins the web
   defaults and compact Gestão controls for the master switch, limit, due-soon
-  window, attendance lookahead, and three source toggles. This remains local
-  advisory policy coverage only: no new legal-calendar rules, law-source
-  authority, threshold verification, external delivery/email/ICS/CalDAV/webhook,
+  window, attendance lookahead, and three source toggles. Web
+  contracts/dashboard/notification tests plus `npm run build --workspace
+  apps/web` passed for the fixed-date condominium reminder surface. This
+  remains local advisory policy/calendar coverage only: no legal-calendar
+  authority, law-source authority, threshold verification, external
+  delivery/email/ICS/CalDAV/webhook,
   workflow completion, attendance proof, compliance gate, or legal sufficiency
   claim is implemented.
 - Current imported-document review reminder checks: focused `cargo test -p
@@ -1859,7 +1866,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   upload path/schema exposure. This is discoverability and redacted summary
   access only, not raw report download, provider execution, legal validation,
   trust validation, or certification.
-- Current `7ab3ab7` automated-review law corpus UI checks: focused API,
+- Recent `7ab3ab7` automated-review law corpus UI checks: focused API,
   contract, and web markers pin `DashboardLawReference.review_method` /
   `review_note`, `law_verification_wire` emitting the `automated_review` serde
   wire value, `LawSourceView` review metadata, per-diploma
@@ -1914,7 +1921,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   full RBAC/delegation-policy completion, tenant authorization proof,
   legal-capacity verification, broad security certification, or spec
   completion.
-- Current checkpoint metadata/static checks through `7ab3ab7`
+- Current checkpoint metadata/static checks through `3a41187`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
