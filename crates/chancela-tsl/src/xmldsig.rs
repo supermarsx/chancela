@@ -867,6 +867,20 @@ fn push_escaped_attr_value(out: &mut String, value: &str) {
     }
 }
 
+/// Extract the DER of the signer certificate from `<ds:KeyInfo>/<ds:X509Data>/<ds:X509Certificate>`,
+/// for downstream certificate-path building (wp26 E5 `certpath`, E4 `lotl`). Returns `Ok(None)` when
+/// the document carries no `<ds:Signature>` or the signature carries no embedded certificate.
+// Exposed ahead of its in-crate consumers (E4 `lotl.rs`, E5 `certpath.rs`), which land in parallel.
+#[allow(dead_code)]
+pub(crate) fn extract_signer_cert(xml: &[u8]) -> Result<Option<Vec<u8>>, TslError> {
+    match parse_signature(xml) {
+        Ok(parsed) => Ok(parsed.signer_cert_der),
+        // No signature element at all is not an error for extraction — there is simply no cert.
+        Err(TslError::SignatureStructure(_)) => Ok(None),
+        Err(err) => Err(err),
+    }
+}
+
 /// Verify the signature value against the signer certificate's public key over any candidate
 /// SignedInfo form; success on the first candidate that verifies.
 fn verify_signature_value(
@@ -1008,5 +1022,196 @@ mod tests {
         let s = String::from_utf8_lossy(&stripped);
         assert!(!s.contains("ds:Signature"));
         assert!(s.contains("SchemeTerritory"));
+    }
+
+    const NS_DS: &str = "http://www.w3.org/2000/09/xmldsig#";
+
+    /// A document whose `<ds:SignedInfo>` inherits `xmlns:ds` from the root and uses self-closing
+    /// empty children — i.e. genuinely NOT in canonical form.
+    fn non_canonical_signed_info_doc(digest_b64: &str, sig_b64: &str, cert_b64: &str) -> String {
+        format!(
+            "<TrustServiceStatusList xmlns:ds=\"{NS_DS}\">\
+             <SchemeInformation><SchemeTerritory>PT</SchemeTerritory></SchemeInformation>\
+             <ds:Signature>\
+             <ds:SignedInfo>\n  <ds:CanonicalizationMethod Algorithm=\"{EXC_C14N_10}\"/>\n  \
+             <ds:SignatureMethod Algorithm=\"{ECDSA_SHA256}\"/>\n  \
+             <ds:Reference URI=\"\">\n    <ds:DigestMethod Algorithm=\"{SHA256_DIGEST}\"/>\n    \
+             <ds:DigestValue>{digest_b64}</ds:DigestValue>\n  </ds:Reference>\n</ds:SignedInfo>\
+             <ds:SignatureValue>{sig_b64}</ds:SignatureValue>\
+             <ds:KeyInfo><ds:X509Data><ds:X509Certificate>{cert_b64}</ds:X509Certificate>\
+             </ds:X509Data></ds:KeyInfo>\
+             </ds:Signature>\
+             </TrustServiceStatusList>"
+        )
+    }
+
+    fn signed_info_offsets(doc: &str) -> (usize, usize) {
+        let start = doc.find("<ds:SignedInfo>").expect("SignedInfo start");
+        let end = doc.find("</ds:SignedInfo>").expect("SignedInfo end") + "</ds:SignedInfo>".len();
+        (start, end)
+    }
+
+    #[test]
+    fn hoist_injects_inherited_ds_namespace() {
+        // `<ds:SignedInfo>` declares no namespaces itself; `xmlns:ds` is on the root. The hoist must
+        // carry that inherited declaration onto the SignedInfo start tag.
+        let doc = non_canonical_signed_info_doc("AAAA", "AAAA", "AAAA");
+        let (start, end) = signed_info_offsets(&doc);
+        let hoisted = hoist_signed_info_namespaces(doc.as_bytes(), start, end).expect("hoist");
+        let hs = String::from_utf8(hoisted).expect("utf8");
+        assert!(
+            hs.starts_with(&format!("<ds:SignedInfo xmlns:ds=\"{NS_DS}\">")),
+            "hoisted SignedInfo must carry the inherited xmlns:ds, got: {hs}"
+        );
+        // The hoisted subtree must canonicalize cleanly.
+        assert!(crate::c14n::canonicalize(hs.as_bytes(), C14nAlgorithm::Exclusive).is_ok());
+    }
+
+    #[test]
+    fn signed_info_primary_candidate_is_the_real_c14n_output() {
+        // The first (primary) candidate handed to hashing MUST equal the real C14N of the
+        // namespace-hoisted subtree, and MUST differ from the raw fallback (empty children expanded,
+        // xmlns:ds hoisted) — proving canonicalization is genuinely routed through `c14n`.
+        let doc = non_canonical_signed_info_doc("AAAA", "AAAA", "AAAA");
+        let (start, end) = signed_info_offsets(&doc);
+        let candidates = signed_info_candidates(doc.as_bytes(), start, end, EXC_C14N_10);
+
+        let hoisted = hoist_signed_info_namespaces(doc.as_bytes(), start, end).expect("hoist");
+        let expected = crate::c14n::canonicalize(&hoisted, C14nAlgorithm::Exclusive).expect("c14n");
+        assert_eq!(
+            candidates.first().map(Vec::as_slice),
+            Some(expected.as_slice()),
+            "primary SignedInfo candidate must be the real C14N output"
+        );
+        assert!(
+            candidates.len() >= 2,
+            "raw fallback candidate must also be present"
+        );
+        assert_ne!(
+            candidates[0], candidates[1],
+            "for a non-canonical SignedInfo the C14N form must differ from the raw bytes"
+        );
+    }
+
+    #[test]
+    fn non_canonical_signed_info_verifies_over_its_c14n_form() {
+        use std::str::FromStr;
+
+        use der::asn1::{BitString, ObjectIdentifier};
+        use p256::ecdsa::SigningKey;
+        use p256::ecdsa::signature::Signer;
+        use rsa::rand_core::OsRng;
+        use spki::{AlgorithmIdentifierOwned, SubjectPublicKeyInfoOwned};
+        use x509_cert::name::Name;
+        use x509_cert::serial_number::SerialNumber;
+        use x509_cert::time::Validity;
+        use x509_cert::{Certificate, TbsCertificate, Version};
+
+        fn base64_standard(bytes: &[u8]) -> String {
+            const TABLE: &[u8; 64] =
+                b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+            let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+            for chunk in bytes.chunks(3) {
+                let b0 = chunk[0];
+                let b1 = *chunk.get(1).unwrap_or(&0);
+                let b2 = *chunk.get(2).unwrap_or(&0);
+                out.push(TABLE[(b0 >> 2) as usize] as char);
+                out.push(TABLE[(((b0 & 0x03) << 4) | (b1 >> 4)) as usize] as char);
+                out.push(if chunk.len() > 1 {
+                    TABLE[(((b1 & 0x0f) << 2) | (b2 >> 6)) as usize] as char
+                } else {
+                    '='
+                });
+                out.push(if chunk.len() > 2 {
+                    TABLE[(b2 & 0x3f) as usize] as char
+                } else {
+                    '='
+                });
+            }
+            out
+        }
+
+        // A P-256 self-signed cert carrying the signing key.
+        let key = SigningKey::random(&mut OsRng);
+        let spki = SubjectPublicKeyInfoOwned::from_key(*key.verifying_key()).expect("spki");
+        let sig_alg = AlgorithmIdentifierOwned {
+            oid: ObjectIdentifier::new_unwrap("1.2.840.10045.4.3.2"),
+            parameters: None,
+        };
+        let name = Name::from_str("CN=E3 c14n routing test signer").expect("name");
+        let validity =
+            Validity::from_now(std::time::Duration::from_secs(365 * 24 * 3600)).expect("validity");
+        let cert = Certificate {
+            tbs_certificate: TbsCertificate {
+                version: Version::V3,
+                serial_number: SerialNumber::new(&[7u8]).expect("serial"),
+                signature: sig_alg.clone(),
+                issuer: name.clone(),
+                validity,
+                subject: name,
+                subject_public_key_info: spki,
+                issuer_unique_id: None,
+                subject_unique_id: None,
+                extensions: None,
+            },
+            signature_algorithm: sig_alg,
+            signature: BitString::from_bytes(&[0u8; 64]).expect("bitstring"),
+        };
+        let cert_der = cert.to_der().expect("cert der");
+        let cert_b64 = base64_standard(&cert_der);
+
+        // The reference (URI="", no C14N transform) digests the raw document minus the Signature.
+        // strip_signature yields exactly the surrounding bytes, so precompute the digest over them.
+        let placeholder = base64_standard(&[0x11u8; 64]);
+        let doc0 = non_canonical_signed_info_doc(
+            &base64_standard(&sha2::Sha256::digest(b"placeholder")),
+            &placeholder,
+            &cert_b64,
+        );
+        let stripped = strip_signature_element(doc0.as_bytes());
+        let digest_b64 = base64_standard(&sha2::Sha256::digest(&stripped));
+
+        // Rebuild the document with the correct reference digest, then locate SignedInfo and sign
+        // over the PRIMARY (real C14N) candidate — the form a conforming XML-DSig signer signs.
+        let doc0 = non_canonical_signed_info_doc(&digest_b64, &placeholder, &cert_b64);
+        let (start, end) = signed_info_offsets(&doc0);
+        let candidates = signed_info_candidates(doc0.as_bytes(), start, end, EXC_C14N_10);
+        let canonical = candidates[0].clone();
+        let raw_fallback = candidates[1].clone();
+        assert_ne!(
+            canonical, raw_fallback,
+            "test must exercise a non-canonical SignedInfo"
+        );
+
+        let signature: p256::ecdsa::Signature = key.sign(&canonical);
+        let sig_b64 = base64_standard(&signature.to_bytes());
+        let doc = doc0.replace(&placeholder, &sig_b64);
+
+        // The full verifier accepts it, anchored to the embedded cert — the signature verifies via
+        // the C14N candidate, since it was signed over the canonical (not raw) SignedInfo.
+        let anchors = TslTrustAnchors::new().with_cert_der(&cert_der);
+        let parsed = parse_signature(doc.as_bytes()).expect("parse");
+        parsed
+            .verify(doc.as_bytes(), &anchors)
+            .expect("non-canonical SignedInfo must verify over its C14N form");
+
+        // And the raw fallback ALONE would NOT verify — proving the C14N candidate did the work.
+        let sig_raw = signature.to_bytes().to_vec();
+        assert!(
+            verify_ecdsa_sha256(&cert, &sig_raw, &[raw_fallback]).is_err(),
+            "raw bytes alone must not verify a signature made over the canonical form"
+        );
+    }
+
+    #[test]
+    fn extract_signer_cert_returns_embedded_der_or_none() {
+        // The placeholder fixture carries a 3-byte "cert" (base64 "AAAA" = 0x00 0x00 0x00).
+        let doc = non_canonical_signed_info_doc("AAAA", "AAAA", "AAAA");
+        let extracted = extract_signer_cert(doc.as_bytes()).expect("extract");
+        assert_eq!(extracted, Some(vec![0u8, 0u8, 0u8]));
+
+        // No <ds:Signature> at all -> Ok(None), not an error.
+        let none = extract_signer_cert(b"<TrustServiceStatusList/>").expect("extract none");
+        assert_eq!(none, None);
     }
 }
