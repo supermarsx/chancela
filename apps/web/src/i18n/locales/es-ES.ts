@@ -264,6 +264,8 @@ export const esES: Catalog = {
   'notifications.reminder.act.conveningNotice.title': 'Revisar convocatoria: {act_title}',
   'notifications.reminder.act.conveningNotice.body':
     'Los estatutos registran {required_notice_days} días de preaviso para {act_title} de {entity_name} con reunión fechada el {meeting_date}; la fecha local de aviso es {notice_due_date}. La evidencia de envío registrada no demuestra esa antelación. Aviso consultivo local; no afirma suficiencia legal, entrega externa ni finalización del workflow.',
+  'notifications.reminder.act.conveningNotice.missingMeetingDate.body':
+    'Los metadatos estatutarios locales registran {required_notice_days} días de preaviso para {act_title} de {entity_name}, pero la fecha de reunión aún no está registrada. La fecha local de aviso no puede calcularse hasta que se registre la fecha de reunión. Registre la fecha de reunión y revise la evidencia de envío registrada. Aviso consultivo local; no afirma suficiencia legal, cálculo de plazo legal, entrega externa, finalización del workflow ni aceptación por registro, DRE o proveedor.',
   'notifications.reminder.act.conveningNotice.action': 'Revisar convocatoria',
   'notifications.reminder.absentOwnerDispatch.title': 'Evidencia de envío pendiente: {act_title}',
   'notifications.reminder.absentOwnerDispatch.body':

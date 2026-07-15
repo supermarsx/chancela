@@ -42,6 +42,8 @@ interface ReminderCopy {
 }
 
 const SETTINGS_ROUTE = '/configuracoes';
+const CONVENING_NOTICE_MISSING_MEETING_DATE_BODY: MessageKey =
+  'notifications.reminder.act.conveningNotice.missingMeetingDate.body';
 
 const ALERT_COPY: Record<string, AlertCopy> = {
   'ledger.integrity.review_required': {
@@ -143,6 +145,36 @@ const REMINDER_COPY: Record<string, ReminderCopy> = {
     action: 'notifications.reminder.importedDocumentReview.action',
   },
 };
+
+function reminderHasMissingMeetingDate(reminder: DashboardReminder, sourceRule: string): boolean {
+  if (sourceRule !== 'act-convening-notice') return false;
+  const params = reminder.params ?? {};
+  const hasMeetingDateParam = Object.prototype.hasOwnProperty.call(params, 'meeting_date');
+  const hasNoticeDueDateParam = Object.prototype.hasOwnProperty.call(params, 'notice_due_date');
+  return (
+    params.evidence_status?.trim() === 'missing_meeting_date' ||
+    params.notice_due_date_computable?.trim() === 'false' ||
+    (hasMeetingDateParam &&
+      hasNoticeDueDateParam &&
+      !params.meeting_date?.trim() &&
+      !params.notice_due_date?.trim())
+  );
+}
+
+function reminderCopyFor(
+  reminder: DashboardReminder,
+  sourceRule: string,
+): ReminderCopy | undefined {
+  const copy = REMINDER_COPY[sourceRule];
+  if (!copy) return undefined;
+  if (reminderHasMissingMeetingDate(reminder, sourceRule)) {
+    return {
+      ...copy,
+      body: CONVENING_NOTICE_MISSING_MEETING_DATE_BODY,
+    };
+  }
+  return copy;
+}
 
 function parseDate(value: string): number | null {
   const trimmed = value.trim();
@@ -602,7 +634,7 @@ export function buildDashboardNotifications(
     const sourceProfile =
       reminder.source_profile.trim() || t('dashboard.workQueue.profile.missing');
     const reason = reminder.reason.trim() || t('dashboard.workQueue.reminder.fallback');
-    const copy = REMINDER_COPY[sourceRule];
+    const copy = reminderCopyFor(reminder, sourceRule);
     const i18nTitle = messageKey(reminder.i18n?.title_key);
     const i18nBody = messageKey(reminder.i18n?.body_key);
     const i18nAction = messageKey(reminder.i18n?.action_key);

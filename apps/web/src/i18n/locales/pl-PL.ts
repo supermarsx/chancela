@@ -263,6 +263,8 @@ export const plPL: Catalog = {
   'notifications.reminder.act.conveningNotice.title': 'Sprawdź zawiadomienie: {act_title}',
   'notifications.reminder.act.conveningNotice.body':
     'Statut rejestruje {required_notice_days} dni zawiadomienia dla {act_title} w {entity_name} z datą posiedzenia {meeting_date}; lokalna data zawiadomienia to {notice_due_date}. Zarejestrowany dowód wysyłki nie wykazuje tego wyprzedzenia. Wyłącznie lokalna wskazówka; nie potwierdza wystarczalności prawnej, doręczenia zewnętrznego ani zakończenia workflow.',
+  'notifications.reminder.act.conveningNotice.missingMeetingDate.body':
+    'Lokalne metadane statutowe rejestrują {required_notice_days} dni zawiadomienia dla {act_title} w {entity_name}, ale data posiedzenia nie jest jeszcze zarejestrowana. Lokalnej daty zawiadomienia nie można obliczyć, dopóki data posiedzenia nie zostanie zarejestrowana. Zarejestruj datę posiedzenia, a następnie sprawdź zarejestrowany dowód wysyłki. Wyłącznie lokalna wskazówka; nie potwierdza wystarczalności prawnej, obliczenia terminu prawnego, doręczenia zewnętrznego, zakończenia workflow ani akceptacji przez rejestr, DRE lub dostawcę.',
   'notifications.reminder.act.conveningNotice.action': 'Sprawdź zawiadomienie',
   'notifications.reminder.absentOwnerDispatch.title': 'Dowód wysyłki oczekuje: {act_title}',
   'notifications.reminder.absentOwnerDispatch.body':

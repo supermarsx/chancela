@@ -261,6 +261,8 @@ export const nlNL: Catalog = {
   'notifications.reminder.act.conveningNotice.title': 'Oproepingsbericht controleren: {act_title}',
   'notifications.reminder.act.conveningNotice.body':
     'De statuten registreren {required_notice_days} oproepingsdagen voor {act_title} van {entity_name} met vergaderdatum {meeting_date}; de lokale kennisgevingsdatum is {notice_due_date}. Het vastgelegde verzendbewijs toont die termijn niet aan. Alleen lokaal advies; er wordt geen juridische toereikendheid, externe levering of workflow-afronding geclaimd.',
+  'notifications.reminder.act.conveningNotice.missingMeetingDate.body':
+    'De lokale statutaire metadata registreren {required_notice_days} oproepingsdagen voor {act_title} van {entity_name}, maar er is nog geen vergaderdatum vastgelegd. De lokale kennisgevingsdatum kan niet worden berekend totdat de vergaderdatum is vastgelegd. Leg de vergaderdatum vast en controleer daarna het vastgelegde verzendbewijs. Alleen lokaal advies; er wordt geen juridische toereikendheid, berekening van een wettelijke termijn, externe levering, workflow-afronding of acceptatie door register, DRE of provider geclaimd.',
   'notifications.reminder.act.conveningNotice.action': 'Oproepingsbericht controleren',
   'notifications.reminder.absentOwnerDispatch.title': 'Verzendbewijs in behandeling: {act_title}',
   'notifications.reminder.absentOwnerDispatch.body':

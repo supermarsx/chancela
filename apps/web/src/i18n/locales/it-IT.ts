@@ -265,6 +265,8 @@ export const itIT: Catalog = {
   'notifications.reminder.act.conveningNotice.title': 'Rivedi convocazione: {act_title}',
   'notifications.reminder.act.conveningNotice.body':
     'Lo statuto registra {required_notice_days} giorni di preavviso per {act_title} di {entity_name} con riunione datata {meeting_date}; la data locale di avviso è {notice_due_date}. La prova di invio registrata non dimostra tale anticipo. Avviso locale consultivo; non afferma sufficienza legale, consegna esterna o completamento del workflow.',
+  'notifications.reminder.act.conveningNotice.missingMeetingDate.body':
+    'I metadati statutari locali registrano {required_notice_days} giorni di preavviso per {act_title} di {entity_name}, ma la data della riunione non è ancora registrata. La data locale di avviso non può essere calcolata finché non viene registrata la data della riunione. Registra la data della riunione e poi rivedi la prova di invio registrata. Avviso locale consultivo; non afferma sufficienza legale, calcolo di termini legali, consegna esterna, completamento del workflow né accettazione da registro, DRE o fornitore.',
   'notifications.reminder.act.conveningNotice.action': 'Rivedi convocazione',
   'notifications.reminder.absentOwnerDispatch.title': 'Prova di invio in sospeso: {act_title}',
   'notifications.reminder.absentOwnerDispatch.body':

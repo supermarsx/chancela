@@ -263,6 +263,8 @@ export const fiFI: Catalog = {
   'notifications.reminder.act.conveningNotice.title': 'Tarkista kokouskutsu: {act_title}',
   'notifications.reminder.act.conveningNotice.body':
     'Säännöt kirjaavat {required_notice_days} ilmoituspäivää asialle {act_title} ({entity_name}) kokouspäivällä {meeting_date}; paikallinen ilmoituspäivä on {notice_due_date}. Tallennettu lähetysnäyttö ei osoita tätä ennakkoaikaa. Vain paikallinen neuvo; ei väitä oikeudellista riittävyyttä, ulkoista toimitusta tai workflow’n valmistumista.',
+  'notifications.reminder.act.conveningNotice.missingMeetingDate.body':
+    'Paikalliset sääntömetatiedot kirjaavat {required_notice_days} ilmoituspäivää asialle {act_title} ({entity_name}), mutta kokouspäivää ei ole tallennettu. Paikallista ilmoituspäivää ei voida laskea ennen kuin kokouspäivä on tallennettu. Tallenna kokouspäivä ja tarkista sen jälkeen tallennettu lähetysnäyttö. Vain paikallinen neuvo; ei väitä oikeudellista riittävyyttä, lakisääteisen määräajan laskentaa, ulkoista toimitusta, workflow’n valmistumista eikä rekisterin, DRE:n tai palveluntarjoajan hyväksyntää.',
   'notifications.reminder.act.conveningNotice.action': 'Tarkista kokouskutsu',
   'notifications.reminder.absentOwnerDispatch.title': 'Lähetysnäyttö odottaa: {act_title}',
   'notifications.reminder.absentOwnerDispatch.body':

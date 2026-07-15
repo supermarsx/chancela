@@ -59,6 +59,18 @@ describe('catalog completeness matrix', () => {
     expect(enUS['dashboard.workQueue.status.pending']).toBe('Pending');
   });
 
+  it('keeps missing-meeting-date convocation reminder copy non-computing and advisory', () => {
+    const key = 'notifications.reminder.act.conveningNotice.missingMeetingDate.body';
+    expect(ptPT[key]).toContain('não pode ser calculada');
+    expect(ptPT[key]).toContain('cálculo de prazo legal');
+    expect(ptPT[key]).toContain('aceitação por registo, DRE ou fornecedor');
+    expect(ptPT[key]).not.toContain('{notice_due_date}');
+    expect(enUS[key]).toContain('cannot be computed');
+    expect(enUS[key]).toContain('legal deadline computation');
+    expect(enUS[key]).toContain('registry/DRE acceptance');
+    expect(enUS[key]).not.toContain('{notice_due_date}');
+  });
+
   it('keeps condominium annual reminder titles localized', () => {
     expect(ptPT['notifications.reminder.annual.condominio.title']).toBe(
       'Assembleia anual de condomínio pendente',

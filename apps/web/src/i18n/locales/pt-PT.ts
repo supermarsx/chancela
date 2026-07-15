@@ -268,6 +268,8 @@ export const ptPT = {
   'notifications.reminder.act.conveningNotice.title': 'Rever convocatória: {act_title}',
   'notifications.reminder.act.conveningNotice.body':
     'Os estatutos registam {required_notice_days} dias de antecedência para {act_title} de {entity_name} com reunião marcada para {meeting_date}; a data local de aviso é {notice_due_date}. A evidência de expedição registada não demonstra essa antecedência. Aviso consultivo local; não afirma suficiência legal, entrega externa ou conclusão do workflow.',
+  'notifications.reminder.act.conveningNotice.missingMeetingDate.body':
+    'Os metadados estatutários locais registam {required_notice_days} dias de antecedência para {act_title} de {entity_name}, mas a data da reunião ainda não está registada. A data local de aviso não pode ser calculada até a data da reunião ser registada. Registe a data da reunião e reveja a evidência de expedição. Aviso consultivo local; não afirma suficiência legal, cálculo de prazo legal, entrega externa, conclusão do workflow nem aceitação por registo, DRE ou fornecedor.',
   'notifications.reminder.act.conveningNotice.action': 'Rever convocatória',
   'notifications.reminder.absentOwnerDispatch.title':
     'Evidência de expedição pendente: {act_title}',

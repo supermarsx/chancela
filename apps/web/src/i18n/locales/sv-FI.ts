@@ -266,6 +266,8 @@ export const svFI: Catalog = {
   'notifications.reminder.act.conveningNotice.title': 'Granska kallelse: {act_title}',
   'notifications.reminder.act.conveningNotice.body':
     'Stadgarna anger {required_notice_days} kallelsedagar för {act_title} hos {entity_name} med mötesdatum {meeting_date}; det lokala kallelsedatumet är {notice_due_date}. Registrerat avsändningsunderlag visar inte denna framförhållning. Endast lokal rådgivande markering; ingen juridisk tillräcklighet, extern leverans eller workflow-slutförande hävdas.',
+  'notifications.reminder.act.conveningNotice.missingMeetingDate.body':
+    'De lokala stadgemetadata anger {required_notice_days} kallelsedagar för {act_title} hos {entity_name}, men inget mötesdatum är registrerat. Det lokala kallelsedatumet kan inte beräknas förrän mötesdatumet har registrerats. Registrera mötesdatumet och granska därefter det registrerade avsändningsunderlaget. Endast lokal rådgivande markering; ingen juridisk tillräcklighet, ingen beräkning av juridisk tidsfrist, ingen extern leverans, inget workflow-slutförande och ingen acceptans från register, DRE eller leverantör hävdas.',
   'notifications.reminder.act.conveningNotice.action': 'Granska kallelse',
   'notifications.reminder.absentOwnerDispatch.title': 'Avsändningsbevis väntar: {act_title}',
   'notifications.reminder.absentOwnerDispatch.body':

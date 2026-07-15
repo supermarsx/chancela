@@ -549,6 +549,69 @@ describe('buildDashboardNotifications', () => {
     expect(items[0]?.detail).toContain('Aviso consultivo local');
   });
 
+  it('renders convocation-notice reminders without meeting dates as non-computed advisory act work', () => {
+    const items = buildDashboardNotifications(
+      dashboard({
+        reminders: [
+          reminder({
+            due_date: '',
+            status: 'Pending',
+            severity: 'Warning',
+            reason: 'Raw backend convocation notice fallback.',
+            source_rule: 'act-convening-notice',
+            source_profile: 'csc-commercial',
+            params: {
+              act_id: 'act-notice-1',
+              act_title: 'Ata de aprovação de contas',
+              book_id: 'book-1',
+              entity_id: 'entity-1',
+              entity_name: 'Acme, S.A.',
+              required_notice_days: '10',
+              meeting_date: '',
+              notice_due_date: '',
+              dispatch_date: '',
+              antecedence_days: '',
+              evidence_status: 'missing_meeting_date',
+              notice_due_date_computable: 'false',
+              local_deadline_computed: 'false',
+              local_advisory_only: 'true',
+              legal_sufficiency_claimed: 'false',
+              legal_deadline_computation_claimed: 'false',
+              external_delivery_claimed: 'false',
+              workflow_completion_claimed: 'false',
+              registry_acceptance_claimed: 'false',
+              dre_acceptance_claimed: 'false',
+              provider_acceptance_claimed: 'false',
+            },
+            action: {
+              kind: 'open_act_convening_notice',
+              label_key: 'notifications.reminder.act.conveningNotice.action',
+              api_href: '/v1/acts/act-notice-1',
+              route: null,
+            },
+          }),
+        ],
+      }),
+      t,
+    );
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      kind: 'reminder',
+      tone: 'neutral',
+      badge: 'Pendente',
+      title: 'Rever convocatória: Ata de aprovação de contas',
+      detail:
+        'Os metadados estatutários locais registam 10 dias de antecedência para Ata de aprovação de contas de Acme, S.A., mas a data da reunião ainda não está registada. A data local de aviso não pode ser calculada até a data da reunião ser registada. Registe a data da reunião e reveja a evidência de expedição. Aviso consultivo local; não afirma suficiência legal, cálculo de prazo legal, entrega externa, conclusão do workflow nem aceitação por registo, DRE ou fornecedor.',
+      meta: ['Sem data', 'Fonte act-convening-notice / csc-commercial'],
+      action: { href: '/atas/act-notice-1', label: 'Rever convocatória' },
+    });
+    expect(items[0]?.detail).not.toContain('Raw backend');
+    expect(items[0]?.detail).not.toContain('data local de aviso é');
+    expect(items[0]?.detail).not.toContain('2026-03-20');
+    expect(items[0]?.detail).toContain('não pode ser calculada');
+  });
+
   it('renders condominium annual reminders with localized advisory copy and entity action', () => {
     const items = buildDashboardNotifications(
       dashboard({

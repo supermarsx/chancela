@@ -54,6 +54,12 @@ interface WorkQueueItem {
   actionLabel?: string;
 }
 
+interface ReminderCopy {
+  title: MessageKey;
+  body: MessageKey;
+  action: MessageKey;
+}
+
 interface ActivityItem {
   event: LedgerEventView;
   kind: ActivityKind;
@@ -456,9 +462,10 @@ const ALERT_COPY: Partial<Record<string, { title: MessageKey; body: MessageKey }
   },
 };
 
-const REMINDER_COPY: Partial<
-  Record<string, { title: MessageKey; body: MessageKey; action: MessageKey }>
-> = {
+const CONVENING_NOTICE_MISSING_MEETING_DATE_BODY: MessageKey =
+  'notifications.reminder.act.conveningNotice.missingMeetingDate.body';
+
+const REMINDER_COPY: Partial<Record<string, ReminderCopy>> = {
   'csc-art376-annual': {
     title: 'notifications.reminder.annual.csc.title',
     body: 'notifications.reminder.annual.body',
@@ -490,6 +497,36 @@ const REMINDER_COPY: Partial<
     action: 'notifications.reminder.act.conveningNotice.action',
   },
 };
+
+function reminderHasMissingMeetingDate(reminder: DashboardReminder, sourceRule: string): boolean {
+  if (sourceRule !== 'act-convening-notice') return false;
+  const params = reminder.params ?? {};
+  const hasMeetingDateParam = Object.prototype.hasOwnProperty.call(params, 'meeting_date');
+  const hasNoticeDueDateParam = Object.prototype.hasOwnProperty.call(params, 'notice_due_date');
+  return (
+    params.evidence_status?.trim() === 'missing_meeting_date' ||
+    params.notice_due_date_computable?.trim() === 'false' ||
+    (hasMeetingDateParam &&
+      hasNoticeDueDateParam &&
+      !params.meeting_date?.trim() &&
+      !params.notice_due_date?.trim())
+  );
+}
+
+function reminderCopyFor(
+  reminder: DashboardReminder,
+  sourceRule: string,
+): ReminderCopy | undefined {
+  const copy = REMINDER_COPY[sourceRule];
+  if (!copy) return undefined;
+  if (reminderHasMissingMeetingDate(reminder, sourceRule)) {
+    return {
+      ...copy,
+      body: CONVENING_NOTICE_MISSING_MEETING_DATE_BODY,
+    };
+  }
+  return copy;
+}
 
 function alertWorkQueueItem(alert: DashboardAlert, index: number, t: TFunction): WorkQueueItem {
   const code = alert.code.trim();
@@ -582,7 +619,7 @@ function buildWorkQueue({
     };
     const titleKey = messageKey(reminder.i18n?.title_key);
     const bodyKey = messageKey(reminder.i18n?.body_key);
-    const copy = REMINDER_COPY[sourceRule];
+    const copy = reminderCopyFor(reminder, sourceRule);
     const effectiveTitleKey = titleKey ?? copy?.title;
     const effectiveBodyKey = bodyKey ?? copy?.body;
     const actionKey = copy?.action;

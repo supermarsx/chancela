@@ -260,6 +260,8 @@ export const daDK: Catalog = {
   'notifications.reminder.act.conveningNotice.title': 'Gennemgå indkaldelse: {act_title}',
   'notifications.reminder.act.conveningNotice.body':
     'Vedtægterne registrerer {required_notice_days} varslingsdage for {act_title} hos {entity_name} med mødedato {meeting_date}; den lokale varslingsdato er {notice_due_date}. Den registrerede afsendelsesdokumentation viser ikke dette varsel. Kun lokal rådgivende markering; der påstås ingen juridisk tilstrækkelighed, ekstern levering eller workflow-afslutning.',
+  'notifications.reminder.act.conveningNotice.missingMeetingDate.body':
+    'De lokale vedtægtsmetadata registrerer {required_notice_days} varslingsdage for {act_title} hos {entity_name}, men der er ikke registreret nogen mødedato. Den lokale varslingsdato kan ikke beregnes, før mødedatoen er registreret. Registrer mødedatoen, og gennemgå derefter den registrerede afsendelsesdokumentation. Kun lokal rådgivende markering; der påstås ingen juridisk tilstrækkelighed, ingen beregning af juridisk frist, ingen ekstern levering, ingen workflow-afslutning og ingen register-/DRE- eller leverandøraccept.',
   'notifications.reminder.act.conveningNotice.action': 'Gennemgå indkaldelse',
   'notifications.reminder.absentOwnerDispatch.title': 'Afsendelsesbevis afventer: {act_title}',
   'notifications.reminder.absentOwnerDispatch.body':

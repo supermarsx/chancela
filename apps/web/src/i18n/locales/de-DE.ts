@@ -266,6 +266,8 @@ export const deDE: Catalog = {
   'notifications.reminder.act.conveningNotice.title': 'Einberufung prüfen: {act_title}',
   'notifications.reminder.act.conveningNotice.body':
     'Die Satzung erfasst {required_notice_days} Tage Vorlauf für {act_title} von {entity_name} mit Versammlungsdatum {meeting_date}; das lokale Hinweisdatum ist {notice_due_date}. Die erfassten Versandnachweise belegen diesen Vorlauf nicht. Nur lokaler Hinweis; keine rechtliche Ausreichendheit, externe Zustellung oder Workflow-Fertigstellung wird behauptet.',
+  'notifications.reminder.act.conveningNotice.missingMeetingDate.body':
+    'Die lokalen Satzungsmetadaten erfassen {required_notice_days} Tage Vorlauf für {act_title} von {entity_name}, aber es ist kein Versammlungsdatum erfasst. Das lokale Hinweisdatum kann erst berechnet werden, wenn das Versammlungsdatum erfasst ist. Erfassen Sie das Versammlungsdatum und prüfen Sie danach die erfassten Versandnachweise. Nur lokaler Hinweis; keine rechtliche Ausreichendheit, keine Berechnung einer gesetzlichen Frist, keine externe Zustellung, keine Workflow-Fertigstellung und keine Register-/DRE- oder Anbieterakzeptanz wird behauptet.',
   'notifications.reminder.act.conveningNotice.action': 'Einberufung prüfen',
   'notifications.reminder.absentOwnerDispatch.title': 'Versandnachweis ausstehend: {act_title}',
   'notifications.reminder.absentOwnerDispatch.body':

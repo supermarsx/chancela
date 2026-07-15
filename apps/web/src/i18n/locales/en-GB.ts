@@ -260,6 +260,8 @@ export const enGB: Catalog = {
   'notifications.reminder.act.conveningNotice.title': 'Review convening notice: {act_title}',
   'notifications.reminder.act.conveningNotice.body':
     'The statutes record {required_notice_days} notice days for {act_title} at {entity_name} with meeting date {meeting_date}; the local notice date is {notice_due_date}. Recorded dispatch evidence does not demonstrate that antecedence. Local advisory only; no legal sufficiency, external delivery, or workflow completion is claimed.',
+  'notifications.reminder.act.conveningNotice.missingMeetingDate.body':
+    'The local statute metadata records {required_notice_days} notice days for {act_title} at {entity_name}, but no meeting date is recorded. The local notice date cannot be computed until the meeting date is recorded. Record the meeting date, then review the recorded dispatch evidence. Local advisory only; no legal sufficiency, legal deadline computation, external delivery, workflow completion, registry/DRE acceptance, or provider acceptance is claimed.',
   'notifications.reminder.act.conveningNotice.action': 'Review convening notice',
   'notifications.reminder.absentOwnerDispatch.title': 'Dispatch evidence pending: {act_title}',
   'notifications.reminder.absentOwnerDispatch.body':

@@ -267,6 +267,8 @@ export const frFR: Catalog = {
   'notifications.reminder.act.conveningNotice.title': 'Revoir la convocation : {act_title}',
   'notifications.reminder.act.conveningNotice.body':
     'Les statuts indiquent {required_notice_days} jours de préavis pour {act_title} de {entity_name} avec réunion datée du {meeting_date}; la date locale de préavis est {notice_due_date}. La preuve d’envoi enregistrée ne démontre pas ce délai. Avis consultatif local uniquement ; aucune suffisance juridique, remise externe ni finalisation du workflow n’est affirmée.',
+  'notifications.reminder.act.conveningNotice.missingMeetingDate.body':
+    'Les métadonnées statutaires locales indiquent {required_notice_days} jours de préavis pour {act_title} de {entity_name}, mais aucune date de réunion n’est enregistrée. La date locale de préavis ne peut pas être calculée tant que la date de réunion n’est pas enregistrée. Renseignez la date de réunion, puis revoyez la preuve d’envoi enregistrée. Avis consultatif local uniquement ; aucune suffisance juridique, aucun calcul de délai légal, aucune remise externe, aucune finalisation du workflow ni aucune acceptation par le registre, le DRE ou un prestataire n’est affirmée.',
   'notifications.reminder.act.conveningNotice.action': 'Revoir la convocation',
   'notifications.reminder.absentOwnerDispatch.title': 'Preuve d’envoi en attente : {act_title}',
   'notifications.reminder.absentOwnerDispatch.body':
