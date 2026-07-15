@@ -2833,7 +2833,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Current `843fd6a` preserves the `842b7f2` mobile P1 slice",
+    "Current `33e70bb` preserves the `842b7f2` mobile P1 slice",
     "spec coverage mobile P1 checkpoint marker",
   );
   assertFileContainsNormalized(
@@ -2843,12 +2843,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "GDPR/API subject-DEK secret-store binding through `843fd6a`",
+    "GDPR/API subject-DEK secret-store binding through `33e70bb`",
     "CI/E2E hardening plan subject DEK focused checks marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Current `843fd6a` keeps Legal/Data/Architecture/API/CI **PARTIAL**",
+    "Current `33e70bb` keeps Legal/Data/Architecture/API/CI **PARTIAL**",
     "spec coverage subject DEK checkpoint marker",
   );
   assertFileContains(
@@ -5848,7 +5848,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "`843fd6a` canonicalization hardening for SignedInfo/reference digest",
+    "`33e70bb` canonicalization hardening for SignedInfo/reference digest",
     "CI checkpoints TSL canonicalization hardening marker",
   );
   assertFileContains(
@@ -10885,12 +10885,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `843fd6a`",
+    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `33e70bb`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `843fd6a`",
+    "Focused Gate Snapshot Through `33e70bb`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -11570,7 +11570,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `843fd6a`",
+    "Current checkpoint metadata/static checks through `33e70bb`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -11810,7 +11810,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current `843fd6a` TSL XML-DSig checks",
+    "Current `33e70bb` TSL XML-DSig checks",
     "CI/E2E hardening plan TSL P-256 XML-DSig checks marker",
   );
   assertFileContains(
@@ -12145,7 +12145,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `843fd6a6c3dba4d24cc445fefdbff99fe5a6c545`",
+    "implementation snapshot `33e70bb655d73d5abad4a597492b1673d75bd45a`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(

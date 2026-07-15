@@ -612,7 +612,7 @@ It intentionally reuses existing test surfaces:
   trust-list validation, claim qualified status, or complete legal signing
   acceptance.
 - TSL XML-DSig hardening: `cargo test -p chancela-tsl --locked` pins the
-  `843fd6a` canonicalization hardening for SignedInfo/reference digest
+  `33e70bb` canonicalization hardening for SignedInfo/reference digest
   candidates through real C14N while preserving the already-canonical fast path.
   This remains bounded technical TSL parsing evidence only; it does not claim
   legal trust certification, production trust-list validity, certificate path/

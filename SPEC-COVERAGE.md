@@ -1,6 +1,6 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-15 from current implementation snapshot `843fd6a6c3dba4d24cc445fefdbff99fe5a6c545`,
+*Updated 2026-07-15 from current implementation snapshot `33e70bb655d73d5abad4a597492b1673d75bd45a`,
 with committed evidence refreshes for mobile API base URL indirection and
 shell detection, subject DEK secret-store binding, the settled PDF/UA v12 gated-claim lane,
 XAdES C14N/digest-agility/B/T/LT/ASiC evidence, archive PDF accessibility
@@ -1936,7 +1936,7 @@ Implementation checkpoints covered here:
   official DGLAB export, government filing, import path, disposal execution,
   DGLAB certification, legal archival certification, PDF/A/PAdES/PDF-UA
   certification, authority approval, or legal archive acceptance is implemented.
-- Current `843fd6a` keeps Signatures/Trust/CI **PARTIAL**: the TSL XML-DSig
+- Current `33e70bb` keeps Signatures/Trust/CI **PARTIAL**: the TSL XML-DSig
   verifier now resolves bounded same-document `URI="#id"` references when a
   unique matching element is present in the supported minimal TSL shape, rejects
   missing, duplicate, external, or unsupported fragment targets instead of
@@ -3051,7 +3051,7 @@ Implementation checkpoints covered here:
   with contract and focused UI coverage. This is not live host SQLCipher proof,
   plaintext migration, OCR execution, canonical conversion, a signature, or legal
   acceptance.
-- Current `843fd6a` preserves the `842b7f2` mobile P1 slice and keeps Product
+- Current `33e70bb` preserves the `842b7f2` mobile P1 slice and keeps Product
   Scope/Architecture/UX/CI **PARTIAL**: the web client now routes API fetches
   and generated download URLs through
   `resolveApiUrl`, leaving browser/Tauri defaults relative while allowing
@@ -3063,7 +3063,7 @@ Implementation checkpoints covered here:
   URL indirection and shell detection only; it is not a native mobile release,
   iOS/Android packaging, offline sync, production connector readiness, or spec
   completion.
-- Current `843fd6a` keeps Legal/Data/Architecture/API/CI **PARTIAL**: the API
+- Current `33e70bb` keeps Legal/Data/Architecture/API/CI **PARTIAL**: the API
   secret-store subject-DEK crypto now derives the subject-DEK root from the
   resolved credential secret-store CMK with dedicated HKDF salt/info, keeps DEK
   wrap and field encryption AAD bound to subject, field, and key version, treats
@@ -3834,7 +3834,7 @@ or universal PDF/UA completion.
   external, or unsupported fragment references, plus bounded P-256 ECDSA-SHA256
   verification when the signer certificate is embedded, matches a configured
   trust anchor, and the XML-DSig signature value is raw fixed-width `r||s`. DER
-  ECDSA signatures are rejected. Current `843fd6a` additionally routes bounded
+  ECDSA signatures are rejected. Current `33e70bb` additionally routes bounded
   SignedInfo/reference digest candidates through real C14N while preserving the
   already-canonical fast path. This improves technical trust-list evidence, but
   it still does not support multiple references, support transform chains,
