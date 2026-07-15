@@ -1,8 +1,9 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-15 from current implementation snapshot `caae1bfdb05338905654afe90ee480ae7b876f49`,
-with committed evidence refreshes for the recently landed convening dispatch
-evidence capture UI slice, convocation reminder guidance routing,
+*Updated 2026-07-15 from current implementation snapshot `0c539ae4be96d577c12ebc3a3a79a39f0fbaf01f`,
+with committed evidence refreshes for the recently landed route-stubbed
+convening dispatch browser proof, convening dispatch evidence capture UI slice,
+convocation reminder guidance routing,
 missing-meeting-date convocation reminder, convocation act-review guidance, and
 convocation-notice local WFL/legal-calendar advisory reminder slices,
 condominium annual local
@@ -201,7 +202,9 @@ advisory reminders, `87ec6aa` convocation act-review guidance, `3dc31e3`
 missing-meeting-date convocation reminder handling, `82d3554` focused
 convocation reminder routing to the existing convening guidance anchor, and
 `caae1bf` local convening dispatch evidence capture through the existing
-endpoint.
+endpoint, followed by `0c539ae` route-stubbed browser evidence for dashboard
+convocation-reminder routing into the convening guidance anchor and local
+convening dispatch evidence POST through that same existing endpoint.
 Earlier coverage text remains prior snapshot context. All top-level spec areas remain **PARTIAL**.
 This is an implementation and test coverage snapshot, not a legal certification,
 not production CMD approval, not DRE verification promotion, not full PDF/UA
@@ -231,6 +234,22 @@ being useful. The matrix below records the current factual coverage and the rema
 blockers.
 
 Implementation checkpoints covered here:
+
+- Current `0c539ae` keeps Workflows/Legal/Compliance/UX/API/CI **PARTIAL**:
+  focused route-stubbed Playwright browser proof in
+  `apps/web/e2e/convening-dispatch-evidence.spec.ts` now pins the dashboard
+  `act-convening-notice` reminder path to `/atas/{id}#convening-guidance`,
+  verifies the existing convening guidance/no-claim copy, records local
+  dispatch evidence through `POST /v1/acts/{id}/convening/dispatch`, and
+  asserts the captured body contains the required `dispatched_at`, optional
+  channel/reference, and existing recipient names. Evidence passed: `npm run
+  test:browser --workspace apps/web --
+  e2e/convening-dispatch-evidence.spec.ts` (1 Chromium test), `git diff
+  --check`, and `git diff --cached --check` before commit. This is
+  route-stubbed browser evidence only: it does not call a real backend,
+  perform email/SMS/external delivery, validate provider/registry/DRE
+  acceptance, prove legal sufficiency/effect, complete the workflow, or add a
+  legal/compliance completion claim.
 
 - Current `caae1bf` keeps Workflows/Legal/Compliance/UX/API/CI **PARTIAL**:
   the Ata editor now builds a bounded dispatch body from the existing

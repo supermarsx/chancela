@@ -87,6 +87,7 @@ condominium annual profile-calendar Jan 15 local advisory markers plus
 dashboard-only annual reminder localization markers for CSC, association,
 foundation, and cooperative profile-calendar rules, convocation act-review
 guidance markers plus convening dispatch evidence capture markers and
+focused route-stubbed convening dispatch browser proof, and
 convocation-notice local WFL/legal-calendar advisory markers for
 `act-convening-notice` open-act reminders including the missing-meeting-date
 non-computed reminder path and focused `#convening-guidance` workflow UI
@@ -695,6 +696,16 @@ acceptance copy. These markers do not create recipients, change backend
 behavior, send notifications, perform external delivery, or claim legal
 authority, legal sufficiency, compliance completion, workflow completion,
 registry/DRE/provider acceptance, legal effect, or legal/compliance completion.
+
+Convening dispatch browser proof markers pin only route-stubbed local browser
+evidence: `npm run test:browser --workspace apps/web --
+e2e/convening-dispatch-evidence.spec.ts` covers the dashboard reminder link to
+`/atas/{id}#convening-guidance`, the visible convening guidance/no-claim copy,
+and the local `POST /v1/acts/{id}/convening/dispatch` request body for
+required `dispatched_at`, optional channel/reference, and existing recipient
+names. It does not exercise real delivery, live providers, registry/DRE
+acceptance, legal sufficiency/effect, workflow completion, or legal/compliance
+completion.
 
 Convocation-notice advisory markers pin the local statute/convening evidence
 slice only: core `STATUTE/convocation-notice-*` warnings for missing,

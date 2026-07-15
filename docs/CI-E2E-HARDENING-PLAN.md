@@ -1,8 +1,9 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `caae1bf`,
-including coverage notes for convening dispatch evidence capture UI,
+and implementation snapshot `0c539ae`,
+including coverage notes for route-stubbed convening dispatch browser proof,
+convening dispatch evidence capture UI,
 convocation reminder guidance routing,
 missing-meeting-date convocation reminders, convocation act-review guidance and
 convocation-notice local WFL/legal-calendar advisory reminders, condominium
@@ -891,11 +892,11 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `caae1bf`
+## Focused Gate Snapshot Through `0c539ae`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08` and checkpoint-promoted on 2026-07-15 for
-current implementation head `caae1bf`. This is not an exhaustive current
+current implementation head `0c539ae`. This is not an exhaustive current
 green-run claim; browser, Docker, desktop, package signing/notarization, image
 signing/attestation, and live-provider limits above still apply.
 
@@ -1859,6 +1860,17 @@ settingsDefaults.test.ts contracts.test.ts`.
   send email/SMS, confirm external delivery, compute legal sufficiency, complete
   the workflow, or claim registry/DRE/provider acceptance, legal effect, or
   legal/compliance completion.
+- Current `0c539ae` convening dispatch browser proof checks: focused
+  route-stubbed Playwright evidence passed with `npm run test:browser
+  --workspace apps/web -- e2e/convening-dispatch-evidence.spec.ts` (1 Chromium
+  test), plus `git diff --check` and `git diff --cached --check` before commit.
+  It pins the dashboard `act-convening-notice` reminder link to
+  `/atas/{id}#convening-guidance`, the existing guidance/no-claim browser copy,
+  and the local `POST /v1/acts/{id}/convening/dispatch` body for required
+  `dispatched_at`, optional channel/reference, and existing recipient names.
+  This is route-stubbed local browser evidence only: no real delivery, provider,
+  registry/DRE acceptance, legal sufficiency/effect, workflow completion, or
+  legal/compliance completion claim is added.
 - Current `82d3554` convocation reminder guidance routing checks: focused
   `npm run test --workspace apps/web -- DashboardPage.test.tsx
   notifications.test.ts AtaEditorStructured.test.tsx` passed 64 tests, `npm
@@ -2041,14 +2053,15 @@ settingsDefaults.test.ts contracts.test.ts`.
   full RBAC/delegation-policy completion, tenant authorization proof,
   legal-capacity verification, broad security certification, or spec
   completion.
-- Current checkpoint metadata/static checks through `caae1bf`
+- Current checkpoint metadata/static checks through `0c539ae`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
   `git diff --check -- SPEC-COVERAGE.md docs\CI-E2E-HARDENING-PLAN.md
   docs\CI-CHECKPOINTS.md scripts\checkpoint-recent-landed.mjs`.
   These pin the spec snapshot,
-  hardening-plan head, convening dispatch evidence capture, convocation
+  hardening-plan head, route-stubbed convening dispatch browser proof,
+  convening dispatch evidence capture, convocation
   reminder guidance routing, convocation act-review guidance, convocation-notice
   advisory reminders, dashboard annual
   reminder localization, automated-review

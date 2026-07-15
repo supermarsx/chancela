@@ -10421,12 +10421,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `caae1bf`",
+    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `0c539ae`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `caae1bf`",
+    "Focused Gate Snapshot Through `0c539ae`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -11066,7 +11066,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `caae1bf`",
+    "Current checkpoint metadata/static checks through `0c539ae`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -11601,7 +11601,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `caae1bfdb05338905654afe90ee480ae7b876f49`",
+    "implementation snapshot `0c539ae4be96d577c12ebc3a3a79a39f0fbaf01f`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -12106,6 +12106,41 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
+    "Current `0c539ae` keeps Workflows/Legal/Compliance/UX/API/CI **PARTIAL**",
+    "spec coverage convening dispatch browser proof checkpoint marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "apps/web/e2e/convening-dispatch-evidence.spec.ts",
+    "spec coverage convening dispatch browser spec marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "route-stubbed browser evidence only: it does not call a real backend, perform email/SMS/external delivery, validate provider/registry/DRE acceptance",
+    "spec coverage convening dispatch browser no-claim marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Current `0c539ae` convening dispatch browser proof checks",
+    "CI/E2E hardening plan convening dispatch browser proof marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "npm run test:browser\n  --workspace apps/web -- e2e/convening-dispatch-evidence.spec.ts",
+    "CI/E2E hardening plan convening dispatch browser command marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "Convening dispatch browser proof markers pin only route-stubbed local browser\nevidence",
+    "CI checkpoints convening dispatch browser proof marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-CHECKPOINTS.md",
+    "covers the dashboard reminder link to `/atas/{id}#convening-guidance`, the visible convening guidance/no-claim copy, and the local `POST /v1/acts/{id}/convening/dispatch` request body",
+    "CI checkpoints convening dispatch browser proof scope marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
     "Current `caae1bf` keeps Workflows/Legal/Compliance/UX/API/CI **PARTIAL**",
     "spec coverage convening dispatch evidence capture checkpoint marker",
   );
@@ -12203,6 +12238,36 @@ function assertCheckpointMap() {
     "apps/web/src/api/client.test.ts",
     "records act convening dispatch evidence through the act endpoint",
     "web client act convening dispatch endpoint coverage marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/convening-dispatch-evidence.spec.ts",
+    "dashboard convocation reminder routes to convening guidance and records local dispatch evidence",
+    "browser convening dispatch route and evidence coverage marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/convening-dispatch-evidence.spec.ts",
+    "The API is route-stubbed so this pins dashboard routing and the act endpoint",
+    "browser convening dispatch route-stubbed boundary marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/convening-dispatch-evidence.spec.ts",
+    "await expect(action).toHaveAttribute('href', `/atas/${ACT_ID}#convening-guidance`);",
+    "browser convening dispatch guidance href marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/convening-dispatch-evidence.spec.ts",
+    "const dispatchResponse = waitForApiResponse(page, DISPATCH_PATH, 'POST');",
+    "browser convening dispatch POST wait marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/convening-dispatch-evidence.spec.ts",
+    "recipients: ['Ana Sócia', 'Bruno Sócio']",
+    "browser convening dispatch recipient payload marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/convening-dispatch-evidence.spec.ts",
+    "suficiência (?:legal|jurídica) confirmada|entrega externa confirmada|email enviado|sms enviado|workflow concluído|registo\\/DRE aceite",
+    "browser convening dispatch no-overclaim assertion marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
