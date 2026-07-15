@@ -144,6 +144,12 @@ async fn main() {
         )
     };
 
+    // wp25-sec: warn once at boot if the durable store is a PLAINTEXT SQLite DB (no SQLCipher key).
+    // Captured before `state` moves into `app`. Encryption-at-rest stays optional/feature-gated (see
+    // the module docs) so builds without the native SQLCipher lib are unaffected; this only makes the
+    // recommended production posture visible.
+    let store_is_plaintext = state.store.is_some() && !state.database_encryption_configured;
+
     let app = chancela_api::app(state, web_dist.clone());
 
     let listener = TcpListener::bind(addr)
@@ -167,11 +173,24 @@ async fn main() {
         persistent = data_dir.is_some(),
         "chancela-server listening"
     );
+    if store_is_plaintext {
+        tracing::warn!(
+            "the durable SQLite database is UNENCRYPTED at rest; for production configure \
+             encryption at rest — build with `--features sqlcipher` and set \
+             CHANCELA_DB_KEY/CHANCELA_DB_KEY_FILE, or place the data directory on an encrypted volume"
+        );
+    }
 
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
-        .await
-        .expect("server error");
+    // wp25-sec: serve with per-connection info so the per-IP rate limiter can read the real TCP
+    // peer address (`ConnectInfo<SocketAddr>`). When the deployment sits behind a trusted reverse
+    // proxy, set CHANCELA_RATE_LIMIT_TRUST_FORWARDED_FOR=1 to key off X-Forwarded-For / X-Real-IP.
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await
+    .expect("server error");
 
     tracing::info!("chancela-server shut down cleanly");
 }

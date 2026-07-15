@@ -169,12 +169,14 @@ mod users;
 mod xades_signature;
 
 use std::collections::HashMap;
+use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
+use std::time::Instant;
 
 use axum::Json;
 use axum::Router;
-use axum::extract::{DefaultBodyLimit, OriginalUri, State};
+use axum::extract::{ConnectInfo, DefaultBodyLimit, OriginalUri, State};
 use axum::http::StatusCode;
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
@@ -631,6 +633,23 @@ pub struct AppState {
     /// (fail-closed to the per-node floor), and a session-revoke / role-change is broadcast so other
     /// nodes evict their caches. See [`cluster_shared_state`].
     pub cluster_shared: cluster_shared_state::SharedClusterState,
+    /// wp25-sec — per-client-IP HTTP rate-limit policy. `Default` is **disabled** so the
+    /// test/embedding constructors ([`AppState::default`], [`AppState::with_data_dir`]) stay inert;
+    /// the running server enables it with sane defaults from the environment in
+    /// [`AppState::try_from_env`]. Single-node, in-memory (see [`Self::rate_limit_buckets`]).
+    pub rate_limit: RateLimitConfig,
+    /// wp25-sec — per-client-IP token buckets backing [`rate_limit`](Self::rate_limit). In-memory,
+    /// reset on restart, bounded by the number of distinct recent client IPs. Cluster-wide limiting
+    /// would need a shared store (Redis) — a documented follow-up.
+    pub rate_limit_buckets: Arc<RwLock<HashMap<IpAddr, TokenBucket>>>,
+    /// wp25-sec — the absolute session-lifetime cap: the maximum wall-clock age a session may reach
+    /// regardless of the 24h idle/sliding renewal. `Default` is 7 days; the running server overrides
+    /// it from `CHANCELA_SESSION_MAX_LIFETIME` in [`AppState::try_from_env`].
+    pub session_max_lifetime: SessionMaxLifetime,
+    /// wp25-sec — per-token session issued-at timestamps backing the absolute-lifetime cap. Recorded
+    /// on first sight of a token (recovered from the pre-slide expiry on the minting node) and
+    /// consulted by [`actor::resolve_session_actor`]. In-memory, reset on restart.
+    pub session_issued_at: Arc<RwLock<HashMap<String, time::OffsetDateTime>>>,
 }
 
 impl AppState {
@@ -1285,8 +1304,8 @@ impl AppState {
     /// plaintext or in-memory.
     pub fn try_from_env() -> Result<Self, AppStateInitError> {
         let database_encryption = DatabaseEncryptionConfig::from_env()?;
-        match Self::resolve_data_dir() {
-            Some(dir) => Self::try_with_data_dir(dir, database_encryption),
+        let mut state = match Self::resolve_data_dir() {
+            Some(dir) => Self::try_with_data_dir(dir, database_encryption)?,
             // Pure in-memory (no data dir): seed the RBAC catalog so the bootstrap first user's
             // Owner\@Global assignment resolves to real authority. Without this a fresh in-memory
             // instance would hold an Owner assignment against an EMPTY catalog (fail-closed →
@@ -1295,9 +1314,9 @@ impl AppState {
                 if database_encryption.is_configured() {
                     return Err(AppStateInitError::DatabaseEncryptionRequiresDataDir);
                 }
-                let state = Self::default();
+                let base = Self::default();
                 let seeded = Arc::new(RwLock::new(chancela_authz::RoleCatalog::seeded_defaults()));
-                Ok(AppState {
+                AppState {
                     roles: seeded,
                     // Honour the CC co-location signal even in the pure in-memory desktop dev path.
                     local_signing: signature::local_signing_from_env(),
@@ -1305,10 +1324,16 @@ impl AppState {
                     csc_providers: Arc::new(signature::load_csc_providers_from_env()),
                     paper_book_ocr_command: paper_import::PaperBookOcrCommandConfig::from_env()
                         .map(Arc::new),
-                    ..state
-                })
+                    ..base
+                }
             }
-        }
+        };
+        // wp25-sec — security-hardening posture resolved from the environment for the *running*
+        // server only, so the test/embedding constructors (`default`/`with_data_dir`) stay inert:
+        // the per-IP rate limiter is ON by default here, and the absolute session cap is applied.
+        state.rate_limit = rate_limit_config_from_env();
+        state.session_max_lifetime = session_max_lifetime_from_env();
+        Ok(state)
     }
 
     /// The data directory `from_env` would use, or `None` for in-memory. Exposed so a binary can
@@ -2021,17 +2046,18 @@ pub fn router(state: AppState) -> Router {
             state.clone(),
             cluster_route::write_redirect_gate,
         ))
-        // Security response headers (t41 M2).
+        // Security response headers (t41 M2) — now including HSTS (wp25-sec).
         .layer(middleware::from_fn(security_headers))
+        // wp25-sec — per-client-IP HTTP rate limiter. Placed just below `observe` (so a rejected
+        // `429` is still traced + metered) and above the credential/degraded/cluster gates and the
+        // handlers. The health/readiness/metrics probes are exempt. Inert unless enabled (ON for the
+        // running server via `AppState::try_from_env`; OFF for the test/embedding constructors).
+        .layer(middleware::from_fn_with_state(state.clone(), rate_limit))
         // wp25 observability — OUTERMOST layer: correlation id (`x-request-id`) + tracing span +
         // HTTP metrics (count / latency / in-flight) for every request. Added last so it wraps the
         // whole stack (a 503 from the gates below is still traced, metered, and carries the id). It
         // runs after routing, so `MatchedPath` is present for bounded-cardinality trace/metric labels
         // and raw URL paths with ids/secrets are never logged.
-        // NOTE for the security executor rebasing next: add HSTS to `security_headers` (the response
-        // header layer just below this) and insert the rate-limit layer into THIS `.layer(...)` chain
-        // — put rate-limiting just below `observe` (so rejected requests are still traced + metered)
-        // and above the credential/degraded/cluster gates.
         .layer(middleware::from_fn(observability::observe))
         .with_state(state);
 
@@ -2158,6 +2184,302 @@ async fn security_headers(request: axum::http::Request<axum::body::Body>, next: 
          script-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
             .parse()
             .unwrap(),
+    );
+    // Strict-Transport-Security (wp25-sec). HSTS only takes effect over HTTPS — TLS is terminated at
+    // the reverse proxy in front of the server, and browsers ignore this header on plain HTTP — so
+    // emitting it unconditionally is safe and lets a TLS-fronted deployment pin HTTPS with no
+    // per-request configuration. The value (max-age / includeSubDomains / preload) is resolved once
+    // from the environment; see [`hsts_header_value`].
+    headers.insert(
+        axum::http::HeaderName::from_static("strict-transport-security"),
+        axum::http::HeaderValue::from_static(hsts_header_value()),
+    );
+    response
+}
+
+// ── wp25-sec: security-hardening configuration + middleware ──────────────────────────────────────
+
+/// Env var overriding the absolute session lifetime cap, in whole seconds. Default 7 days; a
+/// non-positive value disables the cap (sessions then rely on the 24h idle/sliding expiry alone).
+pub const SESSION_MAX_LIFETIME_ENV: &str = "CHANCELA_SESSION_MAX_LIFETIME";
+/// Default absolute session lifetime cap: 7 days.
+pub const DEFAULT_SESSION_MAX_LIFETIME_SECS: i64 = 7 * 24 * 60 * 60;
+
+/// Env var setting the HSTS `max-age` (seconds). Default [`DEFAULT_HSTS_MAX_AGE_SECS`].
+pub const HSTS_MAX_AGE_ENV: &str = "CHANCELA_HSTS_MAX_AGE";
+/// Env var toggling the HSTS `includeSubDomains` directive. Default on.
+pub const HSTS_INCLUDE_SUBDOMAINS_ENV: &str = "CHANCELA_HSTS_INCLUDE_SUBDOMAINS";
+/// Env var toggling the HSTS `preload` directive. Default off (opt in only once the domain is
+/// actually submitted to the browser preload list).
+pub const HSTS_PRELOAD_ENV: &str = "CHANCELA_HSTS_PRELOAD";
+/// Default HSTS `max-age`: two years, the common preload-eligible baseline.
+pub const DEFAULT_HSTS_MAX_AGE_SECS: u64 = 63_072_000;
+
+/// Env var toggling the per-IP HTTP rate limiter. Default ON for the running server.
+pub const RATE_LIMIT_ENABLED_ENV: &str = "CHANCELA_RATE_LIMIT_ENABLED";
+/// Env var setting the sustained per-IP request rate (requests per second).
+pub const RATE_LIMIT_PER_SECOND_ENV: &str = "CHANCELA_RATE_LIMIT_PER_SECOND";
+/// Env var setting the per-IP burst allowance (bucket capacity).
+pub const RATE_LIMIT_BURST_ENV: &str = "CHANCELA_RATE_LIMIT_BURST";
+/// Env var enabling trust of `X-Forwarded-For` / `X-Real-IP` for the client IP. Default OFF
+/// (spoofable unless the server sits behind a trusted reverse proxy).
+pub const RATE_LIMIT_TRUST_FORWARDED_ENV: &str = "CHANCELA_RATE_LIMIT_TRUST_FORWARDED_FOR";
+const DEFAULT_RATE_LIMIT_PER_SECOND: f64 = 50.0;
+const DEFAULT_RATE_LIMIT_BURST: f64 = 100.0;
+
+/// Parse a boolean-ish env var (`1/true/yes/on` vs `0/false/no/off`), falling back to `default`
+/// when unset or unrecognised.
+fn env_flag(name: &str, default: bool) -> bool {
+    match std::env::var(name) {
+        Ok(raw) => match raw.trim().to_ascii_lowercase().as_str() {
+            "1" | "true" | "yes" | "on" => true,
+            "0" | "false" | "no" | "off" => false,
+            _ => default,
+        },
+        Err(_) => default,
+    }
+}
+
+/// The absolute session lifetime cap resolved from the environment (default 7 days).
+fn session_max_lifetime_from_env() -> SessionMaxLifetime {
+    match std::env::var(SESSION_MAX_LIFETIME_ENV) {
+        Ok(raw) => match raw.trim().parse::<i64>() {
+            Ok(secs) => SessionMaxLifetime(secs),
+            Err(_) => {
+                tracing::warn!(
+                    value = %raw,
+                    "{SESSION_MAX_LIFETIME_ENV} is not an integer number of seconds; using default"
+                );
+                SessionMaxLifetime::default()
+            }
+        },
+        Err(_) => SessionMaxLifetime::default(),
+    }
+}
+
+/// The `Strict-Transport-Security` header value, resolved once from the environment.
+///
+/// `max-age` defaults to two years; `includeSubDomains` is on by default; `preload` is off by
+/// default. Setting `CHANCELA_HSTS_MAX_AGE=0` emits `max-age=0`, which tells browsers to forget the
+/// policy. Cached in a `OnceLock` so it is computed once and the header can be a `&'static str`.
+fn hsts_header_value() -> &'static str {
+    static VALUE: OnceLock<String> = OnceLock::new();
+    VALUE
+        .get_or_init(|| {
+            let max_age = std::env::var(HSTS_MAX_AGE_ENV)
+                .ok()
+                .and_then(|v| v.trim().parse::<u64>().ok())
+                .unwrap_or(DEFAULT_HSTS_MAX_AGE_SECS);
+            let mut value = format!("max-age={max_age}");
+            if env_flag(HSTS_INCLUDE_SUBDOMAINS_ENV, true) {
+                value.push_str("; includeSubDomains");
+            }
+            if env_flag(HSTS_PRELOAD_ENV, false) {
+                value.push_str("; preload");
+            }
+            value
+        })
+        .as_str()
+}
+
+/// Absolute upper bound on how long a single session may live regardless of sliding renewals
+/// (wp25-sec). `Default` is [`DEFAULT_SESSION_MAX_LIFETIME_SECS`] (7 days); the running server
+/// overrides it from [`SESSION_MAX_LIFETIME_ENV`] in [`AppState::try_from_env`].
+#[derive(Clone, Copy, Debug)]
+pub struct SessionMaxLifetime(pub i64);
+
+impl Default for SessionMaxLifetime {
+    fn default() -> Self {
+        Self(DEFAULT_SESSION_MAX_LIFETIME_SECS)
+    }
+}
+
+/// Per-client-IP HTTP rate-limit policy (wp25-sec). `Default` is **disabled** (test/embedding
+/// posture); the running server enables it with sane defaults via [`AppState::try_from_env`].
+#[derive(Clone, Debug)]
+pub struct RateLimitConfig {
+    /// Whether limiting is active at all.
+    pub enabled: bool,
+    /// Sustained refill rate, in requests per second per IP.
+    pub per_second: f64,
+    /// Burst capacity (bucket size) per IP.
+    pub burst: f64,
+    /// Whether to trust `X-Forwarded-For` / `X-Real-IP` for the client IP. OFF by default: only a
+    /// deployment actually behind a trusted reverse proxy should enable it, since these headers are
+    /// client-spoofable when the server is directly reachable.
+    pub trust_forwarded_for: bool,
+}
+
+impl Default for RateLimitConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            per_second: DEFAULT_RATE_LIMIT_PER_SECOND,
+            burst: DEFAULT_RATE_LIMIT_BURST,
+            trust_forwarded_for: false,
+        }
+    }
+}
+
+/// The rate-limit policy resolved from the environment for the running server (limiter ON unless
+/// `CHANCELA_RATE_LIMIT_ENABLED` says otherwise).
+fn rate_limit_config_from_env() -> RateLimitConfig {
+    let defaults = RateLimitConfig::default();
+    RateLimitConfig {
+        enabled: env_flag(RATE_LIMIT_ENABLED_ENV, true),
+        per_second: std::env::var(RATE_LIMIT_PER_SECOND_ENV)
+            .ok()
+            .and_then(|v| v.trim().parse::<f64>().ok())
+            .filter(|v| v.is_finite() && *v > 0.0)
+            .unwrap_or(defaults.per_second),
+        burst: std::env::var(RATE_LIMIT_BURST_ENV)
+            .ok()
+            .and_then(|v| v.trim().parse::<f64>().ok())
+            .filter(|v| v.is_finite() && *v >= 1.0)
+            .unwrap_or(defaults.burst),
+        trust_forwarded_for: env_flag(RATE_LIMIT_TRUST_FORWARDED_ENV, false),
+    }
+}
+
+/// A single client IP's token bucket (wp25-sec): refills at `per_second`, capped at `burst`.
+#[derive(Debug)]
+pub struct TokenBucket {
+    tokens: f64,
+    last_refill: Instant,
+}
+
+impl TokenBucket {
+    fn new(burst: f64, now: Instant) -> Self {
+        Self {
+            tokens: burst,
+            last_refill: now,
+        }
+    }
+
+    fn refill(&mut self, per_second: f64, burst: f64, now: Instant) {
+        let elapsed = now
+            .saturating_duration_since(self.last_refill)
+            .as_secs_f64();
+        if elapsed > 0.0 {
+            self.tokens = (self.tokens + elapsed * per_second).min(burst);
+            self.last_refill = now;
+        }
+    }
+
+    /// Consume one token; returns `true` if the request is allowed.
+    fn try_take(&mut self) -> bool {
+        if self.tokens >= 1.0 {
+            self.tokens -= 1.0;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Whole seconds until at least one token is available again (for `Retry-After`).
+    fn retry_after_secs(&self, per_second: f64) -> u64 {
+        if per_second <= 0.0 {
+            return 1;
+        }
+        let deficit = (1.0 - self.tokens).max(0.0);
+        ((deficit / per_second).ceil() as u64).max(1)
+    }
+}
+
+/// Paths always exempt from rate limiting: the liveness/readiness/metrics probes (and their `/api`
+/// aliases) must answer even under load so an orchestrator never kills a busy-but-healthy node.
+fn rate_limit_exempt(path: &str) -> bool {
+    matches!(
+        path,
+        "/health"
+            | "/livez"
+            | "/readyz"
+            | "/metrics"
+            | "/api/health"
+            | "/api/livez"
+            | "/api/readyz"
+            | "/api/metrics"
+    )
+}
+
+/// Resolve the client IP for rate limiting. When `trust_forwarded_for` is set (deployment behind a
+/// trusted reverse proxy), prefer `X-Real-IP` then the left-most `X-Forwarded-For` entry; otherwise
+/// use the TCP peer address ([`ConnectInfo`], populated by the server's
+/// `into_make_service_with_connect_info`). Falls back to the unspecified address (one shared bucket)
+/// when no source is available — e.g. in-process tests without connect info.
+fn rate_limit_client_ip(
+    request: &axum::http::Request<axum::body::Body>,
+    trust_forwarded_for: bool,
+) -> IpAddr {
+    if trust_forwarded_for {
+        if let Some(ip) = forwarded_client_ip(request.headers()) {
+            return ip;
+        }
+    }
+    request
+        .extensions()
+        .get::<ConnectInfo<SocketAddr>>()
+        .map(|ci| ci.0.ip())
+        .unwrap_or(IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED))
+}
+
+/// Extract a client IP from the proxy forwarding headers (`X-Real-IP`, then the left-most
+/// `X-Forwarded-For` entry). Only consulted when the proxy is explicitly trusted.
+fn forwarded_client_ip(headers: &axum::http::HeaderMap) -> Option<IpAddr> {
+    if let Some(real) = headers.get("x-real-ip").and_then(|v| v.to_str().ok()) {
+        if let Ok(ip) = real.trim().parse::<IpAddr>() {
+            return Some(ip);
+        }
+    }
+    let forwarded = headers
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())?;
+    forwarded.split(',').next()?.trim().parse::<IpAddr>().ok()
+}
+
+/// Per-client-IP HTTP rate-limit middleware (wp25-sec). Exempts the health/readiness/metrics probes;
+/// otherwise debits the client IP's token bucket and returns `429 Too Many Requests` with a
+/// `Retry-After` header once the IP outruns its configured rate + burst. In-memory + single-node;
+/// cluster-wide limiting would need a shared store (Redis) — a documented follow-up.
+async fn rate_limit(
+    State(state): State<AppState>,
+    request: axum::http::Request<axum::body::Body>,
+    next: Next,
+) -> Response {
+    let config = state.rate_limit.clone();
+    if !config.enabled || rate_limit_exempt(request.uri().path()) {
+        return next.run(request).await;
+    }
+    let ip = rate_limit_client_ip(&request, config.trust_forwarded_for);
+    let retry_after = {
+        let now = Instant::now();
+        let mut buckets = state.rate_limit_buckets.write().await;
+        let bucket = buckets
+            .entry(ip)
+            .or_insert_with(|| TokenBucket::new(config.burst, now));
+        bucket.refill(config.per_second, config.burst, now);
+        if bucket.try_take() {
+            None
+        } else {
+            Some(bucket.retry_after_secs(config.per_second))
+        }
+    };
+    match retry_after {
+        None => next.run(request).await,
+        Some(secs) => too_many_requests(secs),
+    }
+}
+
+/// Build the `429 Too Many Requests` response with a `Retry-After` (delta-seconds).
+fn too_many_requests(retry_after_secs: u64) -> Response {
+    let body = serde_json::json!({
+        "error": "demasiados pedidos: limite de taxa excedido; tente novamente dentro de instantes",
+        "rate_limited": true,
+    });
+    let mut response = (StatusCode::TOO_MANY_REQUESTS, Json(body)).into_response();
+    response.headers_mut().insert(
+        axum::http::header::RETRY_AFTER,
+        axum::http::HeaderValue::from(retry_after_secs.max(1)),
     );
     response
 }
@@ -8118,6 +8440,128 @@ mod tests {
             .expect("content-security-policy header");
         assert!(csp.contains("default-src 'self'"), "{csp}");
         assert!(csp.contains("frame-ancestors 'none'"), "{csp}");
+        // wp25-sec: HSTS is emitted on every response (safe even over plain HTTP — browsers ignore
+        // it there; it pins HTTPS once the TLS-terminating reverse proxy is in front).
+        let hsts = headers
+            .get("strict-transport-security")
+            .and_then(|v| v.to_str().ok())
+            .expect("strict-transport-security header");
+        assert!(hsts.contains("max-age="), "{hsts}");
+        assert!(hsts.contains("includeSubDomains"), "{hsts}");
+    }
+
+    #[tokio::test]
+    async fn hsts_header_present_on_api_responses() {
+        let (_status, headers, _body) =
+            send_text_with_headers(router(AppState::default()), get("/health")).await;
+        let hsts = headers
+            .get("strict-transport-security")
+            .and_then(|v| v.to_str().ok())
+            .expect("strict-transport-security header on API responses");
+        assert!(hsts.starts_with("max-age="), "{hsts}");
+        assert!(hsts.contains("includeSubDomains"), "{hsts}");
+    }
+
+    #[tokio::test]
+    async fn rate_limiter_returns_429_with_retry_after_after_burst() {
+        // Tight policy (burst of 2, negligible refill) so the third request from one IP is limited.
+        // Trust the forwarded IP so the in-process test can key requests by header (no ConnectInfo).
+        let state = AppState {
+            rate_limit: RateLimitConfig {
+                enabled: true,
+                per_second: 0.001,
+                burst: 2.0,
+                trust_forwarded_for: true,
+            },
+            ..AppState::default()
+        };
+
+        let request = |ip: &str| {
+            Request::builder()
+                .uri("/v1/entities")
+                .header("x-real-ip", ip)
+                .body(Body::empty())
+                .expect("request builds")
+        };
+
+        // First two requests pass the limiter (they then 401 at the auth layer — not our concern).
+        for _ in 0..2 {
+            let status = router(state.clone())
+                .oneshot(request("203.0.113.7"))
+                .await
+                .expect("router responds")
+                .status();
+            assert_ne!(status, StatusCode::TOO_MANY_REQUESTS);
+        }
+
+        // The third is rate-limited with a Retry-After.
+        let response = router(state.clone())
+            .oneshot(request("203.0.113.7"))
+            .await
+            .expect("router responds");
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert!(
+            response.headers().get("retry-after").is_some(),
+            "429 carries a Retry-After header"
+        );
+
+        // A different client IP is unaffected (per-IP buckets).
+        let status = router(state.clone())
+            .oneshot(request("198.51.100.9"))
+            .await
+            .expect("router responds")
+            .status();
+        assert_ne!(status, StatusCode::TOO_MANY_REQUESTS);
+    }
+
+    #[tokio::test]
+    async fn rate_limiter_exempts_liveness_probe() {
+        let state = AppState {
+            rate_limit: RateLimitConfig {
+                enabled: true,
+                per_second: 0.001,
+                burst: 1.0,
+                trust_forwarded_for: true,
+            },
+            ..AppState::default()
+        };
+        // Far more requests than the burst; /livez is exempt so none is ever limited.
+        for _ in 0..5 {
+            let response = router(state.clone())
+                .oneshot(
+                    Request::builder()
+                        .uri("/livez")
+                        .header("x-real-ip", "203.0.113.7")
+                        .body(Body::empty())
+                        .expect("request builds"),
+                )
+                .await
+                .expect("router responds");
+            assert_eq!(response.status(), StatusCode::OK);
+        }
+    }
+
+    #[tokio::test]
+    async fn session_past_absolute_lifetime_cap_is_rejected() {
+        // A 1-hour absolute cap so a session issued two hours ago is over-age.
+        let state = AppState {
+            session_max_lifetime: SessionMaxLifetime(60 * 60),
+            ..AppState::default()
+        };
+        let uid = seed_user(&state, "amelia.marques", vec![]).await;
+        let token = seed_session(&state, &uid.to_string()).await;
+        // Pin the issued-at well beyond the cap (the sliding 24h expiry stays fresh).
+        state.session_issued_at.write().await.insert(
+            token.clone(),
+            time::OffsetDateTime::now_utc() - time::Duration::hours(2),
+        );
+
+        // The session is rejected (401) — not a 403 (which would mean the session was accepted but
+        // the user lacked permission).
+        let (status, _) = send_raw(state.clone(), with_session(get("/v1/entities"), &token)).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        // The over-age session was evicted.
+        assert!(!state.sessions.read().await.contains_key(&token));
     }
 
     #[tokio::test]

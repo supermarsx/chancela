@@ -18,6 +18,18 @@
 //! Each session carries an `expires_at` timestamp (24h from creation). The extractor rejects
 //! expired tokens (401) and slides the expiry forward on each successful request, so an active
 //! user is never logged out mid-work while an idle session expires.
+//!
+//! ## Absolute lifetime cap (wp25-sec)
+//!
+//! The 24h expiry above is a *sliding* idle window — an active session renews it forever. On top of
+//! it, a configurable **absolute** cap ([`AppState::session_max_lifetime`], default 7 days from
+//! `CHANCELA_SESSION_MAX_LIFETIME`) bounds the total wall-clock age of a session so it cannot be
+//! renewed indefinitely. The session's issued-at is recorded on first sight (recovered from the
+//! pre-slide expiry on the minting node) in [`AppState::session_issued_at`]; once
+//! `now >= issued_at + cap` the session is rejected (401) and evicted. A non-positive cap disables
+//! the check. Enforcement is node-local with exact creation time on the minting node; cluster-wide
+//! exact enforcement would need the issued-at carried in the shared session record (Redis) — a
+//! documented follow-up.
 
 use axum::extract::FromRequestParts;
 use axum::http::request::Parts;
@@ -146,37 +158,57 @@ pub async fn resolve_session_actor(
     token: &str,
 ) -> Result<Option<String>, ApiError> {
     let std_ttl = std::time::Duration::from_secs(SESSION_TTL_SECS.max(0) as u64);
+    let now = OffsetDateTime::now_utc();
     // 1. Node-local fast path (authoritative on the minting node; holds the unlocked key + expiry).
-    let local_uid = {
-        let now = OffsetDateTime::now_utc();
+    // Capture the session's *creation* time (recoverable as the pre-slide expiry minus the TTL) so
+    // the absolute-lifetime cap can be evaluated before the idle expiry is slid forward.
+    let local = {
         let mut sessions = state.sessions.write().await;
-        let valid = matches!(sessions.get(token), Some(e) if now < e.expires_at);
-        if valid {
-            let entry = sessions.get_mut(token).expect("entry was just present");
-            entry.expires_at = now + time::Duration::seconds(SESSION_TTL_SECS);
-            Some(entry.user_id)
-        } else {
-            // Drop an expired local entry (idempotent for an absent token), then fall through to the
-            // cluster-shared store below.
-            sessions.remove(token);
-            None
+        match sessions.get(token) {
+            Some(entry) if now < entry.expires_at => {
+                let created_at = entry.expires_at - time::Duration::seconds(SESSION_TTL_SECS);
+                let user_id = entry.user_id;
+                let entry = sessions.get_mut(token).expect("entry was just present");
+                entry.expires_at = now + time::Duration::seconds(SESSION_TTL_SECS);
+                Some((user_id, created_at))
+            }
+            _ => {
+                // Drop an expired local entry (idempotent for an absent token), then fall through to
+                // the cluster-shared store below.
+                sessions.remove(token);
+                None
+            }
         }
     };
-    let user_id = match local_uid {
-        // Local hit: refresh the shared TTL too so a follower's copy stays alive while this node uses
-        // the session (a no-op single-node).
-        Some(uid) => {
+    let user_id = match local {
+        // Local hit: enforce the absolute cap, then refresh the shared TTL too so a follower's copy
+        // stays alive while this node uses the session (a no-op single-node).
+        Some((uid, created_at)) => {
+            if session_absolute_cap_exceeded(state, token, now, created_at).await {
+                evict_session(state, token).await;
+                return Ok(None);
+            }
             state.cluster_shared.sessions.put(token, uid.0, std_ttl);
             uid
         }
-        // Local miss/expiry: consult the cluster-shared store. FAIL-CLOSED — anything other than a
-        // verified `Found` is treated as unauthenticated (`NotShared` single-node ⇒ today's `None`).
-        None => match state.cluster_shared.sessions.resolve(token, std_ttl) {
-            SessionLookup::Found { user_id } => UserId(user_id),
-            SessionLookup::NotShared | SessionLookup::NotFound | SessionLookup::Unavailable => {
-                return Ok(None);
+        // Local miss/expiry: drop any orphan issued-at, then consult the cluster-shared store.
+        // FAIL-CLOSED — anything other than a verified `Found` is treated as unauthenticated
+        // (`NotShared` single-node ⇒ today's `None`).
+        None => {
+            state.session_issued_at.write().await.remove(token);
+            match state.cluster_shared.sessions.resolve(token, std_ttl) {
+                // No local creation time here; pin issued-at at first cross-node sight.
+                SessionLookup::Found { user_id } => {
+                    if session_absolute_cap_exceeded(state, token, now, now).await {
+                        return Ok(None);
+                    }
+                    UserId(user_id)
+                }
+                SessionLookup::NotShared | SessionLookup::NotFound | SessionLookup::Unavailable => {
+                    return Ok(None);
+                }
             }
-        },
+        }
     };
     let username = {
         let users = state.users.read().await;
@@ -186,6 +218,38 @@ pub async fn resolve_session_actor(
             .map(|u| u.username.clone())
     };
     Ok(username)
+}
+
+/// Whether a session has exceeded its absolute lifetime cap (wp25-sec).
+///
+/// Records the session's issued-at on first sight (`first_seen_issued_at` — the creation time
+/// recovered from the pre-slide expiry on the minting node, or "now" for a session first observed
+/// via the cluster-shared store) and returns `true` once `now >= issued_at + cap`. A prior pinned
+/// issued-at always wins over the derived value, so the cap is anchored to the true creation time
+/// even as the 24h idle expiry keeps sliding. A non-positive cap disables the check.
+async fn session_absolute_cap_exceeded(
+    state: &AppState,
+    token: &str,
+    now: OffsetDateTime,
+    first_seen_issued_at: OffsetDateTime,
+) -> bool {
+    let cap_secs = state.session_max_lifetime.0;
+    if cap_secs <= 0 {
+        return false;
+    }
+    let issued_at = {
+        let mut issued = state.session_issued_at.write().await;
+        *issued
+            .entry(token.to_owned())
+            .or_insert(first_seen_issued_at)
+    };
+    now >= issued_at + time::Duration::seconds(cap_secs)
+}
+
+/// Evict a session both from the node-local map and from the issued-at cap tracker.
+async fn evict_session(state: &AppState, token: &str) {
+    state.sessions.write().await.remove(token);
+    state.session_issued_at.write().await.remove(token);
 }
 
 /// Read the raw session token from request headers (without validation).
