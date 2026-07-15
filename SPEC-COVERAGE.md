@@ -1,7 +1,8 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-15 from current implementation snapshot `99d15a4488752d9a3e8509d6539005843480e7b4`,
-with committed evidence refreshes for the settled PDF/UA v12 gated-claim lane,
+*Updated 2026-07-15 from current implementation snapshot `f828c50fe794c79ae7a4a6bf9e6eb9b0d460c8c9`,
+with committed evidence refreshes for mobile API base URL indirection and
+shell detection, subject DEK secret-store binding, the settled PDF/UA v12 gated-claim lane,
 XAdES C14N/digest-agility/B/T/LT/ASiC evidence, archive PDF accessibility
 propagation, the MCP document/archive PDF accessibility
 v12 identifier, count, blocker, and fixture-report alignment, the browser
@@ -3046,6 +3047,28 @@ Implementation checkpoints covered here:
   with contract and focused UI coverage. This is not live host SQLCipher proof,
   plaintext migration, OCR execution, canonical conversion, a signature, or legal
   acceptance.
+- Current `f828c50` preserves the `842b7f2` mobile P1 slice and keeps Product
+  Scope/Architecture/UX/CI **PARTIAL**: the web client now routes API fetches
+  and generated download URLs through
+  `resolveApiUrl`, leaving browser/Tauri defaults relative while allowing
+  `VITE_CHANCELA_API_BASE_URL`, `window.__CHANCELA_CONFIG__`, or
+  `window.__CHANCELA_MOBILE_SHELL__` to provide an absolute API base URL. The
+  mobile shell helper detects explicit Chancela hints plus Capacitor, Cordova,
+  ReactNative WebView, and Chancela WKWebView handlers, with focused
+  `baseUrl`, client, and mobile-shell unit coverage. This is frontend API base
+  URL indirection and shell detection only; it is not a native mobile release,
+  iOS/Android packaging, offline sync, production connector readiness, or spec
+  completion.
+- Current `f828c50` keeps Legal/Data/Architecture/API/CI **PARTIAL**: the API
+  secret-store subject-DEK crypto now derives the subject-DEK root from the
+  resolved credential secret-store CMK with dedicated HKDF salt/info, keeps DEK
+  wrap and field encryption AAD bound to subject, field, and key version, treats
+  an empty persisted wrapped-DEK blob as erased/unrecoverable, and covers
+  round-trip, crypto-erase, AAD binding, randomized wrapped blobs, and
+  cross-store unwrap failure. This is local secret-store crypto binding for the
+  GDPR-erasure follow-up only; it is not a wired destructive erasure workflow,
+  physical deletion/anonymization, backup/archive rewrite, legal GDPR
+  completion, production key-custody proof, or spec completion.
 
 ---
 

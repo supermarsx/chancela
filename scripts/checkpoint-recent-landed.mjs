@@ -2818,6 +2818,111 @@ function assertCheckpointMap() {
   );
   assertFileContainsNormalized(
     "docs/CI-CHECKPOINTS.md",
+    "mobile API base URL/shell-detection markers for `resolveApiBaseUrl`, `resolveApiUrl`, `VITE_CHANCELA_API_BASE_URL`, runtime `__CHANCELA_CONFIG__`, `__CHANCELA_MOBILE_SHELL__`, and Capacitor/Cordova/ReactNative/WKWebView detection",
+    "CI checkpoints mobile API base URL lane marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "src/api/baseUrl.test.ts src/api/client.test.ts src/shell/mobileShell.test.ts",
+    "CI checkpoints mobile API base URL command marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Mobile P1 API base URL checks through `842b7f2`",
+    "CI/E2E hardening plan mobile P1 focused checks marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Current `f828c50` preserves the `842b7f2` mobile P1 slice",
+    "spec coverage mobile P1 checkpoint marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-CHECKPOINTS.md",
+    "subject DEK secret-store binding markers for `subject_dek_crypto`, dedicated subject-DEK HKDF root derivation, subject/field/key-version AAD binding, empty wrapped-DEK erase failure, randomized wrap blobs, and cross-store unwrap failure",
+    "CI checkpoints subject DEK secret-store binding lane marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "GDPR/API subject-DEK secret-store binding through `f828c50`",
+    "CI/E2E hardening plan subject DEK focused checks marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Current `f828c50` keeps Legal/Data/Architecture/API/CI **PARTIAL**",
+    "spec coverage subject DEK checkpoint marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/secretstore.rs",
+    "pub fn subject_dek_crypto(&self) -> SubjectDekCrypto",
+    "API subject DEK credential store constructor marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/secretstore.rs",
+    "SUBJECT_DEK_ROOT_FROM_CMK_INFO",
+    "API subject DEK CMK domain separation marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/secretstore.rs",
+    "fn subject_dek_from_credential_store_derives_a_bound_working_engine()",
+    "API subject DEK credential store binding coverage marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/secretstore.rs",
+    "a store with different key material must not unwrap another store's subject DEK",
+    "API subject DEK cross-store unwrap failure marker",
+  );
+  assertFileContains(
+    "apps/web/src/api/baseUrl.ts",
+    "export const API_BASE_URL_ENV = 'VITE_CHANCELA_API_BASE_URL';",
+    "web API base URL environment marker",
+  );
+  assertFileContains(
+    "apps/web/src/api/baseUrl.ts",
+    "return normalizeApiBaseUrl(runtimeConfig || mobileConfig || envConfig);",
+    "web API base URL resolution order marker",
+  );
+  assertFileContains(
+    "apps/web/src/api/baseUrl.ts",
+    "if (/^[a-z][a-z0-9+.-]*:/i.test(path)) return path;",
+    "web API base URL absolute URL preservation marker",
+  );
+  assertFileContains(
+    "apps/web/src/api/client.ts",
+    "fetch(resolveApiUrl(path)",
+    "web API client resolveApiUrl fetch marker",
+  );
+  assertFileContains(
+    "apps/web/src/api/client.ts",
+    "return resolveApiUrl(`/v1/law/${encodeURIComponent(id)}/pdf`);",
+    "web API generated download URL resolver marker",
+  );
+  assertFileContains(
+    "apps/web/src/shell/mobileShell.ts",
+    "if (isEnabledHint(win.__CHANCELA_MOBILE_SHELL__)) return true;",
+    "web mobile shell explicit hint marker",
+  );
+  assertFileContains(
+    "apps/web/src/shell/mobileShell.ts",
+    "return Boolean(handlers?.chancela || handlers?.chancelaMobile);",
+    "web mobile shell WKWebView handler marker",
+  );
+  assertFileContains(
+    "apps/web/src/api/baseUrl.test.ts",
+    "uses a mobile shell injected API base URL",
+    "web API base URL mobile shell test marker",
+  );
+  assertFileContains(
+    "apps/web/src/api/client.test.ts",
+    "uses a configured API base URL for client requests",
+    "web API client configured base URL test marker",
+  );
+  assertFileContains(
+    "apps/web/src/shell/mobileShell.test.ts",
+    "detects common native mobile bridges",
+    "web mobile shell native bridge test marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-CHECKPOINTS.md",
     "external-signing stored slot evidence rendering",
     "CI checkpoints external-signing stored slot evidence lane marker",
   );
@@ -10775,12 +10880,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `99d15a4`",
+    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `f828c50`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `99d15a4`",
+    "Focused Gate Snapshot Through `f828c50`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -11460,7 +11565,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `99d15a4`",
+    "Current checkpoint metadata/static checks through `f828c50`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -12030,7 +12135,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `99d15a4488752d9a3e8509d6539005843480e7b4`",
+    "implementation snapshot `f828c50fe794c79ae7a4a6bf9e6eb9b0d460c8c9`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(

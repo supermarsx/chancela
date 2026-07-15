@@ -1,7 +1,7 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `99d15a4`,
+and implementation snapshot `f828c50`,
 including coverage notes for the settled PDF/UA v12 gated-claim lane, XAdES
 C14N/digest-agility/B/T/LT/ASiC evidence, archive PDF accessibility
 propagation, the MCP document/archive PDF accessibility v12
@@ -982,11 +982,11 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `99d15a4`
+## Focused Gate Snapshot Through `f828c50`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08` and checkpoint-promoted on 2026-07-15 for
-current implementation head `99d15a4`. This is not an exhaustive current
+current implementation head `f828c50`. This is not an exhaustive current
 green-run claim; the full-server E2E claim below is limited to local
 `chancela-server --features e2e` after auth harness alignment, and browser,
 Docker, desktop, production package signing/notarization, production image
@@ -1169,6 +1169,23 @@ settingsDefaults.test.ts contracts.test.ts`.
   Settings user create/edit email, Ata signatory email, and Data Management
   cleanup-row/retained-export target coverage are the focused UI checks for the
   latest web slices, alongside Prettier and ESLint.
+- Mobile P1 API base URL checks through `842b7f2`: focused
+  `apps/web/src/api/baseUrl.test.ts`, `apps/web/src/api/client.test.ts`, and
+  `apps/web/src/shell/mobileShell.test.ts` coverage pins relative browser/Tauri
+  defaults, `VITE_CHANCELA_API_BASE_URL`, runtime `__CHANCELA_CONFIG__`,
+  `__CHANCELA_MOBILE_SHELL__` API base URL injection, and Capacitor/Cordova/
+  ReactNative/WKWebView shell detection. This is frontend API base URL
+  indirection and shell detection only: no native mobile build, iOS/Android
+  package, offline sync, production connector readiness, or spec-completion
+  claim is made.
+- GDPR/API subject-DEK secret-store binding through `f828c50`: focused local
+  `crates/chancela-api/src/secretstore.rs` coverage pins subject-DEK crypto
+  construction from the resolved credential secret-store CMK using dedicated
+  HKDF salt/info, subject/field/key-version AAD binding, empty wrapped-DEK blob
+  erase failure, randomized wrapped blobs, and cross-store unwrap failure. This
+  is API secret-store crypto evidence only: no wired destructive erasure
+  workflow, physical deletion/anonymization, backup/archive rewrite, legal GDPR
+  completion, production key-custody proof, or spec-completion claim is made.
 - Current working-tree retained-export cleanup UX checks: focused API/core
   markers pin export dry-run `would_delete_files`, `would_delete_directories`,
   and `would_delete_bytes` planning with `deleted_files`, `deleted_directories`,
@@ -2362,7 +2379,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   production-readiness, TLS/key-custody, vulnerability-free scan, SBOM,
   signature/attestation, HA/failover/RPO/RTO, legal/DR certification, cloud
   deployment readiness, or spec-completion claim is made.
-- Current checkpoint metadata/static checks through `99d15a4`
+- Current checkpoint metadata/static checks through `f828c50`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
@@ -2370,7 +2387,9 @@ settingsDefaults.test.ts contracts.test.ts`.
   docs\CI-CHECKPOINTS.md docs\CI-RELEASE-HARDENING.md docs\extras.md
   scripts\checkpoint-recent-landed.mjs scripts\check-spec-coverage.mjs`.
   These pin the spec snapshot,
-  hardening-plan head, opt-in release signing hooks/status artifacts, Postgres
+  hardening-plan head, mobile API base URL/shell-detection markers, subject DEK
+  secret-store binding markers, opt-in
+  release signing hooks/status artifacts, Postgres
   rustls TLS `sslmode=prefer` proof and no-`verify-full`/production-readiness
   boundary, observability `/metrics`/`/livez`/`/readyz` request-id/route-label
   markers, runtime HSTS, single-node in-memory rate-limiting, absolute session

@@ -113,6 +113,14 @@ imported-document review dashboard reminder/deep-link routing,
 web shell accessibility/focus markers for the skip link to `#main-content`,
 route-change main landmark focus, route-crash `main#main-content`
 preservation, PageHeader h1 rendering, and modal focus-trap behavior,
+mobile API base URL/shell-detection markers for `resolveApiBaseUrl`,
+`resolveApiUrl`, `VITE_CHANCELA_API_BASE_URL`, runtime
+`__CHANCELA_CONFIG__`, `__CHANCELA_MOBILE_SHELL__`, and
+Capacitor/Cordova/ReactNative/WKWebView detection,
+subject DEK secret-store binding markers for `subject_dek_crypto`, dedicated
+subject-DEK HKDF root derivation, subject/field/key-version AAD binding,
+empty wrapped-DEK erase failure, randomized wrap blobs, and cross-store unwrap
+failure,
 password-required account creation/session static markers,
 trust identifier-match explanations, trust/import/static request-boundary
 hardening, and read-only local DGLAB interchange
@@ -698,6 +706,14 @@ It intentionally reuses existing test surfaces:
   focused shell/navigation/modal regression evidence only, not complete UX,
   WCAG/legal accessibility certification, PDF/UA delivery, or exhaustive
   assistive-technology validation.
+- Mobile API base URL detection unit tests:
+  `npm run test --workspace apps/web -- src/api/baseUrl.test.ts src/api/client.test.ts src/shell/mobileShell.test.ts`
+  pin relative browser/Tauri defaults, environment and runtime API base URL
+  overrides, mobile-shell injected API base URLs, generated download URL
+  resolution, and explicit/native shell detection. This is frontend API base URL
+  indirection and shell detection only, not a shipped native mobile app,
+  iOS/Android packaging, offline sync, production connector readiness, or spec
+  completion.
 - Validator corpus manifest:
   `npm run test:validator-corpus`
 - Desktop lockfile resolution:
@@ -741,6 +757,12 @@ dashboard subtab markers,
 dashboard/notification icon-only markers, web shell accessibility/focus
 markers for the skip-link target, route-change main focus, route-crash main
 target preservation, PageHeader h1 coverage, and modal focus-trap behavior,
+mobile API base URL/shell-detection markers for relative defaults,
+environment/runtime/mobile-shell base URL sources, generated download URL
+resolution, and native shell detection,
+subject DEK secret-store binding markers for store-bound root derivation,
+subject/field/key-version binding, erase failure, randomized wrap blobs, and
+cross-store unwrap failure,
 template law-reference UI markers,
 password-required account creation/session API and web markers,
 structured registry chronology graph markers plus richer frontend chronology
@@ -1026,6 +1048,14 @@ execute migration or rekey from the readiness panel, prove SQLCipher-at-rest
 production encryption, complete plaintext migration, complete production key
 custody/runbooks, complete hardware-derived defaults, prove legal disposal,
 certify GDPR lifecycle completion, or complete the full key-rotation runbook.
+Subject DEK secret-store binding markers pin only local API crypto evidence:
+`CredentialSecretStore::subject_dek_crypto` derives a subject-DEK root from the
+resolved credential-store CMK with dedicated HKDF salt/info, subject-DEK wrap and
+field encryption AAD bind subject, field, and key version, empty wrapped-DEK
+blobs fail as erased/unrecoverable, wrapped blobs are randomized, and another
+store's CMK cannot unwrap the subject DEK. They are not a wired destructive
+erasure workflow, physical deletion/anonymization, backup/archive rewrite,
+legal GDPR completion, production key-custody proof, or spec completion.
 They do not certify legal validity, legal retention schedules or approvals,
 retention deletion or anonymization/redaction execution, retention execution
 completion, destructive GDPR erasure, full erasure, template legal effect, DRE
