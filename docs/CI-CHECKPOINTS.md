@@ -214,17 +214,21 @@ durable backend family and sidecar storage mode, adds backend-neutral logical
 payload and DB-backed sidecar telemetry labels where sidecars are database-backed,
 and preserves SQLite-specific rows for compatibility. SQLite remains the
 default backend; Postgres selection is feature/config gated through
-`CHANCELA_DB_BACKEND=postgres` plus
-exactly one `DATABASE_URL` or `DATABASE_URL_FILE` source; default CI still does
-not run against a live Postgres database, and live PG election/failover tests
-remain ignored unless `DATABASE_URL` points at a throwaway database. They do
-not prove file-to-DB sidecar migration, backup/restore execution, production
-Postgres readiness, live DB validation, migration completeness, production HA
-readiness, consensus correctness, split-brain impossibility, live failover
-certification, cloud deployment readiness, TLS/remote PG readiness, multi-node
-operational certification, backup-policy/RPO/RTO certification, destructive
-operation safety, legal/DR certification, external service dependency, or external sync
-readiness.
+`CHANCELA_DB_BACKEND=postgres` plus exactly one `DATABASE_URL` or
+`DATABASE_URL_FILE` source. Default CI now runs only the store runtime
+write/read test
+`cargo test -p chancela-store --features postgres --locked --test
+postgres_backend runtime_reads_and_writes_roundtrip_on_postgres -- --ignored
+--test-threads=1` against a disposable GitHub Actions `chancela_store_ci`
+database; API seed-dataset, logical restore, cluster/failover/feed/sidecar, and
+other live PG tests remain opt-in unless `DATABASE_URL` points at a throwaway
+database. They do not prove file-to-DB sidecar migration, backup/restore
+execution, production Postgres readiness, broad live DB validation, migration
+completeness, production HA readiness, consensus correctness, split-brain
+impossibility, live failover certification, cloud deployment readiness,
+TLS/remote PG readiness, multi-node operational certification,
+backup-policy/RPO/RTO certification, destructive operation safety, legal/DR
+certification, external service dependency, or external sync readiness.
 
 It intentionally reuses existing test surfaces:
 
@@ -600,7 +604,7 @@ It intentionally reuses existing test surfaces:
   server E2E fixture wiring. This is authoring
   infrastructure only: no full template catalog completion, legal review,
   law-reference/threshold verification, provider/registry/DRE acceptance, or
-  production Postgres CI claim is added.
+  production Postgres readiness claim is added.
 - Template law-reference corpus audit:
   `cargo test -p chancela-api --test law_reference_coverage --locked` builds a
   deterministic local report from the embedded template registry and embedded

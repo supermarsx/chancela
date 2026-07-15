@@ -104,6 +104,14 @@ test operating checklist for driving Chancela toward release confidence.
 - A dedicated SQLCipher feature lane runs on Windows, pins Strawberry Perl ahead
   of vendored OpenSSL, and runs
   `cargo test -p chancela-store --locked --features sqlcipher sqlcipher`.
+- A dedicated Postgres store backend lane runs the existing ignored
+  `runtime_reads_and_writes_roundtrip_on_postgres` test against a disposable
+  GitHub Actions `chancela_store_ci` database with
+  `cargo test -p chancela-store --features postgres --locked --test
+  postgres_backend runtime_reads_and_writes_roundtrip_on_postgres -- --ignored
+  --test-threads=1`. It is limited to the store integration test binary; API
+  seed, logical restore, cluster/failover/feed, sidecar, TLS, HA, and migration
+  coverage remain outside this CI lane.
 - Web format, ESLint, Vitest/V8 coverage thresholds, and Vite build run on Node
   20 and Node 24; the web CI test command is
   `npm run test:coverage --workspace apps/web`.
@@ -1047,11 +1055,12 @@ settingsDefaults.test.ts contracts.test.ts`.
   `restore_preflight` verification; ignored live-Postgres tests cover
   export/import round-trip, tamper quarantine, collision-refuse atomicity,
   start-over coherence, and bad-bundle preflight refusal. SQLite remains the
-  default, Postgres selection is feature/config gated, default CI does not run
-  against a live Postgres database, and only direct SQLite internals remain
-  fail-closed on Postgres. It is not production Postgres
+  default, Postgres selection is feature/config gated, and the current live
+  Postgres CI lane is limited to the store runtime write/read round-trip test
+  against a disposable `chancela_store_ci` database. Only direct SQLite
+  internals remain fail-closed on Postgres. It is not production Postgres
   readiness, global read-freshness certification for settings/users/roles/
-  sidecars, live DB validation, migration completeness, production HA
+  sidecars, broad live DB validation, migration completeness, production HA
   readiness, consensus correctness, split-brain impossibility, live failover
   certification, cloud deployment readiness, TLS/remote PG readiness,
   multi-node operational certification, backup-policy/RPO/RTO certification,

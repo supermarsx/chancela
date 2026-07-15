@@ -12186,7 +12186,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "not production Postgres readiness, live\n  DB validation, migration completeness, production HA readiness, consensus",
+    "not production Postgres readiness, broad live DB validation, migration\n  completeness, production HA readiness, consensus",
     "spec coverage Postgres no-production-readiness caveat marker",
   );
   assertFileContains(
@@ -13031,12 +13031,32 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "default CI does not run\n  against a live Postgres database",
-    "CI/E2E hardening plan Postgres no-live-DB marker",
+    "A dedicated Postgres store backend lane runs the existing ignored\n  `runtime_reads_and_writes_roundtrip_on_postgres` test against a disposable\n  GitHub Actions `chancela_store_ci` database",
+    "CI/E2E hardening plan narrow Postgres live CI marker",
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "SQLite\nremains the default backend; Postgres selection is feature/config gated",
+    "Default CI now runs only the store runtime\nwrite/read test",
+    "CI checkpoints narrow Postgres live CI marker",
+  );
+  assertFileContains(
+    ".github/workflows/ci.yml",
+    "POSTGRES_DB: chancela_store_ci",
+    "CI workflow Postgres disposable database marker",
+  );
+  assertFileContains(
+    ".github/workflows/ci.yml",
+    "cargo test -p chancela-store --features postgres --locked --test postgres_backend runtime_reads_and_writes_roundtrip_on_postgres -- --ignored --test-threads=1",
+    "CI workflow Postgres runtime test command marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "one live store runtime write/read CI gate",
+    "spec coverage narrow Postgres live CI marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "SQLite remains the\ndefault backend; Postgres selection is feature/config gated",
     "CI checkpoints database backend default/gated marker",
   );
   assertFileContains(
@@ -13184,13 +13204,13 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "local advisory-lock/fail-closed gating only",
-    "spec coverage Postgres local advisory-lock gate caveat marker",
+    "one live store runtime write/read CI gate, and marker\n  coverage plus local advisory-lock/fail-closed gating only",
+    "spec coverage Postgres narrow live gate caveat marker",
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "live PG election/failover tests\nremain ignored unless `DATABASE_URL` points at a throwaway database",
-    "CI checkpoints Postgres live failover DATABASE_URL gate marker",
+    "cluster/failover/feed/sidecar, and\nother live PG tests remain opt-in unless `DATABASE_URL` points at a throwaway\ndatabase",
+    "CI checkpoints Postgres live tests opt-in marker",
   );
   assertFileContains(
     "crates/chancela-api/src/lib.rs",

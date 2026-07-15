@@ -248,6 +248,43 @@ jobs:
           cargo test -p chancela-store --locked --features sqlcipher sqlcipher
 
   # ---------------------------------------------------------------------------
+  # Postgres store: run an existing ignored chancela-store live-backend test
+  # against a disposable GitHub Actions PostgreSQL service. This is deliberately
+  # limited to the store integration test binary; API seed/cluster/feed/sidecar
+  # live tests stay opt-in and ignored.
+  # ---------------------------------------------------------------------------
+  postgres:
+    name: Postgres store backend
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: chancela
+          POSTGRES_PASSWORD: chancela
+          POSTGRES_DB: chancela_store_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U chancela -d chancela_store_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://chancela:chancela@localhost:5432/chancela_store_ci
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run live Postgres store backend runtime test
+        run: cargo test -p chancela-store --features postgres --locked --test postgres_backend runtime_reads_and_writes_roundtrip_on_postgres -- --ignored --test-threads=1
+
+  # ---------------------------------------------------------------------------
   # Web: format, lint, test and build the @chancela/web workspace on supported
   # Node LTS, using the committed root npm lockfile.
   # ---------------------------------------------------------------------------
