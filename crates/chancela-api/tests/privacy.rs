@@ -6770,6 +6770,77 @@ async fn erasure_execute_rejects_unapproved_request() {
     );
 }
 
+#[tokio::test]
+async fn erasure_execute_rejects_last_owner_removal() {
+    let tmp = TempDir::new();
+    let state = AppState::with_data_dir(tmp.dir.clone());
+    let subject = UserId(Uuid::from_u128(0xA3EA));
+    let subject_token = insert_admin_session(&state, subject, "subject.owner").await;
+    let requester = UserId(Uuid::from_u128(0xA0EA));
+    let requester_token = insert_admin_session(&state, requester, "requester.owner").await;
+    let request_id = create_erasure_dsr(&state, subject, &requester_token).await;
+
+    let (_status, report) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                &format!("/v1/privacy/users/{subject}/dsr-requests/{request_id}/erasure/preflight"),
+                json!({}),
+            ),
+            &requester_token,
+        ),
+    )
+    .await;
+    let digest = report["preflight_digest"]
+        .as_str()
+        .expect("digest")
+        .to_owned();
+
+    let (status, body) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                &format!("/v1/privacy/users/{subject}/dsr-requests/{request_id}/erasure/approve"),
+                json!({
+                    "preflight_digest": digest,
+                    "subject_confirmation": subject.to_string(),
+                    "acknowledge_carveouts": true
+                }),
+            ),
+            &subject_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "approval succeeds: {body}");
+
+    {
+        let mut users = state.users.write().await;
+        let requester = users.get_mut(&requester).expect("requester exists");
+        requester.role_assignments = vec![RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global)];
+    }
+
+    let (status, body) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                &format!("/v1/privacy/users/{subject}/dsr-requests/{request_id}/erasure/execute"),
+                json!({ "preflight_digest": digest }),
+            ),
+            &subject_token,
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::CONFLICT,
+        "erasure must preserve at least one active Owner: {body}"
+    );
+    assert!(
+        state.users.read().await.contains_key(&subject),
+        "blocked last Owner remains in the users store"
+    );
+}
+
 /// THE MERGE-GATE (plan P5): a real destructive erasure must preserve ledger integrity.
 #[tokio::test]
 async fn merge_gate_erasure_preserves_ledger_integrity_and_destroys_dek() {
