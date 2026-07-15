@@ -2783,7 +2783,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "dashboard guest recent-events redaction",
+    "dashboard guest/minimal contract fixture and web parsing redaction",
     "CI checkpoints dashboard guest recent-events redaction lane marker",
   );
   assertFileContains(
@@ -2933,7 +2933,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "dashboard guest\n`recent_events: []` redaction and no-permission-grant\nmarkers",
+    "dashboard guest/minimal\n`recent_events: []` contract fixture/web parsing redaction and no-permission-grant\nmarkers",
     "CI checkpoints static dashboard guest redaction marker",
   );
   assertFileContains(
@@ -7052,6 +7052,31 @@ function assertCheckpointMap() {
     "API dashboard Guest recent_events empty marker",
   );
   assertFileContains(
+    "contracts/README.md",
+    "`dashboard.guest.json`                 | guest/minimal-redacted `DashboardResponse`",
+    "dashboard guest contract fixture README marker",
+  );
+  assertFileContains(
+    "contracts/dashboard.guest.json",
+    '"recent_events": []',
+    "dashboard guest contract fixture empty recent_events marker",
+  );
+  assertFileContains(
+    "apps/web/src/contracts/contracts.test.ts",
+    "dashboard.guest.json \u2192 Dashboard guest/minimal recent-event redaction",
+    "web contract dashboard guest fixture test marker",
+  );
+  assertFileContains(
+    "apps/web/src/contracts/contracts.test.ts",
+    "guest dashboard must not expose",
+    "web contract dashboard guest forbidden-field marker",
+  );
+  assertFileContains(
+    "apps/web/src/contracts/contracts.test.ts",
+    "guest dashboard leaked owner event value",
+    "web contract dashboard guest owner-only value marker",
+  );
+  assertFileContains(
     "apps/web/src/features/dashboard/DashboardPage.test.tsx",
     "DashboardPage",
     "dashboard unit coverage",
@@ -10750,12 +10775,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `6a1282d`",
+    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `b8c1ccf`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `6a1282d`",
+    "Focused Gate Snapshot Through `b8c1ccf`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -11010,12 +11035,17 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current working-tree dashboard guest recent-events redaction checks",
+    "Current `b8c1ccf` dashboard guest/minimal recent-events redaction checks",
     "CI/E2E hardening plan dashboard guest redaction checks marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Guest refusal from\n  `/v1/ledger/events`",
+    "`contracts/dashboard.guest.json` through the web parser with\n  `recent_events: []` plus absent owner-only ledger event fields/values",
+    "CI/E2E hardening plan dashboard guest web contract marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Guest still gets refusal from\n  `/v1/ledger/events`",
     "CI/E2E hardening plan dashboard Guest ledger refusal marker",
   );
   assertFileContains(
@@ -11430,7 +11460,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `6a1282d`",
+    "Current checkpoint metadata/static checks through `b8c1ccf`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -12000,7 +12030,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `6a1282dbb1cd4ca8f4be3cf79f81604b48c0c014`",
+    "implementation snapshot `b8c1ccfb0447c64f973243dde6eb8a92f9060897`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -14343,17 +14373,22 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "`GET /v1/dashboard`\n  now returns `recent_events: []` for guest/minimal redaction callers",
+    "`contracts/dashboard.guest.json` and\n  `apps/web/src/contracts/contracts.test.ts` now pin the guest/minimal",
     "spec coverage dashboard guest recent-events redaction marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Guest remains\n  forbidden from `GET /v1/ledger/events`",
+    "owner-only ledger event fields/values\n  absent from the guest fixture",
+    "spec coverage dashboard guest owner-only absence marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Guest remaining forbidden from\n  `GET /v1/ledger/events`",
     "spec coverage dashboard Guest ledger forbidden marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "adds no permission\n  grants or broader privacy/anonymization completion claim",
+    "response redaction only: no permission grants, no production privacy\n  compliance, no full dashboard privacy completion",
     "spec coverage dashboard no permission grant marker",
   );
   assertFileContains(

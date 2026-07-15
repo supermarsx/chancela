@@ -1,6 +1,6 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-15 from current implementation snapshot `6a1282dbb1cd4ca8f4be3cf79f81604b48c0c014`,
+*Updated 2026-07-15 from current implementation snapshot `b8c1ccfb0447c64f973243dde6eb8a92f9060897`,
 with committed evidence refreshes for the MCP document/archive PDF accessibility
 v11 identifier, count, blocker, and fixture-report alignment, the browser
 workflow provenance review panel and sanitized local MCP workflow-provenance copy
@@ -261,7 +261,9 @@ runtime HTTP/session hardening for HSTS, the single-node in-memory per-IP rate
 limiter, the absolute session lifetime cap, reset/reload cleanup of that
 node-local runtime state, and CurrentAttestor cap enforcement, followed by
 `6a1282d` local DPIA privacy review reminders under the existing
-privacy-control reminder source toggle.
+privacy-control reminder source toggle, followed by `b8c1ccf` guest/minimal
+dashboard contract fixture and web parsing coverage for existing recent-event
+redaction.
 Earlier coverage text remains prior snapshot context. All top-level spec areas remain **PARTIAL**.
 This is an implementation and test coverage snapshot, not a legal certification,
 not production CMD approval, not DRE verification promotion, not full PDF/UA
@@ -1750,11 +1752,17 @@ Implementation checkpoints covered here:
   validity, archive certification, provider validation, external-validator
   success, trust validation, legal review, full archive completion, AI/MCP
   completion, spec completion, or provider/legal assurance.
-- Working tree keeps Data/Roles/Workflows/CI **PARTIAL**: `GET /v1/dashboard`
-  now returns `recent_events: []` for guest/minimal redaction callers while
-  Owner and `Leitor` sessions keep the recent ledger-event feed. Guest remains
-  forbidden from `GET /v1/ledger/events`, and the slice adds no permission
-  grants or broader privacy/anonymization completion claim.
+- Current `b8c1ccf` keeps Data/Roles/Workflows/API/CI **PARTIAL**:
+  `contracts/dashboard.guest.json` and
+  `apps/web/src/contracts/contracts.test.ts` now pin the guest/minimal
+  `GET /v1/dashboard` wire fixture and web parser path for existing dashboard
+  redaction: guest `recent_events: []`, owner-only ledger event fields/values
+  absent from the guest fixture, Owner and `Leitor` sessions retaining the
+  recent ledger-event feed, and Guest remaining forbidden from
+  `GET /v1/ledger/events`. This is contract/test coverage for existing
+  response redaction only: no permission grants, no production privacy
+  compliance, no full dashboard privacy completion, and no broader
+  anonymization/redaction completion claim.
 - `62bae07` keeps Data/Archive/UX/API/CI **PARTIAL**: the general Arquivo
   page now reads ledger rows from additive `GET /v1/ledger/events/page` instead
   of loading the whole bare-array feed, while `GET /v1/ledger/events` remains
@@ -3092,8 +3100,9 @@ Current matrix alignment note: the `platform_logs` and
 only; the local `LocalDglabInterchangeManifest` scaffold is Documents/Archive
 metadata-only coverage; and the richer Ata editor statement-source provenance
 rendering plus the MCP draft-vs-signed comparison prompt/resource are AI/UX
-human-review coverage. Guest dashboard recent-event redaction is read-response
-redaction only. Generated-document by-id downloads are Documents/Workflow
+human-review coverage. Guest dashboard recent-event redaction, including the
+`dashboard.guest.json` fixture and web contract parsing assertions, is
+read-response redaction only. Generated-document by-id downloads are Documents/Workflow
 plumbing for non-Ata generated rows only, and generated dispatch-evidence
 bundle/archive indexes, now including generated Convocatoria notices, are
 metadata-only preservation pointers, not canonical document promotion.
@@ -4666,8 +4675,9 @@ behavior, legal disposal, or legal-effect claims.
   route/contract/optional-key/overclaim/no-mutation/exact-passphrase markers, imported-document
   review receipt/history UI/no-fake-receipt/no-claim markers, MCP workflow provenance review
   prompt/resource markers, MCP draft-vs-signed comparison review prompt/resource
-  markers, MCP chronology review summary resource markers, dashboard guest
-  `recent_events: []` redaction markers,
+  markers, MCP chronology review summary resource markers, dashboard
+  guest/minimal `recent_events: []` contract fixture/web parsing redaction
+  markers,
   generated-document by-id download route plus sealed post-act certidao/extrato
   generation UI markers and absent-owner/generated-convening communication dispatch-evidence
   route/store/idempotency/coverage/evidence-attached/no-completion/no-claim
@@ -5028,7 +5038,8 @@ behavior, legal disposal, or legal-effect claims.
   Pending citations are not DRE-verified law text, legal bases, legal advice, or
   a compliance-status upgrade.
 - Guest/minimal redaction hides selected read-response metadata for current entity, registry, book,
-  act, imported-document views, and dashboard recent events; it is not full
+  act, imported-document views, and dashboard recent events, including contract
+  fixture/web parser coverage; it is not full
   anonymization, destructive erasure, a permission grant, or certification of
   access-control/privacy policy completeness.
 - Seeded role drift diagnostics report missing default permissions for manual

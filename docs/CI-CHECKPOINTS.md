@@ -106,7 +106,8 @@ accepted/denied/rejected/suppressed audit markers, the first-class
 `template_catalog_metadata_lint` command for post-act template
 sealed-provenance lint, all-family standalone agenda-item templates,
 recovery/document/dashboard/notification
-UI, dashboard guest recent-events redaction, Ferramentas external-validator
+UI, dashboard guest/minimal contract fixture and web parsing redaction,
+Ferramentas external-validator
 metadata UI, raw-report byte download API, imported-document review receipt UI,
 imported-document review dashboard reminder/deep-link routing,
 web shell accessibility/focus markers for the skip link to `#main-content`,
@@ -166,7 +167,7 @@ enable/delete flows, strict non-confidential-store blocking, stored CMD/CSC
 runtime credential resolution, stored SCAP prod resolution, stored-only PKCS#12
 priority/failover and wrong-identity fail-safe markers,
 manual-signature original-reference metadata markers for core required-before-mutation
-and immutable seal metadata coverage, API guest/minimal redaction coverage,
+and immutable seal metadata coverage, API and contract guest/minimal redaction coverage,
 focused Ata editor manual seal validation tests, `act.sealed` contract coverage,
 and focused Playwright browser coverage in
 `apps/web/e2e/manual-signature-original-reference.spec.ts` plus the shared seal
@@ -383,10 +384,13 @@ It intentionally reuses existing test surfaces:
   closure, conflict on different closure evidence, outcome-category decision
   mapping, persistence, authorization/unknown-field/overclaim rejection, and
   due-candidate reads that stay non-mutating after closure.
-- API dashboard guest event redaction:
+- API/web dashboard guest event redaction:
   `cargo test -p chancela-api --locked dashboard_recent_events_redacts_guest_feed_but_keeps_owner_and_reader_feed`
   including guest `recent_events: []`, retained Owner/Leitor recent events, and
-  continued guest denial from `/v1/ledger/events`.
+  continued guest denial from `/v1/ledger/events`; plus
+  `npm run test --workspace apps/web -- src/contracts/contracts.test.ts` for
+  `contracts/dashboard.guest.json` web parsing, empty guest recent events, and
+  absent owner-only ledger event fields/values in the guest fixture.
 - API generated-document by-id downloads, sealed post-act/template Convocatoria
   generation UI, absent-owner/generated-convening dispatch evidence, and
   dashboard reminders:
@@ -804,8 +808,8 @@ body/no-Pending-marker rendering, and preservation of human-Verified vs Pending
 visual separation, MCP workflow provenance review prompt/resource plus deterministic
 local workflow/human-review/evidence-marker summary/no-raw-echo/no-call/no-claim
 markers, MCP draft-vs-signed comparison review prompt/resource plus deterministic
-local comparison report/no-call/no-claim markers, dashboard guest
-`recent_events: []` redaction and no-permission-grant
+local comparison report/no-call/no-claim markers, dashboard guest/minimal
+`recent_events: []` contract fixture/web parsing redaction and no-permission-grant
 markers, privacy control review reminder source-rule/dashboard/browser markers,
 generated-document by-id route, sealed post-act certidao/extrato and generated
 Convocatoria generation UI, dispatch-evidence route, `act.read`/`document.generate` gates,

@@ -1,7 +1,7 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `6a1282d`,
+and implementation snapshot `b8c1ccf`,
 including coverage notes for the MCP document/archive PDF accessibility v11
 identifier/count/blocker alignment, fixture report version 11, the Ata editor
 workflow provenance review panel, generated-document coverage fixture alignment,
@@ -71,7 +71,8 @@ AI provenance review-packet copy, explicit external-validator raw
 report upload UI guardrails, the raw external-validator raw-report byte download
 API, the MCP workflow provenance, draft-vs-signed comparison, privacy-control,
 and document/archive review aids,
-dashboard guest recent-events redaction, generated-document by-id download route,
+dashboard guest/minimal contract fixture and web parsing coverage for existing
+recent-event redaction, generated-document by-id download route,
 sealed post-act certidao/extrato template generation UI,
 condominium absent-owner communication auto-generation, and operator-supplied
 absent-owner/generated-convening dispatch-evidence recording with dashboard reminder surfacing,
@@ -455,11 +456,14 @@ test operating checklist for driving Chancela toward release confidence.
   validity, source certification, workflow completion, meeting legality, notice
   sufficiency, extraction accuracy certification, AI-01 completion, full AI/MCP
   completion, or provider/model assurance.
-- The current dashboard guest redaction slice returns `recent_events: []` from
-  `GET /v1/dashboard` for guest/minimal redaction callers, while Owner and
-  `Leitor` sessions keep recent events. Guest still lacks `GET /v1/ledger/events`.
-  Treat this as response redaction only: no permission grants, no broader
-  anonymization/redaction completion, and no access-control completeness claim.
+- The current dashboard guest redaction slice now has a
+  `contracts/dashboard.guest.json` fixture and web contract parser coverage for
+  the existing `GET /v1/dashboard` response boundary: guest/minimal callers get
+  `recent_events: []`, owner-only ledger event fields/values are absent from
+  the fixture, Owner and `Leitor` sessions keep recent events, and Guest still
+  lacks `GET /v1/ledger/events`. Treat this as response redaction only: no
+  permission grants, no broader anonymization/redaction completion, no
+  production privacy compliance, and no access-control completeness claim.
 - The current generated-document by-id download and dispatch-evidence slice returns
   `/v1/documents/generated/{document_id}` for on-demand generated docs,
   gates the download through `act.read` on the owning act, and covers both
@@ -976,11 +980,11 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `6a1282d`
+## Focused Gate Snapshot Through `b8c1ccf`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08` and checkpoint-promoted on 2026-07-15 for
-current implementation head `6a1282d`. This is not an exhaustive current
+current implementation head `b8c1ccf`. This is not an exhaustive current
 green-run claim; the full-server E2E claim below is limited to local
 `chancela-server --features e2e` after auth harness alignment, and browser,
 Docker, desktop, production package signing/notarization, production image
@@ -1538,12 +1542,17 @@ settingsDefaults.test.ts contracts.test.ts`.
   certification, legal validity claim, archive or act mutation, user/editor
   authoritative graph claim, live provider call, or ownership/relationship
   determination is made.
-- Current working-tree dashboard guest recent-events redaction checks: focused
+- Current `b8c1ccf` dashboard guest/minimal recent-events redaction checks:
+  focused
   `cargo test -p chancela-api --locked dashboard_recent_events_redacts_guest_feed_but_keeps_owner_and_reader_feed`
-  coverage pins `recent_events: []` for guest/minimal dashboard readers, Owner
-  and `Leitor` recent-event visibility, and continued Guest refusal from
-  `/v1/ledger/events`. This is response redaction only: no permission grants,
-  full anonymization, destructive erasure, or policy-completeness claim.
+  coverage pins the existing API behavior, and
+  `npm run test --workspace apps/web -- src/contracts/contracts.test.ts` now
+  covers `contracts/dashboard.guest.json` through the web parser with
+  `recent_events: []` plus absent owner-only ledger event fields/values. Owner
+  and `Leitor` keep recent-event visibility, and Guest still gets refusal from
+  `/v1/ledger/events`. This is response redaction contract coverage only: no
+  permission grants, full anonymization, destructive erasure, production
+  privacy compliance, or policy-completeness claim.
 - Current `3795016` generated-convening real-backend browser proof checkpoint:
   `npm run test:browser --workspace apps/web -- e2e/generated-convening-dispatch-evidence-real.spec.ts --project=chromium`
   passed for the release-server/built-SPA/E2E-backend path. It follows the
@@ -2340,7 +2349,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   production-readiness, TLS/key-custody, vulnerability-free scan, SBOM,
   signature/attestation, HA/failover/RPO/RTO, legal/DR certification, cloud
   deployment readiness, or spec-completion claim is made.
-- Current checkpoint metadata/static checks through `6a1282d`
+- Current checkpoint metadata/static checks through `b8c1ccf`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
