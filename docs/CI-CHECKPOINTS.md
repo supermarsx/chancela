@@ -81,8 +81,9 @@ trust identifier-match explanations, trust/import/static request-boundary
 hardening, and read-only local DGLAB interchange
 manifest API and BookDetail JSON-download markers, generated-document by-id
 download route plus sealed post-act certidao/extrato template generation UI,
-absent-owner communication dispatch-evidence recording, and generated
-absent-owner evidence UI and dashboard absent-owner dispatch-evidence reminders,
+absent-owner communication dispatch-evidence recording, generated-convening
+dispatch-evidence metadata-only recording, and generated
+absent-owner/generated-convening evidence UI and dashboard dispatch-evidence reminders,
 condominium annual profile-calendar Jan 15 local advisory markers plus
 dashboard-only annual reminder localization markers for CSC, association,
 foundation, and cooperative profile-calendar rules, convocation act-review
@@ -296,8 +297,8 @@ It intentionally reuses existing test surfaces:
   `cargo test -p chancela-api --locked dashboard_recent_events_redacts_guest_feed_but_keeps_owner_and_reader_feed`
   including guest `recent_events: []`, retained Owner/Leitor recent events, and
   continued guest denial from `/v1/ledger/events`.
-- API generated-document by-id downloads, sealed post-act template generation
-  UI, absent-owner dispatch evidence, and
+- API generated-document by-id downloads, sealed post-act/template Convocatoria
+  generation UI, absent-owner/generated-convening dispatch evidence, and
   dashboard reminders:
   `cargo test -p chancela-api --locked on_demand_generate_persists_a_chosen_document_and_emits_the_event`
   and
@@ -307,9 +308,13 @@ It intentionally reuses existing test surfaces:
   plus
   `cargo test -p chancela-api --locked absent_owner_dispatch_evidence_`
   plus
+  `cargo test -p chancela-api --locked generated_convening_notice_dispatch_evidence`
+  plus
   `cargo test -p chancela-store --test store --locked generated_document_dispatch_evidence`
   plus
   `cargo test -p chancela-api --test archive_package --locked archive_package_indexes_generated_absent_owner_dispatch_evidence_metadata_only`
+  plus
+  `cargo test -p chancela-api --test archive_package --locked generated_convening_notice_dispatch_evidence`
   plus
   `cargo test -p chancela-api --locked document_bundle_indexes_generated_absent_owner_dispatch_evidence_without_replacing_ata`
   plus the `cargo test -p chancela-api --locked reminder_` lane for
@@ -324,12 +329,14 @@ It intentionally reuses existing test surfaces:
   including automatic `condominio-comunicacao-ausentes/v1` generation after
   condominium seal with absent attendees, and `POST`/`GET`
   `/v1/documents/generated/{document_id}/dispatch-evidence` as gated
-  operator-supplied evidence recording. The markers pin the separate
+  operator-supplied evidence recording for absent-owner communications and
+  generated Convocatoria documents. The markers pin the separate
   `generated_document_dispatch_evidence` store table, exact-retry idempotency
-  without a duplicate ledger event, selected absent-recipient evidence coverage,
+  without a duplicate ledger event, selected absent/convening recipient evidence coverage,
   evidence-attached/status headers, `x-chancela-dispatch-completed=false`, and
-  the `absent_owner_communication.dispatch_evidence_recorded` false/no-claim
-  flags. Document-bundle markers pin
+  the `absent_owner_communication.dispatch_evidence_recorded` and
+  `generated_document.dispatch_evidence_recorded` false/no-claim flags.
+  Document-bundle markers pin
   `validation_report.evidence_index.generated_dispatch_evidence` while the
   bundle `document` and canonical download remain the sealed Ata. Archive
   package markers pin metadata-only `EvidenceReport` JSON sidecars at
@@ -337,7 +344,8 @@ It intentionally reuses existing test surfaces:
   references, `act_id` without `document_id` on sidecar manifest entries, and
   no promotion into top-level/canonical `manifest.document_ids`. Preservation
   markers pin safe status/coverage/recipient/channel/reference/evidence
-  locator/imported-document/timestamp fields; exclusion of `operator_note`,
+  locator/imported-document/timestamp fields for absent-owner and generated
+  Convocatoria evidence; exclusion of `operator_note`,
   `idempotency_key`, note-derived stable fingerprints, generated communication
   bytes, and imported proof bytes; and false `proof_bytes_included`,
   `bytes_included`, `operator_note_included`, `dispatch_completed`,
@@ -345,24 +353,28 @@ It intentionally reuses existing test surfaces:
   acceptance flags. Web/UI markers pin `listGeneratedDocuments`,
   `getGeneratedDocumentDispatchEvidence`,
   `recordGeneratedDocumentDispatchEvidence`, `generateActDocument`,
-  sealed post-act `Certidao`/`Extrato` template discovery and
+  sealed post-act `Certidao`/`Extrato` and Convocatoria template discovery and
   generation/download, generated absent-owner communication listing, generated
   PDF fetch, stored evidence rows, metadata-only evidence form submission,
   `operator_evidence_*` statuses, `documents.generated.noClaim.*` copy,
-  dispatch-evidence scope remaining limited to
-  `condominio-comunicacao-ausentes/v1`, generated-document deep-link
+  dispatch-evidence forms for rows with `dispatch_evidence_status`,
+  generated-document deep-link
   `generated_document_id`, `focus=dispatch-evidence`,
   `#generated-dispatch-evidence`, `actDocumentPanelTargetFromLocation`, one-time
   dispatch-evidence selection/focus, and no send/delivery/legal-notice or
   dispatch-completion copy. Focused Playwright browser proof is guarded by
-  `apps/web/e2e/absent-owner-dispatch-evidence.spec.ts` and pins the advisory
-  dashboard reminder route into the generated-document dispatch-evidence form,
-  generated `condominio-comunicacao-ausentes/v1` visibility and download,
-  metadata-only evidence recording, resulting operator evidence row display,
-  and no send/delivery/legal-notice completion claims. Dashboard markers pin `source_rule`
-  `absent-owner-dispatch-evidence`, `source_profile`
-  `condominium-generated-communication`, action kind
-  `open_absent_owner_dispatch_evidence`, no-date `Pending`/`Advisory`
+  `apps/web/e2e/absent-owner-dispatch-evidence.spec.ts` and
+  `apps/web/e2e/generated-convening-dispatch-evidence.spec.ts`; these pin the
+  advisory dashboard reminder route into the generated-document
+  dispatch-evidence form, generated `condominio-comunicacao-ausentes/v1` and
+  generated Convocatoria visibility/download, metadata-only evidence recording,
+  resulting operator evidence row display, and no send/delivery/legal-notice
+  completion claims. Dashboard markers pin `source_rule`
+  `absent-owner-dispatch-evidence` / `generated-convening-dispatch-evidence`,
+  `source_profile` `condominium-generated-communication` /
+  `generated-convening-notice`, action kind
+  `open_absent_owner_dispatch_evidence` /
+  `open_generated_convening_dispatch_evidence`, no-date `Pending`/`Advisory`
   semantics,
   `/atas/{act_id}?generated_document_id={document_id}&focus=dispatch-evidence#generated-dispatch-evidence`
   routing from dashboard reminders and notification popup actions,
@@ -643,16 +655,18 @@ markers, MCP draft-vs-signed comparison review prompt/resource plus deterministi
 local comparison report/no-call/no-claim markers, dashboard guest
 `recent_events: []` redaction and no-permission-grant
 markers, privacy control review reminder source-rule/dashboard/browser markers,
-generated-document by-id route, sealed post-act certidao/extrato generation UI,
-dispatch-evidence route, `act.read`/`document.generate` gates,
+generated-document by-id route, sealed post-act certidao/extrato and generated
+Convocatoria generation UI, dispatch-evidence route, `act.read`/`document.generate` gates,
 durable/in-memory, canonical Ata preservation,
-absent-owner communication auto-generation, communication-template-scoped dispatch-evidence store,
+absent-owner communication auto-generation, generated-convening notice evidence,
+communication-template-scoped dispatch-evidence store,
 idempotency, selected-recipient evidence coverage, evidence-attached headers,
 no dispatch completion, web client/hooks/panel/i18n metadata-only evidence UI,
 generated-document deep-link query/hash focus routing, one-time
 ActDocumentPanel dispatch-evidence selection/focus, no send/delivery/
 legal-notice copy, no-claim markers, and dashboard reminder/notification
-source/action/deep-link/no-date ordering/fixture markers, plus document-bundle
+source/action/deep-link/no-date ordering/fixture markers for absent-owner and
+generated-convening reminders, plus document-bundle
 `generated_dispatch_evidence` metadata and archive
 `evidence/generated-dispatch/{document_id}.json` sidecar/index markers,
 live-provider assurance markers, validator manifest,

@@ -1,8 +1,9 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `daf8288`,
-including coverage notes for convening recipient contact metadata before local
+and implementation snapshot `a6db2da`,
+including coverage notes for generated-convening dispatch-evidence
+metadata-only generated-document recording, convening recipient contact metadata before local
 dispatch evidence stamping, route-stubbed convening dispatch browser proof,
 convening dispatch evidence capture UI,
 convocation reminder guidance routing,
@@ -56,7 +57,7 @@ and document/archive review aids,
 dashboard guest recent-events redaction, generated-document by-id download route,
 sealed post-act certidao/extrato template generation UI,
 condominium absent-owner communication auto-generation, and operator-supplied
-dispatch-evidence recording with dashboard reminder surfacing,
+absent-owner/generated-convening dispatch-evidence recording with dashboard reminder surfacing,
 document-bundle/archive generated dispatch-evidence metadata preservation,
 imported-document review receipt UI, trust catalog identifier-match explanations,
 imported-document review dashboard reminders and review-form deep-link focus routing,
@@ -398,7 +399,7 @@ test operating checklist for driving Chancela toward release confidence.
   Treat this as response redaction only: no permission grants, no broader
   anonymization/redaction completion, and no access-control completeness claim.
 - The current generated-document by-id download and dispatch-evidence slice returns
-  `/v1/documents/generated/{document_id}` for on-demand generated post-act docs,
+  `/v1/documents/generated/{document_id}` for on-demand generated docs,
   gates the download through `act.read` on the owning act, and covers both
   durable and in-memory modes while keeping `/v1/acts/{act_id}/document` as the
   sealed Ata route. Sealing a condominium act with absent attendees also
@@ -406,18 +407,23 @@ test operating checklist for driving Chancela toward release confidence.
   document as the Ata, stores the communication for generated-document by-id
   retrieval in durable and in-memory modes, and emits honest pending dispatch
   evidence (`required_pending`, `evidence_attached=false`,
-  `dispatch_completed=false`) that server E2E re-checks after restart. The same
-  backend slice exposes `POST`/`GET`
+  `dispatch_completed=false`) that server E2E re-checks after restart.
+  Generated Convocatoria documents now reuse the same generated-document
+  dispatch-evidence path when the generated template is a `Convocatoria` stage
+  template and the act has persisted convening recipients. The same backend
+  slice exposes `POST`/`GET`
   `/v1/documents/generated/{document_id}/dispatch-evidence` for
-  operator-supplied dispatch evidence, stores it in
+  operator-supplied dispatch evidence for absent-owner communications and
+  generated Convocatoria documents, stores it in
   `generated_document_dispatch_evidence`, returns exact retries idempotently,
-  records selected absent-recipient evidence coverage, updates only
+  records selected absent/convening-recipient evidence coverage, updates only
   evidence-attached/status headers while keeping
   `x-chancela-dispatch-completed=false`, and emits
-  `absent_owner_communication.dispatch_evidence_recorded` with false/no-claim
+  `absent_owner_communication.dispatch_evidence_recorded` or
+  `generated_document.dispatch_evidence_recorded` with false/no-claim
   flags. Document bundles now keep the canonical bundle `document` and
   `/v1/acts/{act_id}/document` download as the sealed Ata while adding generated
-  absent-owner dispatch metadata under
+  absent-owner and generated Convocatoria dispatch metadata under
   `validation_report.evidence_index.generated_dispatch_evidence`. Archive
   package exports add metadata-only JSON sidecars at
   `evidence/generated-dispatch/{document_id}.json`, reference them from
@@ -434,17 +440,22 @@ test operating checklist for driving Chancela toward release confidence.
   acceptance flags false. Focused preservation tests are
   `archive_package_indexes_generated_absent_owner_dispatch_evidence_metadata_only`
   and
-  `document_bundle_indexes_generated_absent_owner_dispatch_evidence_without_replacing_ata`.
+  `document_bundle_indexes_generated_absent_owner_dispatch_evidence_without_replacing_ata`,
+  plus
+  `archive_package_indexes_generated_convening_notice_dispatch_evidence_metadata_only`
+  and
+  `document_bundle_indexes_generated_convening_notice_dispatch_evidence_without_replacing_ata`.
   The web follow-on slice covers `listGeneratedDocuments`,
   `generateActDocument`, generated PDF fetch,
   `getGeneratedDocumentDispatchEvidence`,
   `recordGeneratedDocumentDispatchEvidence`, sealed post-act `Certidao` and
-  `Extrato` template discovery/generation/download, generated absent-owner
+  `Extrato` plus Convocatoria template discovery/generation/download, generated absent-owner
   communication listing, stored evidence rows, permission-gated metadata-only
   evidence recording, `operator_evidence_*` statuses, and
-  `documents.generated.noClaim.*` copy. Dispatch evidence remains scoped to
-  `condominio-comunicacao-ausentes/v1`; generated certidao/extrato rows do not
-  fetch or render dispatch-evidence forms. Dashboard and notification actions use
+  `documents.generated.noClaim.*` copy. Dispatch evidence forms render for
+  generated rows with `dispatch_evidence_status`; generated certidao/extrato
+  rows keep null status and do not fetch or render dispatch-evidence forms.
+  Dashboard and notification actions use
   generated-document deep links with `generated_document_id`,
   `focus=dispatch-evidence`, and `#generated-dispatch-evidence`; the Ata route
   resolves them through `actDocumentPanelTargetFromLocation`, and
@@ -893,11 +904,11 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `daf8288`
+## Focused Gate Snapshot Through `a6db2da`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08` and checkpoint-promoted on 2026-07-15 for
-current implementation head `daf8288`. This is not an exhaustive current
+current implementation head `a6db2da`. This is not an exhaustive current
 green-run claim; browser, Docker, desktop, package signing/notarization, image
 signing/attestation, and live-provider limits above still apply.
 
@@ -1423,8 +1434,8 @@ settingsDefaults.test.ts contracts.test.ts`.
   and `Leitor` recent-event visibility, and continued Guest refusal from
   `/v1/ledger/events`. This is response redaction only: no permission grants,
   full anonymization, destructive erasure, or policy-completeness claim.
-- Current working-tree generated-document by-id download, dispatch-evidence, and
-  dashboard absent-owner reminder checks: focused
+- Current `a6db2da` generated-document by-id download, dispatch-evidence, and
+  dashboard absent-owner/generated-convening reminder checks: focused
   `cargo test -p chancela-api --locked on_demand_generate_persists_a_chosen_document_and_emits_the_event`
   and
   `cargo test -p chancela-api --locked in_memory_generated_document_download_uses_returned_url_and_keeps_canonical_ata`
@@ -1432,19 +1443,23 @@ settingsDefaults.test.ts contracts.test.ts`.
   `cargo test -p chancela-server --test e2e_act_document_persistence --locked condominium_absent_owner_communication_auto_generates_and_keeps_canonical_ata`
   plus `cargo test -p chancela-api --locked absent_owner_dispatch_evidence_`
   and
+  `cargo test -p chancela-api --locked generated_convening_notice_dispatch_evidence`
+  and
   `cargo test -p chancela-store --test store --locked generated_document_dispatch_evidence`
   coverage pins `/v1/documents/generated/{document_id}`, route classification,
   `act.read` gating by the owning act, durable and in-memory lookup, and
   preservation of `/v1/acts/{act_id}/document` as the sealed Ata bytes. It also
   pins automatic condominium absent-owner communication generation after seal,
   generated-document by-id retrieval of that communication, pending dispatch
-  evidence status, restart persistence, `POST`/`GET`
+  evidence status, restart persistence, generated Convocatoria dispatch evidence
+  for persisted convening recipients, `POST`/`GET`
   `/v1/documents/generated/{document_id}/dispatch-evidence`,
   `generated_document_dispatch_evidence`, operator-supplied dispatch evidence
-  with exact-retry idempotency, selected absent-recipient evidence coverage,
+  with exact-retry idempotency, selected absent/convening-recipient evidence coverage,
   evidence-attached/status headers, no dispatch-completed header claim, and the
   bounded
-  `absent_owner_communication.dispatch_evidence_recorded` event false flags.
+  `absent_owner_communication.dispatch_evidence_recorded` and
+  `generated_document.dispatch_evidence_recorded` event false flags.
   The `cargo test -p chancela-api --locked reminder_` lane also pins
   `GET /v1/dashboard` absent-owner dispatch-evidence reminders for
   `required_pending` and `operator_evidence_partial`, suppresses
@@ -1456,22 +1471,26 @@ settingsDefaults.test.ts contracts.test.ts`.
   truncation through
   `reminder_generated_absent_owner_no_due_date_does_not_evict_dated_reminders_before_limit`.
   Focused web coverage is
-  `npm run test --workspace apps/web -- src/api/client.test.ts src/contracts/contracts.test.ts src/features/dashboard/DashboardPage.test.tsx src/features/documents/ActDocumentPanel.test.tsx src/i18n/i18n.test.ts`;
+  `npm run test --workspace apps/web -- src/api/client.test.ts src/contracts/contracts.test.ts src/features/dashboard/DashboardPage.test.tsx src/features/documents/ActDocumentPanel.test.tsx src/features/notifications/notifications.test.ts src/i18n/i18n.test.ts`;
   it pins `listGeneratedDocuments`, `getGeneratedDocumentDispatchEvidence`,
   `recordGeneratedDocumentDispatchEvidence`, generated absent-owner
-  communication listing, generated PDF fetch, stored evidence rows,
+  communication listing, generated Convocatoria generation/evidence form,
+  generated PDF fetch, stored evidence rows,
   permission-gated metadata-only evidence recording, `operator_evidence_*`
   status display, `documents.generated.noClaim.*` localized copy, dashboard
-  localized deep-link routing, notification deep-link routing, one-time
+  localized deep-link routing, dashboard generated-convening reminder routing,
+  notification deep-link routing, one-time
   ActDocumentPanel dispatch-evidence selection/focus, advisory absent-owner
   reminder copy, and the `contracts/dashboard.json` pending no-due-date
   generated absent-owner fixture.
   Focused route-stubbed browser proof is
-  `npm run test:browser --workspace apps/web -- e2e/absent-owner-dispatch-evidence.spec.ts`;
+  `npm run test:browser --workspace apps/web -- e2e/absent-owner-dispatch-evidence.spec.ts`
+  and `npm run test:browser --workspace apps/web -- generated-convening-dispatch-evidence.spec.ts --project=chromium`;
   it pins the advisory dashboard reminder opening the generated-document
-  dispatch-evidence form, generated `condominio-comunicacao-ausentes/v1`
-  visibility/download, metadata-only evidence recording, resulting operator
-  evidence row display, and no send/delivery/legal-notice completion claims.
+  dispatch-evidence form, generated `condominio-comunicacao-ausentes/v1` and
+  generated Convocatoria visibility/download, metadata-only evidence recording,
+  resulting operator evidence row display, and no send/delivery/legal-notice
+  completion claims.
   This is generated-document retrieval, dashboard/notification navigation, and
   operator-recorded dispatch-evidence metadata only: no sealed act, canonical
   Ata, or generated-byte mutation; no mail, email, SMS, or provider sending; no
@@ -2071,14 +2090,15 @@ settingsDefaults.test.ts contracts.test.ts`.
   full RBAC/delegation-policy completion, tenant authorization proof,
   legal-capacity verification, broad security certification, or spec
   completion.
-- Current checkpoint metadata/static checks through `daf8288`
+- Current checkpoint metadata/static checks through `a6db2da`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
   `git diff --check -- SPEC-COVERAGE.md docs\CI-E2E-HARDENING-PLAN.md
   docs\CI-CHECKPOINTS.md scripts\checkpoint-recent-landed.mjs`.
   These pin the spec snapshot,
-  hardening-plan head, convening recipient contact metadata, route-stubbed
+  hardening-plan head, generated-convening dispatch evidence metadata-only
+  generated-document recording, convening recipient contact metadata, route-stubbed
   convening dispatch browser proof, convening dispatch evidence capture,
   convocation
   reminder guidance routing, convocation act-review guidance, convocation-notice
@@ -2234,7 +2254,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   drift read-only manual-review markers, archive readability/ZK manifest-only
   caveat markers, template `FamilyChannelMismatch` compatibility markers, and
   MCP structured trust-catalog filter plus redacted external-validator summary
-  markers, plus generated-document by-id route, absent-owner dispatch-evidence
+  markers, plus generated-document by-id route, absent-owner/generated-convening dispatch-evidence
   route/store/idempotency/selected-recipient coverage/evidence-attached/
   no-completion/no-claim markers and focused generated absent-owner evidence
   web client/panel/i18n/dashboard/notification deep-link/focus/contract markers,

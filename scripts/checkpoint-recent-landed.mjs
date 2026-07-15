@@ -2789,13 +2789,13 @@ function assertCheckpointMap() {
   );
   assertFileContainsNormalized(
     "docs/CI-CHECKPOINTS.md",
-    "dashboard absent-owner dispatch-evidence reminders",
-    "CI checkpoints dashboard absent-owner reminder lane marker",
+    "dashboard dispatch-evidence reminders",
+    "CI checkpoints dashboard generated dispatch reminder lane marker",
   );
   assertFileContainsNormalized(
     "docs/CI-CHECKPOINTS.md",
-    "generated absent-owner evidence UI",
-    "CI checkpoints generated absent-owner evidence UI lane marker",
+    "generated absent-owner/generated-convening evidence UI",
+    "CI checkpoints generated dispatch evidence UI lane marker",
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
@@ -2934,7 +2934,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "generated-document by-id route, sealed post-act certidao/extrato generation UI,\ndispatch-evidence route, `act.read`/`document.generate` gates,\ndurable/in-memory, canonical Ata preservation,\nabsent-owner communication auto-generation, communication-template-scoped dispatch-evidence store,\nidempotency, selected-recipient evidence coverage, evidence-attached headers,\nno dispatch completion, web client/hooks/panel/i18n metadata-only evidence UI,\ngenerated-document deep-link query/hash focus routing, one-time\nActDocumentPanel dispatch-evidence selection/focus, no send/delivery/\nlegal-notice copy, no-claim markers, and dashboard reminder/notification\nsource/action/deep-link/no-date ordering/fixture markers",
+    "generated-document by-id route, sealed post-act certidao/extrato and generated\nConvocatoria generation UI, dispatch-evidence route, `act.read`/`document.generate` gates,\ndurable/in-memory, canonical Ata preservation,\nabsent-owner communication auto-generation, generated-convening notice evidence,\ncommunication-template-scoped dispatch-evidence store,\nidempotency, selected-recipient evidence coverage, evidence-attached headers,\nno dispatch completion, web client/hooks/panel/i18n metadata-only evidence UI,\ngenerated-document deep-link query/hash focus routing, one-time\nActDocumentPanel dispatch-evidence selection/focus, no send/delivery/\nlegal-notice copy, no-claim markers, and dashboard reminder/notification\nsource/action/deep-link/no-date ordering/fixture markers for absent-owner and\ngenerated-convening reminders",
     "CI checkpoints static generated-document dispatch-evidence marker",
   );
   assertFileContains(
@@ -2986,6 +2986,11 @@ function assertCheckpointMap() {
     "docs/CI-CHECKPOINTS.md",
     "archive_package_indexes_generated_absent_owner_dispatch_evidence_metadata_only",
     "CI checkpoints generated dispatch archive preservation test marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "generated_convening_notice_dispatch_evidence",
+    "CI checkpoints generated-convening dispatch-evidence command marker",
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
@@ -10405,6 +10410,31 @@ function assertCheckpointMap() {
     "absent-owner dispatch-evidence browser false flags marker",
   );
   assertFileContains(
+    "apps/web/e2e/generated-convening-dispatch-evidence.spec.ts",
+    "dashboard reminder opens generated convening notice evidence and records metadata only",
+    "generated-convening dispatch-evidence browser workflow coverage",
+  );
+  assertFileContains(
+    "apps/web/e2e/generated-convening-dispatch-evidence.spec.ts",
+    "generated-convening-dispatch-evidence",
+    "generated-convening dispatch-evidence browser source-rule marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/generated-convening-dispatch-evidence.spec.ts",
+    "no sending, delivery, legal notice completion",
+    "generated-convening dispatch-evidence browser no-claim copy marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/generated-convening-dispatch-evidence.spec.ts",
+    "open_generated_convening_dispatch_evidence",
+    "generated-convening dispatch-evidence browser action marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/generated-convening-dispatch-evidence.spec.ts",
+    "await expect(visibleCopy).not.toContainText(",
+    "generated-convening dispatch-evidence browser request no-overclaim marker",
+  );
+  assertFileContains(
     "SPEC-COVERAGE.md",
     "Route-stubbed browser proof now pins\n  the dashboard reminder -> generated-document dispatch-evidence workflow",
     "spec coverage absent-owner dispatch-evidence browser proof marker",
@@ -10421,12 +10451,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `daf8288`",
+    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `a6db2da`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `daf8288`",
+    "Focused Gate Snapshot Through `a6db2da`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -10686,7 +10716,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current working-tree generated-document by-id download, dispatch-evidence, and\n  dashboard absent-owner reminder checks",
+    "Current `a6db2da` generated-document by-id download, dispatch-evidence, and\n  dashboard absent-owner/generated-convening reminder checks",
     "CI/E2E hardening plan generated-document dispatch-evidence checks marker",
   );
   assertFileContains(
@@ -10711,7 +10741,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "`npm run test --workspace apps/web -- src/api/client.test.ts src/contracts/contracts.test.ts src/features/dashboard/DashboardPage.test.tsx src/features/documents/ActDocumentPanel.test.tsx src/i18n/i18n.test.ts`",
+    "`npm run test --workspace apps/web -- src/api/client.test.ts src/contracts/contracts.test.ts src/features/dashboard/DashboardPage.test.tsx src/features/documents/ActDocumentPanel.test.tsx src/features/notifications/notifications.test.ts src/i18n/i18n.test.ts`",
     "CI/E2E hardening plan generated absent-owner focused web command marker",
   );
   assertFileContains(
@@ -10723,6 +10753,11 @@ function assertCheckpointMap() {
     "docs/CI-E2E-HARDENING-PLAN.md",
     "web client/panel/i18n/dashboard/notification deep-link/focus/contract markers",
     "CI/E2E hardening plan generated absent-owner web static-map marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "generated-convening-dispatch-evidence.spec.ts --project=chromium",
+    "CI/E2E hardening plan generated-convening browser command marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -11066,7 +11101,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `daf8288`",
+    "Current checkpoint metadata/static checks through `a6db2da`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -11601,7 +11636,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `daf8288a02febd0a8c0169ac56017e186d1bafb0`",
+    "implementation snapshot `a6db2da7ef4a7389f063bab21bef2fd34869915d`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -13449,7 +13484,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "on-demand generated\n  post-act documents now return `/v1/documents/generated/{document_id}`",
+    "on-demand generated documents now return\n  `/v1/documents/generated/{document_id}`",
     "spec coverage generated-document by-id route marker",
   );
   assertFileContains(
@@ -13484,13 +13519,38 @@ function assertCheckpointMap() {
   );
   assertFileContainsNormalized(
     "SPEC-COVERAGE.md",
-    "absent-recipient evidence coverage and evidence-attached status/header state while keeping `dispatch_completed=false` and `x-chancela-dispatch-completed=false`",
+    "absent- or convening-recipient evidence coverage and evidence-attached status/header state while keeping `dispatch_completed=false` and `x-chancela-dispatch-completed=false`",
     "spec coverage condominium absent-owner no dispatch completion marker",
   );
   assertFileContainsNormalized(
     "SPEC-COVERAGE.md",
-    "Follow-on web coverage now surfaces the generated absent-owner communication list, generated PDF fetch, stored evidence rows, metadata-only evidence recording form, `operator_evidence_*` status display, `documents.generated.noClaim.*` copy, and generated-document deep links",
+    "Follow-on web coverage now surfaces the generated absent-owner communication list, generated Convocatoria documents, generated PDF fetch, stored evidence rows, metadata-only evidence recording form, `operator_evidence_*` status display, `documents.generated.noClaim.*` copy, and generated-document deep links",
     "spec coverage generated absent-owner web follow-on marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "Generated Convocatoria documents now reuse the same generated-document dispatch evidence path",
+    "spec coverage generated-convening dispatch evidence reuse marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "`generated_document.dispatch_evidence_recorded`",
+    "spec coverage generated-convening dispatch event marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "archive_package_indexes_generated_convening_notice_dispatch_evidence_metadata_only",
+    "spec coverage generated-convening archive preservation test marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "document_bundle_indexes_generated_convening_notice_dispatch_evidence_without_replacing_ata",
+    "spec coverage generated-convening bundle preservation test marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "apps/web/e2e/generated-convening-dispatch-evidence.spec.ts",
+    "spec coverage generated-convening browser spec marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
@@ -13584,7 +13644,7 @@ function assertCheckpointMap() {
   );
   assertFileContainsNormalized(
     "SPEC-COVERAGE.md",
-    "generated dispatch-evidence bundle/archive indexes are metadata-only preservation pointers, not canonical document promotion",
+    "generated dispatch-evidence bundle/archive indexes, now including generated Convocatoria notices, are metadata-only preservation pointers, not canonical document promotion",
     "spec coverage generated dispatch metadata-only matrix marker",
   );
   assertFileContains(

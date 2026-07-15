@@ -1,7 +1,8 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-15 from current implementation snapshot `daf8288a02febd0a8c0169ac56017e186d1bafb0`,
-with committed evidence refreshes for the recently landed convening recipient
+*Updated 2026-07-15 from current implementation snapshot `a6db2da7ef4a7389f063bab21bef2fd34869915d`,
+with committed evidence refreshes for the recently landed generated-convening
+dispatch-evidence metadata-only generated-document slice, convening recipient
 contact metadata split before local dispatch evidence, route-stubbed convening
 dispatch browser proof, convening dispatch evidence capture UI slice,
 convocation reminder guidance routing,
@@ -207,7 +208,10 @@ endpoint, followed by `0c539ae` route-stubbed browser evidence for dashboard
 convocation-reminder routing into the convening guidance anchor and local
 convening dispatch evidence POST through that same existing endpoint, and
 `daf8288` separate convening recipient contact metadata before dispatch
-evidence stamping.
+evidence stamping, followed by `a6db2da` metadata-only generated
+Convocatoria dispatch-evidence recording through the generated-document
+side-table, bundle index, archive sidecar, dashboard reminder, notification,
+and route-stubbed browser paths.
 Earlier coverage text remains prior snapshot context. All top-level spec areas remain **PARTIAL**.
 This is an implementation and test coverage snapshot, not a legal certification,
 not production CMD approval, not DRE verification promotion, not full PDF/UA
@@ -1462,8 +1466,9 @@ Implementation checkpoints covered here:
   DGLAB/legal archive certification claim, prove filing/legal acceptance, claim
   all-record export, add signing/legal evidence, validate signatures, mutate the
   ledger, or prove production archive custody.
-- Working tree keeps Documents/Workflows/API/CI **PARTIAL**: on-demand generated
-  post-act documents now return `/v1/documents/generated/{document_id}` and can
+- Current `a6db2da` keeps Documents/Workflows/Legal/Compliance/UX/API/CI
+  **PARTIAL**: on-demand generated documents now return
+  `/v1/documents/generated/{document_id}` and can
   be downloaded by their own generated document id in durable and in-memory
   modes. The route inherits `act.read` from the owning act, and the canonical
   `/v1/acts/{act_id}/document` route remains the sealed Ata target for signing
@@ -1473,21 +1478,28 @@ Implementation checkpoints covered here:
   retrievable by generated document id in durable and in-memory modes, and
   starts with `document.generated` payload/header status `required_pending`,
   `evidence_attached=false`, and `dispatch_completed=false`, including server
-  E2E re-checks after restart. The same bounded backend slice now exposes
+  E2E re-checks after restart. Generated Convocatoria documents now reuse the
+  same generated-document dispatch evidence path whenever the generated template
+  is a `Convocatoria` stage template, such as `csc-convocatoria-ag/v1`, and the
+  act has persisted convening recipients. The same bounded backend slice now exposes
   `POST`/`GET` `/v1/documents/generated/{document_id}/dispatch-evidence` for
   operator-supplied dispatch evidence on
-  `condominio-comunicacao-ausentes/v1`. It stores metadata in the separate
+  `condominio-comunicacao-ausentes/v1` and generated Convocatoria documents. It
+  stores metadata in the separate
   `generated_document_dispatch_evidence` table, returns exact retries from the
-  idempotency key without a duplicate ledger event, derives selected
-  absent-recipient evidence coverage and evidence-attached status/header state
-  while keeping `dispatch_completed=false` and
+  idempotency key without a duplicate ledger event, derives selected absent- or
+  convening-recipient evidence coverage and evidence-attached status/header
+  state while keeping `dispatch_completed=false` and
   `x-chancela-dispatch-completed=false`, and appends
-  `absent_owner_communication.dispatch_evidence_recorded` with selected/required
-  recipients plus false `sending_performed_by_chancela`, `delivery_confirmed`,
+  `absent_owner_communication.dispatch_evidence_recorded` for absent-owner
+  communications or `generated_document.dispatch_evidence_recorded` with
+  `dispatch_evidence_profile=generated_convening_notice` for generated
+  Convocatoria documents, selected/required recipients, and false
+  `sending_performed_by_chancela`, `delivery_confirmed`,
   `legal_sufficiency_claimed`, `legal_notice_completion_claimed`, and
   `bytes_in_payload` flags. Document bundles now keep the canonical bundle
   `document` and `/v1/acts/{act_id}/document` download as the sealed Ata while
-  adding generated absent-owner dispatch metadata under
+  adding generated absent-owner and generated Convocatoria dispatch metadata under
   `validation_report.evidence_index.generated_dispatch_evidence`. Archive
   package exports add metadata-only JSON sidecars at
   `evidence/generated-dispatch/{document_id}.json`, reference them from
@@ -1506,11 +1518,15 @@ Implementation checkpoints covered here:
   Focused preservation tests are
   `archive_package_indexes_generated_absent_owner_dispatch_evidence_metadata_only`
   and
-  `document_bundle_indexes_generated_absent_owner_dispatch_evidence_without_replacing_ata`.
-  Follow-on web coverage now surfaces the generated
-  absent-owner communication list, generated PDF fetch, stored evidence rows,
-  metadata-only evidence recording form, `operator_evidence_*` status display,
-  `documents.generated.noClaim.*` copy, and generated-document deep links with
+  `document_bundle_indexes_generated_absent_owner_dispatch_evidence_without_replacing_ata`,
+  plus
+  `archive_package_indexes_generated_convening_notice_dispatch_evidence_metadata_only`
+  and
+  `document_bundle_indexes_generated_convening_notice_dispatch_evidence_without_replacing_ata`.
+  Follow-on web coverage now surfaces the generated absent-owner communication
+  list, generated Convocatoria documents, generated PDF fetch, stored evidence
+  rows, metadata-only evidence recording form, `operator_evidence_*` status
+  display, `documents.generated.noClaim.*` copy, and generated-document deep links with
   `generated_document_id`, `focus=dispatch-evidence`, and
   `#generated-dispatch-evidence` through the web client/hooks and
   `ActDocumentPanel`; the focused web tests pin that the UI selects and focuses
@@ -1518,20 +1534,21 @@ Implementation checkpoints covered here:
   without changing `dispatch_completed=false` or claiming
   send/delivery/legal-notice completion. Route-stubbed browser proof now pins
   the dashboard reminder -> generated-document dispatch-evidence workflow in
-  `apps/web/e2e/absent-owner-dispatch-evidence.spec.ts`: it opens the advisory
-  absent-owner reminder, follows
+  `apps/web/e2e/absent-owner-dispatch-evidence.spec.ts` and
+  `apps/web/e2e/generated-convening-dispatch-evidence.spec.ts`: the latter opens
+  the generated-convening reminder, follows
   `/atas/{act_id}?generated_document_id={document_id}&focus=dispatch-evidence#generated-dispatch-evidence`,
-  observes `condominio-comunicacao-ausentes/v1`, downloads the generated
-  communication, focuses the metadata-only evidence form, records mocked/local
-  operator metadata, displays the resulting evidence row, and keeps the no
+  observes the generated Convocatoria document, focuses the metadata-only
+  evidence form, records mocked/local operator metadata for selected convening
+  recipients, displays the resulting evidence row, and keeps the no
   send/delivery/legal-notice completion boundaries visible. Dashboard follow-on now has
   `GET /v1/dashboard` add `Pending`/`Advisory` no-due-date reminders with
-  `source_rule` `absent-owner-dispatch-evidence`, `source_profile`
-  `condominium-generated-communication`, and action kind
-  `open_absent_owner_dispatch_evidence` for generated
-  `condominio-comunicacao-ausentes/v1` documents tied to sealed condominium
-  acts when dispatch evidence is `required_pending` or
-  `operator_evidence_partial`; `operator_evidence_covered` is suppressed. The
+  `source_rule` `absent-owner-dispatch-evidence` / `generated-convening-dispatch-evidence`,
+  `source_profile` `condominium-generated-communication` /
+  `generated-convening-notice`, and action kind
+  `open_absent_owner_dispatch_evidence` /
+  `open_generated_convening_dispatch_evidence` when dispatch evidence is
+  `required_pending` or `operator_evidence_partial`; `operator_evidence_covered` is suppressed. The
   reminder and notification popup route the web UI to
   `/atas/{act_id}?generated_document_id={document_id}&focus=dispatch-evidence#generated-dispatch-evidence`,
   expose API href `/v1/documents/generated/{document_id}/dispatch-evidence`,
@@ -2737,8 +2754,9 @@ rendering plus the MCP draft-vs-signed comparison prompt/resource are AI/UX
 human-review coverage. Guest dashboard recent-event redaction is read-response
 redaction only. Generated-document by-id downloads are Documents/Workflow
 plumbing for non-Ata generated rows only, and generated dispatch-evidence
-bundle/archive indexes are metadata-only preservation pointers, not canonical
-document promotion. Manual-signature original-reference metadata is now covered
+bundle/archive indexes, now including generated Convocatoria notices, are
+metadata-only preservation pointers, not canonical document promotion.
+Manual-signature original-reference metadata is now covered
 for the spec/04 Signatures & Trust, spec/06 Workflows, and spec/10 UX & Design
 PARTIAL rows as validation/redaction-backed custody metadata plus focused web
 unit/contract and Playwright evidence only; it does not change the absence of
@@ -4263,7 +4281,7 @@ behavior, legal disposal, or legal-effect claims.
   markers, MCP chronology review summary resource markers, dashboard guest
   `recent_events: []` redaction markers,
   generated-document by-id download route plus sealed post-act certidao/extrato
-  generation UI markers and absent-owner communication dispatch-evidence
+  generation UI markers and absent-owner/generated-convening communication dispatch-evidence
   route/store/idempotency/coverage/evidence-attached/no-completion/no-claim
   markers plus document-bundle `generated_dispatch_evidence` and archive
   `evidence/generated-dispatch/{document_id}.json` metadata-only sidecar
