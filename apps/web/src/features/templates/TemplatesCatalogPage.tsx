@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useTemplates } from '../../api/hooks';
+import { useDeleteTemplate, useExportTemplate, useTemplates } from '../../api/hooks';
 import {
   entityFamilyLabels,
   lifecycleStageLabels,
@@ -14,6 +14,7 @@ import {
   type MeetingChannel,
   type SignaturePolicyHint,
   type TemplateLawReference,
+  type TemplateSpec,
   type TemplateSummary,
 } from '../../api/types';
 import { useT } from '../../i18n';
@@ -21,6 +22,7 @@ import {
   Badge,
   ButtonLink,
   Card,
+  ConfirmActionModal,
   EmptyState,
   ErrorNote,
   Field,
@@ -31,7 +33,12 @@ import {
   PageHeader,
   Select,
   SkeletonCards,
+  useToast,
 } from '../../ui';
+import { saveBlobAs, saveBlobResultMessage, type SaveBlobResult } from '../../desktop/saveFile';
+import { GateButton, GateIconButton } from '../session/permissions';
+import { TemplateEditorForm } from './TemplateEditorForm';
+import { TemplateImportDialog } from './TemplateImportDialog';
 
 const ENTITY_FAMILIES: readonly EntityFamily[] = [
   'CommercialCompany',
@@ -105,6 +112,14 @@ function lawReferenceSourceText(reference: TemplateLawReference): string {
   return [reference.source_label, article ? `art. ${article}` : ''].filter(Boolean).join(' · ');
 }
 
+/** Derive the export filename from the response `Content-Disposition`, or `<id>.json`. */
+function exportFilename(id: string, headers: Headers): string {
+  const disposition = headers.get('content-disposition') ?? '';
+  const match = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(disposition);
+  if (match?.[1]) return decodeURIComponent(match[1].trim());
+  return `${id.replace(/[\\/]/g, '-')}.json`;
+}
+
 function sortTemplates(a: TemplateSummary, b: TemplateSummary): number {
   return (
     a.family.localeCompare(b.family) ||
@@ -115,9 +130,18 @@ function sortTemplates(a: TemplateSummary, b: TemplateSummary): number {
   );
 }
 
+type EditorState = { mode: 'create' } | { mode: 'edit'; spec: TemplateSpec };
+
 export function TemplatesCatalogPage() {
   const t = useT();
+  const toast = useToast();
   const templates = useTemplates();
+  const exportTemplate = useExportTemplate();
+  const loadTemplateSpec = useExportTemplate();
+  const deleteTemplate = useDeleteTemplate();
+  const [editor, setEditor] = useState<EditorState | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<TemplateSummary | null>(null);
   const [query, setQuery] = useState('');
   const [family, setFamily] = useState<EntityFamily | ''>('');
   const [stage, setStage] = useState<LifecycleStage | ''>('');
@@ -179,15 +203,74 @@ export function TemplatesCatalogPage() {
     setRulePack('');
   }
 
+  function showSaveResult(result: SaveBlobResult) {
+    if (result.kind === 'cancelled') {
+      toast.info(saveBlobResultMessage(result));
+      return;
+    }
+    toast.success(saveBlobResultMessage(result));
+  }
+
+  async function onExport(template: TemplateSummary) {
+    try {
+      const download = await exportTemplate.mutateAsync(template.id);
+      showSaveResult(
+        await saveBlobAs({
+          blob: download.blob,
+          filename: exportFilename(template.id, download.headers),
+          contentType: download.contentType || 'application/json',
+          preferBrowserSavePicker: true,
+        }),
+      );
+    } catch (err) {
+      toast.error(err);
+    }
+  }
+
+  async function onEdit(template: TemplateSummary) {
+    try {
+      const download = await loadTemplateSpec.mutateAsync(template.id);
+      setEditor({ mode: 'edit', spec: JSON.parse(download.text) as TemplateSpec });
+    } catch (err) {
+      toast.error(err);
+    }
+  }
+
+  async function onConfirmDelete(template: TemplateSummary) {
+    await deleteTemplate.mutateAsync(template.id);
+    toast.success(t('templates.toast.deleted', { id: template.id }));
+    setDeleteTarget(null);
+  }
+
   return (
     <div className="stack">
       <PageHeader
         title={t('templates.title')}
         lede={t('templates.lede')}
         actions={
-          <ButtonLink to="/livros" variant="primary" icon={<Icon.ArrowRight />}>
-            {t('templates.openAct')}
-          </ButtonLink>
+          <>
+            <GateButton
+              perm="template.manage"
+              type="button"
+              variant="secondary"
+              icon={<Icon.Plus />}
+              onClick={() => setEditor({ mode: 'create' })}
+            >
+              {t('templates.actions.new')}
+            </GateButton>
+            <GateButton
+              perm="template.manage"
+              type="button"
+              variant="secondary"
+              icon={<Icon.Tray />}
+              onClick={() => setImporting(true)}
+            >
+              {t('templates.actions.import')}
+            </GateButton>
+            <ButtonLink to="/livros" variant="primary" icon={<Icon.ArrowRight />}>
+              {t('templates.openAct')}
+            </ButtonLink>
+          </>
         }
       />
 
@@ -346,12 +429,18 @@ export function TemplatesCatalogPage() {
           <div className="templates-grid">
             {filtered.map((template) => {
               const lawReferences = template.law_references ?? [];
+              const isUser = template.source === 'user';
 
               return (
                 <article className="template-card" key={template.id}>
                   <div className="template-card__head">
                     <p className="card__label">{t('templates.card.id')}</p>
-                    <Badge tone="accent">{template.locale}</Badge>
+                    <span className="template-card__channels">
+                      <Badge tone={isUser ? 'accent' : 'neutral'}>
+                        {isUser ? t('templates.source.user') : t('templates.source.builtin')}
+                      </Badge>
+                      <Badge tone="accent">{template.locale}</Badge>
+                    </span>
                   </div>
                   <code className="template-card__id">{template.id}</code>
                   <dl className="template-card__meta">
@@ -417,6 +506,30 @@ export function TemplatesCatalogPage() {
                     ) : null}
                   </dl>
                   <div className="template-card__actions">
+                    {isUser ? (
+                      <>
+                        <GateIconButton
+                          perm="template.manage"
+                          icon={<Icon.Pencil />}
+                          label={t('templates.actions.edit')}
+                          disabled={loadTemplateSpec.isPending}
+                          onClick={() => void onEdit(template)}
+                        />
+                        <GateIconButton
+                          perm="template.manage"
+                          icon={<Icon.Archive />}
+                          label={t('templates.actions.export')}
+                          disabled={exportTemplate.isPending}
+                          onClick={() => void onExport(template)}
+                        />
+                        <GateIconButton
+                          perm="template.manage"
+                          icon={<Icon.Trash />}
+                          label={t('templates.actions.delete')}
+                          onClick={() => setDeleteTarget(template)}
+                        />
+                      </>
+                    ) : null}
                     <ButtonLink to="/livros" icon={<Icon.ArrowRight />}>
                       {t('templates.openAct')}
                     </ButtonLink>
@@ -427,6 +540,30 @@ export function TemplatesCatalogPage() {
           </div>
         )}
       </section>
+
+      {editor ? (
+        <TemplateEditorForm
+          mode={editor.mode}
+          initialSpec={editor.mode === 'edit' ? editor.spec : null}
+          onClose={() => setEditor(null)}
+        />
+      ) : null}
+
+      {importing ? <TemplateImportDialog onClose={() => setImporting(false)} /> : null}
+
+      <ConfirmActionModal
+        open={deleteTarget !== null}
+        onClose={() => setDeleteTarget(null)}
+        title={t('templates.actions.delete')}
+        danger
+        intro={deleteTarget ? t('templates.delete.confirm', { id: deleteTarget.id }) : ''}
+        confirmLabel={t('templates.actions.delete')}
+        pendingLabel={t('templates.actions.delete')}
+        pending={deleteTemplate.isPending}
+        onConfirm={async () => {
+          if (deleteTarget) await onConfirmDelete(deleteTarget);
+        }}
+      />
     </div>
   );
 }

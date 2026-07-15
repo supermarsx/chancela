@@ -1,8 +1,64 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { TemplatesCatalogPage } from './TemplatesCatalogPage';
 import { fetchTable, renderWithProviders } from '../../test/utils';
 import type { TemplateSummary } from '../../api/types';
+
+interface RecordedRequest {
+  url: string;
+  method: string;
+  body?: BodyInit | null;
+}
+
+const USER_TEMPLATE: TemplateSummary = {
+  id: 'user-encosto-ata/v1',
+  family: 'CommercialCompany',
+  stage: 'Ata',
+  channels: ['Physical'],
+  signature_policy: 'QualifiedPreferred',
+  rule_pack_id: 'csc-art63/v2',
+  law_references: [],
+  locale: 'pt-PT',
+  editable: true,
+  source: 'user',
+};
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(status === 204 ? null : JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+/**
+ * A method-aware fetch stub over the template endpoints. `handle` may answer a specific
+ * (url, method) pair; any GET on the collection falls back to `catalog`.
+ */
+function templatesFetch(
+  catalog: TemplateSummary[],
+  handle?: (url: string, method: string) => Response | null,
+) {
+  const calls: RecordedRequest[] = [];
+  const fn = ((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : input.toString();
+    const method = (init?.method ?? 'GET').toUpperCase();
+    calls.push({ url, method, body: init?.body });
+    const custom = handle?.(url, method);
+    if (custom) return Promise.resolve(custom);
+    if (url.includes('/v1/templates') && method === 'GET') {
+      return Promise.resolve(jsonResponse(catalog));
+    }
+    return Promise.reject(new Error(`no stub for ${method} ${url}`));
+  }) as typeof fetch;
+  return { fn, calls };
+}
+
+function jsonFile(content: string, name = 'modelo.json'): File {
+  const file = new File([content], name, { type: 'application/json' });
+  // jsdom's File does not implement async body readers; the dialog reads via `file.text()`.
+  Object.defineProperty(file, 'text', { value: () => Promise.resolve(content) });
+  return file;
+}
 
 const CATALOG: TemplateSummary[] = [
   {
@@ -342,5 +398,111 @@ describe('TemplatesCatalogPage', () => {
     });
     expect(screen.getByText('1 de 4 modelos')).toBeTruthy();
     expect(screen.getByText('assoc-convocatoria-ga/v1')).toBeTruthy();
+  });
+
+  it('shows management actions on user templates and keeps built-ins read-only', async () => {
+    const { fn } = templatesFetch([CATALOG[0], USER_TEMPLATE]);
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<TemplatesCatalogPage />, ['/minutas']);
+
+    expect(screen.getByRole('button', { name: 'Novo modelo' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Importar' })).toBeTruthy();
+
+    const userCard = (await screen.findByText('user-encosto-ata/v1')).closest(
+      'article',
+    ) as HTMLElement;
+    expect(within(userCard).getByText('Criado pelo utilizador')).toBeTruthy();
+    expect(within(userCard).getByRole('button', { name: 'Editar' })).toBeTruthy();
+    expect(within(userCard).getByRole('button', { name: 'Exportar' })).toBeTruthy();
+    expect(within(userCard).getByRole('button', { name: 'Eliminar' })).toBeTruthy();
+
+    const builtinCard = screen.getByText('csc-ata-ag/v1').closest('article') as HTMLElement;
+    expect(within(builtinCard).getByText('Incluído (só leitura)')).toBeTruthy();
+    expect(within(builtinCard).queryByRole('button', { name: 'Editar' })).toBeNull();
+    expect(within(builtinCard).queryByRole('button', { name: 'Eliminar' })).toBeNull();
+  });
+
+  it('creates a user template through the editor form', async () => {
+    const { fn, calls } = templatesFetch([CATALOG[0]], (url, method) =>
+      url.endsWith('/v1/templates') && method === 'POST' ? jsonResponse(USER_TEMPLATE, 201) : null,
+    );
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<TemplatesCatalogPage />, ['/minutas']);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Novo modelo' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Novo modelo' });
+
+    fireEvent.change(within(dialog).getByLabelText('Identificador'), {
+      target: { value: 'user-encosto-ata/v1' },
+    });
+    fireEvent.change(within(dialog).getByLabelText('Pacote de regras'), {
+      target: { value: 'csc-art63/v2' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Guardar' }));
+
+    await waitFor(() =>
+      expect(
+        calls.some((c) => c.method === 'POST' && c.url.endsWith('/v1/templates')),
+      ).toBe(true),
+    );
+    const post = calls.find((c) => c.method === 'POST' && c.url.endsWith('/v1/templates'));
+    expect(String(post?.body)).toContain('user-encosto-ata/v1');
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Novo modelo' })).toBeNull());
+  });
+
+  it('blocks an invalid import in the dry-run preflight', async () => {
+    const { fn, calls } = templatesFetch([CATALOG[0]], (url, method) =>
+      url.includes('/v1/templates/import') && method === 'POST'
+        ? jsonResponse({ ok: false, error: { code: 'no_blocks', message: 'sem blocos' } })
+        : null,
+    );
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<TemplatesCatalogPage />, ['/minutas']);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Importar' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Importar modelo' });
+
+    const fileInput = dialog.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(fileInput, { target: { files: [jsonFile('{"id":"user-x/v1"}')] } });
+
+    expect(
+      await within(dialog).findByText('O modelo tem de conter pelo menos um bloco.'),
+    ).toBeTruthy();
+    const confirm = within(dialog).getByRole('button', {
+      name: 'Confirmar importação',
+    }) as HTMLButtonElement;
+    expect(confirm.disabled).toBe(true);
+    expect(
+      calls.some((c) => c.method === 'POST' && c.url.includes('dry_run=true')),
+    ).toBe(true);
+  });
+
+  it('deletes a user template through the confirm dialog', async () => {
+    const { fn, calls } = templatesFetch([CATALOG[0], USER_TEMPLATE], (url, method) =>
+      url.includes('/v1/templates/') && method === 'DELETE' ? jsonResponse(null, 204) : null,
+    );
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<TemplatesCatalogPage />, ['/minutas']);
+
+    const userCard = (await screen.findByText('user-encosto-ata/v1')).closest(
+      'article',
+    ) as HTMLElement;
+    fireEvent.click(within(userCard).getByRole('button', { name: 'Eliminar' }));
+
+    const dialog = await screen.findByRole('dialog');
+    expect(
+      within(dialog).getByText('Eliminar o modelo «user-encosto-ata/v1»? Esta ação não pode ser anulada.'),
+    ).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Eliminar' }));
+
+    await waitFor(() =>
+      expect(calls.some((c) => c.method === 'DELETE' && c.url.includes('/v1/templates/'))).toBe(
+        true,
+      ),
+    );
   });
 });
