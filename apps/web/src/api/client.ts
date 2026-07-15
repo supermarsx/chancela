@@ -1,10 +1,10 @@
 /**
  * Typed `fetch` wrappers for the Chancela API (plan t5 §2).
  *
- * Every path is relative (`/v1/...`, `/health`) so the same client works in three
- * origins unchanged: the Vite dev proxy (:5173 → :8080), the production server that
- * serves the built SPA same-origin, and the Tauri desktop WebView pointed at the
- * embedded loopback server. Errors are surfaced as `ApiError`, which carries the
+ * By default, every path stays relative (`/v1/...`, `/health`) so the same client
+ * works in the Vite dev proxy, the same-origin production server, and the Tauri
+ * desktop WebView. Mobile shells or deployments can opt into an absolute API base
+ * URL through the central resolver. Errors are surfaced as `ApiError`, which carries the
  * HTTP status plus the optional `issues`/`warnings` arrays some endpoints add to the
  * base `{ "error": "..." }` body (compliance/seal per §2.5).
  */
@@ -248,6 +248,7 @@ import type {
   UserDsrExport,
 } from './types';
 import { clearSessionToken, getSessionToken } from './session';
+import { resolveApiUrl } from './baseUrl';
 import { t } from '../i18n';
 
 /** The header that carries the current-user session token (plan t14 §2.8). */
@@ -379,7 +380,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   };
   if (token) headers[SESSION_HEADER] = token;
   if (init?.body) headers['Content-Type'] = 'application/json';
-  const res = await fetch(path, { ...init, headers });
+  const res = await fetch(resolveApiUrl(path), { ...init, headers });
   // A 401 means the server no longer recognises the token (e.g. it restarted and the
   // in-memory session was lost). Clear the stale token and notify listeners so the
   // session query refetches and the UI reflects the signed-out state (L-1).
@@ -425,7 +426,7 @@ export async function fetchBlob(path: string): Promise<Blob> {
   const token = getSessionToken();
   const headers: Record<string, string> = {};
   if (token) headers[SESSION_HEADER] = token;
-  const res = await fetch(path, { headers });
+  const res = await fetch(resolveApiUrl(path), { headers });
   if (res.status === 401) clearSessionToken();
   if (!res.ok) {
     let message = t('error.requestFailed', { status: res.status });
@@ -450,7 +451,7 @@ export async function fetchArrayBuffer(path: string): Promise<ArrayBuffer> {
   const token = getSessionToken();
   const headers: Record<string, string> = {};
   if (token) headers[SESSION_HEADER] = token;
-  const res = await fetch(path, { headers });
+  const res = await fetch(resolveApiUrl(path), { headers });
   if (res.status === 401) clearSessionToken();
   if (!res.ok) {
     let message = t('error.requestFailed', { status: res.status });
@@ -474,7 +475,7 @@ export async function fetchTextDownload(path: string): Promise<TextDownload> {
   const token = getSessionToken();
   const headers: Record<string, string> = {};
   if (token) headers[SESSION_HEADER] = token;
-  const res = await fetch(path, { headers });
+  const res = await fetch(resolveApiUrl(path), { headers });
   if (res.status === 401) clearSessionToken();
   if (!res.ok) {
     let message = t('error.requestFailed', { status: res.status });
@@ -500,7 +501,11 @@ export async function postTextDownload(path: string, body: unknown): Promise<Tex
   const token = getSessionToken();
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (token) headers[SESSION_HEADER] = token;
-  const res = await fetch(path, { method: 'POST', headers, body: JSON.stringify(body) });
+  const res = await fetch(resolveApiUrl(path), {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+  });
   if (res.status === 401) clearSessionToken();
   if (!res.ok) {
     let message = t('error.requestFailed', { status: res.status });
@@ -532,7 +537,7 @@ export async function fetchBlobVia(
   const token = getSessionToken();
   const headers: Record<string, string> = {};
   if (token) headers[SESSION_HEADER] = token;
-  const res = await fetch(path, { method, headers });
+  const res = await fetch(resolveApiUrl(path), { method, headers });
   if (res.status === 401) clearSessionToken();
   if (!res.ok) {
     let message = t('error.requestFailed', { status: res.status });
@@ -556,7 +561,7 @@ export async function postBytes<T>(path: string, bytes: ArrayBuffer | Blob): Pro
   const token = getSessionToken();
   const headers: Record<string, string> = { 'Content-Type': 'application/zip' };
   if (token) headers[SESSION_HEADER] = token;
-  const res = await fetch(path, { method: 'POST', headers, body: bytes });
+  const res = await fetch(resolveApiUrl(path), { method: 'POST', headers, body: bytes });
   if (res.status === 401) clearSessionToken();
   return parseResponse<T>(res, path);
 }
@@ -1252,5 +1257,5 @@ export const api = {
  * resolves against the in-process server.
  */
 export function lawPdfPath(id: string): string {
-  return `/v1/law/${encodeURIComponent(id)}/pdf`;
+  return resolveApiUrl(`/v1/law/${encodeURIComponent(id)}/pdf`);
 }

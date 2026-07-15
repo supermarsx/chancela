@@ -2,6 +2,17 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { ApiError, api, parseResponse } from './client';
 import type { LedgerArchiveDocumentParams } from './types';
 
+interface TestRuntimeWindow {
+  __CHANCELA_CONFIG__?: {
+    apiBaseUrl?: string;
+  };
+  __CHANCELA_MOBILE_SHELL__?: unknown;
+}
+
+function runtimeWindow(): TestRuntimeWindow {
+  return window as unknown as TestRuntimeWindow;
+}
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -10,6 +21,8 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 afterEach(() => {
+  delete runtimeWindow().__CHANCELA_CONFIG__;
+  delete runtimeWindow().__CHANCELA_MOBILE_SHELL__;
   vi.restoreAllMocks();
 });
 
@@ -109,6 +122,23 @@ describe('api client', () => {
     expect(init.method).toBe('POST');
     expect(init.headers['Content-Type']).toBe('application/json');
     expect(JSON.parse(init.body)).toMatchObject({ nipc: '500000000', kind: 'SociedadePorQuotas' });
+  });
+
+  it('uses a configured API base URL for client requests', async () => {
+    runtimeWindow().__CHANCELA_CONFIG__ = {
+      apiBaseUrl: 'https://api.example.test/chancela/',
+    };
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ id: 'e1' }, 201));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await api.createEntity({
+      name: 'X',
+      nipc: '500000000',
+      seat: 'Porto',
+      kind: 'SociedadePorQuotas',
+    });
+
+    expect(fetchMock.mock.calls[0][0]).toBe('https://api.example.test/chancela/v1/entities');
   });
 
   it('initiates remote signing sessions with the batch endpoint and exact request body', async () => {
