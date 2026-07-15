@@ -627,7 +627,7 @@ It intentionally reuses existing test surfaces:
   qualified-status determination, legal trust certification, live provider
   approval, or full trust implementation.
 - Signing DSS/trust-validation checkpoint: `63df508` is the signing validation
-  implementation checkpoint inside the current `6093e7e` snapshot. Static markers pin
+  implementation checkpoint inside the current `c9cf2cb` snapshot. Static markers pin
   `6292d75` revocation cache plus graceful offline fallback, `ead1aaa`
   full-chain PAdES DSS evidence assembly from validated chain plus revocation
   material, `9be5e00` live end-entity signer-path validation with TSL-resolved
@@ -1100,7 +1100,7 @@ workflow evidence only; it does not claim physical deletion, anonymization,
 backup/archive rewrite, legal GDPR compliance or completion, legal disposal
 approval, production key custody, or full spec completion.
 GDPR sealed-record annotation/remedy markers pin only `58b7e55` append-only API
-annotation and remedy-classification evidence plus the current `6093e7e` privacy
+annotation and remedy-classification evidence plus the current `c9cf2cb` snapshot's privacy
 documentation framing for statutory-retention cases: subject rectification and
 processing-restriction annotations can be appended while prior sealed/signed
 event bytes, hashes, and payload digests remain frozen and ledger verification
@@ -1113,6 +1113,13 @@ activity indexing, and tenant scope preservation through role/authorization
 resolution paths. They do not certify complete tenant isolation, complete tenant
 authorization coverage, legal-capacity validation, broad security certification,
 or any spec area. The spec matrix remains `PARTIAL=11`.
+Current snapshot drift/test-determinism markers additionally record only
+`fafb8ad` mkdocs navigation drift capture for the mobile companion docs,
+`b951895` XAdES C14N vector-test formatting, and `c9cf2cb` command-signing
+environment-race isolation in the API test harness. They are docs config and
+test determinism evidence only; they do not claim new production signing,
+XAdES conformance, CMD approval, legal validity, or any spec completion. The
+spec matrix remains `PARTIAL=11`.
 They do not certify legal validity, legal retention schedules or approvals,
 retention deletion or anonymization/redaction execution, retention execution
 completion, destructive GDPR erasure, full erasure, template legal effect, DRE

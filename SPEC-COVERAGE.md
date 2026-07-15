@@ -1,12 +1,14 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-15 from current implementation snapshot `6093e7e9fb2a343df800c3a0cb8477a8c05d7e21`,
+*Updated 2026-07-15 from current implementation snapshot `c9cf2cbdf0a6549b71b849fd1a8bd18a5333df4f`,
 with committed evidence refreshes for mobile API base URL indirection and
 shell detection, the mobile companion foundation docs/scripts, destructive
 erasure preflight/approve/execute route wiring plus local gate evidence,
 append-only rectification/restriction ledger annotation routes and remedy
 classification framing, tenant-chain ledger membership and authorization-chain
 integration evidence,
+mkdocs navigation drift capture for the mobile companion docs, XAdES C14N
+vector-test formatting, command-signing environment-race test determinism,
 subject DEK secret-store binding, the settled PDF/UA v12 gated-claim lane,
 XAdES C14N/digest-agility/B/T/LT/ASiC evidence, archive PDF accessibility
 propagation, the MCP document/archive PDF accessibility
@@ -283,8 +285,10 @@ dashboard contract fixture and web parsing coverage for existing recent-event
 redaction, `82424b8` dashboard checkpoint pinning, the PDF/UA lane
 (`c17e1be`, `fd07081`, `e84630c`, `7c08393`, `6ff9901`, `92de3e7`), the
 XAdES lane (`1d881f9`, `2325baf`, `305310d`, `56648f0`, `50854dd`), and
-`99d15a4` archive PDF accessibility propagation, and `6093e7e`
-tenant-chain ledger/API integration evidence.
+`99d15a4` archive PDF accessibility propagation, `6093e7e`
+tenant-chain ledger/API integration evidence, `fafb8ad` docs-site navigation
+drift capture, `b951895` XAdES C14N vector formatting, and `c9cf2cb`
+command-signing environment-race test determinism.
 Earlier coverage text remains prior snapshot context. All top-level spec areas remain **PARTIAL**.
 This is an implementation and test coverage snapshot, not a legal certification,
 not production CMD approval, not DRE verification promotion, not universal PDF/UA
@@ -1947,7 +1951,7 @@ Implementation checkpoints covered here:
   official DGLAB export, government filing, import path, disposal execution,
   DGLAB certification, legal archival certification, PDF/A/PAdES/PDF-UA
   certification, authority approval, or legal archive acceptance is implemented.
-- Current `6093e7e` keeps Legal/Data/API/UX/CI **PARTIAL**: the implementation
+- Current `c9cf2cb` keeps Legal/Data/Signatures/API/UX/CI **PARTIAL**: the implementation
   snapshot includes the prior `842b7f2` mobile API base URL/shell-detection
   slice, `d43b82a` mobile companion foundation docs plus inert desktop package
   Android companion scripts, `33e70bb` subject-DEK secret-store binding,
@@ -1963,7 +1967,10 @@ Implementation checkpoints covered here:
   remedy framing and destructive crypto-erasure is the narrow non-retained-PII
   exception. `6093e7e` adds tenant-chain ledger membership, tenant-aware archive
   chain labeling, tenant scope handling in entity activity indexing, and tenant
-  scope preservation through role/authorization resolution paths.
+  scope preservation through role/authorization resolution paths. The current
+  snapshot also records `fafb8ad` mkdocs navigation drift capture for mobile
+  companion docs, `b951895` XAdES C14N vector-test formatting, and `c9cf2cb`
+  command-signing environment-race isolation in the API test harness.
   This is bounded local API and documentation evidence only: it does not claim a
   shipped native mobile app, iOS/Android packaging readiness, offline sync,
   production connector readiness, physical deletion, anonymization, backup or
@@ -3214,10 +3221,11 @@ Current PDF/UA, XAdES, and archive propagation alignment note: the PDF/UA lane
 through `92de3e7` claims PDF/UA-1 only for conforming pre-signature generated
 documents whose report v12 has no blockers and whose XMP/self-check gate passes;
 non-conforming documents still decline the claim. The XAdES lane through
-`50854dd` pins in-crate C14N, SHA-384/512 with P-384/P-521 at the
-`chancela-xades` layer, XAdES-B/T/LT validation material, and ASiC-S/ASiC-E
-XAdES technical evidence, but not XAdES-LTA, provider/trust/legal completion,
-QES, or eIDAS legal effect. The archive propagation fix at `99d15a4` preserves
+`50854dd`, with `b951895` formatting-only test maintenance, pins in-crate C14N,
+SHA-384/512 with P-384/P-521 at the `chancela-xades` layer, XAdES-B/T/LT
+validation material, and ASiC-S/ASiC-E XAdES technical evidence, but not
+XAdES-LTA, provider/trust/legal completion, QES, or eIDAS legal effect. The
+archive propagation fix at `99d15a4` preserves
 generated report `pdf_ua_claimed` into document-bundle/archive evidence while
 book-only or unavailable evidence remains false/unavailable. These lanes keep
 the matrix at **PARTIAL=11** and do not claim DGLAB/legal archive certification

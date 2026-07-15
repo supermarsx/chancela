@@ -1,12 +1,14 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `6093e7e`,
+and implementation snapshot `c9cf2cb`,
 including coverage notes for the mobile companion foundation docs/scripts,
 destructive erasure preflight/approve/execute route wiring plus local gate
 evidence, append-only rectification/restriction ledger annotation routes and
 remedy classification framing, tenant-chain ledger membership and
 authorization-chain integration evidence, the
+mkdocs navigation drift capture for the mobile companion docs, XAdES C14N
+vector-test formatting, command-signing environment-race test determinism, the
 settled PDF/UA v12 gated-claim lane, XAdES
 C14N/digest-agility/B/T/LT/ASiC evidence, archive PDF accessibility
 propagation, the MCP document/archive PDF accessibility v12
@@ -992,11 +994,11 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `6093e7e`
+## Focused Gate Snapshot Through `c9cf2cb`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08` and checkpoint-promoted on 2026-07-15 for
-current implementation head `6093e7e`. This is not an exhaustive current
+current implementation head `c9cf2cb`. This is not an exhaustive current
 green-run claim; the full-server E2E claim below is limited to local
 `chancela-server --features e2e` after auth harness alignment, and browser,
 Docker, desktop, production package signing/notarization, production image
@@ -1226,6 +1228,13 @@ settingsDefaults.test.ts contracts.test.ts`.
   certification, full tenant authorization proof, legal-capacity validation,
   broad security certification, or spec-completion claim is made; the spec
   matrix remains `PARTIAL=11`.
+- Snapshot drift/test-determinism checkpoint through `c9cf2cb`: `fafb8ad`
+  records mkdocs navigation drift capture for the mobile companion docs,
+  `b951895` formats the XAdES C14N vector test, and `c9cf2cb` isolates
+  command-signing environment state in the API test harness. This is docs
+  config and test determinism evidence only: no production signing, XAdES
+  conformance, CMD approval, legal validity, or spec-completion claim is made;
+  the spec matrix remains `PARTIAL=11`.
 - Current working-tree retained-export cleanup UX checks: focused API/core
   markers pin export dry-run `would_delete_files`, `would_delete_directories`,
   and `would_delete_bytes` planning with `deleted_files`, `deleted_directories`,
@@ -2434,7 +2443,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   production-readiness, TLS/key-custody, vulnerability-free scan, SBOM,
   signature/attestation, HA/failover/RPO/RTO, legal/DR certification, cloud
   deployment readiness, or spec-completion claim is made.
-- Current checkpoint metadata/static checks through `6093e7e`
+- Current checkpoint metadata/static checks through `c9cf2cb`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
