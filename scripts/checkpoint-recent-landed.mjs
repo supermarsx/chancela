@@ -10421,12 +10421,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `040ce48`",
+    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `711c7a4`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `040ce48`",
+    "Focused Gate Snapshot Through `711c7a4`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -11066,7 +11066,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `040ce48`",
+    "Current checkpoint metadata/static checks through `711c7a4`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -11601,7 +11601,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `040ce4874425ac67f059cb36aafcaa379ae3463e`",
+    "implementation snapshot `711c7a4cfd240d28bde98b1d8b4aa85fbb5413f7`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -11978,6 +11978,81 @@ function assertCheckpointMap() {
     "SPEC-COVERAGE.md",
     "The combined\n  condominium reminder evidence still does not claim a legal deadline,\n  legal-calendar authority, compliance status, provider execution, DRE/source\n  authority verification",
     "spec coverage condominium annual reminder no-claim marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Current `711c7a4` keeps Workflows/UX/CI **PARTIAL**",
+    "spec coverage dashboard annual reminder localization checkpoint marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "dashboard work queue now maps supported annual profile-calendar reminder rules to localized titles",
+    "spec coverage dashboard annual reminder localized copy marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "`csc-art376-annual`, `assoc-annual`, `fundacao-annual`, and\n  `cooperativa-annual`, while preserving the existing `condominio-annual`",
+    "spec coverage dashboard annual reminder rule list marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "frontend dashboard display and workflow/calendar UI coverage only",
+    "spec coverage dashboard annual reminder UI-only caveat marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Current `711c7a4` dashboard annual reminder localization checks",
+    "CI/E2E hardening plan dashboard annual reminder localization marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "`csc-art376-annual`, `assoc-annual`, `fundacao-annual`, and\n  `cooperativa-annual`, while preserving `condominio-annual` behavior",
+    "CI/E2E hardening plan dashboard annual reminder rule list marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "no backend/calendar policy, contract, provider, legal/compliance",
+    "CI/E2E hardening plan dashboard annual reminder no-backend caveat marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-CHECKPOINTS.md",
+    "dashboard-only annual reminder localization markers for CSC, association, foundation, and cooperative profile-calendar rules",
+    "CI checkpoints dashboard annual reminder localization marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/dashboard/DashboardPage.tsx",
+    "'csc-art376-annual': {\n    title: 'notifications.reminder.annual.csc.title'",
+    "dashboard CSC annual reminder copy marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/dashboard/DashboardPage.tsx",
+    "'assoc-annual': {\n    title: 'notifications.reminder.annual.assoc.title'",
+    "dashboard association annual reminder copy marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/dashboard/DashboardPage.tsx",
+    "'fundacao-annual': {\n    title: 'notifications.reminder.annual.fundacao.title'",
+    "dashboard foundation annual reminder copy marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/dashboard/DashboardPage.tsx",
+    "'cooperativa-annual': {\n    title: 'notifications.reminder.annual.cooperativa.title'",
+    "dashboard cooperative annual reminder copy marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/dashboard/DashboardPage.test.tsx",
+    "localizes all non-condominium annual profile-calendar reminders in the work queue",
+    "dashboard annual reminder localization test marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/dashboard/DashboardPage.test.tsx",
+    "Raw fallback for ${annualCase.rule}",
+    "dashboard annual reminder raw fallback fixture marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/dashboard/DashboardPage.test.tsx",
+    "expect(itemText).not.toContain('DRE');",
+    "dashboard annual reminder no-DRE display claim marker",
   );
   assertFileContains(
     "apps/web/src/features/notifications/notifications.ts",

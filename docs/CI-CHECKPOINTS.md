@@ -83,7 +83,9 @@ manifest API and BookDetail JSON-download markers, generated-document by-id
 download route plus sealed post-act certidao/extrato template generation UI,
 absent-owner communication dispatch-evidence recording, and generated
 absent-owner evidence UI and dashboard absent-owner dispatch-evidence reminders,
-condominium annual profile-calendar Jan 15 local advisory markers,
+condominium annual profile-calendar Jan 15 local advisory markers plus
+dashboard-only annual reminder localization markers for CSC, association,
+foundation, and cooperative profile-calendar rules,
 compact validator-report actions, template provenance UI, release clean-source
 provenance gating, local CC batch-signing UI markers for BatchSigningPanel,
 `useCcBatchSign`, `POST /v1/signature/cc/batch-sign`, optional transient PIN

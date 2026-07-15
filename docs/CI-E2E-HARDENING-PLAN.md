@@ -1,10 +1,11 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `040ce48`,
+and implementation snapshot `711c7a4`,
 including coverage notes for condominium annual local advisory Jan 15
-profile-calendar depth, automated-review dashboard contract surfacing, archive
-active-filter count refinement, all-filtered archive export streaming/caps,
+profile-calendar depth, dashboard annual profile-calendar reminder localization,
+automated-review dashboard contract surfacing, archive active-filter count
+refinement, all-filtered archive export streaming/caps,
 automated-review law corpus evidence and UI tier surfacing, MCP workflow
 provenance local JSON/text summary,
 key-custody readiness UI/contract surfacing,
@@ -886,11 +887,11 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `040ce48`
+## Focused Gate Snapshot Through `711c7a4`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08` and checkpoint-promoted on 2026-07-15 for
-current implementation head `040ce48`. This is not an exhaustive current
+current implementation head `711c7a4`. This is not an exhaustive current
 green-run claim; browser, Docker, desktop, package signing/notarization, image
 signing/attestation, and live-provider limits above still apply.
 
@@ -1808,6 +1809,18 @@ settingsDefaults.test.ts contracts.test.ts`.
   delivery/email/ICS/CalDAV/webhook,
   workflow completion, attendance proof, compliance gate, or legal sufficiency
   claim is implemented.
+- Current `711c7a4` dashboard annual reminder localization checks: focused
+  `npm run test --workspace apps/web --
+  src/features/dashboard/DashboardPage.test.tsx` coverage pins work-queue
+  localized titles, shared annual advisory body copy, localized entity action,
+  entity routes, due dates, source metadata, and raw fallback suppression for
+  `csc-art376-annual`, `assoc-annual`, `fundacao-annual`, and
+  `cooperativa-annual`, while preserving `condominio-annual` behavior. `npm run
+  build --workspace apps/web` passed with the existing ConfirmActionModal Rollup
+  warnings. This is frontend dashboard display and workflow/calendar UI coverage
+  only: no backend/calendar policy, contract, provider, legal/compliance, DRE
+  source-authority, external delivery/calendar-sync/webhook, workflow completion,
+  or legal-effect claim is implemented.
 - Current imported-document review reminder checks: focused `cargo test -p
   chancela-api --lib --locked imported_document_review_reminder` coverage pins
   metadata-only dashboard reminder emission for act-scoped imports whose review
@@ -1942,15 +1955,16 @@ settingsDefaults.test.ts contracts.test.ts`.
   full RBAC/delegation-policy completion, tenant authorization proof,
   legal-capacity verification, broad security certification, or spec
   completion.
-- Current checkpoint metadata/static checks through `040ce48`
+- Current checkpoint metadata/static checks through `711c7a4`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
   `git diff --check -- SPEC-COVERAGE.md docs\CI-E2E-HARDENING-PLAN.md
   docs\CI-CHECKPOINTS.md scripts\checkpoint-recent-landed.mjs`.
   These pin the spec snapshot,
-  hardening-plan head, automated-review dashboard contract surfacing, Arquivo
-  advanced-filter count badge, all-filtered archive export streaming/cap scope, MCP meeting
+  hardening-plan head, dashboard annual reminder localization, automated-review
+  dashboard contract surfacing, Arquivo advanced-filter count badge,
+  all-filtered archive export streaming/cap scope, MCP meeting
   metadata extraction review resource, PDF table-structure semantics, export save-prompt
   routing, dashboard dates tab, notification footer icon-only action, and
   clarified platform operations UI, user/signatory email capture, and compact

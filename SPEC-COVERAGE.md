@@ -1,6 +1,6 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-15 from current implementation snapshot `040ce4874425ac67f059cb36aafcaa379ae3463e`,
+*Updated 2026-07-15 from current implementation snapshot `711c7a4cfd240d28bde98b1d8b4aa85fbb5413f7`,
 with committed evidence refreshes for the recently landed condominium annual
 local advisory due-date depth, automated-review dashboard contract surface,
 archive filter refinement, all-filtered archive export, automated-review law
@@ -190,8 +190,9 @@ vendoring, `49c8313` automated-review law contract synchronization, and
 `72df5c0` automated-review law corpus UI tier surfacing, with `7ab3ab7`
 focused web assertions for the honest badge and caveat tooltip, plus `3a41187`
 condominium annual local advisory due-date coverage, `a7125b3`
-all-filtered archive export scope coverage, and `040ce48` streamed
-all-filtered archive export/cap coverage.
+all-filtered archive export scope coverage, `040ce48` streamed all-filtered
+archive export/cap coverage, and `711c7a4` dashboard annual profile-calendar
+reminder localization.
 Earlier coverage text remains prior snapshot context. All top-level spec areas remain **PARTIAL**.
 This is an implementation and test coverage snapshot, not a legal certification,
 not production CMD approval, not DRE verification promotion, not full PDF/UA
@@ -240,6 +241,20 @@ Implementation checkpoints covered here:
   execution, DRE/source-authority verification, legal review, external
   delivery/calendar sync/webhook, workflow completion, or any legal/compliance
   completion claim.
+
+- Current `711c7a4` keeps Workflows/UX/CI **PARTIAL**: the dashboard work queue
+  now maps supported annual profile-calendar reminder rules to localized titles,
+  the shared annual advisory body, and the existing localized entity action for
+  `csc-art376-annual`, `assoc-annual`, `fundacao-annual`, and
+  `cooperativa-annual`, while preserving the existing `condominio-annual`
+  behavior. Focused dashboard tests pin localized non-condominium annual titles,
+  entity routes, due dates, profile-calendar source metadata, and suppression of
+  raw backend fallback/legal-provider text in the rendered work-queue items. This
+  is frontend dashboard display and workflow/calendar UI coverage only: it does
+  not change backend reminder generation, calendar policy, contracts, providers,
+  legal/compliance status, DRE/source authority, external delivery/calendar sync
+  or webhook behavior, workflow completion, or any legal/compliance completion
+  claim.
 
 - Recent `7ab3ab7` keeps Legal/Compliance/UX/API/CI **PARTIAL**:
   automated-review law references now flow from API/dashboard and law-corpus
