@@ -48,7 +48,8 @@ use crate::credential_resolve::{
 use crate::error::ApiError;
 use crate::secretstore_persist::{CredentialMode, ProviderCredentialStore};
 use crate::signature::{
-    self, LocalPkcs12SignRequest, LocalPkcs12SignResponse, SealAppearanceRequest,
+    self, LocalPkcs12SignRequest, LocalPkcs12SignResponse, ScapCapacityEvidenceRequest,
+    SealAppearanceRequest,
 };
 
 /// JSON envelope accepted by `POST /v1/acts/{id}/signature/local/pkcs12/sign-stored`.
@@ -68,6 +69,9 @@ pub struct StoredPkcs12SignRequest {
     /// The capacity in which the signer acts (optional, informational; threaded to the delegate).
     #[serde(default)]
     pub capacity: Option<String>,
+    /// Optional SCAP-backed capacity evidence request; threaded to the delegate unchanged.
+    #[serde(default, alias = "scap_evidence")]
+    pub scap_capacity_evidence: Option<ScapCapacityEvidenceRequest>,
     /// Actor override for attribution.
     #[serde(default)]
     pub actor: Option<String>,
@@ -156,6 +160,7 @@ pub async fn sign_local_pkcs12_stored_signature(
         passphrase: chosen.passphrase,
         friendly_name: chosen.friendly_name,
         capacity: req.capacity,
+        scap_capacity_evidence: req.scap_capacity_evidence,
         actor: req.actor,
         seal: req.seal,
     };

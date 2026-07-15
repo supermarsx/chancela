@@ -50,6 +50,9 @@ use crate::secretstore_persist::{
     CredentialMode, DecryptedCredentialEntry, FIELD_APPLICATION_ID, FIELD_SECRET,
     ProviderCredentialError, ProviderCredentialStore,
 };
+use crate::signature::{
+    ScapCapacityEvidenceEnvironment, ScapCapacityEvidenceRequest, SignerCapacityEvidence,
+};
 
 /// Envelope cap for the SCAP sign endpoint (PKCS#12 + content).
 pub(crate) const SCAP_SIGN_MAX_BYTES: usize = 8 * 1024 * 1024;
@@ -203,6 +206,66 @@ fn build_scap_client(
             Ok(ScapClientKind::Http(client))
         }
     }
+}
+
+/// Resolve a signer-capacity SCAP request into the signed-document evidence vocabulary.
+///
+/// This intentionally reuses the same client/transport selection as the public SCAP endpoints:
+/// preprod/mock may only produce provider-declared evidence, while `verified_by_scap` is reachable
+/// only through the production HTTP transport after a `Granted` verification decision.
+pub(crate) fn signer_capacity_evidence_from_request(
+    req: ScapCapacityEvidenceRequest,
+    declared_capacity: Option<&str>,
+    provider_credentials: &ProviderCredentialStore,
+) -> Result<SignerCapacityEvidence, ApiError> {
+    let citizen_id = req.citizen_id.trim().to_owned();
+    let provider_id = req.provider_id.trim().to_owned();
+    let attribute_name = req.attribute_name.trim().to_owned();
+    if citizen_id.is_empty() || provider_id.is_empty() || attribute_name.is_empty() {
+        return Err(ApiError::Unprocessable(
+            "scap_capacity_evidence requires citizen_id, provider_id, and attribute_name"
+                .to_owned(),
+        ));
+    }
+    if let Some(capacity) = declared_capacity.map(str::trim).filter(|v| !v.is_empty()) {
+        if capacity != attribute_name {
+            return Err(ApiError::Unprocessable(format!(
+                "capacity '{capacity}' does not match SCAP attribute '{attribute_name}'"
+            )));
+        }
+    }
+
+    let environment = match req.environment {
+        ScapCapacityEvidenceEnvironment::Preprod => EnvironmentRequest::Preprod,
+        ScapCapacityEvidenceEnvironment::Prod => EnvironmentRequest::Prod,
+    };
+    let citizen = citizen_ref(&citizen_id, req.full_name.as_deref());
+    let client = build_scap_client(environment, provider_credentials)?;
+    let attributes = client.fetch_attributes(&citizen).map_err(map_scap_error)?;
+    let attribute = attributes
+        .into_iter()
+        .find(|a| a.provider_id == provider_id && a.name == attribute_name)
+        .ok_or_else(|| {
+            ApiError::Unprocessable(format!(
+                "SCAP does not report attribute '{attribute_name}' from provider '{provider_id}' \
+                 for this citizen"
+            ))
+        })?;
+
+    let evidence = client
+        .build_signature_evidence(attribute, &citizen)
+        .map_err(map_scap_error)?;
+    let report = client.verify_evidence(&evidence).map_err(map_scap_error)?;
+    let verified_at = evidence.verified_at.and_then(|t| t.format(&Rfc3339).ok());
+    Ok(SignerCapacityEvidence {
+        requested_provider_capacity: report.attribute_name,
+        source: "scap_attribute_provider".to_owned(),
+        verification_status: report.verification_status_marker.to_owned(),
+        verification_source: evidence.verification_source,
+        verified_at,
+        authority_reference: evidence.authority_reference,
+        status_scope: report.status_scope_marker.to_owned(),
+    })
 }
 
 fn resolve_prod_scap_config(

@@ -99,7 +99,7 @@ use crate::secretstore_persist::{
     FIELD_CLIENT_ID, FIELD_CLIENT_SECRET, FIELD_HTTP_BASIC_PASSWORD, FIELD_HTTP_BASIC_USERNAME,
 };
 use crate::settings::{RuntimeTsaProvider, RuntimeTslSource};
-use crate::{CredentialMode, ProviderCredentialError};
+use crate::{CredentialMode, ProviderCredentialError, ProviderCredentialStore};
 
 /// The signing family this module produces (v1 is CMD-only; t57 ruling 2).
 const FAMILY_CMD: &str = "ChaveMovelDigital";
@@ -535,9 +535,8 @@ pub struct SignatureEvidenceStatus {
     pub status_scope: &'static str,
 }
 
-/// Declared signer-capacity evidence preserved with a signed artifact. This records only what the
-/// operator/request supplied; Chancela does not perform SCAP or authority verification in this
-/// slice.
+/// Signer-capacity evidence preserved with a signed artifact. Legacy requests record only what the
+/// operator supplied; endpoints that accept SCAP evidence may resolve a provider attribute first.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SignerCapacityEvidence {
     pub requested_provider_capacity: String,
@@ -776,6 +775,37 @@ pub struct OfficialSignatureLegalValidation {
 
 // --- local PKCS#12 software-certificate signing -----------------------------------------------
 
+/// SCAP environment requested for signer-capacity evidence resolution.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ScapCapacityEvidenceEnvironment {
+    /// Offline mock/pre-production transport. May report provider-declared attributes, never
+    /// `verified_by_scap`.
+    #[default]
+    Preprod,
+    /// Production HTTP SCAP transport. Requires configured SCAP credentials and only records
+    /// `verified_by_scap` when SCAP returns `Granted`.
+    Prod,
+}
+
+/// Optional SCAP-backed signer-capacity evidence request.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScapCapacityEvidenceRequest {
+    /// Civil identifier of the signing citizen whose professional attribute is checked.
+    pub citizen_id: String,
+    /// Full name hint for SCAP, when known.
+    #[serde(default)]
+    pub full_name: Option<String>,
+    /// Attribute-provider id to resolve.
+    pub provider_id: String,
+    /// Professional/representative attribute name expected from that provider.
+    pub attribute_name: String,
+    /// SCAP environment/transport to use. Defaults to mock/preprod and therefore cannot verify.
+    #[serde(default)]
+    pub environment: ScapCapacityEvidenceEnvironment,
+}
+
 /// JSON envelope accepted by `POST /v1/acts/{id}/signature/local/pkcs12/sign`.
 ///
 /// This is an advanced local-signing import flow: the encrypted PKCS#12 bytes and passphrase are
@@ -793,6 +823,10 @@ pub struct LocalPkcs12SignRequest {
     /// The capacity in which the signer acts (optional, informational).
     #[serde(default)]
     pub capacity: Option<String>,
+    /// Optional SCAP-backed capacity evidence request. When present, the SCAP attribute must match
+    /// `capacity` if both are supplied.
+    #[serde(default, alias = "scap_evidence")]
+    pub scap_capacity_evidence: Option<ScapCapacityEvidenceRequest>,
     /// Actor override for attribution.
     #[serde(default)]
     pub actor: Option<String>,
@@ -4896,7 +4930,12 @@ pub async fn sign_local_pkcs12_signature(
         .map(Pkcs12IdentitySelector::by_friendly_name)
         .unwrap_or_else(Pkcs12IdentitySelector::any);
     let capacity = optional_trimmed(req.capacity);
-    let signer_capacity_evidence = signer_capacity_evidence_from_capacity(capacity.clone());
+    let signer_capacity_evidence = signer_capacity_evidence_from_request(
+        capacity.as_deref(),
+        req.scap_capacity_evidence,
+        state.provider_credentials.clone(),
+    )
+    .await?;
     let signer_capacity_evidence_json = signer_capacity_evidence_json(&signer_capacity_evidence)?;
     let signing_time = OffsetDateTime::now_utc()
         .replace_nanosecond(0)
@@ -6260,6 +6299,29 @@ pub(crate) fn signer_capacity_evidence_from_capacity(
         authority_reference: None,
         status_scope: "declared_capacity_evidence_only".to_owned(),
     })
+}
+
+async fn signer_capacity_evidence_from_request(
+    capacity: Option<&str>,
+    scap_capacity_evidence: Option<ScapCapacityEvidenceRequest>,
+    provider_credentials: Arc<ProviderCredentialStore>,
+) -> Result<Option<SignerCapacityEvidence>, ApiError> {
+    let Some(request) = scap_capacity_evidence else {
+        return Ok(signer_capacity_evidence_from_capacity(
+            capacity.map(ToOwned::to_owned),
+        ));
+    };
+    let declared_capacity = capacity.map(ToOwned::to_owned);
+    tokio::task::spawn_blocking(move || {
+        crate::scap::signer_capacity_evidence_from_request(
+            request,
+            declared_capacity.as_deref(),
+            &provider_credentials,
+        )
+        .map(Some)
+    })
+    .await
+    .map_err(|e| ApiError::Internal(format!("SCAP capacity evidence task failed: {e}")))?
 }
 
 pub(crate) fn signer_capacity_evidence_json(
