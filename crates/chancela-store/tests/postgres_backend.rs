@@ -1421,3 +1421,48 @@ fn restore_preflight_is_non_destructive_and_rejects_a_bad_bundle_on_postgres() {
 
     let _ = std::fs::remove_dir_all(&data_dir);
 }
+
+/// wp25 — opening with an explicit `sslmode` drives the connection through the new rustls TLS
+/// connector ([`chancela_store::pg_tls`]) instead of `NoTls`. `prefer` is the default posture and is
+/// non-breaking: it negotiates TLS if the server offers it and falls back to plaintext otherwise, so
+/// this round-trip passes against a plain test Postgres AND a TLS-enabled one. It proves the rustls
+/// `MakeTlsConnect` integrates with the synchronous `postgres` + r2d2 stack (pool + writer) and that
+/// `sslmode=` is parsed out of the DSN and honored. For an end-to-end `verify-full` proof point,
+/// run against a TLS Postgres with `CHANCELA_PG_SSLMODE=verify-full` and
+/// `CHANCELA_PG_TLS_ROOT_CERT` pointing at its CA.
+#[test]
+#[ignore = "requires a live PostgreSQL at DATABASE_URL"]
+fn sslmode_prefer_opens_and_roundtrips_on_postgres() {
+    let Some(isolated) = isolated_postgres("sslmode-prefer") else {
+        return;
+    };
+    // The isolated URL is libpq keyword form; append an explicit sslmode the resolver must honor.
+    let database_url = format!("{} sslmode=prefer", isolated.url());
+    let store = Store::open_backend(StoreBackendSelection::Postgres { database_url })
+        .expect("open postgres backend with sslmode=prefer");
+
+    let mut ledger = Ledger::new();
+    let event = ledger
+        .append(
+            "amelia.marques",
+            "application",
+            "app.started",
+            None,
+            b"postgres-tls-prefer",
+        )
+        .clone();
+    store
+        .persist(|tx| tx.append_event(&event))
+        .expect("persist over the resolved (prefer) connection");
+
+    let loaded = store.load().expect("reload over the resolved connection");
+    assert_eq!(
+        loaded.ledger.len(),
+        1,
+        "one event replays over the TLS-capable connector"
+    );
+    assert!(
+        loaded.chain_status.is_ok(),
+        "replayed chain verifies over the prefer connection"
+    );
+}

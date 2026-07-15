@@ -35,6 +35,8 @@ pub mod dialect;
 pub(crate) mod pg;
 #[cfg(feature = "postgres")]
 pub(crate) mod pg_backup;
+#[cfg(feature = "postgres")]
+pub(crate) mod pg_tls;
 // wp16 P0 — Postgres advisory-lock leader election / step-down / failover-handoff primitives.
 #[cfg(feature = "postgres")]
 pub(crate) mod pg_cluster;
@@ -119,6 +121,13 @@ pub enum StoreError {
     #[cfg(feature = "postgres")]
     #[error("postgres connection pool error: {0}")]
     R2d2(#[from] r2d2::Error),
+    /// The Postgres TLS layer could not be configured: an unrecognized `sslmode`, an unreadable /
+    /// empty `CHANCELA_PG_TLS_ROOT_CERT` bundle, or (under `verify-full`) no trusted root CA at all.
+    /// Fails closed so a mis-set TLS config never silently degrades to an unverified or plaintext
+    /// connection. Only present when the `postgres` feature is enabled (wp25).
+    #[cfg(feature = "postgres")]
+    #[error("postgres tls configuration error: {0}")]
+    PgTls(String),
     /// A store operation was invoked on the PostgreSQL backend that is not yet ported to it
     /// (wp14 Phase 1). These paths still funnel through the SQLite-only `Tx::raw` / connection
     /// accessors and fail closed here with a clear, named operation rather than misbehaving. See

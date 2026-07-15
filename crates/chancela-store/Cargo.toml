@@ -20,7 +20,16 @@ sqlcipher = ["rusqlite/bundled-sqlcipher-vendored-openssl"]
 # (wired in Phase 2) selects a `postgres`-crate + r2d2 pool backend behind the same `Store`/`Tx`
 # facade (§2.3 Option A: a synchronous driver so the frozen `persist(|tx| ...)` closure API is
 # preserved verbatim). SQLite remains the default and is untouched.
-postgres = ["dep:postgres", "dep:r2d2", "dep:r2d2_postgres"]
+postgres = [
+    "dep:postgres",
+    "dep:r2d2",
+    "dep:r2d2_postgres",
+    "dep:rustls",
+    "dep:tokio",
+    "dep:tokio-rustls",
+    "dep:rustls-native-certs",
+    "dep:rustls-pemfile",
+]
 
 [dependencies]
 # Domain types persisted/loaded by the store. It depends on core (Entity/Book/Act ids),
@@ -54,3 +63,14 @@ zip = { workspace = true }
 postgres = { version = "0.19", optional = true }
 r2d2 = { version = "0.8", optional = true }
 r2d2_postgres = { version = "0.18", optional = true }
+# TLS for the synchronous Postgres connection (wp25). A rustls `MakeTlsConnect` is implemented over
+# `tokio-rustls` in `pg_tls.rs`, so the sync `postgres`+r2d2 stack gains sslmode=require/verify-full
+# WITHOUT dragging in OpenSSL (`postgres-native-tls`/`postgres-openssl`). rustls + its trust-root /
+# PEM helpers are already compiled elsewhere in the workspace, so this adds only dependency edges,
+# no new crate versions. `tokio` is needed only for the `AsyncRead`/`AsyncWrite` trait bounds the
+# tokio-postgres TLS traits require; the sync driver still owns its own runtime.
+rustls = { version = "0.23", optional = true }
+tokio = { version = "1", optional = true, default-features = false }
+tokio-rustls = { version = "0.26", optional = true }
+rustls-native-certs = { version = "0.8", optional = true }
+rustls-pemfile = { version = "2", optional = true }

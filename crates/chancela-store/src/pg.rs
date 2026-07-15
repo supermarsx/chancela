@@ -29,8 +29,9 @@
 //! node that loses the race comes up as a read-only FOLLOWER and polls for promotion rather than
 //! hanging (see [`crate::pg_cluster`] for the election / step-down / handoff /
 //! `leader_epoch`-fence machinery). Compose additionally pins `deploy.replicas: 1` for the
-//! single-writer profile (§6). TLS (`sslmode=verify-full` via `postgres-rustls`, §3) remains a
-//! later hardening item.
+//! single-writer profile (§6). TLS is now supported (wp25): the connection honors an sslmode of
+//! `disable`/`prefer`/`require`/`verify-full` (from `DATABASE_URL` or `CHANCELA_PG_SSLMODE`) through a
+//! rustls connector for the sync `postgres` stack — see [`crate::pg_tls`].
 //!
 //! ## What the Postgres backend supports vs defers (all deferrals fail closed, never silently)
 //!
@@ -76,7 +77,7 @@ use chancela_core::{Act, ActId, Book, Entity, EntityId};
 use chancela_ledger::Ledger;
 use chancela_registry::RegistryExtract;
 use postgres::types::ToSql;
-use postgres::{Client, NoTls, Row};
+use postgres::{Client, Row};
 use r2d2_postgres::PostgresConnectionManager;
 use rusqlite::types::Value;
 
@@ -105,8 +106,11 @@ pub(crate) const ADD_IMPORTED_DOCUMENTS_GUARDRAIL_ACK_COLUMN: &str = "ALTER TABL
 pub(crate) const EVENTS_SINCE_SQL: &str = "SELECT seq, id, actor, justification, timestamp, scope, kind, payload_digest, \
      prev_hash, hash, links FROM events WHERE seq > $1 ORDER BY seq";
 
-/// The `r2d2` connection manager type for the read pool.
-type PgManager = PostgresConnectionManager<NoTls>;
+/// The `r2d2` connection manager type for the read pool. The TLS connector is always the
+/// rustls-based [`crate::pg_tls::MakeRustlsConnect`]; whether TLS is actually negotiated is decided
+/// by the connection's `ssl_mode` (resolved in [`crate::pg_tls::resolve`]), so `sslmode=disable`
+/// stays plaintext (the connector is built but never invoked) while `require`/`verify-full` encrypt.
+type PgManager = PostgresConnectionManager<crate::pg_tls::MakeRustlsConnect>;
 
 /// The PostgreSQL backend: a read pool plus a single advisory-locked writer connection.
 #[derive(Clone)]
@@ -156,16 +160,20 @@ impl std::fmt::Debug for PostgresBackend {
 impl PostgresBackend {
     /// Connect to `database_url`, take the writer advisory lock, and run the per-backend DDL.
     ///
-    /// `database_url` is a libpq connection string (`postgres://user:pass@host:5432/db`). TLS is
-    /// `NoTls` in this lane; `sslmode=verify-full` via `postgres-rustls` remains a later hardening
-    /// item.
+    /// `database_url` is a libpq connection string (`postgres://user:pass@host:5432/db`). The TLS
+    /// posture is resolved from `CHANCELA_PG_SSLMODE` or the URL's `sslmode=` (defaulting to
+    /// `prefer`) and applied through the rustls connector in [`crate::pg_tls`]; both the read pool
+    /// and the writer share the same resolved [`postgres::Config`] + connector.
     pub(crate) fn open(database_url: &str) -> Result<Self, StoreError> {
-        let config: postgres::Config = database_url
-            .parse()
-            .map_err(|e: postgres::Error| StoreError::Postgres(e))?;
+        let crate::pg_tls::ResolvedPgTls {
+            config,
+            connector,
+            mode: _mode,
+        } = crate::pg_tls::resolve(database_url)?;
 
-        // Read pool.
-        let manager = PostgresConnectionManager::new(config, NoTls);
+        // Read pool. The resolved config carries the wire `ssl_mode`; the connector encrypts when
+        // that mode negotiates TLS and is a harmless no-op under `sslmode=disable`.
+        let manager = PostgresConnectionManager::new(config.clone(), connector.clone());
         let pool = r2d2::Pool::builder().build(manager)?;
 
         // Dedicated writer connection. wp16 P0 promotes the wp14 writer advisory lock from a blocking
@@ -175,7 +183,7 @@ impl PostgresBackend {
         // this node is a FOLLOWER that comes up read-only and polls for promotion (see
         // [`crate::pg_cluster`]). The lock stays on this one never-pooled connection so the ledger's
         // single-writer invariant is physically coupled to the write channel (plan §7.3).
-        let mut writer = Client::connect(database_url, NoTls)?;
+        let mut writer = config.connect(connector)?;
         let mode = crate::pg_cluster::resolve_election_mode();
         let node_id: Arc<str> = Arc::from(crate::pg_cluster::resolve_node_id());
         let advertised_addr: Arc<str> = Arc::from(crate::pg_cluster::resolve_advertised_url());
