@@ -66,6 +66,12 @@ pub enum Permission {
     #[serde(rename = "document.generate")]
     DocumentGenerate,
 
+    // --- Templates ---
+    /// Gates user-authored template create/edit/delete/import. Listing and export stay on
+    /// `act.read`.
+    #[serde(rename = "template.manage")]
+    TemplateManage,
+
     // --- Ledger ---
     #[serde(rename = "ledger.read")]
     LedgerRead,
@@ -121,7 +127,7 @@ pub enum Permission {
 
 impl Permission {
     /// Every permission in the catalog, in declaration order. This IS the Owner permission-set.
-    pub const ALL: [Permission; 38] = [
+    pub const ALL: [Permission; 39] = [
         Permission::EntityRead,
         Permission::EntityCreate,
         Permission::EntityUpdate,
@@ -141,6 +147,7 @@ impl Permission {
         Permission::ActArchive,
         Permission::SigningPerform,
         Permission::DocumentGenerate,
+        Permission::TemplateManage,
         Permission::LedgerRead,
         Permission::LedgerRecover,
         Permission::DataBackup,
@@ -195,6 +202,7 @@ impl Permission {
             Permission::ActArchive => "act.archive",
             Permission::SigningPerform => "signing.perform",
             Permission::DocumentGenerate => "document.generate",
+            Permission::TemplateManage => "template.manage",
             Permission::LedgerRead => "ledger.read",
             Permission::LedgerRecover => "ledger.recover",
             Permission::DataBackup => "data.backup",
