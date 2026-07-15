@@ -1229,7 +1229,9 @@ impl AppState {
                     &dir.join(external_validator_evidence::EXTERNAL_VALIDATOR_REPORT_METADATA_DIR),
                 );
             self.api_key_rate_limits.write().await.clear();
+            self.rate_limit_buckets.write().await.clear();
             self.sessions.write().await.clear();
+            self.session_issued_at.write().await.clear();
             self.attestations.write().await.clear();
             *self.cae.write().await = chancela_cae::load_catalog(Some(&dir));
             *self.law_store.write().await = law::load_law_store(&dir.join(law::LAWS_DIR));
@@ -1270,6 +1272,7 @@ impl AppState {
         self.backup_recovery_drill_receipts.write().await.clear();
         self.notification_triage.write().await.clear();
         self.sessions.write().await.clear();
+        self.session_issued_at.write().await.clear();
         self.attestations.write().await.clear();
         self.api_keys.write().await.clear();
         self.external_signing_envelopes.write().await.clear();
@@ -1278,6 +1281,7 @@ impl AppState {
             .await
             .clear();
         self.api_key_rate_limits.write().await.clear();
+        self.rate_limit_buckets.write().await.clear();
         self.platform_logs.write().await.clear();
         // A blank first-run instance has the seeded default roles and no delegations (t64), matching
         // what a subsequent load of the wiped data dir would reseed.
@@ -8562,6 +8566,107 @@ mod tests {
         assert_eq!(status, StatusCode::UNAUTHORIZED);
         // The over-age session was evicted.
         assert!(!state.sessions.read().await.contains_key(&token));
+    }
+
+    #[tokio::test]
+    async fn runtime_security_state_cleared_on_data_dir_reload() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.dir.clone());
+        state
+            .session_issued_at
+            .write()
+            .await
+            .insert("stale-session".to_owned(), time::OffsetDateTime::now_utc());
+        state.rate_limit_buckets.write().await.insert(
+            std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
+            TokenBucket::new(1.0, std::time::Instant::now()),
+        );
+
+        state
+            .reload_domain_memory()
+            .await
+            .expect("data-dir reload succeeds");
+
+        assert!(
+            state.session_issued_at.read().await.is_empty(),
+            "session issued-at cap tracker is cleared on reload"
+        );
+        assert!(
+            state.rate_limit_buckets.read().await.is_empty(),
+            "per-IP rate-limit buckets are cleared on reload"
+        );
+    }
+
+    #[tokio::test]
+    async fn runtime_security_state_cleared_on_factory_memory_clear() {
+        let state = AppState::default();
+        state
+            .session_issued_at
+            .write()
+            .await
+            .insert("stale-session".to_owned(), time::OffsetDateTime::now_utc());
+        state.rate_limit_buckets.write().await.insert(
+            std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
+            TokenBucket::new(1.0, std::time::Instant::now()),
+        );
+
+        state.clear_all_memory().await;
+
+        assert!(
+            state.session_issued_at.read().await.is_empty(),
+            "session issued-at cap tracker is cleared on factory reset"
+        );
+        assert!(
+            state.rate_limit_buckets.read().await.is_empty(),
+            "per-IP rate-limit buckets are cleared on factory reset"
+        );
+    }
+
+    #[tokio::test]
+    async fn current_attestor_rejects_session_past_absolute_lifetime_cap() {
+        let state = AppState {
+            session_max_lifetime: SessionMaxLifetime(60 * 60),
+            ..AppState::default()
+        };
+        let uid = seed_user(&state, "attestor.cap", vec![]).await;
+        let token = Uuid::new_v4().to_string();
+        let now = time::OffsetDateTime::now_utc();
+        state.sessions.write().await.insert(
+            token.clone(),
+            crate::session::SessionEntry {
+                user_id: uid,
+                unlocked_key: Some(
+                    p256::ecdsa::SigningKey::from_slice(&[7u8; 32]).expect("valid test key"),
+                ),
+                expires_at: now + time::Duration::seconds(crate::actor::SESSION_TTL_SECS),
+            },
+        );
+        state
+            .session_issued_at
+            .write()
+            .await
+            .insert(token.clone(), now - time::Duration::hours(2));
+
+        let (mut parts, _) = with_session(get("/v1/entities"), &token).into_parts();
+        let attestor =
+            <CurrentAttestor as axum::extract::FromRequestParts<AppState>>::from_request_parts(
+                &mut parts, &state,
+            )
+            .await
+            .expect("attestor extractor is infallible");
+
+        assert!(
+            attestor.signer().is_none(),
+            "over-age sessions must not expose an unlocked signing key"
+        );
+        assert!(
+            !state.sessions.read().await.contains_key(&token),
+            "over-age session is evicted"
+        );
+        assert!(
+            !state.session_issued_at.read().await.contains_key(&token),
+            "over-age issued-at tracker is evicted"
+        );
     }
 
     #[tokio::test]

@@ -267,8 +267,8 @@ pub fn read_session_token(parts: &Parts) -> Option<&str> {
 /// A session gains an unlocked [`SigningKey`](p256::ecdsa::SigningKey) only when the user signed
 /// in with the correct password **and** has an attestation key (plan t29 §4.4). This infallible
 /// extractor exposes that key (with the actor's username) to a mutating handler so it can sign the
-/// event it just appended. Absent/unknown/expired token, a legacy no-hash or key-less session, or
-/// an inactive user all yield "no signer" — never an error.
+/// event it just appended. Absent/unknown/expired/over-age token, a legacy no-hash or key-less
+/// session, or an inactive user all yield "no signer" — never an error.
 #[derive(Clone, Default)]
 pub struct CurrentAttestor {
     signer: Option<(String, p256::ecdsa::SigningKey)>,
@@ -293,24 +293,29 @@ impl FromRequestParts<AppState> for CurrentAttestor {
             None => return Ok(CurrentAttestor::default()),
         };
 
+        let now = OffsetDateTime::now_utc();
         let entry = {
             let sessions = state.sessions.read().await;
-            sessions
-                .get(token)
-                .map(|e| (e.user_id, e.unlocked_key.clone()))
+            sessions.get(token).map(|e| {
+                (
+                    e.user_id,
+                    e.unlocked_key.clone(),
+                    e.expires_at,
+                    e.expires_at - time::Duration::seconds(SESSION_TTL_SECS),
+                )
+            })
         };
         let signer = match entry {
-            Some((uid, Some(key))) => {
-                let now = OffsetDateTime::now_utc();
-                let expired = state
-                    .sessions
-                    .read()
-                    .await
-                    .get(token)
-                    .is_none_or(|e| now >= e.expires_at);
-                if expired {
-                    None
+            Some((uid, key, expires_at, created_at)) => {
+                let should_evict = if now >= expires_at {
+                    true
                 } else {
+                    session_absolute_cap_exceeded(state, token, now, created_at).await
+                };
+                if should_evict {
+                    evict_session(state, token).await;
+                    None
+                } else if let Some(key) = key {
                     state
                         .users
                         .read()
@@ -318,6 +323,8 @@ impl FromRequestParts<AppState> for CurrentAttestor {
                         .get(&uid)
                         .filter(|u| u.active)
                         .map(|u| (u.username.clone(), key))
+                } else {
+                    None
                 }
             }
             _ => None,
