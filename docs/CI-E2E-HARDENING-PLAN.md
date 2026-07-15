@@ -1,8 +1,9 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `364cb4b`,
-including coverage notes for the full composed-server E2E local pass after auth
+and implementation snapshot `3795016`,
+including coverage notes for the real-backend generated-convening
+dispatch-evidence browser proof, full composed-server E2E local pass after auth
 harness alignment, focused composed-server generated-convening
 dispatch-evidence E2E coverage, generated-convening dispatch-evidence
 metadata-only generated-document recording, convening recipient contact metadata before local
@@ -906,11 +907,11 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `364cb4b`
+## Focused Gate Snapshot Through `3795016`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08` and checkpoint-promoted on 2026-07-15 for
-current implementation head `364cb4b`. This is not an exhaustive current
+current implementation head `3795016`. This is not an exhaustive current
 green-run claim; the full-server E2E claim below is limited to local
 `chancela-server --features e2e` after auth harness alignment, and browser,
 Docker, desktop, package signing/notarization, image signing/attestation, and
@@ -1438,6 +1439,18 @@ settingsDefaults.test.ts contracts.test.ts`.
   and `Leitor` recent-event visibility, and continued Guest refusal from
   `/v1/ledger/events`. This is response redaction only: no permission grants,
   full anonymization, destructive erasure, or policy-completeness claim.
+- Current `3795016` generated-convening real-backend browser proof checkpoint:
+  `npm run test:browser --workspace apps/web -- e2e/generated-convening-dispatch-evidence-real.spec.ts --project=chromium`
+  passed for the release-server/built-SPA/E2E-backend path. It follows the
+  dashboard generated-convening dispatch-evidence reminder deep link to
+  `/atas/{act_id}?generated_document_id={document_id}&focus=dispatch-evidence#generated-dispatch-evidence`,
+  records operator metadata through real `POST`/`GET`
+  `/v1/documents/generated/{document_id}/dispatch-evidence`, and verifies the
+  persisted operator evidence row plus `operator_evidence_covered` status
+  rendering. This validates UI/backend integration for generated Convocatoria
+  dispatch-evidence metadata only: no send/delivery/legal-notice completion,
+  restart-persistence, bundle/archive preservation, full browser matrix,
+  provider/legal/registry proof, or spec completion is claimed.
 - Current `364cb4b` composed-server auth-aligned E2E checkpoint:
   `cargo test -p chancela-server --features e2e --locked` passed locally after
   the server E2E auth helpers were aligned with the current password-required
@@ -1516,6 +1529,12 @@ settingsDefaults.test.ts contracts.test.ts`.
   generated Convocatoria visibility/download, metadata-only evidence recording,
   resulting operator evidence row display, and no send/delivery/legal-notice
   completion claims.
+  Real-backend browser proof is
+  `npm run test:browser --workspace apps/web -- e2e/generated-convening-dispatch-evidence-real.spec.ts --project=chromium`;
+  it uses the E2E backend for the dashboard deep link, real
+  `/v1/documents/generated/{document_id}/dispatch-evidence` `POST`/`GET`, and
+  persisted operator evidence row/status rendering while keeping the
+  metadata-only no-claim boundary.
   This is generated-document retrieval, dashboard/notification navigation, and
   operator-recorded dispatch-evidence metadata only: no sealed act, canonical
   Ata, or generated-byte mutation; no mail, email, SMS, or provider sending; no
@@ -2119,14 +2138,16 @@ settingsDefaults.test.ts contracts.test.ts`.
   full RBAC/delegation-policy completion, tenant authorization proof,
   legal-capacity verification, broad security certification, or spec
   completion.
-- Current checkpoint metadata/static checks through `364cb4b`
+- Current checkpoint metadata/static checks through `3795016`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
   `git diff --check -- SPEC-COVERAGE.md docs\CI-E2E-HARDENING-PLAN.md
-  docs\CI-CHECKPOINTS.md scripts\checkpoint-recent-landed.mjs`.
+  docs\CI-CHECKPOINTS.md scripts\checkpoint-recent-landed.mjs
+  apps\web\e2e\generated-convening-dispatch-evidence-real.spec.ts`.
   These pin the spec snapshot,
-  hardening-plan head, focused composed-server generated-convening E2E evidence,
+  hardening-plan head, real-backend generated-convening dispatch-evidence
+  browser proof, focused composed-server generated-convening E2E evidence,
   generated-convening dispatch evidence metadata-only
   generated-document recording, convening recipient contact metadata, route-stubbed
   convening dispatch browser proof, convening dispatch evidence capture,

@@ -83,7 +83,8 @@ manifest API and BookDetail JSON-download markers, generated-document by-id
 download route plus sealed post-act certidao/extrato template generation UI,
 absent-owner communication dispatch-evidence recording, generated-convening
 dispatch-evidence metadata-only recording plus focused composed-server
-generated-convening dispatch-evidence E2E coverage, a full composed-server E2E
+generated-convening dispatch-evidence E2E coverage, real-backend
+generated-convening dispatch-evidence browser proof, a full composed-server E2E
 local pass after auth harness alignment, and generated
 absent-owner/generated-convening evidence UI and dashboard dispatch-evidence reminders,
 condominium annual profile-calendar Jan 15 local advisory markers plus
@@ -375,7 +376,12 @@ It intentionally reuses existing test surfaces:
   dispatch-evidence form, generated `condominio-comunicacao-ausentes/v1` and
   generated Convocatoria visibility/download, metadata-only evidence recording,
   resulting operator evidence row display, and no send/delivery/legal-notice
-  completion claims. Dashboard markers pin `source_rule`
+  completion claims. Guarded real-backend Playwright proof is pinned by
+  `apps/web/e2e/generated-convening-dispatch-evidence-real.spec.ts`; it covers
+  the dashboard/deep-link dispatch-evidence flow against the E2E backend, real
+  `POST`/`GET` `/v1/documents/generated/{document_id}/dispatch-evidence`,
+  persisted operator evidence row/status rendering, and metadata-only/no
+  send/delivery/legal-notice completion boundaries. Dashboard markers pin `source_rule`
   `absent-owner-dispatch-evidence` / `generated-convening-dispatch-evidence`,
   `source_profile` `condominium-generated-communication` /
   `generated-convening-notice`, action kind
@@ -691,7 +697,12 @@ generated-document deep-link query/hash focus routing, one-time
 ActDocumentPanel dispatch-evidence selection/focus, no send/delivery/
 legal-notice copy, no-claim markers, and dashboard reminder/notification
 source/action/deep-link/no-date ordering/fixture markers for absent-owner and
-generated-convening reminders, plus document-bundle
+generated-convening reminders, real-backend browser proof in
+`apps/web/e2e/generated-convening-dispatch-evidence-real.spec.ts` against the
+E2E backend, real `POST`/`GET`
+`/v1/documents/generated/{document_id}/dispatch-evidence`, persisted operator
+evidence row/status rendering, and metadata-only/no send/delivery/legal-notice
+completion boundaries, plus document-bundle
 `generated_dispatch_evidence` metadata and archive
 `evidence/generated-dispatch/{document_id}.json` sidecar/index markers,
 focused composed-server generated-convening E2E persistence/restart/archive
@@ -764,6 +775,13 @@ required `dispatched_at`, optional channel/reference, and existing recipient
 names. It does not exercise real delivery, live providers, registry/DRE
 acceptance, legal sufficiency/effect, workflow completion, or legal/compliance
 completion.
+
+Generated-convening dispatch real-backend browser proof is guarded by
+`apps/web/e2e/generated-convening-dispatch-evidence-real.spec.ts`: it pins the
+dashboard/deep-link dispatch-evidence flow against the E2E backend, real
+`POST`/`GET` `/v1/documents/generated/{document_id}/dispatch-evidence`,
+persisted operator evidence row/status rendering, and the metadata-only/no
+send/delivery/legal-notice completion boundaries.
 
 Convocation-notice advisory markers pin the local statute/convening evidence
 slice only: core `STATUTE/convocation-notice-*` warnings for missing,

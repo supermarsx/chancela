@@ -10471,12 +10471,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `364cb4b`",
+    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `3795016`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `364cb4b`",
+    "Focused Gate Snapshot Through `3795016`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -11141,7 +11141,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `364cb4b`",
+    "Current checkpoint metadata/static checks through `3795016`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -11676,7 +11676,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `364cb4b5ba64251e13f7be794dc06cdfdd8fd1f3`",
+    "implementation snapshot `3795016a4099edee107b4c69357fae3cd3fe865f`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -13612,6 +13612,40 @@ function assertCheckpointMap() {
     "apps/web/e2e/generated-convening-dispatch-evidence.spec.ts",
     "spec coverage generated-convening browser spec marker",
   );
+  assertFileExists(
+    "apps/web/e2e/generated-convening-dispatch-evidence-real.spec.ts",
+    "real backend generated convening dispatch evidence browser spec",
+  );
+  assertFileContains(
+    "apps/web/e2e/generated-convening-dispatch-evidence-real.spec.ts",
+    "metadata-only generated convening browser proof; no sending or delivery claim",
+    "real backend generated convening dispatch evidence records metadata only",
+  );
+  assertFileContains(
+    "apps/web/e2e/generated-convening-dispatch-evidence-real.spec.ts",
+    "/v1/documents/generated/",
+    "real backend generated convening dispatch evidence route marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/generated-convening-dispatch-evidence-real.spec.ts",
+    "records generated Convocatoria dispatch evidence against the real backend",
+    "real backend generated convening browser proof title marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "apps/web/e2e/generated-convening-dispatch-evidence-real.spec.ts",
+    "spec coverage real-backend generated-convening browser spec marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Current `3795016` keeps Documents/Workflows/Legal/Compliance/UX/API/CI",
+    "spec coverage real-backend generated-convening checkpoint marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "real-backend browser proof validates UI/backend integration for generated Convocatoria dispatch-evidence metadata only; statuses remain PARTIAL=11",
+    "spec coverage real-backend generated-convening partial-status marker",
+  );
   assertFileContains(
     "SPEC-COVERAGE.md",
     "`generated_document_id`",
@@ -13726,6 +13760,31 @@ function assertCheckpointMap() {
     "docs/CI-CHECKPOINTS.md",
     "It is focused E2E evidence only, not a full server E2E-suite\n  green-run claim.",
     "CI checkpoints generated-convening focused E2E no-full-suite marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "apps/web/e2e/generated-convening-dispatch-evidence-real.spec.ts",
+    "CI checkpoints real-backend generated-convening browser spec marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-CHECKPOINTS.md",
+    "dashboard/deep-link dispatch-evidence flow against the E2E backend, real `POST`/`GET` `/v1/documents/generated/{document_id}/dispatch-evidence`, persisted operator evidence row/status rendering, and metadata-only/no send/delivery/legal-notice completion boundaries",
+    "CI checkpoints real-backend generated-convening proof boundary marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Current `3795016` generated-convening real-backend browser proof checkpoint",
+    "CI/E2E hardening plan real-backend generated-convening checkpoint marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "npm run test:browser --workspace apps/web -- e2e/generated-convening-dispatch-evidence-real.spec.ts --project=chromium",
+    "CI/E2E hardening plan real-backend generated-convening browser command marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "real-backend generated-convening dispatch-evidence browser proof, focused composed-server generated-convening E2E evidence",
+    "CI/E2E hardening plan real-backend generated-convening static summary marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",

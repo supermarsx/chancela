@@ -1,12 +1,15 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-15 from current implementation snapshot `364cb4b5ba64251e13f7be794dc06cdfdd8fd1f3`,
-with committed evidence refreshes for the recently landed full composed-server
-E2E local pass after auth harness alignment, focused composed-server
+*Updated 2026-07-15 from current implementation snapshot `3795016a4099edee107b4c69357fae3cd3fe865f`,
+with committed evidence refreshes for the recently landed real-backend
+generated-convening dispatch-evidence browser proof, full composed-server E2E
+local pass after auth harness alignment, focused composed-server
 generated-convening dispatch-evidence E2E slice,
 generated-convening dispatch-evidence metadata-only generated-document slice,
 convening recipient contact metadata split before local dispatch evidence,
-route-stubbed convening dispatch browser proof, convening dispatch evidence capture UI slice,
+route-stubbed convening dispatch browser proof, real-backend
+generated-convening dispatch-evidence browser proof, convening dispatch
+evidence capture UI slice,
 convocation reminder guidance routing,
 missing-meeting-date convocation reminder, convocation act-review guidance, and
 convocation-notice local WFL/legal-calendar advisory reminder slices,
@@ -220,7 +223,10 @@ boundaries, followed by `364cb4b` full composed-server
 `cargo test -p chancela-server --features e2e --locked` local pass after
 password-required auth harness alignment, including focused recovery E2E and
 web contract confirmation while preserving public auth semantics and no-hash
-session refusal.
+session refusal, followed by `3795016` focused real-backend Playwright browser
+proof for generated Convocatoria dispatch-evidence metadata over the E2E
+backend, real generated-document dispatch-evidence `POST`/`GET`, dashboard
+deep-link routing, and persisted operator evidence row/status rendering.
 Earlier coverage text remains prior snapshot context. All top-level spec areas remain **PARTIAL**.
 This is an implementation and test coverage snapshot, not a legal certification,
 not production CMD approval, not DRE verification promotion, not full PDF/UA
@@ -250,6 +256,21 @@ being useful. The matrix below records the current factual coverage and the rema
 blockers.
 
 Implementation checkpoints covered here:
+
+- Current `3795016` keeps Documents/Workflows/Legal/Compliance/UX/API/CI
+  **PARTIAL**: focused real-backend Playwright browser proof in
+  `apps/web/e2e/generated-convening-dispatch-evidence-real.spec.ts` passed with
+  `npm run test:browser --workspace apps/web -- e2e/generated-convening-dispatch-evidence-real.spec.ts --project=chromium`.
+  The proof composes the release server, built SPA, and E2E backend; follows the
+  dashboard generated-convening dispatch-evidence reminder deep link; exercises
+  real `POST`/`GET`
+  `/v1/documents/generated/{document_id}/dispatch-evidence`; and verifies the
+  persisted operator evidence row plus `operator_evidence_covered` status
+  rendering. This is focused browser E2E only: it validates UI/backend
+  integration for generated Convocatoria dispatch-evidence metadata, but does
+  not claim full browser coverage, full server E2E, restart persistence,
+  bundle/archive preservation, send/delivery/legal-notice completion, legal
+  sufficiency, registry/DRE/provider acceptance, or spec completion.
 
 - Current `364cb4b` keeps CI/API/Workflows/Legal/Compliance/UX **PARTIAL**:
   local full composed-server E2E passed with
@@ -1580,7 +1601,19 @@ Implementation checkpoints covered here:
   observes the generated Convocatoria document, focuses the metadata-only
   evidence form, records mocked/local operator metadata for selected convening
   recipients, displays the resulting evidence row, and keeps the no
-  send/delivery/legal-notice completion boundaries visible. Dashboard follow-on now has
+  send/delivery/legal-notice completion boundaries visible.
+  Real-backend browser proof in
+  `apps/web/e2e/generated-convening-dispatch-evidence-real.spec.ts` passed with
+  `npm run test:browser --workspace apps/web -- e2e/generated-convening-dispatch-evidence-real.spec.ts --project=chromium`.
+  It composes the release server, built SPA, and E2E backend, follows the
+  dashboard deep link to the generated-document dispatch-evidence form, records
+  operator metadata through real `POST`/`GET`
+  `/v1/documents/generated/{document_id}/dispatch-evidence`, and renders the
+  persisted evidence row/status without changing the metadata-only no-claim
+  boundary. The real-backend browser proof validates UI/backend integration for
+  generated Convocatoria dispatch-evidence metadata only; statuses remain
+  PARTIAL=11.
+  Dashboard follow-on now has
   `GET /v1/dashboard` add `Pending`/`Advisory` no-due-date reminders with
   `source_rule` `absent-owner-dispatch-evidence` / `generated-convening-dispatch-evidence`,
   `source_profile` `condominium-generated-communication` /
@@ -2795,6 +2828,8 @@ redaction only. Generated-document by-id downloads are Documents/Workflow
 plumbing for non-Ata generated rows only, and generated dispatch-evidence
 bundle/archive indexes, now including generated Convocatoria notices, are
 metadata-only preservation pointers, not canonical document promotion.
+The real-backend browser proof validates UI/backend integration for generated
+Convocatoria dispatch-evidence metadata only; statuses remain PARTIAL=11.
 Manual-signature original-reference metadata is now covered
 for the spec/04 Signatures & Trust, spec/06 Workflows, and spec/10 UX & Design
 PARTIAL rows as validation/redaction-backed custody metadata plus focused web
