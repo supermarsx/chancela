@@ -103,6 +103,7 @@ nav:
   - Deployment:
       - Overview & profiles: deployment.md
       - High availability & failover: HA-FAILOVER.md
+      - PostgreSQL backup & restore: postgres-backup-restore.md
   - Configuration: configuration.md
   - Capabilities:
       - Overview: capabilities.md
@@ -112,6 +113,7 @@ nav:
   - Requirements: requirements.md
   - Comparison: comparison.md
   - Security & Hardening: security/hardened-docker.md
+  - Release signing & provenance: release-signing.md
   - Extras: extras.md
   - Reference:
       - Architecture overview: ARCHITECTURE.md
