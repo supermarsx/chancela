@@ -567,6 +567,28 @@ describe('api client', () => {
     }
   });
 
+  it('passes the all-filtered archive scope without a cursor parameter', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response('{"events":[]}', {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await api.fetchLedgerArchiveDocument({
+      format: 'json',
+      export_scope: 'all_filtered',
+      q: 'approved digest',
+      limit: 100,
+      order: 'desc',
+    });
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      '/v1/ledger/archive/document?format=json&export_scope=all_filtered&q=approved+digest&limit=100&order=desc',
+    );
+  });
+
   it('downloads an act working-copy export as Markdown text plus a typed blob', async () => {
     const markdown = '# WORKING COPY - NON-EVIDENTIARY\n\nAta da AG anual\n';
     const fetchMock = vi.fn().mockResolvedValue(

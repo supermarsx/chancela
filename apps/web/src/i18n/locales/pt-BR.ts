@@ -998,6 +998,11 @@ export const ptBR: Catalog = {
   'ledger.th.hash': 'Impressão (hash)',
   'ledger.archive.export': 'Exportar arquivo',
   'ledger.archive.downloading': 'Exportando…',
+  'ledger.archive.scope.label': 'Escopo da exportação',
+  'ledger.archive.scope.help':
+    'Página atual usa o limite de Eventos por página; todos os registros filtrados são gerados no servidor sem carregar mais registros na tabela.',
+  'ledger.archive.scope.currentPage': 'Página atual filtrada',
+  'ledger.archive.scope.allFiltered': 'Todos os filtrados',
   'ledger.archive.format.label': 'Formato de exportação',
   'ledger.archive.format.help':
     'Usa os filtros ativos, ordem mais recentes primeiro e o limite de Eventos por página; aumente o limite para incluir mais eventos no arquivo.',

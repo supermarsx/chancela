@@ -1003,6 +1003,11 @@ export const ptPT = {
   'ledger.th.hash': 'Impressão (hash)',
   'ledger.archive.export': 'Exportar arquivo',
   'ledger.archive.downloading': 'A exportar…',
+  'ledger.archive.scope.label': 'Âmbito da exportação',
+  'ledger.archive.scope.help':
+    'Página atual usa o limite de Eventos por página; todos os registos filtrados são gerados no servidor sem carregar mais registos na tabela.',
+  'ledger.archive.scope.currentPage': 'Página atual filtrada',
+  'ledger.archive.scope.allFiltered': 'Todos os filtrados',
   'ledger.archive.format.label': 'Formato de exportação',
   'ledger.archive.format.help':
     'Usa os filtros ativos, ordem mais recentes primeiro e o limite de Eventos por página; aumente o limite para incluir mais eventos no ficheiro.',

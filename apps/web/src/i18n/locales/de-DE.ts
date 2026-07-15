@@ -1011,6 +1011,11 @@ export const deDE: Catalog = {
   'ledger.th.hash': 'Prüfsumme (Hash)',
   'ledger.archive.export': 'Archiv exportieren',
   'ledger.archive.downloading': 'Wird exportiert…',
+  'ledger.archive.scope.label': 'Exportumfang',
+  'ledger.archive.scope.help':
+    'Aktuelle Seite nutzt das Limit „Ereignisse pro Seite“; alle gefilterten Einträge werden serverseitig erzeugt, ohne weitere Datensätze in die Tabelle zu laden.',
+  'ledger.archive.scope.currentPage': 'Aktuelle gefilterte Seite',
+  'ledger.archive.scope.allFiltered': 'Alle gefilterten Einträge',
   'ledger.archive.format.label': 'Exportformat',
   'ledger.archive.format.help':
     'Verwendet aktive Filter, die Reihenfolge neueste zuerst und das Limit Ereignisse pro Seite; erhöhen Sie das Limit, um mehr Ereignisse in die Datei aufzunehmen.',

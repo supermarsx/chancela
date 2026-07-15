@@ -1089,6 +1089,7 @@ export const api = {
     fetchBlob(
       `/v1/ledger/archive/document${query({
         format: params.format,
+        export_scope: params.export_scope,
         q: params.q,
         chain: params.chain,
         scope: params.scope,

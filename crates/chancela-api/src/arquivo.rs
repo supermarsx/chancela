@@ -1,4 +1,4 @@
-//! Arquivo bounded ledger export (t67-E1).
+//! Arquivo ledger export (t67-E1).
 //!
 //! `GET /v1/ledger/archive/document` is an on-demand, read-only rendering of the ledger archive. It
 //! does not persist a document and does not append a ledger event; PDF/A projects the filtered
@@ -27,8 +27,10 @@ use crate::error::ApiError;
 use crate::hex::hex;
 use crate::ledger_events_page::{LedgerEventsSelectorQuery, select_ledger_events_page};
 use crate::ledger_filter::{
-    LedgerEventFilters, LedgerOrder, filter_summary, normalized_page_limit,
+    LedgerEventFilters, LedgerOrder, MAX_LEDGER_PAGE_LIMIT, filter_summary, normalized_page_limit,
 };
+
+const ALL_FILTERED_EXPORT_BATCH_LIMIT: usize = MAX_LEDGER_PAGE_LIMIT;
 
 #[derive(Debug, Deserialize)]
 pub struct ArchiveDocumentQuery {
@@ -50,15 +52,60 @@ pub struct ArchiveDocumentQuery {
     pub from: Option<String>,
     /// Upper timestamp bound: RFC 3339 inclusive, or `YYYY-MM-DD` covering that whole day.
     pub to: Option<String>,
-    /// Not supported for archive documents: exports are bounded to the first filtered page.
+    /// Not supported for archive documents; use `export_scope=all_filtered` for bulk export.
     pub before_seq: Option<u64>,
     /// Last-N limit after filters. Omitted uses the bounded archive page default.
     pub limit: Option<usize>,
     /// Newest-first order contract for the bounded export page. Defaults to `desc`.
     pub order: Option<String>,
+    /// Export scope. Omitted preserves the historical bounded first-page export.
+    pub export_scope: Option<ArchiveDocumentScope>,
     /// Export format. `pdfa` is the canonical preserved-evidence rendering; the others are
     /// audit/interchange exports of the same filtered event set.
     pub format: Option<ArchiveExportFormat>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ArchiveDocumentScope {
+    BoundedFirstPage,
+    AllFiltered,
+}
+
+impl<'de> Deserialize<'de> for ArchiveDocumentScope {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let raw = String::deserialize(deserializer)?;
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "" | "current_page" | "current-page" | "bounded_first_page" | "bounded-first-page"
+            | "first_page" | "first-page" => Ok(Self::BoundedFirstPage),
+            "all_filtered" | "all-filtered" | "all" => Ok(Self::AllFiltered),
+            other => Err(serde::de::Error::custom(format!(
+                "invalid archive export_scope {other:?}; expected current_page or all_filtered"
+            ))),
+        }
+    }
+}
+
+impl ArchiveDocumentScope {
+    fn code(self) -> &'static str {
+        match self {
+            Self::BoundedFirstPage => "bounded_first_page",
+            Self::AllFiltered => "all_filtered",
+        }
+    }
+
+    fn description(self) -> &'static str {
+        match self {
+            Self::BoundedFirstPage => {
+                "Exports only the first filtered newest-first page after limit normalization, not every matching ledger event."
+            }
+            Self::AllFiltered => {
+                "Exports every matching filtered ledger event server-side in newest-first order, without requiring the browser page to load all records."
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -112,10 +159,12 @@ fn parse_chain(raw: Option<&str>) -> Result<ChainId, ApiError> {
     }
 }
 
-/// `GET /v1/ledger/archive/document` — render the first filtered newest-first archive page.
+/// `GET /v1/ledger/archive/document` — render a filtered newest-first archive export.
 ///
-/// The export is intentionally bounded by the same normalized page limit as
-/// `/v1/ledger/events/page`; it is not an all-records dump when more matching events exist.
+/// By default the export is intentionally bounded by the same normalized page limit as
+/// `/v1/ledger/events/page`. Callers may opt into `export_scope=all_filtered` to have the server
+/// walk the same filtered newest-first result set in chunks without using `before_seq` as an
+/// external bulk-export cursor.
 pub async fn export_archive_document(
     State(state): State<AppState>,
     actor: CurrentActor,
@@ -126,9 +175,12 @@ pub async fn export_archive_document(
     let chain = parse_chain(q.chain.as_deref())?;
     let format = q.format.unwrap_or(ArchiveExportFormat::Pdfa);
     let order = LedgerOrder::from_query(q.order.as_deref())?;
+    let export_scope = q
+        .export_scope
+        .unwrap_or(ArchiveDocumentScope::BoundedFirstPage);
     if q.before_seq.is_some() {
         return Err(ApiError::Unprocessable(
-            "ledger archive document exports are bounded to the first filtered page; before_seq is not supported"
+            "ledger archive document exports do not accept before_seq; omit it for the first filtered page or set export_scope=all_filtered for a server-side all-filtered export"
                 .to_owned(),
         ));
     }
@@ -156,25 +208,36 @@ pub async fn export_archive_document(
         let status = ledger.chain_status(&chain).ok_or(ApiError::NotFound)?;
         (status, ledger.reanchored_segments())
     };
-    let selected = select_ledger_events_page(
-        &state,
-        LedgerEventsSelectorQuery {
-            before_seq: None,
-            limit,
-            order,
-            chain: Some(chain.clone()),
-            filters: &filters,
-        },
-    )
-    .await?;
+    let selected = match export_scope {
+        ArchiveDocumentScope::BoundedFirstPage => {
+            select_ledger_events_page(
+                &state,
+                LedgerEventsSelectorQuery {
+                    before_seq: None,
+                    limit,
+                    order,
+                    chain: Some(chain.clone()),
+                    filters: &filters,
+                },
+            )
+            .await?
+        }
+        ArchiveDocumentScope::AllFiltered => {
+            select_all_filtered_ledger_events(&state, &chain, order, &filters).await?
+        }
+    };
     let records = selected
         .events
         .iter()
         .map(|event| RenderRecord::from_event(event, &chain))
         .collect::<Vec<_>>();
     let page_meta = ArchivePageMeta {
+        scope: export_scope,
         order,
-        limit: selected.limit,
+        page_limit: (export_scope == ArchiveDocumentScope::BoundedFirstPage)
+            .then_some(selected.limit),
+        internal_batch_limit: (export_scope == ArchiveDocumentScope::AllFiltered)
+            .then_some(selected.limit),
         has_more: selected.has_more,
         next_cursor: selected.next_cursor,
     };
@@ -183,7 +246,17 @@ pub async fn export_archive_document(
     let generated_at = OffsetDateTime::now_utc()
         .format(&Rfc3339)
         .unwrap_or_default();
-    let filter_summary = filter_summary(&chain.canonical(), &filters, Some(limit), Some(order));
+    let filter_summary = filter_summary(
+        &chain.canonical(),
+        &filters,
+        page_meta.page_limit,
+        Some(order),
+    );
+    let filename_scope = if export_scope == ArchiveDocumentScope::AllFiltered {
+        "-all-filtered"
+    } else {
+        ""
+    };
     if format == ArchiveExportFormat::Pdfa {
         let model = build_archive_document(ArchiveDocumentInput {
             chain: &chain,
@@ -200,13 +273,18 @@ pub async fn export_archive_document(
         let bytes = chancela_doc::pdfa::write(&model)
             .map_err(|e| ApiError::Internal(format!("PDF/A generation failed: {e}")))?;
 
-        let filename = format!("arquivo-{}.pdf", chain.canonical().replace(':', "-"));
+        let filename = format!(
+            "arquivo-{}{}.pdf",
+            chain.canonical().replace(':', "-"),
+            filename_scope
+        );
         return build_export_response(PDFA_PROFILE, filename, bytes);
     }
 
     let filename = format!(
-        "arquivo-{}-audit-interchange.{}",
+        "arquivo-{}{}-audit-interchange.{}",
         chain.canonical().replace(':', "-"),
+        filename_scope,
         format.extension()
     );
     let (content_type, bytes) = render_interchange_export(InterchangeInput {
@@ -237,6 +315,48 @@ fn build_export_response(
         .map_err(|e| ApiError::Internal(format!("failed to build archive response: {e}")))
 }
 
+async fn select_all_filtered_ledger_events(
+    state: &AppState,
+    chain: &ChainId,
+    order: LedgerOrder,
+    filters: &LedgerEventFilters,
+) -> Result<crate::ledger_events_page::LedgerEventsSelection, ApiError> {
+    let mut events = Vec::new();
+    let mut before_seq = None;
+
+    loop {
+        let page = select_ledger_events_page(
+            state,
+            LedgerEventsSelectorQuery {
+                before_seq,
+                limit: ALL_FILTERED_EXPORT_BATCH_LIMIT,
+                order,
+                chain: Some(chain.clone()),
+                filters,
+            },
+        )
+        .await?;
+        events.extend(page.events);
+        if !page.has_more {
+            break;
+        }
+        let Some(next_cursor) = page.next_cursor else {
+            return Err(ApiError::Internal(
+                "ledger all-filtered archive export pager reported more records without a cursor"
+                    .to_owned(),
+            ));
+        };
+        before_seq = Some(next_cursor);
+    }
+
+    Ok(crate::ledger_events_page::LedgerEventsSelection {
+        events,
+        next_cursor: None,
+        has_more: false,
+        limit: ALL_FILTERED_EXPORT_BATCH_LIMIT,
+    })
+}
+
 struct InterchangeInput<'a> {
     format: ArchiveExportFormat,
     chain: &'a ChainId,
@@ -250,24 +370,38 @@ struct InterchangeInput<'a> {
 
 #[derive(Clone, Copy)]
 struct ArchivePageMeta {
+    scope: ArchiveDocumentScope,
     order: LedgerOrder,
-    limit: usize,
+    page_limit: Option<usize>,
+    internal_batch_limit: Option<usize>,
     has_more: bool,
     next_cursor: Option<u64>,
 }
 
 impl ArchivePageMeta {
     fn scope_code(self) -> &'static str {
-        "bounded_first_page"
+        self.scope.code()
     }
 
     fn scope_description(self) -> &'static str {
-        "Exports only the first filtered newest-first page after limit normalization, not every matching ledger event."
+        self.scope.description()
     }
 
     fn next_cursor_label(self) -> String {
         self.next_cursor
             .map(|cursor| cursor.to_string())
+            .unwrap_or_else(|| "-".to_owned())
+    }
+
+    fn page_limit_label(self) -> String {
+        self.page_limit
+            .map(|limit| limit.to_string())
+            .unwrap_or_else(|| "sem limite de pagina".to_owned())
+    }
+
+    fn internal_batch_limit_label(self) -> String {
+        self.internal_batch_limit
+            .map(|limit| limit.to_string())
             .unwrap_or_else(|| "-".to_owned())
     }
 }
@@ -296,7 +430,8 @@ fn render_interchange_export(
             "filters": input.filter_summary,
             "export_scope": input.page_meta.scope_code(),
             "export_scope_description": input.page_meta.scope_description(),
-            "page_limit": input.page_meta.limit,
+            "page_limit": input.page_meta.page_limit,
+            "internal_batch_limit": input.page_meta.internal_batch_limit,
             "has_more": input.page_meta.has_more,
             "next_cursor": input.page_meta.next_cursor,
             "event_count": input.records.len(),
@@ -337,7 +472,14 @@ fn render_txt(input: &InterchangeInput<'_>, head: &str, notice: &str) -> String 
         input.page_meta.scope_code(),
         input.page_meta.scope_description()
     ));
-    out.push_str(&format!("Limite da pagina: {}\n", input.page_meta.limit));
+    out.push_str(&format!(
+        "Limite da pagina: {}\n",
+        input.page_meta.page_limit_label()
+    ));
+    out.push_str(&format!(
+        "Lote interno da exportacao: {}\n",
+        input.page_meta.internal_batch_limit_label()
+    ));
     out.push_str(&format!(
         "Ordem: {}\n",
         input.page_meta.order.display_label()
@@ -374,7 +516,14 @@ fn render_csv(input: &InterchangeInput<'_>, notice: &str) -> String {
         "# export_scope={}\n",
         input.page_meta.scope_code()
     ));
-    out.push_str(&format!("# page_limit={}\n", input.page_meta.limit));
+    out.push_str(&format!(
+        "# page_limit={}\n",
+        input.page_meta.page_limit_label()
+    ));
+    out.push_str(&format!(
+        "# internal_batch_limit={}\n",
+        input.page_meta.internal_batch_limit_label()
+    ));
     out.push_str(&format!(
         "# order={}\n",
         input.page_meta.order.as_query_value()
@@ -427,7 +576,11 @@ fn render_html(input: &InterchangeInput<'_>, head: &str, notice: &str) -> String
                 input.page_meta.scope_description()
             ),
         ),
-        ("Limite da pagina", input.page_meta.limit.to_string()),
+        ("Limite da pagina", input.page_meta.page_limit_label()),
+        (
+            "Lote interno da exportacao",
+            input.page_meta.internal_batch_limit_label(),
+        ),
         ("Ordem", input.page_meta.order.display_label().to_owned()),
         ("Ha mais eventos", input.page_meta.has_more.to_string()),
         ("Cursor seguinte", input.page_meta.next_cursor_label()),
@@ -583,7 +736,11 @@ fn build_archive_document(input: ArchiveDocumentInput<'_>) -> DocumentModel {
                 "Descricao da exportacao",
                 input.page_meta.scope_description(),
             ),
-            kv("Limite da pagina", input.page_meta.limit.to_string()),
+            kv("Limite da pagina", input.page_meta.page_limit_label()),
+            kv(
+                "Lote interno da exportacao",
+                input.page_meta.internal_batch_limit_label(),
+            ),
             kv("Ordem", input.page_meta.order.display_label()),
             kv("Ha mais eventos", input.page_meta.has_more.to_string()),
             kv("Cursor seguinte", input.page_meta.next_cursor_label()),

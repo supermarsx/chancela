@@ -999,6 +999,11 @@ export const plPL: Catalog = {
   'ledger.th.hash': 'Odcisk (hash)',
   'ledger.archive.export': 'Eksportuj archiwum',
   'ledger.archive.downloading': 'Eksportowanie…',
+  'ledger.archive.scope.label': 'Zakres eksportu',
+  'ledger.archive.scope.help':
+    'Bieżąca strona używa limitu Zdarzenia na stronę; wszystkie filtrowane rekordy są generowane na serwerze bez ładowania kolejnych rekordów do tabeli.',
+  'ledger.archive.scope.currentPage': 'Bieżąca filtrowana strona',
+  'ledger.archive.scope.allFiltered': 'Wszystkie filtrowane rekordy',
   'ledger.archive.format.label': 'Format eksportu',
   'ledger.archive.format.help':
     'Używa aktywnych filtrów, kolejności od najnowszych i limitu Zdarzeń na stronę; zwiększ limit, aby uwzględnić więcej zdarzeń w pliku.',

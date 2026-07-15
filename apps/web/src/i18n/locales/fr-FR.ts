@@ -1010,6 +1010,11 @@ export const frFR: Catalog = {
   'ledger.th.hash': 'Empreinte (hash)',
   'ledger.archive.export': 'Exporter les archives',
   'ledger.archive.downloading': 'Export…',
+  'ledger.archive.scope.label': "Périmètre d'export",
+  'ledger.archive.scope.help':
+    "La page actuelle utilise la limite Événements par page ; tous les filtrés sont générés côté serveur sans charger plus d'enregistrements dans le tableau.",
+  'ledger.archive.scope.currentPage': 'Page filtrée actuelle',
+  'ledger.archive.scope.allFiltered': 'Tous les filtrés',
   'ledger.archive.format.label': "Format d'export",
   'ledger.archive.format.help':
     "Utilise les filtres actifs, l'ordre plus récents en premier et la limite Événements par page ; augmentez la limite pour inclure plus d'événements dans le fichier.",

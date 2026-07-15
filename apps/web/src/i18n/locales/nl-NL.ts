@@ -999,6 +999,11 @@ export const nlNL: Catalog = {
   'ledger.th.hash': 'Vingerafdruk (hash)',
   'ledger.archive.export': 'Archief exporteren',
   'ledger.archive.downloading': 'Exporteren…',
+  'ledger.archive.scope.label': 'Exportbereik',
+  'ledger.archive.scope.help':
+    'Huidige pagina gebruikt de limiet Gebeurtenissen per pagina; alle gefilterde records worden op de server gemaakt zonder meer records in de tabel te laden.',
+  'ledger.archive.scope.currentPage': 'Huidige gefilterde pagina',
+  'ledger.archive.scope.allFiltered': 'Alle gefilterde records',
   'ledger.archive.format.label': 'Exportformaat',
   'ledger.archive.format.help':
     'Gebruikt actieve filters, nieuwste-eerst volgorde en de limiet Gebeurtenissen per pagina; verhoog de limiet om meer gebeurtenissen in het bestand op te nemen.',

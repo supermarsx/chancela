@@ -991,6 +991,11 @@ export const enGB: Catalog = {
   'ledger.th.hash': 'Fingerprint (hash)',
   'ledger.archive.export': 'Export archive',
   'ledger.archive.downloading': 'Exporting…',
+  'ledger.archive.scope.label': 'Export scope',
+  'ledger.archive.scope.help':
+    'Current page uses the Events per page limit; all filtered records are generated on the server without loading more records into the table.',
+  'ledger.archive.scope.currentPage': 'Current filtered page',
+  'ledger.archive.scope.allFiltered': 'All filtered records',
   'ledger.archive.format.label': 'Export format',
   'ledger.archive.format.help':
     'Uses active filters, newest-first order, and the Events per page limit; raise the limit to include more events in the file.',

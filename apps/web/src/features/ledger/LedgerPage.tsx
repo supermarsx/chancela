@@ -14,6 +14,7 @@ import {
 import type {
   LedgerArchiveDocumentFormat,
   LedgerArchiveDocumentParams,
+  LedgerArchiveDocumentScope,
   LedgerQueryParams,
 } from '../../api/types';
 import { useT, type TFunction } from '../../i18n';
@@ -104,9 +105,10 @@ function slug(value: string): string {
 function archiveFilename(params: LedgerArchiveDocumentParams): string {
   const chain = params.chain ? slug(params.chain) : 'global';
   const scope = params.scope ? `-${slug(params.scope)}` : '';
+  const exportScope = params.export_scope === 'all_filtered' ? '-all-filtered' : '';
   const format = params.format ?? 'pdfa';
   const extension = format === 'pdfa' ? 'pdf' : format;
-  return `arquivo-${chain}${scope}.${extension}`;
+  return `arquivo-${chain}${scope}${exportScope}.${extension}`;
 }
 
 function exportContentType(format: LedgerArchiveDocumentFormat): string {
@@ -157,6 +159,8 @@ export function LedgerPage() {
   const [filters, setFilters] = useState<LedgerFilters>(INITIAL_FILTERS);
   const deferredSearch = useDeferredValue(filters.search);
   const [archiveFormat, setArchiveFormat] = useState<LedgerArchiveDocumentFormat>('pdfa');
+  const [archiveScope, setArchiveScope] =
+    useState<LedgerArchiveDocumentScope>('current_page');
   const verify = useLedgerVerify();
   const integrity = useLedgerIntegrity();
   const downloadArchive = useDownloadLedgerArchiveDocument();
@@ -201,6 +205,13 @@ export function LedgerPage() {
     ],
     [t],
   );
+  const archiveScopeOptions = useMemo(
+    () => [
+      { value: 'current_page', label: t('ledger.archive.scope.currentPage') },
+      { value: 'all_filtered', label: t('ledger.archive.scope.allFiltered') },
+    ],
+    [t],
+  );
 
   function showSaveResult(result: SaveBlobResult) {
     if (result.kind === 'cancelled') {
@@ -215,7 +226,16 @@ export function LedgerPage() {
   }
 
   function onDownloadArchive() {
-    const params = { ...filteredParams(filters), format: archiveFormat };
+    const baseParams = filteredParams(filters);
+    const params: LedgerArchiveDocumentParams =
+      archiveScope === 'all_filtered'
+        ? {
+            ...baseParams,
+            limit: undefined,
+            format: archiveFormat,
+            export_scope: 'all_filtered',
+          }
+        : { ...baseParams, format: archiveFormat };
     downloadArchive.mutate(params, {
       onSuccess: async (blob) => {
         try {
@@ -260,6 +280,20 @@ export function LedgerPage() {
         title={t('ledger.events.title')}
         actions={
           <div className="ledger-export-controls">
+            <Field
+              label={t('ledger.archive.scope.label')}
+              htmlFor="ledger-export-scope"
+              help={t('ledger.archive.scope.help')}
+            >
+              <Select
+                id="ledger-export-scope"
+                options={archiveScopeOptions}
+                value={archiveScope}
+                onChange={(e) =>
+                  setArchiveScope(e.target.value as LedgerArchiveDocumentScope)
+                }
+              />
+            </Field>
             <Field
               label={t('ledger.archive.format.label')}
               htmlFor="ledger-export-format"

@@ -289,6 +289,9 @@ describe('LedgerPage', () => {
     fireEvent.change(screen.getByLabelText('Filtrar por âmbito'), {
       target: { value: 'act:88' },
     });
+    expect((screen.getByLabelText('Âmbito da exportação') as HTMLSelectElement).value).toBe(
+      'current_page',
+    );
     fireEvent.change(screen.getByLabelText('Formato de exportação'), { target: { value: 'txt' } });
     fireEvent.click(screen.getByRole('button', { name: 'Exportar arquivo' }));
 
@@ -311,17 +314,52 @@ describe('LedgerPage', () => {
     expect(screen.getByRole('option', { name: 'JSON de intercâmbio (.json)' })).toBeTruthy();
     expect(screen.getByRole('option', { name: 'CSV de auditoria (.csv)' })).toBeTruthy();
     expect(screen.getByRole('option', { name: 'HTML de auditoria (.html)' })).toBeTruthy();
-    const helpIds =
-      screen.getByRole('button', { name: 'Ajuda' }).getAttribute('aria-describedby') ?? '';
+    expect(screen.getByRole('option', { name: 'Página atual filtrada' })).toBeTruthy();
+    expect(screen.getByRole('option', { name: 'Todos os filtrados' })).toBeTruthy();
+    const helpTexts = screen
+      .getAllByRole('button', { name: 'Ajuda' })
+      .flatMap((button) => (button.getAttribute('aria-describedby') ?? '').split(/\s+/))
+      .map((id) => document.getElementById(id)?.textContent);
     expect(
-      helpIds
-        .split(/\s+/)
-        .some(
-          (id) =>
-            document.getElementById(id)?.textContent ===
-            'Usa os filtros ativos, ordem mais recentes primeiro e o limite de Eventos por página; aumente o limite para incluir mais eventos no ficheiro.',
-        ),
+      helpTexts.some(
+        (text) =>
+          text ===
+          'Usa os filtros ativos, ordem mais recentes primeiro e o limite de Eventos por página; aumente o limite para incluir mais eventos no ficheiro.',
+      ),
     ).toBe(true);
+  });
+
+  it('exports all filtered records server-side without loading older pages into the table', async () => {
+    saveFileMock.saveBlobAs.mockResolvedValue({
+      kind: 'browser-save',
+      filename: 'arquivo-global-all-filtered.json',
+      contentType: 'application/json',
+      bytes: 14,
+    });
+    const calls = stubLedgerFetch(
+      page([makeEvent(1050)], { next_cursor: 950, has_more: true }),
+      page([makeEvent(950)]),
+    );
+
+    renderWithProviders(<LedgerPage />);
+
+    expect(await screen.findByText('event.1050')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Âmbito da exportação'), {
+      target: { value: 'all_filtered' },
+    });
+    fireEvent.change(screen.getByLabelText('Formato de exportação'), { target: { value: 'json' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Exportar arquivo' }));
+
+    await waitFor(() => expect(saveFileMock.saveBlobAs).toHaveBeenCalledTimes(1));
+    expect(calls.filter((c) => c.url.includes('/v1/ledger/events/page'))).toHaveLength(1);
+    const archiveCall = calls.find((c) => c.url.includes('/v1/ledger/archive/document'));
+    expect(archiveCall?.url).toBe(
+      '/v1/ledger/archive/document?format=json&export_scope=all_filtered&order=desc',
+    );
+    expect(saveFileMock.saveBlobAs.mock.calls[0][0].filename).toBe(
+      'arquivo-global-all-filtered.json',
+    );
+    expect(screen.queryByText('event.950')).toBeNull();
   });
 
   it('shows a filtered empty state without losing the clear action', async () => {

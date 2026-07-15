@@ -1001,6 +1001,11 @@ export const svFI: Catalog = {
   'ledger.th.hash': 'Fingeravtryck (hash)',
   'ledger.archive.export': 'Exportera arkiv',
   'ledger.archive.downloading': 'Exporterar…',
+  'ledger.archive.scope.label': 'Exportomfattning',
+  'ledger.archive.scope.help':
+    'Aktuell sida använder gränsen Händelser per sida; alla filtrerade poster skapas på servern utan att läsa in fler poster i tabellen.',
+  'ledger.archive.scope.currentPage': 'Aktuell filtrerad sida',
+  'ledger.archive.scope.allFiltered': 'Alla filtrerade poster',
   'ledger.archive.format.label': 'Exportformat',
   'ledger.archive.format.help':
     'Använder aktiva filter, ordningen nyaste först och gränsen Händelser per sida; höj gränsen för att ta med fler händelser i filen.',

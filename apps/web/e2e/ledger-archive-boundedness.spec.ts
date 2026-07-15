@@ -94,6 +94,26 @@ test('arquivo filters and archive export use the current bounded newest-first qu
   expect(archiveUrl.searchParams.get('limit')).toBe('50');
   expect(archiveUrl.searchParams.get('order')).toBe('desc');
   expect(archiveUrl.searchParams.has('before_seq')).toBe(false);
+
+  await page.getByLabel('Âmbito da exportação').selectOption('all_filtered');
+  await page.getByRole('button', { name: 'Exportar arquivo' }).click();
+
+  await expect.poll(() => ledgerRequests.archive.length).toBe(2);
+  const allFilteredUrl = new URL(`http://chancela.test${ledgerRequests.archive[1]}`);
+  expect(allFilteredUrl.pathname).toBe('/v1/ledger/archive/document');
+  expect(allFilteredUrl.searchParams.get('format')).toBe('json');
+  expect(allFilteredUrl.searchParams.get('export_scope')).toBe('all_filtered');
+  expect(allFilteredUrl.searchParams.get('q')).toBe('approved digest');
+  expect(allFilteredUrl.searchParams.get('chain')).toBe('book:book-123456789');
+  expect(allFilteredUrl.searchParams.get('scope')).toBe('act:88');
+  expect(allFilteredUrl.searchParams.get('kind')).toBe('act.sealed');
+  expect(allFilteredUrl.searchParams.get('actor')).toBe('amelia.marques');
+  expect(allFilteredUrl.searchParams.get('from')).toBe('2026-07-01');
+  expect(allFilteredUrl.searchParams.get('to')).toBe('2026-07-31');
+  expect(allFilteredUrl.searchParams.has('limit')).toBe(false);
+  expect(allFilteredUrl.searchParams.get('order')).toBe('desc');
+  expect(allFilteredUrl.searchParams.has('before_seq')).toBe(false);
+  expect(ledgerRequests.page.filter((path) => path.includes('before_seq=')).length).toBe(0);
 });
 
 type ArchiveRouteOptions = {

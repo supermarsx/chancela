@@ -1003,6 +1003,11 @@ export const esES: Catalog = {
   'ledger.th.hash': 'Huella (hash)',
   'ledger.archive.export': 'Exportar archivo',
   'ledger.archive.downloading': 'Exportando…',
+  'ledger.archive.scope.label': 'Alcance de exportación',
+  'ledger.archive.scope.help':
+    'La página actual usa el límite de Eventos por página; todos los filtrados se generan en el servidor sin cargar más registros en la tabla.',
+  'ledger.archive.scope.currentPage': 'Página filtrada actual',
+  'ledger.archive.scope.allFiltered': 'Todos los filtrados',
   'ledger.archive.format.label': 'Formato de exportación',
   'ledger.archive.format.help':
     'Usa los filtros activos, el orden de más recientes primero y el límite de Eventos por página; aumente el límite para incluir más eventos en el archivo.',

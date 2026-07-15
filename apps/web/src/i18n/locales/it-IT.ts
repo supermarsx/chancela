@@ -1004,6 +1004,11 @@ export const itIT: Catalog = {
   'ledger.th.hash': 'Impronta (hash)',
   'ledger.archive.export': 'Esporta archivio',
   'ledger.archive.downloading': 'Esportazione…',
+  'ledger.archive.scope.label': 'Ambito di esportazione',
+  'ledger.archive.scope.help':
+    'La pagina attuale usa il limite Eventi per pagina; tutti i filtrati sono generati sul server senza caricare altri record nella tabella.',
+  'ledger.archive.scope.currentPage': 'Pagina filtrata attuale',
+  'ledger.archive.scope.allFiltered': 'Tutti i filtrati',
   'ledger.archive.format.label': 'Formato di esportazione',
   'ledger.archive.format.help':
     'Usa i filtri attivi, l’ordine più recenti prima e il limite Eventi per pagina; aumenta il limite per includere più eventi nel file.',

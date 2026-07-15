@@ -1000,6 +1000,11 @@ export const fiFI: Catalog = {
   'ledger.th.hash': 'Sormenjälki (hash)',
   'ledger.archive.export': 'Vie arkisto',
   'ledger.archive.downloading': 'Viedään…',
+  'ledger.archive.scope.label': 'Viennin laajuus',
+  'ledger.archive.scope.help':
+    'Nykyinen sivu käyttää Tapahtumia sivulla -rajaa; kaikki suodatetut tietueet luodaan palvelimella lataamatta lisää rivejä taulukkoon.',
+  'ledger.archive.scope.currentPage': 'Nykyinen suodatettu sivu',
+  'ledger.archive.scope.allFiltered': 'Kaikki suodatetut tietueet',
   'ledger.archive.format.label': 'Vientimuoto',
   'ledger.archive.format.help':
     'Käyttää aktiivisia suodattimia, uusimmat ensin -järjestystä ja Tapahtumia sivulla -rajaa; nosta rajaa, jos haluat tiedostoon lisää tapahtumia.',

@@ -4655,6 +4655,56 @@ mod tests {
                             .contains("archive/limit-target")
                 }));
             }
+
+            let (status, ctype, disposition, export_bytes) = send_download(
+                state.clone(),
+                get(&format!("{export_base}&export_scope=all_filtered&limit=10")),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{mode} all-filtered export");
+            assert_eq!(ctype, "application/json");
+            assert!(
+                disposition.contains("all-filtered-audit-interchange.json"),
+                "{mode}: {disposition}"
+            );
+            let export: Value = serde_json::from_slice(&export_bytes).expect("archive json");
+            assert_eq!(export["export_scope"], "all_filtered");
+            assert!(
+                export["export_scope_description"]
+                    .as_str()
+                    .expect("scope description")
+                    .contains("every matching filtered ledger event"),
+                "{mode}: {export}"
+            );
+            assert_eq!(export["event_count"], 300);
+            assert_eq!(export["page_limit"], Value::Null);
+            assert_eq!(export["internal_batch_limit"], 250);
+            assert_eq!(export["has_more"], false);
+            assert_eq!(export["next_cursor"], Value::Null);
+            assert_eq!(export["order"], "desc");
+            assert_eq!(export["event_order"], "seq_desc");
+            assert!(
+                !export["filters"]
+                    .as_str()
+                    .expect("filters")
+                    .contains("limit=10"),
+                "{mode}: all-filtered export must not use the UI page limit as an export cap"
+            );
+            let all_events = export["events"].as_array().expect("all export events");
+            assert_eq!(all_events.len(), 300);
+            assert_eq!(all_events[0]["seq"], 299);
+            assert_eq!(all_events[299]["seq"], 0);
+            assert!(all_events.windows(2).all(|pair| {
+                pair[0]["seq"].as_u64().expect("left seq")
+                    > pair[1]["seq"].as_u64().expect("right seq")
+            }));
+            assert!(all_events.iter().all(|event| {
+                event["kind"] == "limit.target"
+                    && event["scope"]
+                        .as_str()
+                        .expect("scope")
+                        .contains("archive/limit-target")
+            }));
         }
     }
 

@@ -1894,6 +1894,7 @@ export interface LedgerEventView {
 export type LedgerOrder = 'desc';
 
 export type LedgerArchiveDocumentFormat = 'pdfa' | 'json' | 'txt' | 'csv' | 'html';
+export type LedgerArchiveDocumentScope = 'current_page' | 'all_filtered';
 
 /** Query params for `GET /v1/ledger/events` and the paged `/v1/ledger/events/page`. */
 export interface LedgerQueryParams {
@@ -1920,6 +1921,7 @@ export interface LedgerEventsPage {
 /** Query params for `GET /v1/ledger/archive/document`. */
 export interface LedgerArchiveDocumentParams extends Omit<LedgerQueryParams, 'before_seq'> {
   format?: LedgerArchiveDocumentFormat;
+  export_scope?: LedgerArchiveDocumentScope;
 }
 
 export interface LedgerVerify {
