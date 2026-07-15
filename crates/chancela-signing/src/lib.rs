@@ -36,6 +36,7 @@ pub mod asic_validate;
 pub mod batch;
 pub mod cc;
 pub mod cmd_session;
+pub mod dss_collect;
 pub mod envelope;
 pub mod mock;
 pub mod pipeline;
@@ -76,6 +77,7 @@ pub use cc::{CcSignedPdf, sign_pdf_cc};
 pub use cmd_session::{
     CMD_PROVIDER_ID, CmdInitiate, CmdRemoteSource, CmdSignSession, cmd_confirm, cmd_initiate,
 };
+pub use dss_collect::collect_dss_evidence;
 pub use envelope::{
     DocumentInput, SigningJob, is_complete, pending_slots, record_manual_signature, sign_slot,
 };
@@ -91,8 +93,9 @@ pub use provider::{CmdProvider, SignerProvider, SmartcardProvider};
 pub use remote::{RemoteInitiate, RemoteSignSession, RemoteSigningSource};
 pub use revocation::{
     BoundedHttpRevocationTransport, DiscoveredRevocationUris, OcspRevocationSource,
-    RevocationError, RevocationEvidence, RevocationEvidenceProvider, RevocationFetchLimits,
-    RevocationHttpResponse, RevocationHttpTransport, RevocationSource, unsigned_ocsp_request_der,
+    REVOCATION_CACHE_FALLBACK_TTL, RevocationCache, RevocationCacheKey, RevocationError,
+    RevocationEvidence, RevocationEvidenceProvider, RevocationFetchLimits, RevocationHttpResponse,
+    RevocationHttpTransport, RevocationSource, unsigned_ocsp_request_der,
 };
 pub use soft_cert::{
     Pkcs12IdentitySelector, Pkcs12SigningSource, SoftCertificateError, SoftCertificateIdentity,

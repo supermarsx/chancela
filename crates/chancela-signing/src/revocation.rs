@@ -4,7 +4,9 @@
 //! bounded/mocked transport, fetches OCSP responses with unsigned RFC 6960 requests, and only
 //! returns DSS evidence after validating issuer/responder trust, freshness, status, and signatures.
 
+use std::collections::HashMap;
 use std::io::Read;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use der::asn1::{Null, ObjectIdentifier, OctetString};
@@ -118,6 +120,137 @@ pub struct RevocationEvidence {
     pub sources: Vec<RevocationSource>,
     /// Accepted OCSP source records.
     pub ocsp_sources: Vec<OcspRevocationSource>,
+    /// `true` when this evidence was served from the cache after a *live* fetch failed with a
+    /// transport/availability error — the graceful offline fallback path. `false` for a fresh live
+    /// fetch (including one whose result was just cached). A `stale` entry has NOT been re-checked
+    /// against the CA at `validation_time`; callers MUST surface it as reduced-assurance and MUST
+    /// NOT treat it as a fresh, currently-confirmed non-revoked status.
+    pub stale: bool,
+}
+
+/// Fallback cache TTL for revocation evidence whose CRL/OCSP responses advertise no `nextUpdate`.
+/// Mirrors `chancela_tsl::cache::FALLBACK_TTL` (24h): a bounded default that keeps a
+/// `nextUpdate`-less entry from lingering silently while staying cheap.
+pub const REVOCATION_CACHE_FALLBACK_TTL: time::Duration = time::Duration::hours(24);
+
+/// In-process cache key for one signer/issuer pair: `(sha256(signer_der), sha256(issuer_der))`.
+///
+/// Hashing the DER (rather than storing it) keeps the key small and constant-size while remaining
+/// collision-resistant for cache-lookup purposes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct RevocationCacheKey {
+    signer_sha256: [u8; 32],
+    issuer_sha256: [u8; 32],
+}
+
+impl RevocationCacheKey {
+    /// Derive the key from raw signer/issuer certificate DER.
+    pub fn new(signer_cert_der: &[u8], issuer_cert_der: &[u8]) -> Self {
+        Self {
+            signer_sha256: Sha256::digest(signer_cert_der).into(),
+            issuer_sha256: Sha256::digest(issuer_cert_der).into(),
+        }
+    }
+}
+
+/// One cached last-good revocation result and the instant it becomes stale.
+#[derive(Debug, Clone)]
+struct RevocationCacheEntry {
+    /// The last successfully-validated (fresh, `stale: false`) evidence for this key.
+    evidence: RevocationEvidence,
+    /// Instant at which the entry is no longer fresh: the min CRL/OCSP `nextUpdate`, or the
+    /// fetch-time + [`REVOCATION_CACHE_FALLBACK_TTL`] when no `nextUpdate` was present.
+    expires_at: OffsetDateTime,
+}
+
+/// In-process TTL cache of last-good revocation evidence keyed on the signer/issuer pair.
+///
+/// The cache is `Clone` (shares one backing map via `Arc`) and `Default`, so a single instance can
+/// be shared across validation calls. It is used exclusively through
+/// [`RevocationEvidenceProvider::collect_for_signer_cached`]; see that method for the fresh-hit /
+/// live-fetch / graceful-offline-fallback logic and the fail-closed guarantee.
+#[derive(Debug, Clone, Default)]
+pub struct RevocationCache {
+    entries: Arc<Mutex<HashMap<RevocationCacheKey, RevocationCacheEntry>>>,
+}
+
+impl RevocationCache {
+    /// Create an empty cache.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Number of cached entries.
+    pub fn len(&self) -> usize {
+        self.lock().len()
+    }
+
+    /// Whether the cache holds no entries.
+    pub fn is_empty(&self) -> bool {
+        self.lock().is_empty()
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<RevocationCacheKey, RevocationCacheEntry>> {
+        self.entries
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// Return a clone of the cached evidence for `key` iff it is still fresh at `now`.
+    fn get_fresh(
+        &self,
+        key: &RevocationCacheKey,
+        now: OffsetDateTime,
+    ) -> Option<RevocationEvidence> {
+        self.lock()
+            .get(key)
+            .filter(|entry| now < entry.expires_at)
+            .map(|entry| entry.evidence.clone())
+    }
+
+    /// Return a clone of any cached evidence for `key`, fresh or expired (used by the offline
+    /// fallback). The returned evidence is the stored fresh copy; the caller flags it `stale`.
+    fn get_any(&self, key: &RevocationCacheKey) -> Option<RevocationEvidence> {
+        self.lock().get(key).map(|entry| entry.evidence.clone())
+    }
+
+    /// Insert/replace the last-good entry for `key`.
+    fn insert(
+        &self,
+        key: RevocationCacheKey,
+        evidence: RevocationEvidence,
+        expires_at: OffsetDateTime,
+    ) {
+        self.lock().insert(
+            key,
+            RevocationCacheEntry {
+                evidence,
+                expires_at,
+            },
+        );
+    }
+}
+
+/// Compute the cache-expiry instant for freshly-fetched `evidence`: the minimum CRL/OCSP
+/// `nextUpdate` across all accepted sources, or `validation_time + `[`REVOCATION_CACHE_FALLBACK_TTL`]
+/// when no source advertises a `nextUpdate`.
+fn revocation_cache_expiry(
+    evidence: &RevocationEvidence,
+    validation_time: OffsetDateTime,
+) -> OffsetDateTime {
+    let mut earliest: Option<OffsetDateTime> = None;
+    let mut consider = |candidate: OffsetDateTime| {
+        earliest = Some(earliest.map_or(candidate, |current| current.min(candidate)));
+    };
+    for source in &evidence.ocsp_sources {
+        consider(source.next_update);
+    }
+    for source in &evidence.sources {
+        if let Some(next_update) = source.next_update {
+            consider(next_update);
+        }
+    }
+    earliest.unwrap_or(validation_time + REVOCATION_CACHE_FALLBACK_TTL)
 }
 
 /// Minimal HTTP response used by mock and real revocation transports.
@@ -405,6 +538,27 @@ pub enum RevocationError {
     },
 }
 
+impl RevocationError {
+    /// Whether this failure is a transport/availability failure — the responder was unreachable,
+    /// returned a non-success HTTP status, or sent an oversized body — as opposed to a *definitive*
+    /// answer (revoked, unknown, stale/invalid data, untrusted responder, missing endpoint, …).
+    ///
+    /// This is the fail-closed gate for the graceful offline fallback (§5 risk 4): ONLY a
+    /// transport/availability failure may fall back to last-good cached evidence. A definitive
+    /// negative — most importantly [`RevocationError::OcspSignerRevoked`] /
+    /// [`RevocationError::SignerRevoked`] — returns `false` here and therefore always propagates,
+    /// so a stale-good cache entry can never mask a real revocation or upgrade an unverified status
+    /// to trusted.
+    pub fn is_transport_failure(&self) -> bool {
+        matches!(
+            self,
+            RevocationError::Http(_)
+                | RevocationError::HttpStatus { .. }
+                | RevocationError::HttpLimitExceeded { .. }
+        )
+    }
+}
+
 /// Validated CRL revocation evidence provider.
 #[derive(Debug, Clone)]
 pub struct RevocationEvidenceProvider<T = BoundedHttpRevocationTransport> {
@@ -485,6 +639,7 @@ impl<T: RevocationHttpTransport> RevocationEvidenceProvider<T> {
                         discovered,
                         sources: Vec::new(),
                         ocsp_sources: vec![source],
+                        stale: false,
                     });
                 }
                 Err(RevocationError::OcspSignerRevoked { url }) => {
@@ -507,6 +662,7 @@ impl<T: RevocationHttpTransport> RevocationEvidenceProvider<T> {
                         discovered,
                         sources: vec![source],
                         ocsp_sources: Vec::new(),
+                        stale: false,
                     });
                 }
                 Err(RevocationError::SignerRevoked { url }) => {
@@ -517,6 +673,55 @@ impl<T: RevocationHttpTransport> RevocationEvidenceProvider<T> {
         }
 
         Err(last_error.unwrap_or(RevocationError::NoRevocationEndpoint))
+    }
+
+    /// Cached [`Self::collect_for_signer`] with graceful offline fallback.
+    ///
+    /// 1. If `cache` holds a still-fresh entry (its min CRL/OCSP `nextUpdate` has not passed at
+    ///    `validation_time`), return it unchanged (`stale: false`) without any network access.
+    /// 2. Otherwise attempt a live fetch. On success, cache it (expiry from `nextUpdate`, or the
+    ///    bounded [`REVOCATION_CACHE_FALLBACK_TTL`]) and return the fresh evidence.
+    /// 3. On a **transport/availability** failure ([`RevocationError::is_transport_failure`]), if a
+    ///    cache entry exists (even expired) return it flagged `stale: true` — the graceful offline
+    ///    fallback. If no entry exists, propagate the error (fail-closed).
+    ///
+    /// Fail-closed guarantee (§5 risk 4): a *definitive* negative (e.g.
+    /// [`RevocationError::OcspSignerRevoked`] / [`RevocationError::SignerRevoked`], an unknown
+    /// status, stale/invalid data, or an untrusted responder) is not a transport failure, so it
+    /// always propagates and is never masked by a stale-good cache entry.
+    pub fn collect_for_signer_cached(
+        &self,
+        cache: &RevocationCache,
+        signer_cert_der: &[u8],
+        issuer_cert_der: &[u8],
+        validation_time: OffsetDateTime,
+    ) -> Result<RevocationEvidence, RevocationError> {
+        let key = RevocationCacheKey::new(signer_cert_der, issuer_cert_der);
+
+        // (a) Fresh cache hit: return as-is, no network access.
+        if let Some(evidence) = cache.get_fresh(&key, validation_time) {
+            return Ok(evidence);
+        }
+
+        // (b) Live fetch.
+        match self.collect_for_signer(signer_cert_der, issuer_cert_der, validation_time) {
+            Ok(evidence) => {
+                let expires_at = revocation_cache_expiry(&evidence, validation_time);
+                cache.insert(key, evidence.clone(), expires_at);
+                Ok(evidence)
+            }
+            // (c) Graceful offline fallback — transport/availability failures only.
+            Err(err) if err.is_transport_failure() => match cache.get_any(&key) {
+                Some(mut evidence) => {
+                    evidence.stale = true;
+                    Ok(evidence)
+                }
+                // Fail-closed: no last-good evidence to fall back to.
+                None => Err(err),
+            },
+            // Definitive negatives (revoked/unknown/invalid/…) always propagate — never masked.
+            Err(err) => Err(err),
+        }
     }
 
     fn fetch_and_validate_ocsp(
@@ -1530,5 +1735,411 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    // --- Caching + graceful offline fallback -------------------------------------------------
+
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+    use rsa::Pkcs1v15Sign;
+    use x509_cert::crl::{RevokedCert, TbsCertList};
+
+    const SHA256_DIGEST_INFO_PREFIX: [u8; 19] = [
+        0x30, 0x31, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01,
+        0x05, 0x00, 0x04, 0x20,
+    ];
+
+    /// A CRL transport that counts `get_crl` calls and can be flipped to a forced transport
+    /// failure, modelling an OCSP/CRL endpoint going offline.
+    #[derive(Clone)]
+    struct CountingCrlTransport {
+        crl_der: Vec<u8>,
+        calls: Arc<AtomicUsize>,
+        fail: Arc<AtomicBool>,
+    }
+
+    impl RevocationHttpTransport for CountingCrlTransport {
+        fn get_crl(
+            &self,
+            _url: &str,
+            _limits: &RevocationFetchLimits,
+        ) -> Result<RevocationHttpResponse, RevocationError> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            if self.fail.load(Ordering::SeqCst) {
+                return Err(RevocationError::Http(
+                    "forced transport failure".to_string(),
+                ));
+            }
+            Ok(RevocationHttpResponse {
+                status: 200,
+                body: self.crl_der.clone(),
+            })
+        }
+
+        fn post_ocsp(
+            &self,
+            _url: &str,
+            _request_der: &[u8],
+            _limits: &RevocationFetchLimits,
+        ) -> Result<RevocationHttpResponse, RevocationError> {
+            panic!("CRL cache tests expose no OCSP endpoint")
+        }
+    }
+
+    fn rsa_key() -> rsa::RsaPrivateKey {
+        rsa::RsaPrivateKey::new(&mut rsa::rand_core::OsRng, 2048).expect("rsa key")
+    }
+
+    fn spki_of(key: &rsa::RsaPrivateKey) -> SubjectPublicKeyInfoOwned {
+        let public = rsa::RsaPublicKey::from(key);
+        SubjectPublicKeyInfoOwned::from_der(
+            public
+                .to_public_key_der()
+                .expect("public key der")
+                .as_bytes(),
+        )
+        .expect("spki")
+    }
+
+    fn rsa_sig_alg() -> AlgorithmIdentifierOwned {
+        AlgorithmIdentifierOwned {
+            oid: OID_SHA256_WITH_RSA_ENCRYPTION,
+            parameters: Some(Any::null()),
+        }
+    }
+
+    fn make_cert(
+        subject: &Name,
+        spki: SubjectPublicKeyInfoOwned,
+        serial: SerialNumber,
+        extensions: Vec<Extension>,
+    ) -> Certificate {
+        let sig_alg = rsa_sig_alg();
+        Certificate {
+            tbs_certificate: TbsCertificate {
+                version: Version::V3,
+                serial_number: serial,
+                signature: sig_alg.clone(),
+                issuer: subject.clone(),
+                validity: Validity::from_now(StdDuration::from_secs(3600 * 24 * 365))
+                    .expect("validity"),
+                subject: subject.clone(),
+                subject_public_key_info: spki,
+                issuer_unique_id: None,
+                subject_unique_id: None,
+                extensions: if extensions.is_empty() {
+                    None
+                } else {
+                    Some(extensions)
+                },
+            },
+            signature_algorithm: sig_alg,
+            signature: BitString::from_bytes(&[0; 256]).expect("signature"),
+        }
+    }
+
+    fn to_x509_time(dt: OffsetDateTime) -> Time {
+        let secs = dt.unix_timestamp();
+        assert!(secs >= 0, "test times are post-epoch");
+        let system = std::time::SystemTime::UNIX_EPOCH + StdDuration::from_secs(secs as u64);
+        Time::try_from(system).expect("x509 time")
+    }
+
+    /// Build a DER CRL issued by `issuer_subject` and signed with `issuer_key`, optionally listing
+    /// `revoked_serial` as revoked.
+    fn build_signed_crl(
+        issuer_subject: &Name,
+        issuer_key: &rsa::RsaPrivateKey,
+        this_update: OffsetDateTime,
+        next_update: OffsetDateTime,
+        revoked_serial: Option<&SerialNumber>,
+    ) -> Vec<u8> {
+        let sig_alg = rsa_sig_alg();
+        let revoked_certificates = revoked_serial.map(|serial| {
+            vec![RevokedCert {
+                serial_number: serial.clone(),
+                revocation_date: to_x509_time(this_update),
+                crl_entry_extensions: None,
+            }]
+        });
+        let tbs = TbsCertList {
+            version: Version::V2,
+            signature: sig_alg.clone(),
+            issuer: issuer_subject.clone(),
+            this_update: to_x509_time(this_update),
+            next_update: Some(to_x509_time(next_update)),
+            revoked_certificates,
+            crl_extensions: None,
+        };
+        let tbs_der = tbs.to_der().expect("tbs der");
+        let mut digest_info = SHA256_DIGEST_INFO_PREFIX.to_vec();
+        digest_info.extend_from_slice(&Sha256::digest(&tbs_der));
+        let signature = issuer_key
+            .sign(Pkcs1v15Sign::new_unprefixed(), &digest_info)
+            .expect("crl signature");
+        CertificateList {
+            tbs_cert_list: tbs,
+            signature_algorithm: sig_alg,
+            signature: BitString::from_bytes(&signature).expect("crl signature bits"),
+        }
+        .to_der()
+        .expect("crl der")
+    }
+
+    /// An issuer (with its signing key), and a signer certificate that advertises a single HTTP CRL
+    /// distribution point, ready for the CRL revocation path.
+    fn issuer_and_signer() -> (rsa::RsaPrivateKey, Certificate, Certificate) {
+        let issuer_key = rsa_key();
+        let issuer_name = Name::from_str("CN=Revocation Cache Test CA").expect("issuer name");
+        let issuer = make_cert(
+            &issuer_name,
+            spki_of(&issuer_key),
+            SerialNumber::new(&[0x0a]).expect("issuer serial"),
+            Vec::new(),
+        );
+
+        let signer_key = rsa_key();
+        let signer_name = Name::from_str("CN=Revocation Cache Test Signer").expect("signer name");
+        let cdp = CrlDistributionPoints(vec![DistributionPoint {
+            distribution_point: Some(DistributionPointName::FullName(vec![uri(
+                "http://crl.example/test.crl",
+            )])),
+            reasons: None,
+            crl_issuer: None,
+        }]);
+        let signer = make_cert(
+            &signer_name,
+            spki_of(&signer_key),
+            SerialNumber::new(&[0x12, 0x34]).expect("signer serial"),
+            vec![extension(
+                OID_CRL_DISTRIBUTION_POINTS,
+                cdp.to_der().expect("cdp der"),
+            )],
+        );
+
+        (issuer_key, issuer, signer)
+    }
+
+    #[test]
+    fn is_transport_failure_only_for_availability_errors() {
+        assert!(RevocationError::Http("x".to_string()).is_transport_failure());
+        assert!(
+            RevocationError::HttpStatus {
+                url: "u".to_string(),
+                status: 503,
+            }
+            .is_transport_failure()
+        );
+        assert!(
+            RevocationError::HttpLimitExceeded {
+                url: "u".to_string(),
+                limit: 1,
+            }
+            .is_transport_failure()
+        );
+        // Definitive negatives must NOT be treated as transport failures (fail-closed).
+        assert!(
+            !RevocationError::SignerRevoked {
+                url: "u".to_string()
+            }
+            .is_transport_failure()
+        );
+        assert!(
+            !RevocationError::OcspSignerRevoked {
+                url: "u".to_string()
+            }
+            .is_transport_failure()
+        );
+        assert!(
+            !RevocationError::OcspSignerUnknown {
+                url: "u".to_string()
+            }
+            .is_transport_failure()
+        );
+    }
+
+    #[test]
+    fn fresh_fetch_populates_cache_and_second_call_within_ttl_is_not_refetched() {
+        let (issuer_key, issuer, signer) = issuer_and_signer();
+        let issuer_der = issuer.to_der().expect("issuer der");
+        let signer_der = signer.to_der().expect("signer der");
+        let now = OffsetDateTime::now_utc();
+        let crl = build_signed_crl(
+            &issuer.tbs_certificate.subject,
+            &issuer_key,
+            now - time::Duration::hours(1),
+            now + time::Duration::hours(24),
+            None,
+        );
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        let provider = RevocationEvidenceProvider::new(
+            CountingCrlTransport {
+                crl_der: crl,
+                calls: calls.clone(),
+                fail: Arc::new(AtomicBool::new(false)),
+            },
+            RevocationFetchLimits::default(),
+        );
+        let cache = RevocationCache::new();
+
+        let first = provider
+            .collect_for_signer_cached(&cache, &signer_der, &issuer_der, now)
+            .expect("fresh fetch");
+        assert!(!first.stale);
+        assert_eq!(first.dss.crls.len(), 1);
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert_eq!(cache.len(), 1);
+
+        let second = provider
+            .collect_for_signer_cached(&cache, &signer_der, &issuer_der, now)
+            .expect("cache hit");
+        assert!(!second.stale, "fresh cache hit must not be flagged stale");
+        assert_eq!(second.dss, first.dss);
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            1,
+            "second call within TTL must not re-fetch"
+        );
+    }
+
+    #[test]
+    fn offline_failure_after_expiry_returns_stale_cached_evidence() {
+        let (issuer_key, issuer, signer) = issuer_and_signer();
+        let issuer_der = issuer.to_der().expect("issuer der");
+        let signer_der = signer.to_der().expect("signer der");
+        let now = OffsetDateTime::now_utc();
+        // nextUpdate is only one hour out, so the entry is expired at `later`.
+        let crl = build_signed_crl(
+            &issuer.tbs_certificate.subject,
+            &issuer_key,
+            now - time::Duration::hours(1),
+            now + time::Duration::hours(1),
+            None,
+        );
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        let fail = Arc::new(AtomicBool::new(false));
+        let provider = RevocationEvidenceProvider::new(
+            CountingCrlTransport {
+                crl_der: crl,
+                calls: calls.clone(),
+                fail: fail.clone(),
+            },
+            RevocationFetchLimits::default(),
+        );
+        let cache = RevocationCache::new();
+
+        let fresh = provider
+            .collect_for_signer_cached(&cache, &signer_der, &issuer_der, now)
+            .expect("fresh fetch");
+        assert!(!fresh.stale);
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+        // Endpoint goes offline; entry is now expired -> live fetch attempted and fails.
+        fail.store(true, Ordering::SeqCst);
+        let later = now + time::Duration::hours(2);
+        let stale = provider
+            .collect_for_signer_cached(&cache, &signer_der, &issuer_der, later)
+            .expect("graceful offline fallback");
+        assert!(stale.stale, "offline fallback must be flagged stale");
+        assert_eq!(
+            stale.dss, fresh.dss,
+            "fallback returns the last-good evidence"
+        );
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            2,
+            "fallback only after a live re-fetch was attempted"
+        );
+    }
+
+    #[test]
+    fn offline_failure_without_cached_entry_propagates_error() {
+        let (issuer_key, issuer, signer) = issuer_and_signer();
+        let issuer_der = issuer.to_der().expect("issuer der");
+        let signer_der = signer.to_der().expect("signer der");
+        let now = OffsetDateTime::now_utc();
+        let crl = build_signed_crl(
+            &issuer.tbs_certificate.subject,
+            &issuer_key,
+            now - time::Duration::hours(1),
+            now + time::Duration::hours(24),
+            None,
+        );
+        let provider = RevocationEvidenceProvider::new(
+            CountingCrlTransport {
+                crl_der: crl,
+                calls: Arc::new(AtomicUsize::new(0)),
+                fail: Arc::new(AtomicBool::new(true)),
+            },
+            RevocationFetchLimits::default(),
+        );
+        let cache = RevocationCache::new();
+
+        let err = provider
+            .collect_for_signer_cached(&cache, &signer_der, &issuer_der, now)
+            .unwrap_err();
+        assert!(matches!(err, RevocationError::Http(_)));
+        assert!(
+            cache.is_empty(),
+            "no evidence fabricated when nothing cached"
+        );
+    }
+
+    #[test]
+    fn definitive_revocation_is_not_masked_by_stale_good_cache_entry() {
+        let (issuer_key, issuer, signer) = issuer_and_signer();
+        let issuer_der = issuer.to_der().expect("issuer der");
+        let signer_der = signer.to_der().expect("signer der");
+        let now = OffsetDateTime::now_utc();
+
+        // First: a good CRL populates a last-good cache entry (short TTL so it expires).
+        let good_crl = build_signed_crl(
+            &issuer.tbs_certificate.subject,
+            &issuer_key,
+            now - time::Duration::hours(1),
+            now + time::Duration::hours(1),
+            None,
+        );
+        let cache = RevocationCache::new();
+        let good_provider = RevocationEvidenceProvider::new(
+            CountingCrlTransport {
+                crl_der: good_crl,
+                calls: Arc::new(AtomicUsize::new(0)),
+                fail: Arc::new(AtomicBool::new(false)),
+            },
+            RevocationFetchLimits::default(),
+        );
+        good_provider
+            .collect_for_signer_cached(&cache, &signer_der, &issuer_der, now)
+            .expect("good fetch populates cache");
+        assert_eq!(cache.len(), 1);
+
+        // Later: the responder is reachable and returns a *revoked* answer for the signer.
+        let revoked_crl = build_signed_crl(
+            &issuer.tbs_certificate.subject,
+            &issuer_key,
+            now + time::Duration::hours(1),
+            now + time::Duration::hours(48),
+            Some(&signer.tbs_certificate.serial_number),
+        );
+        let revoked_provider = RevocationEvidenceProvider::new(
+            CountingCrlTransport {
+                crl_der: revoked_crl,
+                calls: Arc::new(AtomicUsize::new(0)),
+                fail: Arc::new(AtomicBool::new(false)),
+            },
+            RevocationFetchLimits::default(),
+        );
+        let later = now + time::Duration::hours(2);
+        let err = revoked_provider
+            .collect_for_signer_cached(&cache, &signer_der, &issuer_der, later)
+            .unwrap_err();
+        assert!(
+            matches!(err, RevocationError::SignerRevoked { .. }),
+            "a definitive revocation must propagate, never masked by the stale-good cache entry"
+        );
     }
 }
