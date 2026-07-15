@@ -31,10 +31,170 @@ use chancela_store::{
     StoredPaperBookOcrPageSpan, StoredPaperBookOcrReviewStatus, StoredPaperBookOcrStatus,
     StoredSignedDocument,
 };
+use postgres::NoTls;
 use time::OffsetDateTime;
 
 fn database_url() -> Option<String> {
     std::env::var("DATABASE_URL").ok().filter(|s| !s.is_empty())
+}
+
+struct IsolatedPostgresDb {
+    admin_config: postgres::Config,
+    database_name: String,
+    database_url: String,
+}
+
+impl IsolatedPostgresDb {
+    fn create(parent_url: &str, tag: &str) -> Result<Self, postgres::Error> {
+        let admin_config: postgres::Config = parent_url.parse()?;
+        let parent_name = admin_config
+            .get_dbname()
+            .or_else(|| admin_config.get_user())
+            .unwrap_or("chancela");
+        let database_name = isolated_database_name(parent_name, tag);
+
+        let mut admin = admin_config.connect(NoTls)?;
+        admin.batch_execute(&format!("CREATE DATABASE {}", quote_ident(&database_name)))?;
+
+        let mut child_config = admin_config.clone();
+        child_config.dbname(&database_name);
+        let database_url = libpq_connection_string(&child_config);
+
+        Ok(Self {
+            admin_config,
+            database_name,
+            database_url,
+        })
+    }
+
+    fn url(&self) -> String {
+        self.database_url.clone()
+    }
+}
+
+impl Drop for IsolatedPostgresDb {
+    fn drop(&mut self) {
+        let mut admin = match self.admin_config.connect(NoTls) {
+            Ok(admin) => admin,
+            Err(err) => {
+                eprintln!(
+                    "failed to connect for cleanup of postgres test database {}: {err}",
+                    self.database_name
+                );
+                return;
+            }
+        };
+        if let Err(err) = admin.batch_execute(&format!(
+            "DROP DATABASE IF EXISTS {}",
+            quote_ident(&self.database_name)
+        )) {
+            eprintln!(
+                "failed to drop postgres test database {}: {err}",
+                self.database_name
+            );
+        }
+    }
+}
+
+fn isolated_postgres(tag: &str) -> Option<IsolatedPostgresDb> {
+    let Some(database_url) = database_url() else {
+        eprintln!("skipping: DATABASE_URL not set");
+        return None;
+    };
+    Some(IsolatedPostgresDb::create(&database_url, tag).expect("create isolated postgres database"))
+}
+
+fn isolated_database_name(parent: &str, tag: &str) -> String {
+    let parent = sanitize_ident_part(parent);
+    let tag = sanitize_ident_part(tag);
+    let tag = &tag[..tag.len().min(24)];
+    let unique = uuid::Uuid::new_v4().simple().to_string();
+    let suffix = format!("_{tag}_{}", &unique[..12]);
+    let max_parent_len = 63usize.saturating_sub(suffix.len());
+    format!("{}{}", &parent[..parent.len().min(max_parent_len)], suffix)
+}
+
+fn sanitize_ident_part(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for ch in value.chars() {
+        if ch.is_ascii_alphanumeric() {
+            out.push(ch.to_ascii_lowercase());
+        } else {
+            out.push('_');
+        }
+    }
+    if out.is_empty() || out.starts_with(|ch: char| ch.is_ascii_digit()) {
+        out.insert_str(0, "chancela");
+    }
+    out
+}
+
+fn quote_ident(value: &str) -> String {
+    format!("\"{}\"", value.replace('"', "\"\""))
+}
+
+fn libpq_connection_string(config: &postgres::Config) -> String {
+    let mut parts = Vec::new();
+    if let Some(user) = config.get_user() {
+        parts.push(libpq_kv("user", user));
+    }
+    if let Some(password) = config.get_password() {
+        parts.push(libpq_kv(
+            "password",
+            String::from_utf8_lossy(password).as_ref(),
+        ));
+    }
+    if let Some(dbname) = config.get_dbname() {
+        parts.push(libpq_kv("dbname", dbname));
+    }
+    if !config.get_hosts().is_empty() {
+        let hosts = config
+            .get_hosts()
+            .iter()
+            .map(|host| match host {
+                postgres::config::Host::Tcp(host) => host.clone(),
+                #[cfg(unix)]
+                postgres::config::Host::Unix(path) => path.to_string_lossy().into_owned(),
+            })
+            .collect::<Vec<_>>()
+            .join(",");
+        parts.push(libpq_kv("host", &hosts));
+    }
+    if !config.get_hostaddrs().is_empty() {
+        let hostaddrs = config
+            .get_hostaddrs()
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(",");
+        parts.push(libpq_kv("hostaddr", &hostaddrs));
+    }
+    if !config.get_ports().is_empty() {
+        let ports = config
+            .get_ports()
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(",");
+        parts.push(libpq_kv("port", &ports));
+    }
+    if let Some(options) = config.get_options() {
+        parts.push(libpq_kv("options", options));
+    }
+    if let Some(application_name) = config.get_application_name() {
+        parts.push(libpq_kv("application_name", application_name));
+    }
+    if let Some(timeout) = config.get_connect_timeout() {
+        parts.push(libpq_kv("connect_timeout", &timeout.as_secs().to_string()));
+    }
+    parts.join(" ")
+}
+
+fn libpq_kv(key: &str, value: &str) -> String {
+    format!(
+        "{key}='{}'",
+        value.replace('\\', "\\\\").replace('\'', "\\'")
+    )
 }
 
 fn ts(secs: i64) -> OffsetDateTime {
@@ -47,11 +207,10 @@ fn ts(secs: i64) -> OffsetDateTime {
 #[test]
 #[ignore = "requires a live PostgreSQL at DATABASE_URL"]
 fn persist_and_reload_event_roundtrips_on_postgres() {
-    let Some(database_url) = database_url() else {
-        eprintln!("skipping: DATABASE_URL not set");
+    let Some(isolated) = isolated_postgres("persist-reload") else {
         return;
     };
-
+    let database_url = isolated.url();
     let store = Store::open_backend(StoreBackendSelection::Postgres { database_url })
         .expect("open postgres backend");
 
@@ -88,10 +247,10 @@ fn persist_and_reload_event_roundtrips_on_postgres() {
 #[test]
 #[ignore = "requires a live PostgreSQL at DATABASE_URL"]
 fn runtime_reads_and_writes_roundtrip_on_postgres() {
-    let Some(database_url) = database_url() else {
-        eprintln!("skipping: DATABASE_URL not set");
+    let Some(isolated) = isolated_postgres("runtime-roundtrip") else {
         return;
     };
+    let database_url = isolated.url();
     let store = Store::open_backend(StoreBackendSelection::Postgres { database_url })
         .expect("open postgres backend");
 
@@ -548,10 +707,10 @@ fn seed_blank_instance(store: &Store, data_dir: &Path) -> (Ledger, ActId) {
 #[test]
 #[ignore = "requires a live PostgreSQL at DATABASE_URL"]
 fn logical_backup_restore_roundtrips_on_postgres() {
-    let Some(database_url) = database_url() else {
-        eprintln!("skipping: DATABASE_URL not set");
+    let Some(isolated) = isolated_postgres("logical-backup-restore") else {
         return;
     };
+    let database_url = isolated.url();
     let store = Store::open_backend(StoreBackendSelection::Postgres { database_url })
         .expect("open postgres backend");
     let data_dir = unique_data_dir("roundtrip");
@@ -636,10 +795,10 @@ fn logical_backup_restore_roundtrips_on_postgres() {
 #[test]
 #[ignore = "requires a live PostgreSQL at DATABASE_URL"]
 fn wipe_start_over_and_factory_reset_stay_coherent_on_postgres() {
-    let Some(database_url) = database_url() else {
-        eprintln!("skipping: DATABASE_URL not set");
+    let Some(isolated) = isolated_postgres("recovery") else {
         return;
     };
+    let database_url = isolated.url();
     let store = Store::open_backend(StoreBackendSelection::Postgres { database_url })
         .expect("open postgres backend");
     let data_dir = unique_data_dir("recovery");
@@ -720,10 +879,10 @@ fn wipe_start_over_and_factory_reset_stay_coherent_on_postgres() {
 #[test]
 #[ignore = "requires a live PostgreSQL at DATABASE_URL"]
 fn restore_rejects_a_corrupt_bundle_and_leaves_the_database_unchanged() {
-    let Some(database_url) = database_url() else {
-        eprintln!("skipping: DATABASE_URL not set");
+    let Some(isolated) = isolated_postgres("corrupt-restore") else {
         return;
     };
+    let database_url = isolated.url();
     let store = Store::open_backend(StoreBackendSelection::Postgres { database_url })
         .expect("open postgres backend");
     let data_dir = unique_data_dir("corrupt");
@@ -738,13 +897,14 @@ fn restore_rejects_a_corrupt_bundle_and_leaves_the_database_unchanged() {
     let doc_b = sample_document(act_b, "b");
     store.persist(|tx| tx.upsert_document(&doc_b)).unwrap();
 
-    // Corrupt the archive bytes.
-    let mut bytes = std::fs::read(&manifest.path).unwrap();
-    let mid = bytes.len() / 2;
-    bytes[mid] ^= 0xFF;
-    bytes[mid + 1] ^= 0xFF;
+    // Corrupt a table member without updating the manifest/table digest.
+    let bytes = std::fs::read(&manifest.path).unwrap();
     let corrupt_path = data_dir.join("corrupt-bundle.zip");
-    std::fs::write(&corrupt_path, &bytes).unwrap();
+    std::fs::write(
+        &corrupt_path,
+        corrupt_zip_member(&bytes, "tables/documents.jsonl"),
+    )
+    .unwrap();
 
     let mut restore_ledger = ledger.clone();
     let err = store
@@ -770,11 +930,10 @@ fn restore_rejects_a_corrupt_bundle_and_leaves_the_database_unchanged() {
 #[test]
 #[ignore = "requires a live PostgreSQL at DATABASE_URL"]
 fn postgres_restore_rejects_a_sqlite_bundle() {
-    let Some(database_url) = database_url() else {
-        eprintln!("skipping: DATABASE_URL not set");
+    let Some(isolated) = isolated_postgres("sqlite-reject") else {
         return;
     };
-
+    let database_url = isolated.url();
     // Produce a real SQLite backup.
     let sqlite_dir = unique_data_dir("sqlite-src");
     let sqlite_manifest = {
@@ -896,6 +1055,36 @@ fn zip_member(archive_bytes: &[u8], name: &str) -> Option<Vec<u8>> {
     Some(buf)
 }
 
+fn corrupt_zip_member(archive_bytes: &[u8], member_name: &str) -> Vec<u8> {
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(archive_bytes)).unwrap();
+    let mut members = Vec::new();
+    let mut found = false;
+    for i in 0..archive.len() {
+        let mut f = archive.by_index(i).unwrap();
+        let name = f.name().to_owned();
+        let mut bytes = Vec::new();
+        std::io::Read::read_to_end(&mut f, &mut bytes).unwrap();
+        if name == member_name {
+            found = true;
+            if bytes.is_empty() {
+                bytes.push(b'!');
+            } else {
+                bytes[0] ^= 0xFF;
+            }
+        }
+        members.push((name, bytes));
+    }
+    assert!(found, "zip member {member_name} should exist");
+
+    let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    let opts = zip::write::SimpleFileOptions::default();
+    for (name, bytes) in members {
+        zip.start_file(name, opts).unwrap();
+        std::io::Write::write_all(&mut zip, &bytes).unwrap();
+    }
+    zip.finish().unwrap().into_inner()
+}
+
 /// Per-book export → import round-trip on Postgres: the logical bundle carries the book + entity +
 /// acts + the book-chain events; re-importing (after a factory blank clears the original) verifies
 /// clean, records the isolated import + retained bundle, and never merges the foreign chain onto the
@@ -903,10 +1092,10 @@ fn zip_member(archive_bytes: &[u8], name: &str) -> Option<Vec<u8>> {
 #[test]
 #[ignore = "requires a live PostgreSQL at DATABASE_URL"]
 fn per_book_export_import_roundtrips_on_postgres() {
-    let Some(database_url) = database_url() else {
-        eprintln!("skipping: DATABASE_URL not set");
+    let Some(isolated) = isolated_postgres("perbook-roundtrip") else {
         return;
     };
+    let database_url = isolated.url();
     let store = Store::open_backend(StoreBackendSelection::Postgres { database_url })
         .expect("open postgres backend");
     let data_dir = unique_data_dir("perbook-roundtrip");
@@ -1014,10 +1203,10 @@ fn per_book_export_import_roundtrips_on_postgres() {
 #[test]
 #[ignore = "requires a live PostgreSQL at DATABASE_URL"]
 fn per_book_import_quarantines_tamper_and_refuses_collision_atomically_on_postgres() {
-    let Some(database_url) = database_url() else {
-        eprintln!("skipping: DATABASE_URL not set");
+    let Some(isolated) = isolated_postgres("perbook-tamper") else {
         return;
     };
+    let database_url = isolated.url();
     let store = Store::open_backend(StoreBackendSelection::Postgres { database_url })
         .expect("open postgres backend");
     let data_dir = unique_data_dir("perbook-tamper");
@@ -1120,10 +1309,10 @@ fn per_book_import_quarantines_tamper_and_refuses_collision_atomically_on_postgr
 #[test]
 #[ignore = "requires a live PostgreSQL at DATABASE_URL"]
 fn per_book_start_over_stays_coherent_on_postgres() {
-    let Some(database_url) = database_url() else {
-        eprintln!("skipping: DATABASE_URL not set");
+    let Some(isolated) = isolated_postgres("perbook-startover") else {
         return;
     };
+    let database_url = isolated.url();
     let store = Store::open_backend(StoreBackendSelection::Postgres { database_url })
         .expect("open postgres backend");
     let data_dir = unique_data_dir("perbook-startover");
@@ -1179,10 +1368,10 @@ fn per_book_start_over_stays_coherent_on_postgres() {
 #[test]
 #[ignore = "requires a live PostgreSQL at DATABASE_URL"]
 fn restore_preflight_is_non_destructive_and_rejects_a_bad_bundle_on_postgres() {
-    let Some(database_url) = database_url() else {
-        eprintln!("skipping: DATABASE_URL not set");
+    let Some(isolated) = isolated_postgres("preflight") else {
         return;
     };
+    let database_url = isolated.url();
     let store = Store::open_backend(StoreBackendSelection::Postgres { database_url })
         .expect("open postgres backend");
     let data_dir = unique_data_dir("preflight");
@@ -1212,13 +1401,14 @@ fn restore_preflight_is_non_destructive_and_rejects_a_bad_bundle_on_postgres() {
     // The seeded act is still live too.
     assert!(store.document_for_act(act.id).unwrap().is_some());
 
-    // Corrupt the bundle → preflight refuses with bounded errors, live DB still untouched.
-    let mut bytes = std::fs::read(&manifest.path).unwrap();
-    let mid = bytes.len() / 2;
-    bytes[mid] ^= 0xFF;
-    bytes[mid + 1] ^= 0xFF;
+    // Corrupt a table member without updating the manifest/table digest.
+    let bytes = std::fs::read(&manifest.path).unwrap();
     let corrupt_path = data_dir.join("corrupt-backup.zip");
-    std::fs::write(&corrupt_path, &bytes).unwrap();
+    std::fs::write(
+        &corrupt_path,
+        corrupt_zip_member(&bytes, "tables/documents.jsonl"),
+    )
+    .unwrap();
     let bad = store
         .restore_preflight(&corrupt_path, &data_dir, None)
         .expect("preflight bad bundle returns evidence, not an error");

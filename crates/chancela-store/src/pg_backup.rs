@@ -267,8 +267,9 @@ impl PostgresBackend {
                 ""
             };
             let insert = format!(
+                // `postgres` binds `String` as TEXT, so cast through text before jsonb.
                 "INSERT INTO {table} {overriding}SELECT \
-                 (jsonb_populate_record(NULL::{table}, $1::jsonb)).*"
+                 (jsonb_populate_record(NULL::{table}, $1::text::jsonb)).*"
             );
             if let Some(rows) = verified.table_rows.get(table) {
                 for row_json in rows {
