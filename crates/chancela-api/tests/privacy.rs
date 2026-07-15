@@ -6912,3 +6912,205 @@ async fn merge_gate_erasure_preserves_ledger_integrity_and_destroys_dek() {
         "destroyed DEK can no longer be unwrapped -- the PII ciphertext is cryptographically dead"
     );
 }
+
+// =================================================================================================
+// wp26-gdpr — append-only ANNOTATION remedy (the STANDARD data-subject path for statutorily-retained
+// sealed acts/books/signed documents). Signatures/sealed content stay valid because annotation only
+// ever appends a new ledger event; it never mutates or re-chains any prior (signed) event.
+// =================================================================================================
+
+/// Snapshot every ledger event's frozen (hash, payload_digest) — the bytes a signature is over.
+async fn ledger_frozen_snapshot(state: &AppState) -> Vec<([u8; 32], [u8; 32])> {
+    let ledger = state.ledger.read().await;
+    ledger
+        .events()
+        .iter()
+        .map(|e| (e.hash, e.payload_digest))
+        .collect()
+}
+
+#[tokio::test]
+async fn rectification_annotation_is_append_only_and_preserves_signed_events() {
+    let tmp = TempDir::new();
+    let state = AppState::with_data_dir(tmp.dir.clone());
+    let (_owner, owner_token) = bootstrap_owner(&state).await;
+    let subject = UserId(Uuid::from_u128(0xB101));
+    insert_user(
+        &state,
+        subject,
+        "amelia.marques",
+        RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global),
+    )
+    .await;
+    let request_id = create_erasure_dsr(&state, subject, &owner_token).await;
+
+    // BEFORE: capture the full frozen ledger + the count.
+    let before = ledger_frozen_snapshot(&state).await;
+    let n = {
+        let ledger = state.ledger.read().await;
+        ledger.verify().expect("verifies before annotation")
+    };
+
+    // Record an append-only rectification note against a (representative) sealed-act scope.
+    let (status, view) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                &format!(
+                    "/v1/privacy/users/{subject}/dsr-requests/{request_id}/rectification"
+                ),
+                // Default subject scope (Application chain). Annotating a specific sealed-act scope is
+                // a mid-chain append proven byte-preserving in the chancela-ledger unit test
+                // `annotation_preserves_prior_sealed_events_byte_for_byte` (a real act.sealed event).
+                json!({
+                    "note": "Display name misspelled in the sealed minute; corrected here by annotation.",
+                    "field": "display_name"
+                }),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "rectification recorded: {view}");
+    assert_eq!(view["annotation"], json!("rectification"));
+    assert_eq!(view["event_kind"], json!("subject.rectification_noted"));
+    assert!(
+        view["event_id"].as_str().is_some(),
+        "annotation event id present"
+    );
+
+    // AFTER: the ledger grew by exactly one and every prior (signed/sealed) event is byte-identical.
+    let after = ledger_frozen_snapshot(&state).await;
+    {
+        let ledger = state.ledger.read().await;
+        assert_eq!(
+            ledger.verify(),
+            Ok(n + 1),
+            "append-only: verify advances by one"
+        );
+        assert!(
+            ledger
+                .events()
+                .iter()
+                .any(|e| e.kind == "subject.rectification_noted"),
+            "rectification annotation appended"
+        );
+    }
+    assert_eq!(after.len(), before.len() + 1, "exactly one new event");
+    for (i, prior) in before.iter().enumerate() {
+        assert_eq!(
+            &after[i], prior,
+            "prior signed/sealed event {i} is byte-identical after annotation"
+        );
+    }
+}
+
+#[tokio::test]
+async fn restriction_annotation_records_append_only_marker() {
+    let tmp = TempDir::new();
+    let state = AppState::with_data_dir(tmp.dir.clone());
+    let (_owner, owner_token) = bootstrap_owner(&state).await;
+    let subject = UserId(Uuid::from_u128(0xB102));
+    insert_user(
+        &state,
+        subject,
+        "amelia.marques",
+        RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global),
+    )
+    .await;
+    let request_id = create_erasure_dsr(&state, subject, &owner_token).await;
+    let n = {
+        let ledger = state.ledger.read().await;
+        ledger.verify().expect("verifies before")
+    };
+
+    let (status, view) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                &format!("/v1/privacy/users/{subject}/dsr-requests/{request_id}/restriction"),
+                json!({ "note": "Subject objects to further processing pending review." }),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "restriction recorded: {view}");
+    assert_eq!(view["annotation"], json!("restriction"));
+    assert_eq!(view["event_kind"], json!("subject.processing_restricted"));
+    // Default scope is the subject's user chain.
+    assert_eq!(view["scope"], json!(format!("user:{subject}")));
+    let ledger = state.ledger.read().await;
+    assert_eq!(ledger.verify(), Ok(n + 1), "append-only marker");
+}
+
+#[tokio::test]
+async fn rectification_requires_a_note() {
+    let tmp = TempDir::new();
+    let state = AppState::with_data_dir(tmp.dir.clone());
+    let (_owner, owner_token) = bootstrap_owner(&state).await;
+    let subject = UserId(Uuid::from_u128(0xB103));
+    insert_user(
+        &state,
+        subject,
+        "amelia.marques",
+        RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global),
+    )
+    .await;
+    let request_id = create_erasure_dsr(&state, subject, &owner_token).await;
+    let (status, _b) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                &format!("/v1/privacy/users/{subject}/dsr-requests/{request_id}/rectification"),
+                json!({ "field": "display_name" }),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "note is required");
+}
+
+#[tokio::test]
+async fn preflight_marks_sealed_records_as_annotation_remedy() {
+    let tmp = TempDir::new();
+    let state = AppState::with_data_dir(tmp.dir.clone());
+    let (_owner, owner_token) = bootstrap_owner(&state).await;
+    let subject = UserId(Uuid::from_u128(0xB104));
+    insert_user(
+        &state,
+        subject,
+        "amelia.marques",
+        RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global),
+    )
+    .await;
+    let request_id = create_erasure_dsr(&state, subject, &owner_token).await;
+    let (status, report) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                &format!("/v1/privacy/users/{subject}/dsr-requests/{request_id}/erasure/preflight"),
+                json!({}),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "preflight: {report}");
+    let carveouts = report["retained_carveouts"].as_array().expect("carveouts");
+    let sealed = carveouts
+        .iter()
+        .find(|c| c["collection"] == json!("acts_books_signed_documents"))
+        .expect("sealed-records carve-out present");
+    assert_eq!(
+        sealed["legal_basis"],
+        json!("art_17_3_b_statutory_retention"),
+        "honest Art. 17(3)(b) legal-retention basis"
+    );
+    assert_eq!(
+        sealed["remedy"],
+        json!("annotation"),
+        "the remedy for sealed records is annotation, not erasure"
+    );
+}

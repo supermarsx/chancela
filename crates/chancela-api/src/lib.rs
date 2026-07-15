@@ -1923,6 +1923,14 @@ pub fn router(state: AppState) -> Router {
             post(privacy::erasure_execute),
         )
         .route(
+            "/v1/privacy/users/{user_id}/dsr-requests/{request_id}/rectification",
+            post(privacy::record_subject_rectification),
+        )
+        .route(
+            "/v1/privacy/users/{user_id}/dsr-requests/{request_id}/restriction",
+            post(privacy::record_subject_restriction),
+        )
+        .route(
             "/v1/privacy/dsr-requests/{id}",
             patch(privacy::patch_dsr_request),
         )

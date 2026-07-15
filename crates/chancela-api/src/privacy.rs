@@ -27,7 +27,9 @@ use crate::error::ApiError;
 use crate::sidecar_store::persist_users;
 use crate::try_append_event;
 use crate::users::{User, UserId, UserView};
-use chancela_ledger::SUBJECT_ERASED_KIND;
+use chancela_ledger::{
+    SUBJECT_ERASED_KIND, SUBJECT_PROCESSING_RESTRICTED_KIND, SUBJECT_RECTIFICATION_KIND,
+};
 
 const FORMAT_VERSION: u32 = 1;
 const DSR_CREATED_KIND: &str = "privacy.dsr.request.created";
@@ -7399,12 +7401,17 @@ pub struct ErasableTarget {
     pub count: u64,
 }
 
-/// One lawfully-retained carve-out (GDPR Art. 17(3)) surfaced by the preflight, with its legal basis.
+/// One lawfully-retained carve-out (GDPR Art. 17(3)) surfaced by the preflight, with its legal basis
+/// and the remedy the data subject is entitled to instead of erasure.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RetainedCarveout {
     pub collection: String,
     pub legal_basis: String,
     pub detail: String,
+    /// The data-subject remedy for this retained record: `annotation` (record an append-only
+    /// rectification / restriction note against it — the standard remedy for sealed acts / books /
+    /// signed documents whose signatures must stay valid) or `retained_no_action`.
+    pub remedy: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -7565,6 +7572,7 @@ async fn enumerate_erasure_plan(state: &AppState, request: &DsrRequest) -> Erasu
             detail: format!(
                 "{ledger_event_count} append-only ledger event(s) reference the subject; retained as accountability + tamper-evidence records and never rewritten"
             ),
+            remedy: "retained_no_action".to_owned(),
         },
         RetainedCarveout {
             collection: DSR_REQUESTS_FILE.to_owned(),
@@ -7572,13 +7580,15 @@ async fn enumerate_erasure_plan(state: &AppState, request: &DsrRequest) -> Erasu
             detail:
                 "the DSR request audit trail and the subject.erased attestation are retained as proof the erasure occurred"
                     .to_owned(),
+            remedy: "retained_no_action".to_owned(),
         },
         RetainedCarveout {
             collection: "acts_books_signed_documents".to_owned(),
             legal_basis: "art_17_3_b_statutory_retention".to_owned(),
             detail:
-                "sealed minutes (acts), books + termo de abertura, and signed legal documents are the organisation's business records, retained under statutory obligation"
+                "sealed minutes (acts), books + termo de abertura, and signed legal documents carry a statutory retention obligation and their signatures must stay valid; the subject's remedy is an append-only rectification / restriction annotation, NOT erasure"
                     .to_owned(),
+            remedy: "annotation".to_owned(),
         },
         RetainedCarveout {
             collection: "delegations".to_owned(),
@@ -7586,6 +7596,7 @@ async fn enumerate_erasure_plan(state: &AppState, request: &DsrRequest) -> Erasu
             detail:
                 "role delegations naming the subject are retained pending a separate accountability review; not auto-deleted by this workflow"
                     .to_owned(),
+            remedy: "retained_no_action".to_owned(),
         },
     ];
 
@@ -7972,6 +7983,201 @@ pub async fn erasure_execute(
     };
     persist_dsr_requests(&state).await?;
     Ok(Json(view))
+}
+
+// =================================================================================================
+// wp26-gdpr: append-only ANNOTATION remedy (rectification + restriction/objection).
+//
+// This is the STANDARD data-subject remedy for PII embedded in sealed acts / books / signed legal
+// documents: those records carry a statutory retention obligation (GDPR Art. 17(3)(b)) and rewriting
+// them would break their signatures, so they are never erased. Instead a correction (rectification)
+// or a restriction-of-processing / objection marker is recorded as a NEW append-only ledger event
+// linked to the record. The sealed/signed payload is never touched — signatures stay valid — and the
+// ledger only ever grows, so `verify()` advances Ok(n) → Ok(n+1). Destructive erasure (above) is the
+// narrow exception for genuinely non-legally-required PII.
+// =================================================================================================
+
+#[derive(Deserialize)]
+pub struct SubjectAnnotationBody {
+    /// The rectification correction text, or the restriction / objection reason.
+    #[serde(default)]
+    pub note: Option<String>,
+    /// Optional target scope the annotation is recorded against — an act / entity / book scope
+    /// (`entity:{id}/book:{id}/act:{id}`, `entity:{id}`, …) so the note is discoverable alongside the
+    /// sealed record. Defaults to the subject's `user:{uuid}` scope (the Application chain).
+    #[serde(default)]
+    pub target_scope: Option<String>,
+    /// Optional field being rectified / objected to (e.g. `display_name`).
+    #[serde(default)]
+    pub field: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct SubjectAnnotationView {
+    pub subject_user_id: String,
+    pub dsr_request_id: String,
+    /// `rectification` or `restriction`.
+    pub annotation: String,
+    pub event_kind: String,
+    pub event_id: String,
+    pub scope: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub field: Option<String>,
+    pub note: String,
+    pub noted_by: String,
+    pub noted_at: String,
+    /// The append-only ledger head after the annotation (proves the ledger only grew).
+    pub ledger_length: usize,
+}
+
+/// Validate and default the annotation target scope. A caller-supplied scope must be a recognised
+/// scope-grammar string (act / book / entity / a bare uuid / an app keyword); anything path-like or
+/// empty is rejected. When absent, the annotation is scoped to the subject's `user:{uuid}` chain.
+fn resolve_annotation_scope(
+    subject_user_id: &UserId,
+    target_scope: Option<String>,
+) -> Result<String, ApiError> {
+    match target_scope
+        .map(|s| s.trim().to_owned())
+        .filter(|s| !s.is_empty())
+    {
+        None => Ok(format!("user:{subject_user_id}")),
+        Some(scope) => {
+            if scope.len() > 256 || scope.contains("..") || scope.contains(['\\', '\n', '\r']) {
+                return Err(ApiError::Unprocessable("invalid target_scope".to_owned()));
+            }
+            Ok(scope)
+        }
+    }
+}
+
+async fn record_subject_annotation(
+    state: &AppState,
+    subject: UserId,
+    request_id: DsrRequestId,
+    annotation_label: &str,
+    body: SubjectAnnotationBody,
+    actor: &CurrentActor,
+    attestor: &CurrentAttestor,
+) -> Result<Json<SubjectAnnotationView>, ApiError> {
+    // The append-only event kind is fixed by the remedy (rectification vs restriction/objection).
+    let kind = match annotation_label {
+        "rectification" => SUBJECT_RECTIFICATION_KIND,
+        _ => SUBJECT_PROCESSING_RESTRICTED_KIND,
+    };
+    require_permission(state, actor, Permission::UserManage, Scope::Global).await?;
+    // The DSR must exist and belong to the subject (audit linkage for the annotation).
+    {
+        let requests = state.dsr_requests.read().await;
+        let request = requests.get(&request_id).ok_or(ApiError::NotFound)?;
+        if request.subject_user_id != subject {
+            return Err(ApiError::NotFound);
+        }
+    }
+    let note = clean_required(body.note.as_deref().unwrap_or_default(), "note")?;
+    if note.chars().count() > MAX_DSR_EXECUTION_NOTE_CHARS {
+        return Err(ApiError::Unprocessable(format!(
+            "note must be at most {MAX_DSR_EXECUTION_NOTE_CHARS} characters"
+        )));
+    }
+    let field = clean_optional_bounded(body.field, "field", MAX_DSR_AFFECTED_FIELD_CHARS)?;
+    let scope = resolve_annotation_scope(&subject, body.target_scope)?;
+    let noted_by = actor.resolve("api");
+    let noted_at = now_rfc3339();
+
+    // The digested, retained-as-JSON annotation payload. Records the correction / restriction against
+    // the record WITHOUT touching any sealed / signed content.
+    let payload = serde_json::json!({
+        "subject_id": subject.to_string(),
+        "dsr_request_id": request_id.to_string(),
+        "annotation": annotation_label,
+        "field": field,
+        "note": note,
+        "scope": scope,
+        "noted_by": noted_by,
+        "noted_at": noted_at,
+    });
+    let payload_json = serde_json::to_string(&payload)?;
+
+    let (event_id, ledger_length) = {
+        let mut ledger = state.ledger.write().await;
+        try_append_event(
+            &mut ledger,
+            &noted_by,
+            &scope,
+            kind,
+            Some(&payload_json),
+            payload_json.as_bytes(),
+        )?;
+        let event_id = ledger
+            .events()
+            .last()
+            .map(|e| e.id.to_string())
+            .unwrap_or_default();
+        state.persist_write_through(&mut ledger, 1, |_tx| Ok(()))?;
+        state.attest_latest(attestor, &ledger).await;
+        (event_id, ledger.len())
+    };
+
+    Ok(Json(SubjectAnnotationView {
+        subject_user_id: subject.to_string(),
+        dsr_request_id: request_id.to_string(),
+        annotation: annotation_label.to_owned(),
+        event_kind: kind.to_owned(),
+        event_id,
+        scope,
+        field,
+        note,
+        noted_by,
+        noted_at,
+        ledger_length,
+    }))
+}
+
+/// `POST /v1/privacy/users/{user_id}/dsr-requests/{request_id}/rectification`
+///
+/// Record an append-only rectification note against the subject's records (the standard Art. 16 /
+/// Art. 17(3)(b) remedy). Never modifies any sealed / signed payload — signatures stay valid.
+pub async fn record_subject_rectification(
+    State(state): State<AppState>,
+    Path((user_id, request_id)): Path<(Uuid, Uuid)>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    Json(body): Json<SubjectAnnotationBody>,
+) -> Result<Json<SubjectAnnotationView>, ApiError> {
+    record_subject_annotation(
+        &state,
+        UserId(user_id),
+        DsrRequestId(request_id),
+        "rectification",
+        body,
+        &actor,
+        &attestor,
+    )
+    .await
+}
+
+/// `POST /v1/privacy/users/{user_id}/dsr-requests/{request_id}/restriction`
+///
+/// Record an append-only restriction-of-processing / objection marker against the subject's records
+/// (GDPR Art. 18 / Art. 21). Never modifies any sealed / signed payload — signatures stay valid.
+pub async fn record_subject_restriction(
+    State(state): State<AppState>,
+    Path((user_id, request_id)): Path<(Uuid, Uuid)>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    Json(body): Json<SubjectAnnotationBody>,
+) -> Result<Json<SubjectAnnotationView>, ApiError> {
+    record_subject_annotation(
+        &state,
+        UserId(user_id),
+        DsrRequestId(request_id),
+        "restriction",
+        body,
+        &actor,
+        &attestor,
+    )
+    .await
 }
 
 fn clean_required(raw: &str, field: &str) -> Result<String, ApiError> {
