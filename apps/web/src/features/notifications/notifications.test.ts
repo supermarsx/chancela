@@ -707,6 +707,56 @@ describe('buildDashboardNotifications', () => {
     });
   });
 
+  it('preserves generated-convening dispatch-evidence targets without delivery or legal claims', () => {
+    const items = buildDashboardNotifications(
+      dashboard({
+        reminders: [
+          reminder({
+            due_date: '',
+            status: 'Pending',
+            reason:
+              'Generated convening notice metadata only; no sending, delivery, legal notice completion, or legal sufficiency is claimed.',
+            source_rule: 'generated-convening-dispatch-evidence',
+            source_profile: 'generated-convening-notice',
+            params: {
+              act_id: 'act-conv-1',
+              act_title: 'Ata convocada',
+              generated_document_id: 'generated-conv-1',
+              dispatch_evidence_status: 'operator_evidence_partial',
+              missing_recipients: 'Bruno Sócio',
+              dispatch_completed: 'false',
+              completion_basis: 'none',
+              delivery_confirmed: 'false',
+              legal_notice_completion_claimed: 'false',
+              legal_sufficiency_claimed: 'false',
+            },
+            action: {
+              kind: 'open_generated_convening_dispatch_evidence',
+              label_key: 'notifications.reminder.absentOwnerDispatch.action',
+              api_href: '/v1/documents/generated/generated-conv-1/dispatch-evidence',
+              route: '/atas/act-conv-1',
+            },
+            i18n: null,
+          }),
+        ],
+      }),
+      t,
+    );
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      kind: 'reminder',
+      action: {
+        href: '/atas/act-conv-1?generated_document_id=generated-conv-1&focus=dispatch-evidence#generated-dispatch-evidence',
+        label: 'Abrir ata',
+      },
+    });
+    expect(items[0]?.detail).toContain('no sending, delivery');
+    expect(items[0]?.detail).toContain('no');
+    expect(items[0]?.detail).not.toContain('Entrega confirmada');
+    expect(items[0]?.detail).not.toContain('Aviso legal válido');
+  });
+
   it('routes imported-document review reminders to the act review form', () => {
     const items = buildDashboardNotifications(
       dashboard({

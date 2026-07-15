@@ -383,11 +383,14 @@ function actionFromMetadata(
             (paramText(params, 'act_id') ? `/atas/${paramText(params, 'act_id')}` : undefined),
           paramText(params, 'imported_document_id') ?? importedDocumentIdFromApi(action.api_href),
         )
-      : action.kind === 'open_absent_owner_dispatch_evidence'
+      : action.kind === 'open_absent_owner_dispatch_evidence' ||
+          action.kind === 'open_generated_convening_dispatch_evidence'
         ? generatedDispatchEvidenceRoute(
             frontendRouteFromApi(action.route) ??
               (paramText(params, 'act_id') ? `/atas/${paramText(params, 'act_id')}` : undefined),
-            paramText(params, 'document_id') ?? generatedDispatchDocumentIdFromApi(action.api_href),
+            paramText(params, 'generated_document_id') ??
+              paramText(params, 'document_id') ??
+              generatedDispatchDocumentIdFromApi(action.api_href),
           )
         : (frontendRouteFromApi(action.route) ?? frontendRouteFromApi(action.api_href));
   const labelKey = messageKey(action.label_key);

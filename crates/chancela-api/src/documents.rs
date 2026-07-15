@@ -123,6 +123,81 @@ const MAX_DISPATCH_EVIDENCE_LOCATOR_CHARS: usize = 512;
 const MAX_DISPATCH_EVIDENCE_NOTE_CHARS: usize = 2_000;
 const ABSENT_OWNER_DISPATCH_EVIDENCE_EVENT_KIND: &str =
     "absent_owner_communication.dispatch_evidence_recorded";
+const GENERATED_DOCUMENT_DISPATCH_EVIDENCE_EVENT_KIND: &str =
+    "generated_document.dispatch_evidence_recorded";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum GeneratedDispatchEvidenceProfile {
+    AbsentOwnerCommunication,
+    GeneratedConveningNotice,
+}
+
+impl GeneratedDispatchEvidenceProfile {
+    fn event_kind(self) -> &'static str {
+        match self {
+            Self::AbsentOwnerCommunication => ABSENT_OWNER_DISPATCH_EVIDENCE_EVENT_KIND,
+            Self::GeneratedConveningNotice => GENERATED_DOCUMENT_DISPATCH_EVIDENCE_EVENT_KIND,
+        }
+    }
+
+    fn code(self) -> &'static str {
+        match self {
+            Self::AbsentOwnerCommunication => "condominium_absent_owner_communication",
+            Self::GeneratedConveningNotice => "generated_convening_notice",
+        }
+    }
+
+    fn recipient_error_label(self) -> &'static str {
+        match self {
+            Self::AbsentOwnerCommunication => "absent attendee",
+            Self::GeneratedConveningNotice => "convening recipient",
+        }
+    }
+
+    fn recipient_error_label_with_article(self) -> &'static str {
+        match self {
+            Self::AbsentOwnerCommunication => "an absent attendee",
+            Self::GeneratedConveningNotice => "a convening recipient",
+        }
+    }
+
+    fn empty_recipients_message(self) -> &'static str {
+        match self {
+            Self::AbsentOwnerCommunication => {
+                "act has no absent attendees for absent-owner dispatch evidence"
+            }
+            Self::GeneratedConveningNotice => {
+                "act has no convening recipients for generated convening notice dispatch evidence"
+            }
+        }
+    }
+
+    fn uncovered_note(self) -> String {
+        match self {
+            Self::AbsentOwnerCommunication => {
+                "communication generated automatically; operator-recorded dispatch evidence does not cover every required absent recipient"
+                    .to_owned()
+            }
+            Self::GeneratedConveningNotice => {
+                "generated convening notice has operator-recorded dispatch evidence pending for one or more required recipients; no sending, delivery, legal notice completion, or legal sufficiency is claimed"
+                    .to_owned()
+            }
+        }
+    }
+
+    fn covered_note(self) -> String {
+        match self {
+            Self::AbsentOwnerCommunication => {
+                "operator-recorded dispatch evidence covers all absent recipients, but no sending, delivery, legal notice completion, or legal sufficiency is claimed"
+                    .to_owned()
+            }
+            Self::GeneratedConveningNotice => {
+                "operator-recorded dispatch evidence covers all generated convening notice recipients, but no sending, delivery, legal notice completion, or legal sufficiency is claimed"
+                    .to_owned()
+            }
+        }
+    }
+}
 
 /// The embedded template registry, loaded once. The assets are compile-time-validated by
 /// `chancela-templates` (build.rs embeds them; e1's tests prove the load), so a load failure is
@@ -134,6 +209,34 @@ static REGISTRY: LazyLock<Registry> = LazyLock::new(|| {
 /// The process-wide template registry (loaded once, lazily).
 pub(crate) fn registry() -> &'static Registry {
     &REGISTRY
+}
+
+pub(crate) fn generated_dispatch_evidence_profile_for_template(
+    template_id: &str,
+) -> Option<GeneratedDispatchEvidenceProfile> {
+    if template_id == CONDOMINIUM_ABSENT_OWNER_COMMUNICATION_TEMPLATE_ID {
+        return Some(GeneratedDispatchEvidenceProfile::AbsentOwnerCommunication);
+    }
+    let spec = registry().get(template_id)?;
+    if spec.stage == LifecycleStage::Convocatoria {
+        return Some(GeneratedDispatchEvidenceProfile::GeneratedConveningNotice);
+    }
+    None
+}
+
+pub(crate) fn generated_dispatch_required_recipient_names(
+    act: &Act,
+    template_id: &str,
+) -> Option<Vec<String>> {
+    let profile = generated_dispatch_evidence_profile_for_template(template_id)?;
+    Some(match profile {
+        GeneratedDispatchEvidenceProfile::AbsentOwnerCommunication => {
+            absent_owner_recipient_names(act)
+        }
+        GeneratedDispatchEvidenceProfile::GeneratedConveningNotice => {
+            convening_recipient_names(act)
+        }
+    })
 }
 
 /// The **spine** (default) template id for a family + stage — the single deterministic template
@@ -469,15 +572,22 @@ pub(crate) fn generate_for_act_template(
 
     let ctx = act_render_ctx(act, book, entity)?;
     let mut made = generate(spec, &ctx, act.id, OffsetDateTime::now_utc())?;
-    let absent_recipients = absent_owner_recipient_names(act);
-    if let Some(status) =
-        dispatch_evidence_status_for_template(&made.stored.template_id, &absent_recipients, &[])
+    if let Some(required_recipients) =
+        generated_dispatch_required_recipient_names(act, &made.stored.template_id)
     {
-        if let Some(obj) = made.event_payload.as_object_mut() {
-            obj.insert(
-                "dispatch_evidence_status".to_owned(),
-                serde_json::to_value(status)?,
-            );
+        if !required_recipients.is_empty() {
+            if let Some(status) = dispatch_evidence_status_for_template(
+                &made.stored.template_id,
+                &required_recipients,
+                &[],
+            ) {
+                if let Some(obj) = made.event_payload.as_object_mut() {
+                    obj.insert(
+                        "dispatch_evidence_status".to_owned(),
+                        serde_json::to_value(status)?,
+                    );
+                }
+            }
         }
     }
     Ok(made)
@@ -2960,7 +3070,7 @@ pub struct GeneratedDocumentView {
     pub dispatch_evidence_status: Option<DispatchEvidenceStatusView>,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 pub struct GeneratedDocumentDispatchEvidenceRequest {
     pub actor: String,
     pub dispatched_at: String,
@@ -3074,9 +3184,7 @@ pub(crate) fn dispatch_evidence_status_for_template(
     required_recipients: &[String],
     recorded_recipients: &[String],
 ) -> Option<DispatchEvidenceStatusView> {
-    if template_id != CONDOMINIUM_ABSENT_OWNER_COMMUNICATION_TEMPLATE_ID {
-        return None;
-    }
+    let profile = generated_dispatch_evidence_profile_for_template(template_id)?;
     let required_set: BTreeSet<&str> = required_recipients
         .iter()
         .map(String::as_str)
@@ -3115,9 +3223,9 @@ pub(crate) fn dispatch_evidence_status_for_template(
         recorded_recipients: recorded,
         missing_recipients: missing,
         note: if all_required_recipients_covered {
-            "operator-recorded dispatch evidence covers all absent recipients, but no sending, delivery, legal notice completion, or legal sufficiency is claimed".to_owned()
+            profile.covered_note()
         } else {
-            "communication generated automatically; operator-recorded dispatch evidence does not cover every required absent recipient".to_owned()
+            profile.uncovered_note()
         },
     })
 }
@@ -3130,6 +3238,22 @@ pub(crate) fn absent_owner_recipient_names(act: &Act) -> Vec<String> {
             continue;
         }
         let name = attendee.name.trim();
+        if name.is_empty() || !seen.insert(name.to_owned()) {
+            continue;
+        }
+        recipients.push(name.to_owned());
+    }
+    recipients
+}
+
+pub(crate) fn convening_recipient_names(act: &Act) -> Vec<String> {
+    let Some(convening) = &act.convening else {
+        return Vec::new();
+    };
+    let mut seen = BTreeSet::new();
+    let mut recipients = Vec::new();
+    for recipient in &convening.recipients {
+        let name = recipient.name.trim();
         if name.is_empty() || !seen.insert(name.to_owned()) {
             continue;
         }
@@ -3324,7 +3448,7 @@ pub async fn record_generated_document_dispatch_evidence(
         .ok_or(ApiError::NotFound)?;
     let scope = scope_of_act(&state, doc.act_id).await;
     require_permission(&state, &actor, Permission::DocumentGenerate, scope).await?;
-    let context = absent_owner_dispatch_context_for_doc(&state, doc).await?;
+    let context = generated_dispatch_context_for_doc(&state, doc).await?;
     ensure_book_open_for_dispatch_evidence(&context.book)?;
     let Some(store) = &state.store else {
         return Err(ApiError::Unprocessable(
@@ -3332,7 +3456,11 @@ pub async fn record_generated_document_dispatch_evidence(
         ));
     };
 
-    let request = normalize_generated_dispatch_evidence_request(req, &context.required_recipients)?;
+    let request = normalize_generated_dispatch_evidence_request(
+        req,
+        &context.required_recipients,
+        context.profile,
+    )?;
     if let Some(imported_document_id) = &request.imported_document_id {
         validate_dispatch_evidence_import(store, imported_document_id, context.doc.act_id)?;
     }
@@ -3363,8 +3491,9 @@ pub async fn record_generated_document_dispatch_evidence(
         context.entity.id, context.book.id, context.act.id
     );
     let justification = format!(
-        "operator-recorded dispatch evidence for {} absent recipient(s)",
-        evidence.recipients.len()
+        "operator-recorded dispatch evidence for {} {} recipient(s)",
+        evidence.recipients.len(),
+        context.profile.code()
     );
 
     let mut ledger = state.ledger.write().await;
@@ -3379,7 +3508,7 @@ pub async fn record_generated_document_dispatch_evidence(
         &mut ledger,
         &resolved_actor,
         &event_scope,
-        ABSENT_OWNER_DISPATCH_EVIDENCE_EVENT_KIND,
+        context.profile.event_kind(),
         Some(&justification),
         &payload,
     )?;
@@ -3419,7 +3548,7 @@ pub async fn record_generated_document_dispatch_evidence(
 
 fn generated_dispatch_evidence_response(
     status_code: StatusCode,
-    context: &AbsentOwnerDispatchContext,
+    context: &GeneratedDispatchContext,
     store: &chancela_store::Store,
     evidence: &StoredGeneratedDocumentDispatchEvidence,
 ) -> Result<Response, ApiError> {
@@ -3449,7 +3578,7 @@ pub async fn get_generated_document_dispatch_evidence(
         .ok_or(ApiError::NotFound)?;
     let scope = scope_of_act(&state, doc.act_id).await;
     require_permission(&state, &actor, Permission::ActRead, scope).await?;
-    let context = absent_owner_dispatch_context_for_doc(&state, doc).await?;
+    let context = generated_dispatch_context_for_doc(&state, doc).await?;
     let rows = match &state.store {
         Some(store) => store
             .generated_document_dispatch_evidence(&context.doc.id)
@@ -3465,7 +3594,8 @@ pub async fn get_generated_document_dispatch_evidence(
     }))
 }
 
-struct AbsentOwnerDispatchContext {
+struct GeneratedDispatchContext {
+    profile: GeneratedDispatchEvidenceProfile,
     doc: StoredDocument,
     act: Act,
     book: Book,
@@ -3473,16 +3603,34 @@ struct AbsentOwnerDispatchContext {
     required_recipients: Vec<String>,
 }
 
-async fn absent_owner_dispatch_context_for_doc(
+async fn generated_dispatch_context_for_doc(
     state: &AppState,
     doc: StoredDocument,
-) -> Result<AbsentOwnerDispatchContext, ApiError> {
-    if doc.template_id != CONDOMINIUM_ABSENT_OWNER_COMMUNICATION_TEMPLATE_ID {
-        return Err(ApiError::Unprocessable(
-            "dispatch evidence is only supported for condominio-comunicacao-ausentes/v1 generated documents"
-                .to_owned(),
-        ));
-    }
+) -> Result<GeneratedDispatchContext, ApiError> {
+    generated_dispatch_context_for_doc_inner(state, doc, true)
+        .await?
+        .ok_or_else(unsupported_generated_dispatch_evidence_error)
+}
+
+async fn maybe_generated_dispatch_context_for_doc(
+    state: &AppState,
+    doc: StoredDocument,
+) -> Result<Option<GeneratedDispatchContext>, ApiError> {
+    generated_dispatch_context_for_doc_inner(state, doc, false).await
+}
+
+async fn generated_dispatch_context_for_doc_inner(
+    state: &AppState,
+    doc: StoredDocument,
+    strict_required_recipients: bool,
+) -> Result<Option<GeneratedDispatchContext>, ApiError> {
+    let Some(profile) = generated_dispatch_evidence_profile_for_template(&doc.template_id) else {
+        return if strict_required_recipients {
+            Err(unsupported_generated_dispatch_evidence_error())
+        } else {
+            Ok(None)
+        };
+    };
     let act = state
         .acts
         .read()
@@ -3504,39 +3652,69 @@ async fn absent_owner_dispatch_context_for_doc(
         .get(&book.entity_id)
         .cloned()
         .ok_or(ApiError::NotFound)?;
-    if entity.family != EntityFamily::Condominium {
-        return Err(ApiError::Unprocessable(
-            "absent-owner dispatch evidence requires a condominium act".to_owned(),
-        ));
-    }
-    if act.state != ActState::Sealed || act.ata_number.is_none() {
-        return Err(ApiError::Unprocessable(
-            "absent-owner dispatch evidence requires a sealed act".to_owned(),
-        ));
-    }
-    let required_recipients = absent_owner_recipient_names(&act);
+    let required_recipients = match profile {
+        GeneratedDispatchEvidenceProfile::AbsentOwnerCommunication => {
+            if entity.family != EntityFamily::Condominium {
+                return Err(ApiError::Unprocessable(
+                    "absent-owner dispatch evidence requires a condominium act".to_owned(),
+                ));
+            }
+            if act.state != ActState::Sealed || act.ata_number.is_none() {
+                return Err(ApiError::Unprocessable(
+                    "absent-owner dispatch evidence requires a sealed act".to_owned(),
+                ));
+            }
+            absent_owner_recipient_names(&act)
+        }
+        GeneratedDispatchEvidenceProfile::GeneratedConveningNotice => {
+            if !registry()
+                .get(&doc.template_id)
+                .is_some_and(|spec| spec.family == entity.family)
+            {
+                return Err(ApiError::Unprocessable(
+                    "generated convening notice dispatch evidence requires a template for this entity family"
+                        .to_owned(),
+                ));
+            }
+            convening_recipient_names(&act)
+        }
+    };
     if required_recipients.is_empty() {
-        return Err(ApiError::Unprocessable(
-            "act has no absent attendees for absent-owner dispatch evidence".to_owned(),
-        ));
+        return if strict_required_recipients {
+            Err(ApiError::Unprocessable(
+                profile.empty_recipients_message().to_owned(),
+            ))
+        } else {
+            Ok(None)
+        };
     }
-    Ok(AbsentOwnerDispatchContext {
+    Ok(Some(GeneratedDispatchContext {
+        profile,
         doc,
         act,
         book,
         entity,
         required_recipients,
-    })
+    }))
+}
+
+fn unsupported_generated_dispatch_evidence_error() -> ApiError {
+    ApiError::Unprocessable(
+        "dispatch evidence is only supported for condominio-comunicacao-ausentes/v1 or generated Convocatoria documents"
+            .to_owned(),
+    )
 }
 
 async fn dispatch_evidence_status_for_generated_document(
     state: &AppState,
     doc: &StoredDocument,
 ) -> Result<Option<DispatchEvidenceStatusView>, ApiError> {
-    if doc.template_id != CONDOMINIUM_ABSENT_OWNER_COMMUNICATION_TEMPLATE_ID {
+    if generated_dispatch_evidence_profile_for_template(&doc.template_id).is_none() {
         return Ok(None);
     }
-    let context = absent_owner_dispatch_context_for_doc(state, doc.clone()).await?;
+    let Some(context) = maybe_generated_dispatch_context_for_doc(state, doc.clone()).await? else {
+        return Ok(None);
+    };
     let rows = match &state.store {
         Some(store) => store
             .generated_document_dispatch_evidence(&doc.id)
@@ -3554,9 +3732,11 @@ pub(crate) async fn generated_dispatch_evidence_preservation_indexes_for_act(
     let mut indexes = Vec::new();
     for doc in docs
         .into_iter()
-        .filter(|doc| doc.template_id == CONDOMINIUM_ABSENT_OWNER_COMMUNICATION_TEMPLATE_ID)
+        .filter(|doc| generated_dispatch_evidence_profile_for_template(&doc.template_id).is_some())
     {
-        let context = absent_owner_dispatch_context_for_doc(state, doc).await?;
+        let Some(context) = maybe_generated_dispatch_context_for_doc(state, doc).await? else {
+            continue;
+        };
         let rows = match &state.store {
             Some(store) => store
                 .generated_document_dispatch_evidence(&context.doc.id)
@@ -3578,7 +3758,7 @@ pub(crate) async fn generated_dispatch_evidence_preservation_indexes_for_act(
 }
 
 fn dispatch_evidence_status_from_rows(
-    context: &AbsentOwnerDispatchContext,
+    context: &GeneratedDispatchContext,
     rows: &[StoredGeneratedDocumentDispatchEvidence],
 ) -> DispatchEvidenceStatusView {
     let recorded = rows
@@ -3590,11 +3770,11 @@ fn dispatch_evidence_status_from_rows(
         &context.required_recipients,
         &recorded,
     )
-    .expect("absent-owner context uses the absent-owner template")
+    .expect("generated dispatch context uses a supported template")
 }
 
 fn generated_dispatch_evidence_preservation_index(
-    context: &AbsentOwnerDispatchContext,
+    context: &GeneratedDispatchContext,
     rows: &[StoredGeneratedDocumentDispatchEvidence],
 ) -> GeneratedDispatchEvidencePreservationIndex {
     let status = dispatch_evidence_status_from_rows(context, rows);
@@ -3671,6 +3851,7 @@ struct NormalizedGeneratedDispatchEvidenceRequest {
 fn normalize_generated_dispatch_evidence_request(
     req: GeneratedDocumentDispatchEvidenceRequest,
     required_recipients: &[String],
+    profile: GeneratedDispatchEvidenceProfile,
 ) -> Result<NormalizedGeneratedDispatchEvidenceRequest, ApiError> {
     let actor = non_empty(Some(req.actor)).unwrap_or_else(|| "api".to_owned());
     let dispatched_at_raw = req.dispatched_at.trim();
@@ -3706,7 +3887,7 @@ fn normalize_generated_dispatch_evidence_request(
         MAX_DISPATCH_EVIDENCE_NOTE_CHARS,
     )?;
     let recipients =
-        normalize_absent_owner_dispatch_recipients(req.recipients, required_recipients)?;
+        normalize_generated_dispatch_recipients(req.recipients, required_recipients, profile)?;
     Ok(NormalizedGeneratedDispatchEvidenceRequest {
         actor,
         dispatched_at,
@@ -3719,18 +3900,20 @@ fn normalize_generated_dispatch_evidence_request(
     })
 }
 
-fn normalize_absent_owner_dispatch_recipients(
+fn normalize_generated_dispatch_recipients(
     recipients: Option<Vec<String>>,
     required_recipients: &[String],
+    profile: GeneratedDispatchEvidenceProfile,
 ) -> Result<Vec<String>, ApiError> {
     let required: BTreeSet<&str> = required_recipients.iter().map(String::as_str).collect();
     let Some(recipients) = recipients else {
         return Ok(required_recipients.to_vec());
     };
     if recipients.is_empty() {
-        return Err(ApiError::Unprocessable(
-            "recipients must name at least one absent attendee".to_owned(),
-        ));
+        return Err(ApiError::Unprocessable(format!(
+            "recipients must name at least one {}",
+            profile.recipient_error_label()
+        )));
     }
     let mut seen = BTreeSet::new();
     let mut selected = Vec::new();
@@ -3743,7 +3926,8 @@ fn normalize_absent_owner_dispatch_recipients(
         }
         if !required.contains(name) {
             return Err(ApiError::Unprocessable(format!(
-                "recipient {name:?} is not an absent attendee for this act"
+                "recipient {name:?} is not {} for this act",
+                profile.recipient_error_label_with_article()
             )));
         }
         if !seen.insert(name.to_owned()) {
@@ -3807,16 +3991,17 @@ fn generated_dispatch_evidence_idempotency_key(
 }
 
 fn generated_dispatch_evidence_event_payload(
-    context: &AbsentOwnerDispatchContext,
+    context: &GeneratedDispatchContext,
     evidence: &StoredGeneratedDocumentDispatchEvidence,
 ) -> Value {
-    json!({
+    let mut payload = json!({
         "document_id": &evidence.document_id,
         "act_id": evidence.act_id.to_string(),
         "template_id": &evidence.template_id,
         "idempotency_key": &evidence.idempotency_key,
-        "selected_absent_recipients": &evidence.recipients,
-        "required_absent_recipients": &context.required_recipients,
+        "dispatch_evidence_profile": context.profile.code(),
+        "selected_recipients": &evidence.recipients,
+        "required_recipients": &context.required_recipients,
         "metadata": {
             "actor": &evidence.actor,
             "dispatched_at": evidence.dispatched_at.format(&Rfc3339).unwrap_or_default(),
@@ -3831,7 +4016,32 @@ fn generated_dispatch_evidence_event_payload(
         "legal_sufficiency_claimed": false,
         "legal_notice_completion_claimed": false,
         "bytes_in_payload": false,
-    })
+    });
+    if let Some(obj) = payload.as_object_mut() {
+        match context.profile {
+            GeneratedDispatchEvidenceProfile::AbsentOwnerCommunication => {
+                obj.insert(
+                    "selected_absent_recipients".to_owned(),
+                    json!(&evidence.recipients),
+                );
+                obj.insert(
+                    "required_absent_recipients".to_owned(),
+                    json!(&context.required_recipients),
+                );
+            }
+            GeneratedDispatchEvidenceProfile::GeneratedConveningNotice => {
+                obj.insert(
+                    "selected_convening_recipients".to_owned(),
+                    json!(&evidence.recipients),
+                );
+                obj.insert(
+                    "required_convening_recipients".to_owned(),
+                    json!(&context.required_recipients),
+                );
+            }
+        }
+    }
+    payload
 }
 
 fn generated_dispatch_evidence_view(
@@ -7830,6 +8040,106 @@ mod tests {
         (actor, entity, book, act, ata, communication)
     }
 
+    async fn seed_generated_convening_dispatch_fixture(
+        state: &AppState,
+        recipient_names: Vec<&str>,
+    ) -> (
+        CurrentActor,
+        Entity,
+        Book,
+        Act,
+        StoredDocument,
+        StoredDocument,
+    ) {
+        let actor = seed_owner(state).await;
+        let entity = entity_of(EntityKind::SociedadeAnonima);
+        let mut book = Book::new(entity.id, BookKind::AssembleiaGeral);
+        book.state = chancela_core::BookState::Open;
+        let mut act = sealed_csc_act(&book);
+        act.convening = Some(Convening {
+            convener: Some("Ana Presidente".to_owned()),
+            convener_capacity: Some(SignatoryCapacity::Chair),
+            dispatch_date: Some(date!(2026 - 03 - 01)),
+            antecedence_days: Some(21),
+            channel: Some(DispatchChannel::Email),
+            evidence_reference: Some("convening-ledger:seed".to_owned()),
+            recipients: recipient_names
+                .into_iter()
+                .map(|name| ConveningRecipient {
+                    name: name.to_owned(),
+                    contact: None,
+                    channel: Some(DispatchChannel::Email),
+                    reference: None,
+                    dispatched_at: Some(date!(2026 - 03 - 01)),
+                })
+                .collect(),
+            second_call: None,
+        });
+        let ata = generate_for_act(&act, &entity, None)
+            .expect("ata generation ok")
+            .expect("ata document")
+            .stored;
+        let notice = generate_for_act_template(&act, &book, &entity, "csc-convocatoria-ag/v1")
+            .expect("convocatoria generation ok")
+            .stored;
+
+        let events = {
+            let mut ledger = state.ledger.write().await;
+            crate::try_append_event(
+                &mut ledger,
+                "document.owner",
+                &entity.id.to_string(),
+                "entity.created",
+                None,
+                b"entity",
+            )
+            .expect("entity genesis");
+            crate::try_append_event(
+                &mut ledger,
+                "document.owner",
+                &format!("entity:{}/book:{}", entity.id, book.id),
+                "book.opened",
+                None,
+                b"book",
+            )
+            .expect("book genesis");
+            crate::try_append_event(
+                &mut ledger,
+                "document.owner",
+                &format!("entity:{}/book:{}/act:{}", entity.id, book.id, act.id),
+                "act.sealed",
+                None,
+                b"act",
+            )
+            .expect("act genesis");
+            ledger.events().to_vec()
+        };
+        state
+            .store
+            .as_ref()
+            .expect("store")
+            .persist(|tx| {
+                for event in &events {
+                    tx.append_event(event)?;
+                }
+                tx.upsert_entity(&entity)?;
+                tx.upsert_book(&book)?;
+                tx.upsert_act(&act)?;
+                tx.upsert_document(&ata)?;
+                tx.upsert_document(&notice)
+            })
+            .expect("fixture persists");
+        state
+            .entities
+            .write()
+            .await
+            .insert(entity.id, entity.clone());
+        state.books.write().await.insert(book.id, book.clone());
+        state.acts.write().await.insert(act.id, act.clone());
+        state.documents.write().await.insert(act.id, ata.clone());
+        (actor, entity, book, act, ata, notice)
+    }
+
     fn absent_owner_dispatch_request(
         recipients: Vec<&str>,
     ) -> GeneratedDocumentDispatchEvidenceRequest {
@@ -7845,11 +8155,330 @@ mod tests {
         }
     }
 
+    fn generated_convening_dispatch_request(
+        recipients: Vec<&str>,
+    ) -> GeneratedDocumentDispatchEvidenceRequest {
+        GeneratedDocumentDispatchEvidenceRequest {
+            actor: "operator.fixture".to_owned(),
+            dispatched_at: "2026-03-01T09:00:00Z".to_owned(),
+            channel: Some(DispatchChannel::Email),
+            reference: Some(format!("MSG-{}", recipients.join("-"))),
+            recipients: Some(recipients.into_iter().map(str::to_owned).collect()),
+            evidence_reference: Some("archive:convening-notice-dispatch".to_owned()),
+            imported_document_id: None,
+            operator_note: Some(
+                "Generated convening notice operator note must not enter the ledger.".to_owned(),
+            ),
+        }
+    }
+
     async fn response_json(response: Response) -> Value {
         let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
             .await
             .expect("response body");
         serde_json::from_slice(&bytes).expect("json body")
+    }
+
+    #[tokio::test]
+    async fn generated_convening_notice_dispatch_evidence_records_partial_covered_idempotently_and_preserves_act_pdf()
+     {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.path());
+        let (actor, _entity, _book, act, ata, notice) =
+            seed_generated_convening_dispatch_fixture(&state, vec!["Ana Sócia", "Bruno Sócio"])
+                .await;
+        let act_before = act.clone();
+        let ledger_before = state.ledger.read().await.len();
+
+        let Json(generated) =
+            list_generated_documents_for_act(State(state.clone()), Path(act.id.0), actor.clone())
+                .await
+                .expect("generated documents list");
+        let notice_view = generated
+            .iter()
+            .find(|doc| doc.id == notice.id)
+            .expect("generated convening notice view");
+        let status = notice_view
+            .dispatch_evidence_status
+            .as_ref()
+            .expect("dispatch status present for generated convocatória");
+        assert_eq!(status.status, "required_pending");
+        assert_eq!(
+            status.required_recipients,
+            vec!["Ana Sócia".to_owned(), "Bruno Sócio".to_owned()]
+        );
+        assert_eq!(status.dispatch_completed, false);
+        assert_eq!(status.completion_basis, "none");
+        assert!(
+            status
+                .note
+                .contains("no sending, delivery, legal notice completion, or legal sufficiency")
+        );
+
+        let partial = record_generated_document_dispatch_evidence(
+            State(state.clone()),
+            actor.clone(),
+            CurrentAttestor::default(),
+            Path(notice.id.clone()),
+            Json(generated_convening_dispatch_request(vec!["Ana Sócia"])),
+        )
+        .await
+        .expect("partial generated convening evidence recorded");
+        assert_eq!(partial.status(), StatusCode::CREATED);
+        let partial_body = response_json(partial).await;
+        assert_eq!(
+            partial_body["dispatch_evidence_status"]["status"],
+            "operator_evidence_partial"
+        );
+        assert_eq!(
+            partial_body["dispatch_evidence_status"]["recorded_recipients"],
+            json!(["Ana Sócia"])
+        );
+        assert_eq!(
+            partial_body["dispatch_evidence_status"]["missing_recipients"],
+            json!(["Bruno Sócio"])
+        );
+        assert_eq!(
+            partial_body["dispatch_evidence_status"]["dispatch_completed"],
+            false
+        );
+        assert_eq!(
+            partial_body["dispatch_evidence_status"]["completion_basis"],
+            "none"
+        );
+        for flag in [
+            "sending_performed_by_chancela",
+            "delivery_confirmed",
+            "legal_sufficiency_claimed",
+            "legal_notice_completion_claimed",
+            "bytes_in_payload",
+        ] {
+            assert_eq!(
+                partial_body["evidence"][flag], false,
+                "{flag} must remain false"
+            );
+        }
+
+        let covered_request = generated_convening_dispatch_request(vec!["Bruno Sócio"]);
+        let covered = record_generated_document_dispatch_evidence(
+            State(state.clone()),
+            actor.clone(),
+            CurrentAttestor::default(),
+            Path(notice.id.clone()),
+            Json(covered_request.clone()),
+        )
+        .await
+        .expect("covered generated convening evidence recorded");
+        assert_eq!(covered.status(), StatusCode::CREATED);
+        let covered_body = response_json(covered).await;
+        assert_eq!(
+            covered_body["dispatch_evidence_status"]["status"],
+            "operator_evidence_covered"
+        );
+        assert_eq!(
+            covered_body["dispatch_evidence_status"]["recorded_recipients"],
+            json!(["Ana Sócia", "Bruno Sócio"])
+        );
+        assert_eq!(
+            covered_body["dispatch_evidence_status"]["missing_recipients"],
+            json!([])
+        );
+        assert_eq!(
+            covered_body["dispatch_evidence_status"]["dispatch_completed"],
+            false
+        );
+        assert_eq!(
+            covered_body["dispatch_evidence_status"]["completion_basis"],
+            "none"
+        );
+
+        let ledger_after_second = state.ledger.read().await.len();
+        assert_eq!(ledger_after_second, ledger_before + 2);
+        assert_eq!(
+            state
+                .ledger
+                .read()
+                .await
+                .events()
+                .iter()
+                .filter(|event| event.kind == GENERATED_DOCUMENT_DISPATCH_EVIDENCE_EVENT_KIND)
+                .count(),
+            2,
+            "generated convening evidence uses the generated-document event kind"
+        );
+
+        let retry = record_generated_document_dispatch_evidence(
+            State(state.clone()),
+            actor.clone(),
+            CurrentAttestor::default(),
+            Path(notice.id.clone()),
+            Json(covered_request),
+        )
+        .await
+        .expect("exact generated convening retry returns existing row");
+        assert_eq!(retry.status(), StatusCode::OK);
+        assert_eq!(
+            state.ledger.read().await.len(),
+            ledger_after_second,
+            "exact retry must not append another ledger event"
+        );
+
+        let list = get_generated_document_dispatch_evidence(
+            State(state.clone()),
+            Path(notice.id.clone()),
+            actor.clone(),
+        )
+        .await
+        .expect("dispatch evidence list")
+        .0;
+        assert_eq!(
+            list.dispatch_evidence_status.status,
+            "operator_evidence_covered"
+        );
+        assert_eq!(list.evidence.len(), 2);
+
+        let canonical = load_document(&state, act.id)
+            .await
+            .expect("canonical load")
+            .expect("canonical ata");
+        assert_eq!(canonical.id, ata.id);
+        assert_eq!(canonical.pdf_digest, ata.pdf_digest);
+        assert_eq!(canonical.pdf_bytes, ata.pdf_bytes);
+        assert_eq!(
+            state.acts.read().await.get(&act.id),
+            Some(&act_before),
+            "recording generated-document dispatch evidence must not mutate the act"
+        );
+        let generated_pdf =
+            get_generated_document_pdf(State(state.clone()), Path(notice.id.clone()), actor)
+                .await
+                .expect("generated notice PDF response");
+        assert_eq!(
+            generated_pdf
+                .headers()
+                .get("x-chancela-dispatch-evidence-status")
+                .and_then(|v| v.to_str().ok()),
+            Some("operator_evidence_covered")
+        );
+        assert_eq!(
+            generated_pdf
+                .headers()
+                .get("x-chancela-dispatch-completed")
+                .and_then(|v| v.to_str().ok()),
+            Some("false")
+        );
+        let generated_bytes = axum::body::to_bytes(generated_pdf.into_body(), usize::MAX)
+            .await
+            .expect("generated notice PDF body");
+        assert_eq!(generated_bytes.as_ref(), notice.pdf_bytes.as_slice());
+
+        let rows = state
+            .store
+            .as_ref()
+            .expect("store")
+            .generated_document_dispatch_evidence(&notice.id)
+            .expect("evidence rows");
+        let context = generated_dispatch_context_for_doc(&state, notice)
+            .await
+            .expect("generated convening context");
+        let payload = generated_dispatch_evidence_event_payload(&context, &rows[0]);
+        assert_eq!(
+            payload["dispatch_evidence_profile"],
+            "generated_convening_notice"
+        );
+        assert_eq!(
+            payload["required_convening_recipients"],
+            json!(["Ana Sócia", "Bruno Sócio"])
+        );
+        assert_eq!(
+            payload["selected_convening_recipients"],
+            json!(["Ana Sócia"])
+        );
+        assert_eq!(payload["sending_performed_by_chancela"], false);
+        assert_eq!(payload["delivery_confirmed"], false);
+        assert_eq!(payload["legal_sufficiency_claimed"], false);
+        assert_eq!(payload["legal_notice_completion_claimed"], false);
+        assert_eq!(payload["bytes_in_payload"], false);
+        assert_eq!(payload["metadata"]["operator_note_in_payload"], false);
+        assert!(
+            !payload
+                .to_string()
+                .contains("Generated convening notice operator note"),
+            "operator note must not be serialized into ledger payload: {payload}"
+        );
+    }
+
+    #[tokio::test]
+    async fn generated_convening_notice_dispatch_evidence_unavailable_and_rejected_without_convening_recipients()
+     {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.path());
+        let (actor, _entity, _book, act, _ata, notice) =
+            seed_generated_convening_dispatch_fixture(&state, Vec::new()).await;
+        let ledger_before = state.ledger.read().await.len();
+
+        let Json(generated) =
+            list_generated_documents_for_act(State(state.clone()), Path(act.id.0), actor.clone())
+                .await
+                .expect("generated documents list");
+        let notice_view = generated
+            .iter()
+            .find(|doc| doc.id == notice.id)
+            .expect("generated convening notice view");
+        assert!(
+            notice_view.dispatch_evidence_status.is_none(),
+            "generated convening notice without recipients should not expose dispatch evidence UI status"
+        );
+
+        let pdf_response = get_generated_document_pdf(
+            State(state.clone()),
+            Path(notice.id.clone()),
+            actor.clone(),
+        )
+        .await
+        .expect("generated notice PDF response");
+        assert!(
+            pdf_response
+                .headers()
+                .get("x-chancela-dispatch-evidence-status")
+                .is_none(),
+            "unavailable dispatch status must not be advertised on the generated PDF"
+        );
+
+        let get_err = match get_generated_document_dispatch_evidence(
+            State(state.clone()),
+            Path(notice.id.clone()),
+            actor.clone(),
+        )
+        .await
+        {
+            Ok(_) => panic!("GET dispatch evidence should require convening recipients"),
+            Err(err) => err,
+        };
+        assert!(
+            matches!(get_err, ApiError::Unprocessable(message) if message.contains("no convening recipients"))
+        );
+
+        let post_err = match record_generated_document_dispatch_evidence(
+            State(state.clone()),
+            actor,
+            CurrentAttestor::default(),
+            Path(notice.id),
+            Json(generated_convening_dispatch_request(vec!["Ana Sócia"])),
+        )
+        .await
+        {
+            Ok(_) => panic!("POST dispatch evidence should require convening recipients"),
+            Err(err) => err,
+        };
+        assert!(
+            matches!(post_err, ApiError::Unprocessable(message) if message.contains("no convening recipients"))
+        );
+        assert_eq!(
+            state.ledger.read().await.len(),
+            ledger_before,
+            "unavailable generated convening evidence path must not append ledger events"
+        );
     }
 
     #[tokio::test]
@@ -7966,7 +8595,7 @@ mod tests {
             .generated_document_dispatch_evidence(&communication.id)
             .expect("evidence rows");
         assert_eq!(rows.len(), 1);
-        let context = absent_owner_dispatch_context_for_doc(&state, communication)
+        let context = generated_dispatch_context_for_doc(&state, communication)
             .await
             .expect("dispatch context");
         let payload = generated_dispatch_evidence_event_payload(&context, &rows[0]);

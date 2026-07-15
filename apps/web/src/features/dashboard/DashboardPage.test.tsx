@@ -1051,6 +1051,72 @@ describe('DashboardPage', () => {
     ).toBeTruthy();
   });
 
+  it('routes generated-convening dispatch evidence reminders to the generated document workflow', async () => {
+    const dashboard: Dashboard = {
+      ...baseDashboard,
+      reminders: [
+        {
+          due_date: '',
+          severity: 'Advisory',
+          status: 'Pending',
+          reason:
+            'Generated convening notice metadata is partial; no sending, delivery, legal notice completion, or legal sufficiency is claimed.',
+          entity_id: 'entity-1',
+          entity_name: 'Condomínio Acme',
+          source_rule: 'generated-convening-dispatch-evidence',
+          source_profile: 'generated-convening-notice',
+          params: {
+            act_id: 'act-conv-1',
+            act_title: 'Ata convocada',
+            book_id: 'book-1',
+            generated_document_id: 'generated-conv-1',
+            template_id: 'condominio-aviso-convocatoria/v1',
+            dispatch_evidence_status: 'operator_evidence_partial',
+            required_recipient_count: '2',
+            recorded_recipient_count: '1',
+            missing_recipient_count: '1',
+            missing_recipients: 'Bruno Sócio',
+            dispatch_completed: 'false',
+            completion_basis: 'none',
+            sending_performed_by_chancela: 'false',
+            delivery_confirmed: 'false',
+            legal_notice_completion_claimed: 'false',
+            legal_sufficiency_claimed: 'false',
+          },
+          action: {
+            kind: 'open_generated_convening_dispatch_evidence',
+            label_key: 'notifications.reminder.absentOwnerDispatch.action',
+            api_href: '/v1/documents/generated/generated-conv-1/dispatch-evidence',
+            route: '/atas/act-conv-1',
+          },
+          i18n: null,
+        },
+      ],
+    };
+
+    vi.stubGlobal('fetch', fetchTable([{ match: '/v1/dashboard', body: dashboard }]));
+    renderDashboard();
+    await openDashboardTab('Fila de trabalho');
+
+    const queue = await screen.findByRole('list', { name: 'Fila de trabalho do painel' });
+    const item = within(queue).getByRole('listitem');
+    expect(
+      within(item).getByText(
+        'Generated convening notice metadata is partial; no sending, delivery, legal notice completion, or legal sufficiency is claimed.',
+      ),
+    ).toBeTruthy();
+    expect(
+      within(item).getByText(
+        'Fonte generated-convening-dispatch-evidence / generated-convening-notice',
+      ),
+    ).toBeTruthy();
+    expect(within(item).queryByText('Entrega confirmada')).toBeNull();
+    expect(within(item).queryByText('Workflow concluído')).toBeNull();
+    expect(within(item).getByRole('link').getAttribute('href')).toBe(
+      '/atas/act-conv-1?generated_document_id=generated-conv-1&focus=dispatch-evidence#generated-dispatch-evidence',
+    );
+  });
+
   it('renders imported-document review reminders with localized deep-link routing', async () => {
     const dashboard: Dashboard = {
       ...baseDashboard,

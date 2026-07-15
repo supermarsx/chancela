@@ -197,16 +197,15 @@ async fn load_generated_dispatch_evidence_snapshots(
 ) -> Result<Vec<GeneratedDispatchEvidenceSnapshot>, ApiError> {
     if let Some(store) = &state.store {
         let mut snapshots = Vec::new();
-        for act in acts
-            .values()
-            .filter(|act| act.state == ActState::Sealed && act.ata_number.is_some())
-        {
+        for act in acts.values() {
             let docs = store
                 .documents_for_act(act.id)
                 .map_err(|e| ApiError::Internal(format!("document store read failed: {e}")))?;
             for document in docs.into_iter().filter(|document| {
-                document.template_id
-                    == crate::documents::CONDOMINIUM_ABSENT_OWNER_COMMUNICATION_TEMPLATE_ID
+                crate::documents::generated_dispatch_evidence_profile_for_template(
+                    &document.template_id,
+                )
+                .is_some()
             }) {
                 let evidence = store
                     .generated_document_dispatch_evidence(&document.id)
@@ -225,8 +224,10 @@ async fn load_generated_dispatch_evidence_snapshots(
         .await
         .values()
         .filter(|document| {
-            document.template_id
-                == crate::documents::CONDOMINIUM_ABSENT_OWNER_COMMUNICATION_TEMPLATE_ID
+            crate::documents::generated_dispatch_evidence_profile_for_template(
+                &document.template_id,
+            )
+            .is_some()
                 && acts.contains_key(&document.act_id)
         })
         .cloned()
@@ -1387,6 +1388,12 @@ fn dashboard_reminders_with_generated_dispatch_evidence(
         acts,
         generated_dispatch_evidence,
     ));
+    reminders.extend(generated_convening_dispatch_evidence_reminders(
+        entities,
+        books,
+        acts,
+        generated_dispatch_evidence,
+    ));
     reminders.extend(imported_document_review_reminders(
         entities,
         books,
@@ -2046,6 +2053,154 @@ fn absent_owner_dispatch_evidence_dashboard_reminder(
             "notifications.reminder.absentOwnerDispatch.body",
             Some("notifications.reminder.absentOwnerDispatch.action"),
         )),
+    }
+}
+
+fn generated_convening_dispatch_evidence_reminders(
+    entities: &HashMap<EntityId, Entity>,
+    books: &HashMap<BookId, Book>,
+    acts: &HashMap<ActId, Act>,
+    generated_dispatch_evidence: &[GeneratedDispatchEvidenceSnapshot],
+) -> Vec<DashboardReminder> {
+    generated_dispatch_evidence
+        .iter()
+        .filter_map(|snapshot| {
+            generated_convening_dispatch_evidence_reminder(entities, books, acts, snapshot)
+        })
+        .collect()
+}
+
+fn generated_convening_dispatch_evidence_reminder(
+    entities: &HashMap<EntityId, Entity>,
+    books: &HashMap<BookId, Book>,
+    acts: &HashMap<ActId, Act>,
+    snapshot: &GeneratedDispatchEvidenceSnapshot,
+) -> Option<DashboardReminder> {
+    let document = &snapshot.document;
+    if !matches!(
+        crate::documents::generated_dispatch_evidence_profile_for_template(&document.template_id),
+        Some(crate::documents::GeneratedDispatchEvidenceProfile::GeneratedConveningNotice)
+    ) {
+        return None;
+    }
+    let act = acts.get(&document.act_id)?;
+    let book = books.get(&act.book_id)?;
+    let entity = entities.get(&book.entity_id)?;
+    let required_recipients =
+        crate::documents::generated_dispatch_required_recipient_names(act, &document.template_id)?;
+    if required_recipients.is_empty() {
+        return None;
+    }
+    let recorded_recipients = snapshot
+        .evidence
+        .iter()
+        .filter(|row| {
+            row.document_id == document.id
+                && row.act_id == document.act_id
+                && row.template_id == document.template_id
+        })
+        .flat_map(|row| row.recipients.iter().cloned())
+        .collect::<Vec<_>>();
+    let dispatch_status = crate::documents::dispatch_evidence_status_for_template(
+        &document.template_id,
+        &required_recipients,
+        &recorded_recipients,
+    )?;
+    if !matches!(
+        dispatch_status.status.as_str(),
+        "required_pending" | "operator_evidence_partial"
+    ) {
+        return None;
+    }
+
+    Some(generated_convening_dispatch_evidence_dashboard_reminder(
+        entity,
+        book,
+        act,
+        document,
+        &dispatch_status,
+        snapshot.evidence.len(),
+    ))
+}
+
+fn generated_convening_dispatch_evidence_dashboard_reminder(
+    entity: &Entity,
+    book: &Book,
+    act: &Act,
+    document: &StoredDocument,
+    dispatch_status: &crate::documents::DispatchEvidenceStatusView,
+    evidence_row_count: usize,
+) -> DashboardReminder {
+    let required_count = dispatch_status.required_recipients.len();
+    let recorded_count = dispatch_status.recorded_recipients.len();
+    let missing_count = dispatch_status.missing_recipients.len();
+    let missing_recipients = dispatch_status.missing_recipients.join(", ");
+
+    DashboardReminder {
+        due_date: String::new(),
+        severity: "Advisory".to_owned(),
+        status: "Pending".to_owned(),
+        reason: format!(
+            "Generated convening notice document {} for act \"{}\" has dispatch evidence status \
+             {}. This dashboard reminder is advisory only and records operator metadata for \
+             selected required recipients; it does not claim sending, delivery, legal notice \
+             completion, or legal sufficiency.",
+            document.id, act.title, dispatch_status.status
+        ),
+        entity_id: entity.id.to_string(),
+        entity_name: entity.name.clone(),
+        source_rule: "generated-convening-dispatch-evidence".to_owned(),
+        source_profile: "generated-convening-notice".to_owned(),
+        params: dashboard_alert_params([
+            ("act_id", act.id.to_string()),
+            ("act_title", act.title.clone()),
+            ("book_id", book.id.to_string()),
+            ("entity_id", entity.id.to_string()),
+            ("entity_name", entity.name.clone()),
+            ("document_id", document.id.clone()),
+            ("generated_document_id", document.id.clone()),
+            ("template_id", document.template_id.clone()),
+            ("dispatch_evidence_status", dispatch_status.status.clone()),
+            ("required_recipient_count", required_count.to_string()),
+            ("recorded_recipient_count", recorded_count.to_string()),
+            ("missing_recipient_count", missing_count.to_string()),
+            (
+                "required_recipients",
+                dispatch_status.required_recipients.join(", "),
+            ),
+            (
+                "recorded_recipients",
+                dispatch_status.recorded_recipients.join(", "),
+            ),
+            ("missing_recipients", missing_recipients),
+            ("evidence_row_count", evidence_row_count.to_string()),
+            ("dispatch_completed", "false".to_owned()),
+            ("completion_basis", "none".to_owned()),
+            ("sending_performed_by_chancela", "false".to_owned()),
+            ("delivery_confirmed", "false".to_owned()),
+            ("legal_notice_completion_claimed", "false".to_owned()),
+            ("legal_sufficiency_claimed", "false".to_owned()),
+        ]),
+        profile_calendar_plan: None,
+        law_refs: Vec::new(),
+        action: Some(dashboard_action(
+            "open_generated_convening_dispatch_evidence",
+            "notifications.reminder.absentOwnerDispatch.action",
+            Some(format!(
+                "/v1/documents/generated/{}/dispatch-evidence",
+                document.id
+            )),
+            Some(format!(
+                "/atas/{}?generated_document_id={}&focus=dispatch-evidence#generated-dispatch-evidence",
+                act.id, document.id
+            )),
+        )),
+        recommended_next_steps: vec![
+            "Open the generated convening notice dispatch evidence workflow.".to_owned(),
+            "Record operator dispatch evidence for the missing required recipients when available."
+                .to_owned(),
+        ],
+        i18n: None,
     }
 }
 
@@ -2831,8 +2986,9 @@ mod tests {
     };
     use crate::settings::{BackupRecoveryPolicySettings, WorkflowReminderSourceSettings};
     use chancela_core::{
-        AttendanceWeight, Attendee, Convening, LegalHold, MeetingChannel, Nipc, NumberingScheme,
-        PresenceMode, SignatoryCapacity, StatuteOverrides, TermoDeAbertura,
+        AttendanceWeight, Attendee, Convening, ConveningRecipient, DispatchChannel, LegalHold,
+        MeetingChannel, Nipc, NumberingScheme, PresenceMode, SignatoryCapacity, StatuteOverrides,
+        TermoDeAbertura,
     };
     use chancela_registry::{RegistryExtract, RegistryOfficer, RegistryProvenance};
     use time::macros::date;
@@ -3290,11 +3446,108 @@ mod tests {
         )
     }
 
+    fn generated_convening_dispatch_fixture(
+        evidence_recipients: &[&str],
+    ) -> SealedCondominiumDispatchFixture {
+        let entity = entity_of(EntityKind::SociedadeAnonima);
+        let mut book = Book::new(entity.id, BookKind::AssembleiaGeral);
+        book.state = BookState::Open;
+        let mut act = Act::draft(
+            book.id,
+            "Ata da assembleia geral anual",
+            MeetingChannel::Physical,
+        );
+        act.state = ActState::Review;
+        act.meeting_date = Some(date!(2026 - 03 - 30));
+        act.convening = Some(Convening {
+            dispatch_date: Some(date!(2026 - 03 - 01)),
+            antecedence_days: Some(21),
+            channel: Some(DispatchChannel::Email),
+            recipients: vec![
+                ConveningRecipient {
+                    name: "Ana Sócia".to_owned(),
+                    contact: None,
+                    channel: Some(DispatchChannel::Email),
+                    reference: None,
+                    dispatched_at: Some(date!(2026 - 03 - 01)),
+                },
+                ConveningRecipient {
+                    name: "Bruno Sócio".to_owned(),
+                    contact: None,
+                    channel: Some(DispatchChannel::Email),
+                    reference: None,
+                    dispatched_at: Some(date!(2026 - 03 - 01)),
+                },
+            ],
+            ..Convening::default()
+        });
+        let document = StoredDocument {
+            id: "generated-convening-notice-1".to_owned(),
+            act_id: act.id,
+            template_id: "csc-convocatoria-ag/v1".to_owned(),
+            pdf_digest: "cd".repeat(32),
+            profile: crate::documents::PDFA_PROFILE.to_owned(),
+            created_at: OffsetDateTime::UNIX_EPOCH,
+            pdf_bytes: b"%PDF-1.7\ngenerated-convening-notice".to_vec(),
+        };
+        let evidence = if evidence_recipients.is_empty() {
+            Vec::new()
+        } else {
+            vec![StoredGeneratedDocumentDispatchEvidence {
+                document_id: document.id.clone(),
+                idempotency_key: "generated-convening-dispatch-evidence-key-1".to_owned(),
+                act_id: document.act_id,
+                template_id: document.template_id.clone(),
+                actor: "operator.fixture".to_owned(),
+                dispatched_at: OffsetDateTime::UNIX_EPOCH,
+                channel: Some("Email".to_owned()),
+                reference: Some("MSG-1".to_owned()),
+                evidence_reference: Some("archive:convening-proof-1".to_owned()),
+                imported_document_id: None,
+                recipients: evidence_recipients
+                    .iter()
+                    .map(|name| (*name).to_owned())
+                    .collect(),
+                operator_note: Some("Operator-recorded external locator only.".to_owned()),
+                recorded_at: OffsetDateTime::UNIX_EPOCH,
+            }]
+        };
+
+        (
+            HashMap::from([(entity.id, entity)]),
+            HashMap::from([(book.id, book)]),
+            HashMap::from([(act.id, act)]),
+            vec![GeneratedDispatchEvidenceSnapshot { document, evidence }],
+        )
+    }
+
     fn reminders_for_generated_dispatch_evidence(
         evidence_recipients: &[&str],
     ) -> Vec<DashboardReminder> {
         let (entities, books, acts, generated_dispatch_evidence) =
             sealed_condominium_dispatch_fixture(evidence_recipients);
+        dashboard_reminders_with_generated_dispatch_evidence(
+            ReminderInputs {
+                entities: &entities,
+                books: &books,
+                acts: &acts,
+                follow_ups: &HashMap::new(),
+                generated_dispatch_evidence: &generated_dispatch_evidence,
+                imported_documents: &[],
+                registry_extracts: &HashMap::new(),
+                breach_playbooks: &HashMap::new(),
+                transfer_controls: &HashMap::new(),
+            },
+            date!(2026 - 07 - 09),
+            &WorkflowReminderSettings::default(),
+        )
+    }
+
+    fn reminders_for_generated_convening_dispatch_evidence(
+        evidence_recipients: &[&str],
+    ) -> Vec<DashboardReminder> {
+        let (entities, books, acts, generated_dispatch_evidence) =
+            generated_convening_dispatch_fixture(evidence_recipients);
         dashboard_reminders_with_generated_dispatch_evidence(
             ReminderInputs {
                 entities: &entities,
@@ -5108,6 +5361,145 @@ mod tests {
             reminders
                 .iter()
                 .all(|reminder| reminder.source_rule != "absent-owner-dispatch-evidence")
+        );
+    }
+
+    #[test]
+    fn reminder_generated_convening_dispatch_evidence_pending_routes_to_generated_notice_workflow()
+    {
+        let reminders = reminders_for_generated_convening_dispatch_evidence(&[]);
+
+        let generated_convening_reminders = reminders
+            .iter()
+            .filter(|reminder| reminder.source_rule == "generated-convening-dispatch-evidence")
+            .collect::<Vec<_>>();
+        assert_eq!(generated_convening_reminders.len(), 1);
+        let reminder = generated_convening_reminders[0];
+        let act_id = reminder.params.get("act_id").expect("act_id param");
+        let document_id = reminder
+            .params
+            .get("generated_document_id")
+            .expect("generated document id param");
+        assert_eq!(reminder.source_profile, "generated-convening-notice");
+        assert_eq!(reminder.due_date, "");
+        assert_eq!(reminder.status, "Pending");
+        assert_eq!(reminder.severity, "Advisory");
+        assert_eq!(
+            reminder
+                .params
+                .get("dispatch_evidence_status")
+                .map(String::as_str),
+            Some("required_pending")
+        );
+        assert_eq!(
+            reminder
+                .params
+                .get("required_recipient_count")
+                .map(String::as_str),
+            Some("2")
+        );
+        assert_eq!(
+            reminder
+                .params
+                .get("recorded_recipient_count")
+                .map(String::as_str),
+            Some("0")
+        );
+        assert_eq!(
+            reminder
+                .params
+                .get("missing_recipients")
+                .map(String::as_str),
+            Some("Ana Sócia, Bruno Sócio")
+        );
+        for key in [
+            "dispatch_completed",
+            "sending_performed_by_chancela",
+            "delivery_confirmed",
+            "legal_notice_completion_claimed",
+            "legal_sufficiency_claimed",
+        ] {
+            assert_eq!(
+                reminder.params.get(key).map(String::as_str),
+                Some("false"),
+                "{key} must remain false"
+            );
+        }
+        assert_eq!(
+            reminder.params.get("completion_basis").map(String::as_str),
+            Some("none")
+        );
+        assert_eq!(
+            reminder
+                .action
+                .as_ref()
+                .map(|action| (action.kind.as_str(), action.route.as_deref())),
+            Some((
+                "open_generated_convening_dispatch_evidence",
+                Some(
+                    format!(
+                        "/atas/{act_id}?generated_document_id={document_id}&focus=dispatch-evidence#generated-dispatch-evidence"
+                    )
+                    .as_str()
+                )
+            ))
+        );
+        assert_eq!(
+            reminder
+                .action
+                .as_ref()
+                .and_then(|action| action.api_href.as_deref()),
+            Some("/v1/documents/generated/generated-convening-notice-1/dispatch-evidence")
+        );
+        assert!(
+            reminder
+                .reason
+                .contains("Generated convening notice document")
+                && reminder.reason.contains("does not claim sending, delivery"),
+            "reason must stay generated-convening and no-claim scoped: {reminder:?}"
+        );
+        assert!(
+            reminder.i18n.is_none(),
+            "generated-convening reminders must not reuse absent-owner body text"
+        );
+    }
+
+    #[test]
+    fn reminder_generated_convening_dispatch_evidence_partial_and_covered_statuses() {
+        let partial = reminders_for_generated_convening_dispatch_evidence(&["Ana Sócia"]);
+        let reminder = partial
+            .iter()
+            .find(|reminder| reminder.source_rule == "generated-convening-dispatch-evidence")
+            .unwrap_or_else(|| panic!("missing partial generated-convening reminder: {partial:?}"));
+        assert_eq!(
+            reminder
+                .params
+                .get("dispatch_evidence_status")
+                .map(String::as_str),
+            Some("operator_evidence_partial")
+        );
+        assert_eq!(
+            reminder
+                .params
+                .get("recorded_recipients")
+                .map(String::as_str),
+            Some("Ana Sócia")
+        );
+        assert_eq!(
+            reminder
+                .params
+                .get("missing_recipients")
+                .map(String::as_str),
+            Some("Bruno Sócio")
+        );
+
+        let covered =
+            reminders_for_generated_convening_dispatch_evidence(&["Ana Sócia", "Bruno Sócio"]);
+        assert!(
+            covered.iter().all(|reminder| {
+                reminder.source_rule != "generated-convening-dispatch-evidence"
+            }),
+            "covered generated-convening evidence should suppress reminder: {covered:?}"
         );
     }
 

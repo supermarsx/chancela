@@ -210,7 +210,6 @@ function buildImportedDocumentReviewOptions(t: TFunction): {
   ];
 }
 
-const ABSENT_OWNER_COMMUNICATION_TEMPLATE_ID = 'condominio-comunicacao-ausentes/v1';
 const DISPATCH_EVIDENCE_NOTE_LIMIT = 2000;
 const EMPTY_GENERATED_RECIPIENTS: string[] = [];
 
@@ -1899,7 +1898,8 @@ export function ActDocumentPanel({
   const reviewScope = scopeBook(act.book_id);
   const preview = useActDocumentPreview(act.id, open);
   const bundle = useActDocumentBundle(act.id, sealed);
-  const generatedDocuments = useGeneratedDocuments(act.id, sealed);
+  const generatedDocuments = useGeneratedDocuments(act.id, !!act.id);
+  const convocatoriaTemplates = useTemplates(family, 'Convocatoria', !!family);
   const certidaoTemplates = useTemplates(family, 'Certidao', sealed && !!family);
   const extratoTemplates = useTemplates(family, 'Extrato', sealed && !!family);
   const download = useDownloadActDocument(act.id);
@@ -1945,7 +1945,16 @@ export function ActDocumentPanel({
   const importedDocumentFocusTarget = target?.focus === 'import-review' ? 'import-review' : null;
   const importList = importedDocuments.data ?? [];
   const generatedDocumentList = generatedDocuments.data ?? [];
-  const postActTemplates = [...(certidaoTemplates.data ?? []), ...(extratoTemplates.data ?? [])];
+  const generatedTemplateQueries = sealed
+    ? [convocatoriaTemplates, certidaoTemplates, extratoTemplates]
+    : [convocatoriaTemplates];
+  const generatedTemplateLoading = generatedTemplateQueries.some((query) => query.isLoading);
+  const generatedTemplateError =
+    generatedTemplateQueries.find((query) => query.error)?.error ?? null;
+  const postActTemplates = [
+    ...(convocatoriaTemplates.data ?? []),
+    ...(sealed ? [...(certidaoTemplates.data ?? []), ...(extratoTemplates.data ?? [])] : []),
+  ];
   const postActTemplateOptions = postActTemplates.map((template) => ({
     value: template.id,
     label: `${lifecycleStageLabel(template.stage, t)} - ${template.id}`,
@@ -1953,7 +1962,7 @@ export function ActDocumentPanel({
   const selectedGeneratedDocument =
     generatedDocumentList.find((document) => document.id === selectedGeneratedDocumentId) ?? null;
   const selectedGeneratedDocumentSupportsDispatch =
-    selectedGeneratedDocument?.template_id === ABSENT_OWNER_COMMUNICATION_TEMPLATE_ID;
+    selectedGeneratedDocument?.dispatch_evidence_status != null;
   const generatedEvidence = useGeneratedDocumentDispatchEvidence(
     selectedGeneratedDocumentSupportsDispatch ? selectedGeneratedDocument?.id : null,
   );
@@ -1980,7 +1989,7 @@ export function ActDocumentPanel({
   }, [selectedImportReviewId, selectedImportReviewStatus, selectedImportReviewNote]);
 
   useEffect(() => {
-    if (!sealed || generatedDocumentList.length === 0) {
+    if (generatedDocumentList.length === 0) {
       setSelectedGeneratedDocumentId(null);
       return;
     }
@@ -1990,20 +1999,20 @@ export function ActDocumentPanel({
     ) {
       setSelectedGeneratedDocumentId(generatedDocumentList[0].id);
     }
-  }, [sealed, generatedDocumentList, selectedGeneratedDocumentId]);
+  }, [generatedDocumentList, selectedGeneratedDocumentId]);
 
   useEffect(() => {
-    if (!sealed || postActTemplateOptions.length === 0) {
+    if (postActTemplateOptions.length === 0) {
       setSelectedPostActTemplateId('');
       return;
     }
     if (!postActTemplateOptions.some((option) => option.value === selectedPostActTemplateId)) {
       setSelectedPostActTemplateId(postActTemplateOptions[0].value);
     }
-  }, [sealed, postActTemplateOptions, selectedPostActTemplateId]);
+  }, [postActTemplateOptions, selectedPostActTemplateId]);
 
   useEffect(() => {
-    if (!sealed || generatedDocuments.isLoading || !generatedDocumentTargetId) return;
+    if (generatedDocuments.isLoading || !generatedDocumentTargetId) return;
 
     const targetKey = `${act.id}:${generatedDocumentTargetId}:${generatedDocumentFocusTarget ?? ''}`;
     if (handledGeneratedTargetRef.current === targetKey) return;
@@ -2033,7 +2042,6 @@ export function ActDocumentPanel({
     handledGeneratedTargetRef.current = targetKey;
   }, [
     act.id,
-    sealed,
     generatedDocuments.isLoading,
     generatedDocumentList,
     generatedDocumentTargetId,
@@ -2430,23 +2438,23 @@ export function ActDocumentPanel({
           ) : null
         ) : null}
 
-        {sealed ? (
+        {family || generatedDocumentList.length > 0 || generatedDocuments.isLoading || generatedDocuments.error ? (
           <section className="stack--tight" aria-label={t('documents.generated.sectionAria')}>
             {family ? (
               <div className="stack--tight">
                 <div className="section-head">
                   <div className="stack--tight">
-                    <p className="card__label">Minutas pós-ato</p>
+                    <p className="card__label">Minutas geradas</p>
                     <p className="field__hint">
-                      Gere certidões e extratos a partir da ata selada, sem substituir o PDF/A
-                      canónico.
+                      Gere convocatórias e, após o selo, certidões e extratos sem substituir o
+                      PDF/A canónico.
                     </p>
                   </div>
                 </div>
-                {certidaoTemplates.isLoading || extratoTemplates.isLoading ? (
+                {generatedTemplateLoading ? (
                   <Skeleton height="2.4rem" />
-                ) : certidaoTemplates.error || extratoTemplates.error ? (
-                  <ErrorNote error={certidaoTemplates.error ?? extratoTemplates.error} />
+                ) : generatedTemplateError ? (
+                  <ErrorNote error={generatedTemplateError} />
                 ) : postActTemplateOptions.length === 0 ? (
                   <p className="muted">{t('documents.template.none')}</p>
                 ) : (

@@ -417,11 +417,15 @@ function routeFromReminder(reminder: DashboardReminder): string | undefined {
     if (route) return route;
   }
 
-  if (reminder.action?.kind === 'open_absent_owner_dispatch_evidence') {
+  if (
+    reminder.action?.kind === 'open_absent_owner_dispatch_evidence' ||
+    reminder.action?.kind === 'open_generated_convening_dispatch_evidence'
+  ) {
     const actRoute =
       frontendRouteFromApi(reminder.action.route) ??
       (reminder.params?.act_id?.trim() ? `/atas/${reminder.params.act_id.trim()}` : undefined);
     const documentId =
+      reminder.params?.generated_document_id?.trim() ??
       reminder.params?.document_id?.trim() ??
       generatedDispatchDocumentIdFromApi(reminder.action.api_href);
     const route = generatedDispatchEvidenceRoute(actRoute, documentId);

@@ -67,6 +67,13 @@ struct SealedCondominiumAbsentOwnerAct {
     communication_document_id: String,
 }
 
+struct SealedGeneratedConveningNoticeAct {
+    book_id: String,
+    act_id: String,
+    ata_document_id: String,
+    notice_document_id: String,
+}
+
 async fn send(state: &AppState, req: Request<Body>) -> (StatusCode, Value) {
     let resp = router(state.clone())
         .oneshot(req)
@@ -424,6 +431,156 @@ async fn seal_condominium_absent_owner_act(
     }
 }
 
+async fn seal_generated_convening_notice_act(
+    state: &AppState,
+    token: &str,
+) -> SealedGeneratedConveningNoticeAct {
+    let (status, entity) = send(
+        state,
+        json_req(
+            "POST",
+            "/v1/entities",
+            token,
+            json!({
+                "name": "Encosto Estrategico, S.A.",
+                "nipc": "503004642",
+                "seat": "Lisboa",
+                "kind": "SociedadeAnonima"
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "entity: {entity}");
+    let entity_id = entity["id"].as_str().expect("entity id").to_owned();
+
+    let (status, book) = send(
+        state,
+        json_req(
+            "POST",
+            "/v1/books",
+            token,
+            json!({
+                "entity_id": entity_id,
+                "kind": "AssembleiaGeral",
+                "purpose": "livro de atas",
+                "opening_date": "2026-01-15",
+                "required_signatories": ["Administrador"]
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "book: {book}");
+    let book_id = book["id"].as_str().expect("book id").to_owned();
+
+    let (status, act) = send(
+        state,
+        json_req(
+            "POST",
+            "/v1/acts",
+            token,
+            json!({
+                "book_id": book_id,
+                "title": "Ata da AG anual convocada",
+                "channel": "Physical"
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "act: {act}");
+    let act_id = act["id"].as_str().expect("act id").to_owned();
+
+    let (status, body) = send(
+        state,
+        json_req(
+            "PATCH",
+            &format!("/v1/acts/{act_id}"),
+            token,
+            json!({
+                "meeting_date": "2026-03-30",
+                "meeting_time": "10:00",
+                "place": "Sede social",
+                "mesa": { "presidente": "Ana Presidente", "secretarios": ["Rui Secretario"] },
+                "agenda": [{ "number": 1, "text": "Aprovacao das contas" }],
+                "attendance_reference": "Lista de presencas",
+                "deliberations": "Aprovadas as contas do exercicio.",
+                "convening": {
+                    "convener": "Ana Presidente",
+                    "convener_capacity": "Administrator",
+                    "dispatch_date": "2026-03-01",
+                    "antecedence_days": 21,
+                    "channel": "Email",
+                    "evidence_reference": "doc:convocatoria-2026-03-01",
+                    "recipients": [
+                        { "name": "Ana Sócia", "contact": "ana@example.test", "channel": "Email", "reference": "MSG-1" },
+                        { "name": "Bruno Sócio", "contact": "bruno@example.test", "channel": "Email", "reference": "MSG-2" }
+                    ]
+                }
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "patch act: {body}");
+
+    for to in [
+        "Review",
+        "Convened",
+        "Deliberated",
+        "TextApproved",
+        "Signing",
+    ] {
+        let (status, body) = send(
+            state,
+            json_req(
+                "POST",
+                &format!("/v1/acts/{act_id}/advance"),
+                token,
+                json!({ "to": to }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "advance to {to}: {body}");
+    }
+
+    let (status, sealed) = send(
+        state,
+        json_req("POST", &format!("/v1/acts/{act_id}/seal"), token, json!({ "manual_signature_original_reference": { "storage_reference": "Arquivo A / Pasta 2026 / Ata convocada" } })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "seal: {sealed}");
+    let ata_document_id = sealed["document"]["id"]
+        .as_str()
+        .expect("ata document id")
+        .to_owned();
+
+    let (status, notice) = send(
+        state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/document/generate?template_id=csc-convocatoria-ag/v1"),
+            token,
+            json!({}),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "generated notice: {notice}");
+    assert_eq!(notice["template_id"], "csc-convocatoria-ag/v1");
+    assert_eq!(
+        notice["dispatch_evidence_status"]["status"],
+        "required_pending"
+    );
+    let notice_document_id = notice["id"]
+        .as_str()
+        .expect("notice document id")
+        .to_owned();
+
+    SealedGeneratedConveningNoticeAct {
+        book_id,
+        act_id,
+        ata_document_id,
+        notice_document_id,
+    }
+}
+
 async fn open_empty_archive_book(state: &AppState, token: &str) -> String {
     let (status, entity) = send(
         state,
@@ -482,6 +639,34 @@ async fn record_absent_owner_dispatch_evidence(
                 "reference": "RR123456789PT",
                 "recipients": ["Fração B"],
                 "evidence_reference": "archive:dispatch-proof-1",
+                "operator_note": operator_note
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "dispatch evidence: {body}");
+    body
+}
+
+async fn record_generated_convening_notice_dispatch_evidence(
+    state: &AppState,
+    token: &str,
+    document_id: &str,
+    operator_note: &str,
+) -> Value {
+    let (status, body) = send(
+        state,
+        json_req(
+            "POST",
+            &format!("/v1/documents/generated/{document_id}/dispatch-evidence"),
+            token,
+            json!({
+                "actor": "archive.operator",
+                "dispatched_at": "2026-03-01T09:00:00Z",
+                "channel": "Email",
+                "reference": "MSG-1",
+                "recipients": ["Ana Sócia", "Bruno Sócio"],
+                "evidence_reference": "archive:generated-convening-notice-dispatch",
                 "operator_note": operator_note
             }),
         ),
@@ -2425,6 +2610,203 @@ async fn archive_package_indexes_generated_absent_owner_dispatch_evidence_metada
             .iter()
             .all(|entry| entry["document_id"] != sealed.communication_document_id),
         "generated communication is referenced as dispatch metadata, not canonical PDF: {evidence_index}"
+    );
+
+    let sidecar_text = String::from_utf8_lossy(members.get(&sidecar_path).expect("sidecar bytes"));
+    let index_text = String::from_utf8_lossy(members.get("evidence/index.json").expect("index"));
+    assert!(
+        !sidecar_text.contains(note)
+            && !sidecar_text.contains("\"operator_note\":")
+            && !index_text.contains(note)
+            && !index_text.contains("\"operator_note\":"),
+        "free-form operator notes are excluded from preservation output"
+    );
+    assert!(
+        !sidecar_text.contains(idempotency_key)
+            && !sidecar_text.contains("\"idempotency_key\":")
+            && !sidecar_text.contains("\"fingerprint\":")
+            && !index_text.contains(idempotency_key)
+            && !index_text.contains("\"idempotency_key\":")
+            && !index_text.contains("\"fingerprint\":"),
+        "note-derived stable identifiers are excluded from preservation output"
+    );
+}
+
+#[tokio::test]
+async fn archive_package_indexes_generated_convening_notice_dispatch_evidence_metadata_only() {
+    let dir = TempDir::new();
+    let state = AppState::with_data_dir(&dir.0);
+    let token = bootstrap(&state).await;
+    let sealed = seal_generated_convening_notice_act(&state, &token).await;
+    let note = "unique generated convening archive note 2026-07-15T09:00:00Z sentinel";
+    let evidence = record_generated_convening_notice_dispatch_evidence(
+        &state,
+        &token,
+        &sealed.notice_document_id,
+        note,
+    )
+    .await;
+    assert_eq!(
+        evidence["dispatch_evidence_status"]["status"],
+        "operator_evidence_covered"
+    );
+    let idempotency_key = evidence["evidence"]["idempotency_key"]
+        .as_str()
+        .expect("dispatch evidence idempotency key");
+
+    let package = archive_package_bytes(&state, &sealed.book_id, &token).await;
+    let manifest = validate_package(&package).expect("archive package validates");
+    assert!(
+        manifest
+            .document_ids
+            .iter()
+            .any(|id| id.to_string() == sealed.ata_document_id),
+        "canonical Ata document id remains in manifest.document_ids"
+    );
+    assert!(
+        manifest
+            .document_ids
+            .iter()
+            .all(|id| id.to_string() != sealed.notice_document_id),
+        "generated convening notice metadata sidecar must not promote its id into manifest.document_ids"
+    );
+
+    let sidecar_path = format!(
+        "evidence/generated-dispatch/{}.json",
+        sealed.notice_document_id
+    );
+    let sidecar_file = manifest
+        .files
+        .iter()
+        .find(|file| file.path == sidecar_path)
+        .expect("generated convening dispatch sidecar in manifest");
+    assert_eq!(sidecar_file.role, PackageFileRole::EvidenceReport);
+    assert_eq!(sidecar_file.content_type, "application/json");
+    assert_eq!(
+        sidecar_file.act_id.map(|id| id.to_string()).as_deref(),
+        Some(sealed.act_id.as_str())
+    );
+    assert_eq!(sidecar_file.document_id, None);
+
+    let members = zip_members(&package);
+    assert!(
+        !members.contains_key(&format!("documents/{}.pdf", sealed.notice_document_id)),
+        "generated convening notice PDF bytes are not added by this metadata-only slice"
+    );
+    let sidecar = member_json(&members, &sidecar_path);
+    assert_eq!(
+        sidecar["evidence_kind"],
+        "generated_document_dispatch_evidence_metadata"
+    );
+    assert_eq!(
+        sidecar["metadata_schema"],
+        "chancela-generated-document-dispatch-evidence-metadata/v1"
+    );
+    assert_eq!(sidecar["status_scope"], "technical_metadata_only");
+    assert_eq!(sidecar["generated_document_id"], sealed.notice_document_id);
+    assert_eq!(sidecar["act_id"], sealed.act_id);
+    assert_eq!(sidecar["template_id"], "csc-convocatoria-ag/v1");
+    assert_eq!(
+        sidecar["dispatch_evidence_status"]["status"],
+        "operator_evidence_covered"
+    );
+    assert_eq!(
+        sidecar["dispatch_evidence_status"]["dispatch_completed"],
+        false
+    );
+    assert_eq!(
+        sidecar["dispatch_evidence_status"]["completion_basis"],
+        "none"
+    );
+    assert_eq!(
+        sidecar["coverage"]["required_recipients"],
+        json!(["Ana Sócia", "Bruno Sócio"])
+    );
+    assert_eq!(
+        sidecar["coverage"]["recorded_recipients"],
+        json!(["Ana Sócia", "Bruno Sócio"])
+    );
+    assert_eq!(sidecar["coverage"]["missing_recipients"], json!([]));
+    assert_eq!(sidecar["coverage"]["all_required_recipients_covered"], true);
+    for flag in [
+        "sending_performed_by_chancela",
+        "delivery_confirmed",
+        "dispatch_completed",
+        "legal_notice_completion_claimed",
+        "legal_sufficiency_claimed",
+        "provider_execution_claimed",
+        "registry_filing_claimed",
+        "bundle_readiness_claimed",
+        "dglab_certification_claimed",
+        "legal_archive_acceptance_claimed",
+        "proof_bytes_included",
+        "operator_note_included",
+    ] {
+        assert_eq!(sidecar[flag], false, "{flag} must remain false");
+    }
+
+    let record = &sidecar["records"].as_array().expect("records")[0];
+    assert_eq!(record["dispatched_at"], "2026-03-01T09:00:00Z");
+    assert_eq!(record["channel"], "Email");
+    assert_eq!(record["reference"], "MSG-1");
+    assert_eq!(
+        record["evidence_reference"],
+        "archive:generated-convening-notice-dispatch"
+    );
+    assert_eq!(record["recipients"], json!(["Ana Sócia", "Bruno Sócio"]));
+    assert_eq!(record["dispatch_completed"], false);
+    assert_eq!(record["completion_basis"], "none");
+    assert_eq!(record["bytes_included"], false);
+    assert_eq!(record["operator_note_included"], false);
+
+    let evidence_index = member_json(&members, "evidence/index.json");
+    let generated_dispatch = &evidence_index["generated_dispatch_evidence"];
+    assert_eq!(
+        generated_dispatch["attachment_status"],
+        "generated_dispatch_evidence_metadata_attached"
+    );
+    assert_eq!(
+        generated_dispatch["attachments"],
+        json!([{
+            "generated_document_id": sealed.notice_document_id.clone(),
+            "act_id": sealed.act_id.clone(),
+            "template_id": "csc-convocatoria-ag/v1",
+            "path": sidecar_path.clone(),
+            "content_type": "application/json",
+            "generated_document_download": format!(
+                "/v1/documents/generated/{}",
+                sealed.notice_document_id
+            ),
+            "dispatch_evidence_status": {
+                "status": "operator_evidence_covered",
+                "required": true,
+                "evidence_attached": true,
+                "dispatch_completed": false,
+                "completion_basis": "none",
+                "required_recipients": ["Ana Sócia", "Bruno Sócio"],
+                "recorded_recipients": ["Ana Sócia", "Bruno Sócio"],
+                "missing_recipients": [],
+                "note": "operator-recorded dispatch evidence covers all generated convening notice recipients, but no sending, delivery, legal notice completion, or legal sufficiency is claimed"
+            },
+            "proof_bytes_included": false,
+            "operator_note_included": false
+        }])
+    );
+    assert!(
+        evidence_index["documents"]
+            .as_array()
+            .expect("canonical document entries")
+            .iter()
+            .any(|entry| entry["document_id"] == sealed.ata_document_id),
+        "canonical Ata remains the package document: {evidence_index}"
+    );
+    assert!(
+        evidence_index["documents"]
+            .as_array()
+            .expect("canonical document entries")
+            .iter()
+            .all(|entry| entry["document_id"] != sealed.notice_document_id),
+        "generated convening notice is referenced as dispatch metadata, not canonical PDF: {evidence_index}"
     );
 
     let sidecar_text = String::from_utf8_lossy(members.get(&sidecar_path).expect("sidecar bytes"));

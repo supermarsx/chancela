@@ -340,6 +340,38 @@ const extratoTemplate: TemplateSummary = {
   locale: 'pt-PT',
 };
 
+const convocatoriaTemplate: TemplateSummary = {
+  id: 'condominio-aviso-convocatoria/v1',
+  family: 'Condominium',
+  stage: 'Convocatoria',
+  channels: ['Physical'],
+  signature_policy: 'QualifiedPreferred',
+  rule_pack_id: 'condominio',
+  law_references: [],
+  locale: 'pt-PT',
+};
+
+const generatedConvocatoria: GeneratedDocumentView = {
+  id: 'generated-convocatoria-1',
+  act_id: 'act-1',
+  template_id: 'condominio-aviso-convocatoria/v1',
+  pdf_digest: 'a'.repeat(64),
+  profile: 'application/pdf; profile=PDF/A-2u',
+  created_at: '2026-07-12T08:00:00Z',
+  download: '/v1/documents/generated/generated-convocatoria-1',
+  dispatch_evidence_status: {
+    status: 'required_pending',
+    required: true,
+    evidence_attached: false,
+    dispatch_completed: false,
+    completion_basis: 'none',
+    required_recipients: ['Ana Sócia', 'Bruno Sócio'],
+    recorded_recipients: [],
+    missing_recipients: ['Ana Sócia', 'Bruno Sócio'],
+    note: 'generated convening notice metadata only',
+  },
+};
+
 const generatedCertidao: GeneratedDocumentView = {
   id: 'generated-certidao-1',
   act_id: 'act-1',
@@ -389,6 +421,14 @@ const absentOwnerEvidence: GeneratedDocumentDispatchEvidenceList = {
       bytes_in_payload: false,
     },
   ],
+};
+
+const generatedConvocatoriaEvidence: GeneratedDocumentDispatchEvidenceList = {
+  document_id: 'generated-convocatoria-1',
+  act_id: 'act-1',
+  template_id: 'condominio-aviso-convocatoria/v1',
+  dispatch_evidence_status: generatedConvocatoria.dispatch_evidence_status!,
+  evidence: [],
 };
 
 const importedDocumentPendingReview: ImportedDocumentView = {
@@ -682,6 +722,7 @@ function blobText(blob: Blob): Promise<string> {
 }
 
 function emptyImports(url: string) {
+  if (url.includes('/v1/templates')) return json([]);
   if (url.includes('/v1/acts/') && url.includes('/documents/generated')) return json([]);
   if (url.includes('/v1/documents/imported')) return json([]);
   return null;
@@ -1323,6 +1364,112 @@ describe('ActDocumentPanel — generated absent-owner communications', () => {
     expect(screen.queryByText('Aviso legal válido')).toBeNull();
   });
 
+  it('generates a Convocatoria before seal and enables dispatch evidence from status presence', async () => {
+    const calls: { url: string; method?: string }[] = [];
+    const recordedBodies: unknown[] = [];
+    let generatedDocs: GeneratedDocumentView[] = [];
+
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      calls.push({ url, method: init?.method });
+      if (url.includes('/v1/templates') && url.includes('stage=Convocatoria')) {
+        return json([convocatoriaTemplate]);
+      }
+      if (url.includes('/v1/templates')) return json([]);
+      if (url.includes('/v1/acts/act-1/documents/generated')) return json(generatedDocs);
+      if (url.includes('/v1/acts/act-1/document/generate')) {
+        generatedDocs = [generatedConvocatoria];
+        return json(generatedConvocatoria, 201);
+      }
+      if (url.includes('/v1/documents/generated/generated-convocatoria-1/dispatch-evidence')) {
+        if (init?.method === 'POST') {
+          recordedBodies.push(JSON.parse(String(init.body)));
+          return json(
+            {
+              evidence: {
+                document_id: 'generated-convocatoria-1',
+                idempotency_key: 'idem-convocatoria-1',
+                act_id: 'act-1',
+                template_id: 'condominio-aviso-convocatoria/v1',
+                actor: 'web-operator',
+                dispatched_at: '2026-07-11T10:00:00Z',
+                channel: 'Email',
+                reference: 'MSG-77',
+                evidence_reference: null,
+                imported_document_id: null,
+                recipients: ['Ana Sócia', 'Bruno Sócio'],
+                operator_note: null,
+                recorded_at: '2026-07-11T10:05:00Z',
+                sending_performed_by_chancela: false,
+                delivery_confirmed: false,
+                legal_sufficiency_claimed: false,
+                legal_notice_completion_claimed: false,
+                bytes_in_payload: false,
+              },
+              dispatch_evidence_status: {
+                ...generatedConvocatoria.dispatch_evidence_status!,
+                status: 'operator_evidence_covered',
+                evidence_attached: true,
+                recorded_recipients: ['Ana Sócia', 'Bruno Sócio'],
+                missing_recipients: [],
+              },
+            },
+            201,
+          );
+        }
+        return json(generatedConvocatoriaEvidence);
+      }
+      if (url.includes('/v1/documents/imported')) return json([]);
+      return Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(<ActDocumentPanel act={baseAct} family="Condominium" />);
+
+    expect(await screen.findByText('Minutas geradas')).toBeTruthy();
+    expect(
+      await screen.findByRole('option', { name: /Convocatória - condominio-aviso/ }),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Gerar documento' }));
+
+    await waitFor(() =>
+      expect(
+        calls.some(
+          (call) =>
+            call.method === 'POST' &&
+            call.url ===
+              '/v1/acts/act-1/document/generate?template_id=condominio-aviso-convocatoria%2Fv1',
+        ),
+      ).toBe(true),
+    );
+    const form = await screen.findByRole('form', {
+      name: 'Registar evidência da comunicação gerada',
+    });
+    expect(within(form).getByText('Ana Sócia')).toBeTruthy();
+    expect(within(form).getByText('Bruno Sócio')).toBeTruthy();
+    expect(screen.getAllByText('required_pending').length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByText('Aviso legal válido')).toBeNull();
+
+    fireEvent.change(within(form).getByLabelText('Canal'), { target: { value: 'Email' } });
+    fireEvent.change(within(form).getByLabelText('Referência'), {
+      target: { value: 'MSG-77' },
+    });
+    fireEvent.click(within(form).getByRole('button', { name: 'Registar evidência' }));
+
+    await waitFor(() => expect(recordedBodies).toHaveLength(1));
+    expect(recordedBodies[0]).toMatchObject({
+      actor: 'web-operator',
+      channel: 'Email',
+      reference: 'MSG-77',
+      recipients: ['Ana Sócia', 'Bruno Sócio'],
+      evidence_reference: null,
+      imported_document_id: null,
+      operator_note: null,
+    });
+    expect(JSON.stringify(recordedBodies[0])).not.toContain('delivery_confirmed');
+    expect(JSON.stringify(recordedBodies[0])).not.toContain('legal_sufficiency_claimed');
+    expect(JSON.stringify(recordedBodies[0])).not.toContain('legal_notice_completion_claimed');
+  });
+
   it('shows post-act templates, generates an extract, downloads it, and keeps dispatch evidence scoped', async () => {
     const calls: { url: string; method?: string }[] = [];
     let generatedDocs = [absentOwnerCommunication, generatedCertidao];
@@ -1336,6 +1483,9 @@ describe('ActDocumentPanel — generated absent-owner communications', () => {
       }
       if (url.includes('/v1/templates') && url.includes('stage=Extrato')) {
         return json([extratoTemplate]);
+      }
+      if (url.includes('/v1/templates') && url.includes('stage=Convocatoria')) {
+        return json([convocatoriaTemplate]);
       }
       if (url.includes('/v1/acts/act-1/document/generate')) {
         generatedDocs = [absentOwnerCommunication, generatedCertidao, generatedExtrato];
@@ -1375,7 +1525,10 @@ describe('ActDocumentPanel — generated absent-owner communications', () => {
 
     renderWithProviders(<ActDocumentPanel act={sealed} family="Condominium" />);
 
-    expect(await screen.findByText('Minutas pós-ato')).toBeTruthy();
+    expect(await screen.findByText('Minutas geradas')).toBeTruthy();
+    expect(
+      await screen.findByRole('option', { name: /Convocatória - condominio-aviso/ }),
+    ).toBeTruthy();
     expect(
       await screen.findByRole('option', { name: /Certidão - condominio-certidao/ }),
     ).toBeTruthy();
