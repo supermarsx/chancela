@@ -101,8 +101,9 @@ pub use soft_cert::{
     Pkcs12IdentitySelector, Pkcs12SigningSource, SoftCertificateError, SoftCertificateIdentity,
 };
 pub use validate::{
-    SignatureValidationReport, TimestampQtstMatchReport, TimestampTrustDecision,
-    TimestampTrustPolicy, TimestampTrustReport, validate_signature, validate_timestamp_trust,
+    SignatureValidationReport, SignerTrustDecision, SignerTrustReport, TimestampQtstMatchReport,
+    TimestampTrustDecision, TimestampTrustPolicy, TimestampTrustReport, validate_signature,
+    validate_signer_trust, validate_timestamp_trust,
 };
 
 // Re-export the pieces of the underlying stack callers most often name through this crate.
