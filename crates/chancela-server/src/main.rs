@@ -41,8 +41,43 @@ const WEB_DIST_ENV: &str = "CHANCELA_WEB_DIST";
 /// Container path the Docker image copies the web build to.
 const CONTAINER_WEB_DIST: &str = "/srv/web";
 
+/// Environment variable selecting the log formatter: `json` (default, aggregator-friendly) or
+/// `pretty` (human-readable, for local dev).
+const LOG_FORMAT_ENV: &str = "CHANCELA_LOG_FORMAT";
+/// Primary env var for the log level/filter directives; falls back to `RUST_LOG`, then `info`.
+const LOG_FILTER_ENV: &str = "CHANCELA_LOG";
+
+/// Initialise the process-wide `tracing` subscriber before anything else runs.
+///
+/// Level/filter comes from `CHANCELA_LOG`, else `RUST_LOG`, else a sane `info` default. The formatter
+/// is JSON by default (structured, one event per line — what a container log aggregator wants) and
+/// switches to the coloured `pretty` layout when `CHANCELA_LOG_FORMAT=pretty`. Everything is written to
+/// stdout so a supervisor/container captures it. Idempotent-safe: called exactly once from `main`.
+fn init_tracing() {
+    use tracing_subscriber::EnvFilter;
+
+    let filter = std::env::var(LOG_FILTER_ENV)
+        .ok()
+        .or_else(|| std::env::var("RUST_LOG").ok())
+        .map(EnvFilter::new)
+        .unwrap_or_else(|| EnvFilter::new("info"));
+
+    let pretty = std::env::var(LOG_FORMAT_ENV)
+        .map(|v| v.eq_ignore_ascii_case("pretty"))
+        .unwrap_or(false);
+
+    let builder = tracing_subscriber::fmt().with_env_filter(filter);
+    if pretty {
+        builder.pretty().init();
+    } else {
+        builder.json().init();
+    }
+}
+
 #[tokio::main]
 async fn main() {
+    init_tracing();
+
     let raw_addr = std::env::var(ADDR_ENV).unwrap_or_else(|_| DEFAULT_ADDR.to_owned());
     let addr: SocketAddr = raw_addr
         .parse()
@@ -53,7 +88,7 @@ async fn main() {
     // report whether settings persist to disk or live only in memory.
     let data_dir = chancela_api::AppState::resolve_data_dir();
     let state = chancela_api::AppState::try_from_env().unwrap_or_else(|e| {
-        eprintln!("invalid Chancela startup configuration: {e}");
+        tracing::error!(error = %e, "invalid Chancela startup configuration");
         std::process::exit(2);
     });
     #[cfg(feature = "e2e")]
@@ -124,13 +159,21 @@ async fn main() {
         &ledger_status,
         store_status.as_deref(),
     );
+    // Machine-readable startup event beside the human banner, so log aggregators capture a clean
+    // "listening" signal with structured fields.
+    tracing::info!(
+        addr = %bound,
+        version = env!("CARGO_PKG_VERSION"),
+        persistent = data_dir.is_some(),
+        "chancela-server listening"
+    );
 
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
         .await
         .expect("server error");
 
-    println!("chancela-server shut down cleanly");
+    tracing::info!("chancela-server shut down cleanly");
 }
 
 /// Locate the built web shell directory, honouring the documented resolution order. Returns
@@ -142,7 +185,10 @@ fn resolve_web_dist() -> Option<PathBuf> {
         if dir.is_dir() {
             return Some(dir);
         }
-        eprintln!("warning: {WEB_DIST_ENV}={raw:?} is not a directory; ignoring it");
+        tracing::warn!(
+            web_dist = %raw,
+            "{WEB_DIST_ENV} is not a directory; ignoring it"
+        );
     }
 
     // 2. Container layout.
@@ -203,6 +249,9 @@ fn print_banner(
     println!("  CAE         {cae_status}");
     println!("  API");
     println!("    GET  /health");
+    println!("    GET  /livez");
+    println!("    GET  /readyz");
+    println!("    GET  /metrics  (internal/allowlisted only)");
     println!("    GET  /v1/entities");
     println!("    POST /v1/entities");
     println!("    GET  /v1/entities/{{id}}");

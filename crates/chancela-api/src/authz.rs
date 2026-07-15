@@ -269,6 +269,13 @@ pub(crate) enum RouteClass {
 pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     // --- Exempt (unauthenticated) ---------------------------------------------------------------
     ("/health", RouteClass::Exempt),
+    // wp25 observability probes — unauthenticated like `/health`. `/livez` (liveness) and `/readyz`
+    // (narrow degraded-mode readiness) carry no data, only a status. `/metrics` exposes operational
+    // counters/gauges with no PII or secrets; it is Exempt to keep scraping simple, but deployments
+    // must expose it only on the internal network / behind an allowlist, never publicly.
+    ("/metrics", RouteClass::Exempt),
+    ("/livez", RouteClass::Exempt),
+    ("/readyz", RouteClass::Exempt),
     ("/v1/session", RouteClass::Exempt),
     ("/v1/session/roster", RouteClass::Exempt),
     // The password strength ruleset — public knowledge the onboarding checklist renders before any

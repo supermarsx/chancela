@@ -40,6 +40,11 @@ chancela-cae = { workspace = true }
 chancela-store = { workspace = true }
 axum = { workspace = true }
 tokio = { workspace = true }
+# wp25 observability: initialise the process-wide `tracing` subscriber at startup. JSON formatter by
+# default (prod/aggregator-friendly), `pretty` when `CHANCELA_LOG_FORMAT=pretty`; level via
+# `CHANCELA_LOG`/`RUST_LOG` (default `info`). `env-filter` = level directives, `json` = JSON layer.
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt"] }
 
 [dev-dependencies]
 # The e2e harness drives the real server over HTTP (async reqwest client) and asserts live wire

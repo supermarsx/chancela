@@ -53,11 +53,24 @@ TLS connector first.
   status, and the ledger chain status (including whether the server is in
   degraded read-only mode). The compose files already wire a container
   healthcheck against it.
+- **Cheap probes** — `GET /livez` is a dependency-free process liveness probe.
+  `GET /readyz` is a narrow readiness probe for degraded read-only mode only:
+  it returns `503` when the integrity chain has failed closed and `200`
+  otherwise. It does not prove database, Redis, remote signing, trust-list, or
+  multi-node dependency readiness. Both probes are also available under the
+  integration alias (`/api/livez`, `/api/readyz`).
+- **Prometheus metrics** — `GET /metrics` renders Prometheus text and is also
+  mounted at `/api/metrics` for integration clients. It is intentionally
+  unauthenticated for scraper compatibility, so deployments must keep it on an
+  internal network or behind a reverse-proxy/network allowlist. Do not expose it
+  directly to the public internet.
 - **Multi-node** — `/health` also advertises the node role (leader/follower);
   use it for leader-aware load-balancer routing and failover detection.
-- **Logs** — the hardened compose caps log growth (`json-file`, `max-size: 10m`,
-  `max-file: 3`) so a chatty or attacked container cannot fill host disk. The
-  Platform settings section exposes a live log tail.
+- **Logs** — server logs are structured JSON by default (`CHANCELA_LOG` or
+  `RUST_LOG` controls the filter; `CHANCELA_LOG_FORMAT=pretty` is for local
+  development). The hardened compose caps log growth (`json-file`,
+  `max-size: 10m`, `max-file: 3`) so a chatty or attacked container cannot fill
+  host disk. The Platform settings section exposes a live log tail.
 
 ## SBOM and vulnerability scanning
 

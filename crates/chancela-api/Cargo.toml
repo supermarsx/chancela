@@ -73,6 +73,15 @@ uuid = { workspace = true }
 x509-cert = { workspace = true }
 zip = { workspace = true }
 zeroize = "1"
+# wp25 observability: structured logging + Prometheus metrics.
+# `tracing` — request/latency spans and structured events (subscriber is initialised in the
+# server binary). Already in the tree transitively; declared here so the API can emit spans/events.
+tracing = "0.1"
+# `metrics` facade + Prometheus exporter for the `/metrics` endpoint. `default-features = false`
+# drops the exporter's own HTTP listener / push-gateway (and their hyper/tokio pull-ins) — we render
+# the text ourselves from an axum handler, so we only need the recorder + `PrometheusHandle::render`.
+metrics = "0.24"
+metrics-exporter-prometheus = { version = "0.18", default-features = false }
 
 [dev-dependencies]
 tower = { workspace = true }

@@ -140,6 +140,7 @@ mod ledger_events_page;
 mod ledger_filter;
 mod ltv;
 mod notifications;
+mod observability;
 mod paper_import;
 mod password_policy;
 mod pdf_signature_validation;
@@ -1341,12 +1342,25 @@ fn ensure_sqlcipher_feature_available() -> Result<(), AppStateInitError> {
 
 /// Build the API router over the supplied [`AppState`].
 ///
-/// The returned router carries `/health`, the canonical `/v1/*` endpoints, and the integration
-/// alias `/api/v1/*`. Use [`app`] to also serve the web UI. The router is fully wired and can be
-/// served by a listener or exercised in tests via `tower::ServiceExt::oneshot`.
+/// The returned router carries `/health`, the observability probes (`/metrics`, `/livez`, `/readyz`),
+/// the canonical `/v1/*` endpoints, and the integration alias `/api/*`. Use [`app`] to also serve the
+/// web UI. The router is fully wired and can be served by a listener or exercised in tests via
+/// `tower::ServiceExt::oneshot`.
 pub fn router(state: AppState) -> Router {
+    // wp25 observability: install the process-wide Prometheus recorder once (idempotent) so the
+    // per-request metrics middleware records into a live recorder from the first request.
+    observability::install_recorder();
     let api = Router::new()
         .route("/health", get(health))
+        // wp25 observability probes. `/metrics` = Prometheus exposition; `/livez` = cheap liveness
+        // (always 200 while the process runs); `/readyz` = narrow degraded-mode readiness (503 in
+        // degraded read-only mode, not a full dependency probe). All three are unauthenticated like
+        // `/health` (classified `Exempt` in `authz::ROUTE_CLASSIFICATION`); scrape `/metrics` only on
+        // the internal network / behind an allowlist. The outer router also exposes these under the
+        // `/api/*` integration alias.
+        .route("/metrics", get(observability::metrics_endpoint))
+        .route("/livez", get(observability::livez))
+        .route("/readyz", get(observability::readyz))
         .route(
             "/v1/entities",
             get(entities::list_entities).post(entities::create_entity),
@@ -2009,6 +2023,16 @@ pub fn router(state: AppState) -> Router {
         ))
         // Security response headers (t41 M2).
         .layer(middleware::from_fn(security_headers))
+        // wp25 observability — OUTERMOST layer: correlation id (`x-request-id`) + tracing span +
+        // HTTP metrics (count / latency / in-flight) for every request. Added last so it wraps the
+        // whole stack (a 503 from the gates below is still traced, metered, and carries the id). It
+        // runs after routing, so `MatchedPath` is present for bounded-cardinality trace/metric labels
+        // and raw URL paths with ids/secrets are never logged.
+        // NOTE for the security executor rebasing next: add HSTS to `security_headers` (the response
+        // header layer just below this) and insert the rate-limit layer into THIS `.layer(...)` chain
+        // — put rate-limiting just below `observe` (so rejected requests are still traced + metered)
+        // and above the credential/degraded/cluster gates.
+        .layer(middleware::from_fn(observability::observe))
         .with_state(state);
 
     Router::new()
@@ -7906,6 +7930,171 @@ mod tests {
             headers,
             String::from_utf8_lossy(&bytes).into_owned(),
         )
+    }
+
+    // --- wp25 observability: probes + correlation id -------------------------------------------
+
+    #[tokio::test]
+    async fn livez_probe_is_cheap_200_with_a_request_id() {
+        let (status, headers, body) =
+            send_text_with_headers(router(AppState::default()), get("/livez")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body, "ok");
+        // The outermost observability layer stamps a correlation id on every response.
+        let id = headers
+            .get("x-request-id")
+            .expect("x-request-id echoed on every response");
+        assert!(!id.is_empty(), "request id must be non-empty");
+    }
+
+    #[tokio::test]
+    async fn readyz_is_ready_when_not_degraded() {
+        let (status, _headers, body) =
+            send_text_with_headers(router(AppState::default()), get("/readyz")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body, "ready");
+    }
+
+    #[tokio::test]
+    async fn readyz_is_503_in_degraded_read_only_mode() {
+        let state = AppState::default();
+        *state.degraded.write().await = true;
+
+        let (status, _headers, body) = send_text_with_headers(router(state), get("/readyz")).await;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        assert!(
+            body.contains("degraded read-only mode"),
+            "readyz should name the narrow degraded-mode blocker, got {body:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn metrics_endpoint_renders_prometheus_text() {
+        let (status, headers, body) =
+            send_text_with_headers(router(AppState::default()), get("/metrics")).await;
+        assert_eq!(status, StatusCode::OK);
+        let content_type = headers
+            .get(axum::http::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or_default();
+        assert!(
+            content_type.starts_with("text/plain"),
+            "Prometheus exposition is text/plain, got {content_type:?}"
+        );
+        // App gauges are refreshed from live state on every scrape, so they are present even before
+        // any HTTP counter has been flushed — a deterministic marker that the recorder is wired.
+        assert!(
+            body.contains("chancela_ledger_length"),
+            "metrics body should carry the app gauges, got:\n{body}"
+        );
+    }
+
+    #[tokio::test]
+    async fn inbound_request_id_is_honoured_and_echoed() {
+        let req = Request::builder()
+            .uri("/health")
+            .header("x-request-id", "trace-abc-123")
+            .body(Body::empty())
+            .expect("request builds");
+        let (status, headers, _body) =
+            send_text_with_headers(router(AppState::default()), req).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            headers.get("x-request-id").and_then(|v| v.to_str().ok()),
+            Some("trace-abc-123"),
+            "a sane inbound x-request-id is adopted and echoed back verbatim"
+        );
+    }
+
+    #[tokio::test]
+    async fn bad_inbound_request_id_is_rejected_and_replaced() {
+        let empty_req = Request::builder()
+            .uri("/health")
+            .header("x-request-id", "")
+            .body(Body::empty())
+            .expect("request builds");
+        let (status, headers, _body) =
+            send_text_with_headers(router(AppState::default()), empty_req).await;
+        assert_eq!(status, StatusCode::OK);
+        let replacement = headers
+            .get("x-request-id")
+            .and_then(|v| v.to_str().ok())
+            .expect("replacement request id");
+        assert_ne!(replacement, "");
+        assert!(
+            Uuid::parse_str(replacement).is_ok(),
+            "bad inbound request id should be replaced with a minted UUID, got {replacement:?}"
+        );
+
+        let long_id = "a".repeat(201);
+        let long_req = Request::builder()
+            .uri("/health")
+            .header("x-request-id", &long_id)
+            .body(Body::empty())
+            .expect("request builds");
+        let (status, headers, _body) =
+            send_text_with_headers(router(AppState::default()), long_req).await;
+        assert_eq!(status, StatusCode::OK);
+        let replacement = headers
+            .get("x-request-id")
+            .and_then(|v| v.to_str().ok())
+            .expect("replacement request id");
+        assert_ne!(replacement, long_id);
+        assert!(
+            Uuid::parse_str(replacement).is_ok(),
+            "overlong inbound request id should be replaced with a minted UUID, got {replacement:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn observability_probes_are_available_under_api_alias() {
+        let (status, _headers, body) =
+            send_text_with_headers(router(AppState::default()), get("/api/livez")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body, "ok");
+
+        let (status, _headers, body) =
+            send_text_with_headers(router(AppState::default()), get("/api/readyz")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body, "ready");
+
+        let (status, headers, body) =
+            send_text_with_headers(router(AppState::default()), get("/api/metrics")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(
+            headers
+                .get(axum::http::header::CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or_default()
+                .starts_with("text/plain"),
+            "/api/metrics should render Prometheus text"
+        );
+        assert!(
+            body.contains("chancela_ledger_length"),
+            "/api/metrics should expose the same app gauges as /metrics"
+        );
+    }
+
+    #[tokio::test]
+    async fn metrics_use_matched_route_labels_not_raw_paths() {
+        let state = AppState::default();
+        let secret_id = format!("secret-{}", Uuid::new_v4());
+        let raw_path = format!("/v1/entities/{secret_id}");
+
+        let (_status, _headers, _body) =
+            send_text_with_headers(router(state.clone()), get(&raw_path)).await;
+        let (status, _headers, metrics) =
+            send_text_with_headers(router(state), get("/metrics")).await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert!(
+            metrics.contains("path=\"/v1/entities/{id}\""),
+            "metrics should label the dynamic request by route template, got:\n{metrics}"
+        );
+        assert!(
+            !metrics.contains(&secret_id),
+            "metrics must not contain raw path ids or secrets, got:\n{metrics}"
+        );
     }
 
     fn assert_security_headers(headers: &HeaderMap) {
