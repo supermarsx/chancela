@@ -2522,6 +2522,19 @@ a.btn.btn--iconOnly {
   color: var(--accent);
 }
 
+.ledger-advanced-filters__summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.ledger-advanced-filters__count {
+  display: inline-flex;
+  align-items: center;
+}
+
 .ledger-advanced-filters[open] > summary {
   margin-bottom: 0.75rem;
 }

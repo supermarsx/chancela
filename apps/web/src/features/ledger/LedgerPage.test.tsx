@@ -220,6 +220,12 @@ describe('LedgerPage', () => {
     expect(iconPaths).toContain('M4.5 5.5h15l-6 7v5l-3 1.5v-6.5z');
     expect(iconPaths).toContain('M16.5 15.5l3 3M19.5 15.5l-3 3');
     expect(iconPaths).not.toContain('M6 6l12 12M18 6 6 18');
+    const advanced = container.querySelector(
+      'details.ledger-advanced-filters.filter-advanced',
+    ) as HTMLDetailsElement;
+    expect(advanced).toBeTruthy();
+    expect(advanced.open).toBe(false);
+    expect(within(advanced).queryByLabelText('Filtros ativos: 0')).toBeNull();
 
     fireEvent.change(screen.getByLabelText('Pesquisar'), {
       target: { value: 'approved digest' },
@@ -248,6 +254,7 @@ describe('LedgerPage', () => {
     );
     expect((clear as HTMLButtonElement).disabled).toBe(false);
     await waitFor(() => expect(screen.getByText('Filtros ativos: 8')).toBeTruthy());
+    expect(within(advanced).getByLabelText('Filtros ativos: 8')).toBeTruthy();
 
     fireEvent.click(clear);
     await waitFor(() =>
@@ -256,11 +263,6 @@ describe('LedgerPage', () => {
     expect((screen.getByLabelText('Filtrar por âmbito') as HTMLInputElement).value).toBe('');
     expect((screen.getByLabelText('Eventos por página') as HTMLSelectElement).value).toBe('100');
     await waitFor(() => expect(screen.getByText('Filtros ativos: 0')).toBeTruthy());
-
-    const advanced = container.querySelector(
-      'details.ledger-advanced-filters.filter-advanced',
-    ) as HTMLDetailsElement;
-    expect(advanced).toBeTruthy();
     expect(
       advanced.querySelector('.ledger-advanced-filters__body.filter-advanced__body'),
     ).toBeTruthy();
@@ -352,6 +354,11 @@ describe('LedgerPage', () => {
       'display: grid;',
       'grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));',
       'max-width: 100%;',
+    ]);
+    expectCssRule(css, /\.ledger-advanced-filters__summary\s*\{([^}]*)\}/, [
+      'display: inline-flex;',
+      'align-items: center;',
+      'gap: 0.5rem;',
     ]);
     expectCssRule(css, /\.ledger-export-controls\s*\{([^}]*)\}/, [
       'display: flex;',

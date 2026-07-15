@@ -333,7 +333,19 @@ export function LedgerPage() {
             </div>
 
             <details className="ledger-advanced-filters filter-advanced">
-              <summary>{t('ledger.filters.advanced')}</summary>
+              <summary>
+                <span className="ledger-advanced-filters__summary">
+                  <span>{t('ledger.filters.advanced')}</span>
+                  {activeFilterCount > 0 ? (
+                    <span
+                      className="ledger-advanced-filters__count"
+                      aria-label={t('ledger.filters.activeCount', { count: activeFilterCount })}
+                    >
+                      <Badge tone="accent">{activeFilterCount}</Badge>
+                    </span>
+                  ) : null}
+                </span>
+              </summary>
               <div className="ledger-advanced-filters__body filter filter-advanced__body">
                 <Field label={t('ledger.kind.label')} htmlFor="ledger-kind">
                   <Input
