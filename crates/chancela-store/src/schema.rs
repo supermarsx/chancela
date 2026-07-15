@@ -70,7 +70,11 @@
 ///   tables via [`ALL`] and advance their stamp on next open. This phase only makes the store
 ///   *capable* of holding them; the file-based loaders in `chancela-api` are switched in a later,
 ///   coordinated phase.
-pub const SCHEMA_VERSION: i64 = 16;
+/// - **v17** — adds user_templates (user-authored template storage): a document-in-relational
+///   `(id, json)` table mirroring the four domain aggregates, holding the operator-authored
+///   `TemplateSpecDto` JSON. Forward-only, additive: existing databases gain the table via [`ALL`]
+///   and advance their stamp on next open.
+pub const SCHEMA_VERSION: i64 = 17;
 
 /// `meta` — small key/value table for the `schema_version` stamp and the app version.
 pub const CREATE_META: &str = "\
@@ -622,6 +626,16 @@ CREATE TABLE IF NOT EXISTS provider_credentials (
     PRIMARY KEY (mode, provider_id)
 ) STRICT;";
 
+/// `user_templates` — the user-authored template store (schema v17). Document-in-relational like
+/// the four domain aggregates: `(id, json)` where `json` is the API's serialized `TemplateSpecDto`
+/// value (opaque to the store). Holds operator-authored templates alongside the built-in registry;
+/// the store never interprets `json`.
+pub const CREATE_USER_TEMPLATES: &str = "\
+CREATE TABLE IF NOT EXISTS user_templates (
+    id   TEXT PRIMARY KEY,
+    json TEXT NOT NULL
+) STRICT;";
+
 /// Every DDL statement, in dependency order, for [`crate::Store::open`] to execute on boot.
 pub const ALL: &[&str] = &[
     CREATE_META,
@@ -668,4 +682,5 @@ pub const ALL: &[&str] = &[
     CREATE_DELEGATIONS,
     CREATE_SETTINGS,
     CREATE_PROVIDER_CREDENTIALS,
+    CREATE_USER_TEMPLATES,
 ];

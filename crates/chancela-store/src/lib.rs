@@ -2901,6 +2901,18 @@ impl Store {
         self.document_rows("delegations")
     }
 
+    /// Load every stored user-authored template row as `(id, json)`, ordered by id. Each `json` is
+    /// the API's serialized `TemplateSpecDto` value (opaque to the store). Empty when unpopulated.
+    pub fn user_templates(&self) -> Result<Vec<(String, String)>, StoreError> {
+        self.document_rows("user_templates")
+    }
+
+    /// Read one user-authored template's serialized `json` by id, or `None` when unknown. The `json`
+    /// is the API's serialized `TemplateSpecDto` value (opaque to the store).
+    pub fn user_template(&self, id: &str) -> Result<Option<String>, StoreError> {
+        self.document_row("user_templates", id)
+    }
+
     /// Shared reader for the `(id, json)` document-in-relational sidecar tables (users/roles/
     /// delegations). `table` is a fixed internal identifier (never user input), so interpolating it
     /// into the query is safe. Ordered by id for a deterministic enumeration.
@@ -2919,6 +2931,21 @@ impl Store {
             out.push(row?);
         }
         Ok(out)
+    }
+
+    /// Shared single-row reader for the `(id, json)` document-in-relational sidecar tables. Returns
+    /// the `json` column for `id`, or `None` when the id is unknown. `table` is a fixed internal
+    /// identifier (never user input), so interpolating it into the query is safe.
+    fn document_row(&self, table: &str, id: &str) -> Result<Option<String>, StoreError> {
+        #[cfg(feature = "postgres")]
+        if let Backend::Postgres(backend) = &self.backend {
+            return backend.document_row(table, id);
+        }
+        let guard = self.locked_conn()?;
+        let mut stmt = guard.prepare(&format!("SELECT json FROM {table} WHERE id = ?1"))?;
+        stmt.query_row(params![id], |row| row.get::<_, String>(0))
+            .optional()
+            .map_err(StoreError::from)
     }
 
     /// Read the single stored settings document as its serialized `json`, or `None` when the store has
@@ -4595,6 +4622,17 @@ impl Tx<'_> {
     /// no-op when unknown.
     pub fn delete_delegation(&self, id: &str) -> Result<(), StoreError> {
         self.delete_document_row("delegations", id)
+    }
+
+    /// Upsert one user-authored template row (`user_templates`, `(id, json)`), idempotent on the id.
+    /// The `json` is the API's serialized `TemplateSpecDto` value (opaque to the store).
+    pub fn upsert_user_template(&self, id: &str, json: &str) -> Result<(), StoreError> {
+        self.upsert_document_row("user_templates", id, json)
+    }
+
+    /// Remove one user-authored template row by id. A no-op when the id is unknown.
+    pub fn delete_user_template(&self, id: &str) -> Result<(), StoreError> {
+        self.delete_document_row("user_templates", id)
     }
 
     /// Shared document-in-relational upsert for the `(id, json)` sidecar tables. `table` is a fixed
@@ -6347,4 +6385,106 @@ fn add_path_to_zip<W: Write + std::io::Seek>(
         add_file_to_zip(zip, name, path, opts, files)?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A throwaway temp directory unique to this test run, removed on drop. The store's integration
+    /// suite carries its own `TempDir`; this keeps the in-crate unit test self-contained.
+    struct TempDir(std::path::PathBuf);
+
+    impl TempDir {
+        fn new() -> Self {
+            let path =
+                std::env::temp_dir().join(format!("chancela-store-test-{}", uuid::Uuid::new_v4()));
+            std::fs::create_dir_all(&path).expect("create temp dir");
+            TempDir(path)
+        }
+
+        fn path(&self) -> &std::path::Path {
+            &self.0
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn user_templates_round_trip_upsert_get_list_delete() {
+        let dir = TempDir::new();
+        let store = Store::open(dir.path()).expect("open");
+
+        // Empty store reads as empty / absent.
+        assert!(store.user_templates().unwrap().is_empty());
+        assert_eq!(store.user_template("user-ata-ag/v1").unwrap(), None);
+
+        // Upsert two, deliberately out of id order to prove the list orders by id.
+        store
+            .persist(|tx| {
+                tx.upsert_user_template("user-ata-ag/v2", r#"{"id":"user-ata-ag/v2"}"#)?;
+                tx.upsert_user_template("user-ata-ag/v1", r#"{"id":"user-ata-ag/v1"}"#)?;
+                Ok(())
+            })
+            .expect("persist templates");
+
+        // Single-row get returns the stored json.
+        assert_eq!(
+            store.user_template("user-ata-ag/v1").unwrap().as_deref(),
+            Some(r#"{"id":"user-ata-ag/v1"}"#)
+        );
+
+        // List is ordered by id.
+        assert_eq!(
+            store.user_templates().unwrap(),
+            vec![
+                (
+                    "user-ata-ag/v1".to_owned(),
+                    r#"{"id":"user-ata-ag/v1"}"#.to_owned()
+                ),
+                (
+                    "user-ata-ag/v2".to_owned(),
+                    r#"{"id":"user-ata-ag/v2"}"#.to_owned()
+                ),
+            ]
+        );
+
+        // Upsert is idempotent on id: a second write replaces the json, never duplicates the row.
+        store
+            .persist(|tx| {
+                tx.upsert_user_template("user-ata-ag/v1", r#"{"id":"user-ata-ag/v1","v":2}"#)
+            })
+            .expect("update template");
+        assert_eq!(store.user_templates().unwrap().len(), 2);
+        assert_eq!(
+            store.user_template("user-ata-ag/v1").unwrap().as_deref(),
+            Some(r#"{"id":"user-ata-ag/v1","v":2}"#)
+        );
+
+        // Delete drops exactly one row; deleting an unknown id is a no-op.
+        store
+            .persist(|tx| {
+                tx.delete_user_template("user-ata-ag/v2")?;
+                tx.delete_user_template("user-does-not-exist/v1")?;
+                Ok(())
+            })
+            .expect("delete template");
+        assert_eq!(store.user_template("user-ata-ag/v2").unwrap(), None);
+        assert_eq!(
+            store.user_templates().unwrap(),
+            vec![(
+                "user-ata-ag/v1".to_owned(),
+                r#"{"id":"user-ata-ag/v1","v":2}"#.to_owned()
+            )]
+        );
+
+        // The row survives a reopen (durable, not in-memory).
+        drop(store);
+        let reopened = Store::open(dir.path()).expect("reopen");
+        assert_eq!(reopened.user_templates().unwrap().len(), 1);
+    }
 }

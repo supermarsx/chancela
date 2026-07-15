@@ -1541,9 +1541,10 @@ fn schema_version_is_current() {
     // schema v12; generated-document dispatch evidence landed as schema v13; paper-book OCR
     // conversion execution artifacts landed as schema v14; imported-document review history landed
     // as schema v15; the non-ledger sidecar stores (users/roles/delegations/settings/
-    // provider_credentials — wp16 P3b) landed as schema v16.
+    // provider_credentials — wp16 P3b) landed as schema v16; the user-authored template store
+    // (user_templates — wp23) landed as schema v17.
     // A fresh DB is stamped with the current version.
-    assert_eq!(chancela_store::schema::SCHEMA_VERSION, 16);
+    assert_eq!(chancela_store::schema::SCHEMA_VERSION, 17);
     let dir = TempDir::new();
     Store::open(dir.path()).expect("open fresh");
     let raw = rusqlite::Connection::open(dir.path().join("chancela.db")).unwrap();

@@ -845,6 +845,14 @@ impl PostgresBackend {
             .collect()
     }
 
+    pub(crate) fn document_row(&self, table: &str, id: &str) -> Result<Option<String>, StoreError> {
+        // `table` is a fixed internal identifier (users/roles/delegations/user_templates), never
+        // user input.
+        let mut client = self.read()?;
+        let row = client.query_opt(&format!("SELECT json FROM {table} WHERE id = $1"), &[&id])?;
+        Ok(row.map(|row| row.get::<_, String>(0)))
+    }
+
     pub(crate) fn settings(&self) -> Result<Option<String>, StoreError> {
         let mut client = self.read()?;
         let row = client.query_opt(
