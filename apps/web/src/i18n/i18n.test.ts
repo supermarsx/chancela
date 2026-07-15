@@ -392,7 +392,9 @@ describe('catalog completeness matrix', () => {
   it('keeps archive filter and export copy localized outside source Portuguese', () => {
     expect(enUS['ledger.filters.aria']).toBe('Search and filter archive');
     expect(enUS['ledger.archive.format.pdfa']).toBe('Canonical PDF/A (.pdf)');
+    expect(enUS['ledger.archive.scope.help']).toContain('1,000-record server safety cap');
     expect(enUS['ledger.archive.format.help']).toContain('Events per page limit');
+    expect(enUS['ledger.archive.format.help']).toContain('streaming');
     expect(enUS['ledger.order.newestFirst']).toBe('Newest first');
     expect(enGB['ledger.filters.clear.aria']).toBe('Clear archive filters');
     expect(deDE['ledger.archive.export']).toBe('Archiv exportieren');

@@ -1001,12 +1001,12 @@ export const plPL: Catalog = {
   'ledger.archive.downloading': 'Eksportowanie…',
   'ledger.archive.scope.label': 'Zakres eksportu',
   'ledger.archive.scope.help':
-    'Bieżąca strona używa limitu Zdarzenia na stronę; wszystkie filtrowane rekordy są generowane na serwerze bez ładowania kolejnych rekordów do tabeli.',
+    'Bieżąca strona używa limitu Zdarzenia na stronę; wszystkie filtrowane JSON/TXT/CSV/HTML są strumieniowane na serwerze bez ładowania kolejnych rekordów do tabeli; PDF/A dla wszystkich filtrowanych ma serwerowy limit bezpieczeństwa 1 000 rekordów i kończy się błędem bez obcinania po jego przekroczeniu.',
   'ledger.archive.scope.currentPage': 'Bieżąca filtrowana strona',
   'ledger.archive.scope.allFiltered': 'Wszystkie filtrowane rekordy',
   'ledger.archive.format.label': 'Format eksportu',
   'ledger.archive.format.help':
-    'Używa aktywnych filtrów, kolejności od najnowszych i limitu Zdarzeń na stronę; zwiększ limit, aby uwzględnić więcej zdarzeń w pliku.',
+    'Dla Bieżącej strony używa aktywnych filtrów, kolejności od najnowszych i limitu Zdarzeń na stronę; dla Wszystkich filtrowanych JSON/TXT/CSV/HTML eksportują każde dopasowanie strumieniowo, a PDF/A jest limitowany dla bezpieczeństwa pamięci.',
   'ledger.archive.format.pdfa': 'Kanoniczny PDF/A (.pdf)',
   'ledger.archive.format.txt': 'Audyt TXT (.txt)',
   'ledger.archive.format.json': 'JSON wymiany (.json)',

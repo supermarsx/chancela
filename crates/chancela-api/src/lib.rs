@@ -4623,6 +4623,9 @@ mod tests {
                 assert_eq!(export["event_count"], expected_limit);
                 assert_eq!(export["export_scope"], "bounded_first_page");
                 assert_eq!(export["page_limit"], expected_limit);
+                assert_eq!(export["record_cap"], Value::Null);
+                assert_eq!(export["streamed"], false);
+                assert_eq!(export["streaming_mode"], "buffered");
                 assert_eq!(export["order"], "desc");
                 assert_eq!(export["event_order"], "seq_desc");
                 assert_eq!(export["has_more"], true);
@@ -4679,6 +4682,9 @@ mod tests {
             assert_eq!(export["event_count"], 300);
             assert_eq!(export["page_limit"], Value::Null);
             assert_eq!(export["internal_batch_limit"], 250);
+            assert_eq!(export["record_cap"], Value::Null);
+            assert_eq!(export["streamed"], true);
+            assert_eq!(export["streaming_mode"], "streamed");
             assert_eq!(export["has_more"], false);
             assert_eq!(export["next_cursor"], Value::Null);
             assert_eq!(export["order"], "desc");
@@ -4706,6 +4712,62 @@ mod tests {
                         .contains("archive/limit-target")
             }));
         }
+    }
+
+    #[tokio::test]
+    async fn ledger_archive_document_streams_all_filtered_audit_interchange_formats() {
+        let state = fresh_state().await;
+        install_archive_limit_ledger(&state).await;
+        let base = "/v1/ledger/archive/document?chain=application&scope=archive/limit-target&kind=limit.target&export_scope=all_filtered";
+
+        let (status, ctype, disposition, txt_bytes) =
+            send_download(state.clone(), get(&format!("{base}&format=txt"))).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(ctype, "text/plain; charset=utf-8");
+        assert!(disposition.contains("all-filtered-audit-interchange.txt"));
+        let txt = String::from_utf8(txt_bytes).expect("txt utf8");
+        assert!(txt.contains("Modo de geracao: streamed"));
+        assert!(txt.contains("Eventos exportados: calculado no fim do fluxo"));
+        assert!(txt.contains("Total de eventos exportados: 300"));
+        assert!(txt.contains("seq=299 kind=limit.target"));
+        assert!(txt.contains("seq=0 kind=limit.target"));
+
+        let (status, ctype, _disposition, csv_bytes) =
+            send_download(state.clone(), get(&format!("{base}&format=csv"))).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(ctype, "text/csv; charset=utf-8");
+        let csv = String::from_utf8(csv_bytes).expect("csv utf8");
+        assert!(csv.contains("# streaming_mode=streamed"));
+        assert!(csv.contains("# event_count=300"));
+        assert!(csv.contains("299,299,limit.target"));
+        assert!(csv.contains("0,0,limit.target"));
+
+        let (status, ctype, _disposition, html_bytes) =
+            send_download(state, get(&format!("{base}&format=html"))).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(ctype, "text/html; charset=utf-8");
+        let html = String::from_utf8(html_bytes).expect("html utf8");
+        assert!(html.contains("<dd>streamed</dd>"));
+        assert!(html.contains("Eventos exportados: 300"));
+        assert!(html.contains("<td>299</td>"));
+        assert!(html.contains("<td>0</td>"));
+    }
+
+    #[tokio::test]
+    async fn ledger_archive_document_caps_all_filtered_pdfa_without_truncating() {
+        let state = fresh_state().await;
+        install_test_ledger(&state, bulk_application_ledger(1001)).await;
+
+        let (status, body) = send(
+            state,
+            get("/v1/ledger/archive/document?chain=application&export_scope=all_filtered&format=pdfa"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        let error = body["error"].as_str().expect("error");
+        assert!(error.contains("capped at 1000 records"), "{body}");
+        assert!(error.contains("JSON, CSV, TXT, or HTML"), "{body}");
+        assert!(error.contains("No records were truncated"), "{body}");
     }
 
     #[tokio::test]

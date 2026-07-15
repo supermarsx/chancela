@@ -5,19 +5,24 @@
 //! ledger state into the existing `DocumentModel` seam and reuses the frozen PDF/A-2u writer.
 
 use std::collections::HashMap;
+use std::io;
+use std::pin::Pin;
 use std::str::FromStr;
+use std::task::{Context, Poll};
 
-use axum::body::Body;
+use axum::body::{Body, Bytes};
 use axum::extract::{Query, State};
 use axum::http::header::{CONTENT_DISPOSITION, CONTENT_TYPE};
 use axum::response::Response;
 use chancela_authz::{Permission, Scope};
 use chancela_core::{Block, BookKind, DocumentModel, KvRow, Run};
 use chancela_ledger::{ChainId, ChainStatus, Event, ReanchorRecord};
+use futures_core::Stream;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
+use tokio::sync::mpsc;
 
 use crate::AppState;
 use crate::actor::CurrentActor;
@@ -31,6 +36,7 @@ use crate::ledger_filter::{
 };
 
 const ALL_FILTERED_EXPORT_BATCH_LIMIT: usize = MAX_LEDGER_PAGE_LIMIT;
+const ALL_FILTERED_PDFA_RECORD_CAP: usize = 1_000;
 
 #[derive(Debug, Deserialize)]
 pub struct ArchiveDocumentQuery {
@@ -146,6 +152,16 @@ impl ArchiveExportFormat {
             Self::Html => "html",
         }
     }
+
+    fn content_type(self) -> &'static str {
+        match self {
+            Self::Pdfa => PDFA_PROFILE,
+            Self::Json => "application/json",
+            Self::Txt => "text/plain; charset=utf-8",
+            Self::Csv => "text/csv; charset=utf-8",
+            Self::Html => "text/html; charset=utf-8",
+        }
+    }
 }
 
 fn parse_chain(raw: Option<&str>) -> Result<ChainId, ApiError> {
@@ -193,21 +209,72 @@ pub async fn export_archive_document(
         q.to.as_deref(),
     )?;
     let limit = normalized_page_limit(q.limit);
-    let sources = label_sources(&state).await;
-    let instance_name = state
-        .settings
-        .read()
-        .await
-        .organization
-        .name
-        .clone()
-        .unwrap_or_else(|| "Chancela".to_owned());
-
     let (status, reanchors) = {
         let ledger = state.ledger.read().await;
         let status = ledger.chain_status(&chain).ok_or(ApiError::NotFound)?;
         (status, ledger.reanchored_segments())
     };
+    let degraded = *state.degraded.read().await;
+    let generated_at = OffsetDateTime::now_utc()
+        .format(&Rfc3339)
+        .unwrap_or_default();
+    let filter_summary = filter_summary(
+        &chain.canonical(),
+        &filters,
+        (export_scope == ArchiveDocumentScope::BoundedFirstPage).then_some(limit),
+        Some(order),
+    );
+    let filename_scope = if export_scope == ArchiveDocumentScope::AllFiltered {
+        "-all-filtered"
+    } else {
+        ""
+    };
+
+    if export_scope == ArchiveDocumentScope::AllFiltered && format != ArchiveExportFormat::Pdfa {
+        let first_page = select_ledger_events_page(
+            &state,
+            LedgerEventsSelectorQuery {
+                before_seq: None,
+                limit: ALL_FILTERED_EXPORT_BATCH_LIMIT,
+                order,
+                chain: Some(chain.clone()),
+                filters: &filters,
+            },
+        )
+        .await?;
+        let filename = format!(
+            "arquivo-{}{}-audit-interchange.{}",
+            chain.canonical().replace(':', "-"),
+            filename_scope,
+            format.extension()
+        );
+        let page_meta = ArchivePageMeta {
+            scope: export_scope,
+            order,
+            page_limit: None,
+            internal_batch_limit: Some(first_page.limit),
+            has_more: false,
+            next_cursor: None,
+            record_cap: None,
+            streamed: true,
+        };
+        let body = stream_all_filtered_interchange_export(
+            state,
+            filters,
+            first_page,
+            StreamInterchangeInput {
+                format,
+                chain,
+                status,
+                page_meta,
+                degraded,
+                generated_at,
+                filter_summary,
+            },
+        );
+        return build_streaming_export_response(format.content_type(), filename, body);
+    }
+
     let selected = match export_scope {
         ArchiveDocumentScope::BoundedFirstPage => {
             select_ledger_events_page(
@@ -223,7 +290,14 @@ pub async fn export_archive_document(
             .await?
         }
         ArchiveDocumentScope::AllFiltered => {
-            select_all_filtered_ledger_events(&state, &chain, order, &filters).await?
+            select_all_filtered_ledger_events(
+                &state,
+                &chain,
+                order,
+                &filters,
+                Some(ALL_FILTERED_PDFA_RECORD_CAP),
+            )
+            .await?
         }
     };
     let records = selected
@@ -240,24 +314,21 @@ pub async fn export_archive_document(
             .then_some(selected.limit),
         has_more: selected.has_more,
         next_cursor: selected.next_cursor,
-    };
-    let degraded = *state.degraded.read().await;
-
-    let generated_at = OffsetDateTime::now_utc()
-        .format(&Rfc3339)
-        .unwrap_or_default();
-    let filter_summary = filter_summary(
-        &chain.canonical(),
-        &filters,
-        page_meta.page_limit,
-        Some(order),
-    );
-    let filename_scope = if export_scope == ArchiveDocumentScope::AllFiltered {
-        "-all-filtered"
-    } else {
-        ""
+        record_cap: (export_scope == ArchiveDocumentScope::AllFiltered
+            && format == ArchiveExportFormat::Pdfa)
+            .then_some(ALL_FILTERED_PDFA_RECORD_CAP),
+        streamed: false,
     };
     if format == ArchiveExportFormat::Pdfa {
+        let sources = label_sources(&state).await;
+        let instance_name = state
+            .settings
+            .read()
+            .await
+            .organization
+            .name
+            .clone()
+            .unwrap_or_else(|| "Chancela".to_owned());
         let model = build_archive_document(ArchiveDocumentInput {
             chain: &chain,
             status: &status,
@@ -315,11 +386,27 @@ fn build_export_response(
         .map_err(|e| ApiError::Internal(format!("failed to build archive response: {e}")))
 }
 
+fn build_streaming_export_response(
+    content_type: impl Into<String>,
+    filename: String,
+    body: Body,
+) -> Result<Response, ApiError> {
+    Response::builder()
+        .header(CONTENT_TYPE, content_type.into())
+        .header(
+            CONTENT_DISPOSITION,
+            format!("attachment; filename=\"{filename}\""),
+        )
+        .body(body)
+        .map_err(|e| ApiError::Internal(format!("failed to build streaming archive response: {e}")))
+}
+
 async fn select_all_filtered_ledger_events(
     state: &AppState,
     chain: &ChainId,
     order: LedgerOrder,
     filters: &LedgerEventFilters,
+    record_cap: Option<usize>,
 ) -> Result<crate::ledger_events_page::LedgerEventsSelection, ApiError> {
     let mut events = Vec::new();
     let mut before_seq = None;
@@ -336,6 +423,13 @@ async fn select_all_filtered_ledger_events(
             },
         )
         .await?;
+        if let Some(cap) = record_cap {
+            if events.len().saturating_add(page.events.len()) > cap {
+                return Err(ApiError::Unprocessable(format!(
+                    "all_filtered PDF/A ledger archive exports are capped at {cap} records to bound memory use; narrow the filters or export JSON, CSV, TXT, or HTML for a streamed all-filtered audit/interchange file. No records were truncated."
+                )));
+            }
+        }
         events.extend(page.events);
         if !page.has_more {
             break;
@@ -357,6 +451,378 @@ async fn select_all_filtered_ledger_events(
     })
 }
 
+type ArchiveChunk = Result<Bytes, io::Error>;
+type ArchiveChunkSender = mpsc::Sender<ArchiveChunk>;
+
+struct ArchiveBodyStream {
+    receiver: mpsc::Receiver<ArchiveChunk>,
+}
+
+impl Stream for ArchiveBodyStream {
+    type Item = ArchiveChunk;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        self.receiver.poll_recv(cx)
+    }
+}
+
+struct StreamInterchangeInput {
+    format: ArchiveExportFormat,
+    chain: ChainId,
+    status: ChainStatus,
+    page_meta: ArchivePageMeta,
+    degraded: bool,
+    generated_at: String,
+    filter_summary: String,
+}
+
+fn stream_all_filtered_interchange_export(
+    state: AppState,
+    filters: LedgerEventFilters,
+    first_page: crate::ledger_events_page::LedgerEventsSelection,
+    input: StreamInterchangeInput,
+) -> Body {
+    let (tx, receiver) = mpsc::channel(8);
+    tokio::spawn(async move {
+        if let Err(err) =
+            write_all_filtered_interchange_stream(&tx, state, filters, first_page, input).await
+        {
+            let _ = tx.send(Err(err)).await;
+        }
+    });
+    Body::from_stream(ArchiveBodyStream { receiver })
+}
+
+async fn write_all_filtered_interchange_stream(
+    tx: &ArchiveChunkSender,
+    state: AppState,
+    filters: LedgerEventFilters,
+    first_page: crate::ledger_events_page::LedgerEventsSelection,
+    input: StreamInterchangeInput,
+) -> io::Result<()> {
+    let head = input
+        .status
+        .head
+        .as_ref()
+        .map(hex)
+        .unwrap_or_else(|| "-".to_owned());
+    let export_notice =
+        "Audit/interchange export only; PDF/A remains the canonical preserved evidence export.";
+    match input.format {
+        ArchiveExportFormat::Json => {
+            send_chunk(tx, render_json_stream_header(&input, &head, export_notice)?).await?
+        }
+        ArchiveExportFormat::Txt => {
+            send_chunk(tx, render_txt_stream_header(&input, &head, export_notice)).await?
+        }
+        ArchiveExportFormat::Csv => {
+            send_chunk(tx, render_csv_stream_header(&input, export_notice)).await?
+        }
+        ArchiveExportFormat::Html => {
+            send_chunk(tx, render_html_stream_header(&input, &head, export_notice)).await?
+        }
+        ArchiveExportFormat::Pdfa => unreachable!("PDF/A is rendered by the document path"),
+    }
+
+    let mut page = first_page;
+    let mut event_count = 0_usize;
+    loop {
+        let has_more = page.has_more;
+        let next_cursor = page.next_cursor;
+        for event in page.events {
+            let record = RenderRecord::from_event(&event, &input.chain);
+            match input.format {
+                ArchiveExportFormat::Json => {
+                    if event_count > 0 {
+                        send_chunk(tx, ",\n").await?;
+                    }
+                    send_chunk(tx, render_json_record(&record)?).await?;
+                }
+                ArchiveExportFormat::Txt => send_chunk(tx, render_txt_record(&record)).await?,
+                ArchiveExportFormat::Csv => send_chunk(tx, render_csv_record(&record)).await?,
+                ArchiveExportFormat::Html => send_chunk(tx, render_html_record(&record)).await?,
+                ArchiveExportFormat::Pdfa => unreachable!("PDF/A is rendered by the document path"),
+            }
+            event_count += 1;
+        }
+        if !has_more {
+            break;
+        }
+        let Some(cursor) = next_cursor else {
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                "ledger all-filtered archive export pager reported more records without a cursor",
+            ));
+        };
+        page = select_ledger_events_page(
+            &state,
+            LedgerEventsSelectorQuery {
+                before_seq: Some(cursor),
+                limit: ALL_FILTERED_EXPORT_BATCH_LIMIT,
+                order: input.page_meta.order,
+                chain: Some(input.chain.clone()),
+                filters: &filters,
+            },
+        )
+        .await
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{e:?}")))?;
+    }
+
+    match input.format {
+        ArchiveExportFormat::Json => {
+            send_chunk(tx, render_json_stream_footer(event_count)?).await?
+        }
+        ArchiveExportFormat::Txt => {
+            send_chunk(
+                tx,
+                format!("\nTotal de eventos exportados: {event_count}\n"),
+            )
+            .await?
+        }
+        ArchiveExportFormat::Csv => {
+            send_chunk(tx, format!("# event_count={event_count}\n")).await?
+        }
+        ArchiveExportFormat::Html => {
+            send_chunk(
+                tx,
+                format!("</tbody></table><p>Eventos exportados: {event_count}</p></body></html>"),
+            )
+            .await?
+        }
+        ArchiveExportFormat::Pdfa => unreachable!("PDF/A is rendered by the document path"),
+    }
+    Ok(())
+}
+
+async fn send_chunk(tx: &ArchiveChunkSender, chunk: impl Into<Bytes>) -> io::Result<()> {
+    tx.send(Ok(chunk.into())).await.map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::BrokenPipe,
+            "archive export client disconnected",
+        )
+    })
+}
+
+fn json_value(value: impl Serialize) -> io::Result<String> {
+    serde_json::to_string(&value).map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::Other,
+            format!("JSON archive export failed: {e}"),
+        )
+    })
+}
+
+fn render_json_stream_header(
+    input: &StreamInterchangeInput,
+    head: &str,
+    notice: &str,
+) -> io::Result<String> {
+    Ok(format!(
+        concat!(
+            "{{\n",
+            "  \"export_kind\": \"audit_interchange\",\n",
+            "  \"canonical_preserved_evidence\": false,\n",
+            "  \"canonical_evidence_format\": \"pdfa\",\n",
+            "  \"notice\": {},\n",
+            "  \"format\": \"json\",\n",
+            "  \"chain\": {},\n",
+            "  \"generated_at\": {},\n",
+            "  \"filters\": {},\n",
+            "  \"export_scope\": {},\n",
+            "  \"export_scope_description\": {},\n",
+            "  \"page_limit\": null,\n",
+            "  \"internal_batch_limit\": {},\n",
+            "  \"record_cap\": null,\n",
+            "  \"streamed\": true,\n",
+            "  \"streaming_mode\": \"streamed\",\n",
+            "  \"has_more\": false,\n",
+            "  \"next_cursor\": null,\n",
+            "  \"chain_length\": {},\n",
+            "  \"chain_head\": {},\n",
+            "  \"chain_verified\": {},\n",
+            "  \"system_degraded\": {},\n",
+            "  \"order\": {},\n",
+            "  \"event_order\": {},\n",
+            "  \"events\": [\n"
+        ),
+        json_value(notice)?,
+        json_value(input.chain.canonical())?,
+        json_value(&input.generated_at)?,
+        json_value(&input.filter_summary)?,
+        json_value(input.page_meta.scope_code())?,
+        json_value(input.page_meta.scope_description())?,
+        input
+            .page_meta
+            .internal_batch_limit
+            .map(|limit| limit.to_string())
+            .unwrap_or_else(|| "null".to_owned()),
+        input.status.length,
+        json_value(head)?,
+        input.status.verified,
+        input.degraded,
+        json_value(input.page_meta.order.as_query_value())?,
+        json_value(input.page_meta.order.event_order_label())?
+    ))
+}
+
+fn render_json_record(record: &RenderRecord) -> io::Result<String> {
+    Ok(format!("    {}", json_value(record)?))
+}
+
+fn render_json_stream_footer(event_count: usize) -> io::Result<String> {
+    Ok(format!("\n  ],\n  \"event_count\": {event_count}\n}}\n"))
+}
+
+fn render_txt_stream_header(input: &StreamInterchangeInput, head: &str, notice: &str) -> String {
+    let mut out = String::new();
+    out.push_str("Arquivo - registo de eventos\n");
+    out.push_str(notice);
+    out.push('\n');
+    out.push_str(&format!("Cadeia: {}\n", input.chain.canonical()));
+    out.push_str(&format!("Gerado em: {}\n", input.generated_at));
+    out.push_str(&format!("Filtros: {}\n", input.filter_summary));
+    out.push_str(&format!(
+        "Ambito da exportacao: {} - {}\n",
+        input.page_meta.scope_code(),
+        input.page_meta.scope_description()
+    ));
+    out.push_str("Limite da pagina: sem limite de pagina\n");
+    out.push_str(&format!(
+        "Lote interno da exportacao: {}\n",
+        input.page_meta.internal_batch_limit_label()
+    ));
+    out.push_str("Limite de registos: sem limite de registos\n");
+    out.push_str("Modo de geracao: streamed\n");
+    out.push_str(&format!(
+        "Ordem: {}\n",
+        input.page_meta.order.display_label()
+    ));
+    out.push_str("Ha mais eventos: false\n");
+    out.push_str("Cursor seguinte: -\n");
+    out.push_str("Eventos exportados: calculado no fim do fluxo\n");
+    out.push_str(&format!("Extensao da cadeia: {}\n", input.status.length));
+    out.push_str(&format!("Digest de topo: {head}\n"));
+    out.push_str(&format!("Estado da cadeia: {}\n", input.status.verified));
+    out.push_str(&format!("Modo degradado: {}\n\n", input.degraded));
+    out
+}
+
+fn render_txt_record(record: &RenderRecord) -> String {
+    let mut out = String::new();
+    out.push_str(&format!(
+        "seq={} kind={} timestamp={} actor={} scope={}\n",
+        record.seq, record.kind, record.timestamp, record.actor, record.scope
+    ));
+    out.push_str(&format!("chains={}\n", record.chains.join(",")));
+    out.push_str(&format!("payload_digest={}\n", record.payload_digest));
+    out.push_str(&format!("prev_hash={}\n", record.chain_prev_hash));
+    out.push_str(&format!("hash={}\n\n", record.hash));
+    out
+}
+
+fn render_csv_stream_header(input: &StreamInterchangeInput, notice: &str) -> String {
+    let mut out = String::new();
+    out.push_str("# ");
+    out.push_str(notice);
+    out.push('\n');
+    out.push_str(&format!(
+        "# export_scope={}\n",
+        input.page_meta.scope_code()
+    ));
+    out.push_str("# page_limit=sem limite de pagina\n");
+    out.push_str(&format!(
+        "# internal_batch_limit={}\n",
+        input.page_meta.internal_batch_limit_label()
+    ));
+    out.push_str("# record_cap=sem limite de registos\n");
+    out.push_str("# streaming_mode=streamed\n");
+    out.push_str(&format!(
+        "# order={}\n",
+        input.page_meta.order.as_query_value()
+    ));
+    out.push_str("# has_more=false\n");
+    out.push_str("# next_cursor=-\n");
+    out.push_str("seq,chain_seq,kind,scope,actor,timestamp,chains,payload_digest,prev_hash,hash,justification\n");
+    out
+}
+
+fn render_csv_record(record: &RenderRecord) -> String {
+    let row = [
+        record.seq.to_string(),
+        record.chain_seq.to_string(),
+        record.kind.clone(),
+        record.scope.clone(),
+        record.actor.clone(),
+        record.timestamp.clone(),
+        record.chains.join("|"),
+        record.payload_digest.clone(),
+        record.chain_prev_hash.clone(),
+        record.hash.clone(),
+        record.justification.clone().unwrap_or_default(),
+    ]
+    .into_iter()
+    .map(csv_escape)
+    .collect::<Vec<_>>()
+    .join(",");
+    format!("{row}\n")
+}
+
+fn render_html_stream_header(input: &StreamInterchangeInput, head: &str, notice: &str) -> String {
+    let mut out = String::new();
+    out.push_str("<!doctype html><html lang=\"pt-PT\"><head><meta charset=\"utf-8\"><title>Arquivo - audit interchange</title></head><body>");
+    out.push_str("<h1>Arquivo - registo de eventos</h1>");
+    out.push_str(&format!("<p>{}</p>", html_escape(notice)));
+    out.push_str("<dl>");
+    for (key, value) in [
+        ("Cadeia", input.chain.canonical()),
+        ("Gerado em", input.generated_at.clone()),
+        ("Filtros", input.filter_summary.clone()),
+        (
+            "Ambito da exportacao",
+            format!(
+                "{} - {}",
+                input.page_meta.scope_code(),
+                input.page_meta.scope_description()
+            ),
+        ),
+        ("Limite da pagina", "sem limite de pagina".to_owned()),
+        (
+            "Lote interno da exportacao",
+            input.page_meta.internal_batch_limit_label(),
+        ),
+        ("Limite de registos", "sem limite de registos".to_owned()),
+        ("Modo de geracao", "streamed".to_owned()),
+        ("Ordem", input.page_meta.order.display_label().to_owned()),
+        ("Ha mais eventos", "false".to_owned()),
+        ("Cursor seguinte", "-".to_owned()),
+        ("Eventos exportados", "calculado no fim do fluxo".to_owned()),
+        ("Extensao da cadeia", input.status.length.to_string()),
+        ("Digest de topo", head.to_owned()),
+        ("Estado da cadeia", input.status.verified.to_string()),
+        ("Modo degradado", input.degraded.to_string()),
+    ] {
+        out.push_str(&format!(
+            "<dt>{}</dt><dd>{}</dd>",
+            html_escape(key),
+            html_escape(&value)
+        ));
+    }
+    out.push_str("</dl><table><thead><tr><th>Seq</th><th>Acao</th><th>Ambito</th><th>Autor</th><th>Data</th><th>Hash</th></tr></thead><tbody>");
+    out
+}
+
+fn render_html_record(record: &RenderRecord) -> String {
+    format!(
+        "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td><code>{}</code></td></tr>",
+        record.seq,
+        html_escape(&record.kind),
+        html_escape(&record.scope),
+        html_escape(&record.actor),
+        html_escape(&record.timestamp),
+        html_escape(&record.hash)
+    )
+}
+
 struct InterchangeInput<'a> {
     format: ArchiveExportFormat,
     chain: &'a ChainId,
@@ -376,6 +842,8 @@ struct ArchivePageMeta {
     internal_batch_limit: Option<usize>,
     has_more: bool,
     next_cursor: Option<u64>,
+    record_cap: Option<usize>,
+    streamed: bool,
 }
 
 impl ArchivePageMeta {
@@ -403,6 +871,20 @@ impl ArchivePageMeta {
         self.internal_batch_limit
             .map(|limit| limit.to_string())
             .unwrap_or_else(|| "-".to_owned())
+    }
+
+    fn record_cap_label(self) -> String {
+        self.record_cap
+            .map(|limit| limit.to_string())
+            .unwrap_or_else(|| "sem limite de registos".to_owned())
+    }
+
+    fn streaming_label(self) -> &'static str {
+        if self.streamed {
+            "streamed"
+        } else {
+            "buffered"
+        }
     }
 }
 
@@ -432,6 +914,9 @@ fn render_interchange_export(
             "export_scope_description": input.page_meta.scope_description(),
             "page_limit": input.page_meta.page_limit,
             "internal_batch_limit": input.page_meta.internal_batch_limit,
+            "record_cap": input.page_meta.record_cap,
+            "streamed": input.page_meta.streamed,
+            "streaming_mode": input.page_meta.streaming_label(),
             "has_more": input.page_meta.has_more,
             "next_cursor": input.page_meta.next_cursor,
             "event_count": input.records.len(),
@@ -449,14 +934,7 @@ fn render_interchange_export(
         ArchiveExportFormat::Html => render_html(&input, &head, export_notice).into_bytes(),
         ArchiveExportFormat::Pdfa => unreachable!("PDF/A is rendered by the document path"),
     };
-    let content_type = match input.format {
-        ArchiveExportFormat::Json => "application/json",
-        ArchiveExportFormat::Txt => "text/plain; charset=utf-8",
-        ArchiveExportFormat::Csv => "text/csv; charset=utf-8",
-        ArchiveExportFormat::Html => "text/html; charset=utf-8",
-        ArchiveExportFormat::Pdfa => PDFA_PROFILE,
-    };
-    Ok((content_type, bytes))
+    Ok((input.format.content_type(), bytes))
 }
 
 fn render_txt(input: &InterchangeInput<'_>, head: &str, notice: &str) -> String {
@@ -479,6 +957,14 @@ fn render_txt(input: &InterchangeInput<'_>, head: &str, notice: &str) -> String 
     out.push_str(&format!(
         "Lote interno da exportacao: {}\n",
         input.page_meta.internal_batch_limit_label()
+    ));
+    out.push_str(&format!(
+        "Limite de registos: {}\n",
+        input.page_meta.record_cap_label()
+    ));
+    out.push_str(&format!(
+        "Modo de geracao: {}\n",
+        input.page_meta.streaming_label()
     ));
     out.push_str(&format!(
         "Ordem: {}\n",
@@ -523,6 +1009,14 @@ fn render_csv(input: &InterchangeInput<'_>, notice: &str) -> String {
     out.push_str(&format!(
         "# internal_batch_limit={}\n",
         input.page_meta.internal_batch_limit_label()
+    ));
+    out.push_str(&format!(
+        "# record_cap={}\n",
+        input.page_meta.record_cap_label()
+    ));
+    out.push_str(&format!(
+        "# streaming_mode={}\n",
+        input.page_meta.streaming_label()
     ));
     out.push_str(&format!(
         "# order={}\n",
@@ -580,6 +1074,11 @@ fn render_html(input: &InterchangeInput<'_>, head: &str, notice: &str) -> String
         (
             "Lote interno da exportacao",
             input.page_meta.internal_batch_limit_label(),
+        ),
+        ("Limite de registos", input.page_meta.record_cap_label()),
+        (
+            "Modo de geracao",
+            input.page_meta.streaming_label().to_owned(),
         ),
         ("Ordem", input.page_meta.order.display_label().to_owned()),
         ("Ha mais eventos", input.page_meta.has_more.to_string()),
@@ -741,6 +1240,8 @@ fn build_archive_document(input: ArchiveDocumentInput<'_>) -> DocumentModel {
                 "Lote interno da exportacao",
                 input.page_meta.internal_batch_limit_label(),
             ),
+            kv("Limite de registos", input.page_meta.record_cap_label()),
+            kv("Modo de geracao", input.page_meta.streaming_label()),
             kv("Ordem", input.page_meta.order.display_label()),
             kv("Ha mais eventos", input.page_meta.has_more.to_string()),
             kv("Cursor seguinte", input.page_meta.next_cursor_label()),

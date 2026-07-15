@@ -324,7 +324,7 @@ describe('LedgerPage', () => {
       helpTexts.some(
         (text) =>
           text ===
-          'Usa os filtros ativos, ordem mais recentes primeiro e o limite de Eventos por página; aumente o limite para incluir mais eventos no ficheiro.',
+          'Para Página atual, usa os filtros ativos, ordem mais recentes primeiro e o limite de Eventos por página; em Todos os filtrados, JSON/TXT/CSV/HTML exportam todos os correspondentes por streaming, enquanto PDF/A tem limite por segurança de memória.',
       ),
     ).toBe(true);
   });

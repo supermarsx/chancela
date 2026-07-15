@@ -1012,12 +1012,12 @@ export const frFR: Catalog = {
   'ledger.archive.downloading': 'Export…',
   'ledger.archive.scope.label': "Périmètre d'export",
   'ledger.archive.scope.help':
-    "La page actuelle utilise la limite Événements par page ; tous les filtrés sont générés côté serveur sans charger plus d'enregistrements dans le tableau.",
+    "La page actuelle utilise la limite Événements par page ; tous les filtrés JSON/TXT/CSV/HTML sont diffusés côté serveur sans charger plus d'enregistrements dans le tableau ; le PDF/A de tous les filtrés a une limite serveur de sécurité de 1 000 enregistrements et échoue sans troncature si elle est dépassée.",
   'ledger.archive.scope.currentPage': 'Page filtrée actuelle',
   'ledger.archive.scope.allFiltered': 'Tous les filtrés',
   'ledger.archive.format.label': "Format d'export",
   'ledger.archive.format.help':
-    "Utilise les filtres actifs, l'ordre plus récents en premier et la limite Événements par page ; augmentez la limite pour inclure plus d'événements dans le fichier.",
+    "Pour Page actuelle, utilise les filtres actifs, l'ordre plus récents en premier et la limite Événements par page ; pour Tous les filtrés, JSON/TXT/CSV/HTML exportent chaque correspondance en streaming, tandis que PDF/A est limité pour la sécurité mémoire.",
   'ledger.archive.format.pdfa': 'PDF/A canonique (.pdf)',
   'ledger.archive.format.txt': "TXT d'audit (.txt)",
   'ledger.archive.format.json': "JSON d'échange (.json)",

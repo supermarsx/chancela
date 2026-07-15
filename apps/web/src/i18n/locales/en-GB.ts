@@ -993,12 +993,12 @@ export const enGB: Catalog = {
   'ledger.archive.downloading': 'Exporting…',
   'ledger.archive.scope.label': 'Export scope',
   'ledger.archive.scope.help':
-    'Current page uses the Events per page limit; all filtered records are generated on the server without loading more records into the table.',
+    'Current page uses the Events per page limit; all filtered JSON/TXT/CSV/HTML streams on the server without loading more records into the table; all-filtered PDF/A has a 1,000-record server safety cap and fails without truncating if exceeded.',
   'ledger.archive.scope.currentPage': 'Current filtered page',
   'ledger.archive.scope.allFiltered': 'All filtered records',
   'ledger.archive.format.label': 'Export format',
   'ledger.archive.format.help':
-    'Uses active filters, newest-first order, and the Events per page limit; raise the limit to include more events in the file.',
+    'For Current page, uses active filters, newest-first order, and the Events per page limit; for All filtered, JSON/TXT/CSV/HTML exports every match by streaming, while PDF/A is capped for memory safety.',
   'ledger.archive.format.pdfa': 'Canonical PDF/A (.pdf)',
   'ledger.archive.format.txt': 'Audit TXT (.txt)',
   'ledger.archive.format.json': 'Interchange JSON (.json)',

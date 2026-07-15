@@ -1013,12 +1013,12 @@ export const deDE: Catalog = {
   'ledger.archive.downloading': 'Wird exportiert…',
   'ledger.archive.scope.label': 'Exportumfang',
   'ledger.archive.scope.help':
-    'Aktuelle Seite nutzt das Limit „Ereignisse pro Seite“; alle gefilterten Einträge werden serverseitig erzeugt, ohne weitere Datensätze in die Tabelle zu laden.',
+    'Aktuelle Seite nutzt das Limit „Ereignisse pro Seite“; alle gefilterten JSON/TXT/CSV/HTML-Daten werden serverseitig gestreamt, ohne weitere Datensätze in die Tabelle zu laden; PDF/A für alle gefilterten Einträge hat ein Server-Sicherheitslimit von 1.000 Datensätzen und schlägt ohne Kürzung fehl, wenn es überschritten wird.',
   'ledger.archive.scope.currentPage': 'Aktuelle gefilterte Seite',
   'ledger.archive.scope.allFiltered': 'Alle gefilterten Einträge',
   'ledger.archive.format.label': 'Exportformat',
   'ledger.archive.format.help':
-    'Verwendet aktive Filter, die Reihenfolge neueste zuerst und das Limit Ereignisse pro Seite; erhöhen Sie das Limit, um mehr Ereignisse in die Datei aufzunehmen.',
+    'Für Aktuelle Seite werden aktive Filter, neueste-zuerst und das Limit Ereignisse pro Seite verwendet; bei Alle gefilterten Einträge exportieren JSON/TXT/CSV/HTML jeden Treffer per Streaming, während PDF/A aus Speicherschutz begrenzt ist.',
   'ledger.archive.format.pdfa': 'Kanonisches PDF/A (.pdf)',
   'ledger.archive.format.txt': 'Audit-TXT (.txt)',
   'ledger.archive.format.json': 'Austausch-JSON (.json)',

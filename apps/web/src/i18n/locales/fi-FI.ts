@@ -1002,12 +1002,12 @@ export const fiFI: Catalog = {
   'ledger.archive.downloading': 'Viedään…',
   'ledger.archive.scope.label': 'Viennin laajuus',
   'ledger.archive.scope.help':
-    'Nykyinen sivu käyttää Tapahtumia sivulla -rajaa; kaikki suodatetut tietueet luodaan palvelimella lataamatta lisää rivejä taulukkoon.',
+    'Nykyinen sivu käyttää Tapahtumia sivulla -rajaa; kaikki suodatetut JSON/TXT/CSV/HTML-tiedot suoratoistetaan palvelimella lataamatta lisää rivejä taulukkoon; kaikkien suodatettujen PDF/A:ssa on 1 000 tietueen palvelinturvaraja ja se epäonnistuu katkaisematta, jos raja ylittyy.',
   'ledger.archive.scope.currentPage': 'Nykyinen suodatettu sivu',
   'ledger.archive.scope.allFiltered': 'Kaikki suodatetut tietueet',
   'ledger.archive.format.label': 'Vientimuoto',
   'ledger.archive.format.help':
-    'Käyttää aktiivisia suodattimia, uusimmat ensin -järjestystä ja Tapahtumia sivulla -rajaa; nosta rajaa, jos haluat tiedostoon lisää tapahtumia.',
+    'Nykyisellä sivulla käytetään aktiivisia suodattimia, uusimmat ensin -järjestystä ja Tapahtumia sivulla -rajaa; Kaikki suodatetut -viennissä JSON/TXT/CSV/HTML vie kaikki osumat suoratoistona, kun taas PDF/A on rajattu muistiturvallisuuden vuoksi.',
   'ledger.archive.format.pdfa': 'Kanoninen PDF/A (.pdf)',
   'ledger.archive.format.txt': 'Auditointi-TXT (.txt)',
   'ledger.archive.format.json': 'Siirto-JSON (.json)',

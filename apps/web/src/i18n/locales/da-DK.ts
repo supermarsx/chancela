@@ -1000,12 +1000,12 @@ export const daDK: Catalog = {
   'ledger.archive.downloading': 'Eksporterer…',
   'ledger.archive.scope.label': 'Eksportomfang',
   'ledger.archive.scope.help':
-    'Aktuel side bruger grænsen Hændelser pr. side; alle filtrerede poster genereres på serveren uden at indlæse flere poster i tabellen.',
+    'Aktuel side bruger grænsen Hændelser pr. side; alle filtrerede JSON/TXT/CSV/HTML-data streames på serveren uden at indlæse flere poster i tabellen; PDF/A for alle filtrerede poster har en serversikkerhedsgrænse på 1.000 poster og fejler uden afkortning, hvis den overskrides.',
   'ledger.archive.scope.currentPage': 'Aktuel filtreret side',
   'ledger.archive.scope.allFiltered': 'Alle filtrerede poster',
   'ledger.archive.format.label': 'Eksportformat',
   'ledger.archive.format.help':
-    'Bruger aktive filtre, nyeste først og grænsen Hændelser pr. side; hæv grænsen for at medtage flere hændelser i filen.',
+    'For Aktuel side bruges aktive filtre, nyeste først og grænsen Hændelser pr. side; for Alle filtrerede poster eksporterer JSON/TXT/CSV/HTML alle matches via streaming, mens PDF/A er begrænset af hensyn til hukommelsen.',
   'ledger.archive.format.pdfa': 'Kanonisk PDF/A (.pdf)',
   'ledger.archive.format.txt': 'Audit-TXT (.txt)',
   'ledger.archive.format.json': 'Udvekslings-JSON (.json)',

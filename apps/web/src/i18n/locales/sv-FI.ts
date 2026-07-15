@@ -1003,12 +1003,12 @@ export const svFI: Catalog = {
   'ledger.archive.downloading': 'Exporterar…',
   'ledger.archive.scope.label': 'Exportomfattning',
   'ledger.archive.scope.help':
-    'Aktuell sida använder gränsen Händelser per sida; alla filtrerade poster skapas på servern utan att läsa in fler poster i tabellen.',
+    'Aktuell sida använder gränsen Händelser per sida; alla filtrerade JSON/TXT/CSV/HTML-data strömmas på servern utan att läsa in fler poster i tabellen; PDF/A för alla filtrerade poster har en serversäkerhetsgräns på 1 000 poster och misslyckas utan trunkering om den överskrids.',
   'ledger.archive.scope.currentPage': 'Aktuell filtrerad sida',
   'ledger.archive.scope.allFiltered': 'Alla filtrerade poster',
   'ledger.archive.format.label': 'Exportformat',
   'ledger.archive.format.help':
-    'Använder aktiva filter, ordningen nyaste först och gränsen Händelser per sida; höj gränsen för att ta med fler händelser i filen.',
+    'För Aktuell sida används aktiva filter, nyaste först och gränsen Händelser per sida; för Alla filtrerade poster exporterar JSON/TXT/CSV/HTML varje träff via streaming, medan PDF/A begränsas för minnessäkerhet.',
   'ledger.archive.format.pdfa': 'Kanonisk PDF/A (.pdf)',
   'ledger.archive.format.txt': 'Gransknings-TXT (.txt)',
   'ledger.archive.format.json': 'Utbytes-JSON (.json)',

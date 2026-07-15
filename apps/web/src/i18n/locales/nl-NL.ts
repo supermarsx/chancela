@@ -1001,12 +1001,12 @@ export const nlNL: Catalog = {
   'ledger.archive.downloading': 'Exporteren…',
   'ledger.archive.scope.label': 'Exportbereik',
   'ledger.archive.scope.help':
-    'Huidige pagina gebruikt de limiet Gebeurtenissen per pagina; alle gefilterde records worden op de server gemaakt zonder meer records in de tabel te laden.',
+    'Huidige pagina gebruikt de limiet Gebeurtenissen per pagina; alle gefilterde JSON/TXT/CSV/HTML wordt op de server gestreamd zonder meer records in de tabel te laden; PDF/A voor alle gefilterde records heeft een serverveiligheidslimiet van 1.000 records en mislukt zonder afkappen als die wordt overschreden.',
   'ledger.archive.scope.currentPage': 'Huidige gefilterde pagina',
   'ledger.archive.scope.allFiltered': 'Alle gefilterde records',
   'ledger.archive.format.label': 'Exportformaat',
   'ledger.archive.format.help':
-    'Gebruikt actieve filters, nieuwste-eerst volgorde en de limiet Gebeurtenissen per pagina; verhoog de limiet om meer gebeurtenissen in het bestand op te nemen.',
+    'Voor Huidige pagina gebruikt dit actieve filters, nieuwste-eerst volgorde en de limiet Gebeurtenissen per pagina; bij Alle gefilterde records exporteren JSON/TXT/CSV/HTML elke match via streaming, terwijl PDF/A is begrensd voor geheugenveiligheid.',
   'ledger.archive.format.pdfa': 'Canonieke PDF/A (.pdf)',
   'ledger.archive.format.txt': 'Audit-TXT (.txt)',
   'ledger.archive.format.json': 'Uitwisselings-JSON (.json)',

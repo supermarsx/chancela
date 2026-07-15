@@ -1005,12 +1005,12 @@ export const esES: Catalog = {
   'ledger.archive.downloading': 'Exportando…',
   'ledger.archive.scope.label': 'Alcance de exportación',
   'ledger.archive.scope.help':
-    'La página actual usa el límite de Eventos por página; todos los filtrados se generan en el servidor sin cargar más registros en la tabla.',
+    'La página actual usa el límite de Eventos por página; todos los filtrados JSON/TXT/CSV/HTML se transmiten en el servidor sin cargar más registros en la tabla; PDF/A para todos los filtrados tiene un límite de seguridad del servidor de 1.000 registros y falla sin truncar si se supera.',
   'ledger.archive.scope.currentPage': 'Página filtrada actual',
   'ledger.archive.scope.allFiltered': 'Todos los filtrados',
   'ledger.archive.format.label': 'Formato de exportación',
   'ledger.archive.format.help':
-    'Usa los filtros activos, el orden de más recientes primero y el límite de Eventos por página; aumente el límite para incluir más eventos en el archivo.',
+    'Para Página actual, usa los filtros activos, orden de más recientes primero y el límite de Eventos por página; en Todos los filtrados, JSON/TXT/CSV/HTML exportan cada coincidencia por streaming, mientras PDF/A está limitado por seguridad de memoria.',
   'ledger.archive.format.pdfa': 'PDF/A canónico (.pdf)',
   'ledger.archive.format.txt': 'TXT de auditoría (.txt)',
   'ledger.archive.format.json': 'JSON de intercambio (.json)',
