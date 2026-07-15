@@ -42,7 +42,7 @@ pub use role::{
     PLATFORM_ADMIN_ROLE_ID, RECORDS_MANAGER_ROLE_ID, REVIEWER_ROLE_ID, Role, RoleCatalog, RoleId,
     SIGNATARIO_ROLE_ID, SIGNATORY_ROLE_ID, TENANT_ADMIN_ROLE_ID, default_roles,
 };
-pub use scope::{BookId, BookScope, EntityId, NoBooks, Scope, scope_covers};
+pub use scope::{BookId, BookScope, EntityId, NoBooks, Scope, TenantId, scope_covers};
 
 /// A principal's resolved authority: the set of `(permission, scope)` grants, partitioned by whether
 /// each grant arrived **via a role** or **via a delegation**.

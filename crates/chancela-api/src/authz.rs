@@ -35,8 +35,8 @@ use std::collections::HashMap;
 use time::OffsetDateTime;
 
 use chancela_authz::{
-    BookId as AuthzBookId, EntityId as AuthzEntityId, Permission, Role, Scope, ScopedPermissionSet,
-    has_permission,
+    BookId as AuthzBookId, BookScope, EntityId as AuthzEntityId, Permission, Role, Scope,
+    ScopedPermissionSet, TenantId as AuthzTenantId, has_permission,
 };
 use chancela_core::{ActId, BookId, EntityId};
 
@@ -67,6 +67,37 @@ async fn book_relation(state: &AppState) -> HashMap<AuthzBookId, AuthzEntityId> 
         .collect()
 }
 
+/// Snapshot the live **entity→tenant** relation from `state.entities` (wp26 tenancy). Each entity
+/// carries its own `tenant_id` (defaulting to the singleton default tenant for pre-tenancy data), so
+/// this is the authoritative feed for the `Scope::Tenant` narrowing level. Taken at check time (a
+/// brief read lock). An entity with no row resolves to `None` → covered by no `Tenant` grant
+/// (fail-closed). In a single-tenant deployment every entity maps to the one default tenant, so a
+/// `Tenant` grant behaves exactly like `Global`-over-that-tenant and nothing else changes.
+async fn tenant_relation(state: &AppState) -> HashMap<AuthzEntityId, AuthzTenantId> {
+    let entities = state.entities.read().await;
+    entities
+        .values()
+        .map(|e| (AuthzEntityId(e.id.0), AuthzTenantId(e.tenant_id.0)))
+        .collect()
+}
+
+/// The concrete [`BookScope`] the API feeds to `scope_covers`: book→entity via `books` and
+/// entity→tenant via `tenants` (wp26). Borrows the snapshotted relations so a resolved [`Authorizer`]
+/// answers many per-row checks without re-locking or re-allocating.
+struct ScopeRel<'a> {
+    books: &'a HashMap<AuthzBookId, AuthzEntityId>,
+    tenants: &'a HashMap<AuthzEntityId, AuthzTenantId>,
+}
+
+impl BookScope for ScopeRel<'_> {
+    fn entity_of(&self, book: AuthzBookId) -> Option<AuthzEntityId> {
+        self.books.get(&book).copied()
+    }
+    fn tenant_of(&self, entity: AuthzEntityId) -> Option<AuthzTenantId> {
+        self.tenants.get(&entity).copied()
+    }
+}
+
 /// **Core gate (principal-source-agnostic).** Does `eff` satisfy `perm` at `scope`, given the live
 /// book→entity relation? `403` if not. t65's api-key principals call this with the api-key's
 /// resolved [`ScopedPermissionSet`]; the session path uses [`require_permission`].
@@ -77,8 +108,12 @@ pub async fn require_permission_with(
     scope: Scope,
 ) -> Result<(), ApiError> {
     let relation = book_relation(state).await;
-    let books = move |b: AuthzBookId| relation.get(&b).copied();
-    if has_permission(eff, perm, scope, &books) {
+    let tenant_relation = tenant_relation(state).await;
+    let rel = ScopeRel {
+        books: &relation,
+        tenants: &tenant_relation,
+    };
+    if has_permission(eff, perm, scope, &rel) {
         Ok(())
     } else {
         Err(forbidden())
@@ -106,6 +141,19 @@ pub struct Authorizer {
     principal: Option<UserId>,
     eff: ScopedPermissionSet,
     relation: HashMap<AuthzBookId, AuthzEntityId>,
+    /// The entity→tenant relation (wp26), snapshotted alongside `relation` so `Scope::Tenant`
+    /// narrowing is enforced on every per-row check without re-locking `state.entities`.
+    tenant_relation: HashMap<AuthzEntityId, AuthzTenantId>,
+}
+
+impl Authorizer {
+    /// Build the concrete [`BookScope`] (book→entity + entity→tenant) for a `scope_covers` check.
+    fn rel(&self) -> ScopeRel<'_> {
+        ScopeRel {
+            books: &self.relation,
+            tenants: &self.tenant_relation,
+        }
+    }
 }
 
 impl Authorizer {
@@ -121,8 +169,7 @@ impl Authorizer {
     /// Does the principal hold `perm` covering `scope`?
     #[must_use]
     pub fn permits(&self, perm: Permission, scope: Scope) -> bool {
-        let books = |b: AuthzBookId| self.relation.get(&b).copied();
-        has_permission(&self.eff, perm, scope, &books)
+        has_permission(&self.eff, perm, scope, &self.rel())
     }
 
     /// Require `perm` at `scope`, `403` otherwise.
@@ -144,8 +191,7 @@ impl Authorizer {
         &self,
         permission_set: impl IntoIterator<Item = &'a Permission>,
     ) -> bool {
-        let books = |b: AuthzBookId| self.relation.get(&b).copied();
-        chancela_authz::can_define_role(&self.eff, permission_set, &books)
+        chancela_authz::can_define_role(&self.eff, permission_set, &self.rel())
     }
 
     /// **Subset invariant (role assignment, t64-E4).** May the principal *assign* `role` at `scope`?
@@ -154,8 +200,7 @@ impl Authorizer {
     /// `role.assign` does **not** exempt this.
     #[must_use]
     pub fn can_assign_role(&self, role: &Role, scope: Scope) -> bool {
-        let books = |b: AuthzBookId| self.relation.get(&b).copied();
-        chancela_authz::can_assign_role(&self.eff, role, scope, &books)
+        chancela_authz::can_assign_role(&self.eff, role, scope, &self.rel())
     }
 
     /// **Delegation invariant (t64-E4).** May the principal *delegate* `perm` at `scope`? True iff
@@ -163,8 +208,7 @@ impl Authorizer {
     /// requirement forbids re-delegation structurally (a received permission is never a role grant).
     #[must_use]
     pub fn can_delegate(&self, perm: Permission, scope: Scope) -> bool {
-        let books = |b: AuthzBookId| self.relation.get(&b).copied();
-        chancela_authz::can_delegate(&self.eff, perm, scope, &books)
+        chancela_authz::can_delegate(&self.eff, perm, scope, &self.rel())
     }
 }
 
@@ -174,21 +218,34 @@ impl Authorizer {
 pub async fn authorizer(state: &AppState, actor: &CurrentActor) -> Result<Authorizer, ApiError> {
     if let Some(principal) = actor.api_key_principal() {
         let relation = book_relation(state).await;
+        let tenant_relation = tenant_relation(state).await;
         return Ok(Authorizer {
             principal: None,
             eff: principal.effective_permissions.clone(),
             relation,
+            tenant_relation,
         });
     }
 
     let now = OffsetDateTime::now_utc();
     let (principal, eff) = effective_permissions_for_actor(state, actor, now).await?;
     let relation = book_relation(state).await;
+    let tenant_relation = tenant_relation(state).await;
     Ok(Authorizer {
         principal: Some(principal),
         eff,
         relation,
+        tenant_relation,
     })
+}
+
+/// The target [`Scope`] for a **tenant** operation (wp26 tenancy). Used by the two-tenant isolation
+/// fixture today and by the forthcoming tenant CRUD (P4); the narrowing relation is fed from
+/// `state.entities`. `allow(dead_code)` until a non-test handler calls it.
+#[must_use]
+#[allow(dead_code)]
+pub fn scope_of_tenant(id: chancela_core::TenantId) -> Scope {
+    Scope::Tenant(AuthzTenantId(id.0))
 }
 
 /// The target [`Scope`] for an **entity** operation.

@@ -74,5 +74,5 @@ pub use rules::{
     AssociacaoRulePack, ComplianceIssue, CondominioRulePack, CooperativaRulePack, CscArt63RulePack,
     FundacaoRulePack, LegalBasis, LegalBasisVerification, RulePack, Severity, statute_findings,
 };
-pub use tenant::{DEFAULT_TENANT_ID, Tenant, TenantId, default_tenant_id};
 pub use seal::{SealOutcome, open_and_seal_book, seal_act};
+pub use tenant::{DEFAULT_TENANT_ID, Tenant, TenantId, default_tenant_id};

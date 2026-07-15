@@ -83,6 +83,7 @@ pub struct SessionView {
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum ScopeView {
     Global,
+    Tenant { id: String },
     Entity { id: String },
     Book { id: String },
 }
@@ -91,6 +92,9 @@ impl From<chancela_authz::Scope> for ScopeView {
     fn from(s: chancela_authz::Scope) -> Self {
         match s {
             chancela_authz::Scope::Global => ScopeView::Global,
+            chancela_authz::Scope::Tenant(t) => ScopeView::Tenant {
+                id: t.0.to_string(),
+            },
             chancela_authz::Scope::Entity(e) => ScopeView::Entity {
                 id: e.0.to_string(),
             },

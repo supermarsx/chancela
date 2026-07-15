@@ -528,6 +528,156 @@ mod tests {
         token
     }
 
+    /// Like [`token_for_role`] but assigns the role at an arbitrary `scope` (wp26: a
+    /// `Scope::Tenant(..)` assignment), so the two-tenant fixture can mint a user rooted at exactly
+    /// one tenant.
+    async fn token_for_role_at(
+        state: &AppState,
+        username: &str,
+        role_id: RoleId,
+        scope: Scope,
+    ) -> String {
+        use crate::users::{User, UserId};
+        use time::format_description::well_known::Rfc3339;
+
+        {
+            let mut roles = state.roles.write().await;
+            if roles.is_empty() {
+                *roles = RoleCatalog::seeded_defaults();
+            }
+        }
+
+        let uid = UserId(Uuid::new_v4());
+        let user = User {
+            id: uid,
+            username: username.to_owned(),
+            display_name: username.to_owned(),
+            email: None,
+            created_at: time::OffsetDateTime::now_utc()
+                .format(&Rfc3339)
+                .unwrap_or_default(),
+            active: true,
+            password_hash: Some(crate::attestation::hash_secret("Teste-Forte7!X").unwrap()),
+            attestation_key: None,
+            secret_source: Default::default(),
+            recovery_hash: None,
+            role_assignments: vec![RoleAssignment::new(role_id, scope)],
+        };
+        state.users.write().await.insert(uid, user);
+
+        let token = Uuid::new_v4().to_string();
+        let now = time::OffsetDateTime::now_utc();
+        state.sessions.write().await.insert(
+            token.clone(),
+            crate::session::SessionEntry {
+                user_id: uid,
+                unlocked_key: None,
+                expires_at: now + time::Duration::seconds(crate::actor::SESSION_TTL_SECS),
+            },
+        );
+        token
+    }
+
+    /// **Two-tenant isolation fixture (wp26 P2, plan §4.1.2).** Two tenants A and B each own an
+    /// entity; a user is rooted at tenant A only (Owner role assigned at `Scope::Tenant(A)`). The
+    /// user must see **only** A's entity in the list and get a non-enumerating `403` for B's entity,
+    /// while a Global owner (control) sees both. This proves the `Scope::Tenant` narrowing level and
+    /// the entity→tenant relation gate the existing per-row list filter (`entities.rs:202`).
+    #[tokio::test]
+    async fn tenant_isolation_entity_list_and_read_is_scoped_to_the_users_tenant() {
+        use chancela_core::{Entity, EntityId, EntityKind, Nipc, TenantId};
+
+        let state = AppState::default();
+
+        let tenant_a = TenantId::new();
+        let tenant_b = TenantId::new();
+
+        // Insert one entity per tenant directly into state (the create endpoint stamps the default
+        // tenant; here we need a genuinely multi-tenant fixture).
+        let entity_a = Entity::new(
+            "Encosto Estratégico A, Lda",
+            Nipc::unvalidated("A-0001"),
+            "Lisboa",
+            EntityKind::SociedadePorQuotas,
+        )
+        .in_tenant(tenant_a);
+        let entity_b = Entity::new(
+            "Encosto Estratégico B, Lda",
+            Nipc::unvalidated("B-0001"),
+            "Porto",
+            EntityKind::SociedadePorQuotas,
+        )
+        .in_tenant(tenant_b);
+        let id_a: EntityId = entity_a.id;
+        let id_b: EntityId = entity_b.id;
+        {
+            let mut entities = state.entities.write().await;
+            entities.insert(id_a, entity_a);
+            entities.insert(id_b, entity_b);
+        }
+
+        // A user rooted at tenant A only (Owner grants entity.read; the scope narrows it to A).
+        let scope_a = crate::authz::scope_of_tenant(tenant_a);
+        let user_a = token_for_role_at(&state, "amelia.marques", OWNER_ROLE_ID, scope_a).await;
+
+        // (1) The list shows exactly A's entity, never B's.
+        let (status, list) =
+            send_raw(state.clone(), with_session(get("/v1/entities"), &user_a)).await;
+        assert_eq!(status, StatusCode::OK);
+        let ids: Vec<&str> = list
+            .as_array()
+            .expect("list is an array")
+            .iter()
+            .map(|row| row["id"].as_str().expect("row id"))
+            .collect();
+        assert_eq!(
+            ids,
+            vec![id_a.to_string().as_str()],
+            "tenant-A user must see only tenant-A's entity, got {ids:?}"
+        );
+        let body = list.to_string();
+        assert!(
+            !body.contains(&id_b.to_string()),
+            "tenant B's entity id leaked into A's list: {body}"
+        );
+
+        // (2) Reading A's own entity succeeds.
+        let (status, _) = send_raw(
+            state.clone(),
+            with_session(get(&format!("/v1/entities/{id_a}")), &user_a),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+
+        // (3) Reading B's entity is a non-enumerating 403 (never 200, never a distinguishable 404).
+        let (status, _) = send_raw(
+            state.clone(),
+            with_session(get(&format!("/v1/entities/{id_b}")), &user_a),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "tenant-A user must be forbidden from reading tenant-B's entity"
+        );
+
+        // (4) Control: a Global owner sees BOTH entities — the fixture is genuinely populated and the
+        // isolation above is the tenant boundary, not an empty state.
+        let global_owner =
+            token_for_role_at(&state, "global.owner", OWNER_ROLE_ID, Scope::Global).await;
+        let (status, list) = send_raw(
+            state.clone(),
+            with_session(get("/v1/entities"), &global_owner),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            list.as_array().expect("array").len(),
+            2,
+            "a Global owner must see both tenants' entities"
+        );
+    }
+
     #[tokio::test]
     async fn guest_entity_redaction_hides_nipc_and_seat_while_leitor_keeps_them() {
         let state = AppState::default();
