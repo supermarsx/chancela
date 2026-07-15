@@ -6988,12 +6988,26 @@ async fn rectification_annotation_is_append_only_and_preserves_signed_events() {
             Ok(n + 1),
             "append-only: verify advances by one"
         );
+        let annotation = ledger
+            .events()
+            .iter()
+            .find(|e| e.kind == "subject.rectification_noted")
+            .expect("rectification annotation appended");
+        let justification = annotation
+            .justification
+            .as_deref()
+            .expect("annotation has non-sensitive justification");
         assert!(
-            ledger
-                .events()
-                .iter()
-                .any(|e| e.kind == "subject.rectification_noted"),
-            "rectification annotation appended"
+            justification.starts_with("rectification annotation recorded; payload_digest="),
+            "justification identifies annotation and digest only"
+        );
+        assert!(
+            !justification.contains("Display name misspelled"),
+            "justification must not leak sensitive annotation note"
+        );
+        assert!(
+            !justification.contains("display_name"),
+            "justification must not leak sensitive annotation field"
         );
     }
     assert_eq!(after.len(), before.len() + 1, "exactly one new event");
