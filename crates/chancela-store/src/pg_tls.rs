@@ -158,7 +158,10 @@ pub(crate) fn resolve(database_url: &str) -> Result<ResolvedPgTls, StoreError> {
 /// uninterpreted so [`resolve`] can reject unknown modes explicitly rather than silently dropping
 /// them.
 fn extract_and_strip_sslmode(dsn: &str) -> (Option<String>, String) {
-    if let Some(qpos) = dsn.find('?') {
+    if dsn.contains("://") {
+        let Some(qpos) = dsn.find('?') else {
+            return (None, dsn.to_owned());
+        };
         let base = &dsn[..qpos];
         let query = &dsn[qpos + 1..];
         let mut kept: Vec<&str> = Vec::new();
@@ -185,11 +188,6 @@ fn extract_and_strip_sslmode(dsn: &str) -> (Option<String>, String) {
             format!("{base}?{}", kept.join("&"))
         };
         return (found, rebuilt);
-    }
-
-    if dsn.contains("://") {
-        // A URL with no query string: nothing to strip.
-        return (None, dsn.to_owned());
     }
 
     // libpq keyword/value form. Values can be single-quoted and may contain escaped spaces or
@@ -583,6 +581,14 @@ mod tests {
         let (mode, stripped) = extract_and_strip_sslmode("postgres://u:p@host:5432/db");
         assert_eq!(mode, None);
         assert_eq!(stripped, "postgres://u:p@host:5432/db");
+    }
+
+    #[test]
+    fn treats_question_marks_in_keyword_form_as_part_of_values() {
+        let (mode, stripped) =
+            extract_and_strip_sslmode("host=db password='p?ss word' sslmode=prefer dbname=c");
+        assert_eq!(mode.as_deref(), Some("prefer"));
+        assert_eq!(stripped, "host=db password='p?ss word' dbname=c");
     }
 
     #[test]
