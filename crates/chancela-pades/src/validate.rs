@@ -682,9 +682,11 @@ pub struct LtvVerificationReport {
     /// prior revision including its DSS), and each successive timestamp covers strictly more of the
     /// file than the previous one. Vacuously `false` when there is no archive timestamp.
     pub renewal_chain_contiguous: bool,
-    /// Whether the signature is LTV-complete offline: the chain was rebuilt to an embedded root and
-    /// every link is revocation-covered (`chain_terminates_in_embedded_root && uncovered_links empty`).
-    /// This is **not** a trust or qualified-status verdict; see [`Self::scope_note`].
+    /// Whether the signature is LTV-complete offline and still covers the rendered document: the
+    /// signature coverage gate passed, the chain was rebuilt to an embedded root, and every link is
+    /// revocation-covered (`coverage.covers_rendered_document() &&
+    /// chain_terminates_in_embedded_root && uncovered_links empty`). This is **not** a trust or
+    /// qualified-status verdict; see [`Self::scope_note`].
     pub verified_offline: bool,
     /// Honest scope statement (equal to [`LTV_OFFLINE_SCOPE_NOTE`]).
     pub scope_note: &'static str,
@@ -695,8 +697,9 @@ pub struct LtvVerificationReport {
 /// non-root link is covered by an embedded OCSP/CRL, and check the `/DocTimeStamp` renewal chain.
 ///
 /// The signer's own CMS signature and `/ByteRange` coverage are verified first (via
-/// [`validate_pdf_signature`]); this then walks only the material embedded in the PDF. It performs no
-/// trust anchoring and no live fetching — see [`LtvVerificationReport`] and [`LTV_OFFLINE_SCOPE_NOTE`].
+/// [`validate_pdf_signature`]); the final positive verdict also requires that coverage to bind the
+/// rendered document. This then walks only the material embedded in the PDF. It performs no trust
+/// anchoring and no live fetching — see [`LtvVerificationReport`] and [`LTV_OFFLINE_SCOPE_NOTE`].
 ///
 /// Returns `Err` for the same reasons as [`validate_pdf_signature`] (no signature, malformed
 /// ByteRange/Contents, CMS failure) or if the embedded `/DSS` structure is malformed.
@@ -788,8 +791,11 @@ pub fn verify_ltv_offline(signed_pdf: &[u8]) -> Result<LtvVerificationReport, Pa
     let doc_timestamp_count = base.doc_timestamps.count;
     let renewal_chain_contiguous = renewal_chain_contiguous(&base.doc_timestamps);
 
-    // 5. Offline LTV completeness verdict: chain rebuilt to an embedded root + every link covered.
-    let verified_offline = chain_len >= 1 && terminates && uncovered.is_empty();
+    // 5. Offline LTV completeness verdict: the verified CMS must also cover the rendered document,
+    //    then the chain must rebuild to an embedded root with every link covered.
+    let signature_covers_rendered_document = base.coverage.covers_rendered_document();
+    let verified_offline =
+        signature_covers_rendered_document && chain_len >= 1 && terminates && uncovered.is_empty();
 
     Ok(LtvVerificationReport {
         signer_chain_len: chain_len,
@@ -1241,7 +1247,10 @@ mod ltv_tests {
         RawSignature, SignatureAlgorithm, assemble_cades_b, signed_attributes_digest,
     };
 
-    use super::{Certificate, LtvUncoveredReason, verify_ltv_offline};
+    use super::{
+        Certificate, LtvUncoveredReason, PdfSignatureCoverage, validate_pdf_signature,
+        verify_ltv_offline,
+    };
     use crate::dss::{DssEvidence, add_dss_revision};
     use crate::sign::{SignOptions, sign_pdf};
     use crate::{add_doc_timestamp_revision, inspect_doc_timestamps};
@@ -1374,6 +1383,30 @@ mod ltv_tests {
         buf.extend_from_slice(b"trailer\n<< /Size 4 /Root 1 0 R >>\n");
         buf.extend_from_slice(format!("startxref\n{xref_off}\n%%EOF\n").as_bytes());
         buf
+    }
+
+    fn append_object_override(pdf: &[u8], obj_id: u32, new_body: &str) -> Vec<u8> {
+        let doc = lopdf::Document::load_mem(pdf).expect("parse PDF");
+        let root = doc
+            .trailer
+            .get(b"Root")
+            .and_then(lopdf::Object::as_reference)
+            .expect("root");
+        let prev_startxref = crate::pdf::last_startxref(pdf).expect("startxref");
+        let mut out = pdf.to_vec();
+        let obj_offset = out.len() + 1;
+        out.extend_from_slice(b"\n");
+        out.extend_from_slice(format!("{obj_id} 0 obj\n{new_body}\nendobj\n").as_bytes());
+        let xref_offset = out.len();
+        out.extend_from_slice(
+            format!(
+                "xref\n{obj_id} 1\n{obj_offset:010} 00000 n\r\ntrailer\n<< /Size {} /Root {} 0 R /Prev {prev_startxref} >>\nstartxref\n{xref_offset}\n%%EOF\n",
+                doc.max_id + 1,
+                root.0
+            )
+            .as_bytes(),
+        );
+        out
     }
 
     fn sign_pdf_with_leaf(pdf: &[u8], leaf_der: &[u8], leaf_key: &RsaPrivateKey) -> Vec<u8> {
@@ -1533,6 +1566,40 @@ mod ltv_tests {
         assert!(report.all_links_revocation_covered);
         assert!(report.verified_offline);
         assert!(report.uncovered_links.is_empty());
+    }
+
+    #[test]
+    fn altered_rendered_document_is_not_verified_offline() {
+        let (ca_der, leaf_der, leaf_key) = mint_chain();
+        let signed = sign_pdf_with_leaf(&base_pdf(), &leaf_der, &leaf_key);
+        let evidence = DssEvidence {
+            certificates: vec![leaf_der.clone(), ca_der.clone()],
+            ocsp_responses: vec![make_ocsp(&ca_der, &[LEAF_SERIAL])],
+            crls: vec![],
+        };
+        let with_dss = add_dss_revision(&signed, &evidence).expect("DSS append");
+        let altered = append_object_override(
+            &with_dss,
+            3,
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 72 72] /Resources << >> >>",
+        );
+
+        let base_report = validate_pdf_signature(&altered).expect("validate altered PDF");
+        assert_eq!(
+            base_report.coverage,
+            PdfSignatureCoverage::AlteredAfterSigning
+        );
+        assert!(!base_report.coverage.covers_rendered_document());
+
+        let report = verify_ltv_offline(&altered).expect("verify LTV");
+        assert_eq!(report.signer_chain_len, 2);
+        assert!(report.chain_terminates_in_embedded_root);
+        assert!(report.uncovered_links.is_empty());
+        assert!(report.all_links_revocation_covered);
+        assert!(
+            !report.verified_offline,
+            "altered rendered-document coverage must block a positive offline LTV verdict"
+        );
     }
 
     #[test]

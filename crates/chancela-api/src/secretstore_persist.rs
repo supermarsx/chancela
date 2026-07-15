@@ -1245,6 +1245,9 @@ impl ProviderCredentialStore {
         let Some(entry) = record.default_entry().cloned() else {
             return Ok(None);
         };
+        if enforce_runtime_guard && !entry.enabled {
+            return Ok(None);
+        }
         let store = self.secretstore()?;
         if enforce_runtime_guard
             && self.strict
@@ -1933,6 +1936,45 @@ mod tests {
         let statuses = store.statuses().expect("statuses");
         assert_eq!(statuses.len(), 1);
         assert_eq!(statuses[0].key_version, 1);
+    }
+
+    #[test]
+    fn read_runtime_skips_disabled_default_entry() {
+        let store = in_memory_store_with_source(CredentialKeySource::OperatorEnv, true, false);
+        store
+            .put_entry(
+                CredentialMode::Cmd,
+                "",
+                DEFAULT_ENTRY_ID,
+                Some(metadata("disabled default", 0, false, None)),
+                CmdCredentialFields {
+                    application_id: Some(zeroizing("disabled-cmd-application-id")),
+                    ..Default::default()
+                }
+                .into_set_pairs(),
+                &[],
+            )
+            .expect("put disabled default");
+
+        let admin_record = store
+            .read(CredentialMode::Cmd, "")
+            .expect("admin read")
+            .expect("disabled default is still stored");
+        assert_eq!(
+            admin_record
+                .fields
+                .get(FIELD_APPLICATION_ID)
+                .map(|z| z.as_str()),
+            Some("disabled-cmd-application-id")
+        );
+
+        assert!(
+            store
+                .read_runtime(CredentialMode::Cmd, "")
+                .expect("runtime read")
+                .is_none(),
+            "runtime reads must not return disabled stored credentials"
+        );
     }
 
     #[test]

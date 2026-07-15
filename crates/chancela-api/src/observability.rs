@@ -24,7 +24,7 @@ use std::sync::OnceLock;
 use std::time::Instant;
 
 use axum::extract::{MatchedPath, State};
-use axum::http::{HeaderValue, StatusCode, header};
+use axum::http::{HeaderValue, Method, StatusCode, header};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use metrics::{counter, gauge, histogram};
@@ -74,6 +74,27 @@ fn is_acceptable_request_id(candidate: &str) -> bool {
         && candidate.bytes().all(|b| (0x20..=0x7e).contains(&b))
 }
 
+/// Return a bounded Prometheus label for an HTTP method.
+///
+/// HTTP allows extension methods, so using the raw method token as a metric label would let a
+/// remote client create an unbounded number of retained Prometheus time series. Keep the common
+/// standard methods as distinct labels for operational usefulness and collapse every extension or
+/// uncommon method into `OTHER`.
+fn metric_method_label(method: &Method) -> &'static str {
+    match *method {
+        Method::GET => "GET",
+        Method::POST => "POST",
+        Method::PUT => "PUT",
+        Method::DELETE => "DELETE",
+        Method::PATCH => "PATCH",
+        Method::HEAD => "HEAD",
+        Method::OPTIONS => "OPTIONS",
+        Method::TRACE => "TRACE",
+        Method::CONNECT => "CONNECT",
+        _ => "OTHER",
+    }
+}
+
 /// Resolve the correlation id for a request: honour a sane inbound `x-request-id`, else mint a UUIDv4.
 fn resolve_request_id(headers: &axum::http::HeaderMap) -> String {
     headers
@@ -92,9 +113,10 @@ fn resolve_request_id(headers: &axum::http::HeaderMap) -> String {
 /// increment the in-flight gauge → run the handler inside the span → record count + latency, log one
 /// structured completion event, echo the id in the response header.
 ///
-/// Metrics are labelled by the **matched route template** (e.g. `/v1/acts/{id}`), never the raw path,
-/// so path parameters cannot explode label cardinality. Privacy: nothing but method / path template /
-/// status / latency / request-id is ever recorded — no auth headers, tokens, cookies, or bodies.
+/// Metrics are labelled by a bounded HTTP method bucket and the **matched route template**
+/// (e.g. `/v1/acts/{id}`), never the raw path, so attacker-controlled methods and path parameters
+/// cannot explode label cardinality. Privacy: nothing but method bucket / path template / status /
+/// latency / request-id is ever recorded — no auth headers, tokens, cookies, or bodies.
 pub(crate) async fn observe(
     request: axum::http::Request<axum::body::Body>,
     next: Next,
@@ -115,7 +137,7 @@ pub(crate) async fn observe(
         request_id = %request_id,
     );
 
-    let method_label = method.as_str().to_owned();
+    let method_label = metric_method_label(&method);
     gauge!("http_requests_in_flight").increment(1.0);
 
     let mut response = next.run(request).instrument(span.clone()).await;
@@ -128,7 +150,7 @@ pub(crate) async fn observe(
 
     counter!(
         "http_requests_total",
-        "method" => method_label.clone(),
+        "method" => method_label,
         "path" => route_label.clone(),
         "status" => status_label.clone(),
     )
@@ -158,6 +180,33 @@ pub(crate) async fn observe(
         .insert(REQUEST_ID_HEADER, header_value);
 
     response
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn metric_method_label_preserves_common_methods() {
+        assert_eq!(metric_method_label(&Method::GET), "GET");
+        assert_eq!(metric_method_label(&Method::POST), "POST");
+        assert_eq!(metric_method_label(&Method::PUT), "PUT");
+        assert_eq!(metric_method_label(&Method::DELETE), "DELETE");
+        assert_eq!(metric_method_label(&Method::PATCH), "PATCH");
+        assert_eq!(metric_method_label(&Method::HEAD), "HEAD");
+        assert_eq!(metric_method_label(&Method::OPTIONS), "OPTIONS");
+        assert_eq!(metric_method_label(&Method::TRACE), "TRACE");
+        assert_eq!(metric_method_label(&Method::CONNECT), "CONNECT");
+    }
+
+    #[test]
+    fn metric_method_label_collapses_extension_methods() {
+        let first = Method::from_bytes(b"M000001").expect("valid extension method");
+        let second = Method::from_bytes(b"M000002").expect("valid extension method");
+
+        assert_eq!(metric_method_label(&first), "OTHER");
+        assert_eq!(metric_method_label(&second), "OTHER");
+    }
 }
 
 /// `GET /metrics` — Prometheus text exposition (v0.0.4).

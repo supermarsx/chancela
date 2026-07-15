@@ -431,6 +431,10 @@ jobs:
         shell: bash
         env:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          WINDOWS_SIGNED: ${{ steps.sign-windows.outputs.signed }}
+          MACOS_SIGNED: ${{ steps.sign-macos.outputs.signed }}
+          MACOS_NOTARIZED: ${{ steps.sign-macos.outputs.notarized }}
+          MACOS_NOTARIZATION_TICKET: ${{ steps.sign-macos.outputs.ticket }}
         run: |
           set -euo pipefail
           platform="${{ steps.ctx.outputs.platform }}"
@@ -438,13 +442,13 @@ jobs:
           [ -n "$artifact_name" ] || artifact_name="chancela-desktop-$platform"
           args=(desktop --output "dist/release-signing/desktop-signing-status-$platform.json" \
             --platform "$platform" --artifact "$artifact_name" --run-url "$RUN_URL")
-          if [ "$platform" = "windows" ] && [ "${{ steps.sign-windows.outputs.signed }}" = "true" ]; then
+          if [ "$platform" = "windows" ] && [ "$WINDOWS_SIGNED" = "true" ]; then
             args+=(--signed --signer "Windows Authenticode certificate")
           fi
-          if [ "$platform" = "macos" ] && [ "${{ steps.sign-macos.outputs.signed }}" = "true" ]; then
+          if [ "$platform" = "macos" ] && [ "$MACOS_SIGNED" = "true" ]; then
             args+=(--signed --signer "Apple Developer ID Application")
-            if [ "${{ steps.sign-macos.outputs.notarized }}" = "true" ]; then
-              args+=(--notarized --notarization-ticket "${{ steps.sign-macos.outputs.ticket }}")
+            if [ "$MACOS_NOTARIZED" = "true" ]; then
+              args+=(--notarized --notarization-ticket "$MACOS_NOTARIZATION_TICKET")
             fi
           fi
           node scripts/release-signing-status.mjs "${args[@]}"
