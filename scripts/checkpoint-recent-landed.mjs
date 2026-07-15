@@ -10421,12 +10421,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `0c539ae`",
+    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `c2194d9`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `0c539ae`",
+    "Focused Gate Snapshot Through `c2194d9`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -11066,7 +11066,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `0c539ae`",
+    "Current checkpoint metadata/static checks through `c2194d9`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -11601,7 +11601,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `0c539ae4be96d577c12ebc3a3a79a39f0fbaf01f`",
+    "implementation snapshot `c2194d90ebf970ff51ecfc308b5805059c926492`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -12268,6 +12268,96 @@ function assertCheckpointMap() {
     "apps/web/e2e/convening-dispatch-evidence.spec.ts",
     "suficiência (?:legal|jurídica) confirmada|entrega externa confirmada|email enviado|sms enviado|workflow concluído|registo\\/DRE aceite",
     "browser convening dispatch no-overclaim assertion marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Current `c2194d9` keeps Workflows/Legal/Compliance/UX/API/CI **PARTIAL**",
+    "spec coverage convening recipient editor checkpoint marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "contact/reference value maps to the existing `reference` field because no separate contact field exists",
+    "spec coverage convening recipient reference-field boundary marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "dispatch evidence action stays disabled until recipient names exist in the persisted act",
+    "spec coverage convening recipient persisted-state gate marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "Convening recipient editor markers pin local workflow metadata only",
+    "CI checkpoints convening recipient editor marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-CHECKPOINTS.md",
+    "maps contact/reference input to the existing `reference` field because there is no separate contact field",
+    "CI checkpoints convening recipient reference-field marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Current `c2194d9` convening recipient editor checks",
+    "CI/E2E hardening plan convening recipient editor marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Local dispatch evidence stays disabled until recipient names exist in persisted act state",
+    "CI/E2E hardening plan convening recipient persisted-state gate marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/AtaEditorPage.tsx",
+    "function normalizedConveningRecipients",
+    "Ata editor convening recipient normalization marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/AtaEditorPage.tsx",
+    ".filter((recipient) => recipient.name !== '');",
+    "Ata editor convening recipient blank-name filter marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/AtaEditorPage.tsx",
+    "Contacto/referência",
+    "Ata editor convening recipient contact/reference UI marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/AtaEditorPage.tsx",
+    "reference: orNull(recipient.reference ?? '')",
+    "Ata editor convening recipient existing reference field marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/AtaEditorPage.tsx",
+    "persistedRecipients={a.convening?.recipients ?? []}",
+    "Ata editor convening dispatch persisted recipients prop marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/AtaEditorPage.tsx",
+    "const persistedRecipientSet = new Set(conveningRecipientNames(persistedRecipients));",
+    "Ata editor convening dispatch persisted recipient gate marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/AtaEditorPage.tsx",
+    "Guarde a ata para persistir os destinatários antes de registar evidência local de\n          expedição.",
+    "Ata editor convening recipient save-before-dispatch copy marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/AtaEditorStructured.test.tsx",
+    "adds, saves, and removes convening recipients through the act patch body",
+    "Ata editor convening recipient patch coverage marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/AtaEditorStructured.test.tsx",
+    "records convening dispatch evidence for a UI-added recipient after saving",
+    "Ata editor convening recipient save-before-dispatch coverage marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/convening-dispatch-evidence.spec.ts",
+    "expect(patchBodies.at(-1)?.convening?.recipients).toEqual",
+    "browser convening recipient patch payload coverage marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/convening-dispatch-evidence.spec.ts",
+    "await expect(recordButton).toBeDisabled();",
+    "browser convening recipient dispatch-disabled-before-save marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",

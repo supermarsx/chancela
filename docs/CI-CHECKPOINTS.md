@@ -86,8 +86,9 @@ absent-owner evidence UI and dashboard absent-owner dispatch-evidence reminders,
 condominium annual profile-calendar Jan 15 local advisory markers plus
 dashboard-only annual reminder localization markers for CSC, association,
 foundation, and cooperative profile-calendar rules, convocation act-review
-guidance markers plus convening dispatch evidence capture markers and
-focused route-stubbed convening dispatch browser proof, and
+guidance markers plus convening dispatch evidence capture markers, convening
+recipient editor metadata markers, and focused route-stubbed convening dispatch
+browser proof, and
 convocation-notice local WFL/legal-calendar advisory markers for
 `act-convening-notice` open-act reminders including the missing-meeting-date
 non-computed reminder path and focused `#convening-guidance` workflow UI
@@ -696,6 +697,19 @@ acceptance copy. These markers do not create recipients, change backend
 behavior, send notifications, perform external delivery, or claim legal
 authority, legal sufficiency, compliance completion, workflow completion,
 registry/DRE/provider acceptance, legal effect, or legal/compliance completion.
+
+Convening recipient editor markers pin local workflow metadata only: the Ata
+editor exposes recipient rows for name, contact/reference, channel, and
+dispatched date, persists them through the existing `updateAct` /
+`UpdateActBody.convening` path, filters blank-name rows out of the saved payload,
+and maps contact/reference input to the existing `reference` field because
+there is no separate contact field. Dispatch evidence remains disabled until
+recipient names are present in the persisted act, so UI-created recipients must
+be saved before local dispatch evidence can stamp them. These markers do not
+change backend behavior, send notifications, perform email/SMS/provider
+delivery, prove legal sufficiency, complete compliance or workflow state, or
+claim registry/DRE/provider acceptance, legal effect, or legal/compliance
+completion.
 
 Convening dispatch browser proof markers pin only route-stubbed local browser
 evidence: `npm run test:browser --workspace apps/web --
