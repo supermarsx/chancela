@@ -528,6 +528,52 @@ mod tests {
         token
     }
 
+    /// **Anti-leak guard (wp26 P3, plan §4.1.3).** The tenant isolation guarantee for the read path
+    /// rests on the enumeration endpoints filtering **per row** through the resolved `Authorizer`
+    /// (`authz.permits(perm, scope_of_{entity,book}(id))`), because `scope_covers` enforces
+    /// tenant→entity→book containment on exactly that call. If a future edit replaced the per-row
+    /// filter with a single up-front `require_permission` and an unfiltered `.values()` dump, a
+    /// tenant-scoped user would see every tenant's rows. This test freezes the per-row filter into
+    /// the two enumeration handlers so that regression fails the build. It does NOT prove every one
+    /// of the ~101 read sites over entities/books/acts is tenant-safe (see the track's honest P3
+    /// coverage note) — it guards the two proven, tenant-reachable enumeration choke points.
+    #[test]
+    fn enumeration_endpoints_retain_the_per_row_tenant_filter() {
+        const ENTITIES_SRC: &str = include_str!("entities.rs");
+        const BOOKS_SRC: &str = include_str!("books.rs");
+
+        // list_entities filters entities per row on entity.read@Entity(id) and books on
+        // book.read@Book(id) — both narrow through the tenant relation.
+        let entities_list = ENTITIES_SRC
+            .split_once("pub async fn list_entities")
+            .expect("list_entities exists")
+            .1;
+        let entities_list = &entities_list[..entities_list
+            .find("\npub async fn ")
+            .unwrap_or(entities_list.len())];
+        assert!(
+            entities_list.contains("authz.permits(Permission::EntityRead, scope_of_entity("),
+            "list_entities lost its per-row entity.read tenant filter — cross-tenant leak risk"
+        );
+        assert!(
+            entities_list.contains("authz.permits(Permission::BookRead, scope_of_book("),
+            "list_entities lost its per-row book.read tenant filter — cross-tenant leak risk"
+        );
+
+        // list_books filters books per row on book.read@Book(id).
+        let books_list = BOOKS_SRC
+            .split_once("pub async fn list_books")
+            .expect("list_books exists")
+            .1;
+        let books_list = &books_list[..books_list
+            .find("\npub async fn ")
+            .unwrap_or(books_list.len())];
+        assert!(
+            books_list.contains("authz.permits(Permission::BookRead, scope_of_book("),
+            "list_books lost its per-row book.read tenant filter — cross-tenant leak risk"
+        );
+    }
+
     /// Like [`token_for_role`] but assigns the role at an arbitrary `scope` (wp26: a
     /// `Scope::Tenant(..)` assignment), so the two-tenant fixture can mint a user rooted at exactly
     /// one tenant.
@@ -661,8 +707,36 @@ mod tests {
             "tenant-A user must be forbidden from reading tenant-B's entity"
         );
 
-        // (4) Control: a Global owner sees BOTH entities — the fixture is genuinely populated and the
-        // isolation above is the tenant boundary, not an empty state.
+        // (4) The book-enumeration path inherits the same tenant gate (books.rs:196 filters per row
+        // through the Authorizer via scope_of_book → entity → tenant). Give each tenant a book and
+        // assert the tenant-A user sees only A's book on GET /v1/books.
+        use chancela_core::{Book, BookId, BookKind};
+        let book_a = Book::new(id_a, BookKind::AssembleiaGeral);
+        let book_b = Book::new(id_b, BookKind::AssembleiaGeral);
+        let bid_a: BookId = book_a.id;
+        let bid_b: BookId = book_b.id;
+        {
+            let mut books = state.books.write().await;
+            books.insert(bid_a, book_a);
+            books.insert(bid_b, book_b);
+        }
+        let (status, blist) =
+            send_raw(state.clone(), with_session(get("/v1/books"), &user_a)).await;
+        assert_eq!(status, StatusCode::OK);
+        let book_ids: Vec<&str> = blist
+            .as_array()
+            .expect("books is an array")
+            .iter()
+            .map(|row| row["id"].as_str().expect("book id"))
+            .collect();
+        assert_eq!(
+            book_ids,
+            vec![bid_a.to_string().as_str()],
+            "tenant-A user must see only tenant-A's book, got {book_ids:?}"
+        );
+
+        // (5) Control: a Global owner sees BOTH entities and BOTH books — the fixture is genuinely
+        // populated and the isolation above is the tenant boundary, not an empty state.
         let global_owner =
             token_for_role_at(&state, "global.owner", OWNER_ROLE_ID, Scope::Global).await;
         let (status, list) = send_raw(
@@ -675,6 +749,14 @@ mod tests {
             list.as_array().expect("array").len(),
             2,
             "a Global owner must see both tenants' entities"
+        );
+        let (status, blist) =
+            send_raw(state.clone(), with_session(get("/v1/books"), &global_owner)).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            blist.as_array().expect("array").len(),
+            2,
+            "a Global owner must see both tenants' books"
         );
     }
 
