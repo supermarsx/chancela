@@ -31,11 +31,48 @@ Processor and DPIA register routes require either `user.manage@Global` or
 - `POST /v1/privacy/users/{user_id}/dsr-requests/{request_id}/complete`
 - `PATCH /v1/privacy/dsr-requests/{id}`
 - `POST /v1/privacy/dsr-requests/{id}/complete`
+- `POST /v1/privacy/users/{user_id}/dsr-requests/{request_id}/rectification`
+- `POST /v1/privacy/users/{user_id}/dsr-requests/{request_id}/restriction`
 - `POST /v1/privacy/users/{user_id}/dsr-requests/{request_id}/erasure/preflight`
 - `POST /v1/privacy/users/{user_id}/dsr-requests/{request_id}/erasure/approve`
 - `POST /v1/privacy/users/{user_id}/dsr-requests/{request_id}/erasure/execute`
 
-## Destructive erasure (right to erasure, Art. 17) — wp26-gdpr
+## Which remedy applies — annotation is the norm, erasure is the exception
+
+A notary/company-records system holds **sealed company acts** (livro de atas), books, and
+signed legal documents that carry a **statutory retention obligation**. Under GDPR
+Art. 17(3)(b) the legal-obligation carve-out **dominates** for those records: PII embedded
+in a sealed, signed minute is **not erasable** — and rewriting or removing it would break
+the signatures over it. So for the great majority of a subject's PII in this system the
+lawful remedy is **annotation, not deletion**.
+
+- **Annotation (standard remedy, Art. 16 rectification / Art. 18 restriction / Art. 21
+  objection).** A correction or a restriction/objection marker is recorded as a **new
+  append-only ledger event** (`subject.rectification_noted` / `subject.processing_restricted`)
+  linked to the record. The sealed/signed payload is **never touched**, so its signatures
+  stay valid and `Ledger::verify()` only ever advances `Ok(n)` → `Ok(n + 1)`. This is the
+  centerpiece of the data-subject workflow.
+- **Destructive erasure (narrow exception).** Reserved for genuinely non-legally-required
+  PII — an account/directory identity with **no** sealed acts, drafts never sealed, ancillary
+  data. It **never** touches sealed acts/books/signed documents (those are surfaced by the
+  preflight as `remedy: annotation` carve-outs).
+
+The erasure preflight classifies each target: **erasable** (the narrow exception) vs.
+**retained** carve-outs, and every retained sealed-record carve-out carries
+`legal_basis: art_17_3_b_statutory_retention` and `remedy: annotation`. We never overclaim
+what erasure achieves, and user-visible copy never uses the phrase "valor probatório".
+
+### Annotation (rectification / restriction) — append-only
+
+`.../rectification` and `.../restriction` record the subject's correction or restriction
+against the record. Body: `note` (required), optional `field`, and an optional `target_scope`
+(the act/entity/book scope the note is recorded against — e.g. `entity:{id}/book:{id}/act:{id}`;
+defaults to the subject's `user:{uuid}` scope). Each appends one digest-only ledger event whose
+payload records `subject_id`, `dsr_request_id`, `annotation`, `field`, `note`, `scope`,
+`noted_by`, `noted_at`. Requires `user.manage@Global`. Annotating a scope whose chain does not
+exist is refused rather than fabricating a spurious chain genesis.
+
+## Destructive erasure (narrow exception, right to erasure, Art. 17) — wp26-gdpr
 
 Erasure DSRs run a **destructive** workflow that physically deletes the subject's live
 personal data and cryptographically destroys any at-rest-encrypted subject PII, while
@@ -100,7 +137,9 @@ username slug, so it does not re-introduce attributable PII once the users row i
   `books` + the *termo de abertura* genesis, and `signed_documents`/`documents` that are the
   canonical legal instruments. These are business records of the organisation (examples use the
   fictional *Encosto Estratégico Lda*), retained under Art. 17(3)(b); surfaced in the preflight
-  as blockers with a legal-basis reason, never silently skipped.
+  with `legal_basis: art_17_3_b_statutory_retention` and `remedy: annotation` — the data subject's
+  remedy for these is an append-only rectification/restriction annotation (above), never erasure,
+  because rewriting a sealed minute would break its signature. Never silently skipped.
 - **Legal-hold targets** — a legal hold blocks erasure of the held records (reuses the retention
   legal-hold blocker model).
 
