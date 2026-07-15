@@ -33,6 +33,7 @@ pub mod external_signing;
 pub mod profile;
 pub mod rules;
 pub mod seal;
+pub mod tenant;
 
 pub use act::{
     Act, ActId, ActState, AgendaItem, Attachment, AttachmentKind, AttendanceWeight, Attendee,
@@ -73,4 +74,5 @@ pub use rules::{
     AssociacaoRulePack, ComplianceIssue, CondominioRulePack, CooperativaRulePack, CscArt63RulePack,
     FundacaoRulePack, LegalBasis, LegalBasisVerification, RulePack, Severity, statute_findings,
 };
+pub use tenant::{DEFAULT_TENANT_ID, Tenant, TenantId, default_tenant_id};
 pub use seal::{SealOutcome, open_and_seal_book, seal_act};

@@ -184,7 +184,7 @@ use axum::routing::{any, delete, get, patch, post, put};
 use chancela_cae::{CaeCatalog, CaeSource, CaeSourceChain};
 use chancela_cmd::ScmdTransport;
 use chancela_core::external_signing::{ExternalSignatureEnvelope, ExternalSignatureEnvelopeId};
-use chancela_core::{Act, ActId, Book, BookId, Entity, EntityId};
+use chancela_core::{Act, ActId, Book, BookId, DEFAULT_TENANT_ID, Entity, EntityId, Tenant, TenantId};
 use chancela_csc::{CscConfig, CscTransport};
 use chancela_ledger::{Event, Ledger, LedgerError};
 use chancela_registry::{RegistryExtract, RegistryTransport};
@@ -304,8 +304,42 @@ pub const DATA_DIR_ENV: &str = "CHANCELA_DATA_DIR";
 /// retention_execution_records → retention_candidate_resolutions → ledger** to avoid deadlock. The `cae` and `sessions` locks
 /// are independent, short-lived locks not part of that chain (a handler acquires and releases one
 /// before touching the ordered locks, or after — never interleaved with them).
+/// Load the tenant directory from the durable `tenants` table (schema v19) and guarantee the
+/// singleton [`DEFAULT_TENANT_ID`] is present (wp26 tenancy, P1-C).
+///
+/// Every row whose `json` parses becomes a [`Tenant`] in the returned map; an unparseable row is
+/// skipped (defensive — the store never interprets the blob). If the default tenant is missing it is
+/// inserted in memory and a **best-effort** durable seed is attempted (a `NotLeader`/write failure is
+/// swallowed: entity→tenant enforcement reads each entity's own `tenant_id`, never this directory, so
+/// a non-durable default tenant never weakens isolation).
+fn hydrate_tenants(store: &Store) -> HashMap<TenantId, Tenant> {
+    let mut map: HashMap<TenantId, Tenant> = HashMap::new();
+    if let Ok(rows) = store.tenants() {
+        for (_, json) in rows {
+            if let Ok(tenant) = serde_json::from_str::<Tenant>(&json) {
+                map.insert(tenant.id, tenant);
+            }
+        }
+    }
+    if !map.contains_key(&DEFAULT_TENANT_ID) {
+        let default = Tenant::default_tenant();
+        if let Ok(json) = serde_json::to_string(&default) {
+            let id = default.id.to_string();
+            let _ = store.persist(|tx| tx.upsert_tenant(&id, &json));
+        }
+        map.insert(default.id, default);
+    }
+    map
+}
+
 #[derive(Clone, Default)]
 pub struct AppState {
+    /// All known tenants (isolation boundaries above entities, wp26 tenancy), keyed by their
+    /// [`TenantId`]. Seeded with the singleton [`chancela_core::DEFAULT_TENANT_ID`] on boot so a
+    /// single-tenant deployment always has exactly one tenant containing every entity. Not on the
+    /// deadlock lock-order chain: tenancy enforcement reads the entity→tenant relation from
+    /// `entities` (each entity's `tenant_id`), so this map is a directory, not an authz input.
+    pub tenants: Arc<RwLock<HashMap<TenantId, Tenant>>>,
     /// All known entities, keyed by their [`EntityId`].
     pub entities: Arc<RwLock<HashMap<EntityId, Entity>>>,
     /// All books (livros de atas), keyed by their [`BookId`].
@@ -882,6 +916,14 @@ impl AppState {
                     state.entities = Arc::new(RwLock::new(loaded.entities));
                     state.books = Arc::new(RwLock::new(loaded.books));
                     state.acts = Arc::new(RwLock::new(loaded.acts));
+                    // wp26 tenancy: hydrate the tenant directory from the `tenants` table (v19) and
+                    // seed the singleton default tenant if it is absent, so a single-tenant
+                    // deployment always has exactly one tenant holding every (pre-tenancy) entity.
+                    // Best-effort and non-fatal — a read/seed failure just leaves the in-memory
+                    // default; entity→tenant enforcement never depends on this directory being
+                    // durable (it reads each entity's own `tenant_id`).
+                    let tenants = hydrate_tenants(&store);
+                    state.tenants = Arc::new(RwLock::new(tenants));
                     state.follow_ups = Arc::new(RwLock::new(loaded.follow_ups));
                     state.registry_extracts = Arc::new(RwLock::new(loaded.registry_extracts));
                     state.ledger = Arc::new(RwLock::new(loaded.ledger));
@@ -1154,6 +1196,9 @@ impl AppState {
         *self.acts.write().await = loaded.acts;
         *self.follow_ups.write().await = loaded.follow_ups;
         *self.registry_extracts.write().await = loaded.registry_extracts;
+        // wp26 tenancy: re-hydrate the tenant directory from the restored `tenants` table (seeding
+        // the default tenant if absent), matching the boot path.
+        *self.tenants.write().await = hydrate_tenants(store);
         self.registry_auto_updates.write().await.clear();
         self.documents.write().await.clear();
         self.external_signer_invites.write().await.clear();

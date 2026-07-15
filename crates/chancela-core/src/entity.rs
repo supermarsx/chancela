@@ -299,6 +299,14 @@ pub struct StatuteOverrides {
 pub struct Entity {
     /// Stable identifier.
     pub id: EntityId,
+    /// The tenant (isolation boundary) this entity belongs to (DAT-01, SCP-30 phase 4).
+    ///
+    /// Additive: old-shape entity JSON that predates tenancy has no `tenant_id` key and
+    /// deserialises to [`crate::tenant::DEFAULT_TENANT_ID`], migrating cleanly to the singleton
+    /// default tenant. This lives inside `entities.json` (no new column on the `entities` table),
+    /// honouring the store's additive-only migration limitation.
+    #[serde(default = "crate::tenant::default_tenant_id")]
+    pub tenant_id: crate::tenant::TenantId,
     /// Legal name / firma.
     pub name: String,
     /// NIPC — validated ([`Nipc::parse`]) or an explicit override ([`Nipc::unvalidated`]);
@@ -335,6 +343,7 @@ impl Entity {
     ) -> Self {
         Entity {
             id: EntityId::new(),
+            tenant_id: crate::tenant::default_tenant_id(),
             name: name.into(),
             nipc,
             seat: seat.into(),
@@ -343,6 +352,14 @@ impl Entity {
             fiscal_year_end: None,
             statute: None,
         }
+    }
+
+    /// Place this entity in `tenant`, returning the modified value (builder-style). Used by tenant
+    /// creation flows; entities built via [`Entity::new`] default to the singleton default tenant.
+    #[must_use]
+    pub fn in_tenant(mut self, tenant: crate::tenant::TenantId) -> Self {
+        self.tenant_id = tenant;
+        self
     }
 
     /// True when `kind` is consistent with `family` (always true for entities built via
@@ -355,6 +372,37 @@ impl Entity {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn new_entity_defaults_to_the_default_tenant() {
+        let e = Entity::new(
+            "Encosto Estratégico Lda",
+            Nipc::parse("503004642").unwrap(),
+            "Lisboa",
+            EntityKind::SociedadePorQuotas,
+        );
+        assert_eq!(e.tenant_id, crate::tenant::DEFAULT_TENANT_ID);
+    }
+
+    #[test]
+    fn old_shape_entity_json_without_tenant_migrates_to_default_tenant() {
+        // A stored entity created before tenancy: its JSON has no `tenant_id` key.
+        let e = Entity::new(
+            "Encosto Estratégico Lda",
+            Nipc::parse("503004642").unwrap(),
+            "Lisboa",
+            EntityKind::SociedadePorQuotas,
+        );
+        let mut value = serde_json::to_value(&e).unwrap();
+        value
+            .as_object_mut()
+            .unwrap()
+            .remove("tenant_id")
+            .expect("fresh entity JSON carries tenant_id");
+        let migrated: Entity = serde_json::from_value(value).unwrap();
+        assert_eq!(migrated.tenant_id, crate::tenant::DEFAULT_TENANT_ID);
+        assert_eq!(migrated.id, e.id);
+    }
 
     #[test]
     fn accepts_valid_nipc() {

@@ -82,7 +82,14 @@
 ///   sealed under that DEK (live rows and backups alike) cryptographically irrecoverable.
 ///   Forward-only, additive: existing databases gain the table via [`ALL`] and advance their stamp
 ///   on next open.
-pub const SCHEMA_VERSION: i64 = 18;
+/// - **v19** — adds `tenants`: the tenant / organizational-group aggregate above `Entity` (wp26
+///   tenancy, spec 05 DAT-01). A document-in-relational `(id, json)` table mirroring the other
+///   aggregates, holding the API's serialized [`chancela_core::Tenant`] value (opaque to the store).
+///   The entity→tenant link rides **inside** `entities.json` as a `#[serde(default)]` `tenant_id`
+///   field (there is **no** new column on `entities` and no ALTER — the store is additive-only), so
+///   pre-tenancy entities migrate cleanly to a singleton default tenant. Forward-only, additive:
+///   existing databases gain the table via [`ALL`] and advance their stamp on next open.
+pub const SCHEMA_VERSION: i64 = 19;
 
 /// `meta` — small key/value table for the `schema_version` stamp and the app version.
 pub const CREATE_META: &str = "\
@@ -664,6 +671,16 @@ CREATE TABLE IF NOT EXISTS subject_keys (
     erased_at   TEXT
 ) STRICT;";
 
+/// `tenants` — one row per [`chancela_core::Tenant`] (schema v19, wp26 tenancy). Document-in-relational
+/// `(id, json)` mirroring the aggregate tables; `json` is the API's serialized `Tenant` value, opaque
+/// to the store. The entity→tenant link is **not** here — it rides inside `entities.json`; this table
+/// only names/holds the tenants themselves. Additive: no ALTER to `entities`.
+pub const CREATE_TENANTS: &str = "\
+CREATE TABLE IF NOT EXISTS tenants (
+    id   TEXT PRIMARY KEY,
+    json TEXT NOT NULL
+) STRICT;";
+
 /// Every DDL statement, in dependency order, for [`crate::Store::open`] to execute on boot.
 pub const ALL: &[&str] = &[
     CREATE_META,
@@ -712,4 +729,5 @@ pub const ALL: &[&str] = &[
     CREATE_PROVIDER_CREDENTIALS,
     CREATE_USER_TEMPLATES,
     CREATE_SUBJECT_KEYS,
+    CREATE_TENANTS,
 ];

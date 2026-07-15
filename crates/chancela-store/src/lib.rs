@@ -3007,6 +3007,18 @@ impl Store {
         self.document_row("user_templates", id)
     }
 
+    /// Load every stored tenant row as `(id, json)`, ordered by id. Each `json` is the API's
+    /// serialized [`chancela_core::Tenant`] value (opaque to the store). Empty when unpopulated
+    /// (wp26 tenancy, schema v19).
+    pub fn tenants(&self) -> Result<Vec<(String, String)>, StoreError> {
+        self.document_rows("tenants")
+    }
+
+    /// Read one tenant's serialized `json` by id, or `None` when unknown (wp26 tenancy).
+    pub fn tenant(&self, id: &str) -> Result<Option<String>, StoreError> {
+        self.document_row("tenants", id)
+    }
+
     /// Shared reader for the `(id, json)` document-in-relational sidecar tables (users/roles/
     /// delegations). `table` is a fixed internal identifier (never user input), so interpolating it
     /// into the query is safe. Ordered by id for a deterministic enumeration.
@@ -4793,6 +4805,17 @@ impl Tx<'_> {
     /// Remove one user-authored template row by id. A no-op when the id is unknown.
     pub fn delete_user_template(&self, id: &str) -> Result<(), StoreError> {
         self.delete_document_row("user_templates", id)
+    }
+
+    /// Upsert one tenant row (`tenants`, `(id, json)`), idempotent on the id (wp26 tenancy). The
+    /// `json` is the API's serialized [`chancela_core::Tenant`] value (opaque to the store).
+    pub fn upsert_tenant(&self, id: &str, json: &str) -> Result<(), StoreError> {
+        self.upsert_document_row("tenants", id, json)
+    }
+
+    /// Remove one tenant row by id. A no-op when the id is unknown (wp26 tenancy).
+    pub fn delete_tenant(&self, id: &str) -> Result<(), StoreError> {
+        self.delete_document_row("tenants", id)
     }
 
     /// Shared document-in-relational upsert for the `(id, json)` sidecar tables. `table` is a fixed
@@ -6800,5 +6823,47 @@ mod tests {
         drop(store);
         let reopened = Store::open(dir.path()).expect("reopen");
         assert_eq!(reopened.user_templates().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn tenants_round_trip_upsert_get_list_delete() {
+        let dir = TempDir::new();
+        let store = Store::open(dir.path()).expect("open");
+
+        // A fresh store has no tenants (the API seeds the default tenant, not the store).
+        assert!(store.tenants().unwrap().is_empty());
+        assert_eq!(store.tenant("t-a").unwrap(), None);
+
+        store
+            .persist(|tx| {
+                tx.upsert_tenant("t-b", r#"{"id":"t-b","name":"B"}"#)?;
+                tx.upsert_tenant("t-a", r#"{"id":"t-a","name":"A"}"#)?;
+                Ok(())
+            })
+            .expect("persist tenants");
+
+        // Ordered by id.
+        assert_eq!(
+            store.tenants().unwrap(),
+            vec![
+                ("t-a".to_owned(), r#"{"id":"t-a","name":"A"}"#.to_owned()),
+                ("t-b".to_owned(), r#"{"id":"t-b","name":"B"}"#.to_owned()),
+            ]
+        );
+
+        // Idempotent upsert replaces json; delete drops exactly one; survives reopen.
+        store
+            .persist(|tx| tx.upsert_tenant("t-a", r#"{"id":"t-a","name":"A2"}"#))
+            .expect("update tenant");
+        assert_eq!(
+            store.tenant("t-a").unwrap().as_deref(),
+            Some(r#"{"id":"t-a","name":"A2"}"#)
+        );
+        store
+            .persist(|tx| tx.delete_tenant("t-b"))
+            .expect("delete tenant");
+        drop(store);
+        let reopened = Store::open(dir.path()).expect("reopen");
+        assert_eq!(reopened.tenants().unwrap().len(), 1);
     }
 }
