@@ -91,6 +91,7 @@ import type {
   DataCleanupBody,
   DataKeyRotationExecuteBody,
   DataKeyRotationPreflightBody,
+  DispatchActConveningBody,
   BackupRecoveryDrillBody,
   ReanchorBody,
   RestoreBody,
@@ -760,6 +761,20 @@ export function useUpdateAct(id: string) {
       qc.setQueryData(keys.act(id), act);
       void qc.invalidateQueries({ queryKey: keys.compliance(id) });
       void qc.invalidateQueries({ queryKey: keys.dashboard });
+    },
+  });
+}
+
+export function useDispatchActConvening(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: DispatchActConveningBody) => api.dispatchActConvening(id, body),
+    onSuccess: (act) => {
+      qc.setQueryData(keys.act(id), act);
+      void qc.invalidateQueries({ queryKey: keys.compliance(id) });
+      void qc.invalidateQueries({ queryKey: keys.bookActs(act.book_id) });
+      void qc.invalidateQueries({ queryKey: keys.dashboard });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
     },
   });
 }

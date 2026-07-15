@@ -55,6 +55,7 @@ import type {
   NotificationTriageUpdateBody,
   NotificationTriageUpdateResponse,
   DocumentBundle,
+  DispatchActConveningBody,
   GeneratedDocumentDispatchEvidenceList,
   GeneratedDocumentDispatchEvidenceRequest,
   GeneratedDocumentDispatchEvidenceResponse,
@@ -635,6 +636,8 @@ export const api = {
   getAct: (id: string) => get<ActView>(`/v1/acts/${id}`),
   draftAct: (body: DraftActBody) => post<ActView>('/v1/acts', body),
   updateAct: (id: string, body: UpdateActBody) => patch<ActView>(`/v1/acts/${id}`, body),
+  dispatchActConvening: (id: string, body: DispatchActConveningBody) =>
+    post<ActView>(`/v1/acts/${id}/convening/dispatch`, body),
   advanceAct: (id: string, body: AdvanceActBody) => post<ActView>(`/v1/acts/${id}/advance`, body),
   verifyActHumanReview: (id: string, body: VerifyAiHumanReviewBody) =>
     post<ActView>(`/v1/acts/${id}/human-verification`, body),

@@ -18,7 +18,7 @@ import { ataFieldHelp } from './fieldHelp';
 import { makeClient } from '../../test/utils';
 import { ToastProvider } from '../../ui/toast';
 import { ALLOW_ALL_PERMISSIONS, StaticPermissionsProvider } from '../session/permissions';
-import type { ActView, BookView, ComplianceReport } from '../../api/types';
+import type { ActConveningRecipient, ActView, BookView, ComplianceReport } from '../../api/types';
 
 const baseAct: ActView = {
   id: 'act-1',
@@ -81,6 +81,7 @@ function stateful(
   const patches: Record<string, unknown>[] = [];
   const seals: Record<string, unknown>[] = [];
   const verifications: Record<string, unknown>[] = [];
+  const dispatches: Record<string, unknown>[] = [];
   const warnings = options.warnings ?? [];
   const json = (body: unknown, status = 200) =>
     Promise.resolve(
@@ -159,6 +160,40 @@ function stateful(
       };
       return json(act);
     }
+    if (url.includes(`/v1/acts/${act.id}/convening/dispatch`) && method === 'POST') {
+      const body = init?.body
+        ? (JSON.parse(init.body as string) as {
+            dispatched_at?: string;
+            channel?: ActConveningRecipient['channel'];
+            reference?: string;
+            recipients?: string[];
+          })
+        : {};
+      dispatches.push(body);
+      if (!act.convening || act.convening.recipients.length === 0) {
+        return json({ error: 'convening has no recipients to dispatch' }, 422);
+      }
+      const selected = Array.isArray(body.recipients)
+        ? new Set(body.recipients.map((name) => name.trim()).filter((name) => name !== ''))
+        : null;
+      act = {
+        ...act,
+        convening: {
+          ...act.convening,
+          recipients: act.convening.recipients.map((recipient) => {
+            const selectedRecipient = selected == null || selected.has(recipient.name);
+            if (!selectedRecipient) return recipient;
+            return {
+              ...recipient,
+              dispatched_at: body.dispatched_at ?? recipient.dispatched_at,
+              channel: body.channel != null ? body.channel : recipient.channel,
+              reference: body.reference ?? recipient.reference,
+            };
+          }),
+        },
+      };
+      return json(act);
+    }
     if (/\/v1\/acts\/[^/]+$/.test(url)) {
       if (method === 'PATCH') {
         const body = JSON.parse(init!.body as string) as Record<string, unknown>;
@@ -170,7 +205,7 @@ function stateful(
     }
     return Promise.reject(new Error(`no stub for ${method} ${url}`));
   }) as typeof fetch;
-  return { fetchImpl, patches, seals, verifications };
+  return { fetchImpl, patches, seals, verifications, dispatches };
 }
 
 function renderEditor(initialEntry = '/atas/act-1') {
@@ -274,6 +309,56 @@ describe('AtaEditorPage — mesa presidente unblocks the seal', () => {
         second_call: null,
       });
     });
+  });
+
+  it('records convening dispatch evidence through the endpoint as local provenance only', async () => {
+    const withConveningRecipients: ActView = {
+      ...baseAct,
+      mesa: { presidente: 'Ana', secretarios: [] },
+      convening: {
+        convener: null,
+        convener_capacity: null,
+        dispatch_date: '2026-06-01',
+        antecedence_days: 29,
+        channel: 'Email',
+        evidence_reference: 'doc:convocatoria-2026-06-01',
+        recipients: [
+          { name: 'Ana Sócia', channel: null, reference: null, dispatched_at: null },
+          { name: 'Bruno Sócio', channel: null, reference: null, dispatched_at: null },
+        ],
+        second_call: null,
+      },
+    };
+    const shared = stateful(withConveningRecipients);
+    vi.stubGlobal('fetch', shared.fetchImpl);
+    renderEditor();
+
+    expect(await screen.findByDisplayValue('Assembleia Geral Anual')).toBeTruthy();
+    expect(
+      screen.getByText(/Regista apenas evidência local de expedição e proveniência no ledger/i),
+    ).toBeTruthy();
+    const pageText = document.body.textContent ?? '';
+    expect(pageText).toContain('Não envia email/SMS');
+    expect(pageText).toContain('não confirma entrega externa');
+    expect(pageText).toContain('não afirma suficiência legal');
+    expect(pageText).toContain('aceitação por registo/DRE');
+    expect(pageText).toContain('aceitação por prestador');
+    expect(pageText).not.toMatch(/email enviado|sms enviado/i);
+    expect(pageText).not.toMatch(/entrega externa confirmada/i);
+    expect(pageText).not.toMatch(/suficiência legal confirmada/i);
+    expect(pageText).not.toMatch(/workflow concluído/i);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Registar expedição local' }));
+
+    await waitFor(() => {
+      expect(shared.dispatches.at(-1)).toEqual({
+        dispatched_at: '2026-06-01',
+        channel: 'Email',
+        reference: 'doc:convocatoria-2026-06-01',
+        recipients: ['Ana Sócia', 'Bruno Sócio'],
+      });
+    });
+    expect(await screen.findByText('Evidência local de expedição registada.')).toBeTruthy();
   });
 
   it('surfaces missing convocation notice metadata as local advisory guidance only', async () => {

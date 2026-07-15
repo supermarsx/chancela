@@ -24,6 +24,7 @@ import {
   useArchiveAct,
   useBook,
   useCompliance,
+  useDispatchActConvening,
   useEntity,
   useSealAct,
   useUpdateAct,
@@ -62,6 +63,7 @@ import {
   type ActVoteResult,
   type AttachmentKind,
   type ComplianceReport,
+  type DispatchActConveningBody,
   type DispatchChannel,
   type HumanVerificationDecision,
   type MeetingChannel,
@@ -226,6 +228,8 @@ const WRITTEN_RESOLUTION_FALSE_CLAIM_FLAGS = {
 const CONVOCATION_NOTICE_ADVISORY_TITLE = 'Aviso local da convocatória estatutária';
 const CONVOCATION_NOTICE_NO_CLAIMS =
   'Apenas metadados locais; não afirma suficiência jurídica, entrega externa válida nem conclusão do workflow.';
+const CONVENING_DISPATCH_LOCAL_EVIDENCE_COPY =
+  'Regista apenas evidência local de expedição e proveniência no ledger. Não envia email/SMS, não confirma entrega externa, não afirma suficiência legal, conclusão do workflow, aceitação por registo/DRE nem aceitação por prestador.';
 
 function writtenResolutionReviewStatusOptions(
   t: ReturnType<typeof useT>,
@@ -1375,6 +1379,75 @@ function ConveningEditor({
   );
 }
 
+function conveningDispatchRecipientNames(convening: DraftConvening): string[] {
+  return convening.recipients.map((recipient) => recipient.name.trim()).filter((name) => name !== '');
+}
+
+function conveningDispatchEvidenceBody(
+  convening: DraftConvening,
+): DispatchActConveningBody | null {
+  const dispatchedAt = convening.dispatch_date.trim();
+  const recipients = conveningDispatchRecipientNames(convening);
+  if (dispatchedAt === '' || recipients.length === 0) return null;
+
+  const body: DispatchActConveningBody = {
+    dispatched_at: dispatchedAt,
+    recipients,
+  };
+  if (convening.channel !== '') body.channel = convening.channel;
+  const reference = convening.evidence_reference.trim();
+  if (reference !== '') body.reference = reference;
+  return body;
+}
+
+function ConveningDispatchEvidenceAction({
+  convening,
+  disabled,
+  pending,
+  error,
+  scope,
+  onRecord,
+}: {
+  convening: DraftConvening;
+  disabled: boolean;
+  pending: boolean;
+  error: unknown;
+  scope: CanScope;
+  onRecord: () => void;
+}) {
+  const recipientCount = conveningDispatchRecipientNames(convening).length;
+  const hasDispatchDate = convening.dispatch_date.trim() !== '';
+  const ready = !disabled && !pending && hasDispatchDate && recipientCount > 0;
+
+  return (
+    <div className="stack--tight" aria-label="Evidência local de expedição da convocatória">
+      {error ? <ErrorNote error={error} /> : null}
+      <p className="field__hint">{CONVENING_DISPATCH_LOCAL_EVIDENCE_COPY}</p>
+      {hasDispatchDate && recipientCount > 0 ? (
+        <p className="muted">
+          Marca {recipientCount} destinatário(s) existente(s) com a data indicada e, se
+          preenchidos, o meio e a referência local.
+        </p>
+      ) : (
+        <p className="muted">
+          Requer destinatários já existentes na convocatória e uma data de expedição preenchida.
+        </p>
+      )}
+      <GateButton
+        perm="act.edit"
+        scope={scope}
+        type="button"
+        variant="secondary"
+        icon={<Icon.Check />}
+        disabled={!ready}
+        onClick={onRecord}
+      >
+        {pending ? 'A registar evidência local' : 'Registar expedição local'}
+      </GateButton>
+    </div>
+  );
+}
+
 function LifecycleStepper({
   current,
   aiHumanVerificationStatus,
@@ -2089,6 +2162,7 @@ export function AtaEditorPage() {
   const entity = useEntity(book.data?.entity_id ?? '');
   const compliance = useCompliance(id);
   const update = useUpdateAct(id);
+  const dispatchConvening = useDispatchActConvening(id);
   const advance = useAdvanceAct(id);
   const humanReview = useVerifyActHumanReview(id);
   const seal = useSealAct(id);
@@ -2190,6 +2264,32 @@ export function AtaEditorPage() {
         onError: (e) => toast.error(e),
       },
     );
+  }
+
+  function onRecordConveningDispatch() {
+    if (!draft) return;
+    const body = conveningDispatchEvidenceBody(draft.convening);
+    if (!body) return;
+    dispatchConvening.mutate(body, {
+      onSuccess: (next) => {
+        const updatedConvening = next.convening;
+        if (updatedConvening) {
+          setDraft((current) =>
+            current
+              ? {
+                  ...current,
+                  convening: {
+                    ...current.convening,
+                    recipients: updatedConvening.recipients,
+                  },
+                }
+              : current,
+          );
+        }
+        toast.success('Evidência local de expedição registada.');
+      },
+      onError: (e) => toast.error(e),
+    });
   }
 
   function onAdvance(to: ActState) {
@@ -2469,6 +2569,14 @@ export function AtaEditorPage() {
                 convening={draft.convening}
                 disabled={readOnly}
                 onChange={(next) => set('convening', next)}
+              />
+              <ConveningDispatchEvidenceAction
+                convening={draft.convening}
+                disabled={readOnly}
+                pending={dispatchConvening.isPending}
+                error={dispatchConvening.error}
+                scope={bookScope}
+                onRecord={onRecordConveningDispatch}
               />
             </Card>
           </div>

@@ -820,6 +820,33 @@ describe('api client', () => {
     });
   });
 
+  it('records act convening dispatch evidence through the act endpoint', async () => {
+    const act = {
+      id: 'act-1',
+      book_id: 'book-1',
+      title: 'Ata com convocatória',
+      state: 'Signing',
+    };
+    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse(act));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await api.dispatchActConvening('act-1', {
+      dispatched_at: '2026-06-01',
+      channel: 'Email',
+      reference: 'doc:convocatoria-2026-06-01',
+      recipients: ['Ana', 'Bruno'],
+    });
+
+    expect(fetchMock.mock.calls[0][0]).toBe('/v1/acts/act-1/convening/dispatch');
+    expect(fetchMock.mock.calls[0][1].method).toBe('POST');
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      dispatched_at: '2026-06-01',
+      channel: 'Email',
+      reference: 'doc:convocatoria-2026-06-01',
+      recipients: ['Ana', 'Bruno'],
+    });
+  });
+
   it('creates, lists, and revokes external signer invites with redacted list data', async () => {
     const invite = {
       id: 'invite-1',

@@ -585,6 +585,14 @@ export interface ActConvening {
   second_call: ActSecondCall | null;
 }
 
+export interface DispatchActConveningBody {
+  actor?: string;
+  dispatched_at: string;
+  channel?: DispatchChannel | null;
+  reference?: string | null;
+  recipients?: string[] | null;
+}
+
 export interface ActManualSignatureOriginalReference {
   storage_reference: string;
   custodian?: string | null;
