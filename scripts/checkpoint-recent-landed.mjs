@@ -7696,6 +7696,26 @@ function assertCheckpointMap() {
     "server condominium absent-owner generated events restart coverage",
   );
   assertFileContains(
+    "crates/chancela-server/tests/e2e_act_document_persistence.rs",
+    "generated_convening_notice_dispatch_evidence_persists_and_indexes_without_replacing_ata",
+    "server generated-convening dispatch evidence real-binary E2E coverage",
+  );
+  assertFileContains(
+    "crates/chancela-server/tests/e2e_act_document_persistence.rs",
+    "assert_generated_convening_bundle_index",
+    "server generated-convening bundle evidence index marker",
+  );
+  assertFileContains(
+    "crates/chancela-server/tests/e2e_archive_package.rs",
+    "archive_package_indexes_generated_convening_notice_dispatch_evidence_metadata_only",
+    "server generated-convening archive sidecar real-binary E2E coverage",
+  );
+  assertFileContains(
+    "crates/chancela-server/tests/e2e_archive_package.rs",
+    "package export remains read-only after restart",
+    "server generated-convening archive read-only restart marker",
+  );
+  assertFileContains(
     "apps/web/src/features/entities/entities.test.tsx",
     "surfaces the backend entity chronology and Mermaid graph source",
     "entity chronology graph UI coverage",
@@ -10451,12 +10471,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `a6db2da`",
+    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `212a1b2`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `a6db2da`",
+    "Focused Gate Snapshot Through `212a1b2`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -10716,8 +10736,18 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current `a6db2da` generated-document by-id download, dispatch-evidence, and\n  dashboard absent-owner/generated-convening reminder checks",
+    "Current `212a1b2` generated-document by-id download, dispatch-evidence, and\n  dashboard absent-owner/generated-convening reminder checks",
     "CI/E2E hardening plan generated-document dispatch-evidence checks marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "`cargo test -p chancela-server --features e2e --locked --test e2e_act_document_persistence generated_convening -- --nocapture`",
+    "CI/E2E hardening plan generated-convening persistence E2E command marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "`cargo test -p chancela-server --features e2e --locked --test e2e_archive_package generated_convening -- --nocapture`",
+    "CI/E2E hardening plan generated-convening archive E2E command marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -11101,7 +11131,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `a6db2da`",
+    "Current checkpoint metadata/static checks through `212a1b2`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -11636,7 +11666,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `a6db2da7ef4a7389f063bab21bef2fd34869915d`",
+    "implementation snapshot `212a1b20d9faccf21783d98a69d7a9ef7b239006`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -13549,6 +13579,16 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
+    "`cargo test -p chancela-server --features e2e --locked --test e2e_act_document_persistence generated_convening -- --nocapture`",
+    "spec coverage generated-convening persistence E2E command marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "not a full\n  `cargo test -p chancela-server --features e2e --locked` green-run claim",
+    "spec coverage generated-convening focused E2E no-full-suite marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
     "apps/web/e2e/generated-convening-dispatch-evidence.spec.ts",
     "spec coverage generated-convening browser spec marker",
   );
@@ -13651,6 +13691,16 @@ function assertCheckpointMap() {
     "docs/CI-E2E-HARDENING-PLAN.md",
     "document-bundle/archive generated dispatch-evidence metadata preservation",
     "CI/E2E plan generated dispatch preservation header marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "`cargo test -p chancela-server --features e2e --locked --test e2e_archive_package generated_convening -- --nocapture`",
+    "CI checkpoints generated-convening archive E2E command marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "It is focused E2E evidence only, not a full server E2E-suite\n  green-run claim.",
+    "CI checkpoints generated-convening focused E2E no-full-suite marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",

@@ -1,10 +1,11 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-15 from current implementation snapshot `a6db2da7ef4a7389f063bab21bef2fd34869915d`,
-with committed evidence refreshes for the recently landed generated-convening
-dispatch-evidence metadata-only generated-document slice, convening recipient
-contact metadata split before local dispatch evidence, route-stubbed convening
-dispatch browser proof, convening dispatch evidence capture UI slice,
+*Updated 2026-07-15 from current implementation snapshot `212a1b20d9faccf21783d98a69d7a9ef7b239006`,
+with committed evidence refreshes for the recently landed focused
+composed-server generated-convening dispatch-evidence E2E slice,
+generated-convening dispatch-evidence metadata-only generated-document slice,
+convening recipient contact metadata split before local dispatch evidence,
+route-stubbed convening dispatch browser proof, convening dispatch evidence capture UI slice,
 convocation reminder guidance routing,
 missing-meeting-date convocation reminder, convocation act-review guidance, and
 convocation-notice local WFL/legal-calendar advisory reminder slices,
@@ -211,7 +212,10 @@ convening dispatch evidence POST through that same existing endpoint, and
 evidence stamping, followed by `a6db2da` metadata-only generated
 Convocatoria dispatch-evidence recording through the generated-document
 side-table, bundle index, archive sidecar, dashboard reminder, notification,
-and route-stubbed browser paths.
+and route-stubbed browser paths, then `212a1b2` focused composed-server
+real-binary E2E coverage for generated Convocatoria dispatch-evidence
+persistence, bundle/archive indexing, restart persistence, and read-only export
+boundaries.
 Earlier coverage text remains prior snapshot context. All top-level spec areas remain **PARTIAL**.
 This is an implementation and test coverage snapshot, not a legal certification,
 not production CMD approval, not DRE verification promotion, not full PDF/UA
@@ -1466,7 +1470,7 @@ Implementation checkpoints covered here:
   DGLAB/legal archive certification claim, prove filing/legal acceptance, claim
   all-record export, add signing/legal evidence, validate signatures, mutate the
   ledger, or prove production archive custody.
-- Current `a6db2da` keeps Documents/Workflows/Legal/Compliance/UX/API/CI
+- Current `212a1b2` keeps Documents/Workflows/Legal/Compliance/UX/API/CI
   **PARTIAL**: on-demand generated documents now return
   `/v1/documents/generated/{document_id}` and can
   be downloaded by their own generated document id in durable and in-memory
@@ -1523,6 +1527,17 @@ Implementation checkpoints covered here:
   `archive_package_indexes_generated_convening_notice_dispatch_evidence_metadata_only`
   and
   `document_bundle_indexes_generated_convening_notice_dispatch_evidence_without_replacing_ata`.
+  Focused composed-server real-binary E2E coverage is
+  `cargo test -p chancela-server --features e2e --locked --test e2e_act_document_persistence generated_convening -- --nocapture`
+  and
+  `cargo test -p chancela-server --features e2e --locked --test e2e_archive_package generated_convening -- --nocapture`.
+  Those focused E2E checks pin generated Convocatoria creation,
+  generated-document dispatch evidence `POST`/`GET`, dashboard reminder
+  routing/suppression, canonical Ata preservation, bundle
+  generated-dispatch evidence indexing, archive package sidecar indexing,
+  restart persistence, read-only archive export, and metadata-only/no-claim
+  assertions. They are a focused E2E slice only, not a full
+  `cargo test -p chancela-server --features e2e --locked` green-run claim.
   Follow-on web coverage now surfaces the generated absent-owner communication
   list, generated Convocatoria documents, generated PDF fetch, stored evidence
   rows, metadata-only evidence recording form, `operator_evidence_*` status
@@ -4285,7 +4300,9 @@ behavior, legal disposal, or legal-effect claims.
   route/store/idempotency/coverage/evidence-attached/no-completion/no-claim
   markers plus document-bundle `generated_dispatch_evidence` and archive
   `evidence/generated-dispatch/{document_id}.json` metadata-only sidecar
-  markers, external-signing
+  markers plus focused composed-server generated-convening E2E persistence,
+  restart, bundle-index, archive-sidecar, and read-only export markers,
+  external-signing
   envelope UI/safe-409/Ferramentas label markers, PDF verifier DSS/VRI
   `/TU` plus local renewal/no-live-trust/no-legal-claim UI markers, hardening-plan head markers,
   validator corpus sidecar validation, CLI encrypted-key environment tests, and desktop lockfile

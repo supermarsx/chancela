@@ -1,8 +1,9 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `a6db2da`,
-including coverage notes for generated-convening dispatch-evidence
+and implementation snapshot `212a1b2`,
+including coverage notes for focused composed-server generated-convening
+dispatch-evidence E2E coverage, generated-convening dispatch-evidence
 metadata-only generated-document recording, convening recipient contact metadata before local
 dispatch evidence stamping, route-stubbed convening dispatch browser proof,
 convening dispatch evidence capture UI,
@@ -904,11 +905,11 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `a6db2da`
+## Focused Gate Snapshot Through `212a1b2`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08` and checkpoint-promoted on 2026-07-15 for
-current implementation head `a6db2da`. This is not an exhaustive current
+current implementation head `212a1b2`. This is not an exhaustive current
 green-run claim; browser, Docker, desktop, package signing/notarization, image
 signing/attestation, and live-provider limits above still apply.
 
@@ -1434,7 +1435,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   and `Leitor` recent-event visibility, and continued Guest refusal from
   `/v1/ledger/events`. This is response redaction only: no permission grants,
   full anonymization, destructive erasure, or policy-completeness claim.
-- Current `a6db2da` generated-document by-id download, dispatch-evidence, and
+- Current `212a1b2` generated-document by-id download, dispatch-evidence, and
   dashboard absent-owner/generated-convening reminder checks: focused
   `cargo test -p chancela-api --locked on_demand_generate_persists_a_chosen_document_and_emits_the_event`
   and
@@ -1445,6 +1446,11 @@ settingsDefaults.test.ts contracts.test.ts`.
   and
   `cargo test -p chancela-api --locked generated_convening_notice_dispatch_evidence`
   and
+  focused composed-server real-binary checks
+  `cargo test -p chancela-server --features e2e --locked --test e2e_act_document_persistence generated_convening -- --nocapture`
+  and
+  `cargo test -p chancela-server --features e2e --locked --test e2e_archive_package generated_convening -- --nocapture`
+  plus
   `cargo test -p chancela-store --test store --locked generated_document_dispatch_evidence`
   coverage pins `/v1/documents/generated/{document_id}`, route classification,
   `act.read` gating by the owning act, durable and in-memory lookup, and
@@ -1498,6 +1504,10 @@ settingsDefaults.test.ts contracts.test.ts`.
   execution, registry filing, signing, bundle readiness, template legal review,
   threshold correctness, law verification claim, dashboard ledger-event append,
   archive action, legal validity certification, or dispatch-complete claim.
+  The composed-server commands are focused generated-convening E2E filters only;
+  this checkpoint does not claim that the full
+  `cargo test -p chancela-server --features e2e --locked` suite or API
+  regression suite was rerun in the final pass.
 - Current working-tree external-validator raw-report checks: focused API,
   archive-package, and web Ferramentas tests now pin bounded
   `raw_report.content_base64` acceptance only when declared byte length and
@@ -2090,14 +2100,15 @@ settingsDefaults.test.ts contracts.test.ts`.
   full RBAC/delegation-policy completion, tenant authorization proof,
   legal-capacity verification, broad security certification, or spec
   completion.
-- Current checkpoint metadata/static checks through `a6db2da`
+- Current checkpoint metadata/static checks through `212a1b2`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
   `git diff --check -- SPEC-COVERAGE.md docs\CI-E2E-HARDENING-PLAN.md
   docs\CI-CHECKPOINTS.md scripts\checkpoint-recent-landed.mjs`.
   These pin the spec snapshot,
-  hardening-plan head, generated-convening dispatch evidence metadata-only
+  hardening-plan head, focused composed-server generated-convening E2E evidence,
+  generated-convening dispatch evidence metadata-only
   generated-document recording, convening recipient contact metadata, route-stubbed
   convening dispatch browser proof, convening dispatch evidence capture,
   convocation

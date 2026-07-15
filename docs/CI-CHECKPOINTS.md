@@ -82,7 +82,8 @@ hardening, and read-only local DGLAB interchange
 manifest API and BookDetail JSON-download markers, generated-document by-id
 download route plus sealed post-act certidao/extrato template generation UI,
 absent-owner communication dispatch-evidence recording, generated-convening
-dispatch-evidence metadata-only recording, and generated
+dispatch-evidence metadata-only recording plus focused composed-server
+generated-convening dispatch-evidence E2E coverage, and generated
 absent-owner/generated-convening evidence UI and dashboard dispatch-evidence reminders,
 condominium annual profile-calendar Jan 15 local advisory markers plus
 dashboard-only annual reminder localization markers for CSC, association,
@@ -309,6 +310,10 @@ It intentionally reuses existing test surfaces:
   `cargo test -p chancela-api --locked absent_owner_dispatch_evidence_`
   plus
   `cargo test -p chancela-api --locked generated_convening_notice_dispatch_evidence`
+  plus focused composed-server real-binary coverage:
+  `cargo test -p chancela-server --features e2e --locked --test e2e_act_document_persistence generated_convening -- --nocapture`
+  and
+  `cargo test -p chancela-server --features e2e --locked --test e2e_archive_package generated_convening -- --nocapture`
   plus
   `cargo test -p chancela-store --test store --locked generated_document_dispatch_evidence`
   plus
@@ -381,7 +386,13 @@ It intentionally reuses existing test surfaces:
   `/v1/documents/generated/{document_id}/dispatch-evidence` API hrefs,
   `operator_evidence_covered` suppression, dated-before-no-date
   `dashboard_limit` sorting, and the `contracts/dashboard.json` no-date
-  fixture.
+  fixture. The focused composed-server real-binary E2E slice pins generated
+  Convocatoria creation, generated-document dispatch evidence `POST`/`GET`,
+  dashboard reminder routing/suppression, canonical Ata preservation, bundle
+  generated-dispatch evidence indexing, archive package sidecar indexing,
+  restart persistence, read-only archive export, and metadata-only/no-claim
+  assertions. It is focused E2E evidence only, not a full server E2E-suite
+  green-run claim.
 - API/web condominium annual profile-calendar advisory:
   `cargo test -p chancela-core --locked profile_calendar`, `cargo test -p
   chancela-api --locked profile_calendar`, and `cargo test -p chancela-api
@@ -669,6 +680,8 @@ source/action/deep-link/no-date ordering/fixture markers for absent-owner and
 generated-convening reminders, plus document-bundle
 `generated_dispatch_evidence` metadata and archive
 `evidence/generated-dispatch/{document_id}.json` sidecar/index markers,
+focused composed-server generated-convening E2E persistence/restart/archive
+sidecar/read-only export markers,
 live-provider assurance markers, validator manifest,
 Arquivo paged-ledger route/default-limit/cursor markers, 1000+ event first-page
 and load-more coverage, `Store::ledger_events_page` persisted-pager markers,
