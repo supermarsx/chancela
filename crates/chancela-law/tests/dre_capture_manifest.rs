@@ -111,8 +111,8 @@ fn dre_capture_manifest_has_required_operator_fields() {
 }
 
 /// Every DRE article that is NOT human-`Verified` — whether still `Pending` OR now
-/// `AutomatedReview` — remains tracked in the capture manifest as pending HUMAN approval (reviewer
-/// + legal both Pending, no artifact/marker). The automated-review tier makes a weaker claim and
+/// `AutomatedReview` — remains tracked in the capture manifest as pending HUMAN approval (reviewer +
+/// legal both Pending, no artifact/marker). The automated-review tier makes a weaker claim and
 /// therefore bypasses none of the human-approval workflow this manifest records.
 #[test]
 fn all_non_human_verified_dre_articles_have_pending_capture_manifest_coverage() {

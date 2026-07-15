@@ -549,8 +549,7 @@ async fn write_all_filtered_interchange_stream(
             break;
         }
         let Some(cursor) = next_cursor else {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
+            return Err(io::Error::other(
                 "ledger all-filtered archive export pager reported more records without a cursor",
             ));
         };
@@ -565,7 +564,7 @@ async fn write_all_filtered_interchange_stream(
             },
         )
         .await
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{e:?}")))?;
+        .map_err(|e| io::Error::other(format!("{e:?}")))?;
     }
 
     match input.format {
@@ -604,12 +603,8 @@ async fn send_chunk(tx: &ArchiveChunkSender, chunk: impl Into<Bytes>) -> io::Res
 }
 
 fn json_value(value: impl Serialize) -> io::Result<String> {
-    serde_json::to_string(&value).map_err(|e| {
-        io::Error::new(
-            io::ErrorKind::Other,
-            format!("JSON archive export failed: {e}"),
-        )
-    })
+    serde_json::to_string(&value)
+        .map_err(|e| io::Error::other(format!("JSON archive export failed: {e}")))
 }
 
 fn render_json_stream_header(

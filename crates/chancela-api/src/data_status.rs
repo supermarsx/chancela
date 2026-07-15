@@ -909,8 +909,7 @@ fn persist_key_rotation_receipt(
         std::process::id(),
         uuid::Uuid::new_v4()
     ));
-    let bytes = serde_json::to_vec_pretty(&store)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    let bytes = serde_json::to_vec_pretty(&store).map_err(std::io::Error::other)?;
     fs::write(&tmp, bytes)?;
     if path.exists() {
         fs::remove_file(&path)?;

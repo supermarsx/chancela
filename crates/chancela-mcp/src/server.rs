@@ -3954,9 +3954,9 @@ impl RetentionCandidatePresenceCounts {
     }
 }
 
-fn privacy_retention_due_candidates_report<'a>(
-    privacy_controls: &'a serde_json::Map<String, Value>,
-) -> Result<Option<&'a Value>, String> {
+fn privacy_retention_due_candidates_report(
+    privacy_controls: &serde_json::Map<String, Value>,
+) -> Result<Option<&Value>, String> {
     let Some(report) = privacy_controls.get(PRIVACY_RETENTION_DUE_CANDIDATES_KEY) else {
         return Ok(None);
     };
@@ -3966,9 +3966,9 @@ fn privacy_retention_due_candidates_report<'a>(
     Ok(Some(report))
 }
 
-fn privacy_retention_candidate_resolution_records<'a>(
-    privacy_controls: &'a serde_json::Map<String, Value>,
-) -> Result<&'a [Value], String> {
+fn privacy_retention_candidate_resolution_records(
+    privacy_controls: &serde_json::Map<String, Value>,
+) -> Result<&[Value], String> {
     let Some(records) = privacy_controls.get(PRIVACY_RETENTION_CANDIDATE_RESOLUTIONS_KEY) else {
         return Ok(&[]);
     };

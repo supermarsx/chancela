@@ -8640,7 +8640,7 @@ mod tests {
             status.required_recipients,
             vec!["Ana Sócia".to_owned(), "Bruno Sócio".to_owned()]
         );
-        assert_eq!(status.dispatch_completed, false);
+        assert!(!status.dispatch_completed);
         assert_eq!(status.completion_basis, "none");
         assert!(
             status

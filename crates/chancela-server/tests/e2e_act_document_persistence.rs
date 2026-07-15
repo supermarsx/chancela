@@ -281,6 +281,7 @@ fn assert_generated_dispatch_record_metadata_only(record: &Value) {
     );
 }
 
+#[allow(clippy::too_many_arguments)]
 fn assert_generated_convening_bundle_index(
     bundle: &Value,
     act_id: &str,

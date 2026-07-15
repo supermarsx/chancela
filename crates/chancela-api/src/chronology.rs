@@ -607,6 +607,7 @@ mod tests {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn projected_act(
         id: u128,
         book_id: BookId,

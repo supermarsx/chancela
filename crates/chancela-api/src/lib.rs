@@ -12042,7 +12042,7 @@ mod tests {
         assert_eq!(automated["verified"], false);
         assert_eq!(automated["verification"], "automated_review");
         assert_ne!(automated["body"], chancela_law::UNVERIFIED_MARKER);
-        assert!(automated["body"].as_str().expect("body").trim().len() > 0);
+        assert!(!automated["body"].as_str().expect("body").trim().is_empty());
         assert_eq!(automated["source"]["complete"], true);
         assert_eq!(automated["source"]["review_method"], "automated-capture");
         assert!(
