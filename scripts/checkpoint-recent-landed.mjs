@@ -9675,6 +9675,16 @@ function assertCheckpointMap() {
     "ledger archive filtered export request marker",
   );
   assertFileContains(
+    "apps/web/src/features/ledger/LedgerPage.test.tsx",
+    "exports all filtered records server-side without loading older pages into the table",
+    "ledger archive all-filtered UI coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/ledger/LedgerPage.tsx",
+    "export_scope: 'all_filtered'",
+    "ledger archive all-filtered UI request marker",
+  );
+  assertFileContains(
     "apps/web/e2e/ledger-archive-boundedness.spec.ts",
     "arquivo loads only the bounded first page and fetches older events by cursor",
     "ledger archive route-stubbed bounded browser coverage",
@@ -9705,6 +9715,16 @@ function assertCheckpointMap() {
     "ledger archive browser export omits cursor marker",
   );
   assertFileContains(
+    "apps/web/e2e/ledger-archive-boundedness.spec.ts",
+    "expect(allFilteredUrl.searchParams.get('export_scope')).toBe('all_filtered');",
+    "ledger archive browser all-filtered export scope marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/ledger-archive-boundedness.spec.ts",
+    "expect(ledgerRequests.page.filter((path) => path.includes('before_seq=')).length).toBe(0);",
+    "ledger archive browser all-filtered no lazy-load marker",
+  );
+  assertFileContains(
     "apps/web/src/api/client.test.ts",
     "serializes paged ledger filters for newest-first lazy loading",
     "ledger archive paged filter serialization coverage",
@@ -9715,9 +9735,34 @@ function assertCheckpointMap() {
     "ledger archive interchange format coverage",
   );
   assertFileContains(
+    "apps/web/src/api/client.test.ts",
+    "passes the all-filtered archive scope without a cursor parameter",
+    "ledger archive client all-filtered scope coverage",
+  );
+  assertFileContains(
     "apps/web/src/api/types.ts",
     "next_cursor: number | null;",
     "ledger archive numeric cursor type marker",
+  );
+  assertFileContains(
+    "apps/web/src/api/types.ts",
+    "export type LedgerArchiveDocumentScope = 'current_page' | 'all_filtered';",
+    "ledger archive typed export scope marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/arquivo.rs",
+    "const ALL_FILTERED_EXPORT_BATCH_LIMIT: usize = MAX_LEDGER_PAGE_LIMIT;",
+    "ledger archive all-filtered batch limit marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/arquivo.rs",
+    "Exports every matching filtered ledger event server-side in newest-first order",
+    "ledger archive all-filtered API description marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/arquivo.rs",
+    "ledger archive document exports do not accept before_seq",
+    "ledger archive export before_seq rejection marker",
   );
   assertFileContains(
     "crates/chancela-api/src/lib.rs",
@@ -9745,6 +9790,16 @@ function assertCheckpointMap() {
     "ledger archive page limit normalization marker",
   );
   assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "export_scope=all_filtered&limit=10",
+    "ledger archive all-filtered API coverage marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    'assert_eq!(export["internal_batch_limit"], 250);',
+    "ledger archive all-filtered internal batch marker",
+  );
+  assertFileContains(
     "crates/chancela-api/src/ledger_events_page.rs",
     ".ledger_events_page(&store_query(&query))",
     "ledger archive store-backed selector marker",
@@ -9766,12 +9821,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Focused route-stubbed\n  browser proof now adds `/arquivo` coverage",
+    "route-stubbed\n  `/arquivo` proof verifies all-filtered export does not load older records into\n  the table",
     "spec coverage ledger archive browser proof marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "claim\n  all-record export, add signing/legal evidence, validate signatures, mutate the\n  ledger",
+    "all-filtered path currently assembles the final response in memory and has no\n  record-count cap",
     "spec coverage ledger archive no-overclaim marker",
   );
   assertFileContains(
@@ -9796,8 +9851,8 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "export\nremains bounded to the current filtered newest-first page after limit\nnormalization",
-    "CI checkpoints ledger archive bounded export marker",
+    "`export_scope=all_filtered` walks filtered newest-first records server-side in\n250-record internal chunks",
+    "CI checkpoints ledger archive all-filtered export marker",
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
@@ -9823,6 +9878,16 @@ function assertCheckpointMap() {
     "docs/CI-E2E-HARDENING-PLAN.md",
     "no `before_seq`",
     "CI/E2E hardening ledger archive export no-cursor marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Current `a7125b3` all-filtered archive export checks",
+    "CI/E2E hardening all-filtered archive checks marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "the all-filtered response is assembled in memory and has no\n  record-count cap",
+    "CI/E2E hardening all-filtered archive caveat marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -10321,12 +10386,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `3a41187`",
+    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `a7125b3`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `3a41187`",
+    "Focused Gate Snapshot Through `a7125b3`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -10966,7 +11031,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `3a41187`",
+    "Current checkpoint metadata/static checks through `a7125b3`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -11501,7 +11566,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `3a41187a354605971f801ada166a4f48d21ec133`",
+    "implementation snapshot `a7125b323f6c5e4811fe82628dd7e789f03664f1`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -11518,6 +11583,11 @@ function assertCheckpointMap() {
     "SPEC-COVERAGE.md",
     "Recent `baad7b4` keeps Data/Archive/UX/CI **PARTIAL**",
     "spec coverage archive filter refinement current checkpoint marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Current `a7125b3` keeps Data/Archive/UX/CI **PARTIAL**",
+    "spec coverage all-filtered archive export checkpoint marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",

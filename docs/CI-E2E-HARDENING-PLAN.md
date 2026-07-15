@@ -1,10 +1,10 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `3a41187`,
+and implementation snapshot `a7125b3`,
 including coverage notes for condominium annual local advisory Jan 15
 profile-calendar depth, automated-review dashboard contract surfacing, archive
-active-filter count refinement,
+active-filter count refinement, all-filtered archive export,
 automated-review law corpus evidence and UI tier surfacing, MCP workflow
 provenance local JSON/text summary,
 key-custody readiness UI/contract surfacing,
@@ -886,11 +886,11 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `3a41187`
+## Focused Gate Snapshot Through `a7125b3`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08` and checkpoint-promoted on 2026-07-15 for
-current implementation head `3a41187`. This is not an exhaustive current
+current implementation head `a7125b3`. This is not an exhaustive current
 green-run claim; browser, Docker, desktop, package signing/notarization, image
 signing/attestation, and live-provider limits above still apply.
 
@@ -1753,10 +1753,26 @@ settingsDefaults.test.ts contracts.test.ts`.
   `html`, server-backed filters and lazy newest-first paging remain intact, and
   archive-document export remains bounded to the current filtered first page
   with no `before_seq`. This remains archive UI clarity/accessibility and
-  bounded current-page export regression coverage only: no all-record export,
-  non-PDF/A evidence preservation, archive certification, legal acceptance,
-  signature validation, ledger mutation, or production custody claim is
-  implemented or proven.
+  bounded current-page export regression coverage for `baad7b4`; the later
+  `a7125b3` slice covers opt-in all-filtered export. No non-PDF/A evidence
+  preservation, archive certification, legal acceptance, signature validation,
+  ledger mutation, or production custody claim is implemented or proven.
+- Current `a7125b3` all-filtered archive export checks: focused
+  `cargo test -p chancela-api arquivo --locked`, `cargo test -p chancela-api
+  --lib ledger_archive_document --locked`, `npm run test --workspace apps/web
+  -- LedgerPage.test.tsx`, `npm run test --workspace apps/web --
+  client.test.ts i18n.test.ts`, `npm run build --workspace apps/web`, and `npx
+  playwright test e2e/ledger-archive-boundedness.spec.ts --project=chromium`
+  coverage pins explicit archive `export_scope`, default bounded
+  current-page export, `all_filtered` server-side walking of filtered
+  newest-first records in 250-record internal chunks, continued `before_seq`
+  rejection on archive export, preservation of `pdfa`, `txt`, `json`, `csv`,
+  and `html` formats, and UI/browser behavior where all-filtered export does
+  not load older records into the table. This remains filtered ledger export
+  coverage only: the all-filtered response is assembled in memory and has no
+  record-count cap, and there is no DGLAB/legal archive certification, expanded
+  PDF/A/signature/custody claim, legal acceptance, ledger mutation, or full
+  archive completion claim.
 - Current `3a41187` workflow reminder/calendar checks: focused `cargo test -p
   chancela-core --locked profile_calendar`, `cargo test -p chancela-api
   --locked profile_calendar`, and `cargo test -p chancela-api --locked
@@ -1921,14 +1937,16 @@ settingsDefaults.test.ts contracts.test.ts`.
   full RBAC/delegation-policy completion, tenant authorization proof,
   legal-capacity verification, broad security certification, or spec
   completion.
-- Current checkpoint metadata/static checks through `3a41187`
+- Current checkpoint metadata/static checks through `a7125b3`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
   `git diff --check -- SPEC-COVERAGE.md docs\CI-E2E-HARDENING-PLAN.md
   docs\CI-CHECKPOINTS.md scripts\checkpoint-recent-landed.mjs`.
   These pin the spec snapshot,
-  hardening-plan head, automated-review dashboard contract surfacing, Arquivo advanced-filter count badge, MCP meeting metadata extraction review resource, PDF table-structure semantics, export save-prompt
+  hardening-plan head, automated-review dashboard contract surfacing, Arquivo
+  advanced-filter count badge, all-filtered archive export scope, MCP meeting
+  metadata extraction review resource, PDF table-structure semantics, export save-prompt
   routing, dashboard dates tab, notification footer icon-only action, and
   clarified platform operations UI, user/signatory email capture, and compact
   Data Management cleanup controls, platform-log cleanup target/row markers,

@@ -653,12 +653,16 @@ API after-reload/memory-clear store-pager coverage, shared list/export search
 (`q`), chain/scope filter, and limit normalization markers, numeric
 `next_cursor` typing, Livro-style filters, icon-only clear-control markers,
 collapsed advanced-filter summary plus active-filter count badge markers,
-JSON/TXT/CSV/HTML export-format markers, and canonical-only PDF/A evidence
-boundaries, plus route-stubbed `/arquivo` browser proof in
+JSON/TXT/CSV/HTML export-format markers, explicit archive export-scope markers
+for bounded current-page default plus opt-in all-filtered server-side export,
+and canonical-only PDF/A evidence boundaries, plus route-stubbed `/arquivo`
+browser proof in
 `apps/web/e2e/ledger-archive-boundedness.spec.ts` for bounded first-page rows,
 older-tail absence before load-more, cursor request serialization, filtered
 `limit=50&order=desc` list queries, and archive-document export with current
-filters and no `before_seq`, backup recovery-drill `isolated_restore_verified` /
+filters and no `before_seq`, plus all-filtered export with
+`export_scope=all_filtered`, no UI page-limit cap, no `before_seq`, and no older
+records loaded into the table, backup recovery-drill `isolated_restore_verified` /
 `isolated_restore_verification` receipt markers, isolated DB material/readback,
 sidecar materialized file/byte counts, temp-cleanup evidence, no live-restore/
 no `ledger.restored` markers, external-signing slot evidence
@@ -774,12 +778,15 @@ multiple documents, CMD multiple-sign, SCAP-verified representative authority,
 legal-capacity proof, production/live remote batch readiness, or legal effect
 for local CC or repeated remote batch-initiate UI evidence. The
 Arquivo markers prove bounded UI/API/browser paging, persisted-store SQL paging
-after reload/memory clear, and filtered first-page export behavior only; export
-remains bounded to the current filtered newest-first page after limit
-normalization. They do not turn non-PDF/A exports into preserved evidence,
-make any archive certification or DGLAB/legal archive certification claim,
-prove filing or legal acceptance, claim all-record export, add signing/legal
-evidence, validate signatures, or mutate the ledger. The external invite
+after reload/memory clear, filtered first-page default export behavior, and
+explicit all-filtered export behavior only; the default export remains bounded
+to the current filtered newest-first page after limit normalization, while
+`export_scope=all_filtered` walks filtered newest-first records server-side in
+250-record internal chunks. The all-filtered export currently assembles the
+final response in memory and has no record-count cap. They do not turn
+non-PDF/A exports into preserved evidence, make any archive certification or
+DGLAB/legal archive certification claim, prove filing or legal acceptance, add
+signing/legal evidence, validate signatures, or mutate the ledger. The external invite
 signed-PDF markers prove act-scoped technical signed evidence and the linked
 no-identity external slot status path only. The operator-supplied
 external-signing slot evidence markers prove stored technical evidence display
