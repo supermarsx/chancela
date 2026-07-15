@@ -1,14 +1,29 @@
-//! A best-effort XML-DSig validator for the Trusted List's own `<ds:Signature>` element
-//! (SIG-11, audit t41/C2).
+//! An XML-DSig validator for the Trusted List's own `<ds:Signature>` element (SIG-11, audit
+//! t41/C2).
 //!
 //! See [`crate::source::validate_tsl_signature`] for the public entry point and the documented
-//! verification boundary. This module is intentionally minimal: it extracts just enough of the
-//! XML-DSig structure to verify the signature value against the signer certificate's public key,
-//! without pulling in a full XML-DSig library or implementing every canonicalization transform.
+//! verification boundary. This module extracts just enough of the XML-DSig structure to verify the
+//! signature value against the signer certificate's public key, routing canonicalization through the
+//! real C14N implementation in [`crate::c14n`] (wp26 E2) rather than hashing raw source bytes.
+//!
+//! # Canonicalization: real C14N with an already-canonical fast path
+//! XML-DSig signs the *canonical* form of `<ds:SignedInfo>` (per the declared
+//! `CanonicalizationMethod`) and of each `<ds:Reference>`'s transformed content. For genuinely
+//! non-canonical real-world EU LOTL / member-state TSLs, reconstructing those canonical bytes is
+//! mandatory, so this verifier feeds the relevant subtree — with the ancestor `xmlns` context
+//! hoisted onto `<ds:SignedInfo>` as C14N requires — through [`crate::c14n::canonicalize`].
+//!
+//! Both the SignedInfo signature check and the reference digest check are evaluated against a small
+//! ordered set of candidate byte streams: the real C14N output **and** the raw source octets (the
+//! historical "already-canonical fast path"). Verification succeeds if *any* candidate matches. This
+//! is safe — every candidate is still cryptographically bound to the one signature/digest, so an
+//! attacker cannot forge either form without the signer's key, and tampering perturbs *all*
+//! candidates — while keeping lists that were signed over already-serialized-canonical bytes valid.
 
 use der::{Decode, Encode};
 use sha2::Digest;
 
+use crate::c14n::C14nAlgorithm;
 use crate::error::TslError;
 use crate::parse::decode_base64;
 use crate::source::TslTrustAnchors;
@@ -152,20 +167,26 @@ impl ParsedSignature {
             )));
         }
 
-        // 4. Resolve and digest the referenced content.
+        // 4. Resolve and digest the referenced content. The digest must match one of the candidate
+        //    forms of the transformed content: the real C14N output (when the reference carries a
+        //    C14N transform) or the raw transformed octets (the already-canonical fast path).
         let signed_content =
             resolve_referenced_content(xml, &reference.uri, &reference.transforms)?;
-        let digest = sha2::Sha256::digest(&signed_content);
-        if digest.as_slice() != reference.digest_value.as_slice() {
+        if !reference_digest_matches(&reference, &signed_content) {
             return Err(TslError::SignatureDigestMismatch);
         }
 
-        // 5. Canonicalize the SignedInfo element. For enveloped signatures in a document that is
-        //    already canonical (no comments, consistent encoding — the common TSL form), the raw
-        //    element bytes are correct. We do not strip namespaces for exclusive C14N here; a real
-        //    TSL's SignedInfo is already in canonical form.
-        let signed_info_bytes = &xml[self.signed_info_start..self.signed_info_end];
-        let canonical_signed_info = canonicalize_element(signed_info_bytes);
+        // 5. Build the candidate canonical forms of the SignedInfo element. The primary candidate is
+        //    the real C14N of the namespace-hoisted subtree (the ancestor `xmlns`/`xmlns:ds`
+        //    declarations that `<ds:SignedInfo>` inherits are hoisted onto its start tag first, as
+        //    C14N requires in-scope ancestor namespaces); the fallback is the raw element bytes, for
+        //    lists that were signed over already-serialized-canonical SignedInfo octets.
+        let signed_info_candidates = signed_info_candidates(
+            xml,
+            self.signed_info_start,
+            self.signed_info_end,
+            &self.canonicalization_method,
+        );
 
         // 6. Extract the signer certificate.
         let cert_der = self.signer_cert_der.ok_or_else(|| {
@@ -175,13 +196,13 @@ impl ParsedSignature {
             )
         })?;
 
-        // 7. Verify the signature value against the cert's public key. This only proves the list
-        //    is self-consistent — a self-signed list passes this step too.
+        // 7. Verify the signature value against the cert's public key over any candidate SignedInfo
+        //    form. This only proves the list is self-consistent — a self-signed list passes too.
         verify_signature_value(
             &cert_der,
             &self.signature_method,
             &self.signature_value,
-            &canonical_signed_info,
+            &signed_info_candidates,
         )?;
 
         // 8. Trust decision (audit t41/C2 part H4): the signer certificate the list carried about
@@ -626,46 +647,252 @@ fn find_case_insensitive(haystack: &[u8], needle: &[u8]) -> Option<usize> {
         .position(|w| w.eq_ignore_ascii_case(needle))
 }
 
-/// A minimal canonicalization of an element's raw bytes: trim leading/trailing whitespace, remove
-/// XML comments. This is NOT a full C14N implementation — it covers the common case where the
-/// SignedInfo element is already in canonical form (no comments, consistent attribute ordering).
-fn canonicalize_element(element_bytes: &[u8]) -> Vec<u8> {
-    // For already-canonical input, the raw element bytes ARE the canonical form. We trim
-    // surrounding whitespace but otherwise pass the bytes through. A real C14N would sort
-    // attributes, normalize namespace declarations, and strip comments — that requires a proper
-    // canonicalization library and is documented as a limitation.
-    element_bytes
+/// Whether the reference's `<ds:DigestValue>` matches the SHA-256 of any candidate form of the
+/// resolved (transform-applied) content: the real C14N output — when the reference carries an
+/// explicit C14N transform — or the raw octets (already-canonical fast path). Accepting either form
+/// is safe: both are bound to the one digest, so tampering the content perturbs every candidate.
+fn reference_digest_matches(reference: &Reference, resolved_content: &[u8]) -> bool {
+    // Candidate 1: the raw transformed octets.
+    if sha2::Sha256::digest(resolved_content).as_slice() == reference.digest_value.as_slice() {
+        return true;
+    }
+    // Candidate 2..: C14N of the resolved content per each explicit C14N transform on the reference
+    // (the enveloped-signature transform resolves to `None` and is skipped). A canonicalization
+    // error simply removes that candidate — the raw candidate above stays the fail-closed default.
+    for transform in &reference.transforms {
+        if let Some(alg) = C14nAlgorithm::from_uri(transform) {
+            if let Ok(canon) = crate::c14n::canonicalize(resolved_content, alg) {
+                if sha2::Sha256::digest(&canon).as_slice() == reference.digest_value.as_slice() {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+/// Build the ordered candidate byte streams for the `<ds:SignedInfo>` signature check.
+///
+/// The primary candidate is the real C14N of the namespace-hoisted subtree, canonicalized under the
+/// declared `CanonicalizationMethod`; the fallback is the raw element bytes (leading whitespace
+/// trimmed) for lists signed over already-serialized-canonical SignedInfo octets. The signature must
+/// verify over at least one candidate.
+fn signed_info_candidates(
+    xml: &[u8],
+    start: usize,
+    end: usize,
+    canonicalization_method: &str,
+) -> Vec<Vec<u8>> {
+    let mut candidates: Vec<Vec<u8>> = Vec::with_capacity(2);
+
+    // Primary: real C14N over the hoisted subtree (best-effort; skipped on any failure).
+    if let Some(alg) = C14nAlgorithm::from_uri(canonicalization_method) {
+        if let Ok(hoisted) = hoist_signed_info_namespaces(xml, start, end) {
+            if let Ok(canon) = crate::c14n::canonicalize(&hoisted, alg) {
+                candidates.push(canon);
+            }
+        }
+    }
+
+    // Fallback: the raw SignedInfo bytes with leading whitespace trimmed.
+    let raw: Vec<u8> = xml[start..end]
         .iter()
         .skip_while(|b| b.is_ascii_whitespace())
         .copied()
-        .collect()
+        .collect();
+    if !candidates.contains(&raw) {
+        candidates.push(raw);
+    }
+    candidates
 }
 
-/// Verify the signature value against the signer certificate's public key.
+/// Hoist the ancestor in-scope namespace declarations onto the `<ds:SignedInfo>` start tag.
+///
+/// `<ds:SignedInfo>` inherits `xmlns`/`xmlns:ds` (and any other in-scope prefixes) from its ancestor
+/// `<ds:Signature>` / the document root, but the sliced subtree bytes do not carry them. C14N
+/// requires in-scope ancestor namespaces to be present on the apex element, so this walks the
+/// document to the SignedInfo element, collects every ancestor declaration (nearer declarations
+/// overriding farther ones), and injects each one not already declared on SignedInfo itself into its
+/// start tag. Inclusive C14N then renders them all; exclusive C14N drops the unused ones — both
+/// correct. The built-in `xml` prefix is never hoisted (C14N pre-binds it).
+fn hoist_signed_info_namespaces(xml: &[u8], start: usize, end: usize) -> Result<Vec<u8>, TslError> {
+    use quick_xml::events::Event;
+
+    if end > xml.len() || start >= end {
+        return Err(TslError::SignatureStructure(
+            "invalid SignedInfo byte range".to_owned(),
+        ));
+    }
+
+    // 1. Collect ancestor in-scope namespaces by walking to the first <...SignedInfo> element,
+    //    maintaining a stack of per-element declarations.
+    let mut reader = quick_xml::Reader::from_reader(xml);
+    reader.config_mut().trim_text(false);
+    let mut buf = Vec::new();
+    let mut stack: Vec<Vec<(String, String)>> = Vec::new();
+    loop {
+        match reader.read_event_into(&mut buf)? {
+            Event::Start(e) => {
+                if local_name(e.name().as_ref()) == "SignedInfo" {
+                    break;
+                }
+                stack.push(namespace_decls(&e));
+            }
+            Event::End(_) => {
+                stack.pop();
+            }
+            Event::Eof => break,
+            _ => {}
+        }
+        buf.clear();
+    }
+    // Flatten to an in-scope map, nearer ancestors overriding farther ones.
+    let mut in_scope: Vec<(String, String)> = Vec::new();
+    for decls in &stack {
+        for (prefix, uri) in decls {
+            if let Some(slot) = in_scope.iter_mut().find(|(p, _)| p == prefix) {
+                slot.1 = uri.clone();
+            } else {
+                in_scope.push((prefix.clone(), uri.clone()));
+            }
+        }
+    }
+
+    // 2. Determine SignedInfo's own declarations (its own decls win, so never re-inject those).
+    let slice = &xml[start..end];
+    let own = first_element_namespace_decls(slice)?;
+    let own_prefixes: std::collections::HashSet<&str> =
+        own.iter().map(|(p, _)| p.as_str()).collect();
+
+    // 3. Inject the missing ancestor declarations right after the SignedInfo qualified name.
+    let mut injected = String::new();
+    for (prefix, uri) in &in_scope {
+        if prefix == "xml" || own_prefixes.contains(prefix.as_str()) {
+            continue;
+        }
+        if prefix.is_empty() {
+            injected.push_str(" xmlns=\"");
+        } else {
+            injected.push_str(" xmlns:");
+            injected.push_str(prefix);
+            injected.push_str("=\"");
+        }
+        push_escaped_attr_value(&mut injected, uri);
+        injected.push('"');
+    }
+
+    if injected.is_empty() {
+        return Ok(slice.to_vec());
+    }
+
+    let tag_end = start_tag_end(slice)?;
+    let mut out = Vec::with_capacity(slice.len() + injected.len());
+    out.extend_from_slice(&slice[..tag_end]);
+    out.extend_from_slice(injected.as_bytes());
+    out.extend_from_slice(&slice[tag_end..]);
+    Ok(out)
+}
+
+/// The `xmlns`/`xmlns:*` declarations literally present on a start/empty tag as `(prefix, uri)`
+/// (empty prefix = the default namespace).
+fn namespace_decls(e: &quick_xml::events::BytesStart<'_>) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for attr in e.attributes() {
+        let Ok(attr) = attr else { continue };
+        let key = String::from_utf8_lossy(attr.key.as_ref()).into_owned();
+        let value = String::from_utf8_lossy(&attr.value).into_owned();
+        if key == "xmlns" {
+            out.push((String::new(), value));
+        } else if let Some(prefix) = key.strip_prefix("xmlns:") {
+            out.push((prefix.to_owned(), value));
+        }
+    }
+    out
+}
+
+/// The namespace declarations on the first element of `element_bytes` (the SignedInfo start tag).
+fn first_element_namespace_decls(element_bytes: &[u8]) -> Result<Vec<(String, String)>, TslError> {
+    use quick_xml::events::Event;
+
+    let mut reader = quick_xml::Reader::from_reader(element_bytes);
+    reader.config_mut().trim_text(false);
+    let mut buf = Vec::new();
+    loop {
+        match reader.read_event_into(&mut buf)? {
+            Event::Start(e) | Event::Empty(e) => return Ok(namespace_decls(&e)),
+            Event::Eof => {
+                return Err(TslError::SignatureStructure(
+                    "SignedInfo subtree has no element".to_owned(),
+                ));
+            }
+            _ => {}
+        }
+        buf.clear();
+    }
+}
+
+/// The byte index of the `>` that closes the start tag at the front of `slice`, honouring quoted
+/// attribute values so a `>` inside an attribute is not mistaken for the tag end.
+fn start_tag_end(slice: &[u8]) -> Result<usize, TslError> {
+    let mut quote: Option<u8> = None;
+    for (i, &b) in slice.iter().enumerate() {
+        match quote {
+            Some(q) => {
+                if b == q {
+                    quote = None;
+                }
+            }
+            None => match b {
+                b'"' | b'\'' => quote = Some(b),
+                b'>' => return Ok(i),
+                _ => {}
+            },
+        }
+    }
+    Err(TslError::SignatureStructure(
+        "malformed SignedInfo start tag (no closing '>')".to_owned(),
+    ))
+}
+
+/// Minimal XML attribute-value escaping so a hoisted namespace URI stays well-formed when re-parsed
+/// by the canonicalizer (which performs the authoritative C14N escaping).
+fn push_escaped_attr_value(out: &mut String, value: &str) {
+    for ch in value.chars() {
+        match ch {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '"' => out.push_str("&quot;"),
+            _ => out.push(ch),
+        }
+    }
+}
+
+/// Verify the signature value against the signer certificate's public key over any candidate
+/// SignedInfo form; success on the first candidate that verifies.
 fn verify_signature_value(
     cert_der: &[u8],
     signature_method: &str,
     signature: &[u8],
-    signed_info: &[u8],
+    signed_info_candidates: &[Vec<u8>],
 ) -> Result<(), TslError> {
     let cert = x509_cert::Certificate::from_der(cert_der)
         .map_err(|_| TslError::SignatureStructure("invalid signer certificate DER".to_owned()))?;
 
     match signature_method {
-        RSA_SHA256 => verify_rsa_sha256(&cert, signature, signed_info),
-        ECDSA_SHA256 => verify_ecdsa_sha256(&cert, signature, signed_info),
+        RSA_SHA256 => verify_rsa_sha256(&cert, signature, signed_info_candidates),
+        ECDSA_SHA256 => verify_ecdsa_sha256(&cert, signature, signed_info_candidates),
         other => Err(TslError::SignatureUnsupportedAlgorithm(format!(
             "signature method: {other}"
         ))),
     }
 }
 
-/// Verify an RSA-SHA256 signature. The signed bytes are the canonicalized SignedInfo element;
-/// the verifier hashes with SHA-256 internally and checks PKCS#1 v1.5.
+/// Verify an RSA-SHA256 signature over any candidate SignedInfo form. The verifier hashes each
+/// candidate with SHA-256 and checks PKCS#1 v1.5.
 fn verify_rsa_sha256(
     cert: &x509_cert::Certificate,
     signature: &[u8],
-    signed_info: &[u8],
+    signed_info_candidates: &[Vec<u8>],
 ) -> Result<(), TslError> {
     use der::referenced::OwnedToRef;
     use rsa::{Pkcs1v15Sign, RsaPublicKey};
@@ -681,22 +908,28 @@ fn verify_rsa_sha256(
     let public_key =
         RsaPublicKey::try_from(spki).map_err(|_| TslError::SignatureVerificationFailed)?;
 
-    let hash = Sha256::digest(signed_info);
-    let mut digest_info = Vec::with_capacity(SHA256_DIGEST_INFO_PREFIX.len() + hash.len());
-    digest_info.extend_from_slice(&SHA256_DIGEST_INFO_PREFIX);
-    digest_info.extend_from_slice(&hash);
-
-    public_key
-        .verify(Pkcs1v15Sign::new_unprefixed(), &digest_info, signature)
-        .map_err(|_| TslError::SignatureVerificationFailed)
+    for signed_info in signed_info_candidates {
+        let hash = Sha256::digest(signed_info);
+        let mut digest_info = Vec::with_capacity(SHA256_DIGEST_INFO_PREFIX.len() + hash.len());
+        digest_info.extend_from_slice(&SHA256_DIGEST_INFO_PREFIX);
+        digest_info.extend_from_slice(&hash);
+        if public_key
+            .verify(Pkcs1v15Sign::new_unprefixed(), &digest_info, signature)
+            .is_ok()
+        {
+            return Ok(());
+        }
+    }
+    Err(TslError::SignatureVerificationFailed)
 }
 
-/// Verify a P-256 ECDSA-SHA256 XML-DSig signature. XML-DSig carries ECDSA signatures as the
-/// fixed-width raw `r || s` value; DER `ECDSA-Sig-Value` encodings are rejected here.
+/// Verify a P-256 ECDSA-SHA256 XML-DSig signature over any candidate SignedInfo form. XML-DSig
+/// carries ECDSA signatures as the fixed-width raw `r || s` value; DER `ECDSA-Sig-Value` encodings
+/// are rejected here.
 fn verify_ecdsa_sha256(
     cert: &x509_cert::Certificate,
     signature: &[u8],
-    signed_info: &[u8],
+    signed_info_candidates: &[Vec<u8>],
 ) -> Result<(), TslError> {
     use p256::ecdsa::signature::Verifier;
     use p256::ecdsa::{Signature, VerifyingKey};
@@ -719,9 +952,12 @@ fn verify_ecdsa_sha256(
     let sig =
         Signature::from_slice(signature).map_err(|_| TslError::SignatureVerificationFailed)?;
 
-    verifying_key
-        .verify(signed_info, &sig)
-        .map_err(|_| TslError::SignatureVerificationFailed)
+    for signed_info in signed_info_candidates {
+        if verifying_key.verify(signed_info, &sig).is_ok() {
+            return Ok(());
+        }
+    }
+    Err(TslError::SignatureVerificationFailed)
 }
 
 #[cfg(test)]
