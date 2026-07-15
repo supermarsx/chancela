@@ -1,9 +1,9 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `982cc9a`,
-including coverage notes for convocation-notice local WFL/legal-calendar
-advisory reminders, condominium annual local advisory Jan 15 profile-calendar
+and implementation snapshot `87ec6aa`,
+including coverage notes for convocation act-review guidance and
+convocation-notice local WFL/legal-calendar advisory reminders, condominium annual local advisory Jan 15 profile-calendar
 depth, dashboard annual profile-calendar reminder localization,
 automated-review dashboard contract surfacing, archive active-filter count
 refinement, all-filtered archive export streaming/caps,
@@ -1843,6 +1843,20 @@ settingsDefaults.test.ts contracts.test.ts`.
   legal-authority, legal-sufficiency, provider, certification, external
   delivery, workflow-completion, DRE/source-authority, registry acceptance,
   legal effect, or legal/compliance completion claim.
+- Current `87ec6aa` convocation act-review guidance checks: focused
+  `npm run test --workspace apps/web -- AtaEditorStructured.test.tsx
+  CompliancePanel.test.tsx` passed 38 tests, `npm run build --workspace
+  apps/web` passed with the existing ConfirmActionModal warnings, and `git diff
+  --check HEAD~1 HEAD` passed. The Ata editor now shows compact local guidance
+  when the recorded meeting date or convening dispatch/channel/antecedence/
+  evidence reference is missing, and the CompliancePanel now shows next-record
+  guidance for missing or below-threshold convocation-notice advisories. This is
+  local WFL/legal-calendar usability depth only: no backend/dashboard contract
+  change, legal sufficiency, compliance determination, delivery, workflow
+  completion, registry, DRE/source-authority, provider, legal effect, or spec
+  completion claim is implemented. Residual limitation remains that dashboard
+  reminder computation depends on recorded `meeting_date` to compute
+  `notice_due_date`.
 - Current imported-document review reminder checks: focused `cargo test -p
   chancela-api --lib --locked imported_document_review_reminder` coverage pins
   metadata-only dashboard reminder emission for act-scoped imports whose review
@@ -1977,14 +1991,15 @@ settingsDefaults.test.ts contracts.test.ts`.
   full RBAC/delegation-policy completion, tenant authorization proof,
   legal-capacity verification, broad security certification, or spec
   completion.
-- Current checkpoint metadata/static checks through `982cc9a`
+- Current checkpoint metadata/static checks through `87ec6aa`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
   `git diff --check -- SPEC-COVERAGE.md docs\CI-E2E-HARDENING-PLAN.md
   docs\CI-CHECKPOINTS.md scripts\checkpoint-recent-landed.mjs`.
   These pin the spec snapshot,
-  hardening-plan head, convocation-notice advisory reminders, dashboard annual
+  hardening-plan head, convocation act-review guidance, convocation-notice
+  advisory reminders, dashboard annual
   reminder localization, automated-review
   dashboard contract surfacing, Arquivo advanced-filter count badge,
   all-filtered archive export streaming/cap scope, MCP meeting

@@ -10421,7 +10421,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `982cc9a`",
+    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `87ec6aa`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
@@ -11066,7 +11066,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `982cc9a`",
+    "Current checkpoint metadata/static checks through `87ec6aa`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -11601,7 +11601,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `982cc9acb944b54072d87e3dbaa8e879dae42bce`",
+    "implementation snapshot `87ec6aa2db800a157de772800d5be08f929c9534`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -12108,6 +12108,81 @@ function assertCheckpointMap() {
     "docs/CI-CHECKPOINTS.md",
     "Convocation-notice advisory markers pin the local statute/convening evidence\nslice only",
     "CI checkpoints convocation-notice advisory marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Current `87ec6aa` keeps Workflows/Legal/Compliance/UX/CI **PARTIAL**",
+    "spec coverage convocation act-review guidance checkpoint marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "act review now surfaces compact local guidance in the Ata editor and CompliancePanel for recording meeting date, dispatch date/channel, effective antecedence days, and preserved evidence reference",
+    "spec coverage convocation act-review guidance detail marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "does not change backend/dashboard contracts",
+    "spec coverage convocation act-review backend contract boundary marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Current `87ec6aa` convocation act-review guidance checks",
+    "CI/E2E hardening plan convocation act-review guidance marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Residual limitation remains that dashboard reminder computation depends on recorded `meeting_date` to compute `notice_due_date`",
+    "CI/E2E hardening plan convocation act-review limitation marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "Convocation act-review guidance markers pin the local WFL/legal-calendar\nusability slice only",
+    "CI checkpoints convocation act-review guidance marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/AtaEditorPage.tsx",
+    "CONVOCATION_NOTICE_ADVISORY_TITLE = 'Aviso local da convocatória estatutária'",
+    "Ata editor convocation notice advisory title marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/AtaEditorPage.tsx",
+    "Registe a data da reunião para calcular a data local de aviso.",
+    "Ata editor convocation meeting-date guidance marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/AtaEditorPage.tsx",
+    "Registe data/meio de expedição, antecedência efetiva e referência da prova conservada.",
+    "Ata editor convocation evidence guidance marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/AtaEditorPage.tsx",
+    "Apenas metadados locais; não afirma suficiência jurídica, entrega externa válida nem conclusão do workflow.",
+    "Ata editor convocation no-claim guidance marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/AtaEditorStructured.test.tsx",
+    "surfaces missing convocation notice metadata as local advisory guidance only",
+    "Ata editor convocation guidance unit coverage marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/CompliancePanel.tsx",
+    "function ConveningAdvisoryGuidance",
+    "CompliancePanel convening guidance component marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/CompliancePanel.tsx",
+    "Confirme a data da reunião e registe data/meio de expedição, antecedência efetiva e prova conservada.",
+    "CompliancePanel missing convocation next-record marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/CompliancePanel.tsx",
+    "Aviso consultivo local sobre metadados registados; não afirma suficiência jurídica, entrega externa válida nem conclusão do workflow.",
+    "CompliancePanel convocation guidance no-claim marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/CompliancePanel.test.tsx",
+    "adds next-record guidance for missing convocation notice metadata without legal claims",
+    "CompliancePanel convocation guidance unit coverage marker",
   );
   assertFileContains(
     "crates/chancela-core/src/rules.rs",

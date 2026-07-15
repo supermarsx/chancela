@@ -1,8 +1,9 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-15 from current implementation snapshot `982cc9acb944b54072d87e3dbaa8e879dae42bce`,
-with committed evidence refreshes for the recently landed convocation-notice
-local WFL/legal-calendar advisory reminder slice, condominium annual local
+*Updated 2026-07-15 from current implementation snapshot `87ec6aa2db800a157de772800d5be08f929c9534`,
+with committed evidence refreshes for the recently landed convocation
+act-review guidance and convocation-notice local WFL/legal-calendar advisory
+reminder slices, condominium annual local
 advisory due-date depth, automated-review dashboard contract surface,
 archive filter refinement, all-filtered archive export, automated-review law
 corpus UI tier, MCP workflow provenance local JSON/text summary, key-custody
@@ -194,7 +195,7 @@ condominium annual local advisory due-date coverage, `a7125b3`
 all-filtered archive export scope coverage, `040ce48` streamed all-filtered
 archive export/cap coverage, and `711c7a4` dashboard annual profile-calendar
 reminder localization, followed by `982cc9a` convocation-notice local
-advisory reminders.
+advisory reminders, and `87ec6aa` convocation act-review guidance.
 Earlier coverage text remains prior snapshot context. All top-level spec areas remain **PARTIAL**.
 This is an implementation and test coverage snapshot, not a legal certification,
 not production CMD approval, not DRE verification promotion, not full PDF/UA
@@ -282,6 +283,21 @@ Implementation checkpoints covered here:
   or legal/compliance completion claim. Residual limitation: the dashboard
   reminder needs `meeting_date` to compute `notice_due_date`, and core still
   emits the advisory for missing or unverifiable convening evidence.
+
+- Current `87ec6aa` keeps Workflows/Legal/Compliance/UX/CI **PARTIAL**:
+  act review now surfaces compact local guidance in the Ata editor and
+  CompliancePanel for recording meeting date, dispatch date/channel, effective
+  antecedence days, and preserved evidence reference when convocation-notice
+  metadata is missing or below the local statute advisory threshold. Focused
+  web evidence passed: `npm run test --workspace apps/web --
+  AtaEditorStructured.test.tsx CompliancePanel.test.tsx` (38 tests), `npm run
+  build --workspace apps/web` with the existing ConfirmActionModal warnings,
+  and `git diff --check HEAD~1 HEAD`. This is local WFL/legal-calendar usability
+  depth only: it adds no legal sufficiency, compliance determination, delivery,
+  workflow completion, registry, DRE/source-authority, provider, or legal-effect
+  claim, does not change backend/dashboard contracts, and does not make the
+  spec complete. Residual limitation remains that dashboard reminder
+  computation depends on recorded `meeting_date` to compute `notice_due_date`.
 
 - Recent `7ab3ab7` keeps Legal/Compliance/UX/API/CI **PARTIAL**:
   automated-review law references now flow from API/dashboard and law-corpus

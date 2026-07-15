@@ -85,9 +85,9 @@ absent-owner communication dispatch-evidence recording, and generated
 absent-owner evidence UI and dashboard absent-owner dispatch-evidence reminders,
 condominium annual profile-calendar Jan 15 local advisory markers plus
 dashboard-only annual reminder localization markers for CSC, association,
-foundation, and cooperative profile-calendar rules, convocation-notice local
-WFL/legal-calendar advisory markers for `act-convening-notice` open-act
-reminders,
+foundation, and cooperative profile-calendar rules, convocation act-review
+guidance markers plus convocation-notice local WFL/legal-calendar advisory
+markers for `act-convening-notice` open-act reminders,
 compact validator-report actions, template provenance UI, release clean-source
 provenance gating, local CC batch-signing UI markers for BatchSigningPanel,
 `useCcBatchSign`, `POST /v1/signature/cc/batch-sign`, optional transient PIN
@@ -694,6 +694,18 @@ delivery, workflow completion, DRE/source-authority verification, registry
 acceptance, legal effect, or legal/compliance completion. The dashboard reminder
 still needs `meeting_date` to compute `notice_due_date`, and core still warns
 when convening evidence is missing or unverifiable.
+
+Convocation act-review guidance markers pin the local WFL/legal-calendar
+usability slice only: the Ata editor inline warning asks operators to record
+the meeting date plus dispatch date/channel, effective antecedence, and
+preserved proof reference when those local metadata are missing, and the
+CompliancePanel renders next-record guidance for missing or below-threshold
+convocation-notice advisories. These markers do not change backend/dashboard
+contracts and do not claim legal sufficiency, compliance determination,
+delivery, workflow completion, registry, DRE/source-authority, provider
+execution, legal effect, or legal/compliance completion. Dashboard reminder
+computation still depends on recorded `meeting_date` to compute
+`notice_due_date`.
 
 Imported-document review reminder markers pin the API dashboard reminder unit
 coverage for act-scoped imports still in `operator_review_required`,
