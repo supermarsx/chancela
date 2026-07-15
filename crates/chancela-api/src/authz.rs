@@ -534,6 +534,26 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
         "/v1/privacy/users/{user_id}/dsr-requests/{request_id}/complete",
         RouteClass::Gated,
     ), // POST user.manage@Global
+    (
+        "/v1/privacy/users/{user_id}/dsr-requests/{request_id}/erasure/preflight",
+        RouteClass::Gated,
+    ), // POST user.manage@Global (read-only erasure preflight)
+    (
+        "/v1/privacy/users/{user_id}/dsr-requests/{request_id}/erasure/approve",
+        RouteClass::Gated,
+    ), // POST user.manage@Global
+    (
+        "/v1/privacy/users/{user_id}/dsr-requests/{request_id}/erasure/execute",
+        RouteClass::Gated,
+    ), // POST user.manage@Global
+    (
+        "/v1/privacy/users/{user_id}/dsr-requests/{request_id}/rectification",
+        RouteClass::Gated,
+    ), // POST user.manage@Global
+    (
+        "/v1/privacy/users/{user_id}/dsr-requests/{request_id}/restriction",
+        RouteClass::Gated,
+    ), // POST user.manage@Global
     ("/v1/privacy/dsr-requests/{id}", RouteClass::Gated), // PATCH user.manage@Global
     ("/v1/privacy/dsr-requests/{id}/complete", RouteClass::Gated), // POST user.manage@Global
     ("/v1/privacy/processors", RouteClass::Gated),  // GET/POST user.manage|settings.manage@Global
