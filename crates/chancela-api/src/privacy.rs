@@ -7630,8 +7630,12 @@ fn compute_preflight_digest(
         "targets": sorted,
     });
     let bytes = serde_json::to_vec(&canonical).unwrap_or_default();
+    sha256_hex(&bytes)
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
     let mut hasher = Sha256::new();
-    hasher.update(&bytes);
+    hasher.update(bytes);
     hasher
         .finalize()
         .iter()
@@ -8098,6 +8102,9 @@ async fn record_subject_annotation(
         "noted_at": noted_at,
     });
     let payload_json = serde_json::to_string(&payload)?;
+    let payload_digest = sha256_hex(payload_json.as_bytes());
+    let justification =
+        format!("{annotation_label} annotation recorded; payload_digest={payload_digest}");
 
     let (event_id, ledger_length) = {
         let mut ledger = state.ledger.write().await;
@@ -8106,7 +8113,7 @@ async fn record_subject_annotation(
             &noted_by,
             &scope,
             kind,
-            Some(&payload_json),
+            Some(&justification),
             payload_json.as_bytes(),
         )?;
         let event_id = ledger
