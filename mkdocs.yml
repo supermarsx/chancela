@@ -1,0 +1,94 @@
+site_name: Chancela
+site_description: >-
+  Self-hostable livro de atas (minute book) and corporate-acts platform with an
+  append-only hash-chained ledger, Portuguese qualified e-signature integration,
+  and verifiable export/import fixity.
+site_url: https://supermarsx.github.io/chancela/
+repo_url: https://github.com/supermarsx/chancela
+repo_name: supermarsx/chancela
+edit_uri: edit/main/docs/
+copyright: Chancela is MIT-licensed. Documentation describes what the software does; it is not legal advice.
+
+theme:
+  name: material
+  language: en
+  logo: assets/hero.png
+  favicon: assets/hero.png
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.sections
+    - navigation.top
+    - navigation.indexes
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.tabs.link
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: brown
+      accent: amber
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: brown
+      accent: amber
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+extra_css:
+  - assets/extra.css
+
+# Keep nav + anchor checks strict (so a nav entry pointing at a missing peer
+# file, or a broken cross-page anchor, still fails `--strict`). Downgrade only
+# plain "not found" links to info: peer-owned pages (e.g.
+# security/hardened-docker.md) intentionally link to repo-root files
+# (Dockerfile.hardened, docker/…) that live outside docs_dir and are not part of
+# the built site. Those are not ours to edit.
+validation:
+  nav:
+    omitted_files: info
+    not_found: warn
+    absolute_links: warn
+  links:
+    not_found: info
+    anchors: warn
+    absolute_links: info
+    unrecognized_links: info
+
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+nav:
+  - Home: index.md
+  - Deployment: deployment.md
+  - Configuration: configuration.md
+  - Capabilities: capabilities.md
+  - Requirements: requirements.md
+  - Comparison: comparison.md
+  - Security & Hardening: security/hardened-docker.md
+  - Extras: extras.md

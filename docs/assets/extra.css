@@ -1,0 +1,44 @@
+/* Chancela docs — squareish, ledger-like styling overrides for Material.
+   Kept minimal and self-contained (no external assets). */
+
+:root {
+  /* Square off the rounded Material corners for a document/ledger feel. */
+  --md-radius: 2px;
+}
+
+/* Flatten the common rounded surfaces. */
+.md-typeset .admonition,
+.md-typeset details,
+.md-typeset pre > code,
+.md-typeset .highlight > pre,
+.md-typeset table:not([class]),
+.md-typeset .md-button,
+.md-header,
+.md-tabs,
+.md-search__form,
+.md-search__output,
+.md-nav__link,
+.md-typeset .tabbed-set > label,
+.md-typeset .tabbed-content {
+  border-radius: 2px !important;
+}
+
+/* Squareish, bordered "cards" via the grid of links on the landing page. */
+.md-typeset .grid.cards > ul > li,
+.md-typeset .grid > .card {
+  border-radius: 2px !important;
+  border: 1px solid var(--md-default-fg-color--lightest);
+}
+
+/* Tighten table borders so they read like a ledger. */
+.md-typeset table:not([class]) {
+  border: 1px solid var(--md-default-fg-color--lightest);
+}
+.md-typeset table:not([class]) th {
+  font-weight: 700;
+}
+
+/* Slightly denser code blocks. */
+.md-typeset pre > code {
+  border: 1px solid var(--md-default-fg-color--lightest);
+}
