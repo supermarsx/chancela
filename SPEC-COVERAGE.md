@@ -1,6 +1,6 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-15 from current implementation snapshot `f828c50fe794c79ae7a4a6bf9e6eb9b0d460c8c9`,
+*Updated 2026-07-15 from current implementation snapshot `843fd6a6c3dba4d24cc445fefdbff99fe5a6c545`,
 with committed evidence refreshes for mobile API base URL indirection and
 shell detection, subject DEK secret-store binding, the settled PDF/UA v12 gated-claim lane,
 XAdES C14N/digest-agility/B/T/LT/ASiC evidence, archive PDF accessibility
@@ -138,8 +138,10 @@ catalog assets, plus web hot-backup creation UI, backup
 recovery-drill receipt API/UI/contract coverage, workflow reminder policy
 default/UI/dashboard/year-boundary coverage alignment, and CAE obtainer status
 documentation cleanup, plus bounded TSL XML-DSig same-document
-`URI="#id"` fragment resolution and bounded P-256 ECDSA-SHA256 verification
-for raw XML-DSig `r||s` signatures against an anchored signer certificate,
+`URI="#id"` fragment resolution, real C14N-backed SignedInfo/reference digest
+candidate handling with the already-canonical fast path preserved, and bounded
+P-256 ECDSA-SHA256 verification for raw XML-DSig `r||s` signatures against an
+anchored signer certificate,
 plus bounded BookDetail paper-book OCR conversion-dossier UI guardrails, CSC
 quota division/unification template parity, and all-family standalone
 agenda-item templates with 104 total / 44 CSC catalog counts, Pending
@@ -1934,18 +1936,20 @@ Implementation checkpoints covered here:
   official DGLAB export, government filing, import path, disposal execution,
   DGLAB certification, legal archival certification, PDF/A/PAdES/PDF-UA
   certification, authority approval, or legal archive acceptance is implemented.
-- Working tree keeps Signatures/Trust/CI **PARTIAL**: the TSL XML-DSig verifier
-  now resolves bounded same-document `URI="#id"` references when a unique
-  matching element is present in the supported minimal TSL shape, and rejects
+- Current `843fd6a` keeps Signatures/Trust/CI **PARTIAL**: the TSL XML-DSig
+  verifier now resolves bounded same-document `URI="#id"` references when a
+  unique matching element is present in the supported minimal TSL shape, rejects
   missing, duplicate, external, or unsupported fragment targets instead of
-  silently validating the wrong bytes. It also verifies bounded P-256
-  ECDSA-SHA256 XML-DSig signatures only when the signer certificate is embedded
-  in `KeyInfo`, matches a configured trust anchor, and the signature value is
-  the XML-DSig fixed-width raw `r||s` form; DER-encoded ECDSA values remain
-  rejected. This narrows the prior TSL fixture gap only; it is not real C14N,
-  certificate path/revocation policy validation, multiple-reference support,
-  transform-chain support, broad ECDSA/XML-DSig profile support, legal trust
-  certification, or proof of production trust-list validity.
+  silently validating the wrong bytes, and routes SignedInfo/reference digest
+  candidates through real C14N while preserving the already-canonical fast path.
+  It also verifies bounded P-256 ECDSA-SHA256 XML-DSig signatures only when the
+  signer certificate is embedded in `KeyInfo`, matches a configured trust
+  anchor, and the signature value is the XML-DSig fixed-width raw `r||s` form;
+  DER-encoded ECDSA values remain rejected. This narrows the prior TSL fixture
+  gap only; it is not certificate path/revocation policy validation,
+  multiple-reference support, transform-chain support, broad ECDSA/XML-DSig
+  profile support, legal trust certification, or proof of production trust-list
+  validity.
 - Working tree keeps Signatures/Documents/CI **PARTIAL**: `POST
   /v1/signature/asic/inspect` exposes read-only local technical ASiC profile
   inspection for a base64 ASiC ZIP with optional filename, declared size, and
@@ -3047,7 +3051,7 @@ Implementation checkpoints covered here:
   with contract and focused UI coverage. This is not live host SQLCipher proof,
   plaintext migration, OCR execution, canonical conversion, a signature, or legal
   acceptance.
-- Current `f828c50` preserves the `842b7f2` mobile P1 slice and keeps Product
+- Current `843fd6a` preserves the `842b7f2` mobile P1 slice and keeps Product
   Scope/Architecture/UX/CI **PARTIAL**: the web client now routes API fetches
   and generated download URLs through
   `resolveApiUrl`, leaving browser/Tauri defaults relative while allowing
@@ -3059,7 +3063,7 @@ Implementation checkpoints covered here:
   URL indirection and shell detection only; it is not a native mobile release,
   iOS/Android packaging, offline sync, production connector readiness, or spec
   completion.
-- Current `f828c50` keeps Legal/Data/Architecture/API/CI **PARTIAL**: the API
+- Current `843fd6a` keeps Legal/Data/Architecture/API/CI **PARTIAL**: the API
   secret-store subject-DEK crypto now derives the subject-DEK root from the
   resolved credential secret-store CMK with dedicated HKDF salt/info, keeps DEK
   wrap and field encryption AAD bound to subject, field, and key version, treats
@@ -3830,10 +3834,12 @@ or universal PDF/UA completion.
   external, or unsupported fragment references, plus bounded P-256 ECDSA-SHA256
   verification when the signer certificate is embedded, matches a configured
   trust anchor, and the XML-DSig signature value is raw fixed-width `r||s`. DER
-  ECDSA signatures are rejected. This improves technical trust-list evidence,
-  but it still does not perform real C14N, support multiple references, support
-  transform chains, complete broad ECDSA/XML-DSig profile validation, or perform
-  full certificate path/revocation/policy validation or legal trust certification.
+  ECDSA signatures are rejected. Current `843fd6a` additionally routes bounded
+  SignedInfo/reference digest candidates through real C14N while preserving the
+  already-canonical fast path. This improves technical trust-list evidence, but
+  it still does not support multiple references, support transform chains,
+  complete broad ECDSA/XML-DSig profile validation, or perform full certificate
+  path/revocation/policy validation or legal trust certification.
 - **Trust/import/static request-boundary hardening:** focused API tests now pin
   TSL/TSA outbound URL policy that rejects unsafe schemes and localhost,
   loopback, private, link-local, reserved, and unspecified ranges including
@@ -4911,8 +4917,8 @@ or universal PDF/UA completion.
   exact-origin scoped, RAII-dropped, and has no env-var production bypass. TSA diagnostics use an offline fixture
   probe unless a signing flow explicitly requests a timestamp. Path-backed TSA providers,
   unsupported timestamp digests, and XML-DSig shapes outside the supported minimal verifier remain
-  deterministic blockers, not fake live signing; bounded same-document `URI="#id"` handling does
-  not change the absence of real C14N, multiple-reference support, broad ECDSA
+  deterministic blockers, not fake live signing; bounded same-document `URI="#id"` handling and
+  TSL-verifier C14N candidate handling do not change the absence of multiple-reference support, broad ECDSA
   wiring, legal trust certification, exhaustive hostile DNS/rebinding proof, production qualified trust,
   live provider readiness, DGLAB certification, or full release hardening. The bundled fixture is
   advisory and must not be treated as legal trust completion.

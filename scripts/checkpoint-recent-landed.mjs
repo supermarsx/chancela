@@ -2833,7 +2833,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Current `f828c50` preserves the `842b7f2` mobile P1 slice",
+    "Current `843fd6a` preserves the `842b7f2` mobile P1 slice",
     "spec coverage mobile P1 checkpoint marker",
   );
   assertFileContainsNormalized(
@@ -2843,12 +2843,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "GDPR/API subject-DEK secret-store binding through `f828c50`",
+    "GDPR/API subject-DEK secret-store binding through `843fd6a`",
     "CI/E2E hardening plan subject DEK focused checks marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Current `f828c50` keeps Legal/Data/Architecture/API/CI **PARTIAL**",
+    "Current `843fd6a` keeps Legal/Data/Architecture/API/CI **PARTIAL**",
     "spec coverage subject DEK checkpoint marker",
   );
   assertFileContains(
@@ -5845,6 +5845,11 @@ function assertCheckpointMap() {
     "crates/chancela-tsl/tests/tsl_fixture.rs",
     "tsl_signature_validation_rejects_der_encoded_p256_ecdsa_signature_value",
     "TSL XML-DSig P-256 raw r||s boundary coverage",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "`843fd6a` canonicalization hardening for SignedInfo/reference digest",
+    "CI checkpoints TSL canonicalization hardening marker",
   );
   assertFileContains(
     "crates/chancela-tsl/src/record.rs",
@@ -10880,12 +10885,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `f828c50`",
+    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `843fd6a`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `f828c50`",
+    "Focused Gate Snapshot Through `843fd6a`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -11565,7 +11570,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `f828c50`",
+    "Current checkpoint metadata/static checks through `843fd6a`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -11805,8 +11810,13 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current working-tree TSL XML-DSig checks",
+    "Current `843fd6a` TSL XML-DSig checks",
     "CI/E2E hardening plan TSL P-256 XML-DSig checks marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "real C14N-backed SignedInfo/reference digest candidate handling",
+    "CI/E2E hardening plan TSL C14N candidate marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -12135,7 +12145,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `f828c50fe794c79ae7a4a6bf9e6eb9b0d460c8c9`",
+    "implementation snapshot `843fd6a6c3dba4d24cc445fefdbff99fe5a6c545`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -14894,6 +14904,11 @@ function assertCheckpointMap() {
     "SPEC-COVERAGE.md",
     "bounded P-256 ECDSA-SHA256 verification",
     "spec coverage TSL P-256 XML-DSig marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "real C14N-backed SignedInfo/reference digest",
+    "spec coverage TSL C14N candidate marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",

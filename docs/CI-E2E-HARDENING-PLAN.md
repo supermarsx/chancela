@@ -1,7 +1,7 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `f828c50`,
+and implementation snapshot `843fd6a`,
 including coverage notes for the settled PDF/UA v12 gated-claim lane, XAdES
 C14N/digest-agility/B/T/LT/ASiC evidence, archive PDF accessibility
 propagation, the MCP document/archive PDF accessibility v12
@@ -982,11 +982,11 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `f828c50`
+## Focused Gate Snapshot Through `843fd6a`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08` and checkpoint-promoted on 2026-07-15 for
-current implementation head `f828c50`. This is not an exhaustive current
+current implementation head `843fd6a`. This is not an exhaustive current
 green-run claim; the full-server E2E claim below is limited to local
 `chancela-server --features e2e` after auth harness alignment, and browser,
 Docker, desktop, production package signing/notarization, production image
@@ -1178,7 +1178,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   indirection and shell detection only: no native mobile build, iOS/Android
   package, offline sync, production connector readiness, or spec-completion
   claim is made.
-- GDPR/API subject-DEK secret-store binding through `f828c50`: focused local
+- GDPR/API subject-DEK secret-store binding through `843fd6a`: focused local
   `crates/chancela-api/src/secretstore.rs` coverage pins subject-DEK crypto
   construction from the resolved credential secret-store CMK using dedicated
   HKDF salt/info, subject/field/key-version AAD binding, empty wrapped-DEK blob
@@ -1867,15 +1867,17 @@ settingsDefaults.test.ts contracts.test.ts`.
   provider calls, TSA/TSL/OCSP/CRL fetching, trust anchoring, legal validity,
   QES, B-LT/B-LTA, eIDAS legal-effect, or production ASiC/XAdES conformance
   claim is implemented.
-- Current working-tree TSL XML-DSig checks: focused `chancela-tsl` coverage now
-  pins bounded P-256 ECDSA-SHA256 verification only when the embedded signer
-  certificate matches a configured trust anchor and only for XML-DSig's
-  fixed-width raw `r||s` signature value, with DER ECDSA encodings rejected.
-  This remains technical trust-list parsing evidence only; the broader
-  `chancela-xades` lane below is the current XML-signing implementation surface.
-  It is not certificate path/revocation/policy validation, legal
-  trust certification, production trust-list validity, multiple-reference
-  support for the TSL importer, or transform-chain support for the TSL importer.
+- Current `843fd6a` TSL XML-DSig checks: focused `chancela-tsl` coverage now
+  pins real C14N-backed SignedInfo/reference digest candidate handling while
+  preserving the already-canonical fast path, plus bounded P-256 ECDSA-SHA256
+  verification only when the embedded signer certificate matches a configured
+  trust anchor and only for XML-DSig's fixed-width raw `r||s` signature value,
+  with DER ECDSA encodings rejected. This remains technical trust-list parsing
+  evidence only; the broader `chancela-xades` lane below is the current
+  XML-signing implementation surface. It is not certificate path/revocation/
+  policy validation, legal trust certification, production trust-list validity,
+  multiple-reference support for the TSL importer, or transform-chain support
+  for the TSL importer.
 - Current `50854dd` XAdES reconciliation checks: `chancela-xades` now pins real
   in-crate XML C14N against W3C REC-derived vectors, duplicate-`Id` fail-closed
   guards, multiple-reference XML-DSig packaging, SHA-384/512 digest agility for
@@ -2379,7 +2381,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   production-readiness, TLS/key-custody, vulnerability-free scan, SBOM,
   signature/attestation, HA/failover/RPO/RTO, legal/DR certification, cloud
   deployment readiness, or spec-completion claim is made.
-- Current checkpoint metadata/static checks through `f828c50`
+- Current checkpoint metadata/static checks through `843fd6a`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and

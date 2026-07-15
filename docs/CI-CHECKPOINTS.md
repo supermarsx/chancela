@@ -611,7 +611,12 @@ It intentionally reuses existing test surfaces:
   evidence result display, and copy stating that Chancela does not perform
   trust-list validation, claim qualified status, or complete legal signing
   acceptance.
-- TSL XML-DSig hardening: `cargo test -p chancela-tsl --locked`
+- TSL XML-DSig hardening: `cargo test -p chancela-tsl --locked` pins the
+  `843fd6a` canonicalization hardening for SignedInfo/reference digest
+  candidates through real C14N while preserving the already-canonical fast path.
+  This remains bounded technical TSL parsing evidence only; it does not claim
+  legal trust certification, production trust-list validity, certificate path/
+  revocation policy validation, or broad XML-DSig profile support.
 - API trust/import/static hardening markers: the static map pins
   `outbound_url_policy_rejects_reserved_ipv4_zero_eight`,
   `local_trust_url_test_allowance_is_scoped_to_registered_origin`,
