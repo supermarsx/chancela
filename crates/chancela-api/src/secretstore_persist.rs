@@ -986,6 +986,19 @@ impl ProviderCredentialStore {
         Ok(store)
     }
 
+    /// Build the per-subject DEK crypto engine (wp26-gdpr) from the resolved credential key material.
+    ///
+    /// Fails closed with [`SecretStoreError::NoKeySource`] when no root key is available. The engine
+    /// derives per-subject Data Encryption Keys from the same internally-derived key material the
+    /// credential store uses (dedicated HKDF domain separation), so the destructive-erasure workflow
+    /// can crypto-erase a subject: destroying the wrapped DEK makes any DEK-encrypted subject PII —
+    /// live rows and backups alike — cryptographically irrecoverable.
+    pub fn subject_dek_crypto(
+        &self,
+    ) -> Result<crate::secretstore::SubjectDekCrypto, ProviderCredentialError> {
+        Ok(self.secretstore()?.subject_dek_crypto())
+    }
+
     /// The resolved protection level, or a fail-closed error when no key source is available. Surfaced
     /// by the status API (S4) so the UI can label the at-rest guarantee honestly.
     pub fn protection_level(&self) -> Result<ProtectionLevel, ProviderCredentialError> {

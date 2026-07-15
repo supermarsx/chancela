@@ -24,8 +24,10 @@ use crate::actor::{CurrentActor, CurrentAttestor};
 use crate::authz::{authorizer, forbidden, require_permission};
 use crate::dto::{LedgerEventView, format_date};
 use crate::error::ApiError;
+use crate::sidecar_store::persist_users;
 use crate::try_append_event;
 use crate::users::{User, UserId, UserView};
+use chancela_ledger::SUBJECT_ERASED_KIND;
 
 const FORMAT_VERSION: u32 = 1;
 const DSR_CREATED_KIND: &str = "privacy.dsr.request.created";
@@ -329,6 +331,15 @@ pub struct DsrRequest {
     pub legal_basis_review: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub erasure_preflight: Option<DsrErasurePreflight>,
+    /// wp26-gdpr: the dual-control authorization recorded once a distinct approver approves the
+    /// destructive erasure plan (bound to the preflight digest). Absent until approved.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub erasure_authorization: Option<ErasureAuthorization>,
+    /// wp26-gdpr: the attestation record written once the destructive erasure executes (the
+    /// `subject.erased` event id, techniques applied, erased targets, DEK-destroyed flag). Absent
+    /// until executed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub erasure_execution: Option<ErasureExecutionRecord>,
 }
 
 #[derive(Serialize)]
@@ -362,6 +373,10 @@ pub struct DsrRequestView {
     pub legal_basis_review: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub erasure_preflight: Option<DsrErasurePreflight>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub erasure_authorization: Option<ErasureAuthorization>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub erasure_execution: Option<ErasureExecutionRecord>,
 }
 
 impl From<&DsrRequest> for DsrRequestView {
@@ -385,6 +400,8 @@ impl From<&DsrRequest> for DsrRequestView {
             retention_review: req.retention_review.clone(),
             legal_basis_review: req.legal_basis_review.clone(),
             erasure_preflight: req.erasure_preflight.clone(),
+            erasure_authorization: req.erasure_authorization.clone(),
+            erasure_execution: req.erasure_execution.clone(),
         }
     }
 }
@@ -3174,6 +3191,8 @@ pub async fn create_dsr_request(
         retention_review: None,
         legal_basis_review: None,
         erasure_preflight: None,
+        erasure_authorization: None,
+        erasure_execution: None,
     };
     let view = DsrRequestView::from(&request);
     state.dsr_requests.write().await.insert(request.id, request);
@@ -7351,6 +7370,608 @@ fn dsr_erasure_sidecar_plan(
         });
     }
     provided_plan
+}
+
+// =================================================================================================
+// wp26-gdpr: destructive right-to-erasure workflow (preflight → approve → execute → attest)
+//
+// Turns the evidence-only erasure preflight into a real, dual-control-gated destructive workflow that
+// PRESERVES ledger integrity. The append-only ledger is NEVER mutated: erasure physically deletes the
+// subject's live directory identity (the `users` row — username / display_name / email) and
+// crypto-erases the subject's per-subject DEK (destroying the wrapped DEK makes any DEK-encrypted
+// subject PII — live rows AND backups — cryptographically irrecoverable), then appends exactly one
+// `subject.erased` attestation event, so `Ledger::verify()` advances Ok(n) → Ok(n+1). Lawfully
+// retained Art. 17(3) carve-outs (ledger events, DSR audit trail, sealed acts/books/signed documents)
+// are surfaced, never silently skipped. Destructive steps are NOT reachable via API key / MCP.
+// =================================================================================================
+
+const ERASE_TECHNIQUE_PHYSICAL: &str = "physical_delete";
+const ERASE_TECHNIQUE_CRYPTO: &str = "crypto_erase";
+const ERASE_TECHNIQUE_VACUUM: &str = "vacuum";
+
+/// One concrete erasable target enumerated by the destructive-erasure preflight.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ErasableTarget {
+    pub collection: String,
+    pub id: String,
+    /// `physical_delete` (row/sidecar removal + VACUUM) or `crypto_erase` (destroy the subject DEK).
+    pub technique: String,
+    pub count: u64,
+}
+
+/// One lawfully-retained carve-out (GDPR Art. 17(3)) surfaced by the preflight, with its legal basis.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RetainedCarveout {
+    pub collection: String,
+    pub legal_basis: String,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ErasureWorkflowStatus {
+    /// Erasable targets exist and no blocking hold applies — the plan may be approved and executed.
+    ReadyForApproval,
+    /// A legal hold blocks erasure of the subject's records.
+    BlockedLegalHold,
+    /// Nothing erasable remains for this subject (already erased, or never present).
+    NothingToErase,
+}
+
+/// The concrete, digest-bound erasure plan the preflight returns. Evidence only; nothing is destroyed
+/// until an approved execute runs against a matching digest.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ErasurePreflightReport {
+    pub dsr_request_id: String,
+    pub subject_user_id: String,
+    pub assessed_at: String,
+    pub assessed_by: String,
+    pub status: ErasureWorkflowStatus,
+    pub erasable_targets: Vec<ErasableTarget>,
+    pub retained_carveouts: Vec<RetainedCarveout>,
+    pub ledger_event_count_matched: usize,
+    pub subject_dek_present: bool,
+    /// sha256 (lowercase hex) over the canonical erasable plan (subject + sorted targets + DEK flag).
+    /// Approval and execution bind to this digest so the store cannot change between plan and
+    /// destruction without the mismatch being rejected (anti-TOCTOU).
+    pub preflight_digest: String,
+}
+
+/// Dual-control authorization recorded on the DSR record once a distinct approver approves the plan.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ErasureAuthorization {
+    pub preflight_digest: String,
+    pub requested_by: String,
+    pub approved_by: String,
+    pub approved_at: String,
+    pub carveouts_acknowledged: bool,
+}
+
+/// The attestation record written onto the DSR record once the destructive execute commits.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ErasureExecutionRecord {
+    pub executed_by: String,
+    pub executed_at: String,
+    pub subject_erased_event_id: String,
+    pub techniques: Vec<String>,
+    pub erased_targets: Vec<DsrAffectedRecordSummary>,
+    pub retained_carveouts: Vec<RetainedCarveout>,
+    pub dek_destroyed: bool,
+    pub vacuum_completed: bool,
+    pub pre_erasure_ledger_head: usize,
+    pub ledger_event_count_matched: usize,
+}
+
+#[derive(Deserialize)]
+pub struct ApproveErasureBody {
+    /// The preflight digest the approver reviewed; must match a fresh recompute (anti-TOCTOU).
+    #[serde(default)]
+    pub preflight_digest: String,
+    /// Typed confirmation echoing the subject user id (guards against approving the wrong subject).
+    #[serde(default)]
+    pub subject_confirmation: String,
+    /// Explicit acknowledgement of the retained Art. 17(3) carve-outs.
+    #[serde(default)]
+    pub acknowledge_carveouts: bool,
+}
+
+#[derive(Deserialize)]
+pub struct ExecuteErasureBody {
+    /// Must equal the approved authorization digest AND a fresh recompute at execution time.
+    #[serde(default)]
+    pub preflight_digest: String,
+}
+
+struct ErasurePlanEnumeration {
+    erasable_targets: Vec<ErasableTarget>,
+    retained_carveouts: Vec<RetainedCarveout>,
+    subject_dek_present: bool,
+    ledger_event_count: usize,
+    legal_hold_blocked: bool,
+}
+
+/// Destructive erasure is gated to interactive sessions with `user.manage@Global`; it is deliberately
+/// NOT reachable via an API key / MCP principal (destructive step-up operations stay off that path).
+fn reject_api_key_for_destructive(actor: &CurrentActor) -> Result<(), ApiError> {
+    if actor.is_api_key() {
+        return Err(forbidden());
+    }
+    Ok(())
+}
+
+/// Load an erasure DSR request, checking the subject matches and the request is an erasure request.
+async fn load_erasure_request(
+    state: &AppState,
+    request_id: DsrRequestId,
+    subject: UserId,
+) -> Result<DsrRequest, ApiError> {
+    let requests = state.dsr_requests.read().await;
+    let request = requests
+        .get(&request_id)
+        .cloned()
+        .ok_or(ApiError::NotFound)?;
+    if request.subject_user_id != subject {
+        return Err(ApiError::NotFound);
+    }
+    if request.request_type != DsrRequestType::Erasure {
+        return Err(ApiError::Unprocessable(
+            "DSR request is not an erasure request".to_owned(),
+        ));
+    }
+    Ok(request)
+}
+
+/// Enumerate the subject's concrete erasable targets and the retained Art. 17(3) carve-outs. Reads
+/// only; never mutates. The `users` row is the primary erasable PII (username / display_name /
+/// email); the subject DEK is crypto-erasable. Delegations naming the subject are surfaced as a
+/// retained manual-review carve-out rather than auto-deleted.
+async fn enumerate_erasure_plan(state: &AppState, request: &DsrRequest) -> ErasurePlanEnumeration {
+    let subject = request.subject_user_id;
+    let subject_id = subject.to_string();
+    let subject_present = state.users.read().await.contains_key(&subject);
+    let subject_dek_present = match &state.store {
+        Some(store) => store
+            .get_subject_key(&subject_id)
+            .ok()
+            .flatten()
+            .map(|row| row.erased_at.is_none() && !row.wrapped_dek.is_empty())
+            .unwrap_or(false),
+        None => false,
+    };
+    let ledger_event_count = dsr_subject_ledger_event_count(state, subject).await;
+
+    let mut erasable_targets = Vec::new();
+    if subject_present {
+        erasable_targets.push(ErasableTarget {
+            collection: "users".to_owned(),
+            id: subject_id.clone(),
+            technique: ERASE_TECHNIQUE_PHYSICAL.to_owned(),
+            count: 1,
+        });
+    }
+    if subject_dek_present {
+        erasable_targets.push(ErasableTarget {
+            collection: "subject_keys".to_owned(),
+            id: subject_id.clone(),
+            technique: ERASE_TECHNIQUE_CRYPTO.to_owned(),
+            count: 1,
+        });
+    }
+
+    let retained_carveouts = vec![
+        RetainedCarveout {
+            collection: "ledger_events".to_owned(),
+            legal_basis: "art_17_3_legal_claims_and_tamper_evidence".to_owned(),
+            detail: format!(
+                "{ledger_event_count} append-only ledger event(s) reference the subject; retained as accountability + tamper-evidence records and never rewritten"
+            ),
+        },
+        RetainedCarveout {
+            collection: DSR_REQUESTS_FILE.to_owned(),
+            legal_basis: "art_5_2_accountability".to_owned(),
+            detail:
+                "the DSR request audit trail and the subject.erased attestation are retained as proof the erasure occurred"
+                    .to_owned(),
+        },
+        RetainedCarveout {
+            collection: "acts_books_signed_documents".to_owned(),
+            legal_basis: "art_17_3_b_statutory_retention".to_owned(),
+            detail:
+                "sealed minutes (acts), books + termo de abertura, and signed legal documents are the organisation's business records, retained under statutory obligation"
+                    .to_owned(),
+        },
+        RetainedCarveout {
+            collection: "delegations".to_owned(),
+            legal_basis: "art_17_3_manual_review".to_owned(),
+            detail:
+                "role delegations naming the subject are retained pending a separate accountability review; not auto-deleted by this workflow"
+                    .to_owned(),
+        },
+    ];
+
+    ErasurePlanEnumeration {
+        erasable_targets,
+        retained_carveouts,
+        subject_dek_present,
+        ledger_event_count,
+        legal_hold_blocked: false,
+    }
+}
+
+/// Canonical, order-independent sha256 (lowercase hex) over the erasable plan. Binds approval +
+/// execution to the exact set of targets so a store change between plan and destruction is rejected.
+fn compute_preflight_digest(
+    subject_user_id: &UserId,
+    targets: &[ErasableTarget],
+    dek_present: bool,
+) -> String {
+    let mut sorted = targets.to_vec();
+    sorted.sort_by(|a, b| {
+        (a.collection.as_str(), a.id.as_str(), a.technique.as_str()).cmp(&(
+            b.collection.as_str(),
+            b.id.as_str(),
+            b.technique.as_str(),
+        ))
+    });
+    let canonical = serde_json::json!({
+        "subject_user_id": subject_user_id.to_string(),
+        "subject_dek_present": dek_present,
+        "targets": sorted,
+    });
+    let bytes = serde_json::to_vec(&canonical).unwrap_or_default();
+    let mut hasher = Sha256::new();
+    hasher.update(&bytes);
+    hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
+async fn build_erasure_preflight_report(
+    state: &AppState,
+    request: &DsrRequest,
+    assessed_by: &str,
+) -> ErasurePreflightReport {
+    let assessed_at = now_rfc3339();
+    let enumeration = enumerate_erasure_plan(state, request).await;
+    let status = if enumeration.legal_hold_blocked {
+        ErasureWorkflowStatus::BlockedLegalHold
+    } else if enumeration.erasable_targets.is_empty() {
+        ErasureWorkflowStatus::NothingToErase
+    } else {
+        ErasureWorkflowStatus::ReadyForApproval
+    };
+    let preflight_digest = compute_preflight_digest(
+        &request.subject_user_id,
+        &enumeration.erasable_targets,
+        enumeration.subject_dek_present,
+    );
+    ErasurePreflightReport {
+        dsr_request_id: request.id.to_string(),
+        subject_user_id: request.subject_user_id.to_string(),
+        assessed_at,
+        assessed_by: assessed_by.to_owned(),
+        status,
+        erasable_targets: enumeration.erasable_targets,
+        retained_carveouts: enumeration.retained_carveouts,
+        ledger_event_count_matched: enumeration.ledger_event_count,
+        subject_dek_present: enumeration.subject_dek_present,
+        preflight_digest,
+    }
+}
+
+/// Ensure a per-subject DEK exists for `subject_id`, returning the live DEK to encrypt PII under.
+///
+/// Idempotent: an existing non-erased DEK row is unwrapped and returned. Requires a durable store and
+/// a resolvable credential key source. This is the provisioning half of the crypto-erase mechanism —
+/// once the erasure workflow destroys this DEK, any PII encrypted under it (live or in backups) is
+/// cryptographically irrecoverable.
+#[allow(dead_code)]
+pub fn provision_subject_dek(
+    state: &AppState,
+    subject_id: &str,
+) -> Result<crate::secretstore::LiveDek, ApiError> {
+    let Some(store) = &state.store else {
+        return Err(ApiError::Internal(
+            "subject DEK provisioning requires a durable store".to_owned(),
+        ));
+    };
+    let crypto = state
+        .provider_credentials
+        .subject_dek_crypto()
+        .map_err(|e| ApiError::Internal(format!("subject DEK crypto unavailable: {e}")))?;
+    if let Some(row) = store
+        .get_subject_key(subject_id)
+        .map_err(|e| ApiError::Internal(format!("subject key read failed: {e}")))?
+    {
+        if row.erased_at.is_none() && !row.wrapped_dek.is_empty() {
+            let dek = crypto
+                .unwrap_dek(subject_id, &row.wrapped_dek)
+                .map_err(|e| ApiError::Internal(format!("subject DEK unwrap failed: {e}")))?;
+            return Ok(dek);
+        }
+    }
+    let (wrapped, dek) = crypto
+        .wrap_new_dek(subject_id)
+        .map_err(|e| ApiError::Internal(format!("subject DEK generation failed: {e}")))?;
+    let created_at = now_rfc3339();
+    store
+        .persist(|tx| tx.put_subject_key(subject_id, wrapped.as_bytes(), 1, &created_at))
+        .map_err(|e| AppState::map_store_write_error("failed to persist the subject DEK", e))?;
+    Ok(dek)
+}
+
+/// `POST /v1/privacy/users/{user_id}/dsr-requests/{request_id}/erasure/preflight`
+///
+/// Enumerate the subject's erasable targets + retained Art. 17(3) carve-outs and return the
+/// digest-bound plan. Evidence only; nothing is destroyed.
+pub async fn erasure_preflight(
+    State(state): State<AppState>,
+    Path((user_id, request_id)): Path<(Uuid, Uuid)>,
+    actor: CurrentActor,
+) -> Result<Json<ErasurePreflightReport>, ApiError> {
+    require_permission(&state, &actor, Permission::UserManage, Scope::Global).await?;
+    reject_api_key_for_destructive(&actor)?;
+    let subject = UserId(user_id);
+    let request = load_erasure_request(&state, DsrRequestId(request_id), subject).await?;
+    let assessed_by = actor.resolve("api");
+    let report = build_erasure_preflight_report(&state, &request, &assessed_by).await;
+    Ok(Json(report))
+}
+
+/// `POST /v1/privacy/users/{user_id}/dsr-requests/{request_id}/erasure/approve`
+///
+/// Dual-control gate: the approver must be a distinct principal from the requester, must echo the
+/// subject id, must acknowledge the carve-outs, and the supplied digest must match a fresh recompute.
+pub async fn erasure_approve(
+    State(state): State<AppState>,
+    Path((user_id, request_id)): Path<(Uuid, Uuid)>,
+    actor: CurrentActor,
+    Json(body): Json<ApproveErasureBody>,
+) -> Result<Json<DsrRequestView>, ApiError> {
+    require_permission(&state, &actor, Permission::UserManage, Scope::Global).await?;
+    reject_api_key_for_destructive(&actor)?;
+    let subject = UserId(user_id);
+    let request_id = DsrRequestId(request_id);
+    let request = load_erasure_request(&state, request_id, subject).await?;
+    if request.status != DsrRequestStatus::Pending {
+        return Err(ApiError::Conflict(
+            "DSR request is not pending; erasure cannot be approved".to_owned(),
+        ));
+    }
+    let approver = actor.resolve("api");
+    // Dual control: the approver must not be the principal who created the request.
+    if approver == request.created_by {
+        return Err(ApiError::Unprocessable(
+            "dual control: the erasure approver must be a different principal from the requester"
+                .to_owned(),
+        ));
+    }
+    if body.subject_confirmation.trim() != request.subject_user_id.to_string() {
+        return Err(ApiError::Unprocessable(
+            "subject_confirmation must echo the subject user id".to_owned(),
+        ));
+    }
+    if !body.acknowledge_carveouts {
+        return Err(ApiError::Unprocessable(
+            "acknowledge_carveouts must be true: the retained Art. 17(3) carve-outs must be acknowledged"
+                .to_owned(),
+        ));
+    }
+    let report = build_erasure_preflight_report(&state, &request, &approver).await;
+    if report.status != ErasureWorkflowStatus::ReadyForApproval {
+        return Err(ApiError::Unprocessable(
+            "erasure plan is not ready for approval (nothing to erase, or blocked by a legal hold)"
+                .to_owned(),
+        ));
+    }
+    if report.preflight_digest != body.preflight_digest.trim() {
+        return Err(ApiError::Conflict(
+            "preflight digest mismatch; the store changed since preflight — re-run preflight and review the new plan"
+                .to_owned(),
+        ));
+    }
+    let authorization = ErasureAuthorization {
+        preflight_digest: report.preflight_digest,
+        requested_by: request.created_by.clone(),
+        approved_by: approver,
+        approved_at: now_rfc3339(),
+        carveouts_acknowledged: true,
+    };
+
+    let mut requests = state.dsr_requests.write().await;
+    let mut request = requests
+        .get(&request_id)
+        .cloned()
+        .ok_or(ApiError::NotFound)?;
+    if request.status != DsrRequestStatus::Pending {
+        return Err(ApiError::Conflict(
+            "DSR request is not pending; erasure cannot be approved".to_owned(),
+        ));
+    }
+    request.erasure_authorization = Some(authorization);
+    let view = DsrRequestView::from(&request);
+    requests.insert(request.id, request);
+    drop(requests);
+    persist_dsr_requests(&state).await?;
+    Ok(Json(view))
+}
+
+/// `POST /v1/privacy/users/{user_id}/dsr-requests/{request_id}/erasure/execute`
+///
+/// The destructive step. Requires a prior distinct-principal approval bound to the same digest, and
+/// re-checks the digest against a fresh recompute (anti-TOCTOU). In one ledger transaction it appends
+/// the `subject.erased` attestation and destroys the subject DEK; it then physically removes the
+/// subject's directory identity (write-through) and VACUUMs. The append-only ledger is never mutated,
+/// so `verify()` advances Ok(n) → Ok(n+1). Outcome is capped at `partially_fulfilled` (retained
+/// carve-outs remain).
+pub async fn erasure_execute(
+    State(state): State<AppState>,
+    Path((user_id, request_id)): Path<(Uuid, Uuid)>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    Json(body): Json<ExecuteErasureBody>,
+) -> Result<Json<DsrRequestView>, ApiError> {
+    require_permission(&state, &actor, Permission::UserManage, Scope::Global).await?;
+    reject_api_key_for_destructive(&actor)?;
+    let subject = UserId(user_id);
+    let request_id = DsrRequestId(request_id);
+    let executed_by = actor.resolve("api");
+    let request = load_erasure_request(&state, request_id, subject).await?;
+    if request.status != DsrRequestStatus::Pending {
+        return Err(ApiError::Conflict(
+            "DSR request is not pending; erasure has already been completed".to_owned(),
+        ));
+    }
+    let Some(authorization) = request.erasure_authorization.clone() else {
+        return Err(ApiError::Unprocessable(
+            "erasure has not been approved; POST .../erasure/approve first".to_owned(),
+        ));
+    };
+    // Dual control invariant (belt-and-braces: approve already enforced it).
+    if authorization.approved_by == authorization.requested_by {
+        return Err(forbidden());
+    }
+    // Re-enumerate and bind: the body digest, the approved digest, and a fresh recompute must agree.
+    let report = build_erasure_preflight_report(&state, &request, &executed_by).await;
+    if body.preflight_digest.trim() != authorization.preflight_digest
+        || report.preflight_digest != authorization.preflight_digest
+    {
+        return Err(ApiError::Conflict(
+            "preflight digest mismatch (the store changed since approval, or a stale digest was supplied); re-run preflight and approve"
+                .to_owned(),
+        ));
+    }
+    if report.status != ErasureWorkflowStatus::ReadyForApproval {
+        return Err(ApiError::Unprocessable(
+            "erasure plan is no longer ready to execute".to_owned(),
+        ));
+    }
+
+    let executed_at = now_rfc3339();
+    let subject_id = request.subject_user_id.to_string();
+    let scope = format!("user:{subject_id}");
+    let dek_present = report.subject_dek_present;
+    let pre_erasure_ledger_head = state.ledger.read().await.len();
+
+    let mut techniques = vec![ERASE_TECHNIQUE_PHYSICAL.to_owned()];
+    if dek_present {
+        techniques.push(ERASE_TECHNIQUE_CRYPTO.to_owned());
+    }
+    techniques.push(ERASE_TECHNIQUE_VACUUM.to_owned());
+    let erased_targets: Vec<DsrAffectedRecordSummary> = report
+        .erasable_targets
+        .iter()
+        .map(|t| DsrAffectedRecordSummary {
+            collection: t.collection.clone(),
+            action: "erased".to_owned(),
+            count: t.count,
+        })
+        .collect();
+
+    // The digested, retained-as-JSON attestation payload (mirrors ReanchorRecord's justification).
+    let attestation = serde_json::json!({
+        "subject_id": subject_id,
+        "dsr_request_id": request.id.to_string(),
+        "requested_by": authorization.requested_by,
+        "approved_by": authorization.approved_by,
+        "executed_by": executed_by,
+        "executed_at": executed_at,
+        "technique": techniques,
+        "targets": erased_targets,
+        "dek_destroyed": dek_present,
+        "retained_carveouts": report.retained_carveouts,
+        "pre_erasure_ledger_head": pre_erasure_ledger_head,
+        "ledger_event_count_matched": report.ledger_event_count_matched,
+    });
+    let attestation_json = serde_json::to_string(&attestation)?;
+
+    // Step 1 — append `subject.erased` + destroy the subject DEK atomically (ledger event +
+    // subject_keys row, one commits-or-rolls-back transaction). Actor = subject UUID (pseudonymous
+    // convention); scope `user:{uuid}` → Application chain (no genesis-kind constraint).
+    let subject_erased_event_id = {
+        let mut ledger = state.ledger.write().await;
+        try_append_event(
+            &mut ledger,
+            &subject_id,
+            &scope,
+            SUBJECT_ERASED_KIND,
+            Some(&attestation_json),
+            attestation_json.as_bytes(),
+        )?;
+        let event_id = ledger
+            .events()
+            .last()
+            .map(|e| e.id.to_string())
+            .unwrap_or_default();
+        let subject_key = subject_id.clone();
+        let erased_at = executed_at.clone();
+        state.persist_write_through(&mut ledger, 1, move |tx| {
+            if dek_present {
+                tx.destroy_subject_key(&subject_key, &erased_at)?;
+            }
+            Ok(())
+        })?;
+        state.attest_latest(&attestor, &ledger).await;
+        event_id
+    };
+
+    // Step 2 — physically remove the subject's directory identity, write-through (rewrites
+    // `users.json` on SQLite, reconciles the `users` table on Postgres — backend-agnostic).
+    {
+        let mut users = state.users.write().await;
+        users.remove(&subject);
+    }
+    persist_users(&state).await?;
+
+    // Step 3 — reclaim freed pages / dead tuples so deleted PII bytes do not linger (VACUUM cannot run
+    // inside a transaction). Best-effort: the DEK is already destroyed and the row already gone, so a
+    // VACUUM failure must not fail the erasure; the outcome records whether it completed.
+    let vacuum_completed = match &state.store {
+        Some(store) => match store.vacuum() {
+            Ok(()) => true,
+            Err(e) => {
+                eprintln!("wp26-gdpr: VACUUM after erasure failed (non-fatal): {e}");
+                false
+            }
+        },
+        None => false,
+    };
+
+    // Step 4 — mark the DSR record completed (outcome capped at partially_fulfilled) + attest.
+    let execution_record = ErasureExecutionRecord {
+        executed_by: executed_by.clone(),
+        executed_at: executed_at.clone(),
+        subject_erased_event_id,
+        techniques,
+        erased_targets: erased_targets.clone(),
+        retained_carveouts: report.retained_carveouts,
+        dek_destroyed: dek_present,
+        vacuum_completed,
+        pre_erasure_ledger_head,
+        ledger_event_count_matched: report.ledger_event_count_matched,
+    };
+    let view = {
+        let mut requests = state.dsr_requests.write().await;
+        let mut request = requests
+            .get(&request_id)
+            .cloned()
+            .ok_or(ApiError::NotFound)?;
+        request.status = DsrRequestStatus::Completed;
+        request.completed_at = Some(executed_at.clone());
+        request.completed_by = Some(executed_by.clone());
+        request.outcome = Some(DsrExecutionOutcome::PartiallyFulfilled);
+        request.executed_at = Some(executed_at.clone());
+        request.executed_by = Some(executed_by.clone());
+        request.affected_records = erased_targets;
+        request.erasure_execution = Some(execution_record);
+        let view = DsrRequestView::from(&request);
+        requests.insert(request.id, request);
+        view
+    };
+    persist_dsr_requests(&state).await?;
+    Ok(Json(view))
 }
 
 fn clean_required(raw: &str, field: &str) -> Result<String, ApiError> {
