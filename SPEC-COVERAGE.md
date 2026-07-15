@@ -1,9 +1,10 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-15 from current implementation snapshot `3dc31e3b358dbcb60a924e2ea17d682101dd4ea9`,
-with committed evidence refreshes for the recently landed missing-meeting-date
-convocation reminder, convocation act-review guidance, and convocation-notice
-local WFL/legal-calendar advisory reminder slices, condominium annual local
+*Updated 2026-07-15 from current implementation snapshot `82d3554fdd20b0eaff809e4ff809bdd2b1bce5dc`,
+with committed evidence refreshes for the recently landed convocation reminder
+guidance routing, missing-meeting-date convocation reminder, convocation
+act-review guidance, and convocation-notice local WFL/legal-calendar advisory
+reminder slices, condominium annual local
 advisory due-date depth, automated-review dashboard contract surface,
 archive filter refinement, all-filtered archive export, automated-review law
 corpus UI tier, MCP workflow provenance local JSON/text summary, key-custody
@@ -195,8 +196,9 @@ condominium annual local advisory due-date coverage, `a7125b3`
 all-filtered archive export scope coverage, `040ce48` streamed all-filtered
 archive export/cap coverage, and `711c7a4` dashboard annual profile-calendar
 reminder localization, followed by `982cc9a` convocation-notice local
-advisory reminders, `87ec6aa` convocation act-review guidance, and `3dc31e3`
-missing-meeting-date convocation reminder handling.
+advisory reminders, `87ec6aa` convocation act-review guidance, `3dc31e3`
+missing-meeting-date convocation reminder handling, and `82d3554` focused
+convocation reminder routing to the existing convening guidance anchor.
 Earlier coverage text remains prior snapshot context. All top-level spec areas remain **PARTIAL**.
 This is an implementation and test coverage snapshot, not a legal certification,
 not production CMD approval, not DRE verification promotion, not full PDF/UA
@@ -227,7 +229,24 @@ blockers.
 
 Implementation checkpoints covered here:
 
-- Current `3dc31e3` keeps Workflows/Legal/Compliance/UX/API/CI **PARTIAL**:
+- Current `82d3554` keeps Workflows/Legal/Compliance/UX/CI **PARTIAL**:
+  dashboard work-queue links and notification actions for
+  `open_act_convening_notice` / `act-convening-notice` reminders now route to
+  `/atas/{act-id}#convening-guidance` through the shared
+  `actConveningGuidanceRoute` helper. The Ata editor exposes a stable
+  `#convening-guidance` anchor around the existing convocatória/convening
+  guidance card and scrolls that anchored section after async act data and the
+  draft state are loaded, so reminder deep links land on the advisory context
+  instead of only the act top. Focused evidence passed: `npm run test
+  --workspace apps/web -- DashboardPage.test.tsx notifications.test.ts
+  AtaEditorStructured.test.tsx` (64 tests), `npm run build --workspace
+  apps/web`, and `git diff --check`. This is local workflow UI routing depth
+  only: it adds no backend route, contract, archive, docs, legal-authority,
+  legal-sufficiency, legal deadline computation, external-delivery,
+  workflow-completion, registry/DRE/provider acceptance, legal effect, or
+  legal/compliance completion claim.
+
+- Prior `3dc31e3` keeps Workflows/Legal/Compliance/UX/API/CI **PARTIAL**:
   the API dashboard now emits the same `act-convening-notice` local advisory
   reminder when a statute convocation-notice day count exists but the act has no
   recorded `meeting_date`. The missing-date reminder stays pending with blank

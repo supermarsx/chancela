@@ -10421,12 +10421,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `3dc31e3`",
+    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `82d3554`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `3dc31e3`",
+    "Focused Gate Snapshot Through `82d3554`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -11066,7 +11066,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `3dc31e3`",
+    "Current checkpoint metadata/static checks through `82d3554`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -11601,7 +11601,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `3dc31e3b358dbcb60a924e2ea17d682101dd4ea9`",
+    "implementation snapshot `82d3554fdd20b0eaff809e4ff809bdd2b1bce5dc`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -12106,7 +12106,47 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Current `3dc31e3` keeps Workflows/Legal/Compliance/UX/API/CI **PARTIAL**",
+    "Current `82d3554` keeps Workflows/Legal/Compliance/UX/CI **PARTIAL**",
+    "spec coverage convocation reminder guidance routing checkpoint marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "dashboard work-queue links and notification actions for `open_act_convening_notice` / `act-convening-notice` reminders now route to `/atas/{act-id}#convening-guidance`",
+    "spec coverage convocation reminder guidance route marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "stable `#convening-guidance` anchor around the existing convocatória/convening guidance card",
+    "spec coverage convocation guidance anchor marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "This is local workflow UI routing depth only",
+    "spec coverage convocation guidance no-claim marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Current `82d3554` convocation reminder guidance routing checks",
+    "CI/E2E hardening plan convocation reminder guidance routing marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "route to `/atas/{act-id}#convening-guidance`, and the Ata editor maps that stable hash to the existing convocatória/convening guidance card",
+    "CI/E2E hardening plan convocation reminder route detail marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "Convocation reminder guidance routing markers pin the local workflow UI routing\nslice only",
+    "CI checkpoints convocation reminder guidance routing marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-CHECKPOINTS.md",
+    "do not change backend routes, dashboard contracts, archives, or documents",
+    "CI checkpoints convocation reminder routing no-product-claim marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Prior `3dc31e3` keeps Workflows/Legal/Compliance/UX/API/CI **PARTIAL**",
     "spec coverage missing-meeting-date convocation reminder checkpoint marker",
   );
   assertFileContainsNormalized(
@@ -12121,7 +12161,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current `3dc31e3` missing-meeting-date convocation reminder checks",
+    "Prior `3dc31e3` missing-meeting-date convocation reminder checks",
     "CI/E2E hardening plan missing-meeting-date convocation marker",
   );
   assertFileContainsNormalized(
@@ -12273,6 +12313,61 @@ function assertCheckpointMap() {
     "crates/chancela-api/src/dashboard.rs",
     "\"open_act_convening_notice\"",
     "API dashboard convocation-notice action marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/anchors.ts",
+    "export const ACT_CONVENING_GUIDANCE_ID = 'convening-guidance';",
+    "web convocation guidance stable anchor id marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/anchors.ts",
+    "url.hash = ACT_CONVENING_GUIDANCE_HASH;",
+    "web convocation guidance route hash marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/dashboard/DashboardPage.tsx",
+    "const route = actConveningGuidanceRoute(reminderActRoute(reminder));",
+    "dashboard convocation reminder guidance route marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/notifications/notifications.ts",
+    "? (actConveningGuidanceRoute(`/atas/${actId}`) ?? `/atas/${actId}`)",
+    "notification-center convocation reminder target guidance route marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/notifications/notifications.ts",
+    "action.kind === 'open_act_convening_notice'\n      ? actConveningGuidanceRoute(",
+    "notification-center convocation action metadata guidance route marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/AtaEditorPage.tsx",
+    "location.hash !== ACT_CONVENING_GUIDANCE_HASH",
+    "Ata editor convocation guidance hash effect marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/AtaEditorPage.tsx",
+    "document.getElementById(ACT_CONVENING_GUIDANCE_ID)?.scrollIntoView",
+    "Ata editor convocation guidance post-load scroll marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/AtaEditorPage.tsx",
+    "<div id={ACT_CONVENING_GUIDANCE_ID} data-testid={ACT_CONVENING_GUIDANCE_ID}>",
+    "Ata editor convocation guidance stable target marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/AtaEditorStructured.test.tsx",
+    "maps the convening guidance hash to the existing convening advisory section",
+    "Ata editor convocation guidance hash unit coverage marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/dashboard/DashboardPage.test.tsx",
+    "expect(link.getAttribute('href')).toBe('/atas/act-notice-1#convening-guidance');",
+    "dashboard convocation reminder guidance href coverage marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/notifications/notifications.test.ts",
+    "action: { href: '/atas/act-notice-1#convening-guidance', label: 'Rever convocatória' }",
+    "notification-center convocation reminder guidance href coverage marker",
   );
   assertFileContains(
     "apps/web/src/features/dashboard/DashboardPage.tsx",

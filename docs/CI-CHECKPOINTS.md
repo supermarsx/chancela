@@ -88,7 +88,8 @@ dashboard-only annual reminder localization markers for CSC, association,
 foundation, and cooperative profile-calendar rules, convocation act-review
 guidance markers plus convocation-notice local WFL/legal-calendar advisory
 markers for `act-convening-notice` open-act reminders including the
-missing-meeting-date non-computed reminder path,
+missing-meeting-date non-computed reminder path and focused
+`#convening-guidance` workflow UI routing depth,
 compact validator-report actions, template provenance UI, release clean-source
 provenance gating, local CC batch-signing UI markers for BatchSigningPanel,
 `useCcBatchSign`, `POST /v1/signature/cc/batch-sign`, optional transient PIN
@@ -712,6 +713,16 @@ reminders with recorded meeting dates remain pinned. These markers do not claim
 legal authority, legal sufficiency, compliance completion, external delivery,
 workflow completion, registry/DRE/provider acceptance, legal deadline
 computation, legal effect, or legal/compliance completion.
+
+Convocation reminder guidance routing markers pin the local workflow UI routing
+slice only: dashboard and notification actions for
+`open_act_convening_notice` / `act-convening-notice` reminders route to
+`/atas/{act-id}#convening-guidance`, and the Ata editor maps that stable hash
+to the existing convocatória/convening guidance card after async act data loads.
+These markers do not change backend routes, dashboard contracts, archives, or
+documents, and do not claim legal authority, legal sufficiency, legal deadline
+computation, external delivery, workflow completion, registry/DRE/provider
+acceptance, legal effect, or legal/compliance completion.
 
 Convocation act-review guidance markers pin the local WFL/legal-calendar
 usability slice only: the Ata editor inline warning asks operators to record

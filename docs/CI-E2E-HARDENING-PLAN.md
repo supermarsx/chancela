@@ -1,10 +1,11 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `3dc31e3`,
-including coverage notes for missing-meeting-date convocation reminders,
-convocation act-review guidance and convocation-notice local WFL/legal-calendar
-advisory reminders, condominium annual local advisory Jan 15 profile-calendar
+and implementation snapshot `82d3554`,
+including coverage notes for convocation reminder guidance routing,
+missing-meeting-date convocation reminders, convocation act-review guidance and
+convocation-notice local WFL/legal-calendar advisory reminders, condominium
+annual local advisory Jan 15 profile-calendar
 depth, dashboard annual profile-calendar reminder localization,
 automated-review dashboard contract surfacing, archive active-filter count
 refinement, all-filtered archive export streaming/caps,
@@ -889,11 +890,11 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `3dc31e3`
+## Focused Gate Snapshot Through `82d3554`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08` and checkpoint-promoted on 2026-07-15 for
-current implementation head `3dc31e3`. This is not an exhaustive current
+current implementation head `82d3554`. This is not an exhaustive current
 green-run claim; browser, Docker, desktop, package signing/notarization, image
 signing/attestation, and live-provider limits above still apply.
 
@@ -1844,7 +1845,19 @@ settingsDefaults.test.ts contracts.test.ts`.
   legal-authority, legal-sufficiency, provider, certification, external
   delivery, workflow-completion, DRE/source-authority, registry acceptance,
   legal effect, or legal/compliance completion claim.
-- Current `3dc31e3` missing-meeting-date convocation reminder checks: focused
+- Current `82d3554` convocation reminder guidance routing checks: focused
+  `npm run test --workspace apps/web -- DashboardPage.test.tsx
+  notifications.test.ts AtaEditorStructured.test.tsx` passed 64 tests, `npm
+  run build --workspace apps/web` passed, and `git diff --check` passed. The
+  dashboard and notification actions for `open_act_convening_notice` /
+  `act-convening-notice` now route to `/atas/{act-id}#convening-guidance`, and
+  the Ata editor maps that stable hash to the existing convocatória/convening
+  guidance card with a post-load scroll effect after async act data resolves.
+  This is local workflow UI routing depth only: no backend route, contract,
+  archive, legal authority, legal sufficiency, legal deadline computation,
+  external delivery, workflow completion, registry/DRE/provider acceptance,
+  legal effect, or legal/compliance completion claim is added.
+- Prior `3dc31e3` missing-meeting-date convocation reminder checks: focused
   `cargo test -p chancela-api --locked convocation_notice`, `npm run test
   --workspace apps/web -- DashboardPage.test.tsx notifications.test.ts`, `npm
   run test --workspace apps/web -- i18n.test.ts`, `npm run build --workspace
@@ -2014,15 +2027,15 @@ settingsDefaults.test.ts contracts.test.ts`.
   full RBAC/delegation-policy completion, tenant authorization proof,
   legal-capacity verification, broad security certification, or spec
   completion.
-- Current checkpoint metadata/static checks through `3dc31e3`
+- Current checkpoint metadata/static checks through `82d3554`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
   `git diff --check -- SPEC-COVERAGE.md docs\CI-E2E-HARDENING-PLAN.md
   docs\CI-CHECKPOINTS.md scripts\checkpoint-recent-landed.mjs`.
   These pin the spec snapshot,
-  hardening-plan head, convocation act-review guidance, convocation-notice
-  advisory reminders, dashboard annual
+  hardening-plan head, convocation reminder guidance routing, convocation
+  act-review guidance, convocation-notice advisory reminders, dashboard annual
   reminder localization, automated-review
   dashboard contract surfacing, Arquivo advanced-filter count badge,
   all-filtered archive export streaming/cap scope, MCP meeting
