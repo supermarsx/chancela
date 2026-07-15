@@ -1157,6 +1157,23 @@ smoke does not claim HA, a dedicated worker image, registry publication, image
 signing, attestation, notarization, vulnerability remediation, or production
 deployment certification.
 
+The additive hardened Docker lane is pinned as local configuration and operator
+documentation evidence only. `Dockerfile.hardened` uses digest-pinned Rust,
+Node, distroless, and busybox inputs, keeps the final app runtime non-root, and
+documents the busybox healthcheck tradeoff. `docker-compose.hardened.yml` keeps
+separate `single-node` and `postgres` profiles with loopback-only app ports,
+internal Postgres/Redis networking, docker-secret-backed Postgres settings,
+read-only/cap-dropped app containers, and bounded tmpfs/resources/pids/logging.
+`docs/security/hardened-docker.md` records host requirements, secret setup,
+digest refresh, and optional scan/SBOM/signing commands as operator add-ons.
+The pinned validation is `git diff --check 5f0281e..HEAD -- Dockerfile.hardened
+docker-compose.hardened.yml docs/security/hardened-docker.md`, both compose
+`config --quiet` profiles, and `docker build -f Dockerfile.hardened --check .`.
+This does not claim a full image build in this checkpoint, production
+readiness, TLS/key custody, vulnerability-free status, scanner/SBOM proof,
+signature or attestation proof, HA/failover/RPO/RTO, legal/DR certification,
+cloud deployment readiness, or spec completion.
+
 After `npm run package`, run `npm run test:package-integrity` to validate the
 generated `dist/chancela-*.tar.gz` archive and staged package directory. The
 check enforces safe archive member paths, matching manifest entries, valid

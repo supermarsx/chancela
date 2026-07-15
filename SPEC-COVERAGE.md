@@ -1,6 +1,6 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-15 from current implementation snapshot `39eb4ae6df3b881363faf9d40a950f2aada473a2`,
+*Updated 2026-07-15 from current implementation snapshot `9f4caff0ca46018c479cbbe2ffcebf780e710824`,
 with committed evidence refreshes for the MCP document/archive PDF accessibility
 v11 identifier, count, blocker, and fixture-report alignment, the browser
 workflow provenance review panel and sanitized local MCP workflow-provenance copy
@@ -244,8 +244,13 @@ contract E2E wiring for the template summary/import verdict/export fixtures,
 followed by `71fc536` targeted Postgres store CI, `628b613` per-test
 isolated full ignored Postgres backend sweep proof, `6b33517` coverage-waiver
 static debt guard, `0954b53` generated-document coverage fixture alignment,
-`2d84112` browser workflow provenance review panel, and `39eb4ae` MCP
-document/archive PDF accessibility v11 alignment.
+`2d84112` browser workflow provenance review panel, `39eb4ae` MCP
+document/archive PDF accessibility v11 alignment, `412fbf6` sourced comparison
+documentation, `5f0281e` checkpoint pinning for that MCP alignment, `03784e5`
+additive hardened Docker image/Compose/operations documentation, `cc5b1f4`
+dashboard hero documentation asset, `08c9a19` README reformulation, and
+`13787eb` README intro expansion, followed by `9f4caff` MkDocs site and Pages
+workflow documentation.
 Earlier coverage text remains prior snapshot context. All top-level spec areas remain **PARTIAL**.
 This is an implementation and test coverage snapshot, not a legal certification,
 not production CMD approval, not DRE verification promotion, not full PDF/UA
@@ -275,6 +280,24 @@ being useful. The matrix below records the current factual coverage and the rema
 blockers.
 
 Implementation checkpoints covered here:
+
+- Current `9f4caff` keeps Architecture/Release/CI **PARTIAL**: the current
+  implementation snapshot includes the additive `03784e5` hardened Docker lane
+  plus the follow-on comparison, dashboard hero, and README documentation commits
+  plus the MkDocs site/Pages workflow commit through `9f4caff` so the checker
+  tracks the real non-checkpoint HEAD. The Docker lane adds
+  `Dockerfile.hardened`, `docker-compose.hardened.yml`, and
+  `docs/security/hardened-docker.md`: digest-pinned multi-stage image inputs,
+  a distroless non-root runtime with a documented busybox healthcheck tradeoff,
+  loopback-only app publishing, internal Postgres/Redis networking, docker
+  secrets for the Postgres profile, app read-only-rootfs/capability drops,
+  bounded tmpfs/resources/pids/logging, and operator instructions for digest
+  refresh and optional scan/SBOM/signing steps. Local validation for this
+  checkpoint covered whitespace, both compose profiles, and Dockerfile
+  `--check` only. This is container posture/configuration evidence only: it is
+  not a production-readiness, TLS/key-custody, vulnerability-free, scanner/SBOM,
+  signature/attestation, HA/failover/RPO/RTO, legal/DR certification, cloud
+  deployment readiness, or spec-completion claim; statuses remain PARTIAL=11.
 
 - Current `39eb4ae` keeps AI/MCP, Documents/Archive, and CI **PARTIAL**: the
   MCP document/archive review summary now aligns its PDF accessibility checkpoint

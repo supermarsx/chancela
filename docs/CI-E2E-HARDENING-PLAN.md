@@ -1,7 +1,7 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `39eb4ae`,
+and implementation snapshot `9f4caff`,
 including coverage notes for the MCP document/archive PDF accessibility v11
 identifier/count/blocker alignment, fixture report version 11, the Ata editor
 workflow provenance review panel, generated-document coverage fixture alignment,
@@ -78,6 +78,7 @@ document-bundle/archive generated dispatch-evidence metadata preservation,
 imported-document review receipt UI, trust catalog identifier-match explanations,
 imported-document review dashboard reminders and review-form deep-link focus routing,
 password-required account creation/session hardening,
+additive hardened Dockerfile/Compose/operator documentation validation,
 written-resolution evidence receipt local browser proof,
 route-stubbed richer entity chronology visualization over existing structured
 graph evidence and local sealed-act chronology projection over sealed/archived
@@ -965,11 +966,11 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `39eb4ae`
+## Focused Gate Snapshot Through `9f4caff`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08` and checkpoint-promoted on 2026-07-15 for
-current implementation head `39eb4ae`. This is not an exhaustive current
+current implementation head `9f4caff`. This is not an exhaustive current
 green-run claim; the full-server E2E claim below is limited to local
 `chancela-server --features e2e` after auth harness alignment, and browser,
 Docker, desktop, package signing/notarization, image signing/attestation, and
@@ -2269,7 +2270,19 @@ settingsDefaults.test.ts contracts.test.ts`.
   does not claim production Postgres readiness, TLS readiness, HA readiness,
   migration completeness, RPO/RTO certification, split-brain prevention,
   failover certification, legal/DR certification, or spec completion.
-- Current checkpoint metadata/static checks through `39eb4ae`
+- Current `03784e5` hardened Docker checks: reviewed
+  `Dockerfile.hardened`, `docker-compose.hardened.yml`, and
+  `docs/security/hardened-docker.md`, then validated
+  `git diff --check 5f0281e..HEAD -- Dockerfile.hardened docker-compose.hardened.yml docs/security/hardened-docker.md`,
+  `docker compose -f docker-compose.hardened.yml --profile single-node config --quiet`,
+  `docker compose -f docker-compose.hardened.yml --profile postgres config --quiet`
+  with ignored temporary secret files removed afterward, and
+  `docker build -f Dockerfile.hardened --check .`. This pins the additive
+  hardened image/compose/operations-documentation lane only: no full image build,
+  production-readiness, TLS/key-custody, vulnerability-free scan, SBOM,
+  signature/attestation, HA/failover/RPO/RTO, legal/DR certification, cloud
+  deployment readiness, or spec-completion claim is made.
+- Current checkpoint metadata/static checks through `9f4caff`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and

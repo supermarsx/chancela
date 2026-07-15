@@ -10685,12 +10685,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `39eb4ae`",
+    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `9f4caff`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `39eb4ae`",
+    "Focused Gate Snapshot Through `9f4caff`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -11365,7 +11365,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `39eb4ae`",
+    "Current checkpoint metadata/static checks through `9f4caff`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -11900,8 +11900,83 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `39eb4ae6df3b881363faf9d40a950f2aada473a2`",
+    "implementation snapshot `9f4caff0ca46018c479cbbe2ffcebf780e710824`",
     "spec coverage current implementation snapshot marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Current `9f4caff` keeps Architecture/Release/CI **PARTIAL**",
+    "spec coverage hardened Docker current snapshot marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "additive `03784e5` hardened Docker lane",
+    "spec coverage hardened Docker lane commit marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "not a production-readiness, TLS/key-custody, vulnerability-free, scanner/SBOM,\n  signature/attestation, HA/failover/RPO/RTO, legal/DR certification, cloud\n  deployment readiness, or spec-completion claim",
+    "spec coverage hardened Docker no-claim marker",
+  );
+  assertFileContains(
+    "Dockerfile.hardened",
+    "gcr.io/distroless/cc-debian12:nonroot@sha256:",
+    "hardened Dockerfile distroless digest marker",
+  );
+  assertFileContains(
+    "Dockerfile.hardened",
+    "COPY --from=busybox:uclibc@sha256:",
+    "hardened Dockerfile busybox digest marker",
+  );
+  assertFileContains(
+    "docker-compose.hardened.yml",
+    "profiles: [single-node]",
+    "hardened compose single-node profile marker",
+  );
+  assertFileContains(
+    "docker-compose.hardened.yml",
+    "profiles: [postgres]",
+    "hardened compose postgres profile marker",
+  );
+  assertFileContains(
+    "docker-compose.hardened.yml",
+    "host_ip: 127.0.0.1",
+    "hardened compose loopback publish marker",
+  );
+  assertFileContains(
+    "docker-compose.hardened.yml",
+    "internal: true",
+    "hardened compose internal backend network marker",
+  );
+  assertFileContains(
+    "docs/security/hardened-docker.md",
+    "Do **not** describe images produced by the compose profiles as signed or\n> attested unless a signing/provenance pipeline has actually run",
+    "hardened Docker docs signing no-claim marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "The additive hardened Docker lane is pinned as local configuration and operator\ndocumentation evidence only",
+    "CI checkpoints hardened Docker lane marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "This does not claim a full image build in this checkpoint, production\nreadiness, TLS/key custody, vulnerability-free status",
+    "CI checkpoints hardened Docker no-claim marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Current `03784e5` hardened Docker checks",
+    "CI/E2E hardening plan hardened Docker checks marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "docker build -f Dockerfile.hardened --check .",
+    "CI/E2E hardening plan hardened Docker build-check marker",
+  );
+  assertFileDoesNotContain(
+    "scripts/check-spec-coverage.mjs",
+    "\"Dockerfile.hardened\"",
+    "spec coverage checker keeps hardened Docker implementation files out of checkpoint allowlist",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
