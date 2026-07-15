@@ -1280,6 +1280,340 @@ mod windows_dpapi {
     }
 }
 
+// --- Per-subject DEK crypto-erasure (wp26-gdpr) --------------------------------------------
+//
+// A per-subject Data Encryption Key (DEK) layer built ON TOP of the credential secretstore crypto
+// core above (plan wp26-gdpr §2.2). It reuses the same HKDF-SHA256 derivation, XChaCha20-Poly1305
+// AEAD, `SecretEnvelope` at-rest form, length-prefixed AAD discipline, and Zeroize hygiene — no new
+// primitives are introduced.
+//
+// The GDPR-erasure guarantee ("crypto-erase"): each subject's erasable PII is encrypted under a
+// fresh random 32-byte DEK; that DEK is itself AEAD-wrapped under a subject-bound wrapping key
+// derived from the internally-resolved root, and only the *wrapped* DEK is persisted (in
+// `subject_keys.wrapped_dek`). To erase a subject the store overwrites `wrapped_dek` with zeros:
+// [`SubjectDekCrypto::unwrap_dek`] then fails (AEAD auth / parse error), the DEK is unrecoverable,
+// and every field ciphertext under it — in live rows, backups, and archives alike — is dead. This
+// is what makes "erased" mean *irrecoverable even in backups you cannot reach and rewrite*.
+//
+// Everything in this section is consumed by the API erasure workflow (wp26-gdpr P3) and the store
+// (P1), not yet wired at this slice, so each item carries a targeted `#[allow(dead_code)]`: this
+// module is private, so unused `pub` items would otherwise trip `-D dead-code`. This mirrors the
+// `strict()` precedent above rather than a blanket module-level allow.
+
+/// HKDF salt for deriving a subject's DEK-wrapping key (non-secret, versioned; RFC 5869 §3.1).
+#[allow(dead_code)]
+const SUBJECT_DEK_WRAP_SALT: &[u8] = b"chancela.subject-dek.wrap.salt.v1";
+/// HKDF info prefix binding the wrapping-key derivation to its purpose; the subject uuid is
+/// appended at derivation time so each subject gets a distinct wrapping key.
+#[allow(dead_code)]
+const SUBJECT_DEK_WRAP_INFO: &[u8] = b"chancela.subject-dek.wrap.v1";
+/// AEAD associated-data domain separator for subject-DEK operations (DEK wrap + field encryption).
+#[allow(dead_code)]
+const SUBJECT_AAD_DOMAIN: &[u8] = b"chancela.subject-dek.aad.v1";
+/// The AAD `field` label used when wrapping the DEK itself (vs. a real PII field name).
+#[allow(dead_code)]
+const SUBJECT_DEK_FIELD: &str = "dek";
+
+/// A live, unwrapped 32-byte subject DEK held in a zeroizing buffer (wiped on drop). Used to
+/// encrypt/decrypt the subject's PII fields; never persisted.
+#[allow(dead_code)]
+pub type LiveDek = Zeroizing<[u8; KEY_BYTES]>;
+
+/// The opaque at-rest form of a wrapped subject DEK, persisted in `subject_keys.wrapped_dek`.
+///
+/// Byte layout: `key_version (4 BE) ‖ nonce (24) ‖ ciphertext (32-byte DEK + 16-byte Poly1305 tag)`
+/// = 76 bytes. Treat it as an opaque blob; the store persists and later zeroes these bytes and must
+/// not depend on the internal structure.
+#[allow(dead_code)]
+pub struct WrappedDek(pub Vec<u8>);
+
+#[allow(dead_code)]
+impl WrappedDek {
+    /// The opaque blob bytes to persist (or, once erased, to overwrite with zeros).
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+impl AsRef<[u8]> for WrappedDek {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+impl fmt::Debug for WrappedDek {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("WrappedDek")
+            .field(&format_args!("<{} opaque bytes>", self.0.len()))
+            .finish()
+    }
+}
+
+/// A subject-DEK crypto failure. `Display`/`Debug` never carry key or plaintext material.
+#[allow(dead_code)]
+#[derive(Debug)]
+pub enum SubjectDekError {
+    /// An AEAD operation failed: DEK wrap/unwrap or field encrypt/decrypt. On unwrap/decrypt this
+    /// signals a destroyed (zeroed) DEK, a wrong subject/binding, or tampered ciphertext — i.e. the
+    /// crypto-erase outcome — not a caller mistake.
+    Aead(&'static str),
+    /// A wrapped-DEK blob or field envelope was structurally invalid (too short, bad base64, wrong
+    /// unwrapped length).
+    Malformed(&'static str),
+    /// The OS RNG failed while generating a fresh DEK or nonce.
+    Random(std::io::Error),
+}
+
+impl fmt::Display for SubjectDekError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Aead(reason) => write!(f, "subject DEK crypto failure: {reason}"),
+            Self::Malformed(reason) => write!(f, "malformed subject DEK material: {reason}"),
+            Self::Random(source) => {
+                write!(
+                    f,
+                    "failed to generate random subject key material: {source}"
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for SubjectDekError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Random(source) => Some(source),
+            _ => None,
+        }
+    }
+}
+
+/// Build the subject-DEK AEAD associated data binding `subject_id ‖ field ‖ key_version`. Each
+/// string part is length-prefixed (mirroring [`build_aad`]) so distinct `(subject, field)` tuples
+/// can never produce the same AAD bytes — a ciphertext cannot be relocated between subjects or
+/// fields.
+#[allow(dead_code)]
+fn build_subject_aad(subject_id: &str, field: &str, key_version: u32) -> Vec<u8> {
+    let mut aad =
+        Vec::with_capacity(SUBJECT_AAD_DOMAIN.len() + 2 * 8 + subject_id.len() + field.len() + 4);
+    aad.extend_from_slice(SUBJECT_AAD_DOMAIN);
+    for part in [subject_id, field] {
+        aad.extend_from_slice(&(part.len() as u64).to_be_bytes());
+        aad.extend_from_slice(part.as_bytes());
+    }
+    aad.extend_from_slice(&key_version.to_be_bytes());
+    aad
+}
+
+/// The per-subject DEK crypto-erasure engine. Holds the resolved 32-byte root (in a zeroizing
+/// buffer) and derives subject-bound wrapping keys from it on demand. `Debug` is redacted; the root
+/// bytes are never printed.
+///
+/// The API layer (wp26-gdpr P3) constructs this from the same internally-resolved root the
+/// credential secretstore uses; the root itself is supplied directly (the resolver already knows
+/// how to produce it) so this type stays a pure crypto engine with no I/O.
+#[allow(dead_code)]
+pub struct SubjectDekCrypto {
+    root: Zeroizing<[u8; KEY_BYTES]>,
+}
+
+impl fmt::Debug for SubjectDekCrypto {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SubjectDekCrypto")
+            .field("root", &"<redacted>")
+            .finish()
+    }
+}
+
+#[allow(dead_code)]
+impl SubjectDekCrypto {
+    /// Build the engine from a resolved 32-byte root. The root is copied into a zeroizing buffer.
+    pub fn new(root: [u8; KEY_BYTES]) -> Self {
+        Self {
+            root: Zeroizing::new(root),
+        }
+    }
+
+    /// Derive the subject-bound DEK-wrapping key: HKDF-SHA256 over the root with
+    /// `info = SUBJECT_DEK_WRAP_INFO ‖ subject_id`. Binding the uuid into the info means each
+    /// subject's DEK is wrapped under a distinct key.
+    fn subject_wrap_key(&self, subject_id: &str) -> Zeroizing<[u8; KEY_BYTES]> {
+        let mut info = Vec::with_capacity(SUBJECT_DEK_WRAP_INFO.len() + subject_id.len());
+        info.extend_from_slice(SUBJECT_DEK_WRAP_INFO);
+        info.extend_from_slice(subject_id.as_bytes());
+        let mut key = Zeroizing::new([0u8; KEY_BYTES]);
+        hkdf_sha256(SUBJECT_DEK_WRAP_SALT, &self.root[..], &info, &mut key[..]);
+        key
+    }
+
+    /// AEAD-wrap `dek` under the subject's wrapping key into the opaque [`WrappedDek`] blob.
+    fn wrap_dek_bytes(
+        &self,
+        subject_id: &str,
+        dek: &[u8; KEY_BYTES],
+    ) -> Result<WrappedDek, SubjectDekError> {
+        let version = INITIAL_KEY_VERSION;
+        let wrap_key = self.subject_wrap_key(subject_id);
+        let cipher = XChaCha20Poly1305::new_from_slice(&wrap_key[..])
+            .map_err(|_| SubjectDekError::Aead("invalid subject wrap key length"))?;
+
+        let mut nonce = [0u8; NONCE_BYTES];
+        OsRng
+            .try_fill_bytes(&mut nonce)
+            .map_err(|e| SubjectDekError::Random(rng_error(e)))?;
+        let aad = build_subject_aad(subject_id, SUBJECT_DEK_FIELD, version);
+        let ciphertext = cipher
+            .encrypt(
+                XNonce::from_slice(&nonce),
+                Payload {
+                    msg: &dek[..],
+                    aad: &aad,
+                },
+            )
+            .map_err(|_| SubjectDekError::Aead("subject DEK wrap failed"))?;
+
+        let mut blob = Vec::with_capacity(4 + NONCE_BYTES + ciphertext.len());
+        blob.extend_from_slice(&version.to_be_bytes());
+        blob.extend_from_slice(&nonce);
+        blob.extend_from_slice(&ciphertext);
+        Ok(WrappedDek(blob))
+    }
+
+    /// Generate a fresh random 32-byte DEK for `subject_id`, returning both its opaque wrapped form
+    /// (to persist) and the live DEK (to encrypt fields with). The live DEK zeroizes on drop.
+    pub fn wrap_new_dek(&self, subject_id: &str) -> Result<(WrappedDek, LiveDek), SubjectDekError> {
+        let mut dek: LiveDek = Zeroizing::new([0u8; KEY_BYTES]);
+        OsRng
+            .try_fill_bytes(&mut dek[..])
+            .map_err(|e| SubjectDekError::Random(rng_error(e)))?;
+        let wrapped = self.wrap_dek_bytes(subject_id, &dek)?;
+        Ok((wrapped, dek))
+    }
+
+    /// Unwrap a persisted [`WrappedDek`] blob back to the live DEK.
+    ///
+    /// **This is the crypto-erase proof.** Once the store overwrites `wrapped_dek` with zeros (or
+    /// the blob is otherwise empty/corrupt), the AEAD authentication / parse fails and this returns
+    /// `Err` — there is no path to recover the DEK, so all field ciphertext under it is permanently
+    /// irrecoverable.
+    pub fn unwrap_dek(&self, subject_id: &str, wrapped: &[u8]) -> Result<LiveDek, SubjectDekError> {
+        if wrapped.len() < 4 + NONCE_BYTES {
+            return Err(SubjectDekError::Malformed(
+                "wrapped DEK blob is shorter than the header",
+            ));
+        }
+        let version = u32::from_be_bytes([wrapped[0], wrapped[1], wrapped[2], wrapped[3]]);
+        let nonce = &wrapped[4..4 + NONCE_BYTES];
+        let ciphertext = &wrapped[4 + NONCE_BYTES..];
+
+        let wrap_key = self.subject_wrap_key(subject_id);
+        let cipher = XChaCha20Poly1305::new_from_slice(&wrap_key[..])
+            .map_err(|_| SubjectDekError::Aead("invalid subject wrap key length"))?;
+        let aad = build_subject_aad(subject_id, SUBJECT_DEK_FIELD, version);
+        let mut plaintext = cipher
+            .decrypt(
+                XNonce::from_slice(nonce),
+                Payload {
+                    msg: ciphertext,
+                    aad: &aad,
+                },
+            )
+            .map_err(|_| {
+                SubjectDekError::Aead(
+                    "subject DEK unwrap failed (destroyed/erased, wrong subject, or corrupt blob)",
+                )
+            })?;
+
+        if plaintext.len() != KEY_BYTES {
+            plaintext.zeroize();
+            return Err(SubjectDekError::Malformed(
+                "unwrapped subject DEK is not 32 bytes",
+            ));
+        }
+        let mut dek: LiveDek = Zeroizing::new([0u8; KEY_BYTES]);
+        dek.copy_from_slice(&plaintext);
+        plaintext.zeroize();
+        Ok(dek)
+    }
+
+    /// Encrypt one subject PII field under a live DEK into a [`SecretEnvelope`]. The AAD binds
+    /// `subject_id ‖ field ‖ key_version`, so a ciphertext cannot be relocated between fields or
+    /// subjects.
+    pub fn encrypt_field(
+        &self,
+        dek: &LiveDek,
+        subject_id: &str,
+        field: &str,
+        plaintext: &[u8],
+    ) -> Result<SecretEnvelope, SubjectDekError> {
+        let version = INITIAL_KEY_VERSION;
+        let cipher = XChaCha20Poly1305::new_from_slice(&dek[..])
+            .map_err(|_| SubjectDekError::Aead("invalid subject DEK length"))?;
+
+        let mut nonce = [0u8; NONCE_BYTES];
+        OsRng
+            .try_fill_bytes(&mut nonce)
+            .map_err(|e| SubjectDekError::Random(rng_error(e)))?;
+        let aad = build_subject_aad(subject_id, field, version);
+        let ciphertext = cipher
+            .encrypt(
+                XNonce::from_slice(&nonce),
+                Payload {
+                    msg: plaintext,
+                    aad: &aad,
+                },
+            )
+            .map_err(|_| SubjectDekError::Aead("subject field encryption failed"))?;
+
+        Ok(SecretEnvelope {
+            key_version: version,
+            nonce_b64: B64.encode(nonce),
+            ciphertext_b64: B64.encode(ciphertext),
+        })
+    }
+
+    /// Decrypt one subject-field [`SecretEnvelope`] under a live DEK, returning the plaintext in a
+    /// zeroizing buffer. A mismatched `subject_id`/`field`, wrong DEK, or tampered ciphertext fails
+    /// authentication.
+    pub fn decrypt_field(
+        &self,
+        dek: &LiveDek,
+        subject_id: &str,
+        field: &str,
+        env: &SecretEnvelope,
+    ) -> Result<Zeroizing<Vec<u8>>, SubjectDekError> {
+        let cipher = XChaCha20Poly1305::new_from_slice(&dek[..])
+            .map_err(|_| SubjectDekError::Aead("invalid subject DEK length"))?;
+
+        let nonce = B64
+            .decode(&env.nonce_b64)
+            .map_err(|_| SubjectDekError::Malformed("subject nonce is not valid base64"))?;
+        if nonce.len() != NONCE_BYTES {
+            return Err(SubjectDekError::Malformed("subject nonce is not 24 bytes"));
+        }
+        let ciphertext = B64
+            .decode(&env.ciphertext_b64)
+            .map_err(|_| SubjectDekError::Malformed("subject ciphertext is not valid base64"))?;
+
+        let aad = build_subject_aad(subject_id, field, env.key_version);
+        let plaintext = cipher
+            .decrypt(
+                XNonce::from_slice(&nonce),
+                Payload {
+                    msg: &ciphertext,
+                    aad: &aad,
+                },
+            )
+            .map_err(|_| {
+                SubjectDekError::Aead(
+                    "subject field authentication failed (wrong DEK, wrong binding, or tampered \
+                     ciphertext)",
+                )
+            })?;
+        Ok(Zeroizing::new(plaintext))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::{Path, PathBuf};
@@ -1709,6 +2043,143 @@ mod tests {
         let env_debug = format!("{env:?}");
         assert!(!env_debug.contains(&env.ciphertext_b64));
         assert!(env_debug.contains("redacted"));
+    }
+
+    // --- Per-subject DEK crypto-erasure (wp26-gdpr) tests ---
+
+    /// A fixed non-secret root for the subject-DEK tests (tests only; not a real key source).
+    const TEST_SUBJECT_ROOT: [u8; KEY_BYTES] = [0x42; KEY_BYTES];
+    /// XChaCha20-Poly1305 tag length, for asserting the opaque blob size.
+    const AEAD_TAG_BYTES: usize = 16;
+
+    #[test]
+    fn subject_dek_roundtrip() {
+        // Subject Amélia Marques of Encosto Estratégico Lda (fictional).
+        let crypto = SubjectDekCrypto::new(TEST_SUBJECT_ROOT);
+        let subject = "amelia.marques";
+        let (wrapped, dek) = crypto.wrap_new_dek(subject).expect("wrap new dek");
+
+        let display_name = "Amélia Marques";
+        let email = "amelia@example.test";
+        let name_env = crypto
+            .encrypt_field(&dek, subject, "display_name", display_name.as_bytes())
+            .expect("encrypt display_name");
+        let email_env = crypto
+            .encrypt_field(&dek, subject, "email", email.as_bytes())
+            .expect("encrypt email");
+        // Ciphertext must not leak the plaintext.
+        assert!(!name_env.ciphertext_b64.contains("Am"));
+
+        // Re-derive the DEK from the at-rest blob, then decrypt.
+        let dek2 = crypto
+            .unwrap_dek(subject, wrapped.as_bytes())
+            .expect("unwrap dek from blob");
+        let got_name = crypto
+            .decrypt_field(&dek2, subject, "display_name", &name_env)
+            .expect("decrypt display_name");
+        let got_email = crypto
+            .decrypt_field(&dek2, subject, "email", &email_env)
+            .expect("decrypt email");
+        assert_eq!(&got_name[..], display_name.as_bytes());
+        assert_eq!(&got_email[..], email.as_bytes());
+    }
+
+    #[test]
+    fn subject_dek_crypto_erase_makes_ciphertext_undecryptable() {
+        // THE KEY PROOF: destroying the wrapped DEK makes retained ciphertext irrecoverable.
+        let crypto = SubjectDekCrypto::new(TEST_SUBJECT_ROOT);
+        let subject = "amelia.marques";
+        let (wrapped, dek) = crypto.wrap_new_dek(subject).expect("wrap new dek");
+        // Encrypt a PII field and keep only the at-rest envelope (as a backup/archive would).
+        let env = crypto
+            .encrypt_field(&dek, subject, "email", b"amelia@example.test")
+            .expect("encrypt email");
+
+        // Simulate erasure: the store overwrites the wrapped_dek column with zeros.
+        let zeroed = vec![0u8; wrapped.as_bytes().len()];
+        assert!(
+            crypto.unwrap_dek(subject, &zeroed).is_err(),
+            "a zeroed wrapped_dek must never unwrap"
+        );
+        // An empty column must also fail (no partial-recovery path).
+        assert!(
+            crypto.unwrap_dek(subject, &[]).is_err(),
+            "an empty wrapped_dek must never unwrap"
+        );
+
+        // There is no path to reconstruct the destroyed DEK from storage; a freshly generated DEK
+        // (the only thing a caller could produce post-erasure) cannot decrypt the old ciphertext.
+        let (_new_wrapped, new_dek) = crypto.wrap_new_dek(subject).expect("wrap fresh dek");
+        assert!(
+            crypto
+                .decrypt_field(&new_dek, subject, "email", &env)
+                .is_err(),
+            "retained ciphertext must be undecryptable once the original DEK is destroyed"
+        );
+    }
+
+    #[test]
+    fn subject_dek_aad_binding() {
+        let crypto = SubjectDekCrypto::new(TEST_SUBJECT_ROOT);
+        let subject_a = "amelia.marques";
+        let (wrapped_a, dek_a) = crypto.wrap_new_dek(subject_a).expect("wrap a");
+        let env = crypto
+            .encrypt_field(&dek_a, subject_a, "email", b"amelia@example.test")
+            .expect("encrypt email");
+
+        // Same DEK + subject, but opening the "email" ciphertext as "display_name" fails (AAD binds
+        // the field name).
+        assert!(
+            crypto
+                .decrypt_field(&dek_a, subject_a, "display_name", &env)
+                .is_err(),
+            "an envelope for field=email must not decrypt as field=display_name"
+        );
+        // The correct field binding still works.
+        assert!(
+            crypto
+                .decrypt_field(&dek_a, subject_a, "email", &env)
+                .is_ok()
+        );
+
+        // Subject B's DEK cannot decrypt subject A's field.
+        let subject_b = "bruno.esteves";
+        let (_wrapped_b, dek_b) = crypto.wrap_new_dek(subject_b).expect("wrap b");
+        assert!(
+            crypto
+                .decrypt_field(&dek_b, subject_a, "email", &env)
+                .is_err(),
+            "subject B's DEK must not decrypt subject A's field"
+        );
+        // And subject A's wrapped DEK must not unwrap under subject B's wrapping key.
+        assert!(
+            crypto.unwrap_dek(subject_b, wrapped_a.as_bytes()).is_err(),
+            "subject A's wrapped DEK must not unwrap under subject B"
+        );
+    }
+
+    #[test]
+    fn wrapped_dek_is_opaque_and_deterministic_size() {
+        let crypto = SubjectDekCrypto::new(TEST_SUBJECT_ROOT);
+        let subject = "amelia.marques";
+        let (w1, dek1) = crypto.wrap_new_dek(subject).expect("wrap 1");
+        let (w2, _dek2) = crypto.wrap_new_dek(subject).expect("wrap 2");
+
+        // Layout: key_version(4) ‖ nonce(24) ‖ ciphertext(32-byte DEK + 16-byte tag) = 76 bytes.
+        let expected_len = 4 + NONCE_BYTES + KEY_BYTES + AEAD_TAG_BYTES;
+        assert_eq!(w1.as_bytes().len(), expected_len);
+        assert_eq!(w1.as_bytes().len(), w2.as_bytes().len());
+
+        // Fresh random nonce (and DEK) per wrap → distinct blobs even for the same subject.
+        assert_ne!(w1.as_bytes(), w2.as_bytes());
+        // The raw DEK bytes must never appear in the opaque wrapped blob.
+        assert!(
+            w1.as_bytes().windows(KEY_BYTES).all(|win| win != &dek1[..]),
+            "wrapped blob must not contain the plaintext DEK"
+        );
+        // `AsRef` and `as_bytes` agree; Debug redacts the bytes.
+        assert_eq!(w1.as_ref(), w1.as_bytes());
+        assert!(format!("{w1:?}").contains("opaque bytes"));
     }
 
     #[cfg(windows)]
