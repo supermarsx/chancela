@@ -66,7 +66,10 @@ fn run_vector(meta_path: &Path) {
         "vector `{name}` has an empty/too-short `provenance`: {provenance:?}"
     );
     assert!(
-        meta["rule"].as_str().map(str::trim).is_some_and(|r| !r.is_empty()),
+        meta["rule"]
+            .as_str()
+            .map(str::trim)
+            .is_some_and(|r| !r.is_empty()),
         "vector `{name}` is missing a `rule` description"
     );
 
