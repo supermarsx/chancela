@@ -12,20 +12,15 @@
 //! ## Modes ([`PgSslMode`])
 //!
 //! The desired mode is resolved from `CHANCELA_PG_SSLMODE` (highest precedence) or the `sslmode=`
-//! parameter of `DATABASE_URL`, defaulting to `prefer`:
+//! parameter of `DATABASE_URL`, defaulting to `verify-full`. Insecure libpq-compatible modes are
+//! parsed only so this layer can reject them with a clear fail-closed error:
 //!
-//! - **`disable`** — no TLS at all (the historical `NoTls` behaviour). tokio-postgres never sends an
-//!   SSLRequest, so the connector below is constructed but never invoked. For a trusted, isolated
-//!   private network (the default compose profile).
-//! - **`prefer`** (default) — opportunistic: negotiate TLS if the server offers it, fall back to
-//!   plaintext otherwise. The server certificate is **not** verified. This is the non-breaking
-//!   default: an existing non-TLS Postgres keeps working, a TLS-capable one is encrypted for free.
-//! - **`require`** — the connection must be encrypted, but the server certificate is **not** verified
-//!   (guards against passive eavesdropping, not an active MITM).
-//! - **`verify-full`** (also accepts `verify-ca`) — the connection must be encrypted **and** the
-//!   server certificate is verified against a root CA (from `CHANCELA_PG_TLS_ROOT_CERT`, else the
-//!   OS trust store) with hostname checking. The strongest mode; recommended for a networked or
-//!   managed Postgres.
+//! - **`disable`** — rejected; it would send credentials and store traffic in plaintext.
+//! - **`prefer`** — rejected; it can fall back to plaintext and does not authenticate the server.
+//! - **`require`** — rejected; it encrypts but does not authenticate the server certificate.
+//! - **`verify-full`** (also accepts `verify-ca`, hardened to `verify-full`) — the connection must be
+//!   encrypted **and** the server certificate is verified against a root CA (from
+//!   `CHANCELA_PG_TLS_ROOT_CERT`, else the OS trust store) with hostname checking.
 //!
 //! ## Channel binding
 //!
@@ -63,11 +58,11 @@ pub(crate) const ROOT_CERT_ENV: &str = "CHANCELA_PG_TLS_ROOT_CERT";
 /// The resolved TLS posture for a Postgres connection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PgSslMode {
-    /// No TLS (historical `NoTls`): plaintext on a trusted private network.
+    /// No TLS (historical `NoTls`): plaintext and therefore rejected for Chancela startup.
     Disable,
-    /// Opportunistic TLS, no certificate verification (default).
+    /// Opportunistic TLS: may fall back to plaintext and is therefore rejected.
     Prefer,
-    /// Mandatory TLS, no certificate verification.
+    /// Mandatory TLS without server authentication; rejected because active MITM remains possible.
     Require,
     /// Mandatory TLS with root-CA + hostname verification.
     VerifyFull,
@@ -113,7 +108,7 @@ pub(crate) struct ResolvedPgTls {
 
 /// Resolve the TLS posture for `database_url` and build the matching connector.
 ///
-/// Precedence: `CHANCELA_PG_SSLMODE` → the URL's `sslmode=` → `prefer`. Any `sslmode=` is stripped
+/// Precedence: `CHANCELA_PG_SSLMODE` → the URL's `sslmode=` → `verify-full`. Any `sslmode=` is stripped
 /// from the string before it is handed to [`Config`] (which cannot parse `verify-full`/`verify-ca`),
 /// and the wire [`SslMode`] is then set programmatically so all four modes are honored uniformly.
 pub(crate) fn resolve(database_url: &str) -> Result<ResolvedPgTls, StoreError> {
@@ -136,9 +131,17 @@ pub(crate) fn resolve(database_url: &str) -> Result<ResolvedPgTls, StoreError> {
                      (use disable|prefer|require|verify-ca|verify-full)"
                 ))
             })?,
-            None => PgSslMode::Prefer,
+            None => PgSslMode::VerifyFull,
         },
     };
+
+    if !mode.verifies() {
+        return Err(StoreError::PgTls(format!(
+            "PostgreSQL sslmode must be verify-full (verify-ca is accepted and hardened to \"verify-full\"); \
+             insecure sslmode={mode:?} is not allowed because it permits plaintext or \
+             unauthenticated database transport"
+        )));
+    }
 
     let mut config: Config = stripped.parse().map_err(StoreError::Postgres)?;
     config.ssl_mode(mode.wire_mode());
@@ -621,16 +624,28 @@ mod tests {
     }
 
     #[test]
-    fn require_mode_builds_an_encrypt_only_connector_without_roots() {
-        // Must succeed with no OS trust store / root cert env, since require does not verify.
-        let connector = MakeRustlsConnect::build(PgSslMode::Require);
-        assert!(connector.is_ok(), "require connector should build offline");
-        let connector = MakeRustlsConnect::build(PgSslMode::Prefer);
-        assert!(connector.is_ok(), "prefer connector should build offline");
-        let connector = MakeRustlsConnect::build(PgSslMode::Disable);
-        assert!(
-            connector.is_ok(),
-            "disable connector builds but is never used"
-        );
+    fn rejects_insecure_effective_sslmodes() {
+        for dsn in [
+            "postgres://u:p@host/db?sslmode=disable",
+            "postgres://u:p@host/db?sslmode=prefer",
+            "postgres://u:p@host/db?sslmode=require",
+        ] {
+            let err = match resolve(dsn) {
+                Ok(_) => panic!("insecure sslmode must fail closed: {dsn}"),
+                Err(err) => err,
+            };
+            assert!(err.to_string().contains("sslmode must be verify-full"));
+        }
+    }
+
+    #[test]
+    fn missing_sslmode_defaults_to_verify_full() {
+        match resolve("postgres://u:p@host:5432/db") {
+            Ok(resolved) => assert_eq!(resolved.mode, PgSslMode::VerifyFull),
+            Err(err) => assert!(
+                err.to_string().contains("trusted root CAs")
+                    || err.to_string().contains("invalid dns name")
+            ),
+        }
     }
 }
