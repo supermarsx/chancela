@@ -177,7 +177,7 @@ use axum::extract::{DefaultBodyLimit, OriginalUri, State};
 use axum::http::StatusCode;
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{any, delete, get, patch, post};
+use axum::routing::{any, delete, get, patch, post, put};
 use chancela_cae::{CaeCatalog, CaeSource, CaeSourceChain};
 use chancela_cmd::ScmdTransport;
 use chancela_core::external_signing::{ExternalSignatureEnvelope, ExternalSignatureEnvelopeId};
@@ -1727,7 +1727,16 @@ pub fn router(state: AppState) -> Router {
             "/v1/acts/{id}/document/signed",
             get(signature::get_signed_document_pdf),
         )
-        .route("/v1/templates", get(documents::list_templates))
+        .route(
+            "/v1/templates",
+            get(documents::list_templates).post(documents::create_template),
+        )
+        .route(
+            "/v1/templates/{id}",
+            put(documents::replace_template).delete(documents::delete_template),
+        )
+        .route("/v1/templates/{id}/export", get(documents::export_template))
+        .route("/v1/templates/import", post(documents::import_template))
         .route("/v1/ledger/events", get(ledger::list_ledger_events))
         .route(
             "/v1/ledger/events/page",
@@ -2346,6 +2355,25 @@ mod tests {
 
     fn post_json(uri: &str, body: Value) -> Request<Body> {
         body_json("POST", uri, body)
+    }
+
+    fn template_body(id: &str, heading: &str) -> Value {
+        json!({
+            "id": id,
+            "family": "CommercialCompany",
+            "stage": "Ata",
+            "channels": ["Physical"],
+            "signature_policy": "QualifiedPreferred",
+            "rule_pack_id": "csc-art63/v2",
+            "locale": "pt-PT",
+            "blocks": [
+                { "kind": "Heading", "level": 1, "template": heading },
+                {
+                    "kind": "Paragraph",
+                    "template": "Reunida a assembleia em {{ meeting_date | long_date }}."
+                }
+            ]
+        })
     }
 
     fn seal_body() -> Value {
@@ -6093,6 +6121,8 @@ mod tests {
             .find(|t| t["id"] == "csc-ata-ag/v1")
             .expect("csc ata spine summary");
         assert_eq!(spine["family"], "CommercialCompany");
+        assert_eq!(spine["editable"], false);
+        assert_eq!(spine["source"], "builtin");
         assert_eq!(spine["signature_policy"], "QualifiedPreferred");
         assert_eq!(spine["rule_pack_id"], "csc-art63/v2");
         assert_eq!(
@@ -6112,6 +6142,121 @@ mod tests {
                 t["id"] == "csc-certidao-ata/v1" && t["channels"] == serde_json::json!([])
             }),
             "non-meeting summaries keep the asset's empty channel metadata"
+        );
+    }
+
+    #[tokio::test]
+    async fn user_template_management_routes_accept_encoded_ids_and_emit_ledger_events() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.dir.clone());
+        let token = auth_token(&state).await;
+        let id = "user-route-ata/v1";
+        let encoded_id = "user-route-ata%2Fv1";
+        let create_body = template_body(id, "Ata n.º {{ ata_number }}");
+
+        let (status, created) = send_raw(
+            state.clone(),
+            with_session(post_json("/v1/templates", create_body.clone()), &token),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "create: {created}");
+        assert_eq!(created["id"], id);
+        assert_eq!(created["editable"], true);
+        assert_eq!(created["source"], "user");
+
+        let replace_body = template_body(id, "Ata revista n.º {{ ata_number }}");
+        let (status, updated) = send_raw(
+            state.clone(),
+            with_session(
+                put_json(&format!("/v1/templates/{encoded_id}"), replace_body.clone()),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "replace: {updated}");
+        assert_eq!(updated["id"], id);
+        assert_eq!(updated["editable"], true);
+        assert_eq!(updated["source"], "user");
+
+        let (status, verdict) = send_raw(
+            state.clone(),
+            with_session(
+                post_json("/v1/templates/import?dry_run=true", replace_body),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "dry-run: {verdict}");
+        assert_eq!(verdict["ok"], false);
+        assert_eq!(verdict["error"]["code"], "conflict");
+
+        let (status, content_type, disposition, bytes) = send_download(
+            state.clone(),
+            with_session(get(&format!("/v1/templates/{encoded_id}/export")), &token),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "export status");
+        assert_eq!(content_type, "application/json");
+        assert_eq!(
+            disposition,
+            "attachment; filename=\"user-route-ata-v1.json\""
+        );
+        let exported: Value = serde_json::from_slice(&bytes).expect("export JSON");
+        assert_eq!(exported["id"], id);
+        assert_eq!(exported["blocks"][0]["template"], "Ata revista n.º {{ ata_number }}");
+
+        let status = send_status(
+            state.clone(),
+            with_session(
+                body_json("DELETE", &format!("/v1/templates/{encoded_id}"), json!({})),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NO_CONTENT);
+
+        let ledger = state.ledger.read().await;
+        let template_events: Vec<_> = ledger
+            .events()
+            .iter()
+            .filter(|event| event.kind.starts_with("template."))
+            .collect();
+        let kinds: Vec<&str> = template_events
+            .iter()
+            .map(|event| event.kind.as_str())
+            .collect();
+        assert_eq!(
+            kinds,
+            vec![
+                "template.created",
+                "template.updated",
+                "template.deleted"
+            ]
+        );
+        assert!(template_events.iter().all(|event| event.scope == "global"));
+
+        let created_payload = serde_json::to_vec(&json!({
+            "template_id": id,
+            "action": "created",
+            "family": "CommercialCompany",
+            "stage": "Ata",
+            "locale": "pt-PT",
+            "source": "user",
+        }))
+        .expect("created payload JSON");
+        let deleted_payload = serde_json::to_vec(&json!({
+            "template_id": id,
+            "action": "deleted",
+            "source": "user",
+        }))
+        .expect("deleted payload JSON");
+        assert_eq!(
+            template_events[0].payload_digest,
+            <[u8; 32]>::from(Sha256::digest(&created_payload))
+        );
+        assert_eq!(
+            template_events[2].payload_digest,
+            <[u8; 32]>::from(Sha256::digest(&deleted_payload))
         );
     }
 
@@ -15760,10 +15905,11 @@ mod tests {
             chancela_authz::default_roles().len() + 1
         );
 
-        // The frozen verb catalog is introspectable by any session.
+        // The frozen verb catalog is introspectable by any session. wp23 (e4) added the 39th verb
+        // `template.manage`, so the catalog now enumerates 39.
         let (status, cat) = send(state.clone(), get("/v1/permissions")).await;
         assert_eq!(status, StatusCode::OK);
-        assert_eq!(cat["permissions"].as_array().expect("verbs").len(), 38);
+        assert_eq!(cat["permissions"].as_array().expect("verbs").len(), 39);
 
         // Rename + narrow the permission-set.
         let (status, patched) = send(

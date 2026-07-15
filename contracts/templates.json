@@ -1,0 +1,59 @@
+[
+  {
+    "id": "assoc-ata-alteracao-estatutos/v1",
+    "family": "Association",
+    "stage": "Ata",
+    "channels": [
+      "Physical",
+      "Hybrid",
+      "Telematic"
+    ],
+    "signature_policy": "ManualAttested",
+    "rule_pack_id": "assoc-cc/v1",
+    "law_references": [
+      {
+        "source_id": "cc",
+        "source_label": "Código Civil",
+        "article": null,
+        "citation": "Código Civil",
+        "source": "RulePack",
+        "verification": "Pending"
+      },
+      {
+        "source_id": "cc",
+        "source_label": "Código Civil",
+        "article": null,
+        "citation": "CC arts. 173.º e 175.º",
+        "source": "ThresholdRegistry",
+        "verification": "Pending",
+        "threshold_id": "assoc.convocatoria_maioria"
+      }
+    ],
+    "locale": "pt-PT",
+    "editable": false,
+    "source": "builtin"
+  },
+  {
+    "id": "user-encosto-ata/v1",
+    "family": "CommercialCompany",
+    "stage": "Ata",
+    "channels": [
+      "Physical"
+    ],
+    "signature_policy": "QualifiedPreferred",
+    "rule_pack_id": "csc-art63/v2",
+    "law_references": [
+      {
+        "source_id": "csc",
+        "source_label": "Código das Sociedades Comerciais",
+        "article": "63",
+        "citation": "Código das Sociedades Comerciais, Artigo 63.º",
+        "source": "RulePack",
+        "verification": "Pending"
+      }
+    ],
+    "locale": "pt-PT",
+    "editable": true,
+    "source": "user"
+  }
+]

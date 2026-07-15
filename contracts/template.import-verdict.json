@@ -1,0 +1,8 @@
+{
+  "ok": false,
+  "error": {
+    "code": "conflict",
+    "field": "id",
+    "message": "a template with id `user-encosto-ata/v1` already exists"
+  }
+}

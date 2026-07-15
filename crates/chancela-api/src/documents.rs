@@ -36,6 +36,7 @@ use chancela_store::{
     StoredImportedDocumentMeta, StoredImportedDocumentReviewHistoryEntry,
     StoredImportedDocumentReviewStatus, StoredSignedDocument,
 };
+use chancela_templates::authoring::{TemplateValidationError, validate_user_template};
 use chancela_templates::{Registry, TemplateLawReference, TemplateSpec};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -6086,6 +6087,11 @@ pub struct TemplatesQuery {
 }
 
 /// A template summary for the picker (`GET /v1/templates`).
+///
+/// wp23: the picker now merges the read-only built-in catalog with user-authored templates, so
+/// each summary self-describes its provenance: `source` is `"builtin"` or `"user"`, and `editable`
+/// is `true` only for user templates (built-ins are never editable/deletable over HTTP). The
+/// `law_references` remain server-derived — they are never authored, stored, or imported.
 #[derive(Serialize)]
 pub struct TemplateSummary {
     pub id: String,
@@ -6096,9 +6102,14 @@ pub struct TemplateSummary {
     pub rule_pack_id: String,
     pub law_references: Vec<TemplateLawReference>,
     pub locale: String,
+    /// Whether this template can be edited/deleted over HTTP — `true` only for user templates.
+    pub editable: bool,
+    /// Provenance: `"builtin"` (read-only catalog) or `"user"` (authored, CRUD-able).
+    pub source: &'static str,
 }
 
 impl From<&TemplateSpec> for TemplateSummary {
+    /// Built-in defaults: a catalog spec is read-only (`editable: false`, `source: "builtin"`).
     fn from(s: &TemplateSpec) -> Self {
         TemplateSummary {
             id: s.id.clone(),
@@ -6109,13 +6120,32 @@ impl From<&TemplateSpec> for TemplateSummary {
             rule_pack_id: s.rule_pack_id.clone(),
             law_references: s.law_references.clone(),
             locale: s.locale.clone(),
+            editable: false,
+            source: "builtin",
         }
+    }
+}
+
+/// A [`TemplateSummary`] for a user-authored template: same shape, but marked editable and
+/// sourced `"user"`. Built from a validated [`TemplateSpec`] (its server-derived `law_references`
+/// are recomputed by validation, never trusted from the stored bytes).
+fn user_template_summary(spec: &TemplateSpec) -> TemplateSummary {
+    TemplateSummary {
+        editable: true,
+        source: "user",
+        ..TemplateSummary::from(spec)
     }
 }
 
 /// `GET /v1/templates?family=&stage=` — available template summaries for the picker. Both filters
 /// optional. The summary mirrors the catalog metadata authors put in the template asset:
 /// family/stage binding, channel tags, signature-policy hint, rule-pack id, and locale.
+///
+/// wp23: the response **merges** the read-only built-in catalog (`source: "builtin"`) with the
+/// user-authored templates persisted in the store (`source: "user"`, `editable: true`). A stored
+/// user row that no longer validates is skipped and logged rather than failing the whole listing.
+/// Built-ins keep their catalog (filename-sort) order; user templates follow, sorted by id. The
+/// same family/stage filter is applied to the merged set.
 pub async fn list_templates(
     State(state): State<AppState>,
     actor: CurrentActor,
@@ -6123,22 +6153,425 @@ pub async fn list_templates(
 ) -> Result<Json<Vec<TemplateSummary>>, ApiError> {
     // RBAC (t64-E3): the template catalog is `act.read` at Global (drives ata drafting).
     require_permission(&state, &actor, Permission::ActRead, Scope::Global).await?;
-    let reg = registry();
-    let summaries: Vec<TemplateSummary> = match (q.family, q.stage) {
-        (Some(family), Some(stage)) => reg
-            .find(family, stage)
-            .into_iter()
-            .map(TemplateSummary::from)
-            .collect(),
-        _ => reg
-            .specs()
-            .iter()
-            .filter(|s| q.family.is_none_or(|f| s.family == f))
-            .filter(|s| q.stage.is_none_or(|st| s.stage == st))
-            .map(TemplateSummary::from)
-            .collect(),
-    };
+
+    // Built-in catalog, in load order.
+    let mut summaries: Vec<TemplateSummary> = registry()
+        .specs()
+        .iter()
+        .map(TemplateSummary::from)
+        .collect();
+
+    // User-authored templates (schema v17). Parse each stored row through the same authoring guard
+    // the mutations use; a row that no longer validates is skipped + logged, never 500-ing the list.
+    let mut user_summaries: Vec<TemplateSummary> = Vec::new();
+    if let Some(store) = &state.store {
+        let rows = store
+            .user_templates()
+            .map_err(|e| ApiError::Internal(format!("user template store read failed: {e}")))?;
+        for (id, json) in rows {
+            match validate_user_template(&json) {
+                Ok(spec) => user_summaries.push(user_template_summary(&spec)),
+                Err(err) => {
+                    eprintln!("chancela-api: skipping malformed stored user template {id:?}: {err}")
+                }
+            }
+        }
+    }
+    user_summaries.sort_by(|a, b| a.id.cmp(&b.id));
+    summaries.extend(user_summaries);
+
+    // The same optional family/stage filter, applied to the merged set.
+    summaries.retain(|s| q.family.is_none_or(|f| s.family == f));
+    summaries.retain(|s| q.stage.is_none_or(|st| s.stage == st));
+
     Ok(Json(summaries))
+}
+
+/// The ledger scope every user-template mutation is appended at: an application-audit event on the
+/// global spine. The ledger's application/global chains do not prescribe a genesis kind, unlike
+/// company/book chains, so a template-management event can safely be the first event in a fresh
+/// instance.
+const TEMPLATE_EVENT_SCOPE: &str = "global";
+
+/// Query for `POST /v1/templates/import` — `?dry_run=true` runs validation + uniqueness and
+/// returns a verdict WITHOUT persisting (the web import preflight).
+#[derive(Deserialize)]
+pub struct TemplateImportQuery {
+    #[serde(default)]
+    pub dry_run: bool,
+}
+
+/// Error body for the template authoring endpoints (`{code, field?, message}`). Distinct from the
+/// base `{error}` envelope: the web editor branches on the machine-readable `code`/`field` to point
+/// at the offending input. Used for 422 (validation), 409 (id conflict), and inside the import
+/// dry-run verdict.
+#[derive(Serialize)]
+struct TemplateErrorBody {
+    code: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    field: Option<String>,
+    message: String,
+}
+
+/// The `POST /v1/templates/import?dry_run=true` verdict: `ok` plus, when it would be rejected, the
+/// same `{code, field?, message}` the non-dry-run path would return as its error body.
+#[derive(Serialize)]
+struct TemplateImportVerdict {
+    ok: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<TemplateErrorBody>,
+}
+
+/// Map an authoring [`TemplateValidationError`] to the `{code, field?, message}` body.
+fn template_validation_error_body(err: &TemplateValidationError) -> TemplateErrorBody {
+    TemplateErrorBody {
+        code: err.code(),
+        field: err.field(),
+        message: err.to_string(),
+    }
+}
+
+/// The `{code: "conflict", field: "id", message}` body for a duplicate template id.
+fn template_conflict_body(id: &str) -> TemplateErrorBody {
+    TemplateErrorBody {
+        code: "conflict",
+        field: Some("id".to_owned()),
+        message: format!("a template with id `{id}` already exists"),
+    }
+}
+
+/// The ledger payload recorded for a `template.created`/`template.updated` mutation.
+fn template_event_payload(spec: &TemplateSpec, action: &str) -> Value {
+    json!({
+        "template_id": spec.id,
+        "action": action,
+        "family": spec.family,
+        "stage": spec.stage,
+        "locale": spec.locale,
+        "source": "user",
+    })
+}
+
+/// The ledger payload recorded for a `template.deleted` mutation (only the id survives deletion).
+fn template_deleted_payload(id: &str) -> Value {
+    json!({ "template_id": id, "action": "deleted", "source": "user" })
+}
+
+/// Read a raw request body as UTF-8 template JSON, mapping non-UTF-8 to a 422.
+fn user_template_body_str(body: &[u8]) -> Result<&str, ApiError> {
+    std::str::from_utf8(body)
+        .map_err(|_| ApiError::Unprocessable("template body must be valid UTF-8".to_owned()))
+}
+
+/// Whether `id` is already taken — by a built-in catalog id or an existing user-template row. The
+/// reserved `user-` id namespace means a valid user id can never collide with a built-in, but the
+/// built-in check is kept as defence-in-depth so an id can never shadow the read-only catalog.
+fn user_template_id_taken(state: &AppState, id: &str) -> Result<bool, ApiError> {
+    if registry().get(id).is_some() {
+        return Ok(true);
+    }
+    if let Some(store) = &state.store {
+        let taken = store
+            .user_templates()
+            .map_err(|e| ApiError::Internal(format!("user template store read failed: {e}")))?
+            .iter()
+            .any(|(existing, _)| existing == id);
+        if taken {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// Sanitize a template id into a safe download filename (`user-x/v1` → `user-x-v1.json`).
+fn sanitized_template_filename(id: &str) -> String {
+    let stem: String = id
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    format!("{stem}.json")
+}
+
+/// Validate a body, enforce uniqueness, then append `template.created` + upsert the STORED
+/// CANONICAL JSON (the author's exact input, so export→import round-trips losslessly under the
+/// `deny_unknown_fields` DTO — the server-derived `law_references` are never stored). Shared by
+/// `POST /v1/templates` and the non-dry-run `POST /v1/templates/import`. Returns `201` with the
+/// summary; a validation failure is a `422 {code, field?, message}` and a duplicate id a `409`.
+async fn persist_created_user_template(
+    state: &AppState,
+    attestor: &CurrentAttestor,
+    actor_name: &str,
+    body: &[u8],
+) -> Result<Response, ApiError> {
+    if state.store.is_none() {
+        return Err(ApiError::Unprocessable(
+            "user template management requires on-disk persistence".to_owned(),
+        ));
+    }
+    let json = user_template_body_str(body)?;
+    let spec = match validate_user_template(json) {
+        Ok(spec) => spec,
+        Err(err) => {
+            return Ok((
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Json(template_validation_error_body(&err)),
+            )
+                .into_response());
+        }
+    };
+    let id = spec.id.clone();
+    if user_template_id_taken(state, &id)? {
+        return Ok((StatusCode::CONFLICT, Json(template_conflict_body(&id))).into_response());
+    }
+    let stored_json = json.to_owned();
+    let summary = user_template_summary(&spec);
+    let payload = serde_json::to_vec(&template_event_payload(&spec, "created"))?;
+
+    let mut ledger = state.ledger.write().await;
+    crate::try_append_event(
+        &mut ledger,
+        actor_name,
+        TEMPLATE_EVENT_SCOPE,
+        "template.created",
+        Some(&id),
+        &payload,
+    )?;
+    state.persist_write_through(&mut ledger, 1, |tx| {
+        tx.upsert_user_template(&id, &stored_json)
+    })?;
+    state.attest_latest(attestor, &ledger).await;
+    drop(ledger);
+
+    Ok((StatusCode::CREATED, Json(summary)).into_response())
+}
+
+/// `POST /v1/templates` — create a user-authored template (gate `template.manage@Global`).
+pub async fn create_template(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    body: Bytes,
+) -> Result<Response, ApiError> {
+    require_permission(&state, &actor, Permission::TemplateManage, Scope::Global).await?;
+    let actor_name = actor.resolve("api");
+    persist_created_user_template(&state, &attestor, &actor_name, &body).await
+}
+
+/// `PUT /v1/templates/{id}` — replace an existing user template (gate `template.manage@Global`).
+/// `404` on a built-in id or an unknown user id; the body's own id MUST equal the path id (else
+/// `422 {code:"id_mismatch"}`); appends `template.updated` + upserts the canonical stored JSON.
+pub async fn replace_template(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    body: Bytes,
+) -> Result<Response, ApiError> {
+    require_permission(&state, &actor, Permission::TemplateManage, Scope::Global).await?;
+    let actor_name = actor.resolve("api");
+    if state.store.is_none() {
+        return Err(ApiError::Unprocessable(
+            "user template management requires on-disk persistence".to_owned(),
+        ));
+    }
+    // A built-in is read-only (404, never editable); an unknown user id is also a 404.
+    if registry().get(&id).is_some() {
+        return Err(ApiError::NotFound);
+    }
+    let store = state.store.as_ref().expect("store present");
+    if store
+        .user_template(&id)
+        .map_err(|e| ApiError::Internal(format!("user template store read failed: {e}")))?
+        .is_none()
+    {
+        return Err(ApiError::NotFound);
+    }
+
+    let json = user_template_body_str(&body)?;
+    let spec = match validate_user_template(json) {
+        Ok(spec) => spec,
+        Err(err) => {
+            return Ok((
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Json(template_validation_error_body(&err)),
+            )
+                .into_response());
+        }
+    };
+    if spec.id != id {
+        let body = TemplateErrorBody {
+            code: "id_mismatch",
+            field: Some("id".to_owned()),
+            message: format!(
+                "template id in body (`{}`) does not match the path id (`{id}`)",
+                spec.id
+            ),
+        };
+        return Ok((StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response());
+    }
+
+    let stored_json = json.to_owned();
+    let summary = user_template_summary(&spec);
+    let payload = serde_json::to_vec(&template_event_payload(&spec, "updated"))?;
+
+    let mut ledger = state.ledger.write().await;
+    crate::try_append_event(
+        &mut ledger,
+        &actor_name,
+        TEMPLATE_EVENT_SCOPE,
+        "template.updated",
+        Some(&id),
+        &payload,
+    )?;
+    state.persist_write_through(&mut ledger, 1, |tx| {
+        tx.upsert_user_template(&id, &stored_json)
+    })?;
+    state.attest_latest(&attestor, &ledger).await;
+    drop(ledger);
+
+    Ok((StatusCode::OK, Json(summary)).into_response())
+}
+
+/// `DELETE /v1/templates/{id}` — delete a user template (gate `template.manage@Global`). User-only:
+/// `404` on a built-in id or an unknown user id. Appends `template.deleted` + removes the row.
+/// Returns `204`.
+pub async fn delete_template(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+) -> Result<Response, ApiError> {
+    require_permission(&state, &actor, Permission::TemplateManage, Scope::Global).await?;
+    let actor_name = actor.resolve("api");
+    if state.store.is_none() {
+        return Err(ApiError::Unprocessable(
+            "user template management requires on-disk persistence".to_owned(),
+        ));
+    }
+    if registry().get(&id).is_some() {
+        return Err(ApiError::NotFound);
+    }
+    let store = state.store.as_ref().expect("store present");
+    if store
+        .user_template(&id)
+        .map_err(|e| ApiError::Internal(format!("user template store read failed: {e}")))?
+        .is_none()
+    {
+        return Err(ApiError::NotFound);
+    }
+
+    let payload = serde_json::to_vec(&template_deleted_payload(&id))?;
+    let mut ledger = state.ledger.write().await;
+    crate::try_append_event(
+        &mut ledger,
+        &actor_name,
+        TEMPLATE_EVENT_SCOPE,
+        "template.deleted",
+        Some(&id),
+        &payload,
+    )?;
+    state.persist_write_through(&mut ledger, 1, |tx| tx.delete_user_template(&id))?;
+    state.attest_latest(&attestor, &ledger).await;
+    drop(ledger);
+
+    Ok(StatusCode::NO_CONTENT.into_response())
+}
+
+/// `GET /v1/templates/{id}/export` — return a template's canonical JSON as a download (gate
+/// `act.read@Global`). A user template exports its verbatim stored JSON (lossless re-import); a
+/// built-in exports its canonical spec JSON. `Content-Type: application/json` + a
+/// `Content-Disposition: attachment` filename derived from the sanitized id.
+pub async fn export_template(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    actor: CurrentActor,
+) -> Result<Response, ApiError> {
+    require_permission(&state, &actor, Permission::ActRead, Scope::Global).await?;
+
+    let json = if let Some(spec) = registry().get(&id) {
+        serde_json::to_string_pretty(spec)?
+    } else {
+        let stored = match &state.store {
+            Some(store) => store
+                .user_template(&id)
+                .map_err(|e| ApiError::Internal(format!("user template store read failed: {e}")))?,
+            None => None,
+        };
+        stored.ok_or(ApiError::NotFound)?
+    };
+
+    let filename = sanitized_template_filename(&id);
+    let mut response = (StatusCode::OK, json).into_response();
+    let headers = response.headers_mut();
+    headers.insert(
+        header::CONTENT_TYPE,
+        axum::http::HeaderValue::from_static("application/json"),
+    );
+    headers.insert(
+        header::CONTENT_DISPOSITION,
+        axum::http::HeaderValue::from_str(&format!("attachment; filename=\"{filename}\""))
+            .map_err(|e| ApiError::Internal(format!("invalid content-disposition: {e}")))?,
+    );
+    Ok(response)
+}
+
+/// Run the import dry-run preflight: validate + uniqueness only, no persistence. Always `200` with
+/// a `{ok, error?}` verdict.
+fn template_import_dry_run(state: &AppState, body: &[u8]) -> Result<Response, ApiError> {
+    let verdict = match std::str::from_utf8(body) {
+        Err(_) => TemplateImportVerdict {
+            ok: false,
+            error: Some(TemplateErrorBody {
+                code: "malformed",
+                field: None,
+                message: "template body must be valid UTF-8".to_owned(),
+            }),
+        },
+        Ok(json) => match validate_user_template(json) {
+            Err(err) => TemplateImportVerdict {
+                ok: false,
+                error: Some(template_validation_error_body(&err)),
+            },
+            Ok(spec) => {
+                if user_template_id_taken(state, &spec.id)? {
+                    TemplateImportVerdict {
+                        ok: false,
+                        error: Some(template_conflict_body(&spec.id)),
+                    }
+                } else {
+                    TemplateImportVerdict {
+                        ok: true,
+                        error: None,
+                    }
+                }
+            }
+        },
+    };
+    Ok((StatusCode::OK, Json(verdict)).into_response())
+}
+
+/// `POST /v1/templates/import` — import a canonical template JSON (gate `template.manage@Global`).
+/// `?dry_run=true` runs the validation + uniqueness preflight and returns a `{ok, error?}` verdict
+/// WITHOUT persisting; without it, behaves exactly like `POST /v1/templates` (create).
+pub async fn import_template(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    Query(q): Query<TemplateImportQuery>,
+    body: Bytes,
+) -> Result<Response, ApiError> {
+    require_permission(&state, &actor, Permission::TemplateManage, Scope::Global).await?;
+    let actor_name = actor.resolve("api");
+    if q.dry_run {
+        return template_import_dry_run(&state, &body);
+    }
+    persist_created_user_template(&state, &attestor, &actor_name, &body).await
 }
 
 #[cfg(test)]
@@ -9097,5 +9530,426 @@ mod tests {
         assert!(generated.stored.pdf_bytes.starts_with(b"%PDF-"));
         // Keyed by the book id cast into an ActId (book instruments have no owning act).
         assert_eq!(generated.stored.act_id, ActId(book.id.0));
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // wp23 — user-authored template CRUD + export/import (documents::{create,replace,delete,
+    // export,import}_template + merged list_templates).
+    // -----------------------------------------------------------------------------------------
+
+    /// A minimal, valid user-authored template (fictional entity, reserved `user-` id namespace).
+    fn valid_user_template_json() -> String {
+        r#"{
+            "id": "user-encosto-ata/v1",
+            "family": "CommercialCompany",
+            "stage": "Ata",
+            "channels": ["Physical"],
+            "signature_policy": "QualifiedPreferred",
+            "rule_pack_id": "csc-art63/v2",
+            "locale": "pt-PT",
+            "blocks": [
+                { "kind": "Heading", "level": 1, "template": "Ata n.º {{ ata_number }}" },
+                { "kind": "Paragraph", "template": "Reunida a assembleia em {{ meeting_date | long_date }}." }
+            ]
+        }"#
+        .to_string()
+    }
+
+    #[tokio::test]
+    async fn user_template_create_list_export_delete_reimport_round_trip() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.path());
+        let actor = seed_owner(&state).await;
+
+        // create → 201, summary is an editable user template.
+        let created = create_template(
+            State(state.clone()),
+            actor.clone(),
+            CurrentAttestor::default(),
+            Bytes::from(valid_user_template_json()),
+        )
+        .await
+        .expect("create handler ok");
+        assert_eq!(created.status(), StatusCode::CREATED);
+        let created_body = response_json(created).await;
+        assert_eq!(created_body["id"], "user-encosto-ata/v1");
+        assert_eq!(created_body["editable"], true);
+        assert_eq!(created_body["source"], "user");
+
+        // list → merges built-ins (read-only) with our editable user template.
+        let Json(listed) = list_templates(
+            State(state.clone()),
+            actor.clone(),
+            Query(TemplatesQuery {
+                family: None,
+                stage: None,
+            }),
+        )
+        .await
+        .expect("list handler ok");
+        let mine = listed
+            .iter()
+            .find(|s| s.id == "user-encosto-ata/v1")
+            .expect("user template present in merged catalog");
+        assert!(mine.editable);
+        assert_eq!(mine.source, "user");
+        assert!(
+            listed.iter().any(|s| s.source == "builtin"),
+            "merged catalog still carries the read-only built-ins"
+        );
+
+        // export → canonical JSON with an attachment disposition; re-validates cleanly.
+        let exported = export_template(
+            State(state.clone()),
+            Path("user-encosto-ata/v1".to_owned()),
+            actor.clone(),
+        )
+        .await
+        .expect("export handler ok");
+        assert_eq!(exported.status(), StatusCode::OK);
+        assert_eq!(
+            exported
+                .headers()
+                .get(header::CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok()),
+            Some("application/json")
+        );
+        assert_eq!(
+            exported
+                .headers()
+                .get(header::CONTENT_DISPOSITION)
+                .and_then(|v| v.to_str().ok()),
+            Some("attachment; filename=\"user-encosto-ata-v1.json\"")
+        );
+        let exported_bytes = axum::body::to_bytes(exported.into_body(), usize::MAX)
+            .await
+            .expect("export body");
+
+        // delete → 204, then the user template is gone from the merged list.
+        let deleted = delete_template(
+            State(state.clone()),
+            Path("user-encosto-ata/v1".to_owned()),
+            actor.clone(),
+            CurrentAttestor::default(),
+        )
+        .await
+        .expect("delete handler ok");
+        assert_eq!(deleted.status(), StatusCode::NO_CONTENT);
+        let Json(after_delete) = list_templates(
+            State(state.clone()),
+            actor.clone(),
+            Query(TemplatesQuery {
+                family: None,
+                stage: None,
+            }),
+        )
+        .await
+        .expect("list ok");
+        assert!(
+            !after_delete.iter().any(|s| s.id == "user-encosto-ata/v1"),
+            "deleted user template must not reappear"
+        );
+
+        // re-import the exported bytes → 201 (lossless round-trip under deny_unknown_fields).
+        let reimported = import_template(
+            State(state.clone()),
+            actor.clone(),
+            CurrentAttestor::default(),
+            Query(TemplateImportQuery { dry_run: false }),
+            exported_bytes,
+        )
+        .await
+        .expect("import handler ok");
+        assert_eq!(
+            reimported.status(),
+            StatusCode::CREATED,
+            "exported canonical JSON re-imports losslessly"
+        );
+
+        let ledger = state.ledger.read().await;
+        let template_events: Vec<_> = ledger
+            .events()
+            .iter()
+            .filter(|event| event.kind.starts_with("template."))
+            .collect();
+        let kinds: Vec<&str> = template_events
+            .iter()
+            .map(|event| event.kind.as_str())
+            .collect();
+        assert_eq!(
+            kinds,
+            vec![
+                "template.created",
+                "template.deleted",
+                "template.created"
+            ]
+        );
+        assert!(
+            template_events
+                .iter()
+                .all(|event| event.scope == TEMPLATE_EVENT_SCOPE),
+            "user-template mutations are application-scoped: {template_events:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn malformed_user_template_is_422_with_code_body() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.path());
+        let actor = seed_owner(&state).await;
+
+        let bad = r#"{"id":"user-x/v1","family":"Association","stage":"Ata","channels":[],
+            "signature_policy":"ManualAttested","rule_pack_id":"assoc-cc/v1","locale":"pt-PT",
+            "surprise":true,"blocks":[{"kind":"Paragraph","template":"Olá."}]}"#;
+        let resp = create_template(
+            State(state.clone()),
+            actor.clone(),
+            CurrentAttestor::default(),
+            Bytes::from(bad),
+        )
+        .await
+        .expect("handler returns a response (not an Err)");
+        assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let body = response_json(resp).await;
+        assert_eq!(body["code"], "malformed");
+        assert!(body.get("message").is_some());
+    }
+
+    #[tokio::test]
+    async fn duplicate_user_template_id_is_409() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.path());
+        let actor = seed_owner(&state).await;
+
+        let first = create_template(
+            State(state.clone()),
+            actor.clone(),
+            CurrentAttestor::default(),
+            Bytes::from(valid_user_template_json()),
+        )
+        .await
+        .expect("first create ok");
+        assert_eq!(first.status(), StatusCode::CREATED);
+
+        let second = create_template(
+            State(state.clone()),
+            actor.clone(),
+            CurrentAttestor::default(),
+            Bytes::from(valid_user_template_json()),
+        )
+        .await
+        .expect("second create returns a response");
+        assert_eq!(second.status(), StatusCode::CONFLICT);
+        let body = response_json(second).await;
+        assert_eq!(body["code"], "conflict");
+        assert_eq!(body["field"], "id");
+    }
+
+    #[tokio::test]
+    async fn replace_user_template_updates_store_and_ledgers_event() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.path());
+        let actor = seed_owner(&state).await;
+
+        let created = create_template(
+            State(state.clone()),
+            actor.clone(),
+            CurrentAttestor::default(),
+            Bytes::from(valid_user_template_json()),
+        )
+        .await
+        .expect("create ok");
+        assert_eq!(created.status(), StatusCode::CREATED);
+
+        let replacement = valid_user_template_json()
+            .replace("Ata n.º {{ ata_number }}", "Ata revista n.º {{ ata_number }}");
+        let replaced = replace_template(
+            State(state.clone()),
+            Path("user-encosto-ata/v1".to_owned()),
+            actor.clone(),
+            CurrentAttestor::default(),
+            Bytes::from(replacement.clone()),
+        )
+        .await
+        .expect("replace handler ok");
+        assert_eq!(replaced.status(), StatusCode::OK);
+        let body = response_json(replaced).await;
+        assert_eq!(body["id"], "user-encosto-ata/v1");
+        assert_eq!(body["editable"], true);
+        assert_eq!(body["source"], "user");
+
+        let stored = state
+            .store
+            .as_ref()
+            .expect("store")
+            .user_template("user-encosto-ata/v1")
+            .expect("store read")
+            .expect("template row");
+        assert!(
+            stored.contains("Ata revista"),
+            "replacement bytes persisted: {stored}"
+        );
+        let ledger = state.ledger.read().await;
+        let last = ledger.events().last().expect("template.updated event");
+        assert_eq!(last.kind, "template.updated");
+        assert_eq!(last.scope, TEMPLATE_EVENT_SCOPE);
+    }
+
+    #[tokio::test]
+    async fn replace_user_template_rejects_body_path_id_mismatch() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.path());
+        let actor = seed_owner(&state).await;
+
+        let created = create_template(
+            State(state.clone()),
+            actor.clone(),
+            CurrentAttestor::default(),
+            Bytes::from(valid_user_template_json()),
+        )
+        .await
+        .expect("create ok");
+        assert_eq!(created.status(), StatusCode::CREATED);
+
+        let mismatch = valid_user_template_json().replace(
+            "\"id\": \"user-encosto-ata/v1\"",
+            "\"id\": \"user-other-ata/v1\"",
+        );
+        let resp = replace_template(
+            State(state.clone()),
+            Path("user-encosto-ata/v1".to_owned()),
+            actor.clone(),
+            CurrentAttestor::default(),
+            Bytes::from(mismatch),
+        )
+        .await
+        .expect("handler returns a response");
+        assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let body = response_json(resp).await;
+        assert_eq!(body["code"], "id_mismatch");
+        assert_eq!(body["field"], "id");
+
+        let ledger = state.ledger.read().await;
+        assert!(
+            ledger
+                .events()
+                .iter()
+                .all(|event| event.kind != "template.updated"),
+            "id mismatch must not append update event"
+        );
+    }
+
+    #[tokio::test]
+    async fn delete_builtin_template_is_404() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.path());
+        let actor = seed_owner(&state).await;
+        let builtin_id = registry().specs()[0].id.clone();
+
+        let err = delete_template(
+            State(state.clone()),
+            Path(builtin_id),
+            actor.clone(),
+            CurrentAttestor::default(),
+        )
+        .await
+        .expect_err("built-ins are read-only");
+        assert!(matches!(err, ApiError::NotFound));
+    }
+
+    #[tokio::test]
+    async fn replace_builtin_template_is_404() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.path());
+        let actor = seed_owner(&state).await;
+        let builtin_id = registry().specs()[0].id.clone();
+
+        let err = replace_template(
+            State(state.clone()),
+            Path(builtin_id),
+            actor.clone(),
+            CurrentAttestor::default(),
+            Bytes::from(valid_user_template_json()),
+        )
+        .await
+        .expect_err("built-ins are read-only");
+        assert!(matches!(err, ApiError::NotFound));
+    }
+
+    #[tokio::test]
+    async fn import_dry_run_reports_verdict_without_persisting() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.path());
+        let actor = seed_owner(&state).await;
+
+        // A valid unseen template → ok:true, and nothing is persisted.
+        let ok = import_template(
+            State(state.clone()),
+            actor.clone(),
+            CurrentAttestor::default(),
+            Query(TemplateImportQuery { dry_run: true }),
+            Bytes::from(valid_user_template_json()),
+        )
+        .await
+        .expect("dry-run ok");
+        assert_eq!(ok.status(), StatusCode::OK);
+        let ok_body = response_json(ok).await;
+        assert_eq!(ok_body["ok"], true);
+        assert!(ok_body.get("error").is_none());
+
+        // The dry-run persisted nothing.
+        let Json(listed) = list_templates(
+            State(state.clone()),
+            actor.clone(),
+            Query(TemplatesQuery {
+                family: None,
+                stage: None,
+            }),
+        )
+        .await
+        .expect("list ok");
+        assert!(
+            !listed.iter().any(|s| s.id == "user-encosto-ata/v1"),
+            "dry-run must not persist"
+        );
+
+        // A duplicate (after a real create) → ok:false with a conflict verdict.
+        create_template(
+            State(state.clone()),
+            actor.clone(),
+            CurrentAttestor::default(),
+            Bytes::from(valid_user_template_json()),
+        )
+        .await
+        .expect("create ok");
+        let conflict = import_template(
+            State(state.clone()),
+            actor.clone(),
+            CurrentAttestor::default(),
+            Query(TemplateImportQuery { dry_run: true }),
+            Bytes::from(valid_user_template_json()),
+        )
+        .await
+        .expect("dry-run conflict verdict");
+        let conflict_body = response_json(conflict).await;
+        assert_eq!(conflict_body["ok"], false);
+        assert_eq!(conflict_body["error"]["code"], "conflict");
+    }
+
+    #[tokio::test]
+    async fn create_template_requires_template_manage() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.path());
+        let powerless = seed_powerless_actor(&state).await;
+
+        let err = create_template(
+            State(state.clone()),
+            powerless,
+            CurrentAttestor::default(),
+            Bytes::from(valid_user_template_json()),
+        )
+        .await
+        .expect_err("no template.manage permission");
+        assert!(matches!(err, ApiError::Forbidden(_)));
     }
 }
