@@ -754,7 +754,7 @@ pub async fn archive_act(
 }
 
 /// `POST /v1/acts/{id}/convening/dispatch` — record that the convening notice was dispatched
-/// (t61-E1). Stamps `dispatched_at` (+ optional `channel`/`reference`) on the matching
+/// (t61-E1). Stamps `dispatched_at` (+ optional `channel`/dispatch-proof `reference`) on the matching
 /// `convening.recipients` and appends a chained `convening.dispatched` ledger event — unlike a draft
 /// PATCH, dispatch is a real evidentiary action, so it IS auditable. Honest scope: this records the
 /// operator's assertion that the notice was sent; the actual sending stays external/manual.

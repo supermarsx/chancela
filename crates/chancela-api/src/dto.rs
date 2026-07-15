@@ -1185,6 +1185,7 @@ impl From<DeliberationItemView> for DeliberationItem {
 #[derive(Serialize)]
 pub struct ConveningRecipientView {
     pub name: String,
+    pub contact: Option<String>,
     pub channel: Option<DispatchChannel>,
     pub reference: Option<String>,
     pub dispatched_at: Option<String>,
@@ -1194,6 +1195,7 @@ impl From<&ConveningRecipient> for ConveningRecipientView {
     fn from(r: &ConveningRecipient) -> Self {
         ConveningRecipientView {
             name: r.name.clone(),
+            contact: r.contact.clone(),
             channel: r.channel,
             reference: r.reference.clone(),
             dispatched_at: r.dispatched_at.map(format_date),
@@ -1204,6 +1206,7 @@ impl From<&ConveningRecipient> for ConveningRecipientView {
 impl ConveningRecipientView {
     fn redact_sensitive(&mut self) {
         self.name = redacted();
+        self.contact = None;
         self.reference = None;
     }
 }
@@ -1353,6 +1356,8 @@ impl ConveningInput {
 pub struct ConveningRecipientInput {
     pub name: String,
     #[serde(default)]
+    pub contact: Option<String>,
+    #[serde(default)]
     pub channel: Option<DispatchChannel>,
     #[serde(default)]
     pub reference: Option<String>,
@@ -1368,6 +1373,7 @@ impl ConveningRecipientInput {
         };
         Ok(ConveningRecipient {
             name: self.name,
+            contact: self.contact,
             channel: self.channel,
             reference: self.reference,
             dispatched_at,
@@ -3673,8 +3679,9 @@ mod tests {
             evidence_reference: Some("email-msg-123".to_owned()),
             recipients: vec![ConveningRecipient {
                 name: "Sócia Identificada".to_owned(),
+                contact: Some("socia@example.test".to_owned()),
                 channel: None,
-                reference: Some("email pessoal".to_owned()),
+                reference: Some("email-msg-recipient-1".to_owned()),
                 dispatched_at: None,
             }],
             second_call: None,
@@ -3719,6 +3726,8 @@ mod tests {
             "Administração",
             "email-msg-123",
             "Sócia Identificada",
+            "socia@example.test",
+            "email-msg-recipient-1",
             "Presente Identificado",
         ] {
             assert!(

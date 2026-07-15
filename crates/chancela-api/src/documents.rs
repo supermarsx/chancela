@@ -332,8 +332,8 @@ fn act_ctx(act: &Act, entity: &Entity) -> Result<Value, ApiError> {
 
 /// Reshape an [`Act`]'s [`Convening`] record (G1) into the render context the convocatória / ata
 /// templates bind (plan §1e): `convening.{convener, convener_capacity, dispatch_date,
-/// antecedence_days, channel, recipients[].{name, channel, reference, dispatched_at}, second_call.
-/// {date, time, reduced_quorum}}`. Enum leaves keep their bare serde names (so `convener_capacity |
+/// antecedence_days, channel, recipients[].{name, contact, channel, reference, dispatched_at},
+/// second_call.{date, time, reduced_quorum}}`. Enum leaves keep their bare serde names (so `convener_capacity |
 /// role_label` and `channel` resolve); date/time leaves become the formatted wire strings.
 fn convening_object(c: &Convening) -> Value {
     // Start from the derived serde shape (Options → `null`, enums → bare names), then overwrite the
@@ -5947,8 +5947,8 @@ mod tests {
     use chancela_core::book::ClosingReason;
     use chancela_core::{
         ActState, AgendaItem, AttendanceWeight, Attendee, Book, BookKind, Convening,
-        DeliberationItem, DispatchChannel, Entity, EntityKind, KvRow, MeetingChannel, Nipc,
-        PresenceMode, SecondCall, SignatoryCapacity, SignatureSlot, VoteRow,
+        ConveningRecipient, DeliberationItem, DispatchChannel, Entity, EntityKind, KvRow,
+        MeetingChannel, Nipc, PresenceMode, SecondCall, SignatoryCapacity, SignatureSlot, VoteRow,
     };
     use der::Encode;
     use der::asn1::{Any, BitString, ObjectIdentifier};
@@ -8276,7 +8276,13 @@ mod tests {
             antecedence_days: Some(15),
             channel: Some(DispatchChannel::RegisteredLetter),
             evidence_reference: Some("doc:convocatoria-condominio".to_string()),
-            recipients: vec![],
+            recipients: vec![ConveningRecipient {
+                name: "Bruno Cardoso".to_string(),
+                contact: Some("bruno@example.test".to_string()),
+                channel: Some(DispatchChannel::RegisteredLetterAR),
+                reference: Some("RR123456789PT".to_string()),
+                dispatched_at: Some(time::macros::date!(2026 - 06 - 10)),
+            }],
             second_call: Some(SecondCall {
                 date: None,
                 time: None,
@@ -8293,6 +8299,19 @@ mod tests {
             "doc:convocatoria-condominio"
         );
         assert_eq!(ctx["convening"]["second_call"]["reduced_quorum"], true);
+        assert_eq!(ctx["convening"]["recipients"][0]["name"], "Bruno Cardoso");
+        assert_eq!(
+            ctx["convening"]["recipients"][0]["contact"],
+            "bruno@example.test"
+        );
+        assert_eq!(
+            ctx["convening"]["recipients"][0]["reference"],
+            "RR123456789PT"
+        );
+        assert_eq!(
+            ctx["convening"]["recipients"][0]["dispatched_at"],
+            "2026-06-10"
+        );
         assert_eq!(ctx["attendees"][0]["name"], "Amélia Marques");
         assert_eq!(ctx["attendees"][0]["presence"], "InPerson");
         assert_eq!(ctx["attendees"][0]["weight"]["Permilage"], 250);

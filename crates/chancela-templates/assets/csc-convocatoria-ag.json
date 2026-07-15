@@ -85,11 +85,15 @@
           "value": "{{ name }}"
         },
         {
+          "key": "Contacto",
+          "value": "{{ contact }}"
+        },
+        {
           "key": "Meio de expedição",
           "value": "{% if channel == 'RegisteredLetterAR' %}Carta registada com aviso de receção{% elif channel == 'RegisteredLetter' %}Carta registada{% elif channel == 'Email' %}Correio eletrónico{% elif channel == 'HandDelivery' %}Entrega em mão{% elif channel == 'Publication' %}Publicação{% elif channel == 'Portal' %}Portal{% endif %}"
         },
         {
-          "key": "Referência",
+          "key": "Referência de expedição",
           "value": "{{ reference }}"
         },
         {

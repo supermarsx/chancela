@@ -324,7 +324,7 @@ describe('AtaEditorPage — mesa presidente unblocks the seal', () => {
     fireEvent.change(within(recipient).getByLabelText('Nome'), {
       target: { value: 'Carla Sócia' },
     });
-    fireEvent.change(within(recipient).getByLabelText('Contacto/referência'), {
+    fireEvent.change(within(recipient).getByLabelText('Contacto'), {
       target: { value: 'carla@example.test' },
     });
     fireEvent.change(within(recipient).getByLabelText('Meio'), {
@@ -347,8 +347,9 @@ describe('AtaEditorPage — mesa presidente unblocks the seal', () => {
         recipients: [
           {
             name: 'Carla Sócia',
+            contact: 'carla@example.test',
             channel: 'Email',
-            reference: 'carla@example.test',
+            reference: null,
             dispatched_at: '2026-06-01',
           },
         ],
@@ -387,7 +388,7 @@ describe('AtaEditorPage — mesa presidente unblocks the seal', () => {
     fireEvent.change(within(recipient).getByLabelText('Nome'), {
       target: { value: 'Carla Sócia' },
     });
-    fireEvent.change(within(recipient).getByLabelText('Contacto/referência'), {
+    fireEvent.change(within(recipient).getByLabelText('Contacto'), {
       target: { value: 'carla@example.test' },
     });
     fireEvent.change(within(recipient).getByLabelText('Meio'), {
@@ -411,8 +412,9 @@ describe('AtaEditorPage — mesa presidente unblocks the seal', () => {
         recipients: [
           {
             name: 'Carla Sócia',
+            contact: 'carla@example.test',
             channel: 'Email',
-            reference: 'carla@example.test',
+            reference: null,
             dispatched_at: null,
           },
         ],
@@ -449,8 +451,20 @@ describe('AtaEditorPage — mesa presidente unblocks the seal', () => {
         channel: 'Email',
         evidence_reference: 'doc:convocatoria-2026-06-01',
         recipients: [
-          { name: 'Ana Sócia', channel: null, reference: null, dispatched_at: null },
-          { name: 'Bruno Sócio', channel: null, reference: null, dispatched_at: null },
+          {
+            name: 'Ana Sócia',
+            contact: 'ana.socia@example.test',
+            channel: null,
+            reference: null,
+            dispatched_at: null,
+          },
+          {
+            name: 'Bruno Sócio',
+            contact: 'bruno.socio@example.test',
+            channel: null,
+            reference: null,
+            dispatched_at: null,
+          },
         ],
         second_call: null,
       },
@@ -483,6 +497,15 @@ describe('AtaEditorPage — mesa presidente unblocks the seal', () => {
         reference: 'doc:convocatoria-2026-06-01',
         recipients: ['Ana Sócia', 'Bruno Sócio'],
       });
+    });
+    await waitFor(() => {
+      const firstRecipient = within(screen.getByRole('group', { name: 'Destinatário 1' }));
+      expect((firstRecipient.getByLabelText('Contacto') as HTMLInputElement).value).toBe(
+        'ana.socia@example.test',
+      );
+      expect((firstRecipient.getByLabelText('Referência de expedição') as HTMLInputElement).value).toBe(
+        'doc:convocatoria-2026-06-01',
+      );
     });
     expect(await screen.findByText('Evidência local de expedição registada.')).toBeTruthy();
   });

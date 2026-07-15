@@ -43,7 +43,11 @@
       "kind": "KeyValue",
       "items": "convening.recipients",
       "rows": [
-        { "key": "Destinatário", "value": "{{ name }}{% if channel %} — {% if channel == 'RegisteredLetter' %}carta registada{% elif channel == 'RegisteredLetterAR' %}carta registada com aviso de receção{% elif channel == 'Email' %}correio eletrónico{% elif channel == 'HandDelivery' %}entrega em mão{% elif channel == 'Publication' %}publicação{% elif channel == 'Portal' %}portal{% endif %}{% endif %}{% if reference %} (ref. {{ reference }}){% endif %}{% if dispatched_at %}, expedida em {{ dispatched_at | long_date }}{% endif %}" }
+        { "key": "Destinatário", "value": "{{ name }}" },
+        { "key": "Contacto", "value": "{{ contact }}" },
+        { "key": "Meio de expedição", "value": "{% if channel == 'RegisteredLetter' %}Carta registada{% elif channel == 'RegisteredLetterAR' %}Carta registada com aviso de receção{% elif channel == 'Email' %}Correio eletrónico{% elif channel == 'HandDelivery' %}Entrega em mão{% elif channel == 'Publication' %}Publicação{% elif channel == 'Portal' %}Portal{% endif %}" },
+        { "key": "Referência de expedição", "value": "{{ reference }}" },
+        { "key": "Data de expedição", "value": "{{ dispatched_at | long_date }}" }
       ]
     },
     { "kind": "Rule" },

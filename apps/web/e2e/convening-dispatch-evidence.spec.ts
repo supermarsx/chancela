@@ -79,12 +79,12 @@ test('dashboard convocation reminder routes to convening guidance and records lo
 
   const firstRecipient = page.getByRole('group', { name: 'Destinatário 1' });
   await firstRecipient.getByLabel('Nome').fill('Ana Sócia');
-  await firstRecipient.getByLabel('Contacto/referência').fill('ana.socia@example.test');
+  await firstRecipient.getByLabel('Contacto').fill('ana.socia@example.test');
   await firstRecipient.getByLabel('Meio').selectOption('Email');
 
   const secondRecipient = page.getByRole('group', { name: 'Destinatário 2' });
   await secondRecipient.getByLabel('Nome').fill('Bruno Sócio');
-  await secondRecipient.getByLabel('Contacto/referência').fill('bruno.socio@example.test');
+  await secondRecipient.getByLabel('Contacto').fill('bruno.socio@example.test');
   await secondRecipient.getByLabel('Meio').selectOption('Email');
 
   await expect(recordButton).toBeDisabled();
@@ -94,14 +94,16 @@ test('dashboard convocation reminder routes to convening guidance and records lo
   expect(patchBodies.at(-1)?.convening?.recipients).toEqual([
     {
       name: 'Ana Sócia',
+      contact: 'ana.socia@example.test',
       channel: 'Email',
-      reference: 'ana.socia@example.test',
+      reference: null,
       dispatched_at: null,
     },
     {
       name: 'Bruno Sócio',
+      contact: 'bruno.socio@example.test',
       channel: 'Email',
-      reference: 'bruno.socio@example.test',
+      reference: null,
       dispatched_at: null,
     },
   ]);
@@ -119,6 +121,14 @@ test('dashboard convocation reminder routes to convening guidance and records lo
       recipients: ['Ana Sócia', 'Bruno Sócio'],
     },
   ]);
+  await expect(firstRecipient.getByLabel('Contacto')).toHaveValue('ana.socia@example.test');
+  await expect(firstRecipient.getByLabel('Referência de expedição')).toHaveValue(
+    LOCAL_EVIDENCE_REFERENCE,
+  );
+  await expect(secondRecipient.getByLabel('Contacto')).toHaveValue('bruno.socio@example.test');
+  await expect(secondRecipient.getByLabel('Referência de expedição')).toHaveValue(
+    LOCAL_EVIDENCE_REFERENCE,
+  );
   await expect(page.getByText('Evidência local de expedição registada.')).toBeVisible();
   await expect(localEvidence).toContainText('Marca 2 destinatário(s) existente(s)');
 

@@ -233,6 +233,7 @@ const CONVENING_DISPATCH_LOCAL_EVIDENCE_COPY =
 
 const emptyConveningRecipient = (): ActConveningRecipient => ({
   name: '',
+  contact: null,
   channel: null,
   reference: null,
   dispatched_at: null,
@@ -244,6 +245,7 @@ function normalizedConveningRecipients(
   return recipients
     .map((recipient) => ({
       name: recipient.name.trim(),
+      contact: orNull(recipient.contact ?? ''),
       channel: recipient.channel,
       reference: orNull(recipient.reference ?? ''),
       dispatched_at: orNull(recipient.dispatched_at ?? ''),
@@ -1436,8 +1438,9 @@ function ConveningEditor({
           convening.recipients.map((recipient, index) => {
             const rowLabel = `Destinatário ${index + 1}`;
             const nameId = `ed-convening-recipient-${index}-name`;
-            const referenceId = `ed-convening-recipient-${index}-reference`;
+            const contactId = `ed-convening-recipient-${index}-contact`;
             const channelId = `ed-convening-recipient-${index}-channel`;
+            const referenceId = `ed-convening-recipient-${index}-reference`;
             const dispatchedAtId = `ed-convening-recipient-${index}-dispatched-at`;
             return (
               <div className="form" role="group" aria-label={rowLabel} key={index}>
@@ -1450,14 +1453,14 @@ function ConveningEditor({
                       onChange={(e) => updateRecipient(index, { name: e.target.value })}
                     />
                   </Field>
-                  <Field label="Contacto/referência" htmlFor={referenceId}>
+                  <Field label="Contacto" htmlFor={contactId}>
                     <Input
-                      id={referenceId}
-                      value={recipient.reference ?? ''}
+                      id={contactId}
+                      value={recipient.contact ?? ''}
                       disabled={disabled}
-                      placeholder="Ex.: email, morada, registo interno"
+                      placeholder="Ex.: email, morada, conta ou contacto interno"
                       onChange={(e) =>
-                        updateRecipient(index, { reference: orNull(e.target.value) })
+                        updateRecipient(index, { contact: orNull(e.target.value) })
                       }
                     />
                   </Field>
@@ -1484,6 +1487,17 @@ function ConveningEditor({
                       disabled={disabled}
                       onChange={(e) =>
                         updateRecipient(index, { dispatched_at: orNull(e.target.value) })
+                      }
+                    />
+                  </Field>
+                  <Field label="Referência de expedição" htmlFor={referenceId}>
+                    <Input
+                      id={referenceId}
+                      value={recipient.reference ?? ''}
+                      disabled={disabled}
+                      placeholder="Ex.: RR123456789PT, recibo, id de mensagem"
+                      onChange={(e) =>
+                        updateRecipient(index, { reference: orNull(e.target.value) })
                       }
                     />
                   </Field>

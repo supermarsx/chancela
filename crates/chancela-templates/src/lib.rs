@@ -2195,6 +2195,7 @@ mod tests {
         ctx["convening"]["recipients"] = json!([
             {
                 "name": "Ana Rocha",
+                "contact": "ana.rocha@example.test",
                 "channel": "RegisteredLetterAR",
                 "reference": "RR123456789PT",
                 "dispatched_at": "2026-06-10"
@@ -2211,6 +2212,10 @@ mod tests {
             assert!(
                 text.contains("Ana Rocha"),
                 "{id}: recipient missing: {text}"
+            );
+            assert!(
+                text.contains("ana.rocha@example.test"),
+                "{id}: recipient contact missing: {text}"
             );
             assert!(
                 text.contains("RR123456789PT"),

@@ -17635,8 +17635,8 @@ mod tests {
                         "channel": "RegisteredLetter",
                         "evidence_reference": "doc:convocatoria-2026-03-01",
                         "recipients": [
-                            { "name": "Amélia Marques", "channel": "Email" },
-                            { "name": "Bruno Dias" }
+                            { "name": "Amélia Marques", "contact": "amelia@example.test", "channel": "Email", "reference": "MSG-1" },
+                            { "name": "Bruno Dias", "reference": "legacy-reference-only" }
                         ],
                         "second_call": { "date": "2026-03-30", "time": "11:00", "reduced_quorum": true }
                     },
@@ -17663,6 +17663,19 @@ mod tests {
             patched["convening"]["recipients"][0]["name"],
             "Amélia Marques"
         );
+        assert_eq!(
+            patched["convening"]["recipients"][0]["contact"],
+            "amelia@example.test"
+        );
+        assert_eq!(patched["convening"]["recipients"][0]["reference"], "MSG-1");
+        assert!(
+            patched["convening"]["recipients"][1]["contact"].is_null(),
+            "legacy reference must not be copied into contact: {patched}"
+        );
+        assert_eq!(
+            patched["convening"]["recipients"][1]["reference"],
+            "legacy-reference-only"
+        );
         assert_eq!(patched["attendees"][1]["represented_by"], "Amélia Marques");
         assert_eq!(patched["attendees"][1]["weight"]["Permilage"], 250);
 
@@ -17673,6 +17686,14 @@ mod tests {
         assert_eq!(
             fetched["convening"]["evidence_reference"],
             "doc:convocatoria-2026-03-01"
+        );
+        assert_eq!(
+            fetched["convening"]["recipients"][0]["contact"],
+            "amelia@example.test"
+        );
+        assert!(
+            fetched["convening"]["recipients"][1]["contact"].is_null(),
+            "GET must not infer contact from legacy reference: {fetched}"
         );
         assert_eq!(fetched["attendees"].as_array().expect("attendees").len(), 2);
 
@@ -17764,7 +17785,10 @@ mod tests {
                 &format!("/v1/acts/{act_id}"),
                 json!({ "convening": {
                     "antecedence_days": 21,
-                    "recipients": [ { "name": "Amélia Marques" }, { "name": "Bruno Dias" } ]
+                    "recipients": [
+                        { "name": "Amélia Marques", "contact": "amelia@example.test" },
+                        { "name": "Bruno Dias", "contact": "bruno@example.test", "reference": "preexisting-proof" }
+                    ]
                 }}),
             ),
         )
@@ -17788,12 +17812,15 @@ mod tests {
         assert_eq!(amelia["name"], "Amélia Marques");
         assert_eq!(amelia["dispatched_at"], "2026-03-02");
         assert_eq!(amelia["channel"], "Email");
+        assert_eq!(amelia["contact"], "amelia@example.test");
         assert_eq!(amelia["reference"], "RC123");
         // The unnamed recipient stays un-stamped.
         assert!(
             recips[1]["dispatched_at"].is_null(),
             "Bruno not dispatched: {dispatched}"
         );
+        assert_eq!(recips[1]["contact"], "bruno@example.test");
+        assert_eq!(recips[1]["reference"], "preexisting-proof");
 
         // A `convening.dispatched` ledger event was appended for this act.
         let (status, events) = send(

@@ -2734,6 +2734,7 @@ fn populated_g1_g2_act(book_id: chancela_core::BookId) -> Act {
         evidence_reference: Some("doc:convocatoria-rr123456789pt".to_string()),
         recipients: vec![ConveningRecipient {
             name: "Encosto Estratégico Lda".to_string(),
+            contact: Some("socios@example.test".to_string()),
             channel: Some(DispatchChannel::Email),
             reference: Some("RR123456789PT".to_string()),
             dispatched_at: Some(mar_10),

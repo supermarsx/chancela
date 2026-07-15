@@ -609,10 +609,15 @@ pub enum DispatchChannel {
 pub struct ConveningRecipient {
     /// Recipient name.
     pub name: String,
+    /// Operator-supplied contact locator for the recipient (email, address, account id, or other
+    /// local contact metadata). This is distinct from dispatch proof/tracking data.
+    #[serde(default)]
+    pub contact: Option<String>,
     /// Channel this recipient was reached through, when it differs from the convening default.
     #[serde(default)]
     pub channel: Option<DispatchChannel>,
-    /// Dispatch reference (registered-letter tracking number, email id, receipt number, …).
+    /// Dispatch proof/tracking reference (registered-letter tracking number, email id, receipt
+    /// number, archive locator, or other proof metadata). Do not treat this as contact metadata.
     #[serde(default)]
     pub reference: Option<String>,
     /// When the notice was dispatched to this recipient.
@@ -1192,6 +1197,7 @@ mod tests {
             evidence_reference: Some("doc:convocatoria-rr123456789pt".into()),
             recipients: vec![ConveningRecipient {
                 name: "Encosto Estratégico Lda".into(),
+                contact: Some("socios@example.test".into()),
                 channel: Some(DispatchChannel::Email),
                 reference: Some("RR123456789PT".into()),
                 dispatched_at: Some(date!(2026 - 03 - 10)),

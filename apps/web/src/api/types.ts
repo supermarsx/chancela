@@ -563,6 +563,7 @@ export interface ActDeliberationItem {
 
 export interface ActConveningRecipient {
   name: string;
+  contact: string | null;
   channel: DispatchChannel | null;
   reference: string | null;
   dispatched_at: string | null;
