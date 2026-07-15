@@ -138,7 +138,9 @@ routing depth,
 compact validator-report actions, template provenance UI, release clean-source
 provenance gating, opt-in release signing status-artifact markers, Postgres
 rustls TLS/`sslmode=prefer` markers, observability `/metrics`/`/livez`/`/readyz`
-and route-label request-id markers, local CC batch-signing UI markers for BatchSigningPanel,
+and route-label request-id markers, runtime HTTP/session hardening markers for
+HSTS, single-node in-memory per-IP rate limiting, absolute session lifetime
+caps, reset/reload cleanup, and CurrentAttestor cap enforcement, local CC batch-signing UI markers for BatchSigningPanel,
 `useCcBatchSign`, `POST /v1/signature/cc/batch-sign`, optional transient PIN
 clearing/no-storage, per-document results, auth-mode reporting, declared
 signer-capacity evidence display, local-CC-only no-claim boundary copy, and
@@ -1149,6 +1151,23 @@ does not prove database, Redis, remote-signing, trust-list, or cluster
 dependency readiness. These markers are probe/metrics/tracing plumbing only,
 not production SIEM, alerting, HA, retention, full dependency readiness, or a
 compliance claim.
+
+## Runtime HTTP/Session Hardening
+
+The wp25 runtime security markers pin local API behavior only:
+`Strict-Transport-Security` header emission, `CHANCELA_HSTS_*` configuration,
+the per-client-IP token-bucket limiter controlled by `CHANCELA_RATE_LIMIT_*`,
+probe exemptions for `/health`, `/livez`, `/readyz`, `/metrics`, and `/api/...`
+aliases, opt-in `X-Forwarded-For` / `X-Real-IP` trust, the
+`CHANCELA_SESSION_MAX_LIFETIME` absolute session cap, reload/factory-reset
+cleanup of `rate_limit_buckets` and `session_issued_at`, and CurrentAttestor
+refusal before exposing an unlocked signing key for an over-age session.
+
+These markers are local in-memory single-node runtime HTTP/session hardening
+only. They do not prove TLS termination, production HSTS deployment, HA,
+cluster-wide/distributed rate limiting, SQLCipher-at-rest, external deployment,
+legal/DR/security certification, or full spec completion. The spec matrix
+remains `PARTIAL=11`.
 
 ## Release Hardening Artifacts
 

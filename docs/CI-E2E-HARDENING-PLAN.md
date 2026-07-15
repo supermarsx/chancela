@@ -1,7 +1,7 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `f4047b5`,
+and implementation snapshot `22bb23d`,
 including coverage notes for the MCP document/archive PDF accessibility v11
 identifier/count/blocker alignment, fixture report version 11, the Ata editor
 workflow provenance review panel, generated-document coverage fixture alignment,
@@ -91,7 +91,9 @@ manifest-required validation, and release summary binding to the actual package
 tarball basename/SHA-256, opt-in release signing workflow hooks and truthful
 status artifacts, rustls Postgres TLS connector / `sslmode=prefer` live store
 round-trip evidence, observability probes and route-template metrics/request-id
-coverage, synthetic seed dataset integration coverage
+coverage, runtime HTTP/session hardening with HSTS, single-node in-memory
+per-IP rate limiting, absolute session lifetime cap enforcement, reset/reload
+cleanup, and CurrentAttestor cap handling, synthetic seed dataset integration coverage
 over API-created entity/book/act/ledger/dashboard/RBAC/delegation paths, and
 RBAC ledger verification regression coverage for user-role, delegation, and
 role-catalog audit events. This
@@ -974,15 +976,16 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `f4047b5`
+## Focused Gate Snapshot Through `22bb23d`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08` and checkpoint-promoted on 2026-07-15 for
-current implementation head `f4047b5`. This is not an exhaustive current
+current implementation head `22bb23d`. This is not an exhaustive current
 green-run claim; the full-server E2E claim below is limited to local
 `chancela-server --features e2e` after auth harness alignment, and browser,
 Docker, desktop, production package signing/notarization, production image
-signing/attestation, live `verify-full` CA proof, and live-provider limits
+signing/attestation, live `verify-full` CA proof, production TLS/HSTS
+deployment proof, HA/distributed rate-limiting proof, and live-provider limits
 above still apply.
 
 - `actionlint .github/workflows/ci.yml`, `npx prettier --check
@@ -2159,6 +2162,19 @@ settingsDefaults.test.ts contracts.test.ts`.
   prove database, Redis, remote-signing, trust-list, or cluster dependency
   readiness. This is probe/metrics/tracing plumbing only, not production
   observability, SIEM, alerting, HA, retention, or compliance completion.
+- Current `22bb23d` runtime HTTP/session hardening checks: focused API coverage
+  pins `Strict-Transport-Security` on API/static responses,
+  per-client-IP token-bucket 429 responses with `Retry-After`, liveness probe
+  rate-limit exemption, absolute session lifetime cap rejection/eviction,
+  reload/factory-reset cleanup of `session_issued_at` and `rate_limit_buckets`,
+  and CurrentAttestor refusal/eviction before exposing an unlocked signing key
+  for an over-age session. Server source markers also pin
+  `into_make_service_with_connect_info::<SocketAddr>()` for real TCP peer IPs
+  and the plaintext durable-SQLite warning. This is local in-memory single-node
+  runtime HTTP/session hardening only, not TLS termination, production HSTS
+  proof, cluster-wide/distributed rate limiting, HA, SQLCipher-at-rest proof,
+  external deployment proof, legal/DR/security certification, or spec
+  completion.
 - Current working-tree seeded role drift diagnostic checks: focused
   `chancela-api` coverage pins read-only
   `seeded_role_drift.missing_default_permissions` and
@@ -2324,7 +2340,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   production-readiness, TLS/key-custody, vulnerability-free scan, SBOM,
   signature/attestation, HA/failover/RPO/RTO, legal/DR certification, cloud
   deployment readiness, or spec-completion claim is made.
-- Current checkpoint metadata/static checks through `f4047b5`
+- Current checkpoint metadata/static checks through `22bb23d`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
@@ -2335,7 +2351,9 @@ settingsDefaults.test.ts contracts.test.ts`.
   hardening-plan head, opt-in release signing hooks/status artifacts, Postgres
   rustls TLS `sslmode=prefer` proof and no-`verify-full`/production-readiness
   boundary, observability `/metrics`/`/livez`/`/readyz` request-id/route-label
-  markers, MCP document/archive PDF accessibility v11 identifiers
+  markers, runtime HSTS, single-node in-memory rate-limiting, absolute session
+  lifetime, reset/reload cleanup, and CurrentAttestor cap markers, MCP
+  document/archive PDF accessibility v11 identifiers
   and counts, `pdf_accessibility_v11_summary`, `v11_report_count`,
   `pdf_accessibility_v11_report_missing`, fixture report version 11,
   browser workflow provenance review panel and sanitized local MCP payload

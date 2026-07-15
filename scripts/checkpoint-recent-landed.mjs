@@ -10735,12 +10735,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `f4047b5`",
+    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `22bb23d`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `f4047b5`",
+    "Focused Gate Snapshot Through `22bb23d`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -11415,7 +11415,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `f4047b5`",
+    "Current checkpoint metadata/static checks through `22bb23d`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -11980,7 +11980,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `f4047b5ab36259b00309b0d4bd824bc39b103683`",
+    "implementation snapshot `22bb23d133cf63321150731c2f2f9046104a0293`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -12042,6 +12042,86 @@ function assertCheckpointMap() {
     "docs/CI-CHECKPOINTS.md",
     "The wp25 observability markers pin first-class API probes and Prometheus output",
     "CI checkpoints observability marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Current `22bb23d` keeps Architecture/API/CI **PARTIAL**",
+    "spec coverage runtime security hardening checkpoint marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "local in-memory single-node runtime\n  HTTP/session hardening only",
+    "spec coverage runtime security single-node boundary marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "no TLS termination, deployed HSTS proof,\n  cluster-wide/distributed rate limiting, HA, production SQLCipher proof",
+    "spec coverage runtime security no production/HA/distributed claim marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "Runtime HTTP/Session Hardening",
+    "CI checkpoints runtime security section marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "local in-memory single-node runtime HTTP/session hardening\nonly",
+    "CI checkpoints runtime security single-node boundary marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Current `22bb23d` runtime HTTP/session hardening checks",
+    "CI/E2E hardening plan runtime security current checkpoint marker",
+  );
+  assertFileContains(
+    "docs/extras.md",
+    "These controls are local in-memory single-node runtime hardening",
+    "extras runtime security local-only marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "Strict-Transport-Security (wp25-sec)",
+    "API HSTS runtime security marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "rate_limiter_returns_429_with_retry_after_after_burst",
+    "API per-IP rate limiter coverage marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "session_past_absolute_lifetime_cap_is_rejected",
+    "API session absolute lifetime cap coverage marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "runtime_security_state_cleared_on_data_dir_reload",
+    "API runtime security reload cleanup coverage marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "runtime_security_state_cleared_on_factory_memory_clear",
+    "API runtime security factory cleanup coverage marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "current_attestor_rejects_session_past_absolute_lifetime_cap",
+    "API CurrentAttestor absolute cap coverage marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/actor.rs",
+    "Absent/unknown/expired/over-age token",
+    "CurrentAttestor over-age signing-key refusal marker",
+  );
+  assertFileContains(
+    "crates/chancela-server/src/main.rs",
+    "into_make_service_with_connect_info::<SocketAddr>()",
+    "server ConnectInfo rate-limit peer-IP marker",
+  );
+  assertFileContains(
+    "crates/chancela-server/src/main.rs",
+    "the durable SQLite database is UNENCRYPTED at rest",
+    "server plaintext SQLite warning marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",

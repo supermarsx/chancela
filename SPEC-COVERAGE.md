@@ -1,6 +1,6 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-15 from current implementation snapshot `f4047b5ab36259b00309b0d4bd824bc39b103683`,
+*Updated 2026-07-15 from current implementation snapshot `22bb23d133cf63321150731c2f2f9046104a0293`,
 with committed evidence refreshes for the MCP document/archive PDF accessibility
 v11 identifier, count, blocker, and fixture-report alignment, the browser
 workflow provenance review panel and sanitized local MCP workflow-provenance copy
@@ -255,8 +255,11 @@ export for the already-loaded sync/handoff preflight report, then `ef3270a`
 opt-in release signing workflow hooks and truthful status artifacts,
 `974040e`/`afe7111` rustls Postgres TLS connector and `sslmode=prefer` live
 store round-trip evidence, `18ac1bf` docs navigation for the new operator pages,
-and `f4047b5` observability probes, Prometheus metrics, request-id propagation,
-and route-template tracing/metrics labels.
+`f4047b5` observability probes, Prometheus metrics, request-id propagation,
+and route-template tracing/metrics labels, followed by `2847ca0`/`22bb23d`
+runtime HTTP/session hardening for HSTS, the single-node in-memory per-IP rate
+limiter, the absolute session lifetime cap, reset/reload cleanup of that
+node-local runtime state, and CurrentAttestor cap enforcement.
 Earlier coverage text remains prior snapshot context. All top-level spec areas remain **PARTIAL**.
 This is an implementation and test coverage snapshot, not a legal certification,
 not production CMD approval, not DRE verification promotion, not full PDF/UA
@@ -268,10 +271,12 @@ legal document acceptance, signed-PDF legal validity, legal archive
 certification, official DGLAB acceptance/export, paper-book OCR accuracy,
 canonical minutes/legal conversion, destructive retention execution, or
 destructive GDPR erasure, production Postgres readiness, live Postgres database
-validation beyond the store backend sweep, migration completeness, production HA readiness, consensus
+validation beyond the store backend sweep, migration completeness,
+cluster-wide/distributed rate limiting, production HA readiness, consensus
 correctness, split-brain impossibility, live failover certification, cloud
-deployment readiness, live `verify-full` CA/hostname proof, production TLS/remote PG readiness, multi-node operational
-certification, or
+deployment readiness, deployed HSTS/TLS proof, live `verify-full` CA/hostname
+proof, production TLS/remote PG readiness, multi-node operational
+certification, runtime security certification, or
 external sync readiness is complete or that production backup policy is
 complete.*
 
@@ -308,6 +313,21 @@ Implementation checkpoints covered here:
   cluster dependency readiness. This is observability/probe plumbing only, not
   production SIEM/HA/monitoring, alerting, retention, dependency-readiness, or
   spec-completion evidence; statuses remain PARTIAL=11.
+
+- Current `22bb23d` keeps Architecture/API/CI **PARTIAL**: the API now emits
+  `Strict-Transport-Security`, applies a configurable per-client-IP token-bucket
+  HTTP rate limiter that exempts `/health`, `/livez`, `/readyz`, `/metrics`, and
+  their `/api/...` aliases, keeps proxy-forwarded client IP trust opt-in, and
+  enforces a configurable absolute session lifetime cap on top of the existing
+  24h sliding idle expiry. `reload_domain_memory` and `clear_all_memory` now
+  clear `rate_limit_buckets` and `session_issued_at`, and `CurrentAttestor`
+  rejects and evicts over-age sessions before exposing an unlocked signing key.
+  The server also provides TCP `ConnectInfo` to the limiter and warns when a
+  durable SQLite store is plaintext. This is local in-memory single-node runtime
+  HTTP/session hardening only: no TLS termination, deployed HSTS proof,
+  cluster-wide/distributed rate limiting, HA, production SQLCipher proof,
+  external deployment proof, legal/DR/security certification, or full spec
+  completion is claimed; statuses remain PARTIAL=11.
 
 - Recent `974040e`/`afe7111` keeps Data/Architecture/CI **PARTIAL**: the
   Postgres backend now uses a rustls `MakeTlsConnect`, resolves `sslmode` from
@@ -4085,6 +4105,18 @@ behavior, legal disposal, or legal-effect claims.
   work, hashes accepted create passwords through the hardened verifier-seed path, rejects stale
   concurrent bootstrap losers under the write lock, and no longer allows session creation for
   legacy no-hash users.
+- **Runtime HTTP/session hardening:** the API emits `Strict-Transport-Security`,
+  resolves `CHANCELA_HSTS_*`, `CHANCELA_RATE_LIMIT_*`, and
+  `CHANCELA_SESSION_MAX_LIFETIME` for the running server, applies a single-node
+  in-memory per-IP token bucket with `Retry-After` on 429 responses, exempts
+  health/readiness/metrics probes, keeps `X-Forwarded-For` / `X-Real-IP` trust
+  off unless explicitly configured, and enforces a node-local absolute session
+  lifetime cap before both request actor resolution and CurrentAttestor signing
+  key exposure. Reload/factory-reset paths clear the node-local limiter and
+  issued-at cap trackers. This is runtime hardening for a local node only, not
+  HA, distributed rate limiting, production TLS/HSTS deployment proof,
+  SQLCipher-at-rest proof, external deployment evidence, legal/DR/security
+  certification, or a full spec completion claim.
 - **Arquivo backend and UI:** `GET /v1/ledger/archive/document` renders a filtered ledger chain
   archive as PDF/A-2u without mutating state. The web ledger page lets the operator select chain and
   scope filters and download the same archive document.
@@ -5220,5 +5252,11 @@ behavior, legal disposal, or legal-effect claims.
   worker image, managed production operations, registry publication, image
   signing, attestation, notarization, vulnerability remediation, or production
   deployment certification.
+- Runtime HTTP/session hardening is local in-memory single-node behavior:
+  HSTS header emission, per-IP token buckets, session issued-at cap tracking,
+  reset/reload cleanup, and CurrentAttestor cap enforcement do not prove TLS
+  termination, cluster-wide/distributed rate limiting, HA, SQLCipher-at-rest,
+  external deployment readiness, legal/DR/security certification, or full spec
+  completion.
 - `/api/v1` API keys are an implemented integration feature, but a bearer key is still an
   attenuated RBAC principal, not an interactive user session or step-up credential.

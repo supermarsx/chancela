@@ -50,6 +50,28 @@ networked or managed Postgres. Current checkpoint coverage includes the live
 `sslmode=prefer` round-trip only; it is not a live `verify-full` CA/hostname
 proof or production remote-database readiness claim.
 
+The API emits `Strict-Transport-Security` on responses. It is useful only after
+the app is behind a real HTTPS-terminating proxy because browsers ignore HSTS
+over plain HTTP. Set `CHANCELA_HSTS_MAX_AGE`,
+`CHANCELA_HSTS_INCLUDE_SUBDOMAINS`, and `CHANCELA_HSTS_PRELOAD` deliberately for
+the deployed hostname; header emission in the app is not proof that TLS, HSTS
+preload, or external deployment has been validated.
+
+## Runtime limits and sessions
+
+- **HTTP rate limiting** - the running server enables an in-memory per-client-IP
+  token bucket by default (`CHANCELA_RATE_LIMIT_ENABLED`,
+  `CHANCELA_RATE_LIMIT_PER_SECOND`, `CHANCELA_RATE_LIMIT_BURST`). Health,
+  readiness, and metrics probes are exempt. Trusting `X-Forwarded-For` /
+  `X-Real-IP` is opt-in through `CHANCELA_RATE_LIMIT_TRUST_FORWARDED_FOR` and
+  should be used only behind a trusted reverse proxy.
+- **Session lifetime** - `CHANCELA_SESSION_MAX_LIFETIME` caps the absolute
+  wall-clock age of a session on top of the existing sliding idle expiry.
+
+These controls are local in-memory single-node runtime hardening. They are not
+cluster-wide/distributed rate limiting, HA, SQLCipher-at-rest proof, legal/DR/
+security certification, or external deployment proof.
+
 ## Monitoring and healthchecks
 
 - **Liveness** — `GET /health` reports liveness, the crate version, persistence
