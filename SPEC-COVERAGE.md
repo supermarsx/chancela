@@ -1,8 +1,11 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-15 from current implementation snapshot `63df508f602d83fbf73d1064f7b64bacaa140119`,
+*Updated 2026-07-15 from current implementation snapshot `fc17700aa4da69bed5a4aa58a70bf91c8d14ac10`,
 with committed evidence refreshes for mobile API base URL indirection and
-shell detection, subject DEK secret-store binding, the settled PDF/UA v12 gated-claim lane,
+shell detection, the mobile companion foundation docs/scripts, destructive
+erasure preflight/approve/execute route wiring plus local gate evidence,
+append-only rectification/restriction ledger annotation kinds,
+subject DEK secret-store binding, the settled PDF/UA v12 gated-claim lane,
 XAdES C14N/digest-agility/B/T/LT/ASiC evidence, archive PDF accessibility
 propagation, the MCP document/archive PDF accessibility
 v12 identifier, count, blocker, and fixture-report alignment, the browser
@@ -1941,6 +1944,23 @@ Implementation checkpoints covered here:
   official DGLAB export, government filing, import path, disposal execution,
   DGLAB certification, legal archival certification, PDF/A/PAdES/PDF-UA
   certification, authority approval, or legal archive acceptance is implemented.
+- Current `fc17700` keeps Legal/Data/API/UX/CI **PARTIAL**: the implementation
+  snapshot includes the prior `842b7f2` mobile API base URL/shell-detection
+  slice, `d43b82a` mobile companion foundation docs plus inert desktop package
+  Android companion scripts, `33e70bb` subject-DEK secret-store binding,
+  `d1ff21b` destructive erasure workflow persistence, and `67952f7`
+  preflight/approve/execute route wiring with focused privacy tests and a local
+  gate that verifies ledger integrity advances across a real erasure, the test
+  subject user row is removed, and the destroyed subject DEK cannot be unwrapped,
+  plus `fc17700` append-only subject rectification and processing-restriction
+  annotation kinds with a ledger test proving prior sealed/signed event bytes,
+  hashes, and payload digests stay frozen while verification advances.
+  This is bounded local API and documentation evidence only: it does not claim a
+  shipped native mobile app, iOS/Android packaging readiness, offline sync,
+  production connector readiness, physical deletion, anonymization, backup or
+  archive rewrite, legal GDPR compliance/completion, legal disposal approval,
+  production key-custody proof, or full spec completion; statuses remain
+  PARTIAL=11.
 - Current `63df508` keeps Signatures/Trust/CI **PARTIAL**: the implementation
   snapshot includes the prior `8bbe944` `chancela-tsl` LOTL/member-state
   bootstrap, `6292d75` revocation cache and offline fallback, `ead1aaa`

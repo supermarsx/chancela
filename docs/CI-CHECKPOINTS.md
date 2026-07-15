@@ -626,8 +626,8 @@ It intentionally reuses existing test surfaces:
   trust-list validity, certificate path/revocation policy validation,
   qualified-status determination, legal trust certification, live provider
   approval, or full trust implementation.
-- Signing DSS/trust-validation checkpoint: `63df508` is the current
-  implementation snapshot for the signing validation batch. Static markers pin
+- Signing DSS/trust-validation checkpoint: `63df508` is the signing validation
+  implementation checkpoint inside the current `fc17700` snapshot. Static markers pin
   `6292d75` revocation cache plus graceful offline fallback, `ead1aaa`
   full-chain PAdES DSS evidence assembly from validated chain plus revocation
   material, `9be5e00` live end-entity signer-path validation with TSL-resolved
@@ -787,6 +787,8 @@ target preservation, PageHeader h1 coverage, and modal focus-trap behavior,
 mobile API base URL/shell-detection markers for relative defaults,
 environment/runtime/mobile-shell base URL sources, generated download URL
 resolution, and native shell detection,
+mobile companion foundation markers for inert desktop package Android scripts
+and documented external Android/backend exposure prerequisites,
 subject DEK secret-store binding markers for store-bound root derivation,
 subject/field/key-version binding, erase failure, randomized wrap blobs, and
 cross-store unwrap failure,
@@ -1083,6 +1085,27 @@ blobs fail as erased/unrecoverable, wrapped blobs are randomized, and another
 store's CMK cannot unwrap the subject DEK. They are not a wired destructive
 erasure workflow, physical deletion/anonymization, backup/archive rewrite,
 legal GDPR completion, production key-custody proof, or spec completion.
+Mobile companion foundation markers pin only `d43b82a` desktop package Android
+companion script scaffolding and `docs/mobile.md` guidance for external Android
+prerequisites plus backend companion-readiness boundaries. They do not prove a
+native APK build, iOS/Android packaging, app-store submission, offline sync,
+production connector readiness, remote backend exposure, or mobile spec
+completion.
+GDPR erasure API workflow markers pin the now-wired destructive erasure route
+surface and local gate only: `d1ff21b` persists the destructive erasure workflow,
+and `67952f7` registers preflight/approve/execute routes plus tests that prove
+ledger verification advances across a real erasure, the test subject users row
+is gone, and the destroyed subject DEK cannot be unwrapped. This is local API
+workflow evidence only; it does not claim physical deletion, anonymization,
+backup/archive rewrite, legal GDPR compliance or completion, legal disposal
+approval, production key custody, or full spec completion.
+GDPR sealed-record annotation markers pin only `fc17700` append-only ledger
+annotation evidence for statutory-retention cases: subject rectification and
+processing-restriction annotation kinds can be appended while prior sealed/signed
+event bytes, hashes, and payload digests remain frozen and ledger verification
+advances. They do not perform deletion, anonymization, sealed/signed historical
+event mutation, legal GDPR compliance or completion, legal disposal approval, or
+full spec completion.
 They do not certify legal validity, legal retention schedules or approvals,
 retention deletion or anonymization/redaction execution, retention execution
 completion, destructive GDPR erasure, full erasure, template legal effect, DRE

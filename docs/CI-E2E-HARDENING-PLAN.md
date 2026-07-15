@@ -1,8 +1,11 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `63df508`,
-including coverage notes for the settled PDF/UA v12 gated-claim lane, XAdES
+and implementation snapshot `fc17700`,
+including coverage notes for the mobile companion foundation docs/scripts,
+destructive erasure preflight/approve/execute route wiring plus local gate
+evidence, append-only rectification/restriction ledger annotation kinds, the
+settled PDF/UA v12 gated-claim lane, XAdES
 C14N/digest-agility/B/T/LT/ASiC evidence, archive PDF accessibility
 propagation, the MCP document/archive PDF accessibility v12
 identifier/count/blocker alignment, fixture report version 12, the Ata editor
@@ -987,11 +990,11 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `63df508`
+## Focused Gate Snapshot Through `fc17700`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08` and checkpoint-promoted on 2026-07-15 for
-current implementation head `63df508`. This is not an exhaustive current
+current implementation head `fc17700`. This is not an exhaustive current
 green-run claim; the full-server E2E claim below is limited to local
 `chancela-server --features e2e` after auth harness alignment, and browser,
 Docker, desktop, production package signing/notarization, production image
@@ -1183,6 +1186,12 @@ settingsDefaults.test.ts contracts.test.ts`.
   indirection and shell detection only: no native mobile build, iOS/Android
   package, offline sync, production connector readiness, or spec-completion
   claim is made.
+- Mobile companion foundation checkpoint through `d43b82a`: desktop package
+  scripts expose inert Android companion entry points and `docs/mobile.md`
+  records the external prerequisites and backend exposure boundaries. This is
+  documentation/script scaffolding only: no Rust desktop host change, native APK
+  build, iOS/Android packaging proof, store submission, offline sync, production
+  connector readiness, or mobile spec-completion claim is made.
 - GDPR/API subject-DEK secret-store binding through `33e70bb`: focused local
   `crates/chancela-api/src/secretstore.rs` coverage pins subject-DEK crypto
   construction from the resolved credential secret-store CMK using dedicated
@@ -1191,6 +1200,20 @@ settingsDefaults.test.ts contracts.test.ts`.
   is API secret-store crypto evidence only: no wired destructive erasure
   workflow, physical deletion/anonymization, backup/archive rewrite, legal GDPR
   completion, production key-custody proof, or spec-completion claim is made.
+- GDPR erasure API workflow checkpoint through `67952f7`: focused privacy tests
+  pin the destructive erasure preflight/approve/execute route wiring, workflow
+  persistence, ledger verification advancement across a real erasure, test
+  subject user row removal, and destroyed subject-DEK unwrap failure. This is
+  local API gate evidence only: no physical deletion, anonymization, backup or
+  archive rewrite, legal GDPR compliance/completion, legal disposal approval,
+  production key custody, or spec-completion claim is made.
+- GDPR sealed-record annotation checkpoint through `fc17700`: focused ledger
+  tests pin append-only subject rectification and processing-restriction
+  annotation kinds for statutory-retention cases, preserving prior sealed/signed
+  event bytes, hashes, and payload digests while verification advances. This is
+  append-only ledger evidence only: no deletion, anonymization, mutation of
+  sealed/signed historical events, legal GDPR compliance/completion, legal
+  disposal approval, or spec-completion claim is made.
 - Current working-tree retained-export cleanup UX checks: focused API/core
   markers pin export dry-run `would_delete_files`, `would_delete_directories`,
   and `would_delete_bytes` planning with `deleted_files`, `deleted_directories`,
@@ -1883,7 +1906,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   policy validation, legal trust certification, production trust-list validity,
   multiple-reference support for the TSL importer, or transform-chain support
   for the TSL importer.
-- Current `63df508` signing trust validation checkpoint: static markers pin
+- `63df508` signing trust validation checkpoint: static markers pin
   the prior `8bbe944` live EU LOTL/member-state bootstrap, `6292d75`
   revocation cache and graceful offline fallback, `ead1aaa` full-chain PAdES
   DSS evidence assembly from validated chain plus revocation material,
@@ -2399,7 +2422,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   production-readiness, TLS/key-custody, vulnerability-free scan, SBOM,
   signature/attestation, HA/failover/RPO/RTO, legal/DR certification, cloud
   deployment readiness, or spec-completion claim is made.
-- Current checkpoint metadata/static checks through `63df508`
+- Current checkpoint metadata/static checks through `fc17700`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and

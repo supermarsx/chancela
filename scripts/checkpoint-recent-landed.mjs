@@ -10895,12 +10895,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `63df508`",
+    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `fc17700`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `63df508`",
+    "Focused Gate Snapshot Through `fc17700`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -11580,7 +11580,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `63df508`",
+    "Current checkpoint metadata/static checks through `fc17700`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -11825,7 +11825,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current `63df508` signing trust validation checkpoint",
+    "`63df508` signing trust validation checkpoint",
     "CI/E2E hardening plan signing trust validation checkpoint marker",
   );
   assertFileContains(
@@ -12170,8 +12170,28 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `63df508f602d83fbf73d1064f7b64bacaa140119`",
+    "implementation snapshot `fc17700aa4da69bed5a4aa58a70bf91c8d14ac10`",
     "spec coverage current implementation snapshot marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Current `fc17700` keeps Legal/Data/API/UX/CI **PARTIAL**",
+    "spec coverage erasure workflow current checkpoint marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "destructive erasure workflow persistence, and `67952f7`\n  preflight/approve/execute route wiring",
+    "spec coverage erasure workflow route marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "`fc17700` append-only subject rectification and processing-restriction\n  annotation kinds",
+    "spec coverage sealed-record annotation marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "legal GDPR compliance/completion, legal disposal approval,\n  production key-custody proof, or full spec completion",
+    "spec coverage erasure workflow no-overclaim marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
@@ -12185,8 +12205,43 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "Signing DSS/trust-validation checkpoint: `63df508` is the current\n  implementation snapshot",
-    "CI checkpoints signing validation current snapshot marker",
+    "Signing DSS/trust-validation checkpoint: `63df508` is the signing validation\n  implementation checkpoint inside the current `fc17700` snapshot",
+    "CI checkpoints signing validation snapshot marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "Mobile companion foundation markers pin only `d43b82a` desktop package Android\ncompanion script scaffolding",
+    "CI checkpoints mobile companion foundation marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "GDPR erasure API workflow markers pin the now-wired destructive erasure route\nsurface and local gate only",
+    "CI checkpoints GDPR erasure API workflow marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Mobile companion foundation checkpoint through `d43b82a`",
+    "CI/E2E hardening plan mobile companion foundation marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "GDPR erasure API workflow checkpoint through `67952f7`",
+    "CI/E2E hardening plan GDPR erasure workflow marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "GDPR sealed-record annotation checkpoint through `fc17700`",
+    "CI/E2E hardening plan GDPR sealed-record annotation marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "GDPR sealed-record annotation markers pin only `fc17700` append-only ledger\nannotation evidence",
+    "CI checkpoints GDPR sealed-record annotation marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Current checkpoint metadata/static checks through `fc17700`",
+    "CI/E2E hardening plan checkpoint metadata head marker",
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
