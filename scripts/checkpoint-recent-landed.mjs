@@ -9515,6 +9515,61 @@ function assertCheckpointMap() {
     "dashboard law ref review method coverage marker",
   );
   assertFileContains(
+    "contracts/law.diploma.json",
+    "\"verification\": \"automated_review\"",
+    "law diploma contract automated-review tier marker",
+  );
+  assertFileContains(
+    "apps/web/src/contracts/contracts.test.ts",
+    "verified === false` yet is a THIRD state",
+    "web contract automated-review third-state marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/legislacao/CorpusReader.tsx",
+    "Verified / automated-review / Pending",
+    "Legislacao corpus three-tier badge marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/legislacao/CorpusReader.tsx",
+    "Badge tone=\"info\"",
+    "Legislacao automated-review info badge marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/legislacao/CorpusReader.tsx",
+    "reviewNote={article.source.review_note}",
+    "Legislacao automated-review caveat propagation marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/legislacao/legislacao.test.tsx",
+    "badges an automated-review article as its own honest tier",
+    "Legislacao automated-review tier coverage marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/legislacao/legislacao.test.tsx",
+    "badge--info",
+    "Legislacao automated-review badge tone coverage marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/legislacao/legislacao.test.tsx",
+    "NÃO aprovado juridicamente por revisor humano",
+    "Legislacao automated-review human-review caveat coverage marker",
+  );
+  assertFileContains(
+    "apps/web/src/ui/index.tsx",
+    "type BadgeTone = 'neutral' | 'accent' | 'warn' | 'error' | 'ok' | 'info';",
+    "UI shared info badge tone marker",
+  );
+  assertFileContains(
+    "apps/web/src/theme.css",
+    ".badge--info",
+    "theme automated-review info badge style marker",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/locales/pt-PT.ts",
+    "'legislacao.corpus.badge.automatedReviewHelp'",
+    "Legislacao automated-review localized caveat marker",
+  );
+  assertFileContains(
     "apps/web/src/features/ledger/LedgerPage.test.tsx",
     "exports the selected audit format with the current filters through the save helper",
     "ledger archive filtered export format coverage",
@@ -9721,8 +9776,8 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current `3715089` automated-review dashboard contract checks",
-    "CI/E2E hardening automated-review dashboard checks marker",
+    "Current `7ab3ab7` automated-review law corpus UI checks",
+    "CI/E2E hardening automated-review law corpus UI checks marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -10231,12 +10286,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `3715089`",
+    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `7ab3ab7`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `3715089`",
+    "Focused Gate Snapshot Through `7ab3ab7`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -10876,7 +10931,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `3715089`",
+    "Current checkpoint metadata/static checks through `7ab3ab7`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -11406,18 +11461,18 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `37150897adcd6ad72d1847d4d464a9f0ad45697e`",
+    "implementation snapshot `7ab3ab7d9bf39d370a51a93558150f4badcb6cb2`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Current `3715089` keeps Legal/Compliance/UX/API/CI **PARTIAL**",
-    "spec coverage automated-review dashboard current checkpoint marker",
+    "Current `7ab3ab7` keeps Legal/Compliance/UX/API/CI **PARTIAL**",
+    "spec coverage automated-review law UI current checkpoint marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "dashboard contract fixture now shows automated-review\n  refs such as `dl-76-a-2006:1` and `csc:399`",
-    "spec coverage automated-review dashboard fixture marker",
+    "renders the tier with a separate info-toned badge and\n  help caveat",
+    "spec coverage automated-review law UI badge/caveat marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",

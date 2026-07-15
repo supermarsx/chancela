@@ -1,10 +1,10 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `3715089`,
+and implementation snapshot `7ab3ab7`,
 including coverage notes for automated-review dashboard contract surfacing,
 archive active-filter count refinement,
-automated-review law corpus evidence, MCP workflow
+automated-review law corpus evidence and UI tier surfacing, MCP workflow
 provenance local JSON/text summary,
 key-custody readiness UI/contract surfacing,
 data key-rotation receipt history,
@@ -885,11 +885,11 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `3715089`
+## Focused Gate Snapshot Through `7ab3ab7`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08` and checkpoint-promoted on 2026-07-15 for
-current implementation head `3715089`. This is not an exhaustive current
+current implementation head `7ab3ab7`. This is not an exhaustive current
 green-run claim; browser, Docker, desktop, package signing/notarization, image
 signing/attestation, and live-provider limits above still apply.
 
@@ -1859,12 +1859,16 @@ settingsDefaults.test.ts contracts.test.ts`.
   upload path/schema exposure. This is discoverability and redacted summary
   access only, not raw report download, provider execution, legal validation,
   trust validation, or certification.
-- Current `3715089` automated-review dashboard contract checks: focused API and
-  contract markers pin `DashboardLawReference.review_method` / `review_note`,
-  `law_verification_wire` emitting the `automated_review` serde wire value,
-  `LawSourceView` review metadata, per-diploma `automated_review_count`, and
-  dashboard fixture law refs such as `dl-76-a-2006:1` and `csc:399` carrying
-  complete source URLs plus `automated-capture` caveats. This is honest
+- Current `7ab3ab7` automated-review law corpus UI checks: focused API,
+  contract, and web markers pin `DashboardLawReference.review_method` /
+  `review_note`, `law_verification_wire` emitting the `automated_review` serde
+  wire value, `LawSourceView` review metadata, per-diploma
+  `automated_review_count`, contract fixtures where automated-review articles
+  keep real body text and `verified === false`, and Legislação rendering with a
+  separate info-toned automated-review badge, help caveat, non-Pending article
+  body display, and localized automated-review label/caveat copy. The underlying
+  UI implementation landed in `72df5c0`; `7ab3ab7` pins the focused badge/caveat
+  assertions. This is honest
   automated-review provenance surfacing only: no human legal approval,
   Pending-to-Verified promotion, DRE authority verification, legal correctness,
   dashboard legal guidance completion, or legal validity/effect claim is
@@ -1910,7 +1914,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   full RBAC/delegation-policy completion, tenant authorization proof,
   legal-capacity verification, broad security certification, or spec
   completion.
-- Current checkpoint metadata/static checks through `3715089`
+- Current checkpoint metadata/static checks through `7ab3ab7`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and

@@ -1,9 +1,9 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-15 from current implementation snapshot `37150897adcd6ad72d1847d4d464a9f0ad45697e`,
+*Updated 2026-07-15 from current implementation snapshot `7ab3ab7d9bf39d370a51a93558150f4badcb6cb2`,
 with committed evidence refreshes for the recently landed automated-review
 dashboard contract surface, archive filter refinement, automated-review law
-corpus tier, MCP workflow provenance local JSON/text summary, key-custody
+corpus UI tier, MCP workflow provenance local JSON/text summary, key-custody
 readiness UI/contract surfacing, data key-rotation receipt history, and the earlier Signatures & Trust
 provider-credential, stored runtime credential resolution, stored PKCS#12,
 remote batch-initiation surfaces, remote provider readiness manifests, and Docker/Compose runtime-hardening
@@ -184,8 +184,10 @@ the embedded corpus, followed by `3a42f02` bounded platform-log cleanup target
 coverage, `7f9930a` local-only remote provider readiness manifest coverage,
 `eb1a846` MCP workflow provenance review over caller-supplied local JSON or
 text evidence only, `3715089` automated-review dashboard contract surfacing,
-`baad7b4` archive filter refinement, and `9402174` automated-review law-corpus
-vendoring.
+`baad7b4` archive filter refinement, `9402174` automated-review law-corpus
+vendoring, `49c8313` automated-review law contract synchronization, and
+`72df5c0` automated-review law corpus UI tier surfacing, with `7ab3ab7`
+focused web assertions for the honest badge and caveat tooltip.
 Earlier coverage text remains prior snapshot context. All top-level spec areas remain **PARTIAL**.
 This is an implementation and test coverage snapshot, not a legal certification,
 not production CMD approval, not DRE verification promotion, not full PDF/UA
@@ -216,21 +218,28 @@ blockers.
 
 Implementation checkpoints covered here:
 
-- Current `3715089` keeps Legal/Compliance/UX/API/CI **PARTIAL**: dashboard
-  law-reference payloads now preserve the law corpus' third authenticity tier
-  instead of flattening automated-review articles into Pending. The API emits
-  the stable `automated_review` wire value through `DashboardLawReference`,
-  carries `review_method` and `review_note` only for automated-review refs,
-  keeps Verified/Pending/Missing refs without that metadata, and exposes
-  `LawSourceView.review_method` / `review_note` plus per-diploma
-  `automated_review_count` without promoting automated captures to
-  human-`Verified`. The dashboard contract fixture now shows automated-review
-  refs such as `dl-76-a-2006:1` and `csc:399` with complete source URLs,
-  `automated-capture` method metadata, and the human-review caveat. Focused
-  API markers pin 153 Verified / 39 automated-review / 1 Pending corpus counts,
-  complete-source automated-review article bodies, Pending body suppression,
-  citation resolver tier preservation, and dashboard law-ref method/note
-  propagation. This is honest provenance surfacing for already vendored law
+- Current `7ab3ab7` keeps Legal/Compliance/UX/API/CI **PARTIAL**:
+  automated-review law references now flow from API/dashboard and law-corpus
+  contracts into the Legislação reader as a distinct third tier, not as
+  human-`Verified` and not as `Pending`. The earlier `3715089` API/dashboard
+  contract emits the stable `automated_review` wire value through
+  `DashboardLawReference`, carries `review_method` and `review_note` only for
+  automated-review refs, keeps Verified/Pending/Missing refs without that
+  metadata, and exposes `LawSourceView.review_method` / `review_note` plus
+  per-diploma `automated_review_count`. `49c8313` synchronizes the web
+  contracts so `automated_review` articles keep real body text and complete
+  source metadata while `verified === false`, with caveat fields reserved for
+  that tier. `72df5c0` renders the tier with a separate info-toned badge and
+  help caveat, keeps green human-Verified and amber Pending badges distinct,
+  shows automated-review body text without the Pending marker, and carries the
+  localized automated-review label/caveat through citation copy and the corpus
+  reader; `7ab3ab7` adds focused web assertions for the same badge, non-Pending
+  body, and human-review caveat tooltip. Focused markers pin 153 Verified / 39
+  automated-review / 1 Pending
+  corpus counts, complete-source automated-review article bodies, Pending body
+  suppression, citation resolver tier preservation, dashboard law-ref
+  method/note propagation, `badge--info`, and the Legislação automated-review
+  caveat help. This is honest provenance surfacing for already vendored law
   text only: it does not certify legal correctness, add human legal approval,
   verify DRE source authority, complete the law/template audit, complete
   dashboard legal guidance, or make any legal validity/effect claim.

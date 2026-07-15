@@ -610,7 +610,10 @@ archive readability/ZK caveat markers, template `FamilyChannelMismatch` markers,
 MCP trust-catalog structured-filter and redacted external-validator summary
 markers, automated-review dashboard law-reference contract markers for
 `automated_review`, `review_method`, `review_note`, and
-`automated_review_count`, MCP workflow provenance review prompt/resource plus deterministic
+`automated_review_count`, automated-review law corpus UI tier markers for the
+distinct info-toned badge, help caveat, localized automated-review copy, real
+body/no-Pending-marker rendering, and preservation of human-Verified vs Pending
+visual separation, MCP workflow provenance review prompt/resource plus deterministic
 local workflow/human-review/evidence-marker summary/no-raw-echo/no-call/no-claim
 markers, MCP draft-vs-signed comparison review prompt/resource plus deterministic
 local comparison report/no-call/no-claim markers, dashboard guest
