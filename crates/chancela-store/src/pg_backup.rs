@@ -466,6 +466,50 @@ pub(crate) fn verify_pg_backup_bundle(bytes: &[u8]) -> Result<VerifiedPgBackup, 
         }
     }
 
+    // Every non-table/non-manifest member is a restorable sidecar. Require each one to be named in
+    // the manifest with matching fixity, and reject manifest sidecars that are absent or unsafe, so
+    // restore never installs bytes that were outside the verified integrity root.
+    let mut expected_sidecars: BTreeMap<&str, &BackupFile> = BTreeMap::new();
+    for sidecar in &manifest.sidecars {
+        validate_pg_sidecar_member_name(&sidecar.name)?;
+        if expected_sidecars
+            .insert(sidecar.name.as_str(), sidecar)
+            .is_some()
+        {
+            return Err(StoreError::BadBackup(format!(
+                "manifest lists duplicate sidecar {}",
+                sidecar.name
+            )));
+        }
+        let member = members.get(&sidecar.name).ok_or_else(|| {
+            StoreError::BadBackup(format!("bundle is missing sidecar member {}", sidecar.name))
+        })?;
+        if member.len() as u64 != sidecar.bytes {
+            return Err(StoreError::BadBackup(format!(
+                "sidecar {} byte count mismatch (manifest {}, member {})",
+                sidecar.name,
+                sidecar.bytes,
+                member.len()
+            )));
+        }
+        if hex(&Sha256::digest(member)) != sidecar.sha256 {
+            return Err(StoreError::BadBackup(format!(
+                "sidecar {} digest mismatch (tampered sidecar)",
+                sidecar.name
+            )));
+        }
+    }
+    for name in members.keys() {
+        if name == "manifest.json" || name.starts_with("tables/") {
+            continue;
+        }
+        if !expected_sidecars.contains_key(name.as_str()) {
+            return Err(StoreError::BadBackup(format!(
+                "bundle contains unmanifested sidecar member {name}"
+            )));
+        }
+    }
+
     // Re-run the ledger hash-chain from the exported events — catches a reordered/removed event or a
     // broken chain even when every per-member digest is internally consistent.
     let events = table_rows
@@ -606,6 +650,41 @@ fn collect_sidecar_members(
             bytes: bytes.len() as u64,
         });
         members.push((name.to_owned(), bytes));
+    }
+    Ok(())
+}
+
+fn validate_pg_sidecar_member_name(name: &str) -> Result<(), StoreError> {
+    if name.is_empty()
+        || name.contains('\\')
+        || name == "manifest.json"
+        || name.starts_with("tables/")
+    {
+        return Err(StoreError::BadBackup(format!(
+            "unsafe sidecar member name {name:?}"
+        )));
+    }
+    let path = Path::new(name);
+    if path.is_absolute() {
+        return Err(StoreError::BadBackup(format!(
+            "unsafe sidecar member name {name:?}"
+        )));
+    }
+    let mut saw_component = false;
+    for component in path.components() {
+        match component {
+            std::path::Component::Normal(_) => saw_component = true,
+            _ => {
+                return Err(StoreError::BadBackup(format!(
+                    "unsafe sidecar member name {name:?}"
+                )));
+            }
+        }
+    }
+    if !saw_component {
+        return Err(StoreError::BadBackup(format!(
+            "unsafe sidecar member name {name:?}"
+        )));
     }
     Ok(())
 }
@@ -785,6 +864,77 @@ mod tests {
         assert_eq!(verified.manifest.ledger_head, manifest.ledger_head);
         assert_eq!(verified.table_rows.get("events").map(Vec::len), Some(1));
         assert_eq!(verified.manifest.source_instance_id, "inst-1");
+    }
+
+    #[test]
+    fn verifies_manifested_sidecars_and_extracts_them() {
+        let (bundle, mut manifest) = sample_bundle();
+        let (_, mut members) = read_pg_bundle(&bundle).unwrap();
+        let sidecar_bytes = br#"{"theme":"light"}"#.to_vec();
+        manifest.sidecars = vec![BackupFile {
+            name: "settings.json".to_owned(),
+            sha256: hex(&Sha256::digest(&sidecar_bytes)),
+            bytes: sidecar_bytes.len() as u64,
+        }];
+        manifest.bundle_digest = manifest.compute_digest().unwrap();
+        members.insert("settings.json".to_owned(), sidecar_bytes.clone());
+        let mut member_vec: Vec<(String, Vec<u8>)> = members
+            .into_iter()
+            .filter(|(n, _)| n != "manifest.json")
+            .collect();
+        member_vec.sort_by(|a, b| a.0.cmp(&b.0));
+        let bundle = assemble_pg_bundle(&manifest, &member_vec).unwrap();
+
+        let verified = verify_pg_backup_bundle(&bundle).expect("manifested sidecar verifies");
+        let sidecars = sidecar_members(&verified.members);
+        assert_eq!(sidecars.get("settings.json"), Some(&sidecar_bytes));
+    }
+
+    #[test]
+    fn rejects_unmanifested_sidecar_members() {
+        let (bundle, mut manifest) = sample_bundle();
+        let (_, mut members) = read_pg_bundle(&bundle).unwrap();
+        members.insert("api-keys.json".to_owned(), b"attacker".to_vec());
+        manifest.bundle_digest = manifest.compute_digest().unwrap();
+        let mut member_vec: Vec<(String, Vec<u8>)> = members
+            .into_iter()
+            .filter(|(n, _)| n != "manifest.json")
+            .collect();
+        member_vec.sort_by(|a, b| a.0.cmp(&b.0));
+        let bundle = assemble_pg_bundle(&manifest, &member_vec).unwrap();
+
+        let err = verify_pg_backup_bundle(&bundle).unwrap_err();
+        assert!(
+            matches!(err, StoreError::BadBackup(ref m) if m.contains("unmanifested sidecar")),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn rejects_tampered_manifested_sidecar_members() {
+        let (bundle, mut manifest) = sample_bundle();
+        let (_, mut members) = read_pg_bundle(&bundle).unwrap();
+        let benign = b"benign".to_vec();
+        let attacker = b"attacker".to_vec();
+        manifest.sidecars = vec![BackupFile {
+            name: "users.json".to_owned(),
+            sha256: hex(&Sha256::digest(&benign)),
+            bytes: benign.len() as u64,
+        }];
+        manifest.bundle_digest = manifest.compute_digest().unwrap();
+        members.insert("users.json".to_owned(), attacker);
+        let mut member_vec: Vec<(String, Vec<u8>)> = members
+            .into_iter()
+            .filter(|(n, _)| n != "manifest.json")
+            .collect();
+        member_vec.sort_by(|a, b| a.0.cmp(&b.0));
+        let bundle = assemble_pg_bundle(&manifest, &member_vec).unwrap();
+
+        let err = verify_pg_backup_bundle(&bundle).unwrap_err();
+        assert!(
+            matches!(err, StoreError::BadBackup(ref m) if m.contains("sidecar users.json byte count mismatch") || m.contains("sidecar users.json digest mismatch")),
+            "{err:?}"
+        );
     }
 
     #[test]
