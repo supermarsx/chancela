@@ -10,6 +10,9 @@
     "dev:sqlcipher": "tauri dev --features sqlcipher",
     "build": "tauri build --features sqlcipher",
     "build:no-bundle": "tauri build --no-bundle --features sqlcipher",
+    "android:init": "tauri android init",
+    "android:dev": "tauri android dev --no-default-features",
+    "android:build": "tauri android build --no-default-features",
     "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml --locked",
     "test:smoke": "powershell -NoProfile -ExecutionPolicy Bypass -File ../../scripts/e2e-desktop.ps1",
     "test:smoke:ci": "powershell -NoProfile -ExecutionPolicy Bypass -File ../../scripts/e2e-desktop.ps1 -KillOwnedProcesses"
