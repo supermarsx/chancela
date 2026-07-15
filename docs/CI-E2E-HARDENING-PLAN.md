@@ -1,9 +1,11 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `b8c1ccf`,
-including coverage notes for the MCP document/archive PDF accessibility v11
-identifier/count/blocker alignment, fixture report version 11, the Ata editor
+and implementation snapshot `99d15a4`,
+including coverage notes for the settled PDF/UA v12 gated-claim lane, XAdES
+C14N/digest-agility/B/T/LT/ASiC evidence, archive PDF accessibility
+propagation, the MCP document/archive PDF accessibility v12
+identifier/count/blocker alignment, fixture report version 12, the Ata editor
 workflow provenance review panel, generated-document coverage fixture alignment,
 CI coverage-waiver debt guard, and the full ignored Postgres store backend sweep with
 per-test child database isolation, child database cleanup, logical restore
@@ -31,7 +33,7 @@ automated-review law corpus evidence and UI tier surfacing, MCP workflow
 provenance local JSON/text summary,
 key-custody readiness UI/contract surfacing,
 data key-rotation receipt history,
-bounded PAdES DSS validation-time, PDF/UA v11
+bounded PAdES DSS validation-time, PDF/UA v12
 blocker-delta and scoped table-header evidence, retention due-candidate explicit evidence states,
 bounded archive/no-action evidence UI, duplicate-review guard/status surfacing, and
 prior bounded execution suppression with active/suppressed candidate counts plus
@@ -425,12 +427,12 @@ test operating checklist for driving Chancela toward release confidence.
   it returns local input-shape guidance and no-claim boundaries; with
   `arguments.document_archive` it returns deterministic aggregate counts for
   validation report/status, digest/fixity fields, signed-document metadata,
-  external-validator attachment statuses, the `pdf_accessibility_v11` checkpoint,
-  `pdf_accessibility_v11_summary`, `v11_report_count`, PDF accessibility v11
+  external-validator attachment statuses, the `pdf_accessibility_v12` checkpoint,
+  `pdf_accessibility_v12_summary`, `v12_report_count`, PDF accessibility v12
   report/blocker and row/column table-header evidence, archive/evidence-index path
   markers, no-claim flag observations, and missing-evidence blockers including
-  `pdf_accessibility_v11_report_missing`. Fixture coverage uses
-  `report_version: 11` plus nested `accessibility_report_json.version: 11`,
+  `pdf_accessibility_v12_report_missing`. Fixture coverage uses
+  `report_version: 12` plus nested `accessibility_report_json.version: 12`,
   `limited_tagged_structure` known blockers, `other` buckets for unrecognized
   caller blocker text, and row-header/column-header count and scope fields. It echoes no raw
   reports, digest values, path values, IDs, notes, raw PDF bytes, or secrets;
@@ -980,11 +982,11 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `b8c1ccf`
+## Focused Gate Snapshot Through `99d15a4`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08` and checkpoint-promoted on 2026-07-15 for
-current implementation head `b8c1ccf`. This is not an exhaustive current
+current implementation head `99d15a4`. This is not an exhaustive current
 green-run claim; the full-server E2E claim below is limited to local
 `chancela-server --features e2e` after auth harness alignment, and browser,
 Docker, desktop, production package signing/notarization, production image
@@ -1190,37 +1192,39 @@ settingsDefaults.test.ts contracts.test.ts`.
   trust tests pin the `trust-accepted-hash` wrapper, copyable truncated accepted
   TSA hash behavior, and labelled `Registos TSA` result grouping without making
   live trust-network calls.
-- Current working-tree PDF accessibility checks: focused document tests pin
-  accessibility report JSON version 11, deterministic `pdf_ua_blocker_delta`
-  evidence with local basis, cleared blockers, remaining blockers, cleared
-  count of 12, remaining count of 1, scoped row/column table-header evidence,
-  structure-tree diagnostics, explicit role-map target entries,
-  marked-content coverage counts, bounded local topology facts, and
+- Current PDF accessibility checks: focused document tests pin accessibility
+  report JSON version 12, deterministic `pdf_ua_blocker_delta` evidence with
+  local basis, cleared blockers, remaining blockers, cleared count of 13,
+  remaining count of 0 for the conforming fixture, scoped row/column
+  table-header evidence, structure-tree diagnostics, explicit role-map target
+  entries, marked-content coverage counts, bounded local topology facts, and
   marked-artifact target/operator evidence for writer-owned decorative rule
-  artifacts emitted as PDF artifacts. The default
-  fixture no longer reports
+  artifacts emitted as PDF artifacts. The default fixture no longer reports
   `no_alt_text_model` for only writer-owned decorative artifacts, page breaks
   stay excluded through
   `accessibility_page_breaks_do_not_require_decorative_accounting`, and
   `accessibility_non_text_accounting_covers_current_block_variants` keeps
   `DocumentBlock` accounting exhaustive for future caller-owned non-text
-  variants. The default remaining blocker is `limited_tagged_structure`;
-  `LimitedTaggedStructure` remains machine-visible while
-  `pdf_ua_claimed` stays false and no PDF/UA certification claim or `pdfuaid`
-  metadata is emitted. This is blocker reduction only, not PDF/UA conformance,
-  validator evidence, legal sufficiency, or signed-PDF accessibility
+  variants. The conforming fixture now sets `pdf_ua_claimed: true`, emits the
+  PDF/UA-1 XMP identifier plus extension schema, and passes the enforced
+  self-check gate; skipped-heading and fallback-metadata fixtures still decline
+  the claim. This is a gated pre-signature document claim only, not DGLAB
+  certification, legal archive certification, validator evidence, legal
+  sufficiency, universal PDF/UA completion, or signed-PDF accessibility
   certification.
-- Current working-tree PDF accessibility evidence projection checks: focused
+- Current PDF accessibility evidence projection checks: focused
   API/archive tests project the deterministic `chancela-doc` accessibility
-  report JSON v11 into document bundle validation reports and archive package
+  report JSON v12 into document bundle validation reports and archive package
   `evidence/pdf-accessibility/{document_id}.json` sidecars. Act-owned documents
-  are derived from the persisted render model; book-level or unsupported model
-  cases remain explicit `pdf_accessibility_report_unavailable` sidecars. The
-  bundle and archive indexes expose path pointers and false
-  `pdf_ua_claimed`, `dglab_certification_claimed`, and
-  `legal_validity_claimed` flags only. This is technical blocker/fixity
-  metadata, not PDF/UA conformance, DGLAB certification, legal validity,
-  external certification, or signed-PDF accessibility certification.
+  are derived from the persisted render model, and `99d15a4` preserves the
+  generated report's `pdf_ua_claimed` value into bundle/archive evidence.
+  Book-level or unsupported model cases remain explicit
+  `pdf_accessibility_report_unavailable` sidecars with `pdf_ua_claimed: false`.
+  The bundle and archive indexes expose path pointers while keeping
+  `dglab_certification_claimed` and `legal_validity_claimed` false. This is
+  technical blocker/fixity metadata, not DGLAB certification, legal validity,
+  external certification, universal PDF/UA completion, or signed-PDF
+  accessibility certification.
 - Recent export-save checks through `ff1823a`: focused browser E2E pins
   `installCancelledBrowserSavePicker`, the visible `Guardar cancelado` result,
   preserved save-picker options, no browser-download fallback, and no mutation
@@ -1509,7 +1513,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   certification, transfer approval/execution, notification, external calls,
   register mutation, automated legal decision, or risk-scoring authority, and
   it keeps the spec matrix at `PARTIAL=11`.
-- Current `39eb4ae` MCP document/archive PDF accessibility v11 alignment checks: focused
+- Current `92de3e7` MCP document/archive PDF accessibility v12 alignment checks: focused
   `cargo test -p chancela-mcp --locked document_archive_review_summary` coverage
   pins the read-only `chancela://mcp/document-archive-review-summary` resource,
   static no-argument input guidance, deterministic aggregate report mode for
@@ -1517,9 +1521,9 @@ settingsDefaults.test.ts contracts.test.ts`.
   no extra resource params, no bridge/API/AI-provider/legal-service/HTTP/SSE/
   provider calls, aggregate counts for validation report/status, digest/fixity
   fields, signed-document state, external-validator attachments/statuses,
-  `pdf_accessibility_v11`, `pdf_accessibility_v11_summary`,
-  `v11_report_count`, `pdf_accessibility_v11_report_missing`, fixture
-  `report_version: 11`, nested `accessibility_report_json.version: 11`, known
+  `pdf_accessibility_v12`, `pdf_accessibility_v12_summary`,
+  `v12_report_count`, `pdf_accessibility_v12_report_missing`, fixture
+  `report_version: 12`, nested `accessibility_report_json.version: 12`, known
   `limited_tagged_structure` blockers, `other` buckets for unrecognized caller
   blocker text, row/column table-header counts and scope flags,
   archive/evidence-index path markers, no-claim observations, and
@@ -1850,10 +1854,19 @@ settingsDefaults.test.ts contracts.test.ts`.
   pins bounded P-256 ECDSA-SHA256 verification only when the embedded signer
   certificate matches a configured trust anchor and only for XML-DSig's
   fixed-width raw `r||s` signature value, with DER ECDSA encodings rejected.
-  This remains technical trust-list parsing evidence only; it is not real C14N,
-  certificate path/revocation/policy validation, broad ECDSA support, legal
+  This remains technical trust-list parsing evidence only; the broader
+  `chancela-xades` lane below is the current XML-signing implementation surface.
+  It is not certificate path/revocation/policy validation, legal
   trust certification, production trust-list validity, multiple-reference
-  support, or transform-chain support.
+  support for the TSL importer, or transform-chain support for the TSL importer.
+- Current `50854dd` XAdES reconciliation checks: `chancela-xades` now pins real
+  in-crate XML C14N against W3C REC-derived vectors, duplicate-`Id` fail-closed
+  guards, multiple-reference XML-DSig packaging, SHA-384/512 digest agility for
+  P-384/P-521 at the XAdES layer, XAdES-B/T/LT validation material, and ASiC-S
+  plus ASiC-E XAdES technical evidence including `sign_asic_e_xades_lt`. This
+  is shipped technical XML-signing evidence only: no XAdES-LTA, live
+  xmlsec1/EU-DSS run, trusted-list/provider/legal completion, QES, or eIDAS
+  legal-effect claim is made.
 - Current working-tree trust/import/static hardening checks: focused API
   coverage pins TSL/TSA outbound URL policy that rejects unsafe schemes plus
   localhost, loopback, private, link-local, reserved, and unspecified ranges
@@ -2349,7 +2362,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   production-readiness, TLS/key-custody, vulnerability-free scan, SBOM,
   signature/attestation, HA/failover/RPO/RTO, legal/DR certification, cloud
   deployment readiness, or spec-completion claim is made.
-- Current checkpoint metadata/static checks through `b8c1ccf`
+- Current checkpoint metadata/static checks through `99d15a4`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
@@ -2362,9 +2375,9 @@ settingsDefaults.test.ts contracts.test.ts`.
   boundary, observability `/metrics`/`/livez`/`/readyz` request-id/route-label
   markers, runtime HSTS, single-node in-memory rate-limiting, absolute session
   lifetime, reset/reload cleanup, and CurrentAttestor cap markers, MCP
-  document/archive PDF accessibility v11 identifiers
-  and counts, `pdf_accessibility_v11_summary`, `v11_report_count`,
-  `pdf_accessibility_v11_report_missing`, fixture report version 11,
+  document/archive PDF accessibility v12 identifiers
+  and counts, `pdf_accessibility_v12_summary`, `v12_report_count`,
+  `pdf_accessibility_v12_report_missing`, fixture report version 12,
   browser workflow provenance review panel and sanitized local MCP payload
   markers, generated-document coverage fixture alignment,
   CI coverage-waiver static debt guard, backend-only SCAP-backed local PKCS#12
@@ -2444,13 +2457,14 @@ settingsDefaults.test.ts contracts.test.ts`.
   concurrent duplicate guard, queued review status/id/time UI surfacing, and
   false destructive/full-erasure markers, plus PAdES DSS caller validation-time, malformed-time refusal, VRI
   `/TU`, document-timestamp local renewal planning, and monitor-state markers,
-  plus PDF accessibility JSON version 11, deterministic `pdf_ua_blocker_delta`,
-  cleared/remaining blocker counts, scoped table-header evidence,
+  plus PDF accessibility JSON version 12, deterministic `pdf_ua_blocker_delta`,
+  gated `pdf_ua_claimed` true/false paths, cleared/remaining blocker counts,
+  scoped table-header evidence,
   structural-depth evidence, structure-tree diagnostics, explicit role-map
   target entries,
   marked-content coverage counts, writer-owned marked-artifact accounting,
-  bounded topology self-check,
-  `LimitedTaggedStructure`, no-PDF/UA/no-`pdfuaid` markers, plus all-family
+  bounded topology self-check, PDF/UA-1 XMP/self-check gate markers,
+  no-DGLAB/no-legal/no-universal-PDF/UA markers, plus all-family
   agenda-item template IDs/counts/rendering markers,
   CSC quota template IDs/Pending-law-reference markers, CSC
   delegation/revocation template IDs/rendering/no-new-threshold markers, and

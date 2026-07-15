@@ -68,9 +68,9 @@ workflow provenance review panel that copies a sanitized local
 `chancela://mcp/workflow-provenance-review` without raw IDs, names, emails,
 titles, deliberations, access codes, digests, browser MCP calls, AI-01/AI-02,
 or full AI/MCP completion claims, draft-vs-signed comparison review guidance,
-document/archive review summary markers for `pdf_accessibility_v11`,
-`pdf_accessibility_v11_summary`, `v11_report_count`,
-`pdf_accessibility_v11_report_missing`, fixture `report_version: 11`, known
+document/archive review summary markers for `pdf_accessibility_v12`,
+`pdf_accessibility_v12_summary`, `v12_report_count`,
+`pdf_accessibility_v12_report_missing`, fixture `report_version: 12`, known
 `limited_tagged_structure` blockers, `other` blocker buckets, row/column
 table-header counts, local caller-supplied JSON only, and no PDF/UA/DGLAB/legal/
 signature/provider/external-validator/trust/legal-review/full-archive/spec
@@ -750,10 +750,11 @@ flags as source-linked technical evidence only, not a legal registry certificate
 DRE verification, registry/provider authority verification, archive mutation,
 legal validity, user/editor authoritative graph, or an authority-approved graph,
 mapped PDF inter-word space,
-PDF/UA blocker-decomposition markers, PDF accessibility report JSON v11,
-deterministic `pdf_ua_blocker_delta`, cleared/remaining blocker counts,
-marked-content coverage counts, `writer_owned_decorative_artifacts_accounted_for`, reduced default-fixture
-`limited_tagged_structure` remaining blocker lists, exhaustive `DocumentBlock`
+PDF/UA blocker-decomposition markers, PDF accessibility report JSON v12,
+deterministic `pdf_ua_blocker_delta`, gated `pdf_ua_claimed` true/false paths,
+cleared/remaining blocker counts, marked-content coverage counts,
+`writer_owned_decorative_artifacts_accounted_for`, no remaining conforming-fixture
+blocker lists, exhaustive `DocumentBlock`
 non-text-accounting coverage, ASiC structural profile-shape,
 manifest/signature diagnostic, blocker-ID, `technical_validation`,
 `validate_asic_container`, `AsicValidationReport`, `AsicSignatureValidation`,

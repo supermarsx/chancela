@@ -2228,8 +2228,8 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-doc/src/tests.rs",
-    "accessibility_report_records_space_emission_without_pdfua_claim",
-    "PDF accessibility space evidence without PDF/UA claim coverage",
+    "accessibility_report_records_space_emission_with_pdfua_claim",
+    "PDF accessibility space evidence with gated PDF/UA claim coverage",
   );
   assertFileContains(
     "crates/chancela-doc/src/accessibility.rs",
@@ -2288,13 +2288,13 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-doc/src/tests.rs",
-    "accessibility_bounded_local_pdf_diagnostics_are_emitted_without_pdfua_claim",
-    "PDF accessibility v11 local diagnostics no-claim coverage",
+    "accessibility_bounded_local_pdf_diagnostics_are_emitted_with_pdfua_claim",
+    "PDF accessibility v12 local diagnostics gated-claim coverage",
   );
   assertFileContains(
     "crates/chancela-doc/src/tests.rs",
-    "accessibility_explicit_alt_text_decorative_model_keeps_limited_structure_blocker",
-    "PDF accessibility bounded structure blocker retention coverage",
+    "accessibility_explicit_alt_text_decorative_model_claims_pdf_ua",
+    "PDF accessibility explicit alt/decorative model gated-claim coverage",
   );
   assertFileContains(
     "crates/chancela-doc/src/tests.rs",
@@ -2308,8 +2308,8 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-doc/src/tests.rs",
-    '\\"version\\":11',
-    "PDF accessibility report JSON v11 coverage",
+    '\\"version\\":12',
+    "PDF accessibility report JSON v12 coverage",
   );
   assertFileContains(
     "crates/chancela-doc/src/tests.rs",
@@ -2318,17 +2318,17 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-doc/src/tests.rs",
-    '\\"remaining_blockers\\":[\\"limited_tagged_structure\\"]',
-    "PDF accessibility blocker-delta remaining limited-structure marker",
+    '\\"remaining_blockers\\":[]',
+    "PDF accessibility blocker-delta no remaining blockers marker",
   );
   assertFileContains(
     "crates/chancela-doc/src/tests.rs",
-    '\\"cleared_count\\":12',
+    '\\"cleared_count\\":13',
     "PDF accessibility blocker-delta cleared-count marker",
   );
   assertFileContains(
     "crates/chancela-doc/src/tests.rs",
-    '\\"remaining_count\\":1',
+    '\\"remaining_count\\":0',
     "PDF accessibility blocker-delta remaining-count marker",
   );
   assertFileContains(
@@ -2448,8 +2448,8 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-doc/src/tests.rs",
-    "pdf_ua_is_not_claimed_with_minimal_tagging",
-    "PDF/UA non-certification marker coverage",
+    "pdf_ua_is_claimed_for_conforming_document",
+    "PDF/UA gated conforming-document claim coverage",
   );
   assertFileContains(
     "crates/chancela-doc/src/accessibility.rs",
@@ -2493,8 +2493,8 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-doc/src/tests.rs",
-    '\\"pdf_ua_blockers\\":[\\"limited_tagged_structure\\"]',
-    "PDF accessibility reduced bounded blocker list marker",
+    '\\"pdf_ua_blockers\\":[]',
+    "PDF accessibility conforming blocker list marker",
   );
   assertFileDoesNotContain(
     "crates/chancela-doc/src/tests.rs",
@@ -2528,8 +2528,8 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-api/src/lib.rs",
-    "PDF/UA blockers are projected from the doc report",
-    "document bundle PDF accessibility projection coverage",
+    "conforming document has no remaining PDF/UA blockers",
+    "document bundle PDF accessibility v12 gated-claim projection coverage",
   );
   assertFileContains(
     "crates/chancela-api/tests/archive_package.rs",
@@ -2538,12 +2538,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current working-tree PDF accessibility evidence projection checks",
+    "Current PDF accessibility evidence projection checks",
     "CI/E2E hardening plan PDF accessibility projection marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Current `3fcfda3` PDF accessibility evidence projection keeps Documents",
+    "Current `99d15a4` PDF accessibility evidence projection keeps Documents",
     "spec coverage PDF accessibility projection partial marker",
   );
   assertFileContains(
@@ -6268,32 +6268,32 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-mcp/src/server.rs",
-    '"id": "pdf_accessibility_v11"',
-    "MCP document/archive PDF accessibility v11 checkpoint id marker",
+    '"id": "pdf_accessibility_v12"',
+    "MCP document/archive PDF accessibility v12 checkpoint id marker",
   );
   assertFileContains(
     "crates/chancela-mcp/src/server.rs",
-    '"pdf_accessibility_v11_summary": {',
-    "MCP document/archive PDF accessibility v11 summary marker",
+    '"pdf_accessibility_v12_summary": {',
+    "MCP document/archive PDF accessibility v12 summary marker",
   );
   assertFileContains(
     "crates/chancela-mcp/src/server.rs",
-    '"v11_report_count": pdf_accessibility_summary.v11_report_count',
-    "MCP document/archive PDF accessibility v11 count marker",
+    '"v12_report_count": pdf_accessibility_summary.v12_report_count',
+    "MCP document/archive PDF accessibility v12 count marker",
   );
   assertFileContains(
     "crates/chancela-mcp/src/server.rs",
-    'missing_evidence_blockers.insert("pdf_accessibility_v11_report_missing");',
-    "MCP document/archive PDF accessibility missing v11 blocker marker",
+    'missing_evidence_blockers.insert("pdf_accessibility_v12_report_missing");',
+    "MCP document/archive PDF accessibility missing v12 blocker marker",
   );
   assertFileContains(
     "crates/chancela-mcp/src/server.rs",
-    '"report_version": 11',
+    '"report_version": 12',
     "MCP document/archive PDF accessibility fixture report version marker",
   );
   assertFileContains(
     "crates/chancela-mcp/src/server.rs",
-    '"version": 11',
+    '"version": 12',
     "MCP document/archive PDF accessibility nested fixture version marker",
   );
   assertFileContains(
@@ -6303,7 +6303,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-mcp/src/server.rs",
-    'report["pdf_accessibility_v11_summary"]["blocker_counts"]["other"]',
+    'report["pdf_accessibility_v12_summary"]["blocker_counts"]["other"]',
     "MCP document/archive PDF accessibility unknown blocker bucket marker",
   );
   assertFileContains(
@@ -10775,12 +10775,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `b8c1ccf`",
+    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `99d15a4`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `b8c1ccf`",
+    "Focused Gate Snapshot Through `99d15a4`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -10790,13 +10790,13 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current working-tree PDF accessibility checks",
+    "Current PDF accessibility checks",
     "CI/E2E hardening plan PDF accessibility focused checks marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "accessibility report JSON version 11, deterministic `pdf_ua_blocker_delta`",
-    "CI/E2E hardening plan PDF accessibility v11 blocker-delta marker",
+    "accessibility\n  report JSON version 12, deterministic `pdf_ua_blocker_delta`",
+    "CI/E2E hardening plan PDF accessibility v12 blocker-delta marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -10810,8 +10810,8 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "`LimitedTaggedStructure` remains machine-visible",
-    "CI/E2E hardening plan PDF/UA bounded-structure caveat marker",
+    "The conforming fixture now sets `pdf_ua_claimed: true`",
+    "CI/E2E hardening plan PDF/UA gated-claim marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -11000,7 +11000,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current `39eb4ae` MCP document/archive PDF accessibility v11 alignment checks",
+    "Current `92de3e7` MCP document/archive PDF accessibility v12 alignment checks",
     "CI/E2E hardening plan MCP document/archive checks marker",
   );
   assertFileContains(
@@ -11025,13 +11025,13 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "`pdf_accessibility_v11`, `pdf_accessibility_v11_summary`,\n  `v11_report_count`, `pdf_accessibility_v11_report_missing`",
-    "CI/E2E hardening plan MCP document/archive v11 field marker",
+    "`pdf_accessibility_v12`, `pdf_accessibility_v12_summary`,\n  `v12_report_count`, `pdf_accessibility_v12_report_missing`",
+    "CI/E2E hardening plan MCP document/archive v12 field marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "fixture\n  `report_version: 11`, nested `accessibility_report_json.version: 11`, known\n  `limited_tagged_structure` blockers",
-    "CI/E2E hardening plan MCP document/archive v11 fixture marker",
+    "fixture\n  `report_version: 12`, nested `accessibility_report_json.version: 12`, known\n  `limited_tagged_structure` blockers",
+    "CI/E2E hardening plan MCP document/archive v12 fixture marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -11460,7 +11460,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `b8c1ccf`",
+    "Current checkpoint metadata/static checks through `99d15a4`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -12015,8 +12015,8 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "not real C14N,\n  certificate path/revocation/policy validation",
-    "CI/E2E hardening plan TSL P-256 caveat marker",
+    "Current `50854dd` XAdES reconciliation checks",
+    "CI/E2E hardening plan XAdES reconciliation marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -12030,7 +12030,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `b8c1ccfb0447c64f973243dde6eb8a92f9060897`",
+    "implementation snapshot `99d15a4488752d9a3e8509d6539005843480e7b4`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -12245,13 +12245,13 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Current `39eb4ae` keeps AI/MCP, Documents/Archive, and CI **PARTIAL**",
-    "spec coverage MCP document/archive v11 current checkpoint marker",
+    "Current `92de3e7` keeps AI/MCP, Documents/Archive, and CI **PARTIAL**",
+    "spec coverage MCP document/archive v12 current checkpoint marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Static guidance advertises\n  `pdf_accessibility_v11`, and argumented `arguments.document_archive` summaries\n  emit `pdf_accessibility_v11_summary`, `v11_report_count`",
-    "spec coverage MCP document/archive v11 field marker",
+    "Static guidance advertises\n  `pdf_accessibility_v12`, and argumented `arguments.document_archive` summaries\n  emit `pdf_accessibility_v12_summary`, `v12_report_count`",
+    "spec coverage MCP document/archive v12 field marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
@@ -12260,13 +12260,13 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "`pdf_accessibility_v11_report_missing` when no v11 report is supplied",
-    "spec coverage MCP document/archive missing v11 blocker marker",
+    "`pdf_accessibility_v12_report_missing` when no v12 report is supplied",
+    "spec coverage MCP document/archive missing v12 blocker marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "The\n  fixture report is version 11 in both `report_version` and nested\n  `accessibility_report_json.version`",
-    "spec coverage MCP document/archive fixture report v11 marker",
+    "The\n  fixture report is version 12 in both `report_version` and nested\n  `accessibility_report_json.version`",
+    "spec coverage MCP document/archive fixture report v12 marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
@@ -12330,8 +12330,8 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "document/archive review summary markers for `pdf_accessibility_v11`,\n`pdf_accessibility_v11_summary`, `v11_report_count`,\n`pdf_accessibility_v11_report_missing`, fixture `report_version: 11`",
-    "CI checkpoints MCP document/archive v11 markers",
+    "document/archive review summary markers for `pdf_accessibility_v12`,\n`pdf_accessibility_v12_summary`, `v12_report_count`,\n`pdf_accessibility_v12_report_missing`, fixture `report_version: 12`",
+    "CI checkpoints MCP document/archive v12 markers",
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
@@ -15582,12 +15582,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "PDF accessibility report JSON\n  version 11 now includes deterministic `pdf_ua_blocker_delta` evidence",
-    "spec coverage PDF accessibility report v11 blocker-delta marker",
+    "report JSON version 12 includes deterministic `pdf_ua_blocker_delta` evidence",
+    "spec coverage PDF accessibility report v12 blocker-delta marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "cleared count of 12 and remaining count of 1",
+    "cleared count of 13 and remaining\n  count of 0",
     "spec coverage PDF accessibility blocker-delta count marker",
   );
   assertFileContains(
@@ -15597,8 +15597,8 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "`LimitedTaggedStructure` remains machine-visible",
-    "spec coverage PDF/UA limited tagged structure caveat marker",
+    "The conforming\n  generated-document fixture emits the PDF/UA-1 XMP identifier",
+    "spec coverage PDF/UA gated XMP marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",

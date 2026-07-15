@@ -31,7 +31,7 @@ Read-only MCP resources such as `chancela://mcp/document-archive-review-summary`
 aids, not model/provider outputs. The document/archive summary accepts only caller-supplied
 `arguments.document_archive` JSON and returns deterministic aggregate counts for validation status,
 fixity markers, signed-document metadata, external-validator attachment summaries, PDF accessibility
-v11 blockers/table-header evidence, archive path markers, no-claim flags, and missing-evidence
+v12 report/blocker/table-header evidence, archive path markers, no-claim flags, and missing-evidence
 blockers.
 
 `chancela://mcp/workflow-provenance-review` follows the same local-only
