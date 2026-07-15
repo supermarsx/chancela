@@ -2825,6 +2825,52 @@ body {
   display: none;
 }
 
+/* --- Phone reflow of the fixed tab bar (wp26-mobile P2) ------------------------
+ * On wider viewports the tab group is absolute-centered in the full bar width.
+ * At phone widths that centered, scrolling strip paints OVER the brand (left) and
+ * the notification/session controls (right), so tabs and the user picker overlap
+ * and become un-tappable. Below 640px, drop the absolute centering and lay the bar
+ * out as a normal flex row: the wordmark is hidden (the page header already names
+ * the section), the tab strip becomes a flex child that shrinks and scrolls
+ * horizontally in the space between brand and session, and the session controls
+ * stay pinned right. Nothing overlaps and every control keeps its own hit area.
+ * Desktop and the Tauri shell (min window 900px) never match this query, so their
+ * centered layout is byte-for-byte unchanged. */
+@media (max-width: 640px) {
+  .topbar {
+    gap: 0.6rem;
+    padding: 0 0.85rem;
+  }
+
+  /* Reclaim the full width for the tabs; the routed page header names the section. */
+  .topbar__brand {
+    display: none;
+  }
+
+  /* Normal flow instead of absolute centering: the strip flows between the
+     (hidden) brand and the session controls, scrolling within its own box rather
+     than painting across its neighbours. */
+  .topbar__nav {
+    position: static;
+    left: auto;
+    transform: none;
+    max-width: none;
+    flex: 1 1 auto;
+    min-width: 0;
+    justify-content: flex-start;
+    gap: 1.1rem;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .topbar__nav .nav__link {
+    white-space: nowrap;
+  }
+
+  .topbar__session {
+    gap: 0.3rem;
+  }
+}
+
 /* The one scroll container. Fixed below the chrome so its scrollbar never
    overlaps the bars; overflow-x hidden keeps the page body from side-scrolling. */
 .app-scroll {
