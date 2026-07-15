@@ -35,7 +35,7 @@ pub enum SignaturePolicyHint {
 pub enum ProfileCalendarRuleKind {
     /// Commercial-company annual general meeting/accounts spine.
     CommercialCompanyAnnualGeneralMeeting,
-    /// Condominium ordinary annual assembly seed; no local due-date rule is encoded.
+    /// Condominium ordinary annual assembly seed.
     CondominiumAnnualAssembly,
     /// Association annual general meeting spine.
     AssociationAnnualGeneralMeeting,
@@ -202,6 +202,13 @@ const COOP_ART_33_REF: [ProfileCalendarLawReference; 1] = [ProfileCalendarLawRef
     source_status: ProfileCalendarSourceStatus::PendingUnverified,
 }];
 
+const CC_ART_1431_REF: [ProfileCalendarLawReference; 1] = [ProfileCalendarLawReference {
+    diploma_id: "cc",
+    article: "1431",
+    label: "Artigo 1431.º",
+    source_status: ProfileCalendarSourceStatus::PendingUnverified,
+}];
+
 const EMPTY_CALENDAR_REFS: [ProfileCalendarLawReference; 0] = [];
 
 /// Fiscal-year end used by local profile-calendar due-date rules.
@@ -230,6 +237,18 @@ impl FiscalYearEnd {
         format!("{:02}-{:02}", self.month, self.day)
     }
 }
+
+/// Fixed month/day anchor used by local annual advisory profile-calendar rules.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct AnnualFixedDate {
+    pub month: u8,
+    pub day: u8,
+}
+
+/// Local condominium annual advisory anchor: the ordinary first-half-January rule is modeled as
+/// Jan 15. Exceptional first-quarter variants depend on local regulation/deliberation and are not
+/// encoded or claimed by this local planner.
+pub const CONDOMINIUM_ANNUAL_ADVISORY_DATE: AnnualFixedDate = AnnualFixedDate { month: 1, day: 15 };
 
 /// Default local fiscal-year end when the entity has no readable value.
 pub const DEFAULT_PROFILE_CALENDAR_FISCAL_YEAR_END: FiscalYearEnd =
@@ -261,6 +280,8 @@ pub enum ProfileCalendarDueRule {
         months_after_fiscal_year_end: u8,
         default_fiscal_year_end: FiscalYearEnd,
     },
+    /// Due date is a fixed annual month/day local advisory anchor.
+    AnnualFixedDate { month: u8, day: u8 },
     /// The preset has no local due-date rule.
     NotEncoded {
         reason: ProfileCalendarUnsupportedReason,
@@ -272,13 +293,18 @@ impl ProfileCalendarDueRule {
     pub const fn kind(self) -> &'static str {
         match self {
             ProfileCalendarDueRule::FiscalYearEndOffset { .. } => "fiscal_year_end_offset",
+            ProfileCalendarDueRule::AnnualFixedDate { .. } => "annual_fixed_date",
             ProfileCalendarDueRule::NotEncoded { .. } => "not_encoded",
         }
     }
 
     #[must_use]
     pub const fn local_due_date_rule_configured(self) -> bool {
-        matches!(self, ProfileCalendarDueRule::FiscalYearEndOffset { .. })
+        matches!(
+            self,
+            ProfileCalendarDueRule::FiscalYearEndOffset { .. }
+                | ProfileCalendarDueRule::AnnualFixedDate { .. }
+        )
     }
 }
 
@@ -291,6 +317,8 @@ pub enum ProfileCalendarDueBasis {
     DefaultFiscalYearEndMissingRecordedValue,
     /// The entity had an unreadable `fiscal_year_end`, so the local default was used.
     DefaultFiscalYearEndUnreadableRecordedValue,
+    /// The preset uses a fixed annual month/day local advisory anchor.
+    AnnualFixedDate,
 }
 
 impl ProfileCalendarDueBasis {
@@ -304,6 +332,7 @@ impl ProfileCalendarDueBasis {
             ProfileCalendarDueBasis::DefaultFiscalYearEndUnreadableRecordedValue => {
                 "default_fiscal_year_end_unreadable_recorded_value"
             }
+            ProfileCalendarDueBasis::AnnualFixedDate => "annual_fixed_date",
         }
     }
 
@@ -318,6 +347,9 @@ impl ProfileCalendarDueBasis {
             }
             ProfileCalendarDueBasis::DefaultFiscalYearEndUnreadableRecordedValue => {
                 "using the default Dec 31 fiscal-year end because the recorded fiscal_year_end could not be read"
+            }
+            ProfileCalendarDueBasis::AnnualFixedDate => {
+                "using the local fixed annual advisory date; profile-specific exceptions remain manual context"
             }
         }
     }
@@ -335,8 +367,9 @@ pub struct ProfileCalendarEvaluationContext<'a> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProfileCalendarScheduledRule {
     pub due_date: Date,
-    pub fiscal_year_end: FiscalYearEnd,
-    pub months_after_fiscal_year_end: u8,
+    pub fiscal_year_end: Option<FiscalYearEnd>,
+    pub months_after_fiscal_year_end: Option<u8>,
+    pub annual_fixed_date: Option<AnnualFixedDate>,
     pub due_basis: ProfileCalendarDueBasis,
 }
 
@@ -472,10 +505,12 @@ pub fn profile_for(kind: EntityKind) -> EntityProfile {
             CondominioRulePack::ID,
             SignaturePolicyHint::QualifiedOrHandwritten,
             "condominio-dl268",
-            vec![unsupported_calendar_preset(
+            vec![annual_fixed_date_calendar_preset(
                 "condominio-annual",
                 "Assembleia ordinária anual de condóminos (DL 268/94)",
                 ProfileCalendarRuleKind::CondominiumAnnualAssembly,
+                CONDOMINIUM_ANNUAL_ADVISORY_DATE,
+                &CC_ART_1431_REF,
             )],
         ),
         EntityFamily::Association => (
@@ -550,6 +585,31 @@ fn fiscal_year_end_calendar_preset(
     }
 }
 
+fn annual_fixed_date_calendar_preset(
+    id: &'static str,
+    label: &'static str,
+    rule_kind: ProfileCalendarRuleKind,
+    annual_fixed_date: AnnualFixedDate,
+    law_refs: &'static [ProfileCalendarLawReference],
+) -> CalendarPreset {
+    CalendarPreset {
+        id,
+        label,
+        months_after_fiscal_year_end: None,
+        rule_kind,
+        support_status: ProfileCalendarRuleSupportStatus::Supported,
+        review_status: ProfileCalendarReviewStatus::PendingSourceReview,
+        due_rule: ProfileCalendarDueRule::AnnualFixedDate {
+            month: annual_fixed_date.month,
+            day: annual_fixed_date.day,
+        },
+        source_status: ProfileCalendarSourceStatus::PendingUnverified,
+        law_refs,
+        no_claims: ProfileCalendarNoClaimFlags::local_advisory(),
+    }
+}
+
+#[cfg(test)]
 fn unsupported_calendar_preset(
     id: &'static str,
     label: &'static str,
@@ -606,64 +666,85 @@ pub fn evaluate_profile_calendar_rule(
     rule: &CalendarPreset,
     context: ProfileCalendarEvaluationContext<'_>,
 ) -> ProfileCalendarRuleEvaluation {
-    let ProfileCalendarDueRule::FiscalYearEndOffset {
-        months_after_fiscal_year_end,
-        default_fiscal_year_end,
-    } = rule.due_rule
-    else {
-        let reason = match rule.due_rule {
-            ProfileCalendarDueRule::NotEncoded { reason } => reason,
-            ProfileCalendarDueRule::FiscalYearEndOffset { .. } => unreachable!(),
-        };
-        return ProfileCalendarRuleEvaluation::Unsupported(ProfileCalendarUnsupportedRule {
-            reason,
-        });
-    };
+    match rule.due_rule {
+        ProfileCalendarDueRule::FiscalYearEndOffset {
+            months_after_fiscal_year_end,
+            default_fiscal_year_end,
+        } => {
+            let parsed_fiscal_year_end = context
+                .recorded_fiscal_year_end
+                .and_then(FiscalYearEnd::parse);
+            let (fiscal_year_end, due_basis) =
+                match (context.recorded_fiscal_year_end, parsed_fiscal_year_end) {
+                    (Some(_), Some(value)) => {
+                        (value, ProfileCalendarDueBasis::RecordedFiscalYearEnd)
+                    }
+                    (Some(_), None) => (
+                        default_fiscal_year_end,
+                        ProfileCalendarDueBasis::DefaultFiscalYearEndUnreadableRecordedValue,
+                    ),
+                    (None, _) => (
+                        default_fiscal_year_end,
+                        ProfileCalendarDueBasis::DefaultFiscalYearEndMissingRecordedValue,
+                    ),
+                };
 
-    let parsed_fiscal_year_end = context
-        .recorded_fiscal_year_end
-        .and_then(FiscalYearEnd::parse);
-    let (fiscal_year_end, due_basis) =
-        match (context.recorded_fiscal_year_end, parsed_fiscal_year_end) {
-            (Some(_), Some(value)) => (value, ProfileCalendarDueBasis::RecordedFiscalYearEnd),
-            (Some(_), None) => (
-                default_fiscal_year_end,
-                ProfileCalendarDueBasis::DefaultFiscalYearEndUnreadableRecordedValue,
-            ),
-            (None, _) => (
-                default_fiscal_year_end,
-                ProfileCalendarDueBasis::DefaultFiscalYearEndMissingRecordedValue,
-            ),
-        };
+            if is_in_first_fiscal_year(context.constitution_date, fiscal_year_end, context.today) {
+                return ProfileCalendarRuleEvaluation::Suppressed(ProfileCalendarSuppressedRule {
+                    reason: ProfileCalendarSuppressionReason::FirstFiscalYear,
+                });
+            }
 
-    if is_in_first_fiscal_year(context.constitution_date, fiscal_year_end, context.today) {
-        return ProfileCalendarRuleEvaluation::Suppressed(ProfileCalendarSuppressedRule {
-            reason: ProfileCalendarSuppressionReason::FirstFiscalYear,
-        });
+            let due_date = profile_calendar_due_date_for_year(
+                context.today.year(),
+                fiscal_year_end,
+                months_after_fiscal_year_end,
+            );
+            if is_before_first_applicable_annual_due(
+                context.constitution_date,
+                fiscal_year_end,
+                months_after_fiscal_year_end,
+                due_date,
+            ) {
+                return ProfileCalendarRuleEvaluation::Suppressed(ProfileCalendarSuppressedRule {
+                    reason: ProfileCalendarSuppressionReason::BeforeFirstApplicableAnnualDue,
+                });
+            }
+
+            ProfileCalendarRuleEvaluation::Scheduled(ProfileCalendarScheduledRule {
+                due_date,
+                fiscal_year_end: Some(fiscal_year_end),
+                months_after_fiscal_year_end: Some(months_after_fiscal_year_end),
+                annual_fixed_date: None,
+                due_basis,
+            })
+        }
+        ProfileCalendarDueRule::AnnualFixedDate { month, day } => {
+            let annual_fixed_date = AnnualFixedDate { month, day };
+            let due_date =
+                profile_calendar_fixed_date_for_year(context.today.year(), annual_fixed_date);
+            if is_before_first_applicable_fixed_annual_due(
+                context.constitution_date,
+                annual_fixed_date,
+                due_date,
+            ) {
+                return ProfileCalendarRuleEvaluation::Suppressed(ProfileCalendarSuppressedRule {
+                    reason: ProfileCalendarSuppressionReason::BeforeFirstApplicableAnnualDue,
+                });
+            }
+
+            ProfileCalendarRuleEvaluation::Scheduled(ProfileCalendarScheduledRule {
+                due_date,
+                fiscal_year_end: None,
+                months_after_fiscal_year_end: None,
+                annual_fixed_date: Some(annual_fixed_date),
+                due_basis: ProfileCalendarDueBasis::AnnualFixedDate,
+            })
+        }
+        ProfileCalendarDueRule::NotEncoded { reason } => {
+            ProfileCalendarRuleEvaluation::Unsupported(ProfileCalendarUnsupportedRule { reason })
+        }
     }
-
-    let due_date = profile_calendar_due_date_for_year(
-        context.today.year(),
-        fiscal_year_end,
-        months_after_fiscal_year_end,
-    );
-    if is_before_first_applicable_annual_due(
-        context.constitution_date,
-        fiscal_year_end,
-        months_after_fiscal_year_end,
-        due_date,
-    ) {
-        return ProfileCalendarRuleEvaluation::Suppressed(ProfileCalendarSuppressedRule {
-            reason: ProfileCalendarSuppressionReason::BeforeFirstApplicableAnnualDue,
-        });
-    }
-
-    ProfileCalendarRuleEvaluation::Scheduled(ProfileCalendarScheduledRule {
-        due_date,
-        fiscal_year_end,
-        months_after_fiscal_year_end,
-        due_basis,
-    })
 }
 
 /// Calculate the local fiscal-year-offset due date that falls in `due_year`.
@@ -705,6 +786,30 @@ fn is_before_first_applicable_annual_due(
             fiscal_year_end,
             months_after_fiscal_year_end,
         )
+}
+
+fn is_before_first_applicable_fixed_annual_due(
+    constitution_date: Option<Date>,
+    annual_fixed_date: AnnualFixedDate,
+    due_date: Date,
+) -> bool {
+    let Some(constitution_date) = constitution_date else {
+        return false;
+    };
+    due_date < first_applicable_fixed_annual_due_date(constitution_date, annual_fixed_date)
+}
+
+fn first_applicable_fixed_annual_due_date(
+    constitution_date: Date,
+    annual_fixed_date: AnnualFixedDate,
+) -> Date {
+    let same_year_due =
+        profile_calendar_fixed_date_for_year(constitution_date.year(), annual_fixed_date);
+    if same_year_due >= constitution_date {
+        same_year_due
+    } else {
+        profile_calendar_fixed_date_for_year(constitution_date.year() + 1, annual_fixed_date)
+    }
 }
 
 fn is_in_first_fiscal_year(
@@ -757,6 +862,14 @@ fn add_months_clamped(date: Date, months: u8) -> Date {
         day,
     )
     .expect("clamped due date is valid")
+}
+
+fn profile_calendar_fixed_date_for_year(year: i32, annual_fixed_date: AnnualFixedDate) -> Date {
+    let month = Month::try_from(annual_fixed_date.month).expect("validated fixed date month");
+    let day = annual_fixed_date
+        .day
+        .min(days_in_month(year, annual_fixed_date.month));
+    Date::from_calendar_date(year, month, day).expect("clamped fixed date is valid")
 }
 
 fn days_in_month(year: i32, month: u8) -> u8 {
@@ -965,7 +1078,7 @@ mod tests {
         );
         assert_eq!(
             scheduled.fiscal_year_end,
-            DEFAULT_PROFILE_CALENDAR_FISCAL_YEAR_END
+            Some(DEFAULT_PROFILE_CALENDAR_FISCAL_YEAR_END)
         );
     }
 
@@ -991,7 +1104,13 @@ mod tests {
             scheduled.due_basis,
             ProfileCalendarDueBasis::RecordedFiscalYearEnd
         );
-        assert_eq!(scheduled.fiscal_year_end.format_mm_dd(), "08-31");
+        assert_eq!(
+            scheduled
+                .fiscal_year_end
+                .expect("fiscal-year-end rule records the resolved fiscal year end")
+                .format_mm_dd(),
+            "08-31"
+        );
     }
 
     #[test]
@@ -1035,18 +1154,79 @@ mod tests {
     }
 
     #[test]
-    fn unsupported_profile_calendar_rule_surfaces_without_due_date() {
+    fn condominium_profile_calendar_rule_surfaces_local_fixed_advisory_date() {
         let plan = profile_calendar_plan_for(EntityKind::Condominio);
         let rule = &plan.rules[0];
+
+        assert_eq!(
+            rule.support_status,
+            ProfileCalendarRuleSupportStatus::Supported
+        );
+        assert_eq!(rule.months_after_fiscal_year_end, None);
+        assert!(rule.local_due_date_rule_configured());
+        assert_eq!(rule.law_refs.len(), 1);
+        assert_eq!(rule.law_refs[0].diploma_id, "cc");
+        assert_eq!(rule.law_refs[0].article, "1431");
+        assert!(rule.no_claims.local_advisory_only);
+        assert!(!rule.no_claims.legal_deadline_authority_claimed);
+
+        let evaluation = evaluate_profile_calendar_rule(
+            rule,
+            ProfileCalendarEvaluationContext {
+                today: date!(2026 - 01 - 15),
+                recorded_fiscal_year_end: None,
+                constitution_date: None,
+            },
+        );
+
+        let ProfileCalendarRuleEvaluation::Scheduled(scheduled) = evaluation else {
+            panic!("expected scheduled condominium local advisory, got {evaluation:?}");
+        };
+        assert_eq!(scheduled.due_date, date!(2026 - 01 - 15));
+        assert_eq!(scheduled.fiscal_year_end, None);
+        assert_eq!(scheduled.months_after_fiscal_year_end, None);
+        assert_eq!(
+            scheduled.annual_fixed_date,
+            Some(CONDOMINIUM_ANNUAL_ADVISORY_DATE)
+        );
+        assert_eq!(
+            scheduled.due_basis,
+            ProfileCalendarDueBasis::AnnualFixedDate
+        );
+
+        let suppressed = evaluate_profile_calendar_rule(
+            rule,
+            ProfileCalendarEvaluationContext {
+                today: date!(2026 - 07 - 09),
+                recorded_fiscal_year_end: None,
+                constitution_date: Some(date!(2026 - 02 - 01)),
+            },
+        );
+        assert_eq!(
+            suppressed,
+            ProfileCalendarRuleEvaluation::Suppressed(ProfileCalendarSuppressedRule {
+                reason: ProfileCalendarSuppressionReason::BeforeFirstApplicableAnnualDue
+            })
+        );
+    }
+
+    #[test]
+    fn not_encoded_profile_calendar_rule_surfaces_without_due_date() {
+        let rule = unsupported_calendar_preset(
+            "manual-calendar-gap",
+            "Manual calendar gap",
+            ProfileCalendarRuleKind::FoundationAnnualGovernanceReview,
+        );
 
         assert_eq!(
             rule.support_status,
             ProfileCalendarRuleSupportStatus::Unsupported
         );
         assert_eq!(rule.months_after_fiscal_year_end, None);
+        assert!(!rule.local_due_date_rule_configured());
         assert_eq!(
             evaluate_profile_calendar_rule(
-                rule,
+                &rule,
                 ProfileCalendarEvaluationContext {
                     today: date!(2026 - 01 - 15),
                     recorded_fiscal_year_end: None,

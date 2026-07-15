@@ -500,8 +500,8 @@ describe('buildDashboardNotifications', () => {
       dashboard({
         reminders: [
           reminder({
-            due_date: '',
-            status: 'Pending',
+            due_date: '2026-01-15',
+            status: 'DueSoon',
             severity: 'Advisory',
             reason: 'Raw backend condominium fallback.',
             entity_id: 'condo-1',
@@ -510,10 +510,14 @@ describe('buildDashboardNotifications', () => {
             source_profile: 'condominio-dl268',
             params: {
               preset_id: 'condominio-annual',
-              calendar_preset_support: 'unsupported',
-              local_due_date_rule_configured: 'false',
-              local_due_date_calculated: 'false',
+              calendar_preset_support: 'supported',
+              local_due_date_rule_configured: 'true',
+              local_due_date_calculated: 'true',
               legal_deadline_calculated: 'false',
+              annual_fixed_month: '1',
+              annual_fixed_day: '15',
+              due_year: '2026',
+              due_basis: 'annual_fixed_date',
             },
             action: {
               kind: 'open_entity',
@@ -530,16 +534,16 @@ describe('buildDashboardNotifications', () => {
     expect(items).toHaveLength(1);
     expect(items[0]).toMatchObject({
       kind: 'reminder',
-      tone: 'neutral',
-      badge: 'Pendente',
+      tone: 'accent',
+      badge: 'Próximo',
       title: 'Assembleia anual de condomínio pendente',
       action: { href: '/entidades/condo-1', label: 'Abrir entidade' },
     });
     expect(items[0]?.title).not.toBe('Condomínio Horizonte');
     expect(items[0]?.detail).toContain('Condomínio Horizonte');
-    expect(items[0]?.detail).toContain('Sem data');
+    expect(items[0]?.detail).toContain('2026-01-15');
     expect(items[0]?.detail).not.toContain('Raw backend condominium fallback');
-    expect(items[0]?.meta).toContain('Sem data');
+    expect(items[0]?.meta).toContain('Data 2026-01-15');
   });
 
   it('preserves absent-owner generated document and dispatch-evidence targets', () => {

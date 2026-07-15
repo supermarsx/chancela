@@ -2247,14 +2247,25 @@ fn supported_profile_calendar_params(
     scheduled: ProfileCalendarScheduledRule,
 ) -> BTreeMap<String, String> {
     let mut params = profile_calendar_preset_params(preset, true, true, false);
-    params.insert(
-        "months_after_fiscal_year_end".to_owned(),
-        scheduled.months_after_fiscal_year_end.to_string(),
-    );
-    params.insert(
-        "fiscal_year_end".to_owned(),
-        scheduled.fiscal_year_end.format_mm_dd(),
-    );
+    if let Some(months_after_fiscal_year_end) = scheduled.months_after_fiscal_year_end {
+        params.insert(
+            "months_after_fiscal_year_end".to_owned(),
+            months_after_fiscal_year_end.to_string(),
+        );
+    }
+    if let Some(fiscal_year_end) = scheduled.fiscal_year_end {
+        params.insert("fiscal_year_end".to_owned(), fiscal_year_end.format_mm_dd());
+    }
+    if let Some(annual_fixed_date) = scheduled.annual_fixed_date {
+        params.insert(
+            "annual_fixed_month".to_owned(),
+            annual_fixed_date.month.to_string(),
+        );
+        params.insert(
+            "annual_fixed_day".to_owned(),
+            annual_fixed_date.day.to_string(),
+        );
+    }
     params.insert("due_year".to_owned(), scheduled.due_date.year().to_string());
     params.insert(
         "due_basis".to_owned(),
@@ -2381,7 +2392,9 @@ fn supported_profile_calendar_plan_view(
             local_due_date_rule_configured: true,
             local_due_date_calculated: true,
             legal_deadline_calculated: false,
-            fiscal_year_end: Some(scheduled.fiscal_year_end.format_mm_dd()),
+            fiscal_year_end: scheduled
+                .fiscal_year_end
+                .map(|fiscal_year_end| fiscal_year_end.format_mm_dd()),
             due_year: Some(scheduled.due_date.year()),
             due_basis: Some(scheduled.due_basis.as_str().to_owned()),
             unsupported_reason: None,
@@ -2433,12 +2446,24 @@ fn profile_calendar_due_rule_view(preset: &CalendarPreset) -> DashboardProfileCa
             kind: preset.due_rule.kind().to_owned(),
             months_after_fiscal_year_end: Some(months_after_fiscal_year_end),
             default_fiscal_year_end: Some(default_fiscal_year_end.format_mm_dd()),
+            annual_fixed_month: None,
+            annual_fixed_day: None,
+            unsupported_reason: None,
+        },
+        ProfileCalendarDueRule::AnnualFixedDate { month, day } => DashboardProfileCalendarDueRule {
+            kind: preset.due_rule.kind().to_owned(),
+            months_after_fiscal_year_end: None,
+            default_fiscal_year_end: None,
+            annual_fixed_month: Some(month),
+            annual_fixed_day: Some(day),
             unsupported_reason: None,
         },
         ProfileCalendarDueRule::NotEncoded { reason } => DashboardProfileCalendarDueRule {
             kind: preset.due_rule.kind().to_owned(),
             months_after_fiscal_year_end: None,
             default_fiscal_year_end: None,
+            annual_fixed_month: None,
+            annual_fixed_day: None,
             unsupported_reason: Some(reason.as_str().to_owned()),
         },
     }
@@ -4484,7 +4509,7 @@ mod tests {
     }
 
     #[test]
-    fn reminder_generated_absent_owner_no_due_date_does_not_evict_dated_reminders_before_limit() {
+    fn reminder_generated_absent_owner_no_due_date_does_not_evict_earliest_dated_reminder() {
         let mut fixture = reminder_fixture();
         let (entities, books, acts, generated_dispatch_evidence) =
             sealed_condominium_dispatch_fixture(&[]);
@@ -4513,8 +4538,8 @@ mod tests {
         );
 
         assert_eq!(reminders.len(), 1);
-        assert_eq!(reminders[0].source_rule, "csc-art376-annual");
-        assert_eq!(reminders[0].due_date, "2026-03-31");
+        assert_eq!(reminders[0].source_rule, "condominio-annual");
+        assert_eq!(reminders[0].due_date, "2026-01-15");
         assert_eq!(reminders[0].status, "Overdue");
     }
 
@@ -4778,7 +4803,7 @@ mod tests {
     }
 
     #[test]
-    fn unsupported_profile_calendar_without_due_offset_surfaces_no_due_date_advisory() {
+    fn condominium_profile_calendar_surfaces_fixed_annual_date_advisory() {
         let entity = entity_of(EntityKind::Condominio);
         let mut entities = HashMap::new();
         entities.insert(entity.id, entity.clone());
@@ -4796,16 +4821,21 @@ mod tests {
         assert_eq!(reminder.source_rule, "condominio-annual");
         assert_eq!(reminder.source_profile, "condominio-dl268");
         assert_eq!(reminder.entity_id, entity.id.to_string());
-        assert_eq!(reminder.due_date, "");
-        assert_eq!(reminder.status, "Pending");
+        assert_eq!(reminder.due_date, "2026-01-15");
+        assert_eq!(reminder.status, "DueSoon");
         assert_eq!(reminder.severity, "Advisory");
-        assert!(reminder.law_refs.is_empty());
+        assert_eq!(reminder.law_refs.len(), 1);
+        assert_eq!(reminder.law_refs[0].diploma_id, "cc");
+        assert_eq!(reminder.law_refs[0].article, "1431");
+        assert_eq!(reminder.law_refs[0].verification, "Pending");
+        assert_eq!(reminder.law_refs[0].source_url, None);
+        assert!(!reminder.law_refs[0].source_complete);
         assert_eq!(
             reminder
                 .params
                 .get("calendar_preset_support")
                 .map(String::as_str),
-            Some("unsupported")
+            Some("supported")
         );
         assert_eq!(
             reminder.params.get("preset_id").map(String::as_str),
@@ -4820,7 +4850,7 @@ mod tests {
                 .params
                 .get("local_due_date_rule_configured")
                 .map(String::as_str),
-            Some("false")
+            Some("true")
         );
         assert_eq!(
             reminder
@@ -4834,14 +4864,26 @@ mod tests {
                 .params
                 .get("local_due_date_calculated")
                 .map(String::as_str),
-            Some("false")
+            Some("true")
         );
         assert_eq!(
             reminder
                 .params
-                .get("unsupported_reason")
+                .get("annual_fixed_month")
                 .map(String::as_str),
-            Some("missing_local_due_date_rule")
+            Some("1")
+        );
+        assert_eq!(
+            reminder.params.get("annual_fixed_day").map(String::as_str),
+            Some("15")
+        );
+        assert_eq!(
+            reminder.params.get("due_year").map(String::as_str),
+            Some("2026")
+        );
+        assert_eq!(
+            reminder.params.get("due_basis").map(String::as_str),
+            Some("annual_fixed_date")
         );
         assert_eq!(
             reminder.params.get("rule_kind").map(String::as_str),
@@ -4856,12 +4898,16 @@ mod tests {
             Some("pending_unverified")
         );
         assert!(
-            !reminder.params.contains_key("due_year"),
-            "unsupported presets must not invent a due year"
+            !reminder.params.contains_key("months_after_fiscal_year_end"),
+            "fixed-date condominium presets must not pretend to use a fiscal-year offset"
         );
         assert!(
-            !reminder.params.contains_key("due_basis"),
-            "unsupported presets must not invent a due basis"
+            !reminder.params.contains_key("fiscal_year_end"),
+            "fixed-date condominium presets must not invent a fiscal-year basis"
+        );
+        assert!(
+            !reminder.params.contains_key("unsupported_reason"),
+            "supported fixed-date condominium presets must not report an unsupported reason"
         );
         for key in [
             "legal_deadline_authority_claimed",
@@ -4880,45 +4926,47 @@ mod tests {
             assert_eq!(
                 reminder.params.get(key).map(String::as_str),
                 Some("false"),
-                "{key} must remain false for unsupported profile-calendar reminders"
+                "{key} must remain false for condominium profile-calendar reminders"
             );
         }
         let plan = reminder
             .profile_calendar_plan
             .as_ref()
-            .expect("unsupported profile calendar reminder should expose typed plan");
+            .expect("condominium profile calendar reminder should expose typed plan");
         assert_eq!(plan.rule_kind, "condominium_annual_assembly");
-        assert_eq!(plan.support_status, "unsupported");
+        assert_eq!(plan.support_status, "supported");
         assert_eq!(plan.review_status, "pending_source_review");
         assert_eq!(plan.source_status, "pending_unverified");
-        assert_eq!(plan.due_rule.kind, "not_encoded");
-        assert_eq!(
-            plan.due_rule.unsupported_reason.as_deref(),
-            Some("missing_local_due_date_rule")
-        );
-        assert!(!plan.evaluation.local_due_date_rule_configured);
-        assert!(!plan.evaluation.local_due_date_calculated);
+        assert_eq!(plan.due_rule.kind, "annual_fixed_date");
+        assert_eq!(plan.due_rule.months_after_fiscal_year_end, None);
+        assert_eq!(plan.due_rule.default_fiscal_year_end, None);
+        assert_eq!(plan.due_rule.annual_fixed_month, Some(1));
+        assert_eq!(plan.due_rule.annual_fixed_day, Some(15));
+        assert_eq!(plan.due_rule.unsupported_reason, None);
+        assert!(plan.evaluation.local_due_date_rule_configured);
+        assert!(plan.evaluation.local_due_date_calculated);
         assert!(!plan.evaluation.legal_deadline_calculated);
+        assert_eq!(plan.evaluation.fiscal_year_end, None);
+        assert_eq!(plan.evaluation.due_year, Some(2026));
         assert_eq!(
-            plan.evaluation.unsupported_reason.as_deref(),
-            Some("missing_local_due_date_rule")
+            plan.evaluation.due_basis.as_deref(),
+            Some("annual_fixed_date")
         );
+        assert_eq!(plan.evaluation.unsupported_reason, None);
         assert!(!plan.no_claims.external_delivery_claimed);
         assert!(
             reminder
                 .reason
-                .contains("no local due-date rule or fiscal-year offset is configured/encoded")
+                .contains("using the local fixed annual advisory date")
         );
         assert!(
             reminder
                 .reason
-                .contains("does not calculate a legal deadline for this preset")
+                .contains("profile-specific exceptions remain manual context")
         );
         assert!(
-            reminders
-                .iter()
-                .all(|reminder| reminder.due_date.is_empty() && reminder.status == "Pending"),
-            "condominium profile has no encoded fiscal-year offset, so it must not emit a false due reminder"
+            reminder.reason.contains("does not claim a legal deadline"),
+            "condominium profile-calendar copy must keep the no-legal-claim boundary"
         );
     }
 

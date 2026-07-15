@@ -99,36 +99,50 @@ function reminderFor(
 
 function profileCalendarPlan(
   supportStatus: 'supported' | 'unsupported' = 'supported',
+  preset: 'commercial' | 'condominium' = supportStatus === 'unsupported'
+    ? 'condominium'
+    : 'commercial',
 ): NonNullable<DashboardReminder['profile_calendar_plan']> {
-  return {
-    preset_id: supportStatus === 'supported' ? 'csc-art376-annual' : 'condominio-annual',
-    preset_label:
-      supportStatus === 'supported'
-        ? 'Assembleia geral anual (CSC art. 376.º)'
-        : 'Assembleia ordinária anual de condóminos (DL 268/94)',
-    rule_kind:
-      supportStatus === 'supported'
-        ? 'commercial_company_annual_general_meeting'
-        : 'condominium_annual_assembly',
-    support_status: supportStatus,
-    review_status: 'pending_source_review',
-    source_status: 'pending_unverified',
-    due_rule:
-      supportStatus === 'supported'
+  const condominium = preset === 'condominium';
+  const dueRule =
+    supportStatus === 'supported' && condominium
+      ? {
+          kind: 'annual_fixed_date',
+          months_after_fiscal_year_end: null,
+          default_fiscal_year_end: null,
+          annual_fixed_month: 1,
+          annual_fixed_day: 15,
+          unsupported_reason: null,
+        }
+      : supportStatus === 'supported'
         ? {
             kind: 'fiscal_year_end_offset',
             months_after_fiscal_year_end: 3,
             default_fiscal_year_end: '12-31',
+            annual_fixed_month: null,
+            annual_fixed_day: null,
             unsupported_reason: null,
           }
         : {
             kind: 'not_encoded',
             months_after_fiscal_year_end: null,
             default_fiscal_year_end: null,
+            annual_fixed_month: null,
+            annual_fixed_day: null,
             unsupported_reason: 'missing_local_due_date_rule',
-          },
-    evaluation:
-      supportStatus === 'supported'
+          };
+  const evaluation =
+    supportStatus === 'supported' && condominium
+      ? {
+          local_due_date_rule_configured: true,
+          local_due_date_calculated: true,
+          legal_deadline_calculated: false,
+          fiscal_year_end: null,
+          due_year: 2026,
+          due_basis: 'annual_fixed_date',
+          unsupported_reason: null,
+        }
+      : supportStatus === 'supported'
         ? {
             local_due_date_rule_configured: true,
             local_due_date_calculated: true,
@@ -146,7 +160,21 @@ function profileCalendarPlan(
             due_year: null,
             due_basis: null,
             unsupported_reason: 'missing_local_due_date_rule',
-          },
+          };
+
+  return {
+    preset_id: condominium ? 'condominio-annual' : 'csc-art376-annual',
+    preset_label: condominium
+      ? 'Assembleia ordinária anual de condóminos (DL 268/94)'
+      : 'Assembleia geral anual (CSC art. 376.º)',
+    rule_kind: condominium
+      ? 'condominium_annual_assembly'
+      : 'commercial_company_annual_general_meeting',
+    support_status: supportStatus,
+    review_status: 'pending_source_review',
+    source_status: 'pending_unverified',
+    due_rule: dueRule,
+    evaluation,
     no_claims: {
       local_advisory_only: true,
       legal_deadline_authority_claimed: false,
@@ -552,16 +580,16 @@ describe('DashboardPage', () => {
     expect(screen.getAllByRole('row')).toHaveLength(2);
   });
 
-  it('renders unsupported profile-calendar presets as pending no-due-date advisories', async () => {
+  it('renders condominium fixed-date profile-calendar reminders as advisory work', async () => {
     const dashboard: Dashboard = {
       ...baseDashboard,
       reminders: [
         {
-          due_date: '',
+          due_date: '2026-01-15',
           severity: 'Advisory',
-          status: 'Pending',
+          status: 'DueSoon',
           reason:
-            'The condominium calendar preset "Assembleia ordinária anual de condóminos (DL 268/94)" is encoded in the entity profile, but no local due-date rule or fiscal-year offset is configured/encoded for it. Chancela does not calculate a legal deadline for this preset; this advisory only makes the unsupported preset visible.',
+            'The condominium calendar preset "Assembleia ordinária anual de condóminos (DL 268/94)" produces a local advisory date of 2026-01-15 (using the local fixed annual advisory date; profile-specific exceptions remain manual context). No sealed or archived condominium assembly act dated 2026 is recorded for this entity. Chancela does not claim a legal deadline, legal calendar authority, or legal compliance from this local plan.',
           entity_id: 'condo-1',
           entity_name: 'Condomínio Horizonte',
           source_rule: 'condominio-annual',
@@ -569,10 +597,15 @@ describe('DashboardPage', () => {
           params: {
             preset_id: 'condominio-annual',
             preset_label: 'Assembleia ordinária anual de condóminos (DL 268/94)',
-            local_due_date_rule_configured: 'false',
+            local_due_date_rule_configured: 'true',
+            local_due_date_calculated: 'true',
             legal_deadline_calculated: 'false',
+            annual_fixed_month: '1',
+            annual_fixed_day: '15',
+            due_year: '2026',
+            due_basis: 'annual_fixed_date',
           },
-          profile_calendar_plan: profileCalendarPlan('unsupported'),
+          profile_calendar_plan: profileCalendarPlan('supported', 'condominium'),
           law_refs: [],
           action: {
             kind: 'open_entity',
@@ -581,8 +614,8 @@ describe('DashboardPage', () => {
             route: '/entidades/condo-1',
           },
           recommended_next_steps: [
-            'Review the encoded profile calendar preset manually.',
-            'Add a local due-date rule only after the calendar rule is verified and encoded.',
+            'Review the annual condominium assembly record.',
+            'Seal or archive the assembly minutes once approved.',
           ],
         },
       ],
@@ -597,21 +630,23 @@ describe('DashboardPage', () => {
     expect(within(item).getByText('Assembleia anual de condomínio pendente')).toBeTruthy();
     const link = within(item).getByRole('link', { name: 'Abrir entidade' });
     expect(link.getAttribute('href')).toBe('/entidades/condo-1');
-    expect(within(item).getByText('Pendente')).toBeTruthy();
-    expect(within(item).getByText('Sem data')).toBeTruthy();
+    expect(within(item).getByText('Próximo')).toBeTruthy();
+    expect(within(item).getByText('Data 2026-01-15')).toBeTruthy();
     expect(
       within(item).getByText(
-        'Não há ato anual selado ou arquivado para Condomínio Horizonte em Sem data. O lembrete é consultivo e deriva de condominio-annual.',
+        'Não há ato anual selado ou arquivado para Condomínio Horizonte em 2026-01-15. O lembrete é consultivo e deriva de condominio-annual.',
       ),
     ).toBeTruthy();
     expect(within(item).getByText('Fonte condominio-annual / condominio-dl268')).toBeTruthy();
     expect(
-      within(item).getByText('Calendário do perfil: sem regra local consultiva; fonte por rever'),
+      within(item).getByText(
+        'Calendário do perfil: regra local consultiva disponível; fonte por rever',
+      ),
     ).toBeTruthy();
     const itemText = item.textContent ?? '';
     expect(itemText).not.toContain('The condominium calendar preset');
-    expect(itemText).not.toContain('does not calculate a legal deadline');
-    expect(itemText).not.toContain('Profile calendar unsupported / pending_source_review');
+    expect(itemText).not.toContain('does not claim a legal deadline');
+    expect(itemText).not.toContain('Profile calendar supported / pending_source_review');
     expect(itemText).not.toContain('pending_source_review');
   });
 

@@ -253,8 +253,8 @@ describe('NotificationBell', () => {
           body: dashboard({
             reminders: [
               actionableReminder({
-                due_date: '',
-                status: 'Pending',
+                due_date: '2026-01-15',
+                status: 'DueSoon',
                 reason: 'Raw backend condominium fallback.',
                 entity_id: 'condo-1',
                 entity_name: 'Condomínio Horizonte',

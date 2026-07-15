@@ -2745,6 +2745,8 @@ pub struct DashboardProfileCalendarDueRule {
     pub kind: String,
     pub months_after_fiscal_year_end: Option<u8>,
     pub default_fiscal_year_end: Option<String>,
+    pub annual_fixed_month: Option<u8>,
+    pub annual_fixed_day: Option<u8>,
     pub unsupported_reason: Option<String>,
 }
 

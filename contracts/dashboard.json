@@ -304,6 +304,8 @@
           "kind": "fiscal_year_end_offset",
           "months_after_fiscal_year_end": 3,
           "default_fiscal_year_end": "12-31",
+          "annual_fixed_month": null,
+          "annual_fixed_day": null,
           "unsupported_reason": null
         },
         "evaluation": {
@@ -356,23 +358,23 @@
       ]
     },
     {
-      "due_date": "",
+      "due_date": "2026-01-15",
       "severity": "Advisory",
-      "status": "Pending",
-      "reason": "The condominium calendar preset \"Assembleia ordinária anual de condóminos (DL 268/94)\" is encoded in the entity profile, but no local due-date rule or fiscal-year offset is configured/encoded for it. Chancela does not calculate a legal deadline for this preset; this advisory only makes the unsupported preset visible.",
+      "status": "DueSoon",
+      "reason": "The condominium calendar preset \"Assembleia ordinária anual de condóminos (DL 268/94)\" produces a local advisory date of 2026-01-15 (using the local fixed annual advisory date; profile-specific exceptions remain manual context). No sealed or archived condominium assembly act dated 2026 is recorded for this entity. Chancela does not claim a legal deadline, legal calendar authority, or legal compliance from this local plan.",
       "entity_id": "2f1c8e40-0000-4000-8000-000000000002",
       "entity_name": "Condomínio Horizonte",
       "source_rule": "condominio-annual",
       "source_profile": "condominio-dl268",
       "params": {
-        "calendar_preset_support": "unsupported",
+        "calendar_preset_support": "supported",
         "preset_id": "condominio-annual",
         "preset_label": "Assembleia ordinária anual de condóminos (DL 268/94)",
         "rule_kind": "condominium_annual_assembly",
         "review_status": "pending_source_review",
         "source_status": "pending_unverified",
-        "local_due_date_rule_configured": "false",
-        "local_due_date_calculated": "false",
+        "local_due_date_rule_configured": "true",
+        "local_due_date_calculated": "true",
         "legal_deadline_calculated": "false",
         "local_advisory_only": "true",
         "legal_deadline_authority_claimed": "false",
@@ -387,29 +389,34 @@
         "dre_verification_claimed": "false",
         "provider_effect_claimed": "false",
         "certification_claimed": "false",
-        "unsupported_reason": "missing_local_due_date_rule"
+        "annual_fixed_month": "1",
+        "annual_fixed_day": "15",
+        "due_year": "2026",
+        "due_basis": "annual_fixed_date"
       },
       "profile_calendar_plan": {
         "preset_id": "condominio-annual",
         "preset_label": "Assembleia ordinária anual de condóminos (DL 268/94)",
         "rule_kind": "condominium_annual_assembly",
-        "support_status": "unsupported",
+        "support_status": "supported",
         "review_status": "pending_source_review",
         "source_status": "pending_unverified",
         "due_rule": {
-          "kind": "not_encoded",
+          "kind": "annual_fixed_date",
           "months_after_fiscal_year_end": null,
           "default_fiscal_year_end": null,
-          "unsupported_reason": "missing_local_due_date_rule"
+          "annual_fixed_month": 1,
+          "annual_fixed_day": 15,
+          "unsupported_reason": null
         },
         "evaluation": {
-          "local_due_date_rule_configured": false,
-          "local_due_date_calculated": false,
+          "local_due_date_rule_configured": true,
+          "local_due_date_calculated": true,
           "legal_deadline_calculated": false,
           "fiscal_year_end": null,
-          "due_year": null,
-          "due_basis": null,
-          "unsupported_reason": "missing_local_due_date_rule"
+          "due_year": 2026,
+          "due_basis": "annual_fixed_date",
+          "unsupported_reason": null
         },
         "no_claims": {
           "local_advisory_only": true,
@@ -427,7 +434,19 @@
           "certification_claimed": false
         }
       },
-      "law_refs": [],
+      "law_refs": [
+        {
+          "diploma_id": "cc",
+          "article": "1431",
+          "label": "Artigo 1431.º",
+          "heading": "",
+          "verification": "Pending",
+          "source_url": null,
+          "source_complete": false,
+          "review_method": null,
+          "review_note": null
+        }
+      ],
       "action": {
         "kind": "open_entity",
         "label_key": "notifications.reminder.annual.action",
@@ -435,8 +454,8 @@
         "route": "/entidades/2f1c8e40-0000-4000-8000-000000000002"
       },
       "recommended_next_steps": [
-        "Review the encoded profile calendar preset manually.",
-        "Add a local due-date rule only after the calendar rule is verified and encoded."
+        "Review the annual condominium assembly record.",
+        "Seal or archive the assembly minutes once approved."
       ]
     },
     {

@@ -589,16 +589,14 @@ function assertDataKeyOpsMigrationEvidence(
   inEnum(DATA_DATABASE_FORMATS, evidence.database_format, `${label}.database_format`);
   inEnum(DATA_KEY_CONFIG_STATUSES, evidence.key_config, `${label}.key_config`);
   expect(typeof evidence.sqlcipher_available, `${label}.sqlcipher_available`).toBe('boolean');
-  expect(evidence.database_file.length, `${label}.database_file should be non-empty`).toBeGreaterThan(
-    0,
-  );
+  expect(
+    evidence.database_file.length,
+    `${label}.database_file should be non-empty`,
+  ).toBeGreaterThan(0);
   return evidence;
 }
 
-function assertDataKeyOpsMigrationStep(
-  obj: unknown,
-  label: string,
-): DataKeyOpsMigrationStep {
+function assertDataKeyOpsMigrationStep(obj: unknown, label: string): DataKeyOpsMigrationStep {
   const step = assertExactKeys<DataKeyOpsMigrationStep>(
     obj,
     { order: true, title: true, detail: true, source_destructive: true },
@@ -644,7 +642,9 @@ function assertDataKeyOpsStatus(obj: unknown, label: string): DataKeyOpsStatus {
   );
   expect(typeof status.sqlcipher_available, `${label}.sqlcipher_available`).toBe('boolean');
   inEnum(DATA_KEY_CONFIG_STATUSES, status.key_config, `${label}.key_config`);
-  expect(status.database_file.length, `${label}.database_file should be non-empty`).toBeGreaterThan(0);
+  expect(status.database_file.length, `${label}.database_file should be non-empty`).toBeGreaterThan(
+    0,
+  );
   inEnum(DATA_DATABASE_FORMATS, status.database_format, `${label}.database_format`);
   inEnum(DATA_KEY_OPS_PLANS, status.plan, `${label}.plan`);
   assertDataKeyOpsMigrationPlan(status.migration_plan, `${label}.migration_plan`);
@@ -690,12 +690,14 @@ function assertDataDatabaseEncryptionStatus(
   if (encryption.key_ops_plan !== null) {
     inEnum(DATA_KEY_OPS_PLANS, encryption.key_ops_plan, `${label}.key_ops_plan`);
   }
-  expect(typeof encryption.plaintext_migration_pending, `${label}.plaintext_migration_pending`).toBe(
-    'boolean',
-  );
-  expect(typeof encryption.plaintext_migration_blocked, `${label}.plaintext_migration_blocked`).toBe(
-    'boolean',
-  );
+  expect(
+    typeof encryption.plaintext_migration_pending,
+    `${label}.plaintext_migration_pending`,
+  ).toBe('boolean');
+  expect(
+    typeof encryption.plaintext_migration_blocked,
+    `${label}.plaintext_migration_blocked`,
+  ).toBe('boolean');
   if (encryption.key_ops !== null) assertDataKeyOpsStatus(encryption.key_ops, `${label}.key_ops`);
   if (encryption.key_ops_error !== undefined) {
     expect(encryption.key_ops_error.length, `${label}.key_ops_error non-empty`).toBeGreaterThan(0);
@@ -4290,6 +4292,8 @@ describe('contract fixtures parse through the real client', () => {
             kind: true,
             months_after_fiscal_year_end: true,
             default_fiscal_year_end: true,
+            annual_fixed_month: true,
+            annual_fixed_day: true,
             unsupported_reason: true,
           },
           `${label}.profile_calendar_plan.due_rule`,
@@ -4391,15 +4395,19 @@ describe('contract fixtures parse through the real client', () => {
         (reminder) =>
           reminder.source_rule === 'condominio-annual' &&
           reminder.source_profile === 'condominio-dl268' &&
-          reminder.due_date === '' &&
-          reminder.status === 'Pending' &&
-          reminder.params?.calendar_preset_support === 'unsupported' &&
-          reminder.params?.local_due_date_rule_configured === 'false' &&
-          reminder.params?.local_due_date_calculated === 'false' &&
+          reminder.due_date === '2026-01-15' &&
+          reminder.status === 'DueSoon' &&
+          reminder.params?.calendar_preset_support === 'supported' &&
+          reminder.params?.local_due_date_rule_configured === 'true' &&
+          reminder.params?.local_due_date_calculated === 'true' &&
           reminder.params?.legal_deadline_calculated === 'false' &&
           reminder.params?.rule_kind === 'condominium_annual_assembly' &&
           reminder.params?.review_status === 'pending_source_review' &&
           reminder.params?.source_status === 'pending_unverified' &&
+          reminder.params?.annual_fixed_month === '1' &&
+          reminder.params?.annual_fixed_day === '15' &&
+          reminder.params?.due_year === '2026' &&
+          reminder.params?.due_basis === 'annual_fixed_date' &&
           reminder.params?.legal_deadline_authority_claimed === 'false' &&
           reminder.params?.legal_calendar_authority_claimed === 'false' &&
           reminder.params?.legal_compliance_claimed === 'false' &&
@@ -4408,17 +4416,19 @@ describe('contract fixtures parse through the real client', () => {
           reminder.params?.webhook_delivery_claimed === 'false' &&
           reminder.params?.workflow_completion_claimed === 'false' &&
           reminder.params?.compliance_status_claimed === 'false' &&
-          reminder.params?.unsupported_reason === 'missing_local_due_date_rule' &&
-          reminder.params?.due_year === undefined &&
-          reminder.params?.due_basis === undefined &&
+          reminder.params?.unsupported_reason === undefined &&
+          reminder.params?.months_after_fiscal_year_end === undefined &&
+          reminder.params?.fiscal_year_end === undefined &&
           reminder.profile_calendar_plan?.rule_kind === 'condominium_annual_assembly' &&
-          reminder.profile_calendar_plan?.support_status === 'unsupported' &&
-          reminder.profile_calendar_plan?.due_rule.kind === 'not_encoded' &&
-          reminder.profile_calendar_plan?.evaluation.unsupported_reason ===
-            'missing_local_due_date_rule' &&
-          reminder.reason.includes('does not calculate a legal deadline'),
+          reminder.profile_calendar_plan?.support_status === 'supported' &&
+          reminder.profile_calendar_plan?.due_rule.kind === 'annual_fixed_date' &&
+          reminder.profile_calendar_plan?.due_rule.annual_fixed_month === 1 &&
+          reminder.profile_calendar_plan?.due_rule.annual_fixed_day === 15 &&
+          reminder.profile_calendar_plan?.evaluation.due_basis === 'annual_fixed_date' &&
+          reminder.profile_calendar_plan?.evaluation.unsupported_reason === null &&
+          reminder.reason.includes('does not claim a legal deadline'),
       ),
-      'Dashboard.reminders should include a pending no-due-date unsupported profile-calendar advisory',
+      'Dashboard.reminders should include a supported fixed-date condominium profile-calendar advisory',
     ).toBe(true);
     expect(Array.isArray(dash.recent_events)).toBe(true);
     // recent_events reuse the ledger event shape.
@@ -5748,7 +5758,15 @@ describe('contract fixtures parse through the real client', () => {
       { diploma: true, article: true, complete: true },
       `${label}.source`,
       // `review_method`/`review_note` ride the wire only for the `automated_review` tier.
-      ['dr_reference', 'dr_date', 'url', 'source_digest', 'retrieved_at', 'review_method', 'review_note'],
+      [
+        'dr_reference',
+        'dr_date',
+        'url',
+        'source_digest',
+        'retrieved_at',
+        'review_method',
+        'review_note',
+      ],
     );
     expect(typeof source.complete, `${label}.source.complete`).toBe('boolean');
     // A complete source cites a real origin (diploma + article + dr_reference + url) — the

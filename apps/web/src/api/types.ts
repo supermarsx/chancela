@@ -2079,6 +2079,8 @@ export interface DashboardProfileCalendarDueRule {
   kind: string;
   months_after_fiscal_year_end: number | null;
   default_fiscal_year_end: string | null;
+  annual_fixed_month: number | null;
+  annual_fixed_day: number | null;
   unsupported_reason: string | null;
 }
 
