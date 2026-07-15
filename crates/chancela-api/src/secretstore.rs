@@ -1289,8 +1289,8 @@ mod windows_dpapi {
 //
 // The GDPR-erasure guarantee ("crypto-erase"): each subject's erasable PII is encrypted under a
 // fresh random 32-byte DEK; that DEK is itself AEAD-wrapped under a subject-bound wrapping key
-// derived from the internally-resolved root, and only the *wrapped* DEK is persisted (in
-// `subject_keys.wrapped_dek`). To erase a subject the store overwrites `wrapped_dek` with zeros:
+// derived from store-bound key material, and only the *wrapped* DEK is persisted (in
+// `subject_keys.wrapped_dek`). To erase a subject the store replaces `wrapped_dek` with an empty blob:
 // [`SubjectDekCrypto::unwrap_dek`] then fails (AEAD auth / parse error), the DEK is unrecoverable,
 // and every field ciphertext under it — in live rows, backups, and archives alike — is dead. This
 // is what makes "erased" mean *irrecoverable even in backups you cannot reach and rewrite*.
@@ -1313,6 +1313,12 @@ const SUBJECT_AAD_DOMAIN: &[u8] = b"chancela.subject-dek.aad.v1";
 /// The AAD `field` label used when wrapping the DEK itself (vs. a real PII field name).
 #[allow(dead_code)]
 const SUBJECT_DEK_FIELD: &str = "dek";
+/// HKDF salt for deriving the subject-DEK master from a resolved store's CMK (non-secret).
+#[allow(dead_code)]
+const SUBJECT_DEK_ROOT_SALT: &[u8] = b"chancela.subject-dek.root.salt.v1";
+/// HKDF info separating the subject-DEK master (derived from the CMK) from credential-field use.
+#[allow(dead_code)]
+const SUBJECT_DEK_ROOT_FROM_CMK_INFO: &[u8] = b"chancela.subject-dek.root-from-cmk.v1";
 
 /// A live, unwrapped 32-byte subject DEK held in a zeroizing buffer (wiped on drop). Used to
 /// encrypt/decrypt the subject's PII fields; never persisted.
@@ -1322,14 +1328,14 @@ pub type LiveDek = Zeroizing<[u8; KEY_BYTES]>;
 /// The opaque at-rest form of a wrapped subject DEK, persisted in `subject_keys.wrapped_dek`.
 ///
 /// Byte layout: `key_version (4 BE) ‖ nonce (24) ‖ ciphertext (32-byte DEK + 16-byte Poly1305 tag)`
-/// = 76 bytes. Treat it as an opaque blob; the store persists and later zeroes these bytes and must
-/// not depend on the internal structure.
+/// = 76 bytes. Treat it as an opaque blob; the store persists these bytes and later replaces them
+/// with an empty blob, and must not depend on the internal structure.
 #[allow(dead_code)]
 pub struct WrappedDek(pub Vec<u8>);
 
 #[allow(dead_code)]
 impl WrappedDek {
-    /// The opaque blob bytes to persist (or, once erased, to overwrite with zeros).
+    /// The opaque blob bytes to persist. The erased marker is an empty persisted blob.
     pub fn as_bytes(&self) -> &[u8] {
         &self.0
     }
@@ -1354,8 +1360,8 @@ impl fmt::Debug for WrappedDek {
 #[derive(Debug)]
 pub enum SubjectDekError {
     /// An AEAD operation failed: DEK wrap/unwrap or field encrypt/decrypt. On unwrap/decrypt this
-    /// signals a destroyed (zeroed) DEK, a wrong subject/binding, or tampered ciphertext — i.e. the
-    /// crypto-erase outcome — not a caller mistake.
+    /// signals a destroyed DEK, a wrong subject/binding, or tampered ciphertext — i.e. the
+    /// crypto-erase outcome once the persisted blob is empty — not a caller mistake.
     Aead(&'static str),
     /// A wrapped-DEK blob or field envelope was structurally invalid (too short, bad base64, wrong
     /// unwrapped length).
@@ -1409,9 +1415,10 @@ fn build_subject_aad(subject_id: &str, field: &str, key_version: u32) -> Vec<u8>
 /// buffer) and derives subject-bound wrapping keys from it on demand. `Debug` is redacted; the root
 /// bytes are never printed.
 ///
-/// The API layer (wp26-gdpr P3) constructs this from the same internally-resolved root the
-/// credential secretstore uses; the root itself is supplied directly (the resolver already knows
-/// how to produce it) so this type stays a pure crypto engine with no I/O.
+/// The low-level constructor accepts a supplied root so this type stays a pure crypto engine with no
+/// I/O. API callers that already hold a resolved [`CredentialSecretStore`] should use
+/// [`CredentialSecretStore::subject_dek_crypto`] so the subject-DEK root is derived from the store's
+/// current CMK instead.
 #[allow(dead_code)]
 pub struct SubjectDekCrypto {
     root: Zeroizing<[u8; KEY_BYTES]>,
@@ -1492,8 +1499,8 @@ impl SubjectDekCrypto {
 
     /// Unwrap a persisted [`WrappedDek`] blob back to the live DEK.
     ///
-    /// **This is the crypto-erase proof.** Once the store overwrites `wrapped_dek` with zeros (or
-    /// the blob is otherwise empty/corrupt), the AEAD authentication / parse fails and this returns
+    /// **This is the crypto-erase proof.** Once the store replaces `wrapped_dek` with an empty blob
+    /// (or the blob is otherwise corrupt), the AEAD authentication / parse fails and this returns
     /// `Err` — there is no path to recover the DEK, so all field ciphertext under it is permanently
     /// irrecoverable.
     pub fn unwrap_dek(&self, subject_id: &str, wrapped: &[u8]) -> Result<LiveDek, SubjectDekError> {
@@ -1611,6 +1618,36 @@ impl SubjectDekCrypto {
                 )
             })?;
         Ok(Zeroizing::new(plaintext))
+    }
+}
+
+#[allow(dead_code)]
+impl CredentialSecretStore {
+    /// Build a per-subject DEK crypto-erasure engine bound to this store's resolved key material.
+    ///
+    /// [`CredentialSecretStore::from_root`] does not retain the raw 32-byte root — it keeps only the
+    /// derived CMK — so a caller cannot recover a root to hand to [`SubjectDekCrypto::new`]. This
+    /// constructor derives the subject-DEK master from the store's current CMK via HKDF-SHA256 with
+    /// a dedicated info label ([`SUBJECT_DEK_ROOT_FROM_CMK_INFO`]), giving sound domain separation
+    /// from credential-field wrapping while working with what the store actually holds. The API
+    /// erasure workflow (wp26-gdpr P3) calls this rather than [`SubjectDekCrypto::new`].
+    pub fn subject_dek_crypto(&self) -> SubjectDekCrypto {
+        // The current key version is always populated (`from_root` seeds it); this cannot fail.
+        let cmk = self
+            .inner
+            .keys
+            .get(&self.inner.current_version)
+            .expect("current key version is always present in the store key ring");
+        let mut root = [0u8; KEY_BYTES];
+        hkdf_sha256(
+            SUBJECT_DEK_ROOT_SALT,
+            &cmk[..],
+            SUBJECT_DEK_ROOT_FROM_CMK_INFO,
+            &mut root,
+        );
+        let crypto = SubjectDekCrypto::new(root);
+        root.zeroize();
+        crypto
     }
 }
 
@@ -2095,16 +2132,16 @@ mod tests {
             .encrypt_field(&dek, subject, "email", b"amelia@example.test")
             .expect("encrypt email");
 
-        // Simulate erasure: the store overwrites the wrapped_dek column with zeros.
+        // Simulate erasure: the store replaces the wrapped_dek column with an empty blob.
+        assert!(
+            crypto.unwrap_dek(subject, &[]).is_err(),
+            "an empty wrapped_dek must never unwrap"
+        );
+        // A zero-filled blob also fails as corrupt/tampered material (no legacy partial recovery).
         let zeroed = vec![0u8; wrapped.as_bytes().len()];
         assert!(
             crypto.unwrap_dek(subject, &zeroed).is_err(),
             "a zeroed wrapped_dek must never unwrap"
-        );
-        // An empty column must also fail (no partial-recovery path).
-        assert!(
-            crypto.unwrap_dek(subject, &[]).is_err(),
-            "an empty wrapped_dek must never unwrap"
         );
 
         // There is no path to reconstruct the destroyed DEK from storage; a freshly generated DEK
@@ -2180,6 +2217,42 @@ mod tests {
         // `AsRef` and `as_bytes` agree; Debug redacts the bytes.
         assert_eq!(w1.as_ref(), w1.as_bytes());
         assert!(format!("{w1:?}").contains("opaque bytes"));
+    }
+
+    #[test]
+    fn subject_dek_from_credential_store_derives_a_bound_working_engine() {
+        // P3's entry point: build the subject-DEK engine from a resolved store (no raw root).
+        let store = store_with(CredentialKeySource::DerivedFromDbKey, true, false);
+        let crypto = store.subject_dek_crypto();
+        let subject = "amelia.marques";
+        let (wrapped, dek) = crypto.wrap_new_dek(subject).expect("wrap");
+        let env = crypto
+            .encrypt_field(&dek, subject, "email", b"amelia@example.test")
+            .expect("encrypt");
+
+        // Re-deriving from the same store yields the same wrapping material: unwrap + decrypt work.
+        let crypto2 = store.subject_dek_crypto();
+        let dek2 = crypto2
+            .unwrap_dek(subject, wrapped.as_bytes())
+            .expect("unwrap from same store");
+        let got = crypto2
+            .decrypt_field(&dek2, subject, "email", &env)
+            .expect("decrypt");
+        assert_eq!(&got[..], b"amelia@example.test");
+
+        // A store with different key material cannot unwrap this subject's DEK (bound to the CMK).
+        let other = CredentialSecretStore::for_test_source(
+            CredentialKeySource::DerivedFromDbKey,
+            true,
+            false,
+        );
+        assert!(
+            other
+                .subject_dek_crypto()
+                .unwrap_dek(subject, wrapped.as_bytes())
+                .is_err(),
+            "a store with different key material must not unwrap another store's subject DEK"
+        );
     }
 
     #[cfg(windows)]
