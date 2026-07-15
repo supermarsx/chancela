@@ -4160,6 +4160,8 @@ describe('contract fixtures parse through the real client', () => {
           verification: true,
           source_url: true,
           source_complete: true,
+          review_method: true,
+          review_note: true,
         },
         'Dashboard.alerts[0].law_refs[0]',
       );
@@ -4239,6 +4241,8 @@ describe('contract fixtures parse through the real client', () => {
             verification: true,
             source_url: true,
             source_complete: true,
+            review_method: true,
+            review_note: true,
           },
           `${label}.law_refs[0]`,
         );
@@ -5723,20 +5727,28 @@ describe('contract fixtures parse through the real client', () => {
     expect(a.number.length, `${label}.number`).toBeGreaterThan(0);
     inEnum(LAW_VERIFICATIONS, a.verification, `${label}.verification`);
     expect(typeof a.verified, `${label}.verified`).toBe('boolean');
-    // The `verified` boolean mirrors the `verification` enum exactly.
+    // The `verified` boolean is the HUMAN-approved tier alone — only `Verified` sets it. An
+    // `automated_review` article is authentic vendored text but NOT human-legally-approved, so it
+    // is `verified === false` yet is a THIRD state, never lumped with the empty `Pending` marker.
     expect(a.verified).toBe(a.verification === 'Verified');
-    // A `Pending` article never presents an un-sourced body — it renders the loud marker.
-    if (!a.verified) {
+    // Only a `Pending` article renders the loud unverified marker in place of an (empty) body.
+    // A `Verified` OR `automated_review` article carries genuine, non-empty text and MUST NOT
+    // present the marker — automated-review text is real statutory text, merely not human-approved.
+    if (a.verification === 'Pending') {
       expect(a.body, `${label} pending body is the unverified marker`).toContain('NÃO VERIFICADO');
     } else {
-      expect(a.body.trim().length, `${label} verified body is non-empty`).toBeGreaterThan(0);
+      expect(a.body.trim().length, `${label} bodied article has non-empty text`).toBeGreaterThan(0);
+      expect(a.body, `${label} bodied article is not the unverified marker`).not.toContain(
+        'NÃO VERIFICADO',
+      );
     }
     if (a.cross_refs !== undefined) expect(Array.isArray(a.cross_refs)).toBe(true);
     const source = assertExactKeys<LawSourceView>(
       a.source,
       { diploma: true, article: true, complete: true },
       `${label}.source`,
-      ['dr_reference', 'dr_date', 'url', 'source_digest', 'retrieved_at'],
+      // `review_method`/`review_note` ride the wire only for the `automated_review` tier.
+      ['dr_reference', 'dr_date', 'url', 'source_digest', 'retrieved_at', 'review_method', 'review_note'],
     );
     expect(typeof source.complete, `${label}.source.complete`).toBe('boolean');
     // A complete source cites a real origin (diploma + article + dr_reference + url) — the
@@ -5747,6 +5759,17 @@ describe('contract fixtures parse through the real client', () => {
     }
     // A Verified article must cite a complete source.
     if (a.verified) expect(source.complete, `${label} verified ⇒ complete source`).toBe(true);
+    // Automated-review text is authentic (complete source) and carries the honest caveat pair —
+    // `review_method` + `review_note` — which no other tier presents.
+    if (a.verification === 'automated_review') {
+      expect(source.complete, `${label} automated_review ⇒ complete source`).toBe(true);
+      expect(source.review_method, `${label} automated_review ⇒ review_method`).toBeTruthy();
+      expect(source.review_note, `${label} automated_review ⇒ review_note`).toBeTruthy();
+    } else {
+      // The caveat fields are the automated-review tier's alone; other tiers omit them.
+      expect(source.review_method, `${label} non-automated ⇒ no review_method`).toBeUndefined();
+      expect(source.review_note, `${label} non-automated ⇒ no review_note`).toBeUndefined();
+    }
     return a;
   }
 
@@ -5760,6 +5783,7 @@ describe('contract fixtures parse through the real client', () => {
     official_url: true,
     article_count: true,
     verified_count: true,
+    automated_review_count: true,
     pending_count: true,
   } as const;
 
@@ -5771,11 +5795,20 @@ describe('contract fixtures parse through the real client', () => {
   ): T {
     const d = assertExactKeys<T>(obj, requiredKeys, label, optionalKeys);
     inEnum(LAW_DIPLOMA_KINDS, d.kind, `${label}.kind`);
-    for (const k of ['article_count', 'verified_count', 'pending_count'] as const) {
+    for (const k of [
+      'article_count',
+      'verified_count',
+      'automated_review_count',
+      'pending_count',
+    ] as const) {
       expect(typeof d[k], `${label}.${k}`).toBe('number');
     }
-    // The counts partition the diploma: verified + pending = total.
-    expect(d.verified_count + d.pending_count, `${label} counts partition`).toBe(d.article_count);
+    // The counts partition the diploma across all three tiers: verified + automated_review +
+    // pending = total.
+    expect(
+      d.verified_count + d.automated_review_count + d.pending_count,
+      `${label} counts partition`,
+    ).toBe(d.article_count);
     return d;
   }
 
@@ -5803,14 +5836,16 @@ describe('contract fixtures parse through the real client', () => {
     inEnum(['Embedded', 'Cache'], corpus.origin, 'LawCorpusView.origin');
     const counts = assertExactKeys<LawCounts>(
       corpus.counts,
-      { diplomas: true, articles: true, verified: true, pending: true },
+      { diplomas: true, articles: true, verified: true, automated_review: true, pending: true },
       'LawCorpusView.counts',
     );
     for (const [k, v] of Object.entries(counts)) {
       expect(typeof v, `LawCorpusView.counts.${k}`).toBe('number');
     }
-    // The corpus-wide counts partition every article into verified/pending.
-    expect(counts.verified + counts.pending, 'counts partition').toBe(counts.articles);
+    // The corpus-wide counts partition every article across the three tiers.
+    expect(counts.verified + counts.automated_review + counts.pending, 'counts partition').toBe(
+      counts.articles,
+    );
     expect(Array.isArray(corpus.diplomas)).toBe(true);
     expect(corpus.diplomas.length).toBeGreaterThan(0);
     for (const d of corpus.diplomas) {

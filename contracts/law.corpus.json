@@ -4,7 +4,13 @@
   "source_note": "Esqueleto do corpus de legislação (t55-E1a): lista completa de diplomas em escopo com os artigos citados pré-alocados a `Pending`. O texto verbatim é obtido do Diário da República Eletrónico por diploma (t55-E1b). Ver crates/chancela-law/data/source/PROVENANCE.md.",
   "digest": "76bd5d6be20e4bb38174523f2a3a614ac03204d879265e6c0229ecbc6b42b22c",
   "origin": "Embedded",
-  "counts": { "diplomas": 9, "articles": 193, "verified": 153, "pending": 40 },
+  "counts": {
+    "diplomas": 9,
+    "articles": 193,
+    "verified": 152,
+    "automated_review": 1,
+    "pending": 40
+  },
   "diplomas": [
     {
       "id": "csc",
@@ -16,6 +22,7 @@
       "eli": "https://data.dre.pt/eli/dec-lei/262/1986/p/cons/20260101",
       "article_count": 15,
       "verified_count": 0,
+      "automated_review_count": 0,
       "pending_count": 15
     },
     {
@@ -28,6 +35,7 @@
       "eli": "https://data.dre.pt/eli/dec-lei/47344/1966/p/cons/20260101",
       "article_count": 12,
       "verified_count": 0,
+      "automated_review_count": 0,
       "pending_count": 12
     },
     {
@@ -40,6 +48,7 @@
       "eli": "https://data.dre.pt/eli/dec-lei/268/1994/p/cons/20260101",
       "article_count": 6,
       "verified_count": 0,
+      "automated_review_count": 0,
       "pending_count": 6
     },
     {
@@ -52,6 +61,7 @@
       "eli": "https://data.dre.pt/eli/dec-lei/76-a/2006/p/cons/20260101",
       "article_count": 2,
       "verified_count": 0,
+      "automated_review_count": 0,
       "pending_count": 2
     },
     {
@@ -64,6 +74,7 @@
       "eli": "https://data.dre.pt/eli/lei/119/2015/p/cons/20260101",
       "article_count": 3,
       "verified_count": 0,
+      "automated_review_count": 0,
       "pending_count": 3
     },
     {
@@ -76,6 +87,7 @@
       "eli": "https://data.dre.pt/eli/lei/24/2012/p/cons/20260101",
       "article_count": 2,
       "verified_count": 0,
+      "automated_review_count": 0,
       "pending_count": 2
     },
     {
@@ -87,7 +99,8 @@
       "official_url": "https://eur-lex.europa.eu/legal-content/PT/TXT/?uri=CELEX:32014R0910",
       "eli": "https://eur-lex.europa.eu/eli/reg/2014/910/oj",
       "article_count": 52,
-      "verified_count": 52,
+      "verified_count": 51,
+      "automated_review_count": 1,
       "pending_count": 0
     },
     {
@@ -100,6 +113,7 @@
       "eli": "https://eur-lex.europa.eu/eli/reg/2016/679/oj",
       "article_count": 99,
       "verified_count": 99,
+      "automated_review_count": 0,
       "pending_count": 0
     },
     {
@@ -112,6 +126,7 @@
       "eli": "https://eur-lex.europa.eu/eli/reg/2024/1183/oj",
       "article_count": 2,
       "verified_count": 2,
+      "automated_review_count": 0,
       "pending_count": 0
     }
   ]

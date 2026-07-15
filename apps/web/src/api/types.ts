@@ -2039,6 +2039,8 @@ export interface DashboardLawReference {
   verification: string;
   source_url: string | null;
   source_complete: boolean;
+  review_method: string | null;
+  review_note: string | null;
 }
 
 export interface DashboardAction {
@@ -2729,8 +2731,13 @@ export interface LawEntryView {
 // and never presents `Pending` text as authoritative law. These mirror the server views
 // byte-for-byte. Optional (`skip_serializing_if`) fields are omitted from the wire when absent.
 
-/** Whether a corpus article's body is authentically vendored or still a placeholder. */
-export const LAW_VERIFICATIONS = ['Verified', 'Pending'] as const;
+/**
+ * Whether a corpus article's body is human-approved authentic text (`Verified`), automated-review
+ * authentic text (`automated_review` — vendored + auto-reviewed, NOT human-legally-approved), or
+ * still a placeholder (`Pending`). Serializes byte-for-byte as the `chancela_law::Verification`
+ * serde values.
+ */
+export const LAW_VERIFICATIONS = ['Verified', 'automated_review', 'Pending'] as const;
 export type LawVerification = (typeof LAW_VERIFICATIONS)[number];
 
 /** The legal instrument a corpus diploma is (bare serde variant names). */
@@ -2751,6 +2758,8 @@ export interface LawCounts {
   diplomas: number;
   articles: number;
   verified: number;
+  /** Automated-review authentic articles (vendored + auto-reviewed, NOT human-legally-approved). */
+  automated_review: number;
   pending: number;
 }
 
@@ -2777,6 +2786,16 @@ export interface LawSourceView {
   url?: string;
   source_digest?: string;
   retrieved_at?: string;
+  /**
+   * The automated process that produced an `automated_review` body (e.g. `"automated-capture"`).
+   * Present only on automated-review sources; a human-`Verified` or `Pending` source omits it.
+   */
+  review_method?: string;
+  /**
+   * The standing honest caveat carried by `automated_review` text (automated review only, NOT
+   * human-legally-approved, human legal review recommended). Present only for that tier.
+   */
+  review_note?: string;
   complete: boolean;
 }
 
@@ -2811,6 +2830,11 @@ export interface LawDiplomaSummaryView {
   eli?: string;
   article_count: number;
   verified_count: number;
+  /**
+   * Automated-review authentic articles (vendored + auto-reviewed, NOT human-legally-approved) —
+   * distinct from both `verified_count` and `pending_count` so a reader can badge the tier honestly.
+   */
+  automated_review_count: number;
   pending_count: number;
 }
 
