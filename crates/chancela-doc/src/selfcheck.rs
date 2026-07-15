@@ -1,22 +1,32 @@
-//! Structural PDF/A-2u self-verifier — the invariants we can assert without a native validator.
+//! Structural PDF/A-2u + PDF/UA-1 self-verifier — the invariants we can assert without a native
+//! validator.
 //!
 //! Run on the writer's own output (§5.1 of the conformance cheatsheet). It mirrors what
 //! `chancela-pades` and veraPDF care about: a classic xref table, a binary header marker, `/Root` +
 //! `/ID` with no `/Encrypt`, an XMP `/Metadata` stream (uncompressed, carrying the PDF/A markers), a
 //! GTS_PDFA1 OutputIntent with an N=3 profile, and every text font embedded with a `/ToUnicode`
-//! CMap. Failures surface as [`DocError::Conformance`].
+//! CMap. When the XMP additionally carries the PDF/UA-1 identifier (`pdfuaid:part`), this verifier
+//! becomes the **enforced UA gate**: it asserts the identifier is `1`, that a well-formed
+//! `pdfaExtension` schema description accompanies it, and that the tagged heading hierarchy does not
+//! skip a level — on top of the always-on tagged-structure, marked-content, `/Lang` and
+//! `/DisplayDocTitle` checks. Failures surface as [`DocError::Conformance`].
+//!
+//! The UA claim is scoped to the **pre-signature** document. `chancela-pades` later injects an
+//! invisible signature widget that is out of the UA claim (see the wp26-pdfua plan, G14).
 //!
 //! # External verification (opt-in, NOT CI-gated)
 //!
 //! This Rust self-check is the automated gate (no native binary in the distroless ethos). For a
-//! full ISO-19005-2 conformance pass, run veraPDF against a generated file out of band:
+//! full ISO-19005-2 / ISO-14289-1 conformance pass, run veraPDF against a generated file out of
+//! band:
 //!
 //! ```text
 //! verapdf --flavour 2u path/to/doc.pdf          # exit 0 == PDF/A-2U conformant
+//! verapdf --flavour ua1 path/to/doc.pdf         # exit 0 == PDF/UA-1 conformant
 //! verapdf -f 2u --format mrr path/to/doc.pdf    # machine-readable report
 //! ```
 //!
-//! Flavour codes: `2u` = PDF/A-2U, `2a` = 2A, `2b` = 2B. Verify the flag spelling
+//! Flavour codes: `2u` = PDF/A-2U, `2a` = 2A, `2b` = 2B, `ua1` = PDF/UA-1. Verify the flag spelling
 //! (`--flavour`/`-f`) against the installed veraPDF build; older releases differ.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -170,12 +180,18 @@ pub fn verify(bytes: &[u8]) -> Result<(), DocError> {
     if !find(&meta.content, b"<pdfaid:conformance>U</pdfaid:conformance>") {
         return Err(fail("XMP missing pdfaid:conformance = U".into()));
     }
-    if find(&meta.content, b"pdfuaid:") || find(&meta.content, b"<pdfuaid") {
-        return Err(fail(
-            "XMP claims PDF/UA, but the writer only emits a bounded tagged-PDF structure".into(),
-        ));
-    }
     verify_xmp_accessibility_metadata(&meta.content, lang, &fail)?;
+
+    // PDF/UA gate: when the XMP carries the PDF/UA-1 identifier, the file *claims* UA — so it must
+    // satisfy the UA invariants this writer can assert, else the claim would be false and we refuse
+    // to hand back the bytes. When the identifier is absent the file is a plain PDF/A-2U document
+    // (no UA claim) and this gate is a no-op. `/MarkInfo`, `/StructTreeRoot` + non-empty `/RoleMap`,
+    // catalog `/Lang`, and `/ViewerPreferences /DisplayDocTitle true` are already enforced above for
+    // *every* document, so a UA-claiming file inherently carries them; this adds the UA-specific
+    // assertions (identifier + extension schema, heading hierarchy).
+    if find(&meta.content, b"pdfuaid:") || find(&meta.content, b"<pdfuaid") {
+        verify_pdf_ua_claim(&doc, catalog, &meta.content, &fail)?;
+    }
 
     // OutputIntent: /S GTS_PDFA1 and an N=3 DestOutputProfile.
     let oi_ref = oi_arr[0]
@@ -1103,6 +1119,14 @@ fn verify_marked_content_scopes(
                 "page {page_index} paints a path outside an /Artifact marked-content scope"
             )));
         }
+        // No untagged real content (UA / G13): every text-showing operator must sit inside a
+        // tagged marked-content scope (one carrying an /MCID), never bare or under an /Artifact.
+        if is_text_showing_operator(line) && stack.last() != Some(&MarkedScope::TaggedContent) {
+            return Err(fail(format!(
+                "page {page_index} line {} shows text outside a tagged marked-content scope",
+                line_index + 1
+            )));
+        }
     }
 
     if !stack.is_empty() {
@@ -1112,6 +1136,126 @@ fn verify_marked_content_scopes(
     }
 
     Ok(())
+}
+
+/// A content-stream line whose trailing operator shows text (`Tj`, `TJ`, `'`, `"`).
+fn is_text_showing_operator(line: &str) -> bool {
+    matches!(
+        line.split_whitespace().next_back(),
+        Some("Tj") | Some("TJ") | Some("'") | Some("\"")
+    )
+}
+
+/// Assert the PDF/UA-specific invariants for a file that carries the `pdfuaid` identifier.
+///
+/// The structural prerequisites (`/MarkInfo`, `/StructTreeRoot` + `/RoleMap`, `/Lang`,
+/// `/ViewerPreferences /DisplayDocTitle`) are enforced for every document by [`verify`]; this adds
+/// the UA identifier + mandatory `pdfaExtension` schema description and the heading-hierarchy gate.
+fn verify_pdf_ua_claim(
+    doc: &Document,
+    catalog: &Dictionary,
+    xmp: &[u8],
+    fail: &dyn Fn(String) -> DocError,
+) -> Result<(), DocError> {
+    if !find(xmp, b"<pdfuaid:part>1</pdfuaid:part>") {
+        return Err(fail(
+            "XMP carries a pdfuaid namespace but not pdfuaid:part = 1".into(),
+        ));
+    }
+    // The `pdfuaid` schema is not predefined, so a PDF/A file must describe it in a pdfaExtension
+    // block; without it veraPDF fails both PDF/A and PDF/UA.
+    if !find(xmp, b"<pdfaExtension:schemas>")
+        || !find(xmp, b"<pdfaSchema:prefix>pdfuaid</pdfaSchema:prefix>")
+        || !find(
+            xmp,
+            b"<pdfaSchema:namespaceURI>http://www.aiim.org/pdfua/ns/id/</pdfaSchema:namespaceURI>",
+        )
+    {
+        return Err(fail(
+            "PDF/UA claim is missing the mandatory pdfaExtension schema description for pdfuaid"
+                .into(),
+        ));
+    }
+    verify_heading_no_skip(doc, catalog, fail)?;
+    Ok(())
+}
+
+/// Assert the tagged heading hierarchy does not skip a level (UA / G5), reading heading levels from
+/// the structure tree in reading order.
+fn verify_heading_no_skip(
+    doc: &Document,
+    catalog: &Dictionary,
+    fail: &dyn Fn(String) -> DocError,
+) -> Result<(), DocError> {
+    let struct_root_ref = catalog
+        .get(b"StructTreeRoot")
+        .and_then(Object::as_reference)
+        .map_err(|_| fail("catalog has no /StructTreeRoot reference".into()))?;
+    let struct_root = doc
+        .get_object(struct_root_ref)
+        .and_then(Object::as_dict)
+        .map_err(|_| fail("/StructTreeRoot object missing".into()))?;
+    let root_k = struct_root
+        .get(b"K")
+        .map_err(|_| fail("/StructTreeRoot has no /K entry".into()))?;
+
+    let mut levels = Vec::new();
+    let mut seen = BTreeSet::new();
+    collect_heading_levels(doc, root_k, &mut levels, &mut seen);
+
+    let mut previous = 1u8;
+    for level in levels {
+        if level > previous.saturating_add(1) {
+            return Err(fail(format!(
+                "PDF/UA heading hierarchy skips a level (H{previous} then H{level})"
+            )));
+        }
+        previous = level;
+    }
+    Ok(())
+}
+
+/// Depth-first, reading-order walk collecting `ChancelaHeading{1,2,3}` levels from the tag tree.
+fn collect_heading_levels(
+    doc: &Document,
+    node: &Object,
+    levels: &mut Vec<u8>,
+    seen: &mut BTreeSet<ObjectId>,
+) {
+    match node {
+        Object::Reference(id) => {
+            if !seen.insert(*id) {
+                return;
+            }
+            let Ok(elem) = doc.get_object(*id).and_then(Object::as_dict) else {
+                return;
+            };
+            if let Ok(role) = elem.get(b"S").and_then(Object::as_name) {
+                if let Some(level) = heading_level(role) {
+                    levels.push(level);
+                }
+            }
+            if let Ok(kids) = elem.get(b"K") {
+                collect_heading_levels(doc, kids, levels, seen);
+            }
+        }
+        Object::Array(items) => {
+            for item in items {
+                collect_heading_levels(doc, item, levels, seen);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Map a heading structure role to its outline level, or `None` for non-heading roles.
+fn heading_level(role: &[u8]) -> Option<u8> {
+    match role {
+        b"ChancelaHeading1" => Some(1),
+        b"ChancelaHeading2" => Some(2),
+        b"ChancelaHeading3" => Some(3),
+        _ => None,
+    }
 }
 
 fn is_pdf_whitespace(byte: u8) -> bool {
