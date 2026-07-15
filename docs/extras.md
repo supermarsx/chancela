@@ -43,9 +43,12 @@ ingress, put a TLS-terminating reverse proxy (nginx, Caddy, Traefik) in front:
   reading the `/health` role, reads to any node) or let clients follow the `307`
   write redirects.
 
-TLS to a remote Postgres (`sslmode=verify-full`) is **not** wired in the current
-backend (it uses `NoTls` on the local compose network); a remote database needs a
-TLS connector first.
+The optional Postgres backend now uses a rustls connector and honors `sslmode`
+from `CHANCELA_PG_SSLMODE` or `DATABASE_URL` (`disable`, `prefer`, `require`,
+`verify-full`; default `prefer`). Use `verify-full` plus a trusted root CA for a
+networked or managed Postgres. Current checkpoint coverage includes the live
+`sslmode=prefer` round-trip only; it is not a live `verify-full` CA/hostname
+proof or production remote-database readiness claim.
 
 ## Monitoring and healthchecks
 

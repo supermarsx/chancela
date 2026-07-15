@@ -1,7 +1,7 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `6bba291`,
+and implementation snapshot `f4047b5`,
 including coverage notes for the MCP document/archive PDF accessibility v11
 identifier/count/blocker alignment, fixture report version 11, the Ata editor
 workflow provenance review panel, generated-document coverage fixture alignment,
@@ -88,7 +88,10 @@ plus local ASiC inspection endpoint and ASiC ZIP decompression-bound coverage,
 plus release workflow static
 assurance for the unsigned/local-only trust posture, production-package
 manifest-required validation, and release summary binding to the actual package
-tarball basename/SHA-256, synthetic seed dataset integration coverage
+tarball basename/SHA-256, opt-in release signing workflow hooks and truthful
+status artifacts, rustls Postgres TLS connector / `sslmode=prefer` live store
+round-trip evidence, observability probes and route-template metrics/request-id
+coverage, synthetic seed dataset integration coverage
 over API-created entity/book/act/ledger/dashboard/RBAC/delegation paths, and
 RBAC ledger verification regression coverage for user-role, delegation, and
 role-catalog audit events. This
@@ -971,15 +974,16 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `6bba291`
+## Focused Gate Snapshot Through `f4047b5`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08` and checkpoint-promoted on 2026-07-15 for
-current implementation head `6bba291`. This is not an exhaustive current
+current implementation head `f4047b5`. This is not an exhaustive current
 green-run claim; the full-server E2E claim below is limited to local
 `chancela-server --features e2e` after auth harness alignment, and browser,
-Docker, desktop, package signing/notarization, image signing/attestation, and
-live-provider limits above still apply.
+Docker, desktop, production package signing/notarization, production image
+signing/attestation, live `verify-full` CA proof, and live-provider limits
+above still apply.
 
 - `actionlint .github/workflows/ci.yml`, `npx prettier --check
 .github/workflows/ci.yml`, and `git diff --check -- .github/workflows/ci.yml
@@ -1109,7 +1113,8 @@ settingsDefaults.test.ts contracts.test.ts`.
   sidecars, broad API/product live DB validation beyond the store backend sweep,
   API Postgres CI, migration completeness, production HA
   readiness, consensus correctness, split-brain impossibility, live failover
-  certification, cloud deployment readiness, TLS/remote PG readiness,
+  certification, cloud deployment readiness, live `verify-full` CA/hostname
+  proof, production TLS/remote PG readiness,
   multi-node operational certification, backup-policy/RPO/RTO certification,
   legal/DR certification, or external sync readiness.
 - Recent 2026-07-10 focused checks through `783538c`: `npm run
@@ -2134,6 +2139,26 @@ settingsDefaults.test.ts contracts.test.ts`.
   fails `dirty` and `unknown` source states. This is static workflow/package
   metadata assurance only; it does not add signing, notarization, attestation,
   registry publishing, reproducible-build proof, or production trust claims.
+- Current `ef3270a` opt-in release-signing checks: reviewed
+  `.github/workflows/release-signing.yml`,
+  `scripts/release-signing-status.mjs`, and `docs/release-signing.md`. The
+  workflow is manual/secret-gated and inert by default, can push/sign a target
+  container image with cosign and attach a CycloneDX SBOM attestation only when
+  the required target and identity are configured, can code-sign/notarize
+  desktop artifacts only when platform credentials exist, and always uploads
+  status artifacts recording unsigned/not-pushed/not-attested/not-notarized
+  outcomes when evidence is absent. This is hook/status-artifact coverage only:
+  it does not prove production signing success, secret availability, package
+  trust certification, registry publication, or completed notarization.
+- Current `f4047b5` observability checks: focused API coverage pins `/metrics`,
+  `/livez`, `/readyz`, `/api/metrics`, `/api/livez`, `/api/readyz`,
+  `x-request-id` echo/replacement, Prometheus text output, and matched route
+  labels that avoid raw path IDs in metrics. `/metrics` is intentionally
+  unauthenticated for scraper compatibility and must stay internal-network or
+  allowlist protected. `/readyz` is degraded-mode readiness only and does not
+  prove database, Redis, remote-signing, trust-list, or cluster dependency
+  readiness. This is probe/metrics/tracing plumbing only, not production
+  observability, SIEM, alerting, HA, retention, or compliance completion.
 - Current working-tree seeded role drift diagnostic checks: focused
   `chancela-api` coverage pins read-only
   `seeded_role_drift.missing_default_permissions` and
@@ -2274,9 +2299,19 @@ settingsDefaults.test.ts contracts.test.ts`.
   text through `$1::text::jsonb` before `jsonb_populate_record`. This is store
   backend live Postgres coverage only: it does not broaden default CI beyond
   the targeted `71fc536` store runtime lane, does not add API Postgres CI, and
-  does not claim production Postgres readiness, TLS readiness, HA readiness,
-  migration completeness, RPO/RTO certification, split-brain prevention,
+  does not claim production Postgres readiness, live `verify-full` CA/hostname
+  proof, production TLS readiness, HA readiness, migration completeness, RPO/RTO certification, split-brain prevention,
   failover certification, legal/DR certification, or spec completion.
+- Current `974040e`/`afe7111` Postgres TLS checks: source markers pin the
+  rustls `MakeTlsConnect` implementation, `CHANCELA_PG_SSLMODE` precedence over
+  `DATABASE_URL`, URL/keyword-form `sslmode` stripping, default `prefer`,
+  `disable`/`prefer`/`require`/`verify-full` handling, `verify-ca` hardening to
+  verify-full, and fail-closed root-CA loading for verify-full. The live ignored
+  store test `sslmode_prefer_opens_and_roundtrips_on_postgres` proves the
+  connector and `sslmode=prefer` round-trip against a plain or TLS-capable test
+  Postgres only. This does not prove a live `verify-full` CA/hostname path,
+  production remote-Postgres readiness, HA/failover, migration completeness,
+  RPO/RTO, or legal/DR certification.
 - Current `03784e5` hardened Docker checks: reviewed
   `Dockerfile.hardened`, `docker-compose.hardened.yml`, and
   `docs/security/hardened-docker.md`, then validated
@@ -2289,14 +2324,18 @@ settingsDefaults.test.ts contracts.test.ts`.
   production-readiness, TLS/key-custody, vulnerability-free scan, SBOM,
   signature/attestation, HA/failover/RPO/RTO, legal/DR certification, cloud
   deployment readiness, or spec-completion claim is made.
-- Current checkpoint metadata/static checks through `6bba291`
+- Current checkpoint metadata/static checks through `f4047b5`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
   `git diff --check -- SPEC-COVERAGE.md docs\CI-E2E-HARDENING-PLAN.md
-  docs\CI-CHECKPOINTS.md scripts\checkpoint-recent-landed.mjs`.
+  docs\CI-CHECKPOINTS.md docs\CI-RELEASE-HARDENING.md docs\extras.md
+  scripts\checkpoint-recent-landed.mjs scripts\check-spec-coverage.mjs`.
   These pin the spec snapshot,
-  hardening-plan head, MCP document/archive PDF accessibility v11 identifiers
+  hardening-plan head, opt-in release signing hooks/status artifacts, Postgres
+  rustls TLS `sslmode=prefer` proof and no-`verify-full`/production-readiness
+  boundary, observability `/metrics`/`/livez`/`/readyz` request-id/route-label
+  markers, MCP document/archive PDF accessibility v11 identifiers
   and counts, `pdf_accessibility_v11_summary`, `v11_report_count`,
   `pdf_accessibility_v11_report_missing`, fixture report version 11,
   browser workflow provenance review panel and sanitized local MCP payload

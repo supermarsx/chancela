@@ -1,11 +1,12 @@
 # CI Release Hardening
 
-Updated 2026-07-14.
+Updated 2026-07-15.
 
 This page records the current supply-chain and release metadata behavior. It is
-deliberately conservative: CI may upload reports and placeholders, but it must
-not imply package notarization, code signing, container signing, or registry
-publication unless those steps actually happened.
+deliberately conservative: CI may upload reports, hooks, and placeholders, but
+it must not imply package notarization, code signing, container signing, or
+registry publication unless those steps actually happened and the matching
+status artifact records concrete evidence.
 
 ## Enforced in CI
 
@@ -59,21 +60,48 @@ publication unless those steps actually happened.
   `workflow_dispatch` run with `enforce_security_scans=true` makes the npm,
   Cargo, and Docker vulnerability scan statuses blocking.
 
+## Opt-In Signing Workflow
+
+The separate `Release signing (opt-in)` workflow
+(`.github/workflows/release-signing.yml`) is manual and secret-gated. With no
+target image, artifacts, or signing credentials configured, it records honest
+unsigned / not-pushed / not-attested / not-notarized status and does not create
+a production trust claim.
+
+- Container signing is gated by an explicit image target plus either cosign
+  keyless OIDC or `COSIGN_PRIVATE_KEY`/`COSIGN_PASSWORD`; SBOM attestation is
+  recorded only when cosign actually attests the generated CycloneDX predicate.
+- Desktop code-signing/notarization hooks are gated by platform-specific
+  certificates and notarization credentials. Missing credentials leave artifacts
+  unsigned with a status artifact rather than an implied success.
+- `scripts/release-signing-status.mjs self-test` proves positive container,
+  attestation, desktop signing, and macOS notarization claims require concrete
+  evidence such as a digest, identity, predicate type, signer, certificate
+  fingerprint, or notarization ticket.
+
+This checkpoint pins workflow wiring, documentation, and truthful status
+artifacts only. It does not prove production signing success, secret
+availability, package trust certification, registry publication, or completed
+notarization.
+
 ## Not Yet Enforced or Claimed
 
-- Release packages are uploaded with source provenance, manifests, and SHA-256
-  checksums, and the release gate requires a clean source-tree state plus a
-  matching package tarball basename/SHA-256, but there is no package code
-  signing or notarization step configured.
-- The Docker image is local-only in CI. It is not pushed to a registry, signed,
-  attested, or notarized.
+- The normal release workflow uploads packages with source provenance,
+  manifests, and SHA-256 checksums, and the release gate requires a clean
+  source-tree state plus a matching package tarball basename/SHA-256. Production
+  package signing and notarization remain unvalidated unless the separate
+  opt-in workflow runs with configured credentials and emits signed/notarized
+  status evidence.
+- The normal Docker CI lane is local-only. The opt-in signing workflow can push,
+  sign, and attest a target image when explicitly configured, but this checkpoint
+  has no production registry push/signature/attestation proof.
 - The Docker security artifact includes
   `chancela-server-signing-status.json`, which records that no signing or
   notarization was performed.
-- Actual production package or image publication should be added only after the
-  registry, signing identity, notarization flow, provenance policy, and secret
-  handling are configured. At that point, change the relevant
-  `scripts/check-release-trust.mjs` call from `unsigned-dev` or `local-ci` to
-  `production` and include concrete evidence anchors such as certificate
-  fingerprints, attestation digests, workflow run URLs, or notarization ticket
-  references.
+- Actual production package or image publication should be claimed only after
+  the registry, signing identity, notarization flow, provenance policy, and
+  secret handling are configured and a workflow run emits concrete evidence
+  anchors such as certificate fingerprints, attestation digests, workflow run
+  URLs, or notarization ticket references. Only then should the relevant
+  `scripts/check-release-trust.mjs` call move from `unsigned-dev` or `local-ci`
+  to `production`.

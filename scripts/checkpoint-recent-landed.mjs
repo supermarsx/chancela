@@ -10735,12 +10735,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `6bba291`",
+    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `f4047b5`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `6bba291`",
+    "Focused Gate Snapshot Through `f4047b5`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -11415,7 +11415,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `6bba291`",
+    "Current checkpoint metadata/static checks through `f4047b5`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -11763,6 +11763,36 @@ function assertCheckpointMap() {
     "does not add signing, notarization, attestation,\n  registry publishing, reproducible-build proof, or production trust claims",
     "CI/E2E hardening plan release workflow static-only boundary marker",
   );
+  assertFileContains(
+    ".github/workflows/release-signing.yml",
+    "# Opt-in, secret-gated signing pipeline. This workflow is INERT by default",
+    "release-signing workflow opt-in inert marker",
+  );
+  assertFileContains(
+    "scripts/release-signing-status.mjs",
+    "Positive claims are backed by",
+    "release-signing status positive-claims evidence marker",
+  );
+  assertFileContains(
+    "docs/CI-RELEASE-HARDENING.md",
+    "The separate `Release signing (opt-in)` workflow",
+    "CI release hardening opt-in workflow marker",
+  );
+  assertFileContains(
+    "docs/CI-RELEASE-HARDENING.md",
+    "It does not prove production signing success, secret\navailability, package trust certification, registry publication, or completed\nnotarization",
+    "CI release hardening opt-in no-production-claim marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Recent `ef3270a` keeps Release/Architecture/CI **PARTIAL**",
+    "spec coverage opt-in release-signing checkpoint marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "With missing targets or credentials it emits honest unsigned /\nnot-pushed / not-attested / not-notarized status artifacts",
+    "CI checkpoints opt-in release-signing honest status marker",
+  );
   assertFileContainsNormalized(
     "docs/CI-E2E-HARDENING-PLAN.md",
     "identity-requirement-tagged row markers, release workflow unsigned/local-only static guard, clean-source provenance gate, package tarball trust binding, and production-package manifest-required",
@@ -11950,13 +11980,68 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `6bba291527ca65b44cfb64366d9f11d7c1ec5184`",
+    "implementation snapshot `f4047b5ab36259b00309b0d4bd824bc39b103683`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
     "Current `6bba291` keeps Data/Roles/UX/CI **PARTIAL**",
     "spec coverage sync handoff export current snapshot marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Current `f4047b5` keeps Architecture/API/CI **PARTIAL**",
+    "spec coverage observability checkpoint marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "`/metrics` is intentionally unauthenticated for scraper compatibility and\n  must stay on an internal network or behind a reverse-proxy/network allowlist",
+    "spec coverage metrics internal allowlist marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "`/readyz` is degraded-mode readiness only",
+    "spec coverage readyz degraded-mode-only marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Recent `974040e`/`afe7111` keeps Data/Architecture/CI **PARTIAL**",
+    "spec coverage Postgres TLS checkpoint marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "live `prefer` round-trip only; it is not live\n  `verify-full` CA/hostname proof",
+    "spec coverage Postgres TLS no verify-full proof marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/src/pg_tls.rs",
+    "defaulting to `prefer`",
+    "Postgres rustls TLS default prefer marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/tests/postgres_backend.rs",
+    "sslmode_prefer_opens_and_roundtrips_on_postgres",
+    "Postgres sslmode prefer live test marker",
+  );
+  assertFileContains(
+    "docs/extras.md",
+    "Current checkpoint coverage includes the live\n`sslmode=prefer` round-trip only",
+    "extras Postgres TLS prefer-only boundary marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/observability.rs",
+    "route`/`request_id`, times the\n//!   request, records HTTP metrics",
+    "API observability route/request id metrics marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "metrics_use_matched_route_labels_not_raw_paths",
+    "API observability route-label metrics test marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "The wp25 observability markers pin first-class API probes and Prometheus output",
+    "CI checkpoints observability marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",

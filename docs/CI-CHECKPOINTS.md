@@ -136,7 +136,9 @@ convocation-notice local WFL/legal-calendar advisory markers for
 non-computed reminder path and focused `#convening-guidance` workflow UI
 routing depth,
 compact validator-report actions, template provenance UI, release clean-source
-provenance gating, local CC batch-signing UI markers for BatchSigningPanel,
+provenance gating, opt-in release signing status-artifact markers, Postgres
+rustls TLS/`sslmode=prefer` markers, observability `/metrics`/`/livez`/`/readyz`
+and route-label request-id markers, local CC batch-signing UI markers for BatchSigningPanel,
 `useCcBatchSign`, `POST /v1/signature/cc/batch-sign`, optional transient PIN
 clearing/no-storage, per-document results, auth-mode reporting, declared
 signer-capacity evidence display, local-CC-only no-claim boundary copy, and
@@ -266,10 +268,23 @@ do not prove file-to-DB sidecar migration, backup/restore execution, production
 Postgres readiness, broad API/product live DB validation beyond the store
 backend sweep, API Postgres CI, migration
 completeness, production HA readiness, consensus correctness, split-brain
-impossibility, live failover certification, cloud deployment readiness,
-TLS/remote PG readiness, multi-node operational certification,
+impossibility, live failover certification, cloud deployment readiness, live
+`verify-full` CA/hostname proof, production TLS/remote PG readiness, multi-node operational certification,
 backup-policy/RPO/RTO certification, destructive operation safety, legal/DR
 certification, external service dependency, or external sync readiness.
+
+The wp25 Postgres TLS markers prove source and focused live-store coverage for
+the rustls connector only. `crates/chancela-store/src/pg_tls.rs` resolves
+`sslmode` from `CHANCELA_PG_SSLMODE` before `DATABASE_URL`, defaults to
+`prefer`, strips URL and keyword-form `sslmode` before handing the DSN to
+`postgres::Config`, supports `disable`/`prefer`/`require`/`verify-full`, treats
+`verify-ca` as the stricter verify-full posture, and fails closed if
+verify-full cannot load trusted roots. The live ignored test
+`sslmode_prefer_opens_and_roundtrips_on_postgres` proves the connector and
+`sslmode=prefer` round-trip against a plain or TLS-capable test Postgres only.
+It does not prove live `verify-full` CA/hostname validation, production remote
+Postgres readiness, HA/failover, migration completeness, RPO/RTO, legal/DR
+certification, or broader API Postgres CI.
 
 It intentionally reuses existing test surfaces:
 
@@ -1121,6 +1136,20 @@ It verifies API/MCP row rendering, the MCP `start` desired-state POST returning
 does not prove live supervisor integration, process start/stop/restart control,
 stdout/stderr capture, MCP child-process logging, or production observability.
 
+## Observability Probes and Metrics
+
+The wp25 observability markers pin first-class API probes and Prometheus output:
+`/metrics`, `/livez`, `/readyz`, the `/api/...` aliases, `x-request-id`
+echo/replacement, route-template metric labels, and Prometheus text rendering.
+`/metrics` is intentionally unauthenticated for scraper compatibility and must
+be exposed only on an internal network or behind a reverse-proxy/network
+allowlist. `/readyz` is deliberately narrow degraded-mode readiness: it returns
+503 when integrity failure has closed the app into degraded read-only mode and
+does not prove database, Redis, remote-signing, trust-list, or cluster
+dependency readiness. These markers are probe/metrics/tracing plumbing only,
+not production SIEM, alerting, HA, retention, full dependency readiness, or a
+compliance claim.
+
 ## Release Hardening Artifacts
 
 The CI `supply-chain` job now generates and validates a CycloneDX dependency
@@ -1164,6 +1193,18 @@ publication, and attestation evidence are actually generated. The Compose
 smoke does not claim HA, a dedicated worker image, registry publication, image
 signing, attestation, notarization, vulnerability remediation, or production
 deployment certification.
+
+The separate `Release signing (opt-in)` workflow is manual and secret-gated. It
+adds hooks for target-image push/signing, cosign SBOM attestation, source SBOM
+upload, Windows/macOS code signing, and macOS notarization, but
+`scripts/release-signing-status.mjs` records positive signing, attestation, or
+notarization claims only when concrete evidence such as image digest, identity,
+predicate type, signer, certificate fingerprint, run URL, or notarization ticket
+is supplied. With missing targets or credentials it emits honest unsigned /
+not-pushed / not-attested / not-notarized status artifacts. This checkpoint pins
+workflow wiring and status-artifact behavior only: no production signing
+success, secret availability, trust certification, registry publication, or
+completed notarization is claimed.
 
 The additive hardened Docker lane is pinned as local configuration and operator
 documentation evidence only. `Dockerfile.hardened` uses digest-pinned Rust,
