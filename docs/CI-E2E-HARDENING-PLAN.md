@@ -1,9 +1,10 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `87ec6aa`,
-including coverage notes for convocation act-review guidance and
-convocation-notice local WFL/legal-calendar advisory reminders, condominium annual local advisory Jan 15 profile-calendar
+and implementation snapshot `3dc31e3`,
+including coverage notes for missing-meeting-date convocation reminders,
+convocation act-review guidance and convocation-notice local WFL/legal-calendar
+advisory reminders, condominium annual local advisory Jan 15 profile-calendar
 depth, dashboard annual profile-calendar reminder localization,
 automated-review dashboard contract surfacing, archive active-filter count
 refinement, all-filtered archive export streaming/caps,
@@ -888,11 +889,11 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `982cc9a`
+## Focused Gate Snapshot Through `3dc31e3`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08` and checkpoint-promoted on 2026-07-15 for
-current implementation head `982cc9a`. This is not an exhaustive current
+current implementation head `3dc31e3`. This is not an exhaustive current
 green-run claim; browser, Docker, desktop, package signing/notarization, image
 signing/attestation, and live-provider limits above still apply.
 
@@ -1843,6 +1844,28 @@ settingsDefaults.test.ts contracts.test.ts`.
   legal-authority, legal-sufficiency, provider, certification, external
   delivery, workflow-completion, DRE/source-authority, registry acceptance,
   legal effect, or legal/compliance completion claim.
+- Current `3dc31e3` missing-meeting-date convocation reminder checks: focused
+  `cargo test -p chancela-api --locked convocation_notice`, `npm run test
+  --workspace apps/web -- DashboardPage.test.tsx notifications.test.ts`, `npm
+  run test --workspace apps/web -- i18n.test.ts`, `npm run build --workspace
+  apps/web`, and `git diff --check` pin the API and web behavior for a statute
+  convocation-notice day count when `meeting_date` is absent. The API dashboard
+  now emits the same `act-convening-notice` local advisory route with blank
+  `due_date`, blank `meeting_date`, blank `notice_due_date`,
+  `evidence_status=missing_meeting_date`,
+  `notice_due_date_computable=false`,
+  `notice_due_date_blocked_by=missing_meeting_date`,
+  `local_deadline_computed=false`, empty `law_refs`, and false no-claim params
+  for legal sufficiency, legal deadline computation, external delivery,
+  workflow completion, registry acceptance, DRE acceptance, and provider
+  acceptance. Web dashboard and notification copy choose the
+  missing-meeting-date body and state that the local notice due date cannot be
+  computed until the meeting date is recorded; the existing recorded-meeting
+  short/missing dispatch path still computes and displays `notice_due_date` as
+  before. This is local advisory workflow/calendar depth only: no legal
+  authority, legal sufficiency, compliance completion, external delivery,
+  workflow completion, registry/DRE/provider acceptance, legal deadline
+  computation, legal effect, or legal/compliance completion claim is added.
 - Current `87ec6aa` convocation act-review guidance checks: focused
   `npm run test --workspace apps/web -- AtaEditorStructured.test.tsx
   CompliancePanel.test.tsx` passed 38 tests, `npm run build --workspace
@@ -1854,9 +1877,9 @@ settingsDefaults.test.ts contracts.test.ts`.
   local WFL/legal-calendar usability depth only: no backend/dashboard contract
   change, legal sufficiency, compliance determination, delivery, workflow
   completion, registry, DRE/source-authority, provider, legal effect, or spec
-  completion claim is implemented. Residual limitation remains that dashboard
-  reminder computation depends on recorded `meeting_date` to compute
-  `notice_due_date`.
+  completion claim is implemented. Dashboard reminder due-date computation
+  still depends on recorded `meeting_date`; missing-date dashboard reminders are
+  non-computed local advisories.
 - Current imported-document review reminder checks: focused `cargo test -p
   chancela-api --lib --locked imported_document_review_reminder` coverage pins
   metadata-only dashboard reminder emission for act-scoped imports whose review
@@ -1991,7 +2014,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   full RBAC/delegation-policy completion, tenant authorization proof,
   legal-capacity verification, broad security certification, or spec
   completion.
-- Current checkpoint metadata/static checks through `87ec6aa`
+- Current checkpoint metadata/static checks through `3dc31e3`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and

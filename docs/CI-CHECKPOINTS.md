@@ -87,7 +87,8 @@ condominium annual profile-calendar Jan 15 local advisory markers plus
 dashboard-only annual reminder localization markers for CSC, association,
 foundation, and cooperative profile-calendar rules, convocation act-review
 guidance markers plus convocation-notice local WFL/legal-calendar advisory
-markers for `act-convening-notice` open-act reminders,
+markers for `act-convening-notice` open-act reminders including the
+missing-meeting-date non-computed reminder path,
 compact validator-report actions, template provenance UI, release clean-source
 provenance gating, local CC batch-signing UI markers for BatchSigningPanel,
 `useCcBatchSign`, `POST /v1/signature/cc/batch-sign`, optional transient PIN
@@ -691,9 +692,26 @@ notification localized copy that hides raw backend fallback text. These markers
 remain local WFL/legal-calendar advisory evidence only. They do not claim legal
 authority, legal sufficiency, provider/certification execution, external
 delivery, workflow completion, DRE/source-authority verification, registry
-acceptance, legal effect, or legal/compliance completion. The dashboard reminder
-still needs `meeting_date` to compute `notice_due_date`, and core still warns
-when convening evidence is missing or unverifiable.
+acceptance, legal effect, or legal/compliance completion. The computed
+due-date reminder path still needs `meeting_date` to compute `notice_due_date`,
+and core still warns when convening evidence is missing or unverifiable.
+
+Missing-meeting-date convocation reminder markers pin the local advisory
+workflow/calendar slice only: API dashboard coverage emits an
+`act-convening-notice` reminder with blank `due_date`, blank `meeting_date`,
+blank `notice_due_date`, `evidence_status=missing_meeting_date`,
+`notice_due_date_computable=false`,
+`notice_due_date_blocked_by=missing_meeting_date`,
+`local_deadline_computed=false`, empty `law_refs`, and false no-claim params
+for legal sufficiency, legal deadline computation, external delivery, workflow
+completion, registry acceptance, DRE acceptance, and provider acceptance. Web
+dashboard and notification copy choose the missing-meeting-date body and say the
+local notice due date cannot be computed until the meeting date is recorded,
+without assuming `notice_due_date` exists. Existing short/missing dispatch
+reminders with recorded meeting dates remain pinned. These markers do not claim
+legal authority, legal sufficiency, compliance completion, external delivery,
+workflow completion, registry/DRE/provider acceptance, legal deadline
+computation, legal effect, or legal/compliance completion.
 
 Convocation act-review guidance markers pin the local WFL/legal-calendar
 usability slice only: the Ata editor inline warning asks operators to record
@@ -704,8 +722,8 @@ convocation-notice advisories. These markers do not change backend/dashboard
 contracts and do not claim legal sufficiency, compliance determination,
 delivery, workflow completion, registry, DRE/source-authority, provider
 execution, legal effect, or legal/compliance completion. Dashboard reminder
-computation still depends on recorded `meeting_date` to compute
-`notice_due_date`.
+due-date computation still depends on recorded `meeting_date`; missing-date
+dashboard reminders remain non-computed local advisories.
 
 Imported-document review reminder markers pin the API dashboard reminder unit
 coverage for act-scoped imports still in `operator_review_required`,

@@ -1,9 +1,9 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-15 from current implementation snapshot `87ec6aa2db800a157de772800d5be08f929c9534`,
-with committed evidence refreshes for the recently landed convocation
-act-review guidance and convocation-notice local WFL/legal-calendar advisory
-reminder slices, condominium annual local
+*Updated 2026-07-15 from current implementation snapshot `3dc31e3b358dbcb60a924e2ea17d682101dd4ea9`,
+with committed evidence refreshes for the recently landed missing-meeting-date
+convocation reminder, convocation act-review guidance, and convocation-notice
+local WFL/legal-calendar advisory reminder slices, condominium annual local
 advisory due-date depth, automated-review dashboard contract surface,
 archive filter refinement, all-filtered archive export, automated-review law
 corpus UI tier, MCP workflow provenance local JSON/text summary, key-custody
@@ -195,7 +195,8 @@ condominium annual local advisory due-date coverage, `a7125b3`
 all-filtered archive export scope coverage, `040ce48` streamed all-filtered
 archive export/cap coverage, and `711c7a4` dashboard annual profile-calendar
 reminder localization, followed by `982cc9a` convocation-notice local
-advisory reminders, and `87ec6aa` convocation act-review guidance.
+advisory reminders, `87ec6aa` convocation act-review guidance, and `3dc31e3`
+missing-meeting-date convocation reminder handling.
 Earlier coverage text remains prior snapshot context. All top-level spec areas remain **PARTIAL**.
 This is an implementation and test coverage snapshot, not a legal certification,
 not production CMD approval, not DRE verification promotion, not full PDF/UA
@@ -225,6 +226,33 @@ being useful. The matrix below records the current factual coverage and the rema
 blockers.
 
 Implementation checkpoints covered here:
+
+- Current `3dc31e3` keeps Workflows/Legal/Compliance/UX/API/CI **PARTIAL**:
+  the API dashboard now emits the same `act-convening-notice` local advisory
+  reminder when a statute convocation-notice day count exists but the act has no
+  recorded `meeting_date`. The missing-date reminder stays pending with blank
+  `due_date`, blank `meeting_date`, blank `notice_due_date`,
+  `evidence_status=missing_meeting_date`,
+  `notice_due_date_computable=false`,
+  `notice_due_date_blocked_by=missing_meeting_date`,
+  `local_deadline_computed=false`, empty `law_refs`, and explicit false
+  no-claim params for legal sufficiency, legal deadline computation, external
+  delivery, workflow completion, registry acceptance, DRE acceptance, and
+  provider acceptance. Web dashboard and notification copy select the
+  `notifications.reminder.act.conveningNotice.missingMeetingDate.body` text
+  when meeting-date/notice-due-date params are absent or non-computable, so the
+  UI says the notice due date cannot be computed until the meeting date is
+  recorded instead of assuming `notice_due_date` exists. Existing short/missing
+  dispatch reminder behavior with a recorded meeting date remains preserved.
+  Focused evidence passed: `cargo test -p chancela-api --locked
+  convocation_notice` (4 tests), `npm run test --workspace apps/web --
+  DashboardPage.test.tsx notifications.test.ts` (40 tests), `npm run test
+  --workspace apps/web -- i18n.test.ts` (38 tests), `npm run build --workspace
+  apps/web`, and `git diff --check`. This is local advisory workflow/calendar
+  depth only: it adds no legal-authority, legal-sufficiency, compliance
+  completion, external-delivery, workflow-completion, registry/DRE/provider
+  acceptance, legal deadline computation, legal effect, or legal/compliance
+  completion claim when the meeting date is absent.
 
 - Current `3a41187` keeps Workflows/UX/API/CI **PARTIAL**: the
   `condominio-annual` profile-calendar preset now has a deterministic local
@@ -296,8 +324,9 @@ Implementation checkpoints covered here:
   depth only: it adds no legal sufficiency, compliance determination, delivery,
   workflow completion, registry, DRE/source-authority, provider, or legal-effect
   claim, does not change backend/dashboard contracts, and does not make the
-  spec complete. Residual limitation remains that dashboard reminder
-  computation depends on recorded `meeting_date` to compute `notice_due_date`.
+  spec complete. Dashboard reminder due-date computation still depends on
+  recorded `meeting_date`; missing-date dashboard reminders are non-computed
+  local advisories.
 
 - Recent `7ab3ab7` keeps Legal/Compliance/UX/API/CI **PARTIAL**:
   automated-review law references now flow from API/dashboard and law-corpus

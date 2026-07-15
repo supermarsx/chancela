@@ -10421,12 +10421,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `87ec6aa`",
+    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `3dc31e3`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `982cc9a`",
+    "Focused Gate Snapshot Through `3dc31e3`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -11066,7 +11066,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `87ec6aa`",
+    "Current checkpoint metadata/static checks through `3dc31e3`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -11601,7 +11601,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `87ec6aa2db800a157de772800d5be08f929c9534`",
+    "implementation snapshot `3dc31e3b358dbcb60a924e2ea17d682101dd4ea9`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -12105,6 +12105,36 @@ function assertCheckpointMap() {
     "CI/E2E hardening plan convocation-notice limitation marker",
   );
   assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Current `3dc31e3` keeps Workflows/Legal/Compliance/UX/API/CI **PARTIAL**",
+    "spec coverage missing-meeting-date convocation reminder checkpoint marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "`notice_due_date_computable=false`, `notice_due_date_blocked_by=missing_meeting_date`, `local_deadline_computed=false`",
+    "spec coverage missing-meeting-date convocation params marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "no legal-authority, legal-sufficiency, compliance completion, external-delivery, workflow-completion, registry/DRE/provider acceptance, legal deadline computation",
+    "spec coverage missing-meeting-date convocation no-claim marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Current `3dc31e3` missing-meeting-date convocation reminder checks",
+    "CI/E2E hardening plan missing-meeting-date convocation marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "local notice due date cannot be computed until the meeting date is recorded",
+    "CI/E2E hardening plan missing-meeting-date non-computed marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "Missing-meeting-date convocation reminder markers pin the local advisory\nworkflow/calendar slice only",
+    "CI checkpoints missing-meeting-date convocation marker",
+  );
+  assertFileContains(
     "docs/CI-CHECKPOINTS.md",
     "Convocation-notice advisory markers pin the local statute/convening evidence\nslice only",
     "CI checkpoints convocation-notice advisory marker",
@@ -12131,7 +12161,7 @@ function assertCheckpointMap() {
   );
   assertFileContainsNormalized(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Residual limitation remains that dashboard reminder computation depends on recorded `meeting_date` to compute `notice_due_date`",
+    "Dashboard reminder due-date computation still depends on recorded `meeting_date`; missing-date dashboard reminders are non-computed local advisories",
     "CI/E2E hardening plan convocation act-review limitation marker",
   );
   assertFileContains(
@@ -12201,6 +12231,16 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-api/src/dashboard.rs",
+    "convocation_notice_missing_meeting_date_surfaces_local_advisory_without_due_date",
+    "API dashboard convocation-notice missing meeting date reminder coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/dashboard.rs",
+    "fn act_convocation_notice_missing_meeting_date_reminder",
+    "API dashboard convocation-notice missing meeting date builder marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/dashboard.rs",
     "convocation_notice_sufficient_evidence_is_suppressed",
     "API dashboard convocation-notice sufficient evidence suppression coverage",
   );
@@ -12213,6 +12253,16 @@ function assertCheckpointMap() {
     "crates/chancela-api/src/dashboard.rs",
     "(\"notice_due_date\", notice_due_date_text)",
     "API dashboard convocation-notice due-date param marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/dashboard.rs",
+    "(\"notice_due_date_computable\", \"false\".to_owned())",
+    "API dashboard convocation-notice missing meeting date computable false marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/dashboard.rs",
+    "(\"legal_deadline_computation_claimed\", \"false\".to_owned())",
+    "API dashboard convocation-notice legal deadline no-claim marker",
   );
   assertFileContains(
     "crates/chancela-api/src/dashboard.rs",
@@ -12230,9 +12280,19 @@ function assertCheckpointMap() {
     "dashboard convocation-notice localized copy marker",
   );
   assertFileContains(
+    "apps/web/src/features/dashboard/DashboardPage.tsx",
+    "CONVENING_NOTICE_MISSING_MEETING_DATE_BODY",
+    "dashboard convocation-notice missing meeting date body marker",
+  );
+  assertFileContains(
     "apps/web/src/features/notifications/notifications.ts",
     "'act-convening-notice': {\n    title: 'notifications.reminder.act.conveningNotice.title'",
     "notification-center convocation-notice localized copy marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/notifications/notifications.ts",
+    "CONVENING_NOTICE_MISSING_MEETING_DATE_BODY",
+    "notification-center convocation-notice missing meeting date body marker",
   );
   assertFileContains(
     "apps/web/src/features/dashboard/DashboardPage.test.tsx",
@@ -12240,9 +12300,29 @@ function assertCheckpointMap() {
     "dashboard convocation-notice advisory routing test marker",
   );
   assertFileContains(
+    "apps/web/src/features/dashboard/DashboardPage.test.tsx",
+    "renders convocation-notice reminders without meeting dates as non-computed local advisory work",
+    "dashboard convocation-notice missing meeting date test marker",
+  );
+  assertFileContains(
     "apps/web/src/features/notifications/notifications.test.ts",
     "renders convocation-notice reminders as local advisory act work",
     "notification-center convocation-notice advisory test marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/notifications/notifications.test.ts",
+    "renders convocation-notice reminders without meeting dates as non-computed advisory act work",
+    "notification-center convocation-notice missing meeting date test marker",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/i18n.test.ts",
+    "keeps missing-meeting-date convocation reminder copy non-computing and advisory",
+    "i18n convocation-notice missing meeting date copy marker",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/locales/en-US.ts",
+    "The local notice date cannot be computed until the meeting date is recorded.",
+    "en-US convocation-notice missing meeting date non-computed copy marker",
   );
   assertFileContains(
     "apps/web/src/i18n/locales/en-US.ts",
