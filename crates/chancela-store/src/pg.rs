@@ -29,9 +29,10 @@
 //! node that loses the race comes up as a read-only FOLLOWER and polls for promotion rather than
 //! hanging (see [`crate::pg_cluster`] for the election / step-down / handoff /
 //! `leader_epoch`-fence machinery). Compose additionally pins `deploy.replicas: 1` for the
-//! single-writer profile (§6). TLS is now supported (wp25): the connection honors an sslmode of
-//! `disable`/`prefer`/`require`/`verify-full` (from `DATABASE_URL` or `CHANCELA_PG_SSLMODE`) through a
-//! rustls connector for the sync `postgres` stack — see [`crate::pg_tls`].
+//! single-writer profile (§6). TLS is now enforced (wp25 hardening): the connection requires
+//! certificate-verified `sslmode=verify-full` (from `DATABASE_URL` or `CHANCELA_PG_SSLMODE`, with
+//! `verify-ca` hardened to `verify-full`) through a rustls connector for the sync `postgres` stack —
+//! see [`crate::pg_tls`].
 //!
 //! ## What the Postgres backend supports vs defers (all deferrals fail closed, never silently)
 //!
@@ -108,8 +109,8 @@ pub(crate) const EVENTS_SINCE_SQL: &str = "SELECT seq, id, actor, justification,
 
 /// The `r2d2` connection manager type for the read pool. The TLS connector is always the
 /// rustls-based [`crate::pg_tls::MakeRustlsConnect`]; whether TLS is actually negotiated is decided
-/// by the connection's `ssl_mode` (resolved in [`crate::pg_tls::resolve`]), so `sslmode=disable`
-/// stays plaintext (the connector is built but never invoked) while `require`/`verify-full` encrypt.
+/// by the connection's `ssl_mode` (resolved in [`crate::pg_tls::resolve`]); only certificate-verified
+/// TLS is accepted, so plaintext and encrypt-only modes fail closed before any socket is opened.
 type PgManager = PostgresConnectionManager<crate::pg_tls::MakeRustlsConnect>;
 
 /// The PostgreSQL backend: a read pool plus a single advisory-locked writer connection.
@@ -162,7 +163,7 @@ impl PostgresBackend {
     ///
     /// `database_url` is a libpq connection string (`postgres://user:pass@host:5432/db`). The TLS
     /// posture is resolved from `CHANCELA_PG_SSLMODE` or the URL's `sslmode=` (defaulting to
-    /// `prefer`) and applied through the rustls connector in [`crate::pg_tls`]; both the read pool
+    /// `verify-full`) and applied through the rustls connector in [`crate::pg_tls`]; both the read pool
     /// and the writer share the same resolved [`postgres::Config`] + connector.
     pub(crate) fn open(database_url: &str) -> Result<Self, StoreError> {
         let crate::pg_tls::ResolvedPgTls {
@@ -172,7 +173,7 @@ impl PostgresBackend {
         } = crate::pg_tls::resolve(database_url)?;
 
         // Read pool. The resolved config carries the wire `ssl_mode`; the connector encrypts when
-        // that mode negotiates TLS and is a harmless no-op under `sslmode=disable`.
+        // that mode negotiates certificate-verified TLS; insecure modes fail in pg_tls::resolve.
         let manager = PostgresConnectionManager::new(config.clone(), connector.clone());
         let pool = r2d2::Pool::builder().build(manager)?;
 

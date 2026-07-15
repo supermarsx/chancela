@@ -484,10 +484,9 @@ fn os_secret_to_url(raw: OsString) -> Result<String, DatabaseBackendConfigError>
 
 /// Resolve the PostgreSQL connection string from the direct env var or its `*_FILE` indirection.
 ///
-/// Exactly one source may be configured; TLS/`sslmode` is carried inside the URL verbatim and honored
-/// by the store's PostgreSQL driver (plaintext + `sslmode` pass-through today; `sslmode=verify-full`
-/// certificate pinning is a store-layer follow-up — the driver currently connects without a rustls
-/// TLS bridge).
+/// Exactly one source may be configured; TLS/`sslmode` is carried inside the URL verbatim and enforced
+/// by the store's PostgreSQL driver. The store rejects plaintext, opportunistic, and encrypt-only
+/// modes, defaulting to certificate-verified `verify-full` when no `sslmode` is supplied.
 #[cfg(feature = "postgres")]
 fn resolve_database_url(
     url: Option<String>,
@@ -869,11 +868,11 @@ mod tests {
     #[test]
     fn postgres_with_url_resolves() {
         let url = resolve_database_url(
-            Some("postgres://u:p@db:5432/chancela?sslmode=require".to_owned()),
+            Some("postgres://u:p@db:5432/chancela?sslmode=verify-full".to_owned()),
             None,
         )
         .expect("explicit url resolves");
-        assert_eq!(url, "postgres://u:p@db:5432/chancela?sslmode=require");
+        assert_eq!(url, "postgres://u:p@db:5432/chancela?sslmode=verify-full");
     }
 
     #[cfg(feature = "postgres")]
