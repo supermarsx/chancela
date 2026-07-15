@@ -10471,12 +10471,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `212a1b2`",
+    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `364cb4b`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `212a1b2`",
+    "Focused Gate Snapshot Through `364cb4b`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -10738,6 +10738,16 @@ function assertCheckpointMap() {
     "docs/CI-E2E-HARDENING-PLAN.md",
     "Current `212a1b2` generated-document by-id download, dispatch-evidence, and\n  dashboard absent-owner/generated-convening reminder checks",
     "CI/E2E hardening plan generated-document dispatch-evidence checks marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Current `364cb4b` composed-server auth-aligned E2E checkpoint",
+    "CI/E2E hardening plan full server E2E checkpoint marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "`cargo test -p chancela-server --features e2e --locked` passed locally after\n  the server E2E auth helpers were aligned",
+    "CI/E2E hardening plan full server E2E pass marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -11131,7 +11141,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `212a1b2`",
+    "Current checkpoint metadata/static checks through `364cb4b`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -11666,7 +11676,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `212a1b20d9faccf21783d98a69d7a9ef7b239006`",
+    "implementation snapshot `364cb4b5ba64251e13f7be794dc06cdfdd8fd1f3`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -13584,6 +13594,16 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
+    "Current `364cb4b` keeps CI/API/Workflows/Legal/Compliance/UX **PARTIAL**",
+    "spec coverage full server E2E checkpoint marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "local full composed-server E2E passed with\n  `cargo test -p chancela-server --features e2e --locked`",
+    "spec coverage full server E2E pass marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
     "not a full\n  `cargo test -p chancela-server --features e2e --locked` green-run claim",
     "spec coverage generated-convening focused E2E no-full-suite marker",
   );
@@ -13696,6 +13716,11 @@ function assertCheckpointMap() {
     "docs/CI-CHECKPOINTS.md",
     "`cargo test -p chancela-server --features e2e --locked --test e2e_archive_package generated_convening -- --nocapture`",
     "CI checkpoints generated-convening archive E2E command marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "Follow-on local full composed-server E2E at `364cb4b` passed:\n  `cargo test -p chancela-server --features e2e --locked`",
+    "CI checkpoints full server E2E pass marker",
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",

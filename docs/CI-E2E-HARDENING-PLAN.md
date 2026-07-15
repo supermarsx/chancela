@@ -1,8 +1,9 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `212a1b2`,
-including coverage notes for focused composed-server generated-convening
+and implementation snapshot `364cb4b`,
+including coverage notes for the full composed-server E2E local pass after auth
+harness alignment, focused composed-server generated-convening
 dispatch-evidence E2E coverage, generated-convening dispatch-evidence
 metadata-only generated-document recording, convening recipient contact metadata before local
 dispatch evidence stamping, route-stubbed convening dispatch browser proof,
@@ -905,13 +906,15 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `212a1b2`
+## Focused Gate Snapshot Through `364cb4b`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08` and checkpoint-promoted on 2026-07-15 for
-current implementation head `212a1b2`. This is not an exhaustive current
-green-run claim; browser, Docker, desktop, package signing/notarization, image
-signing/attestation, and live-provider limits above still apply.
+current implementation head `364cb4b`. This is not an exhaustive current
+green-run claim; the full-server E2E claim below is limited to local
+`chancela-server --features e2e` after auth harness alignment, and browser,
+Docker, desktop, package signing/notarization, image signing/attestation, and
+live-provider limits above still apply.
 
 - `actionlint .github/workflows/ci.yml`, `npx prettier --check
 .github/workflows/ci.yml`, and `git diff --check -- .github/workflows/ci.yml
@@ -1435,6 +1438,22 @@ settingsDefaults.test.ts contracts.test.ts`.
   and `Leitor` recent-event visibility, and continued Guest refusal from
   `/v1/ledger/events`. This is response redaction only: no permission grants,
   full anonymization, destructive erasure, or policy-completeness claim.
+- Current `364cb4b` composed-server auth-aligned E2E checkpoint:
+  `cargo test -p chancela-server --features e2e --locked` passed locally after
+  the server E2E auth helpers were aligned with the current password-required
+  `/v1/users` and `/v1/session` public contracts. Legacy passwordless
+  degraded-recovery coverage is preserved only through a test-only e2e-feature
+  session seed file consumed at server startup; public account/session
+  semantics remain unchanged, and public session creation still rejects no-hash
+  users. Focused recovery E2E also passed with
+  `cargo test -p chancela-server --features e2e --locked --test e2e_recovery_data_mgmt -- --nocapture`,
+  web contract tests passed with
+  `npm run test --workspace apps/web -- src/contracts/contracts.test.ts` (57),
+  and `cargo fmt --all --check` plus `git diff --check` passed. This full
+  server E2E pass validates the generated-convening composed-server slice under
+  the full suite only; it does not claim full spec completion, live provider
+  proof, legal proof, public auth weakening, or browser/Desktop/Docker matrix
+  completion.
 - Current `212a1b2` generated-document by-id download, dispatch-evidence, and
   dashboard absent-owner/generated-convening reminder checks: focused
   `cargo test -p chancela-api --locked on_demand_generate_persists_a_chosen_document_and_emits_the_event`
@@ -2100,7 +2119,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   full RBAC/delegation-policy completion, tenant authorization proof,
   legal-capacity verification, broad security certification, or spec
   completion.
-- Current checkpoint metadata/static checks through `212a1b2`
+- Current checkpoint metadata/static checks through `364cb4b`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and

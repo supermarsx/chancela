@@ -83,7 +83,8 @@ manifest API and BookDetail JSON-download markers, generated-document by-id
 download route plus sealed post-act certidao/extrato template generation UI,
 absent-owner communication dispatch-evidence recording, generated-convening
 dispatch-evidence metadata-only recording plus focused composed-server
-generated-convening dispatch-evidence E2E coverage, and generated
+generated-convening dispatch-evidence E2E coverage, a full composed-server E2E
+local pass after auth harness alignment, and generated
 absent-owner/generated-convening evidence UI and dashboard dispatch-evidence reminders,
 condominium annual profile-calendar Jan 15 local advisory markers plus
 dashboard-only annual reminder localization markers for CSC, association,
@@ -393,6 +394,19 @@ It intentionally reuses existing test surfaces:
   restart persistence, read-only archive export, and metadata-only/no-claim
   assertions. It is focused E2E evidence only, not a full server E2E-suite
   green-run claim.
+  Follow-on local full composed-server E2E at `364cb4b` passed:
+  `cargo test -p chancela-server --features e2e --locked`. That pass followed
+  server E2E auth-helper alignment with the current password-required
+  `/v1/users` and `/v1/session` public contracts. The legacy degraded-recovery
+  path remains test-only through an e2e-feature session seed file consumed at
+  server startup, and public session creation still rejects no-hash users.
+  Focused recovery E2E
+  `cargo test -p chancela-server --features e2e --locked --test e2e_recovery_data_mgmt -- --nocapture`
+  and web contracts
+  `npm run test --workspace apps/web -- src/contracts/contracts.test.ts` (57)
+  also passed. This validates the generated-convening composed-server coverage
+  under the full suite without claiming spec completion, live provider proof,
+  legal proof, or public auth weakening. The spec matrix remains `PARTIAL=11`.
 - API/web condominium annual profile-calendar advisory:
   `cargo test -p chancela-core --locked profile_calendar`, `cargo test -p
   chancela-api --locked profile_calendar`, and `cargo test -p chancela-api

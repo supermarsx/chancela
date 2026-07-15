@@ -1,8 +1,9 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-15 from current implementation snapshot `212a1b20d9faccf21783d98a69d7a9ef7b239006`,
-with committed evidence refreshes for the recently landed focused
-composed-server generated-convening dispatch-evidence E2E slice,
+*Updated 2026-07-15 from current implementation snapshot `364cb4b5ba64251e13f7be794dc06cdfdd8fd1f3`,
+with committed evidence refreshes for the recently landed full composed-server
+E2E local pass after auth harness alignment, focused composed-server
+generated-convening dispatch-evidence E2E slice,
 generated-convening dispatch-evidence metadata-only generated-document slice,
 convening recipient contact metadata split before local dispatch evidence,
 route-stubbed convening dispatch browser proof, convening dispatch evidence capture UI slice,
@@ -215,7 +216,11 @@ side-table, bundle index, archive sidecar, dashboard reminder, notification,
 and route-stubbed browser paths, then `212a1b2` focused composed-server
 real-binary E2E coverage for generated Convocatoria dispatch-evidence
 persistence, bundle/archive indexing, restart persistence, and read-only export
-boundaries.
+boundaries, followed by `364cb4b` full composed-server
+`cargo test -p chancela-server --features e2e --locked` local pass after
+password-required auth harness alignment, including focused recovery E2E and
+web contract confirmation while preserving public auth semantics and no-hash
+session refusal.
 Earlier coverage text remains prior snapshot context. All top-level spec areas remain **PARTIAL**.
 This is an implementation and test coverage snapshot, not a legal certification,
 not production CMD approval, not DRE verification promotion, not full PDF/UA
@@ -245,6 +250,25 @@ being useful. The matrix below records the current factual coverage and the rema
 blockers.
 
 Implementation checkpoints covered here:
+
+- Current `364cb4b` keeps CI/API/Workflows/Legal/Compliance/UX **PARTIAL**:
+  local full composed-server E2E passed with
+  `cargo test -p chancela-server --features e2e --locked` after the server
+  E2E auth helpers were aligned with the current password-required `/v1/users`
+  and `/v1/session` contracts. Legacy passwordless degraded-recovery coverage
+  is preserved only through a test-only e2e-feature session seed file consumed
+  at server startup; public account/session semantics remain unchanged, and
+  public session creation still rejects no-hash users. Focused recovery E2E
+  also passed with
+  `cargo test -p chancela-server --features e2e --locked --test e2e_recovery_data_mgmt -- --nocapture`,
+  web contract tests passed with
+  `npm run test --workspace apps/web -- src/contracts/contracts.test.ts` (57),
+  and `cargo fmt --all --check` plus `git diff --check` passed. This validates
+  the generated-convening composed-server E2E slice under the full server E2E
+  suite. It is still a local validation/checkpoint slice only: it does not make
+  top-level spec rows complete, prove production/live provider readiness,
+  create legal proof, weaken public auth, or claim browser/Desktop/Docker
+  matrix completion.
 
 - Current `daf8288` keeps Workflows/Legal/Compliance/UX/API/CI **PARTIAL**:
   `ConveningRecipient.contact` is now additive optional recipient contact
