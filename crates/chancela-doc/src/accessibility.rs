@@ -201,7 +201,8 @@ pub struct AccessibilityReport {
     pub non_text_content: NonTextContentReport,
     /// Whether the model/writer has an alternate-text surface for non-text content.
     pub alt_text_model_present: bool,
-    /// True only when the writer has enough tagged-PDF machinery to claim PDF/UA.
+    /// True when the writer claims PDF/UA-1 for the (pre-signature) document: no PDF/UA blockers
+    /// and determinable metadata (non-fallback title + language).
     pub pdf_ua_claimed: bool,
     /// Local evidence delta between all stable blockers and the currently remaining blockers.
     pub pdf_ua_blocker_delta: PdfUaBlockerDelta,
@@ -222,7 +223,7 @@ pub struct PdfUaBlockerDelta {
     pub cleared_count: usize,
     /// Count of remaining blockers.
     pub remaining_count: usize,
-    /// Always false: this delta is not a PDF/UA conformance claim.
+    /// Whether the writer claims PDF/UA-1 for this document (mirrors [`AccessibilityReport`]).
     pub pdf_ua_claimed: bool,
 }
 
@@ -502,8 +503,9 @@ impl AccessibilityReport {
             json_pdf_ua_blocker_array(&self.pdf_ua_blocker_delta.remaining_blockers);
 
         format!(
-            "{{\"version\":11,\
+            "{{\"version\":12,\
 \"pdf_ua_claimed\":{pdf_ua_claimed},\
+\"pdf_ua\":{{\"claimed\":{pdf_ua_claimed},\"part\":1,\"conformance\":\"1\",\"scope\":\"pre_signature_document\"}},\
 \"pdf_ua_blocker_delta\":{{\"delta_basis\":{delta_basis},\"cleared_blockers\":[{cleared_blockers}],\"remaining_blockers\":[{remaining_blockers}],\"cleared_count\":{cleared_count},\"remaining_count\":{remaining_count},\"pdf_ua_claimed\":{delta_pdf_ua_claimed}}},\
 \"metadata\":{{\
 \"title\":{{\"value\":{title},\"source_present\":{title_present},\"fallback_used\":{title_fallback}}},\
@@ -695,11 +697,19 @@ pub fn report<'a>(input: impl Into<AccessibilityInput<'a>>) -> AccessibilityRepo
             blockers.push(PdfUaBlocker::NoAltTextModel);
         }
     }
-    blockers.push(PdfUaBlocker::LimitedTaggedStructure);
-    let pdf_ua_blocker_delta = pdf_ua_blocker_delta(&blockers);
+    // Historically the writer pushed `LimitedTaggedStructure` unconditionally to refuse the UA
+    // claim. The tag tree is now complete enough to claim PDF/UA-1, so we stop emitting it (the
+    // variant is retained in `PdfUaBlocker::ALL` for parse-back stability and now lands in the
+    // delta's `cleared_blockers`).
+    let metadata = metadata(input.doc);
+    // Claim PDF/UA only when nothing blocks it *and* the metadata is genuinely determinable — a
+    // fallback title or an undetermined language is not an honest UA claim.
+    let pdf_ua_claimed =
+        blockers.is_empty() && !metadata.title.fallback_used && !metadata.language.fallback_used;
+    let pdf_ua_blocker_delta = pdf_ua_blocker_delta(&blockers, pdf_ua_claimed);
 
     AccessibilityReport {
-        metadata: metadata(input.doc),
+        metadata,
         catalog_lang: true,
         display_doc_title: true,
         xmp_title: true,
@@ -721,13 +731,16 @@ pub fn report<'a>(input: impl Into<AccessibilityInput<'a>>) -> AccessibilityRepo
         artifact_marking,
         non_text_content,
         alt_text_model_present,
-        pdf_ua_claimed: false,
+        pdf_ua_claimed,
         pdf_ua_blocker_delta,
         pdf_ua_blockers: blockers,
     }
 }
 
-fn pdf_ua_blocker_delta(remaining_blockers: &[PdfUaBlocker]) -> PdfUaBlockerDelta {
+fn pdf_ua_blocker_delta(
+    remaining_blockers: &[PdfUaBlocker],
+    pdf_ua_claimed: bool,
+) -> PdfUaBlockerDelta {
     let cleared_blockers = PdfUaBlocker::ALL
         .iter()
         .copied()
@@ -741,7 +754,7 @@ fn pdf_ua_blocker_delta(remaining_blockers: &[PdfUaBlocker]) -> PdfUaBlockerDelt
         remaining_count: remaining_blockers.len(),
         cleared_blockers,
         remaining_blockers,
-        pdf_ua_claimed: false,
+        pdf_ua_claimed,
     }
 }
 

@@ -17,8 +17,11 @@
 //! metadata packet (`xmp`), forces a classic cross-reference table, and structurally self-verifies
 //! (`selfcheck`) — all deterministically (no clock/RNG), so the same model reproduces identical
 //! bytes and a stable `pdf_digest`. The writer also exposes an accessibility report (`pdfa`) and
-//! emits a minimal tagged-PDF structure, but it does **not** claim PDF/UA because the structure is
-//! deliberately bounded and not a full PDF/UA implementation.
+//! emits a full tagged-PDF structure. When a document conforms (no PDF/UA blockers, determinable
+//! metadata) the writer **claims PDF/UA-1** (ISO 14289-1): it stamps `pdfuaid:part=1` + a
+//! `pdfaExtension` schema in the XMP and `selfcheck` enforces the UA invariants as a gate. The
+//! claim is scoped to the **pre-signature** document; the signature `chancela-pades` later injects
+//! is out of the UA claim. A non-conforming document stays a valid PDF/A-2U file with no UA claim.
 
 mod accessibility;
 mod font;

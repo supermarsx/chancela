@@ -907,12 +907,12 @@ fn accessibility_default_fixture_reports_no_alt_text_model() {
     assert!(report.display_doc_title);
     assert!(report.pages_use_structure_tab_order);
     assert!(!report.alt_text_model_present);
-    assert!(!report.pdf_ua_claimed);
+    assert!(report.pdf_ua_claimed);
     assert_eq!(
         report.pdf_ua_blocker_delta.delta_basis,
         "local_chancela_doc_writer_evidence_only"
     );
-    assert!(!report.pdf_ua_blocker_delta.pdf_ua_claimed);
+    assert!(report.pdf_ua_blocker_delta.pdf_ua_claimed);
     assert!(report.heading_hierarchy.document_title_tagged_as_h1);
     assert_eq!(report.heading_hierarchy.heading_count, 2);
     assert!(report.heading_hierarchy.no_skipped_levels);
@@ -1056,18 +1056,21 @@ fn accessibility_default_fixture_reports_no_alt_text_model() {
             .contains(&pdfa::PdfUaBlocker::LayoutArtifactsNotMarked)
     );
     assert!(
-        report
+        !report
             .pdf_ua_blockers
             .contains(&pdfa::PdfUaBlocker::LimitedTaggedStructure)
     );
+    // A conforming document has no remaining blockers; every stable blocker (including the retired
+    // LimitedTaggedStructure) is now cleared.
+    assert!(report.pdf_ua_blockers.is_empty());
     assert_eq!(
         report.pdf_ua_blocker_delta.remaining_blockers,
         report.pdf_ua_blockers
     );
-    assert_eq!(report.pdf_ua_blocker_delta.remaining_count, 1);
+    assert_eq!(report.pdf_ua_blocker_delta.remaining_count, 0);
     assert_eq!(
         report.pdf_ua_blocker_delta.cleared_count,
-        pdfa::PdfUaBlocker::ALL.len() - 1
+        pdfa::PdfUaBlocker::ALL.len()
     );
     assert!(
         report
@@ -1082,7 +1085,7 @@ fn accessibility_default_fixture_reports_no_alt_text_model() {
             .contains(&pdfa::PdfUaBlocker::NoAltTextModel)
     );
     assert!(
-        !report
+        report
             .pdf_ua_blocker_delta
             .cleared_blockers
             .contains(&pdfa::PdfUaBlocker::LimitedTaggedStructure)
@@ -1114,7 +1117,6 @@ fn accessibility_heading_hierarchy_reports_skipped_and_unsupported_levels() {
         vec![
             pdfa::PdfUaBlocker::HeadingHierarchySkipsLevels,
             pdfa::PdfUaBlocker::UnsupportedHeadingLevel,
-            pdfa::PdfUaBlocker::LimitedTaggedStructure,
         ]
     );
     assert!(!report.pdf_ua_claimed);
@@ -1193,11 +1195,11 @@ fn accessibility_role_map_and_table_semantics_are_reported() {
 }
 
 #[test]
-fn accessibility_report_records_space_emission_without_pdfua_claim() {
+fn accessibility_report_records_space_emission_with_pdfua_claim() {
     let report = pdfa::accessibility_report(&fixture());
 
     assert!(report.inter_word_spaces_emitted);
-    assert!(!report.pdf_ua_claimed);
+    assert!(report.pdf_ua_claimed);
     assert!(
         !report
             .pdf_ua_blockers
@@ -1205,7 +1207,7 @@ fn accessibility_report_records_space_emission_without_pdfua_claim() {
     );
 
     let json = report.to_json();
-    assert!(json.contains("\"version\":11"));
+    assert!(json.contains("\"version\":12"));
     assert!(json.contains("\"row_header_cell_count\":4"));
     assert!(json.contains("\"column_header_cell_count\":4"));
     assert!(json.contains("\"header_cells_have_scope\":true"));
@@ -1214,17 +1216,18 @@ fn accessibility_report_records_space_emission_without_pdfua_claim() {
     assert!(json.contains("\"marked_content\":{"));
     assert!(json.contains("\"bounded_local_profile\":true"));
     assert!(json.contains("\"inter_word_spaces_emitted\":true"));
-    assert!(json.contains("\"pdf_ua_claimed\":false"));
-    assert!(!json.contains("\"pdf_ua_claimed\":true"));
+    assert!(json.contains("\"pdf_ua_claimed\":true"));
+    assert!(json.contains("\"pdf_ua\":{\"claimed\":true,\"part\":1,\"conformance\":\"1\""));
+    assert!(!json.contains("\"pdf_ua_claimed\":false"));
 }
 
 #[test]
-fn accessibility_bounded_local_pdf_diagnostics_are_emitted_without_pdfua_claim() {
+fn accessibility_bounded_local_pdf_diagnostics_are_emitted_with_pdfua_claim() {
     let report = pdfa::accessibility_report(&fixture());
 
-    assert!(!report.pdf_ua_claimed);
+    assert!(report.pdf_ua_claimed);
     assert!(
-        report
+        !report
             .pdf_ua_blockers
             .contains(&pdfa::PdfUaBlocker::LimitedTaggedStructure)
     );
@@ -1243,7 +1246,7 @@ fn accessibility_bounded_local_pdf_diagnostics_are_emitted_without_pdfua_claim()
     assert!(!report.artifact_marking.artifacts_use_mcid);
 
     let json = report.to_json();
-    assert!(json.contains("\"version\":11"));
+    assert!(json.contains("\"version\":12"));
     assert!(json.contains(
         "\"pdf_ua_blocker_delta\":{\"delta_basis\":\"local_chancela_doc_writer_evidence_only\""
     ));
@@ -1256,22 +1259,24 @@ fn accessibility_bounded_local_pdf_diagnostics_are_emitted_without_pdfua_claim()
     assert!(json.contains("\"known_layout_artifact_targets\":["));
     assert!(json.contains("\"artifact_scope_operator\":\"BMC\""));
     assert!(json.contains("\"artifacts_use_mcid\":false"));
-    assert!(json.contains("\"pdf_ua_claimed\":false"));
-    assert!(json.contains("\"remaining_blockers\":[\"limited_tagged_structure\"]"));
-    assert!(json.contains("\"cleared_count\":12"));
-    assert!(json.contains("\"remaining_count\":1"));
-    assert!(!json.contains("\"pdf_ua_claimed\":true"));
+    assert!(json.contains("\"pdf_ua_claimed\":true"));
+    assert!(json.contains("\"remaining_blockers\":[]"));
+    assert!(json.contains("\"cleared_count\":13"));
+    assert!(json.contains("\"remaining_count\":0"));
+    assert!(!json.contains("\"pdf_ua_claimed\":false"));
+    // The machine report describes the target profile via a pdf_ua object, not the raw pdfuaid tag.
     assert!(!json.contains("pdfuaid"));
 
+    // A conforming document carries the PDF/UA-1 identifier in its XMP.
     let bytes = pdfa::write(&fixture()).expect("write");
     assert!(
-        !bytes.windows(7).any(|w| w == b"pdfuaid"),
-        "bounded diagnostics must not introduce PDF/UA identification metadata"
+        bytes.windows(7).any(|w| w == b"pdfuaid"),
+        "a conforming document must carry PDF/UA identification metadata"
     );
 }
 
 #[test]
-fn accessibility_explicit_alt_text_decorative_model_keeps_limited_structure_blocker() {
+fn accessibility_explicit_alt_text_decorative_model_claims_pdf_ua() {
     let mut doc = DocumentModel::new(
         "Ata com metadados de acessibilidade",
         "Encosto Estratégico Lda",
@@ -1305,21 +1310,15 @@ fn accessibility_explicit_alt_text_decorative_model_keeps_limited_structure_bloc
 
     assert!(report.alt_text_model_present);
     assert!(report.non_text_content.complete);
-    assert!(!report.pdf_ua_claimed);
-    assert_eq!(
-        report.pdf_ua_blockers,
-        vec![pdfa::PdfUaBlocker::LimitedTaggedStructure]
-    );
-    assert_eq!(
-        report.pdf_ua_blocker_delta.remaining_blockers,
-        vec![pdfa::PdfUaBlocker::LimitedTaggedStructure]
-    );
+    assert!(report.pdf_ua_claimed);
+    assert!(report.pdf_ua_blockers.is_empty());
+    assert!(report.pdf_ua_blocker_delta.remaining_blockers.is_empty());
     assert_eq!(
         report.pdf_ua_blocker_delta.cleared_count,
-        pdfa::PdfUaBlocker::ALL.len() - 1
+        pdfa::PdfUaBlocker::ALL.len()
     );
-    assert_eq!(report.pdf_ua_blocker_delta.remaining_count, 1);
-    assert!(!report.pdf_ua_blocker_delta.pdf_ua_claimed);
+    assert_eq!(report.pdf_ua_blocker_delta.remaining_count, 0);
+    assert!(report.pdf_ua_blocker_delta.pdf_ua_claimed);
     assert!(
         !report
             .pdf_ua_blockers
@@ -1387,7 +1386,7 @@ fn accessibility_page_breaks_do_not_require_decorative_accounting() {
     );
     assert!(report.alt_text_model_present);
     assert!(report.non_text_content.complete);
-    assert!(!report.pdf_ua_claimed);
+    assert!(report.pdf_ua_claimed);
     assert!(
         !report
             .pdf_ua_blockers
@@ -1401,8 +1400,8 @@ fn accessibility_page_breaks_do_not_require_decorative_accounting() {
 
     let bytes = pdfa::write(&doc).expect("write page-break PDF");
     assert!(
-        !bytes.windows(7).any(|w| w == b"pdfuaid"),
-        "page-break accounting must not introduce PDF/UA identification"
+        bytes.windows(7).any(|w| w == b"pdfuaid"),
+        "a conforming multi-page document must carry PDF/UA identification"
     );
     let parsed = Document::load_mem(&bytes).expect("parse page-break PDF");
     assert_eq!(parsed.get_pages().len(), 2);
@@ -1462,9 +1461,9 @@ fn accessibility_non_text_accounting_covers_current_block_variants() {
             .pdf_ua_blockers
             .contains(&pdfa::PdfUaBlocker::NoAltTextModel)
     );
-    assert!(!report.pdf_ua_claimed);
+    assert!(report.pdf_ua_claimed);
     assert!(
-        report
+        !report
             .pdf_ua_blockers
             .contains(&pdfa::PdfUaBlocker::LimitedTaggedStructure)
     );
@@ -1507,11 +1506,9 @@ fn accessibility_non_text_accounting_reports_missing_and_invalid_entries() {
     assert!(!report.non_text_content.complete);
     assert_eq!(
         report.pdf_ua_blockers,
-        vec![
-            pdfa::PdfUaBlocker::NonTextContentNotAccountedFor,
-            pdfa::PdfUaBlocker::LimitedTaggedStructure
-        ]
+        vec![pdfa::PdfUaBlocker::NonTextContentNotAccountedFor]
     );
+    assert!(!report.pdf_ua_claimed);
 }
 
 #[test]
@@ -1519,25 +1516,140 @@ fn accessibility_report_json_is_deterministic() {
     let a = pdfa::accessibility_report(&fixture()).to_json();
     let b = pdfa::accessibility_report(&fixture()).to_json();
     assert_eq!(a, b);
-    assert!(a.starts_with("{\"version\":11,\"pdf_ua_claimed\":false,\"pdf_ua_blocker_delta\":{"));
+    assert!(a.starts_with(
+        "{\"version\":12,\"pdf_ua_claimed\":true,\"pdf_ua\":{\"claimed\":true,\"part\":1,\"conformance\":\"1\",\"scope\":\"pre_signature_document\"},\"pdf_ua_blocker_delta\":{"
+    ));
     assert!(a.contains("\"delta_basis\":\"local_chancela_doc_writer_evidence_only\""));
-    assert!(a.contains("\"remaining_blockers\":[\"limited_tagged_structure\"]"));
-    assert!(a.contains("\"cleared_count\":12"));
-    assert!(a.contains("\"remaining_count\":1"));
+    assert!(a.contains("\"remaining_blockers\":[]"));
+    assert!(a.contains("\"cleared_count\":13"));
+    assert!(a.contains("\"remaining_count\":0"));
     assert!(a.contains("\"structure_tree\":{"));
     assert!(a.contains("\"mapped_roles\":["));
     assert!(a.contains("\"key_value_tables_have_table_semantics\":true"));
     assert!(a.contains("\"row_header_cells_have_scope_row\":true"));
     assert!(a.contains("\"column_header_cells_have_scope_column\":true"));
     assert!(a.contains("\"known_layout_artifact_targets\":["));
-    assert!(a.contains("\"pdf_ua_blockers\":[\"limited_tagged_structure\"]"));
-    assert!(!a.contains("\"pdf_ua_claimed\":true"));
+    assert!(a.contains("\"pdf_ua_blockers\":[]"));
+    assert!(!a.contains("\"pdf_ua_claimed\":false"));
 }
 
 #[test]
-fn pdf_ua_is_not_claimed_with_minimal_tagging() {
-    let report = pdfa::accessibility_report(&fixture());
+fn conforming_document_carries_full_pdf_ua_identification_and_gate_passes() {
+    let doc = fixture();
+    let report = pdfa::accessibility_report(&doc);
+    assert!(report.pdf_ua_claimed);
+    assert!(report.pdf_ua_blockers.is_empty());
+
+    let bytes = pdfa::write(&doc).expect("write");
+    // Determinism: the same model reproduces identical bytes, UA identifier included.
+    assert_eq!(bytes, pdfa::write(&doc).expect("write again"));
+
+    let parsed = Document::load_mem(&bytes).expect("parse");
+    let xmp = xmp_text(&parsed);
+    // PDF/UA-1 identifier + mandatory extension schema.
+    assert!(xmp.contains("xmlns:pdfuaid=\"http://www.aiim.org/pdfua/ns/id/\""));
+    assert!(xmp.contains("<pdfuaid:part>1</pdfuaid:part>"));
+    assert!(xmp.contains("<pdfaExtension:schemas>"));
+    assert!(xmp.contains("<pdfaSchema:prefix>pdfuaid</pdfaSchema:prefix>"));
+    // Still a valid PDF/A-2U file.
+    assert!(xmp.contains("<pdfaid:part>2</pdfaid:part>"));
+    assert!(xmp.contains("<pdfaid:conformance>U</pdfaid:conformance>"));
+
+    let catalog = catalog(&parsed);
+    assert!(
+        !catalog
+            .get(b"Lang")
+            .and_then(Object::as_str)
+            .unwrap()
+            .is_empty()
+    );
+    let mark_info = catalog.get(b"MarkInfo").and_then(Object::as_dict).unwrap();
+    assert!(matches!(
+        mark_info.get(b"Marked"),
+        Ok(Object::Boolean(true))
+    ));
+    let str_ref = catalog
+        .get(b"StructTreeRoot")
+        .and_then(Object::as_reference)
+        .unwrap();
+    let str_root = parsed
+        .get_object(str_ref)
+        .and_then(Object::as_dict)
+        .unwrap();
+    let role_map = str_root.get(b"RoleMap").and_then(Object::as_dict).unwrap();
+    assert!(!role_map.is_empty());
+    let viewer_prefs = catalog
+        .get(b"ViewerPreferences")
+        .and_then(Object::as_dict)
+        .unwrap();
+    assert!(matches!(
+        viewer_prefs.get(b"DisplayDocTitle"),
+        Ok(Object::Boolean(true))
+    ));
+
+    // The generated bytes pass the enforced UA self-check gate.
+    selfcheck::verify(&bytes).expect("UA gate passes for a conforming document");
+}
+
+#[test]
+fn selfcheck_rejects_pdfua_claim_without_extension_schema() {
+    let mut bytes = pdfa::write(&fixture()).expect("write");
+    // Corrupt the mandatory extension-schema block in place (same length keeps xref offsets valid)
+    // while leaving the pdfuaid identifier — an inconsistent, false UA claim the gate must reject.
+    replace_once(
+        &mut bytes,
+        b"<pdfaExtension:schemas>",
+        b"<pdfaXxtension:schemas>",
+    );
+
+    let err =
+        selfcheck::verify(&bytes).expect_err("a pdfuaid claim without its extension schema fails");
+    assert!(
+        err.to_string().contains("pdfaExtension schema"),
+        "unexpected self-check error: {err}"
+    );
+}
+
+#[test]
+fn skipped_heading_document_makes_no_pdf_ua_claim() {
+    // Negative fixture: a heading skips from the implicit H1 to H3 — the report must decline the
+    // UA claim and the writer must emit a plain PDF/A-2U file with no PDF/UA identifier.
+    let mut doc = DocumentModel::new("Salto", "Encosto Estratégico Lda", "Cabeçalhos");
+    doc.blocks = vec![
+        Block::Heading {
+            level: 3,
+            text: "Salto para h3".to_string(),
+        },
+        Block::Paragraph {
+            runs: vec![Run {
+                text: "Corpo.".to_string(),
+                bold: false,
+                italic: false,
+            }],
+        },
+    ];
+
+    let report = pdfa::accessibility_report(&doc);
     assert!(!report.pdf_ua_claimed);
+    assert!(
+        report
+            .pdf_ua_blockers
+            .contains(&pdfa::PdfUaBlocker::HeadingHierarchySkipsLevels)
+    );
+
+    // write() still succeeds (valid PDF/A-2U) but carries no UA claim.
+    let bytes = pdfa::write(&doc).expect("write");
+    assert!(
+        !bytes.windows(7).any(|w| w == b"pdfuaid"),
+        "a non-conforming document must not claim PDF/UA"
+    );
+    selfcheck::verify(&bytes).expect("plain PDF/A-2U still self-checks");
+}
+
+#[test]
+fn pdf_ua_is_claimed_for_conforming_document() {
+    let report = pdfa::accessibility_report(&fixture());
+    assert!(report.pdf_ua_claimed);
     assert!(report.structure_tree_present);
     assert!(report.tagged_content_present);
     assert!(
@@ -1556,15 +1668,15 @@ fn pdf_ua_is_not_claimed_with_minimal_tagging() {
             .contains(&pdfa::PdfUaBlocker::KeyValueTablesNotTaggedAsTables)
     );
     assert!(
-        report
+        !report
             .pdf_ua_blockers
             .contains(&pdfa::PdfUaBlocker::LimitedTaggedStructure)
     );
 
     let bytes = pdfa::write(&fixture()).expect("write");
     assert!(
-        !bytes.windows(7).any(|w| w == b"pdfuaid"),
-        "writer must not emit PDF/UA identification metadata"
+        bytes.windows(7).any(|w| w == b"pdfuaid"),
+        "a conforming document must carry PDF/UA identification metadata"
     );
     let parsed = Document::load_mem(&bytes).expect("parse");
     let catalog = catalog(&parsed);
