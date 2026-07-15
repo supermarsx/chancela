@@ -1,6 +1,6 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-15 from current implementation snapshot `22bb23d133cf63321150731c2f2f9046104a0293`,
+*Updated 2026-07-15 from current implementation snapshot `6a1282dbb1cd4ca8f4be3cf79f81604b48c0c014`,
 with committed evidence refreshes for the MCP document/archive PDF accessibility
 v11 identifier, count, blocker, and fixture-report alignment, the browser
 workflow provenance review panel and sanitized local MCP workflow-provenance copy
@@ -259,7 +259,9 @@ store round-trip evidence, `18ac1bf` docs navigation for the new operator pages,
 and route-template tracing/metrics labels, followed by `2847ca0`/`22bb23d`
 runtime HTTP/session hardening for HSTS, the single-node in-memory per-IP rate
 limiter, the absolute session lifetime cap, reset/reload cleanup of that
-node-local runtime state, and CurrentAttestor cap enforcement.
+node-local runtime state, and CurrentAttestor cap enforcement, followed by
+`6a1282d` local DPIA privacy review reminders under the existing
+privacy-control reminder source toggle.
 Earlier coverage text remains prior snapshot context. All top-level spec areas remain **PARTIAL**.
 This is an implementation and test coverage snapshot, not a legal certification,
 not production CMD approval, not DRE verification promotion, not full PDF/UA
@@ -1144,7 +1146,7 @@ Implementation checkpoints covered here:
   local evidence only: it makes no chronology editing, legal ownership/priority
   conclusion, registry certification, provider certification, DRE verification,
   external call, archive mutation, or authority-approved graph claim.
-- Current working-tree privacy DPIA/breach/transfer advisory review status and
+- Current `6a1282d` privacy DPIA/breach/transfer advisory review status and
   reminder depth keeps Legal/Compliance/Data/Workflows/UX/CI **PARTIAL**:
   DPIA, breach playbook, and transfer-control read views now include an
   `advisory_review` summary derived only from local `evidence_receipts` and
@@ -1155,21 +1157,23 @@ Implementation checkpoints covered here:
   transfer execution, authority filing, legal acceptance/certification,
   external delivery, completion, compliance certification, and legal completion. The dashboard
   reminder feed can surface local privacy review reminders for no-receipt,
-  due-soon, overdue, and under-review breach/transfer records, while
+  due-soon, overdue, and under-review DPIA, breach-playbook, and
+  transfer-control records, while
   `workflow.reminders.sources.privacy_control_reviews` lets Settings suppress
   only that reminder family. The Settings privacy register rows render the
   local review badge and derived dates beside the existing lifecycle status.
   Focused route-stubbed browser proof now pins Settings > Privacidade rendering
   for breach/transfer/DPIA advisory fixtures, dashboard work-queue reminders for
-  `privacy-breach-playbook-review` and `privacy-transfer-control-review`, and
-  Gestão suppression through
+  `privacy-dpia-review`, `privacy-breach-playbook-review`, and
+  `privacy-transfer-control-review`, and Gestão suppression through
   `workflow.reminders.sources.privacy_control_reviews=false` without privacy
   record mutation. This is deterministic local advisory state only: it does not
   notify authorities or data subjects, approve transfers, execute transfers,
-  certify adequacy/compliance, file DPIAs with an authority, accept or certify
-  legal review, complete DPIAs, make external calls, deliver
-  calendar/email/webhooks, or perform destructive retention, erasure, disposal,
-  or legal-completion action.
+  certify adequacy/compliance, file or submit DPIAs with an authority, accept
+  or certify legal review, complete DPIAs, complete legal approval, make
+  external calls, deliver calendar/email/webhooks, certify production privacy
+  compliance, or perform destructive retention, erasure, disposal, or
+  legal-completion action.
 - Password-required account creation/session slice keeps Data/Roles/UX/CI
   **PARTIAL**: `POST /v1/users` now requires a password, validates it through
   the server password policy, hashes it with the existing verifier-seed path, and
@@ -4633,7 +4637,7 @@ behavior, legal disposal, or legal-effect claims.
   per-book raw-byte import preflight route/no-mutation/API tests and web preview-confirm stale-guard
   markers, resource/prompt tests, API dashboard reminder policy/default/source-toggle/window/year-boundary
   tests, route-stubbed privacy control review reminder browser proof plus
-  Dashboard privacy reminder source-rule unit markers,
+  DPIA/breach/transfer Dashboard privacy reminder source-rule unit markers,
   web contract/client/settings-default/dashboard/ferramentas/signing/i18n/trust tests,
   all-filtered ledger archive export-scope API/client/UI/browser markers,
   external-signing envelope UI/link-safety tests,

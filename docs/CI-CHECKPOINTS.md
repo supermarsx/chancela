@@ -537,13 +537,14 @@ It intentionally reuses existing test surfaces:
   `apps/web/e2e/privacy-control-review-reminders.spec.ts` and pins Settings >
   Privacidade rendering for breach/transfer/DPIA advisory review fixtures,
   local review badges/no-claim copy, dashboard work-queue reminders for
-  `privacy-breach-playbook-review` and `privacy-transfer-control-review`, and
-  Gestão suppression through
+  `privacy-dpia-review`, `privacy-breach-playbook-review`, and
+  `privacy-transfer-control-review`, and Gestão suppression through
   `workflow.reminders.sources.privacy_control_reviews=false` without privacy
   record mutation. These markers remain local advisory reminder evidence only:
   they do not notify authorities or data subjects, approve or execute
-  transfers, file or complete DPIAs, complete legal approval, deliver
-  provider/calendar/email/webhooks, or certify privacy compliance.
+  transfers, file or submit DPIAs with authorities, complete DPIAs, complete
+  legal approval, deliver provider/calendar/email/webhooks, certify privacy
+  compliance, or prove production privacy compliance.
 - DPIA template/guidance pack:
   `cargo test -p chancela-api --test privacy --locked dpia` plus
   `apps/web/src/contracts/contracts.test.ts` and

@@ -1,7 +1,7 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `22bb23d`,
+and implementation snapshot `6a1282d`,
 including coverage notes for the MCP document/archive PDF accessibility v11
 identifier/count/blocker alignment, fixture report version 11, the Ata editor
 workflow provenance review panel, generated-document coverage fixture alignment,
@@ -976,11 +976,11 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `22bb23d`
+## Focused Gate Snapshot Through `6a1282d`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08` and checkpoint-promoted on 2026-07-15 for
-current implementation head `22bb23d`. This is not an exhaustive current
+current implementation head `6a1282d`. This is not an exhaustive current
 green-run claim; the full-server E2E claim below is limited to local
 `chancela-server --features e2e` after auth harness alignment, and browser,
 Docker, desktop, production package signing/notarization, production image
@@ -2340,7 +2340,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   production-readiness, TLS/key-custody, vulnerability-free scan, SBOM,
   signature/attestation, HA/failover/RPO/RTO, legal/DR certification, cloud
   deployment readiness, or spec-completion claim is made.
-- Current checkpoint metadata/static checks through `22bb23d`
+- Current checkpoint metadata/static checks through `6a1282d`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
@@ -2397,7 +2397,9 @@ settingsDefaults.test.ts contracts.test.ts`.
   markers, web SQLite table-usage rows, keyed VRI `/TU` evidence markers,
   compact notification/bell badge assertions, and entity filter nowrap/mobile
   wrap markers, compact template filter markers, structured book termo signatory
-  markers, retention execution review-queue and review-closure markers, retention due-candidate
+  markers, DPIA/breach/transfer privacy-control review reminder dashboard and
+  browser markers under `workflow.reminders.sources.privacy_control_reviews`,
+  retention execution review-queue and review-closure markers, retention due-candidate
   bounded archive/no-action evidence and explicit evidence-state markers,
   backend database-encryption
   key-source/hardware-fallback markers, key-custody readiness UI/contract

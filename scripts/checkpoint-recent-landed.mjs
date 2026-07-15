@@ -5248,6 +5248,11 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-api/src/dashboard.rs",
+    "\"privacy-dpia-review\"",
+    "dashboard DPIA privacy review reminder builder marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/dashboard.rs",
     "This dashboard reminder is local and advisory only",
     "dashboard privacy review advisory caveat marker",
   );
@@ -5260,6 +5265,11 @@ function assertCheckpointMap() {
     "apps/web/src/features/dashboard/DashboardPage.test.tsx",
     "renders privacy control review reminders with settings routing and source markers",
     "web dashboard privacy review reminder source-rule unit marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/dashboard/DashboardPage.test.tsx",
+    "Fonte privacy-dpia-review / privacy-dpia",
+    "web dashboard DPIA privacy review source-rule marker",
   );
   assertFileContains(
     "apps/web/e2e/privacy-control-review-reminders.spec.ts",
@@ -5275,6 +5285,11 @@ function assertCheckpointMap() {
     "apps/web/e2e/privacy-control-review-reminders.spec.ts",
     "PRIVACY_TRANSFER_REVIEW_RULE",
     "privacy transfer control review browser reminder marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/privacy-control-review-reminders.spec.ts",
+    "PRIVACY_DPIA_REVIEW_RULE",
+    "privacy DPIA review browser reminder marker",
   );
   assertFileContains(
     "contracts/privacy.breach-playbooks.json",
@@ -10735,12 +10750,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `22bb23d`",
+    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `6a1282d`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `22bb23d`",
+    "Focused Gate Snapshot Through `6a1282d`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -11415,8 +11430,13 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `22bb23d`",
+    "Current checkpoint metadata/static checks through `6a1282d`",
     "CI/E2E hardening plan current checkpoint checks marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "DPIA/breach/transfer privacy-control review reminder dashboard and\n  browser markers under `workflow.reminders.sources.privacy_control_reviews`",
+    "CI/E2E hardening plan privacy reminder dashboard/browser marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -11980,7 +12000,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `22bb23d133cf63321150731c2f2f9046104a0293`",
+    "implementation snapshot `6a1282dbb1cd4ca8f4be3cf79f81604b48c0c014`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -15397,7 +15417,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Current working-tree privacy DPIA/breach/transfer advisory review status and\n  reminder depth keeps Legal/Compliance/Data/Workflows/UX/CI **PARTIAL**",
+    "Current `6a1282d` privacy DPIA/breach/transfer advisory review status and\n  reminder depth keeps Legal/Compliance/Data/Workflows/UX/CI **PARTIAL**",
     "spec coverage privacy advisory review checkpoint marker",
   );
   assertFileContains(
@@ -15416,9 +15436,19 @@ function assertCheckpointMap() {
     "spec coverage privacy reminder browser proof marker",
   );
   assertFileContains(
+    "SPEC-COVERAGE.md",
+    "`privacy-dpia-review`, `privacy-breach-playbook-review`, and\n  `privacy-transfer-control-review`",
+    "spec coverage DPIA/breach/transfer dashboard reminder marker",
+  );
+  assertFileContains(
     "docs/CI-CHECKPOINTS.md",
     "apps/web/e2e/privacy-control-review-reminders.spec.ts",
     "CI checkpoints privacy reminder browser proof marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "`privacy-dpia-review`, `privacy-breach-playbook-review`, and\n  `privacy-transfer-control-review`",
+    "CI checkpoints DPIA/breach/transfer dashboard reminder marker",
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
@@ -15427,7 +15457,7 @@ function assertCheckpointMap() {
   );
   assertFileContainsNormalized(
     "SPEC-COVERAGE.md",
-    "does not notify authorities or data subjects, approve transfers, execute transfers, certify adequacy/compliance, file DPIAs with an authority",
+    "does not notify authorities or data subjects, approve transfers, execute transfers, certify adequacy/compliance, file or submit DPIAs with an authority",
     "spec coverage privacy advisory no-claim caveat marker",
   );
   assertFileContains(
