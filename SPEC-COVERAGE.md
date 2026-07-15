@@ -1,7 +1,9 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-15 from current implementation snapshot `3795016a4099edee107b4c69357fae3cd3fe865f`,
-with committed evidence refreshes for the recently landed real-backend
+*Updated 2026-07-15 from current implementation snapshot `00078b08b74e26bb44c2eb24c35682ba4efc04ba`,
+with committed evidence refreshes for the recently landed backend-only
+SCAP-backed signer-capacity evidence persistence for local PKCS#12 signing,
+real-backend
 generated-convening dispatch-evidence browser proof, full composed-server E2E
 local pass after auth harness alignment, focused composed-server
 generated-convening dispatch-evidence E2E slice,
@@ -226,7 +228,9 @@ web contract confirmation while preserving public auth semantics and no-hash
 session refusal, followed by `3795016` focused real-backend Playwright browser
 proof for generated Convocatoria dispatch-evidence metadata over the E2E
 backend, real generated-document dispatch-evidence `POST`/`GET`, dashboard
-deep-link routing, and persisted operator evidence row/status rendering.
+deep-link routing, and persisted operator evidence row/status rendering,
+followed by `00078b0` backend-only SCAP-backed capacity evidence persistence
+for local PKCS#12 signing.
 Earlier coverage text remains prior snapshot context. All top-level spec areas remain **PARTIAL**.
 This is an implementation and test coverage snapshot, not a legal certification,
 not production CMD approval, not DRE verification promotion, not full PDF/UA
@@ -256,6 +260,28 @@ being useful. The matrix below records the current factual coverage and the rema
 blockers.
 
 Implementation checkpoints covered here:
+
+- Current `00078b0` keeps Signatures & Trust/API/CI **PARTIAL**: backend
+  signing now persists optional SCAP-backed signer-capacity evidence for the
+  local PKCS#12 software-certificate path, including the stored PKCS#12
+  delegation that forwards `scap_capacity_evidence` to the existing local
+  signer. The `scap_capacity_evidence` request is optional; without it, the
+  existing declared-capacity fallback still stores `not_checked_by_scap` and
+  `declared_capacity_evidence_only`. With it, preprod/mock remains
+  provider-declared only (`declared_capacity_by_provider` /
+  `declared_capacity_evidence_only`), and `verified_by_scap` /
+  `scap_verified_capacity` is persisted only through the prod HTTP SCAP path
+  after a `Granted` verification. Focused coverage includes
+  `local_pkcs12_scap_capacity_preprod_is_provider_declared_only`,
+  `local_pkcs12_persists_verified_scap_capacity_evidence_from_prod_fixture`,
+  and `local_pkcs12_rejects_mismatched_capacity_and_scap_attribute`; the prod
+  proof is a local HTTP fixture, not live SCAP credentials/network or a
+  production SCAP availability claim. A mismatched request `capacity` versus
+  SCAP `attribute_name` fails with 422 before signed artifact/event
+  persistence. This is a backend-only slice: no UI picker rollout, no
+  qualified-signature completion, no representative-authority/legal-authority
+  proof, no legal-capacity/legal-validity completion, and no full spec
+  completion claim; statuses remain PARTIAL=11.
 
 - Current `3795016` keeps Documents/Workflows/Legal/Compliance/UX/API/CI
   **PARTIAL**: focused real-backend Playwright browser proof in
@@ -3147,6 +3173,21 @@ behavior, legal disposal, or legal-effect claims.
   `declared_capacity_evidence_only`; it is not SCAP verification,
   representative-authority proof, qualified-signature validation, authority
   approval, or legal-capacity verification.
+- **Backend SCAP-backed local PKCS#12 capacity evidence:** local PKCS#12 upload
+  signing and stored PKCS#12 signing delegation now accept optional
+  `scap_capacity_evidence` and persist the resolved
+  `signer_capacity_evidence` JSON with the signed document. Existing requests
+  without SCAP evidence keep the `not_checked_by_scap` /
+  `declared_capacity_evidence_only` fallback. Preprod/mock SCAP evidence stays
+  `declared_capacity_by_provider` / `declared_capacity_evidence_only`; only the
+  prod HTTP SCAP transport may persist `verified_by_scap` /
+  `scap_verified_capacity`, and the current proof is a local HTTP fixture that
+  returns `Granted`, not live SCAP credentials/network. A declared `capacity`
+  that does not match the requested SCAP `attribute_name` fails with 422 before
+  signed artifact or event persistence. This is backend-only evidence
+  persistence, not a UI picker rollout, live production SCAP availability proof,
+  representative-authority proof, qualified-signature/legal-authority
+  completion, legal-capacity completion, or legal-validity claim.
 - **Local CC batch signing UI evidence:** BatchSigningPanel exposes a
   local/co-located Cartao de Cidadao batch-signing UI for already sealed acts
   through the desktop/local CC path and `POST /v1/signature/cc/batch-sign`. It
@@ -3471,10 +3512,15 @@ behavior, legal disposal, or legal-effect claims.
   `POST /v1/acts/{id}/signature/local/pkcs12/sign` can sign a sealed act with a
   transient encrypted PFX/passphrase request, persist the resulting signed PDF and
   public certificate evidence, and report `AdvancedLocalTechnicalEvidence`. This
-  is advanced local technical evidence only; it performs no trusted-list lookup,
-  does not become CMD/remote qualified signing, and does not claim legal
-  qualification or legal status. The web signing panel now exposes this flow with
-  transient file/passphrase handling, localized warnings, and regression coverage.
+  path now also accepts optional backend-only `scap_capacity_evidence`: the
+  default/no-SCAP fallback remains `not_checked_by_scap`, preprod/mock evidence
+  remains provider-declared only, and `verified_by_scap` is reachable only via
+  prod HTTP SCAP after `Granted` verification. This is advanced local technical
+  evidence only; it performs no trusted-list lookup, does not become CMD/remote
+  qualified signing, and does not claim legal qualification, legal authority,
+  legal capacity, or legal status. The web signing panel now exposes the local
+  PKCS#12 flow with transient file/passphrase handling, localized warnings, and
+  regression coverage, but no SCAP evidence picker rollout is claimed here.
 - **TSL XML-DSig trust-gate hardening:** `chancela-tsl` now rejects unsupported or
   malformed XML-DSig shapes that the minimal verifier cannot check, and tests
   digest/`SignedInfo`/signature-value tampering plus `TslClient` downgrade behavior.
@@ -4310,7 +4356,10 @@ behavior, legal disposal, or legal-effect claims.
 - **Recent-landed checkpoint:** `npm run test:checkpoint:recent-landed` and the GitHub Actions
   `recent-landed` job pin the cross-cutting recent work: paper import API tests including
   canonical-conversion preflight markers, archive package and DocTimeStamp evidence tests, local
-  PKCS#12 API signing tests, encrypted provider-credential storage/API/UI
+  PKCS#12 API signing tests including backend-only `scap_capacity_evidence`
+  persistence for `not_checked_by_scap`, preprod/mock
+  `declared_capacity_by_provider`, prod-fixture `verified_by_scap`, and
+  mismatched declared-capacity 422 markers, encrypted provider-credential storage/API/UI
   markers, stored CMD/CSC/SCAP runtime credential resolution markers,
   stored-only PKCS#12 priority/failover and wrong-identity fail-safe markers,
   repeated remote batch-initiate API/client/SigningPanel/route-stubbed browser
@@ -4624,6 +4673,12 @@ behavior, legal disposal, or legal-effect claims.
   `not_checked_by_scap` and `declared_capacity_evidence_only`; it is not SCAP
   verification, representative-authority proof, qualified-signature validation,
   authority approval, or legal-capacity verification.
+- Backend local PKCS#12 `scap_capacity_evidence` can persist `verified_by_scap`
+  only when the prod HTTP SCAP path returns `Granted`; the current proof is a
+  local HTTP fixture, not live SCAP credentials/network, production SCAP
+  availability, representative-authority proof, qualified-signature/legal
+  authority completion, legal-capacity completion, legal validity, or UI picker
+  rollout.
 - The local CC batch-signing UI accepts optional transient PIN submission and
   displays per-document results, authentication mode/events, and declared
   capacity evidence for sealed acts only. Focused route-stubbed Playwright

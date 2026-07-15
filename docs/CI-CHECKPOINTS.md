@@ -35,8 +35,9 @@ key-custody readiness UI/contract surfacing for
 bounded data key-rotation receipt history for accepted guarded SQLCipher rekeys,
 guardrail acknowledgements, written-resolution evidence status binding and
 browser receipt proof, trust
-parsing, declared signer-capacity evidence preservation, live-provider static
-assurance, MCP resource/prompt coverage including workflow provenance review
+parsing, declared signer-capacity evidence preservation plus backend-only local
+PKCS#12 SCAP capacity evidence persistence, live-provider static assurance,
+MCP resource/prompt coverage including workflow provenance review
 guidance plus caller-supplied local JSON/text summary counts, draft-vs-signed
 comparison review guidance, and the
 `chancela://mcp/meeting-metadata-extraction-review` local review aid over
@@ -263,7 +264,17 @@ It intentionally reuses existing test surfaces:
 - Live-provider assurance static gate:
   `npm run check:live-provider-assurance`
 - API local PKCS#12 signing:
-  `cargo test -p chancela-api --test local_pkcs12_signing --locked`
+  `cargo test -p chancela-api --test local_pkcs12_signing --locked` including
+  the existing no-SCAP `not_checked_by_scap` fallback, optional
+  `scap_capacity_evidence`, preprod/mock
+  `declared_capacity_by_provider` evidence, prod HTTP SCAP fixture
+  `verified_by_scap` evidence after a `Granted` decision, stored
+  `signer_capacity_evidence_json` persistence, and mismatched declared
+  `capacity` versus SCAP `attribute_name` 422 refusal before artifact/event
+  persistence. This is backend-only local fixture proof, not live SCAP
+  credentials/network proof, production SCAP availability, a UI picker rollout,
+  qualified-signature/legal-authority completion, legal-capacity completion, or
+  full spec completion.
 - API stored CMD/CSC runtime resolution and remote batch initiation:
   `cargo test -p chancela-api --test remote_signing --locked` including
   stored CSC service/access-token runtime credentials, stored CMD
@@ -603,7 +614,11 @@ written-resolution evidence status/binding markers and written-resolution
 browser receipt proof markers for
 `apps/web/e2e/written-resolution-evidence.spec.ts`, declared signer-capacity
 evidence markers with `not_checked_by_scap` and
-`declared_capacity_evidence_only`, local CC batch-signing UI markers for
+`declared_capacity_evidence_only`, backend-only local PKCS#12
+`scap_capacity_evidence` markers with preprod/mock
+`declared_capacity_by_provider`, prod-fixture `verified_by_scap`, local
+`Granted` fixture evidence, mismatched-capacity 422 refusal, and no-SCAP
+fallback preservation, local CC batch-signing UI markers for
 BatchSigningPanel, `useCcBatchSign`, `POST /v1/signature/cc/batch-sign`,
 transient PIN clear/no-storage tests, route/current-act reset behavior,
 per-document result rendering, auth-mode reporting, and declared-capacity
@@ -908,8 +923,9 @@ registry/provider behavior, signing-process behavior, official DGLAB export,
 government filing, DGLAB/legal-archive/PDF-A/PAdES/PDF-UA certification, PDF/UA
 conformance, validator evidence, signed-PDF accessibility certification,
 production XAdES/ASiC conformance, ASiC trust/LTV
-or legal validity, production B-LT/B-LTA, SCAP verification, representative
-authority, live provider validity, canonical OCR conversion, imported-document
+or legal validity, production B-LT/B-LTA, live SCAP credentials/network proof,
+production SCAP availability, representative authority, legal-capacity
+completion, live provider validity, canonical OCR conversion, imported-document
 OCR, imported-document conversion, imported-document PDF/A replacement, imported-document
 signed-PDF creation or signature validation, imported-document seal/PDF-UA, imported-document
 legal acceptance, per-book import preflight legal archive certification, DGLAB/legal acceptance,

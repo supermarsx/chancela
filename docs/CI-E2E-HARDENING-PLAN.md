@@ -1,8 +1,9 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `3795016`,
-including coverage notes for the real-backend generated-convening
+and implementation snapshot `00078b0`,
+including coverage notes for backend-only SCAP-backed signer-capacity evidence
+persistence for local PKCS#12 signing, the real-backend generated-convening
 dispatch-evidence browser proof, full composed-server E2E local pass after auth
 harness alignment, focused composed-server generated-convening
 dispatch-evidence E2E coverage, generated-convening dispatch-evidence
@@ -790,6 +791,16 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
   incomplete stored records, disabled stored records, or authorization-mode
   mismatches. It does not prove production credential custody, provider approval,
   live provider readiness, or legal sufficiency.
+- Backend local PKCS#12 signing now accepts optional `scap_capacity_evidence`
+  and persists resolved signer-capacity evidence for the upload path and stored
+  PKCS#12 delegation. No-SCAP requests keep `not_checked_by_scap`; preprod/mock
+  SCAP stays `declared_capacity_by_provider`; `verified_by_scap` is reachable
+  only through prod HTTP SCAP after a `Granted` decision, with current proof
+  limited to a local HTTP fixture. Mismatched declared capacity versus SCAP
+  attribute fails 422 before artifact/event persistence. This is backend-only
+  evidence persistence: no UI picker rollout, no live SCAP credentials/network
+  proof, no production SCAP availability claim, no representative-authority or
+  legal-capacity completion, and no qualified-signature/legal-validity claim.
 - Local/co-located CC batch signing is represented in the web UI for sealed acts
   through the desktop/local CC path and `POST /v1/signature/cc/batch-sign`,
   with optional transient PIN submission, per-document results, auth-mode/event
@@ -907,11 +918,11 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `3795016`
+## Focused Gate Snapshot Through `00078b0`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08` and checkpoint-promoted on 2026-07-15 for
-current implementation head `3795016`. This is not an exhaustive current
+current implementation head `00078b0`. This is not an exhaustive current
 green-run claim; the full-server E2E claim below is limited to local
 `chancela-server --features e2e` after auth harness alignment, and browser,
 Docker, desktop, package signing/notarization, image signing/attestation, and
@@ -2138,15 +2149,20 @@ settingsDefaults.test.ts contracts.test.ts`.
   full RBAC/delegation-policy completion, tenant authorization proof,
   legal-capacity verification, broad security certification, or spec
   completion.
-- Current checkpoint metadata/static checks through `3795016`
+- Current checkpoint metadata/static checks through `00078b0`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
   `git diff --check -- SPEC-COVERAGE.md docs\CI-E2E-HARDENING-PLAN.md
-  docs\CI-CHECKPOINTS.md scripts\checkpoint-recent-landed.mjs
-  apps\web\e2e\generated-convening-dispatch-evidence-real.spec.ts`.
+  docs\CI-CHECKPOINTS.md scripts\checkpoint-recent-landed.mjs`.
   These pin the spec snapshot,
-  hardening-plan head, real-backend generated-convening dispatch-evidence
+  hardening-plan head, backend-only SCAP-backed local PKCS#12
+  `scap_capacity_evidence` persistence, `not_checked_by_scap` fallback,
+  preprod/mock `declared_capacity_by_provider`, prod-fixture
+  `verified_by_scap`, mismatched declared-capacity 422 refusal, local
+  `Granted` fixture boundaries, no live SCAP credentials/network proof, no UI
+  picker rollout, and no legal-capacity/full-spec completion claim,
+  real-backend generated-convening dispatch-evidence
   browser proof, focused composed-server generated-convening E2E evidence,
   generated-convening dispatch evidence metadata-only
   generated-document recording, convening recipient contact metadata, route-stubbed

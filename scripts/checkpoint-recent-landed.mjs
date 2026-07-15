@@ -3278,6 +3278,96 @@ function assertCheckpointMap() {
     "local PKCS#12 signing API regression coverage",
   );
   assertFileContains(
+    "crates/chancela-api/src/signature.rs",
+    "pub scap_capacity_evidence: Option<ScapCapacityEvidenceRequest>,",
+    "local PKCS#12 optional SCAP capacity request marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/signature.rs",
+    "req.scap_capacity_evidence",
+    "local PKCS#12 SCAP capacity request forwarding marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/signature.rs",
+    "state.provider_credentials.clone()",
+    "local PKCS#12 SCAP credential-store handoff marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/signature_pkcs12_stored.rs",
+    "pub scap_capacity_evidence: Option<ScapCapacityEvidenceRequest>,",
+    "stored PKCS#12 optional SCAP capacity request marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/signature_pkcs12_stored.rs",
+    "scap_capacity_evidence: req.scap_capacity_evidence",
+    "stored PKCS#12 SCAP capacity delegation marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/scap.rs",
+    "scap_capacity_evidence requires citizen_id, provider_id, and attribute_name",
+    "SCAP capacity request required-field marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/scap.rs",
+    "preprod/mock may only produce provider-declared evidence, while `verified_by_scap` is reachable",
+    "SCAP capacity preprod declared-only marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/scap.rs",
+    "after a `Granted` verification decision.",
+    "SCAP capacity verified-only-after-Granted marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/scap.rs",
+    "capacity '{capacity}' does not match SCAP attribute '{attribute_name}'",
+    "SCAP capacity mismatch 422 marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/local_pkcs12_signing.rs",
+    "local_pkcs12_scap_capacity_preprod_is_provider_declared_only",
+    "local PKCS#12 preprod SCAP declared-only coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/local_pkcs12_signing.rs",
+    "local_pkcs12_persists_verified_scap_capacity_evidence_from_prod_fixture",
+    "local PKCS#12 prod fixture verified SCAP capacity coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/local_pkcs12_signing.rs",
+    "local_pkcs12_rejects_mismatched_capacity_and_scap_attribute",
+    "local PKCS#12 mismatched capacity SCAP attribute coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/local_pkcs12_signing.rs",
+    "OA-grant-2026-fixture",
+    "local PKCS#12 SCAP Granted fixture authority marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/local_pkcs12_signing.rs",
+    "StatusCode::UNPROCESSABLE_ENTITY",
+    "local PKCS#12 SCAP mismatch 422 status marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Current `00078b0` keeps Signatures & Trust/API/CI **PARTIAL**",
+    "spec coverage backend SCAP capacity checkpoint marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "backend-only `scap_capacity_evidence`",
+    "spec coverage backend-only SCAP capacity evidence marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-CHECKPOINTS.md",
+    "backend-only local PKCS#12 `scap_capacity_evidence` markers with preprod/mock `declared_capacity_by_provider`, prod-fixture `verified_by_scap`, local `Granted` fixture evidence, mismatched-capacity 422 refusal, and no-SCAP fallback preservation",
+    "CI checkpoints backend SCAP capacity static marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "no UI picker rollout, no live SCAP credentials/network proof, no production SCAP availability claim, no representative-authority or legal-capacity completion",
+    "CI/E2E hardening plan backend SCAP capacity boundary marker",
+  );
+  assertFileContains(
     "crates/chancela-api/src/pdf_signature_validation.rs",
     "pdf_signature_validation_reports_multi_signature_local_renewal_plan",
     "PDF signature validation multi-signature renewal-plan coverage",
@@ -10471,12 +10561,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `3795016`",
+    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `00078b0`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `3795016`",
+    "Focused Gate Snapshot Through `00078b0`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -11141,7 +11231,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `3795016`",
+    "Current checkpoint metadata/static checks through `00078b0`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -11676,7 +11766,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `3795016a4099edee107b4c69357fae3cd3fe865f`",
+    "implementation snapshot `00078b08b74e26bb44c2eb24c35682ba4efc04ba`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
