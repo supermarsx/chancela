@@ -516,17 +516,107 @@ fn wrong_algorithm_declared_is_rejected() {
 }
 
 #[test]
-fn xades_lt_lta_are_typed_not_yet_supported() {
-    let signer = TestSigner::new_rsa("LT", 9);
-    for level in [XadesLevel::LT, XadesLevel::LTA] {
-        assert!(
-            matches!(
-                prepare_xades(enveloping_request(&signer, level)),
-                Err(crate::XadesError::NotYetSupported(_))
-            ),
-            "level {level:?} must report NotYetSupported"
-        );
-    }
+fn xades_lta_is_typed_not_yet_supported() {
+    // LTA (archive timestamp) is deferred: prepare must reject it. LT is now supported (it prepares
+    // like T and is finalized with `with_lt`), so only LTA reports NotYetSupported at prepare.
+    let signer = TestSigner::new_rsa("LTA", 9);
+    assert!(
+        matches!(
+            prepare_xades(enveloping_request(&signer, XadesLevel::LTA)),
+            Err(crate::XadesError::NotYetSupported(_))
+        ),
+        "LTA must report NotYetSupported at prepare"
+    );
+    // LT prepares successfully (finalization is deferred to with_lt).
+    assert!(
+        prepare_xades(enveloping_request(&signer, XadesLevel::LT)).is_ok(),
+        "LT must prepare (finalized via with_lt)"
+    );
+}
+
+/// XAdES-LT (wp26-xades E3): after the T timestamp, `with_lt` embeds CertificateValues +
+/// RevocationValues; validation detects the RevocationValues and reports level LT. The signed core
+/// (SignedInfo / SignatureValue / references) is untouched, so the signature still verifies.
+#[test]
+fn xades_lt_embeds_validation_material_and_reports_lt() {
+    use chancela_tsa::mock::{FIXTURE_DIGEST, FIXTURE_NONCE};
+    use chancela_tsa::{MockTsaTransport, TsaClient};
+
+    let signer = TestSigner::new_ecdsa("XAdES-LT", 30);
+    let prepared = prepare_xades(enveloping_request(&signer, XadesLevel::LT)).expect("prepare LT");
+    let raw = signer.raw_signature(&prepared.signed_info_digest());
+    let assembled = prepared.assemble(&raw).expect("assemble");
+
+    // LT before finalization is not emittable via into_bytes.
+    // (Structural: a genuine RFC 3161 token from the offline fixture transport.)
+    let client = TsaClient::new(MockTsaTransport::from_fixture());
+    let request = chancela_tsa::TimestampRequest::new(FIXTURE_DIGEST)
+        .without_certificate()
+        .with_nonce(FIXTURE_NONCE);
+    let timestamp = client.stamp(&request).expect("verify fixture token");
+
+    // Validation material as `chancela_signing::revocation` would supply it (opaque DER blobs here;
+    // the structural embedding is what this crate owns — real OCSP/CRL bytes come from that module).
+    let material = crate::ValidationMaterial {
+        certificates: vec![signer.cert_der(), b"issuer-cert-der".to_vec()],
+        ocsp_responses: vec![b"ocsp-response-der".to_vec()],
+        crls: vec![b"crl-der".to_vec()],
+    };
+    let xml = assembled
+        .with_lt(&timestamp.token_der, &material)
+        .expect("finalize LT");
+
+    let report = validate_xades(&xml).expect("validate");
+    assert!(report.signature_valid, "LT signed core still verifies");
+    assert!(report.references_valid);
+    assert!(report.is_valid_b(), "LT is still a valid B/T signature");
+    assert!(
+        report.signature_timestamp_present,
+        "LT includes the T timestamp"
+    );
+    assert!(
+        report.certificate_values_present,
+        "CertificateValues embedded"
+    );
+    assert!(
+        report.revocation_values_present,
+        "RevocationValues embedded"
+    );
+    assert_eq!(report.level, XadesLevel::LT);
+
+    // A concrete presence check on the emitted structure.
+    let text = String::from_utf8(xml).unwrap();
+    assert!(text.contains("<xades:EncapsulatedOCSPValue>"));
+    assert!(text.contains("<xades:EncapsulatedCRLValue>"));
+    assert!(text.contains("<xades:EncapsulatedX509Certificate>"));
+}
+
+/// `with_lt` with no OCSP/CRL is rejected — LT means revocation material is present.
+#[test]
+fn xades_lt_requires_revocation_material() {
+    use chancela_tsa::mock::{FIXTURE_DIGEST, FIXTURE_NONCE};
+    use chancela_tsa::{MockTsaTransport, TsaClient};
+
+    let signer = TestSigner::new_rsa("XAdES-LT empty", 31);
+    let prepared = prepare_xades(enveloping_request(&signer, XadesLevel::LT)).unwrap();
+    let raw = signer.raw_signature(&prepared.signed_info_digest());
+    let assembled = prepared.assemble(&raw).unwrap();
+
+    let client = TsaClient::new(MockTsaTransport::from_fixture());
+    let request = chancela_tsa::TimestampRequest::new(FIXTURE_DIGEST)
+        .without_certificate()
+        .with_nonce(FIXTURE_NONCE);
+    let timestamp = client.stamp(&request).unwrap();
+
+    let material = crate::ValidationMaterial {
+        certificates: vec![signer.cert_der()],
+        ocsp_responses: vec![],
+        crls: vec![],
+    };
+    assert!(
+        assembled.with_lt(&timestamp.token_der, &material).is_err(),
+        "LT without any OCSP/CRL must be rejected"
+    );
 }
 
 #[test]

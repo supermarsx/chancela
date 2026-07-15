@@ -40,7 +40,8 @@ pub use error::XadesError;
 pub use validate::{XadesValidationReport, validate_xades};
 pub use xades::{
     AssembledXades, DetachedRef, EnvelopedDocument, EnvelopingObject, ObjectContent, PreparedXades,
-    SignaturePackaging, XadesContext, XadesLevel, XadesSignRequest, prepare_xades,
+    SignaturePackaging, ValidationMaterial, XadesContext, XadesLevel, XadesSignRequest,
+    prepare_xades,
 };
 pub use xmldsig::{Reference, XmlDsigBuilder};
 

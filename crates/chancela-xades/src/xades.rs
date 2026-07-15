@@ -38,9 +38,10 @@ pub enum XadesLevel {
     B,
     /// B + a signature timestamp over `SignatureValue`.
     T,
-    /// T + validation-material (revocation values). Not yet implemented (t67-e10).
+    /// T + validation material (`CertificateValues` + `RevocationValues`). Finalized via
+    /// [`AssembledXades::with_lt`].
     LT,
-    /// LT + an archive timestamp. Not yet implemented (t67-e10 / e7).
+    /// LT + an archive timestamp. Deferred (see `crates/chancela-xades/TESTING.md`).
     LTA,
 }
 
@@ -49,6 +50,31 @@ pub enum XadesLevel {
 pub struct XadesContext {
     /// The `SigningTime` asserted in `SignedProperties`.
     pub signing_time: OffsetDateTime,
+}
+
+/// Validation material embedded in a XAdES-LT signature: the certificate chain plus the OCSP
+/// responses and/or CRLs that establish the signer chain's revocation status, so the signature
+/// stays verifiable long-term without re-fetching from the (possibly retired) CA endpoints.
+///
+/// The shapes map one-to-one onto `chancela_signing::revocation`'s validated output
+/// (`DssEvidence { certificates, ocsp_responses, crls }`): the ASiC/API layers collect the material
+/// through that module and pass it here — this crate does not fetch revocation itself.
+#[derive(Clone, Debug, Default)]
+pub struct ValidationMaterial {
+    /// DER X.509 certificates for `xades:CertificateValues` (the issuer/CA chain and any OCSP
+    /// responder certificate — material a validator needs but that is not in `ds:KeyInfo`).
+    pub certificates: Vec<Vec<u8>>,
+    /// DER `OCSPResponse` bytes for `xades:RevocationValues/OCSPValues/EncapsulatedOCSPValue`.
+    pub ocsp_responses: Vec<Vec<u8>>,
+    /// DER `CertificateList` (CRL) bytes for `xades:RevocationValues/CRLValues/EncapsulatedCRLValue`.
+    pub crls: Vec<Vec<u8>>,
+}
+
+impl ValidationMaterial {
+    /// Whether there is no revocation evidence at all (no OCSP and no CRL). LT requires at least one.
+    pub fn has_revocation(&self) -> bool {
+        !self.ocsp_responses.is_empty() || !self.crls.is_empty()
+    }
 }
 
 /// How the signed data objects relate to the signature.
@@ -176,16 +202,18 @@ impl AssembledXades {
     }
 
     /// The finished XML for a level-B signature. Returns [`XadesError::NotYetSupported`] if the level
-    /// requires a timestamp that has not been applied.
+    /// requires a timestamp / validation material that has not been applied.
     pub fn into_bytes(self) -> Result<Vec<u8>, XadesError> {
         match self.level {
             XadesLevel::B => Ok(self.xml),
             XadesLevel::T => Err(XadesError::NotYetSupported(
                 "XAdES-T requires a signature timestamp; call with_signature_timestamp".into(),
             )),
-            XadesLevel::LT | XadesLevel::LTA => {
-                Err(XadesError::NotYetSupported("XAdES-LT/LTA (t67-e10)".into()))
-            }
+            XadesLevel::LT => Err(XadesError::NotYetSupported(
+                "XAdES-LT requires a signature timestamp and validation material; call with_lt"
+                    .into(),
+            )),
+            XadesLevel::LTA => Err(XadesError::NotYetSupported("XAdES-LTA (deferred)".into())),
         }
     }
 
@@ -203,26 +231,95 @@ impl AssembledXades {
     /// Embed an RFC 3161 `TimeStampToken` (DER `ContentInfo`, e.g. `chancela_tsa::Timestamp::token_der`)
     /// as the XAdES-T `SignatureTimeStamp`, producing the finished XAdES-T XML.
     pub fn with_signature_timestamp(self, token_der: &[u8]) -> Result<Vec<u8>, XadesError> {
-        let unsigned = format!(
-            "<xades:UnsignedProperties><xades:UnsignedSignatureProperties>\
-             <xades:SignatureTimeStamp>\
-             <xades:EncapsulatedTimeStamp>{}</xades:EncapsulatedTimeStamp>\
-             </xades:SignatureTimeStamp>\
-             </xades:UnsignedSignatureProperties></xades:UnsignedProperties>",
-            B64.encode(token_der)
-        );
-        let text = String::from_utf8(self.xml)
-            .map_err(|_| XadesError::Verification("assembled XML is not UTF-8".into()))?;
-        let marker = "</xades:QualifyingProperties>";
-        let pos = text.find(marker).ok_or_else(|| {
-            XadesError::Verification("no QualifyingProperties to attach a timestamp to".into())
-        })?;
-        let mut out = String::with_capacity(text.len() + unsigned.len());
-        out.push_str(&text[..pos]);
-        out.push_str(&unsigned);
-        out.push_str(&text[pos..]);
-        Ok(out.into_bytes())
+        let usp = signature_timestamp_property(token_der);
+        splice_unsigned_signature_properties(self.xml, &usp)
     }
+
+    /// Finalize a XAdES-**LT** signature: the XAdES-T `SignatureTimeStamp` plus
+    /// `xades:CertificateValues` (the chain) and `xades:RevocationValues` (OCSP responses / CRLs)
+    /// under `UnsignedSignatureProperties`, so the signature carries the material a validator needs
+    /// to establish revocation status long-term. LT presupposes the T timestamp; `material` must
+    /// carry at least one OCSP response or CRL ([`ValidationMaterial::has_revocation`]).
+    ///
+    /// `timestamp_token_der` is the same RFC 3161 token XAdES-T uses (over
+    /// [`Self::signature_timestamp_digest`]). This crate does not fetch revocation — the caller
+    /// collects `material` (e.g. via `chancela_signing::revocation`).
+    pub fn with_lt(
+        self,
+        timestamp_token_der: &[u8],
+        material: &ValidationMaterial,
+    ) -> Result<Vec<u8>, XadesError> {
+        if !material.has_revocation() {
+            return Err(XadesError::Verification(
+                "XAdES-LT requires at least one OCSP response or CRL in the validation material"
+                    .into(),
+            ));
+        }
+        let mut usp = signature_timestamp_property(timestamp_token_der);
+        if !material.certificates.is_empty() {
+            usp.push_str("<xades:CertificateValues>");
+            for cert in &material.certificates {
+                usp.push_str("<xades:EncapsulatedX509Certificate>");
+                usp.push_str(&B64.encode(cert));
+                usp.push_str("</xades:EncapsulatedX509Certificate>");
+            }
+            usp.push_str("</xades:CertificateValues>");
+        }
+        usp.push_str("<xades:RevocationValues>");
+        if !material.crls.is_empty() {
+            usp.push_str("<xades:CRLValues>");
+            for crl in &material.crls {
+                usp.push_str("<xades:EncapsulatedCRLValue>");
+                usp.push_str(&B64.encode(crl));
+                usp.push_str("</xades:EncapsulatedCRLValue>");
+            }
+            usp.push_str("</xades:CRLValues>");
+        }
+        if !material.ocsp_responses.is_empty() {
+            usp.push_str("<xades:OCSPValues>");
+            for ocsp in &material.ocsp_responses {
+                usp.push_str("<xades:EncapsulatedOCSPValue>");
+                usp.push_str(&B64.encode(ocsp));
+                usp.push_str("</xades:EncapsulatedOCSPValue>");
+            }
+            usp.push_str("</xades:OCSPValues>");
+        }
+        usp.push_str("</xades:RevocationValues>");
+        splice_unsigned_signature_properties(self.xml, &usp)
+    }
+}
+
+/// The `xades:SignatureTimeStamp/EncapsulatedTimeStamp` property carrying an RFC 3161 token.
+fn signature_timestamp_property(token_der: &[u8]) -> String {
+    format!(
+        "<xades:SignatureTimeStamp><xades:EncapsulatedTimeStamp>{}</xades:EncapsulatedTimeStamp>\
+         </xades:SignatureTimeStamp>",
+        B64.encode(token_der)
+    )
+}
+
+/// Splice `usp_inner` (a sequence of `UnsignedSignatureProperties` child elements) into the
+/// assembled signature as `<xades:UnsignedProperties><xades:UnsignedSignatureProperties>…`, placed
+/// immediately before the closing `</xades:QualifyingProperties>`.
+fn splice_unsigned_signature_properties(
+    xml: Vec<u8>,
+    usp_inner: &str,
+) -> Result<Vec<u8>, XadesError> {
+    let unsigned = format!(
+        "<xades:UnsignedProperties><xades:UnsignedSignatureProperties>{usp_inner}\
+         </xades:UnsignedSignatureProperties></xades:UnsignedProperties>"
+    );
+    let text = String::from_utf8(xml)
+        .map_err(|_| XadesError::Verification("assembled XML is not UTF-8".into()))?;
+    let marker = "</xades:QualifyingProperties>";
+    let pos = text.find(marker).ok_or_else(|| {
+        XadesError::Verification("no QualifyingProperties to attach unsigned properties to".into())
+    })?;
+    let mut out = String::with_capacity(text.len() + unsigned.len());
+    out.push_str(&text[..pos]);
+    out.push_str(&unsigned);
+    out.push_str(&text[pos..]);
+    Ok(out.into_bytes())
 }
 
 /// Format an `OffsetDateTime` as an XML Schema `dateTime` in UTC (`YYYY-MM-DDThh:mm:ssZ`).
@@ -358,9 +455,10 @@ fn splice_enveloped(document: &[u8], signature_xml: &[u8]) -> Result<Vec<u8>, Xa
 /// Prepare a XAdES signature: build `SignedProperties`, compute every `Reference` digest, and expose
 /// the `SignedInfo` digest for signing.
 pub fn prepare_xades(req: XadesSignRequest) -> Result<PreparedXades, XadesError> {
-    if matches!(req.level, XadesLevel::LT | XadesLevel::LTA) {
+    if matches!(req.level, XadesLevel::LTA) {
         return Err(XadesError::NotYetSupported(
-            "XAdES-LT/LTA are scheduled for t67-e10".into(),
+            "XAdES-LTA (archive timestamp) is deferred; see crates/chancela-xades/TESTING.md"
+                .into(),
         ));
     }
 

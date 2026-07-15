@@ -57,7 +57,9 @@ pub use asic::{
     extract_asic_e_container, extract_asic_s_container, inspect_asic_profile,
     sha256_content_digest,
 };
-pub use asic_sign::{AsicEMultiSignRequest, sign_asic_e_multi, sign_asic_s_xades};
+pub use asic_sign::{
+    AsicEMultiSignRequest, sign_asic_e_multi, sign_asic_e_xades_lt, sign_asic_s_xades,
+};
 pub use asic_validate::{
     AsicArchiveTimestampValidation, AsicEmbeddedEvidenceBlocker, AsicEmbeddedEvidenceIndicator,
     AsicSignatureValidation, AsicValidationReport, validate_asic_container,
@@ -108,7 +110,7 @@ pub use chancela_pades::{
     prepare_signature, prepare_signature_with_appearance, sign_pdf_with_appearance,
 };
 pub use chancela_tsa::{Timestamp, TsaClient};
-pub use chancela_xades::{XadesLevel, XadesValidationReport, validate_xades};
+pub use chancela_xades::{ValidationMaterial, XadesLevel, XadesValidationReport, validate_xades};
 
 /// The four signing families the product MUST natively support (SIG-01).
 ///

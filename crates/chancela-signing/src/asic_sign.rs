@@ -17,8 +17,8 @@ use x509_cert::certificate::Certificate;
 
 use chancela_cades::SignatureAlgorithm;
 use chancela_xades::{
-    DetachedRef, PreparedXades, SignaturePackaging, XadesContext, XadesLevel, XadesSignRequest,
-    prepare_xades,
+    DetachedRef, PreparedXades, SignaturePackaging, ValidationMaterial, XadesContext, XadesLevel,
+    XadesSignRequest, prepare_xades,
 };
 
 use crate::SigningError;
@@ -58,7 +58,9 @@ fn algorithm_for_cert(cert_der: &[u8]) -> Result<SignatureAlgorithm, SigningErro
 }
 
 /// Drive one detached XAdES signature over `payloads` through `provider`, returning the finished
-/// XAdES XML at the requested level (B, or T when `tsa` is supplied).
+/// XAdES XML at the requested level (B, T when `tsa` is supplied, or LT when `tsa` **and**
+/// `material` are supplied). LT embeds the caller-collected `material` (chain + OCSP/CRL) — this
+/// module never fetches revocation itself (that stays in `crate::revocation`).
 fn produce_detached_xades(
     provider: &dyn SignerProvider,
     payloads: &[AsicPayload<'_>],
@@ -66,6 +68,7 @@ fn produce_detached_xades(
     signature_id: &str,
     level: XadesLevel,
     tsa: Option<&dyn TimestampProvider>,
+    material: Option<&ValidationMaterial>,
 ) -> Result<Vec<u8>, SigningError> {
     let cert_der = provider.signing_certificate_der()?;
     let sig_alg = algorithm_for_cert(&cert_der)?;
@@ -119,8 +122,27 @@ fn produce_detached_xades(
                 .with_signature_timestamp(&token.token_der)
                 .map_err(xades_err)
         }
-        XadesLevel::LT | XadesLevel::LTA => Err(SigningError::Xades(
-            "XAdES-LT/LTA inside ASiC are not implemented".to_string(),
+        XadesLevel::LT => {
+            let tsa = tsa.ok_or_else(|| {
+                SigningError::Xades(
+                    "XAdES-LT requires a timestamp provider for the signature timestamp"
+                        .to_string(),
+                )
+            })?;
+            let material = material.ok_or_else(|| {
+                SigningError::Xades(
+                    "XAdES-LT requires collected validation material (chain + OCSP/CRL)"
+                        .to_string(),
+                )
+            })?;
+            let digest = assembled.signature_timestamp_digest().map_err(xades_err)?;
+            let token = tsa.timestamp_digest(&digest)?;
+            assembled
+                .with_lt(&token.token_der, material)
+                .map_err(xades_err)
+        }
+        XadesLevel::LTA => Err(SigningError::Xades(
+            "XAdES-LTA inside ASiC is deferred (archive timestamp)".to_string(),
         )),
     }
 }
@@ -150,6 +172,7 @@ pub fn sign_asic_s_xades(
         "asic-s-xades-sig",
         level,
         tsa,
+        None,
     )?;
     create_asic_s_xades_container(content_name, content, &xml)
 }
@@ -211,6 +234,7 @@ pub fn sign_asic_e_multi(req: AsicEMultiSignRequest<'_>) -> Result<Vec<u8>, Sign
             &signature_id,
             req.xades_level,
             req.xades_tsa,
+            None,
         )?;
         members.push((signature_path, xml));
     }
@@ -247,6 +271,39 @@ pub fn sign_asic_e_multi(req: AsicEMultiSignRequest<'_>) -> Result<Vec<u8>, Sign
         .map(|(name, bytes)| (name.as_str(), bytes.as_slice()))
         .collect();
     assemble_asic_e_container(req.payloads, &borrowed)
+}
+
+/// Produce a single-signer ASiC-E container carrying one detached **XAdES-LT** signature over
+/// `payloads` (the ETSI-conventional long-term form for archived atas/documents).
+///
+/// LT requires the signature timestamp (`tsa`) **and** caller-collected validation material — the
+/// signer chain plus its OCSP responses / CRLs, typically gathered through
+/// [`crate::revocation::RevocationEvidenceProvider`]. This function only embeds that material as
+/// `xades:CertificateValues`/`xades:RevocationValues`; it never fetches revocation itself, so it
+/// composes with the revocation caching that lives in [`crate::revocation`].
+pub fn sign_asic_e_xades_lt(
+    provider: &dyn SignerProvider,
+    payloads: &[AsicPayload<'_>],
+    signing_time: OffsetDateTime,
+    tsa: &dyn TimestampProvider,
+    material: &ValidationMaterial,
+) -> Result<Vec<u8>, SigningError> {
+    if payloads.is_empty() {
+        return Err(SigningError::Asic(
+            "ASiC-E XAdES-LT requires at least one payload".to_string(),
+        ));
+    }
+    let xml = produce_detached_xades(
+        provider,
+        payloads,
+        signing_time,
+        "asic-e-xades-lt-sig-001",
+        XadesLevel::LT,
+        Some(tsa),
+        Some(material),
+    )?;
+    let members: Vec<(&str, &[u8])> = vec![("META-INF/signatures001.xml", xml.as_slice())];
+    assemble_asic_e_container(payloads, &members)
 }
 
 /// The media type an ASiC-E XAdES signature member declares (exposed for callers assembling their

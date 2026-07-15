@@ -28,8 +28,9 @@ use chancela_signing::asic::{AsicDiagnosticBlockerId, AsicProfileShape, AsicSign
 use chancela_signing::{
     AsicContainerKind, AsicEMultiSignRequest, AsicPayload, AsicSignatureProfile, EvidentiaryLevel,
     MockProvider, SignerProvider, SigningError, SigningFamily, Timestamp, TimestampProvider,
-    XadesLevel, build_asic_e_manifest, extract_asic_e_container, inspect_asic_profile,
-    sign_asic_e_multi, sign_asic_s, sign_asic_s_xades, validate_asic_container,
+    ValidationMaterial, XadesLevel, build_asic_e_manifest, extract_asic_e_container,
+    inspect_asic_profile, sign_asic_e_multi, sign_asic_e_xades_lt, sign_asic_s, sign_asic_s_xades,
+    validate_asic_container,
 };
 
 const OID_SHA256_WITH_RSA: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.113549.1.1.11");
@@ -466,6 +467,56 @@ fn asic_e_multi_sig_mixed_cades_xades_with_archive_manifest() {
     assert!(archive.valid, "{:?}", archive);
     // The archive manifest covers both payloads plus every signature/manifest member.
     assert!(archive.covered_members.len() >= 2 + 3);
+}
+
+#[test]
+fn asic_e_xades_lt_embeds_validation_material_and_reports_lt() {
+    // wp26-xades E3: ASiC-E carrying a detached XAdES-LT signature. The signature timestamp comes
+    // from the TSA; the chain + OCSP/CRL come pre-collected as ValidationMaterial (as
+    // crate::revocation would supply — opaque DER here since the ASiC layer only embeds it).
+    let xades = ecdsa_provider(SigningFamily::CartaoDeCidadao);
+    let raw = payloads();
+    let payloads = asic_payloads(&raw);
+    let material = ValidationMaterial {
+        certificates: vec![
+            xades.signing_certificate_der().unwrap(),
+            b"issuer-ca-cert-der".to_vec(),
+        ],
+        ocsp_responses: vec![b"ocsp-response-der".to_vec()],
+        crls: vec![b"crl-der".to_vec()],
+    };
+
+    let container = sign_asic_e_xades_lt(&xades, &payloads, fixed_time(), &PatchingTsa, &material)
+        .expect("sign ASiC-E XAdES-LT");
+
+    let report = validate_asic_container(&container).expect("validate ASiC-E XAdES-LT");
+    assert_eq!(report.container_kind, AsicContainerKind::AsicE);
+    assert_eq!(report.signature_profile, AsicSignatureProfile::Xades);
+    assert!(report.is_valid(), "{:?}", report);
+
+    let sig = report
+        .signatures
+        .iter()
+        .find(|s| s.kind == AsicSignatureMemberKind::Xades)
+        .expect("xades signature");
+    assert!(sig.valid, "{:?}", sig);
+    assert_eq!(sig.xades_level, Some(XadesLevel::LT));
+    assert!(sig.has_signature_timestamp, "LT includes the T timestamp");
+    assert_eq!(sig.covered_data_objects.len(), 2);
+
+    let mut codes: Vec<_> = report
+        .embedded_evidence_indicators
+        .iter()
+        .map(|indicator| indicator.code.as_str())
+        .collect();
+    codes.sort();
+    assert!(codes.contains(&"xades_certificate_values"), "{codes:?}");
+    assert!(codes.contains(&"xades_revocation_values"), "{codes:?}");
+    assert!(
+        report.embedded_evidence_blockers.is_empty(),
+        "{:?}",
+        report.embedded_evidence_blockers
+    );
 }
 
 #[test]

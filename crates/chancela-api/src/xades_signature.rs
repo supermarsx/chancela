@@ -28,7 +28,9 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as B64;
 use chancela_authz::{Permission, Scope};
 use chancela_signing::{Pkcs12IdentitySelector, Pkcs12SigningSource, SignatureAlgorithm};
-use chancela_signing::{SignerProvider, SigningError};
+use chancela_signing::{
+    RevocationEvidenceProvider, SignerProvider, SigningError, ValidationMaterial,
+};
 use chancela_xades::{
     DetachedRef, EnvelopingObject, ObjectContent, PreparedXades, SignaturePackaging, XadesContext,
     XadesLevel, XadesSignRequest, XadesValidationReport, prepare_xades, validate_xades,
@@ -80,6 +82,9 @@ enum LevelRequest {
     B,
     /// B + a signature timestamp (requires a configured live TSA).
     T,
+    /// T + validation material (`CertificateValues` + `RevocationValues`). Requires a configured
+    /// live TSA and reachable OCSP/CRL endpoints on the signer chain.
+    Lt,
 }
 
 /// The signer material. Only the co-located software-certificate lane is wired in this slice.
@@ -220,6 +225,7 @@ pub async fn sign_xades(
     let level = match req.level {
         LevelRequest::B => XadesLevel::B,
         LevelRequest::T => XadesLevel::T,
+        LevelRequest::Lt => XadesLevel::LT,
     };
     let packaging = req.packaging;
     let packaging_label = match packaging {
@@ -227,24 +233,24 @@ pub async fn sign_xades(
         PackagingRequest::Enveloping => "enveloping",
     };
 
-    // For XAdES-T, resolve the configured live TSA up-front (a clean 422 if none is configured),
-    // before entering the blocking signing task.
+    // XAdES-T and XAdES-LT both carry a signature timestamp: resolve the configured live TSA
+    // up-front (a clean 422 if none is configured), before entering the blocking signing task.
     let tsa_provider = match level {
-        XadesLevel::T => Some(
+        XadesLevel::T | XadesLevel::LT => Some(
             crate::signature::configured_tsa_provider(&state)
                 .await?
                 .ok_or_else(|| {
                     ApiError::Unprocessable(
-                        "XAdES-T requer um prestador TSA configurado para o carimbo temporal da \
+                        "XAdES-T/LT requer um prestador TSA configurado para o carimbo temporal da \
                          assinatura"
                             .to_owned(),
                     )
                 })?,
         ),
         XadesLevel::B => None,
-        XadesLevel::LT | XadesLevel::LTA => {
+        XadesLevel::LTA => {
             return Err(ApiError::Unprocessable(
-                "XAdES-LT/LTA ainda não são suportados por este endpoint".to_owned(),
+                "XAdES-LTA ainda não é suportado por este endpoint".to_owned(),
             ));
         }
     };
@@ -353,8 +359,40 @@ pub async fn sign_xades(
                     .with_signature_timestamp(&token.token_der)
                     .map_err(|e| SigningError::Xades(e.to_string()))?
             }
-            XadesLevel::LT | XadesLevel::LTA => {
-                return Err(SigningError::Xades("XAdES-LT/LTA not supported".to_owned()));
+            XadesLevel::LT => {
+                let tsa = tsa_client.as_ref().expect("XAdES-LT resolved a TSA client");
+                // The issuer needed to validate revocation is the first chain certificate the PFX
+                // carries above the signer leaf.
+                let issuer_der = source.identity().chain_der.first().ok_or_else(|| {
+                    SigningError::Xades(
+                        "XAdES-LT needs the issuer certificate in the PKCS#12 chain to fetch \
+                         revocation material"
+                            .to_owned(),
+                    )
+                })?;
+                // Collect validated chain + OCSP/CRL exactly as the PAdES-LT lane does (reused
+                // revocation client; never a second one).
+                let evidence = RevocationEvidenceProvider::http()
+                    .collect_for_signer(&cert_der, issuer_der, signing_time)
+                    .map_err(|e| {
+                        SigningError::Xades(format!("revocation collection failed: {e}"))
+                    })?;
+                let material = ValidationMaterial {
+                    certificates: evidence.dss.certificates,
+                    ocsp_responses: evidence.dss.ocsp_responses,
+                    crls: evidence.dss.crls,
+                };
+                let digest = assembled
+                    .signature_timestamp_digest()
+                    .map_err(|e| SigningError::Xades(e.to_string()))?;
+                let token =
+                    chancela_signing::pipeline::TimestampProvider::timestamp_digest(tsa, &digest)?;
+                assembled
+                    .with_lt(&token.token_der, &material)
+                    .map_err(|e| SigningError::Xades(e.to_string()))?
+            }
+            XadesLevel::LTA => {
+                return Err(SigningError::Xades("XAdES-LTA not supported".to_owned()));
             }
         };
         Ok::<_, SigningError>((xml, cert_der, sig_alg))

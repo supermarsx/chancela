@@ -52,6 +52,11 @@ pub struct XadesValidationReport {
     pub signer_cert_der: Option<Vec<u8>>,
     /// A `xades:SignatureTimeStamp` (XAdES-T) is present.
     pub signature_timestamp_present: bool,
+    /// A `xades:CertificateValues` block (XAdES-LT chain material) is present.
+    pub certificate_values_present: bool,
+    /// A `xades:RevocationValues` block (XAdES-LT OCSP/CRL material) is present — the marker that
+    /// distinguishes LT from T.
+    pub revocation_values_present: bool,
 }
 
 impl XadesValidationReport {
@@ -206,13 +211,23 @@ pub fn validate_xades(xml: &[u8]) -> Result<XadesValidationReport, XadesError> {
     let signature_timestamp_present = doc
         .descendants()
         .any(|n| n.has_tag_name((XADES_NS, "SignatureTimeStamp")));
+    let certificate_values_present = doc
+        .descendants()
+        .any(|n| n.has_tag_name((XADES_NS, "CertificateValues")));
+    let revocation_values_present = doc
+        .descendants()
+        .any(|n| n.has_tag_name((XADES_NS, "RevocationValues")));
     let signing_time = doc
         .descendants()
         .find(|n| n.has_tag_name((XADES_NS, "SigningTime")))
         .and_then(|n| n.text())
         .and_then(parse_signing_time);
 
-    let level = if signature_timestamp_present {
+    // Level precedence: RevocationValues (+ the required T timestamp) → LT; timestamp only → T;
+    // otherwise B. LTA (archive timestamp) detection is deferred with its generation.
+    let level = if signature_timestamp_present && revocation_values_present {
+        XadesLevel::LT
+    } else if signature_timestamp_present {
         XadesLevel::T
     } else {
         XadesLevel::B
@@ -230,6 +245,8 @@ pub fn validate_xades(xml: &[u8]) -> Result<XadesValidationReport, XadesError> {
         signing_time,
         signer_cert_der,
         signature_timestamp_present,
+        certificate_values_present,
+        revocation_values_present,
     })
 }
 
@@ -262,9 +279,8 @@ fn reference_digest_algorithm(reference: &roxmltree::Node) -> Result<DigestAlgor
     let algorithm = method
         .attribute("Algorithm")
         .ok_or_else(|| XadesError::Verification("DigestMethod without Algorithm".into()))?;
-    DigestAlgorithm::from_uri(algorithm).ok_or_else(|| {
-        XadesError::Verification(format!("unsupported DigestMethod {algorithm}"))
-    })
+    DigestAlgorithm::from_uri(algorithm)
+        .ok_or_else(|| XadesError::Verification(format!("unsupported DigestMethod {algorithm}")))
 }
 
 /// The first `KeyInfo/X509Data/X509Certificate`, decoded to DER.
