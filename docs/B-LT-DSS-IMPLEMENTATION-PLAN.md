@@ -10,7 +10,8 @@ Keep two axes crisp:
 
 - **Offline vs. online.** `chancela-pades` is a leaf crate: it verifies only the
   material already embedded in the PDF, with no network and no trust anchors. It
-  now offers an offline full-chain LTV *verifier* (see below). The *live*
+  now offers an offline full-chain LTV *verifier* (see below) that
+  cryptographically verifies each CA link's signature offline. The *live*
   population of that material — fetching and validating OCSP/CRL, building the
   signer chain to a live TSL anchor — is done online by `chancela-signing`
   (`dss_collect`) and `chancela-tsl` (LOTL/certpath). `chancela-pades` never
@@ -61,16 +62,21 @@ or legal long-term-validation conclusion.
   signer certificate chain** by issuer/subject-name plus key-identifier linkage,
   requiring each selected issuer to be a CA, and reports the chain length and
   whether it terminates in a self-issued root **present among the embedded
-  certs** (internal consistency + coverage, explicitly **not** a trust-anchor
-  claim — anchoring stays online in `chancela-tsl`); (c) confirms each non-root
-  link is **covered** by an embedded OCSP response (SHA-256 `CertID` matching the
-  link's issuer name/key hash + serial) or CRL (issuer match + serial not
-  listed), reporting per-link `uncovered_links`; and (d) verifies the
-  `/DocTimeStamp` **renewal chain** is contiguous (each archive timestamp's RFC
-  3161 imprint validates over its `/ByteRange`, which covers the prior revision
-  including its DSS, and each successive timestamp covers strictly more of the
-  file). It does **not** fetch revocation, does **not** cryptographically
-  re-verify each CA link's signature, and does **not** anchor trust.
+  certs**, **cryptographically verifying each CA link's signature** (child cert's
+  signature verifies against the parent's public key; RSA-PKCS1-SHA256 /
+  ECDSA-P256-SHA256 only, unknown algorithms rejected). A name-matching issuer
+  whose key does not sign the child is reported as `IssuerSignatureInvalid` and
+  the chain does not verify. Termination in a self-issued root present among the
+  embedded certs is internal consistency + coverage, explicitly **not** a
+  trust-anchor claim — anchoring stays online in `chancela-tsl`. It then (c)
+  confirms each non-root link is **covered** by an embedded OCSP response
+  (SHA-256 `CertID` matching the link's issuer name/key hash + serial) or CRL
+  (issuer match + serial not listed), reporting per-link `uncovered_links`; and
+  (d) verifies the `/DocTimeStamp` **renewal chain** is contiguous (each archive
+  timestamp's RFC 3161 imprint validates over its `/ByteRange`, which covers the
+  prior revision including its DSS, and each successive timestamp covers strictly
+  more of the file). It does **not** fetch revocation and does **not** anchor
+  trust.
 
 ## Implemented Local Slice
 
@@ -109,8 +115,10 @@ acceptance, legal long-term validation, or B-LT/B-LTA sufficiency.
   acts without a signed PDF return `409`.
 - Offline full-chain LTV verifier: a two-level chain (root CA -> CA-issued
   signer leaf) with a complete embedded `/DSS` (chain certs + matching OCSP or
-  CRL per link) reports `verified_offline = true` with all links covered; a DSS
-  whose embedded OCSP names a different serial reports the signer link in
+  CRL per link) reports `verified_offline = true` with all links covered; a
+  substituted intermediate with a matching subject DN but the wrong key is
+  rejected (`IssuerSignatureInvalid`, `verified_offline = false`); a DSS whose
+  embedded OCSP names a different serial reports the signer link in
   `uncovered_links` with `verified_offline = false`; a `/DocTimeStamp` renewal
   over the DSS revision reports a contiguous renewal chain; and a signed PDF with
   no embedded `/DSS` is not verified offline.
@@ -125,9 +133,9 @@ legal LTV still need work that lives **outside** this leaf crate:
   chain to a live TSL anchor (`chancela-signing` `dss_collect` + `chancela-tsl`
   LOTL/certpath), then embedding that material via `add_dss_revision*`;
 - production OCSP/CRL source configuration and operating policy;
-- cryptographic CA-link signature re-verification and **trust anchoring** to a
-  verified LOTL/TSL (online; `chancela-tsl` — deliberately not in the leaf
-  verifier);
+- **trust anchoring** to a verified LOTL/TSL (online; `chancela-tsl` —
+  deliberately not in the leaf verifier; the leaf verifier already checks each CA
+  link's signature cryptographically, but does not decide *trust*);
 - end-to-end QTSP/TSL policy decisions for the signing and timestamping context;
 - qualified *issuance*: qualified certificate + key and qualified timestamps
   from an external QTSP/TSA (CMD/SCMD, CSC v2, or CC smartcard) — cannot be

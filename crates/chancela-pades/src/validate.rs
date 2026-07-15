@@ -586,12 +586,13 @@ fn usize_of(v: i64) -> Result<usize, PadesError> {
 //
 // This is a **leaf-crate, no-network** check. It confirms the long-term-validation material a
 // B-LT/B-LTA signature already carries is internally complete: it rebuilds the signer certificate
-// chain from the certificates embedded in `/DSS /Certs`, confirms every non-root link is backed by
-// an embedded OCSP response or CRL, and checks the `/DocTimeStamp` renewal chain is contiguous. It
-// does NOT fetch revocation data, does NOT cryptographically re-verify each CA link's signature, and
-// does NOT anchor the chain to a trusted list — trust anchoring and live path/revocation validation
-// stay with the online caller (`chancela-signing` + `chancela-tsl`). The signer's *own* signature is
-// still cryptographically verified, via [`validate_pdf_signature`], before any of this runs.
+// chain from the certificates embedded in `/DSS /Certs` — **cryptographically verifying each CA
+// link's signature** (RSA-PKCS1-SHA256 / ECDSA-P256-SHA256 only) — confirms every non-root link is
+// backed by an embedded OCSP response or CRL, and checks the `/DocTimeStamp` renewal chain is
+// contiguous. It does NOT fetch revocation data and does NOT anchor the chain to a trusted list —
+// trust anchoring and live revocation stay with the online caller (`chancela-signing` +
+// `chancela-tsl`). The signer's *own* signature is cryptographically verified, via
+// [`validate_pdf_signature`], before any of this runs.
 // =====================================================================================
 
 /// DER OID content octets for `id-sha256` (2.16.840.1.101.3.4.2.1). OCSP `CertID` hashes computed
@@ -599,27 +600,44 @@ fn usize_of(v: i64) -> Result<usize, PadesError> {
 /// because this leaf crate only links `sha2` and must not add a dependency to hash SHA-1.
 const SHA256_OID_CONTENT: [u8; 9] = [0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01];
 
+/// `sha256WithRSAEncryption` — the only RSA certificate-signature algorithm this verifier accepts.
+const OID_SHA256_WITH_RSA: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.113549.1.1.11");
+/// `ecdsa-with-SHA256` — the only ECDSA certificate-signature algorithm this verifier accepts.
+const OID_ECDSA_WITH_SHA256: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.10045.4.3.2");
+/// DER `DigestInfo` prefix for SHA-256 (RFC 8017 §9.2), for unprefixed RSA-PKCS1 verification.
+const SHA256_DIGEST_INFO_PREFIX: [u8; 19] = [
+    0x30, 0x31, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01, 0x05,
+    0x00, 0x04, 0x20,
+];
+
 /// Honest scope statement carried in every [`LtvVerificationReport`]. This is a technical,
 /// structural + revocation-completeness result over embedded material — **not** a trust decision,
 /// qualified-status finding, or legal long-term-validation claim.
-pub const LTV_OFFLINE_SCOPE_NOTE: &str = "Offline structural + revocation-completeness check over \
+pub const LTV_OFFLINE_SCOPE_NOTE: &str = "Offline chain + revocation-completeness check over \
 embedded PAdES LTV material only: the signer certificate chain is rebuilt from the embedded /DSS \
-certificates (issuer/subject name + key-identifier linkage), each non-root link is confirmed covered \
-by an embedded OCSP response or CRL, and the /DocTimeStamp renewal chain is checked for contiguity. \
-It does not fetch revocation data, does not cryptographically re-verify each CA link's signature, and \
-does not anchor the chain to a trusted list; live path building, revocation, and trust anchoring \
-remain the online caller's responsibility (chancela-signing + chancela-tsl). This reports embedded \
-LTV completeness, not a qualified-status or legal long-term-validation conclusion.";
+certificates (issuer/subject name + key-identifier linkage) and each CA link's signature is \
+cryptographically verified (RSA-PKCS1-SHA256 / ECDSA-P256-SHA256 only), each non-root link is \
+confirmed covered by an embedded OCSP response or CRL, and the /DocTimeStamp renewal chain is checked \
+for contiguity. It does not fetch revocation data and does not anchor the chain to a trusted list; \
+live revocation and trust anchoring remain the online caller's responsibility (chancela-signing + \
+chancela-tsl). This reports embedded LTV completeness, not a qualified-status or legal \
+long-term-validation conclusion.";
 
 /// Why a rebuilt signer-chain link is not backed by embedded long-term-validation material.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum LtvUncoveredReason {
-    /// No embedded `/DSS /Certs` certificate issued this one, so the chain could not be extended to
-    /// a self-issued root. The embedded material is structurally incomplete.
+    /// No embedded `/DSS /Certs` certificate issued this one (by name + key-identifier linkage with
+    /// a verifying signature), so the chain could not be extended to a self-issued root. The
+    /// embedded material is structurally incomplete.
     IssuerNotEmbedded,
-    /// The issuer certificate is embedded, but no embedded OCSP response or CRL covers this link
-    /// (matching CertID / issuer + non-revoked serial). The revocation material is incomplete.
+    /// A name/key-identifier-matching embedded issuer was found, but it does not cryptographically
+    /// sign this certificate (RSA-PKCS1-SHA256 / ECDSA-P256-SHA256), or the certificate signature
+    /// algorithm is unsupported. The chain does not verify at this link.
+    IssuerSignatureInvalid,
+    /// The issuer certificate is embedded and verifies, but no embedded OCSP response or CRL covers
+    /// this link (matching CertID / issuer + non-revoked serial). The revocation material is
+    /// incomplete.
     NoEmbeddedRevocation,
 }
 
@@ -649,8 +667,9 @@ pub struct LtvVerificationReport {
     /// is itself self-issued, i.e. there was no separate CA to embed).
     pub signer_chain_len: usize,
     /// Whether the rebuilt chain terminates in a self-issued (root) certificate that is present
-    /// among the embedded `/DSS /Certs`. Offline this states internal consistency + coverage, **not**
-    /// that the root is a *trusted* anchor — trust anchoring is the online caller's job.
+    /// among the embedded `/DSS /Certs`, with every CA link's signature cryptographically verified.
+    /// Offline this states internal consistency + coverage, **not** that the root is a *trusted*
+    /// anchor — trust anchoring is the online caller's job.
     pub chain_terminates_in_embedded_root: bool,
     /// Whether every non-root link that has an embedded issuer is covered by an embedded OCSP/CRL.
     pub all_links_revocation_covered: bool,
@@ -723,11 +742,22 @@ pub fn verify_ltv_offline(signed_pdf: &[u8]) -> Result<LtvVerificationReport, Pa
                 break;
             }
 
-            match embedded.iter().find(|cand| {
-                cand.subject_der == current.issuer_der
-                    && cand.is_ca
-                    && aki_ski_match(&current, cand)
-            }) {
+            // Candidate issuers by name + CA + key-identifier linkage; then require one whose public
+            // key actually verifies this certificate's signature (RSA-SHA256 / P-256-ECDSA-SHA256).
+            let name_candidates: Vec<&ChainCert> = embedded
+                .iter()
+                .filter(|cand| {
+                    cand.subject_der == current.issuer_der
+                        && cand.is_ca
+                        && aki_ski_match(&current, cand)
+                })
+                .collect();
+            let verified_issuer = name_candidates
+                .iter()
+                .copied()
+                .find(|issuer| verify_child_signature(&current.cert, &issuer.cert));
+
+            match verified_issuer {
                 Some(issuer) => {
                     if !link_revocation_covered(&current, issuer, &ocsp_ders, &crl_ders) {
                         uncovered.push(
@@ -735,6 +765,12 @@ pub fn verify_ltv_offline(signed_pdf: &[u8]) -> Result<LtvVerificationReport, Pa
                         );
                     }
                     current = issuer.clone();
+                }
+                None if !name_candidates.is_empty() => {
+                    // An issuer's name/key-id lined up but its key did not sign this cert.
+                    uncovered
+                        .push(current.uncovered(index, LtvUncoveredReason::IssuerSignatureInvalid));
+                    break;
                 }
                 None => {
                     uncovered.push(current.uncovered(index, LtvUncoveredReason::IssuerNotEmbedded));
@@ -848,6 +884,68 @@ fn aki_ski_match(child: &ChainCert, candidate: &ChainCert) -> bool {
         (Some(aki), Some(ski)) => aki == ski,
         _ => true,
     }
+}
+
+/// Whether `issuer`'s public key cryptographically signs `child` (RSA-PKCS1-SHA256 or
+/// ECDSA-P256-SHA256 only). Mirrors the conservative offline path check in `chancela-tsa/path.rs`:
+/// the certificate's outer `signatureAlgorithm` must match the inner `TBSCertificate.signature`, and
+/// any unsupported algorithm is rejected rather than guessed. No trust, validity, or revocation
+/// decision is made here — only the signature bytes over the TBS.
+fn verify_child_signature(child: &Certificate, issuer: &Certificate) -> bool {
+    if child.signature_algorithm.oid != child.tbs_certificate.signature.oid {
+        return false;
+    }
+    let Some(signature) = child.signature.as_bytes() else {
+        return false;
+    };
+    let Ok(tbs_der) = child.tbs_certificate.to_der() else {
+        return false;
+    };
+    if child.signature_algorithm.oid == OID_SHA256_WITH_RSA {
+        verify_cert_rsa_sha256(issuer, signature, &tbs_der)
+    } else if child.signature_algorithm.oid == OID_ECDSA_WITH_SHA256 {
+        verify_cert_ecdsa_sha256(issuer, signature, &tbs_der)
+    } else {
+        false
+    }
+}
+
+/// Verify an RSA-PKCS1-v1.5-SHA256 certificate signature against `issuer`'s public key.
+fn verify_cert_rsa_sha256(issuer: &Certificate, signature: &[u8], message: &[u8]) -> bool {
+    use der::referenced::OwnedToRef;
+    use rsa::{Pkcs1v15Sign, RsaPublicKey};
+
+    let spki = issuer
+        .tbs_certificate
+        .subject_public_key_info
+        .owned_to_ref();
+    let Ok(public_key) = RsaPublicKey::try_from(spki) else {
+        return false;
+    };
+    let hash = Sha256::digest(message);
+    let mut digest_info = SHA256_DIGEST_INFO_PREFIX.to_vec();
+    digest_info.extend_from_slice(&hash);
+    public_key
+        .verify(Pkcs1v15Sign::new_unprefixed(), &digest_info, signature)
+        .is_ok()
+}
+
+/// Verify an ECDSA-P256-SHA256 certificate signature against `issuer`'s public key.
+fn verify_cert_ecdsa_sha256(issuer: &Certificate, signature: &[u8], message: &[u8]) -> bool {
+    use p256::ecdsa::signature::Verifier;
+    use p256::ecdsa::{Signature, VerifyingKey};
+    use p256::pkcs8::DecodePublicKey;
+
+    let Ok(spki_der) = issuer.tbs_certificate.subject_public_key_info.to_der() else {
+        return false;
+    };
+    let Ok(verifying_key) = VerifyingKey::from_public_key_der(&spki_der) else {
+        return false;
+    };
+    let Ok(sig) = Signature::from_der(signature) else {
+        return false;
+    };
+    verifying_key.verify(message, &sig).is_ok()
 }
 
 /// Whether `child` (issued by `issuer`) is covered by an embedded OCSP response or CRL.
@@ -1463,6 +1561,39 @@ mod ltv_tests {
             LtvUncoveredReason::NoEmbeddedRevocation
         );
         assert!(!report.verified_offline);
+    }
+
+    #[test]
+    fn tampered_intermediate_with_matching_name_is_rejected() {
+        let (_real_ca, leaf_der, leaf_key) = mint_chain();
+        // A substituted "CA": same subject DN and basicConstraints, but an unrelated key — so it
+        // does NOT cryptographically sign the leaf even though the names line up.
+        let (fake_key, fake_spki) = rsa_key();
+        let fake_ca = make_cert(
+            "Encosto CA Root",
+            "Encosto CA Root",
+            0x01,
+            fake_spki,
+            Some(basic_constraints_ca()),
+            &fake_key,
+        );
+        let signed = sign_pdf_with_leaf(&base_pdf(), &leaf_der, &leaf_key);
+        let evidence = DssEvidence {
+            certificates: vec![leaf_der.clone(), fake_ca],
+            ocsp_responses: vec![make_ocsp(&leaf_der, &[LEAF_SERIAL])],
+            crls: vec![],
+        };
+        let with_dss = add_dss_revision(&signed, &evidence).expect("DSS append");
+
+        let report = verify_ltv_offline(&with_dss).expect("verify LTV");
+        assert!(!report.verified_offline, "wrong-key issuer must not verify");
+        assert!(!report.chain_terminates_in_embedded_root);
+        assert_eq!(report.uncovered_links.len(), 1);
+        assert_eq!(report.uncovered_links[0].index, 0, "signer leaf link");
+        assert_eq!(
+            report.uncovered_links[0].reason,
+            LtvUncoveredReason::IssuerSignatureInvalid
+        );
     }
 
     #[test]

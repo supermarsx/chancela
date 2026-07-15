@@ -20,9 +20,11 @@ cms = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
 png = { workspace = true }
+# Used by the offline LTV verifier to cryptographically verify each rebuilt CA link's signature
+# (RSA-PKCS1-SHA256 / ECDSA-P256-SHA256). Same workspace pins as the load-bearing der-0.7 family.
+rsa = { workspace = true }
+p256 = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }
-rsa = { workspace = true }
-p256 = { workspace = true }
 time = { workspace = true }
