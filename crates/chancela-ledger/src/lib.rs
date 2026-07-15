@@ -1070,6 +1070,33 @@ pub const REANCHOR_EVENT_KIND: &str = "ledger.reanchored";
 /// The scope stamped on the chained audit event a [`Ledger::reanchor`] appends (⇒ Application).
 pub const RECOVERY_SCOPE: &str = "recovery";
 
+/// The kind stamped on the append-only GDPR **right-to-erasure attestation** event (wp26-gdpr).
+///
+/// Destructive erasure of a data subject's personal data (physical row/blob deletion + destruction
+/// of the subject's per-subject DEK, making at-rest ciphertext — including backups — irrecoverable)
+/// **never mutates any existing `events` row**: the ledger stores only `payload_digest` and
+/// pseudonymous references, so deleting the store-side PII cannot break [`Ledger::verify`]. The
+/// erasure is instead proven by appending exactly one event of this kind, whose digested payload
+/// records the subject id, the authorizing DSR request, the dual-control principals, the techniques
+/// applied, the erased target counts, and the lawfully-retained Art. 17(3) carve-outs. Because it is
+/// a normal append, `verify()` goes from `Ok(n)` to `Ok(n + 1)` and tamper-evidence is preserved.
+///
+/// Stamp this event's `scope` with a keyword scope (e.g. `user:{uuid}`) so [`Ledger::memberships`]
+/// routes it to the [`ChainId::Application`] chain, which fixes no genesis kind (a bare-UUID or
+/// `book:`/`entity:` scope is avoided to sidestep the WFL-11 genesis-kind constraint).
+pub const SUBJECT_ERASED_KIND: &str = "subject.erased";
+
+/// Pseudonymous-actor convention for post-erasure accountability (wp26-gdpr).
+///
+/// New event stamping SHOULD record `actor` as the subject **UUID**, not a human-readable username
+/// slug: once a subject is erased the `users` row mapping uuid→identity is gone, so a stored UUID
+/// actor becomes a dangling pseudonym rather than attributable PII. Historic events keep their
+/// already-stored `actor` bytes immutably (they are never rewritten); where those still expose a
+/// username or other identifier, the retention of that accountability field is the lawful Art. 17(3)
+/// carve-out surfaced by the erasure preflight — never an in-place edit of the frozen ledger.
+pub const SUBJECT_ERASED_ACTOR_IS_UUID_NOTE: &str =
+    "wp26-gdpr: stamp actor = subject UUID, not username slug";
+
 impl Ledger {
     // ---- §2.1 break location -----------------------------------------------------------------
 
@@ -1774,6 +1801,60 @@ mod tests {
         assert_eq!(ledger.verify(), Ok(1));
         assert_eq!(ledger.verify_chain(&company(E1)), Ok(1));
         assert_eq!(ledger.verify_chain(&ChainId::Global), Ok(1));
+    }
+
+    #[test]
+    fn subject_erased_attestation_appends_and_verifies() {
+        // The GDPR right-to-erasure attestation (wp26-gdpr) is a normal append: it must take the
+        // ledger from Ok(n) to Ok(n+1) with no mutation of any prior event, preserving tamper
+        // evidence. Subject Amélia Marques (fictional) is erased from Encosto Estratégico Lda.
+        let mut ledger = Ledger::new();
+        // Seed some prior history so we prove verify() advances n -> n+1, not just 0 -> 1.
+        ledger.append(
+            "amelia.marques",
+            &entity_scope(E1),
+            "entity.created",
+            None,
+            b"e",
+        );
+        ledger.append(
+            "amelia.marques",
+            &book_scope(E1, B1),
+            "book.opened",
+            None,
+            b"termo",
+        );
+        let n = ledger.verify().expect("pre-erasure ledger verifies");
+        assert_eq!(n, 2);
+
+        // Keyword `user:{uuid}` scope routes to the Application chain (no genesis-kind constraint);
+        // actor is the subject UUID, not the username slug (pseudonymous-actor convention).
+        let subject_uuid = E1;
+        let scope = format!("user:{subject_uuid}");
+        assert_eq!(
+            Ledger::memberships(&scope, SUBJECT_ERASED_KIND),
+            vec![ChainId::Application],
+            "subject.erased must live on the Application chain",
+        );
+        let ev = ledger.append(
+            subject_uuid,
+            &scope,
+            SUBJECT_ERASED_KIND,
+            Some(r#"{"subject_id":"11111111-1111-4111-8111-111111111111","technique":["crypto_erase","physical_delete","vacuum"],"dek_destroyed":true}"#),
+            b"subject-erasure-attestation",
+        );
+        assert_eq!(ev.kind, "subject.erased");
+        assert_eq!(
+            ev.actor, subject_uuid,
+            "actor is the subject UUID, not a username slug"
+        );
+
+        // The whole ledger still verifies and the count advanced by exactly one.
+        assert_eq!(ledger.verify(), Ok(n + 1));
+        // The pre-existing chains are untouched (no reanchor, no rewrite): the Company(E1) chain
+        // still holds exactly its two seed members (entity.created + book.opened).
+        assert_eq!(ledger.verify_chain(&ChainId::Global), Ok(n + 1));
+        assert_eq!(ledger.verify_chain(&company(E1)), Ok(2));
     }
 
     // --- Membership derivation (frozen §3.2 grammar) ---------------------------------------
