@@ -484,7 +484,7 @@ fn missing_reference_digest_method_is_rejected() {
 
     let err = validate_xades(tampered.as_bytes()).expect_err("missing DigestMethod must fail");
     assert!(
-        matches!(err, crate::XadesError::Verification(msg) if msg.contains("reference without DigestMethod")),
+        matches!(err, crate::XadesError::Verification(ref msg) if msg.contains("reference without DigestMethod")),
         "unexpected error: {err}"
     );
 }
@@ -498,7 +498,7 @@ fn unknown_reference_digest_method_is_rejected() {
 
     let err = validate_xades(tampered.as_bytes()).expect_err("unknown DigestMethod must fail");
     assert!(
-        matches!(err, crate::XadesError::Verification(msg) if msg.contains("unsupported DigestMethod urn:chancela:test:unknown-digest")),
+        matches!(err, crate::XadesError::Verification(ref msg) if msg.contains("unsupported DigestMethod urn:chancela:test:unknown-digest")),
         "unexpected error: {err}"
     );
 }
