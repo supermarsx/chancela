@@ -782,8 +782,10 @@ after reload/memory clear, filtered first-page default export behavior, and
 explicit all-filtered export behavior only; the default export remains bounded
 to the current filtered newest-first page after limit normalization, while
 `export_scope=all_filtered` walks filtered newest-first records server-side in
-250-record internal chunks. The all-filtered export currently assembles the
-final response in memory and has no record-count cap. They do not turn
+250-record internal chunks. JSON/TXT/CSV/HTML all-filtered exports now stream
+audit/interchange output and expose `streamed`, `streaming_mode`, and
+`record_cap` metadata; all-filtered PDF/A remains buffered, capped at 1,000
+records, and rejects over-cap exports without truncation. They do not turn
 non-PDF/A exports into preserved evidence, make any archive certification or
 DGLAB/legal archive certification claim, prove filing or legal acceptance, add
 signing/legal evidence, validate signatures, or mutate the ledger. The external invite

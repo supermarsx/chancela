@@ -9756,8 +9756,23 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-api/src/arquivo.rs",
+    "const ALL_FILTERED_PDFA_RECORD_CAP: usize = 1_000;",
+    "ledger archive all-filtered PDF/A cap marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/arquivo.rs",
     "Exports every matching filtered ledger event server-side in newest-first order",
     "ledger archive all-filtered API description marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/arquivo.rs",
+    "stream_all_filtered_interchange_export(",
+    "ledger archive all-filtered streaming interchange marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/arquivo.rs",
+    "No records were truncated.",
+    "ledger archive all-filtered PDF/A over-cap no-truncation marker",
   );
   assertFileContains(
     "crates/chancela-api/src/arquivo.rs",
@@ -9800,6 +9815,26 @@ function assertCheckpointMap() {
     "ledger archive all-filtered internal batch marker",
   );
   assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "ledger_archive_document_streams_all_filtered_audit_interchange_formats",
+    "ledger archive all-filtered streamed interchange coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "ledger_archive_document_caps_all_filtered_pdfa_without_truncating",
+    "ledger archive all-filtered PDF/A cap coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    'assert_eq!(export["streaming_mode"], "streamed");',
+    "ledger archive all-filtered streaming metadata coverage",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/locales/en-US.ts",
+    "all filtered JSON/TXT/CSV/HTML streams on the server",
+    "ledger archive all-filtered help copy streaming marker",
+  );
+  assertFileContains(
     "crates/chancela-api/src/ledger_events_page.rs",
     ".ledger_events_page(&store_query(&query))",
     "ledger archive store-backed selector marker",
@@ -9826,7 +9861,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "all-filtered path currently assembles the final response in memory and has no\n  record-count cap",
+    "all-filtered PDF/A remains buffered and capped at\n  1,000 records",
     "spec coverage ledger archive no-overclaim marker",
   );
   assertFileContains(
@@ -9881,12 +9916,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current `a7125b3` all-filtered archive export checks",
+    "Current `040ce48` all-filtered archive export checks",
     "CI/E2E hardening all-filtered archive checks marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "the all-filtered response is assembled in memory and has no\n  record-count cap",
+    "buffered all-filtered PDF/A capped at 1,000 records with over-cap rejection\n  and no truncation",
     "CI/E2E hardening all-filtered archive caveat marker",
   );
   assertFileContains(
@@ -10386,12 +10421,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `a7125b3`",
+    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `040ce48`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `a7125b3`",
+    "Focused Gate Snapshot Through `040ce48`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -11031,7 +11066,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `a7125b3`",
+    "Current checkpoint metadata/static checks through `040ce48`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -11566,7 +11601,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `a7125b323f6c5e4811fe82628dd7e789f03664f1`",
+    "implementation snapshot `040ce4874425ac67f059cb36aafcaa379ae3463e`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -11586,7 +11621,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Current `a7125b3` keeps Data/Archive/UX/CI **PARTIAL**",
+    "Current `040ce48` keeps Data/Archive/UX/CI **PARTIAL**",
     "spec coverage all-filtered archive export checkpoint marker",
   );
   assertFileContains(
