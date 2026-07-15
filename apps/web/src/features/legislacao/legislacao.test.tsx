@@ -363,7 +363,7 @@ describe('Legislação — corpus reader (full text, t55-E3)', () => {
     source_note: 'Corpus de teste.',
     digest: 'a'.repeat(64),
     origin: 'Embedded',
-    counts: { diplomas: 2, articles: 3, verified: 1, automated_review: 0, pending: 2 },
+    counts: { diplomas: 2, articles: 4, verified: 1, automated_review: 1, pending: 2 },
     diplomas: [
       {
         id: 'eidas-910-2014',
@@ -373,9 +373,9 @@ describe('Legislação — corpus reader (full text, t55-E3)', () => {
         ref: 'Regulamento (UE) n.º 910/2014, de 23 de julho',
         official_url: 'https://eur-lex.europa.eu/eli/reg/2014/910/oj',
         eli: 'https://eur-lex.europa.eu/eli/reg/2014/910/oj',
-        article_count: 1,
+        article_count: 2,
         verified_count: 1,
-        automated_review_count: 0,
+        automated_review_count: 1,
         pending_count: 0,
       },
       {
@@ -412,6 +412,30 @@ describe('Legislação — corpus reader (full text, t55-E3)', () => {
           url: 'https://eur-lex.europa.eu/legal-content/PT/TXT/HTML/?uri=CELEX:32014R0910',
           source_digest: 'b'.repeat(64),
           retrieved_at: '2026-07-08T00:00:00Z',
+          complete: true,
+        },
+      },
+      {
+        // The automated-review tier: authentic vendored text (a real, non-empty body + complete
+        // source) that is NOT human-legally-approved — its own badge + caveat, never the marker.
+        diploma_id: 'eidas-910-2014',
+        number: '6',
+        label: 'Artigo 6.º',
+        heading: 'Reconhecimento mútuo',
+        body: 'Os meios de identificação eletrónica emitidos noutro Estado-Membro são reconhecidos para efeitos da autenticação transfronteiriça.',
+        verification: 'automated_review',
+        verified: false,
+        source: {
+          diploma: 'Regulamento (UE) n.º 910/2014, de 23 de julho',
+          article: 'Artigo 6.º',
+          dr_reference: 'JO L 257 de 28.8.2014, p. 73',
+          dr_date: '2014-08-28',
+          url: 'https://eur-lex.europa.eu/legal-content/PT/TXT/HTML/?uri=CELEX:32014R0910',
+          source_digest: 'c'.repeat(64),
+          retrieved_at: '2026-07-08T00:00:00Z',
+          review_method: 'automated-capture',
+          review_note:
+            'Texto oficial captado e revisto por um processo automático. NÃO aprovado juridicamente por revisor humano — recomenda-se revisão jurídica humana antes de confiar.',
           complete: true,
         },
       },
@@ -585,6 +609,28 @@ describe('Legislação — corpus reader (full text, t55-E3)', () => {
       name: 'https://eur-lex.europa.eu/legal-content/PT/TXT/HTML/?uri=CELEX:32014R0910',
     });
     expect(official).toBeTruthy();
+  });
+
+  it('badges an automated-review article as its own honest tier — real body, no marker, caveat help', async () => {
+    vi.stubGlobal('fetch', corpusFetch());
+    renderWithProviders(<CorpusReader />, ['/?diploma=eidas-910-2014&artigo=6']);
+
+    // Its own info-toned badge — NOT the green human-verified badge, NOT the loud Pending warning.
+    const badge = await screen.findByText('Revisão automática');
+    expect(badge.className).toContain('badge--info');
+
+    // The authentic vendored text is shown as normal body — never inside the "Texto por verificar"
+    // marker warning, and never the [NÃO VERIFICADO] placeholder.
+    expect(screen.getByText(/reconhecidos para efeitos da autenticação transfronteiriça/)).toBeTruthy();
+    expect(screen.queryByText('Texto por verificar')).toBeNull();
+    expect(screen.queryByText('[NÃO VERIFICADO / fonte pendente]')).toBeNull();
+
+    // The "?" help affordance carries the honest caveat (the API's review_note) — automated review
+    // only, NOT human-legally-approved, human legal review recommended.
+    const help = screen.getAllByRole('button', { name: 'Ajuda' });
+    expect(help.length).toBeGreaterThan(0);
+    expect(help[0].getAttribute('aria-describedby')).toBeTruthy();
+    expect(screen.getByText(/NÃO aprovado juridicamente por revisor humano/)).toBeTruthy();
   });
 
   it('full-text search ranks hits with the snippet + badge, and a hit opens the article', async () => {
