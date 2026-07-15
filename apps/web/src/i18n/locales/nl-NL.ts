@@ -258,6 +258,10 @@ export const nlNL: Catalog = {
   'notifications.reminder.act.attendance.body':
     '{act_title} van {entity_name} is gedateerd op {meeting_date} en heeft nog geen voldoende aanwezigheidsregistratie. Leg de aanwezigheidsreferentie en de totalen of gestructureerde deelnemers vast voordat u verder gaat.',
   'notifications.reminder.act.attendance.action': 'Aanwezigheid vastleggen',
+  'notifications.reminder.act.conveningNotice.title': 'Oproepingsbericht controleren: {act_title}',
+  'notifications.reminder.act.conveningNotice.body':
+    'De statuten registreren {required_notice_days} oproepingsdagen voor {act_title} van {entity_name} met vergaderdatum {meeting_date}; de lokale kennisgevingsdatum is {notice_due_date}. Het vastgelegde verzendbewijs toont die termijn niet aan. Alleen lokaal advies; er wordt geen juridische toereikendheid, externe levering of workflow-afronding geclaimd.',
+  'notifications.reminder.act.conveningNotice.action': 'Oproepingsbericht controleren',
   'notifications.reminder.absentOwnerDispatch.title': 'Verzendbewijs in behandeling: {act_title}',
   'notifications.reminder.absentOwnerDispatch.body':
     '{act_title} heeft een gegenereerde mededeling voor afwezige eigenaars, maar het verzendbewijs van de operator is {dispatch_evidence_status}. Ontbrekende ontvangers: {missing_recipients}. Deze herinnering is alleen adviserend.',

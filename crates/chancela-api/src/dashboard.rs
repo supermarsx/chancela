@@ -1374,6 +1374,13 @@ fn dashboard_reminders_with_generated_dispatch_evidence(
             policy.due_soon_days,
         ));
     }
+    reminders.extend(open_act_convocation_notice_reminders(
+        entities,
+        books,
+        acts,
+        today,
+        policy.due_soon_days,
+    ));
     reminders.extend(absent_owner_dispatch_evidence_reminders(
         entities,
         books,
@@ -1597,6 +1604,130 @@ fn act_attendance_law_refs(family: EntityFamily) -> Vec<DashboardLawReference> {
         EntityFamily::CommercialCompany => law_refs(&[("csc", "63")]),
         _ => Vec::new(),
     }
+}
+
+fn open_act_convocation_notice_reminders(
+    entities: &HashMap<EntityId, Entity>,
+    books: &HashMap<BookId, Book>,
+    acts: &HashMap<ActId, Act>,
+    today: Date,
+    due_soon_days: u16,
+) -> Vec<DashboardReminder> {
+    acts.values()
+        .filter_map(|act| {
+            let book = books.get(&act.book_id)?;
+            if book.state != BookState::Open || !is_pre_signing_work_queue_state(act.state) {
+                return None;
+            }
+            let entity = entities.get(&book.entity_id)?;
+            if !entity.is_consistent() {
+                return None;
+            }
+            act_convocation_notice_reminder(entity, book, act, today, due_soon_days)
+        })
+        .collect()
+}
+
+fn act_convocation_notice_reminder(
+    entity: &Entity,
+    book: &Book,
+    act: &Act,
+    today: Date,
+    due_soon_days: u16,
+) -> Option<DashboardReminder> {
+    let required_days = entity.statute.as_ref()?.convocation_notice_days?;
+    let meeting_date = act.meeting_date?;
+    let notice_due_date =
+        Date::from_julian_day(meeting_date.to_julian_day() - i32::from(required_days)).ok()?;
+
+    let dispatch_date = act
+        .convening
+        .as_ref()
+        .and_then(|convening| convening.dispatch_date);
+    let antecedence_days = act_convocation_notice_antecedence_days(act);
+    if antecedence_days
+        .map(|actual| actual >= i32::from(required_days))
+        .unwrap_or(false)
+    {
+        return None;
+    }
+
+    let meeting_date_text = format_date(meeting_date);
+    let notice_due_date_text = format_date(notice_due_date);
+    let dispatch_date_text = dispatch_date.map(format_date).unwrap_or_default();
+    let antecedence_days_text = antecedence_days
+        .map(|days| days.to_string())
+        .unwrap_or_default();
+    let evidence_status = if antecedence_days.is_some() {
+        "short_dispatch_evidence"
+    } else {
+        "missing_or_unverifiable_dispatch_evidence"
+    };
+    let profile = profile_for(entity.kind);
+
+    Some(DashboardReminder {
+        due_date: notice_due_date_text.clone(),
+        severity: "Warning".to_owned(),
+        status: reminder_status(today, notice_due_date, due_soon_days).to_owned(),
+        reason: format!(
+            "Act \"{}\" has a local statute convocation-notice advisory of {} days for meeting date {}. \
+             Recorded convening dispatch evidence is {} and does not demonstrate the configured notice period. \
+             This is a local advisory over recorded statute/convening metadata only; no legal sufficiency, \
+             external delivery, or workflow completion is claimed.",
+            act.title, required_days, meeting_date_text, evidence_status
+        ),
+        entity_id: entity.id.to_string(),
+        entity_name: entity.name.clone(),
+        source_rule: "act-convening-notice".to_owned(),
+        source_profile: profile.template_family.to_owned(),
+        params: dashboard_alert_params([
+            ("act_id", act.id.to_string()),
+            ("act_title", act.title.clone()),
+            ("book_id", book.id.to_string()),
+            ("entity_id", entity.id.to_string()),
+            ("entity_name", entity.name.clone()),
+            ("required_notice_days", required_days.to_string()),
+            ("meeting_date", meeting_date_text),
+            ("notice_due_date", notice_due_date_text),
+            ("dispatch_date", dispatch_date_text),
+            ("antecedence_days", antecedence_days_text),
+            ("evidence_status", evidence_status.to_owned()),
+            ("act_state", format!("{:?}", act.state)),
+            ("local_advisory_only", "true".to_owned()),
+            ("legal_sufficiency_claimed", "false".to_owned()),
+            ("external_delivery_claimed", "false".to_owned()),
+            ("workflow_completion_claimed", "false".to_owned()),
+        ]),
+        profile_calendar_plan: None,
+        law_refs: Vec::new(),
+        action: Some(dashboard_action(
+            "open_act_convening_notice",
+            "notifications.reminder.act.conveningNotice.action",
+            Some(format!("/v1/acts/{}", act.id)),
+            Some(format!("/atas/{}", act.id)),
+        )),
+        recommended_next_steps: vec![
+            "Open the act.".to_owned(),
+            "Review the recorded convening dispatch date and actual antecedence metadata."
+                .to_owned(),
+        ],
+        i18n: Some(alert_i18n(
+            "notifications.reminder.act.conveningNotice.title",
+            "notifications.reminder.act.conveningNotice.body",
+            Some("notifications.reminder.act.conveningNotice.action"),
+        )),
+    })
+}
+
+fn act_convocation_notice_antecedence_days(act: &Act) -> Option<i32> {
+    let convening = act.convening.as_ref()?;
+    if let Some(days) = convening.antecedence_days {
+        return Some(i32::from(days));
+    }
+
+    let dispatch_date = convening.dispatch_date?;
+    let meeting_date = act.meeting_date?;
+    Some(meeting_date.to_julian_day() - dispatch_date.to_julian_day())
 }
 
 fn imported_document_review_reminders(
@@ -2610,8 +2741,8 @@ mod tests {
     };
     use crate::settings::{BackupRecoveryPolicySettings, WorkflowReminderSourceSettings};
     use chancela_core::{
-        AttendanceWeight, Attendee, LegalHold, MeetingChannel, Nipc, NumberingScheme, PresenceMode,
-        SignatoryCapacity, TermoDeAbertura,
+        AttendanceWeight, Attendee, Convening, LegalHold, MeetingChannel, Nipc, NumberingScheme,
+        PresenceMode, SignatoryCapacity, StatuteOverrides, TermoDeAbertura,
     };
     use chancela_registry::{RegistryExtract, RegistryOfficer, RegistryProvenance};
     use time::macros::date;
@@ -4257,6 +4388,227 @@ mod tests {
                 .as_ref()
                 .and_then(|i18n| i18n.action_key.as_deref()),
             Some("notifications.reminder.act.attendance.action")
+        );
+    }
+
+    #[test]
+    fn convocation_notice_missing_evidence_surfaces_local_advisory_reminder() {
+        let mut entity = entity_of(EntityKind::SociedadeAnonima);
+        entity.statute = Some(StatuteOverrides {
+            convocation_notice_days: Some(10),
+            ..StatuteOverrides::default()
+        });
+        let mut book = Book::new(entity.id, BookKind::AssembleiaGeral);
+        book.state = BookState::Open;
+
+        let mut act = Act::draft(
+            book.id,
+            "Ata com convocatoria por rever",
+            MeetingChannel::Physical,
+        );
+        act.state = ActState::Review;
+        act.meeting_date = Some(date!(2026 - 03 - 30));
+        act.attendance_reference = Some("Lista de presencas".to_owned());
+        act.members_present = Some(3);
+        let act_id = act.id;
+        let act_id_text = act_id.to_string();
+
+        let reminders = dashboard_reminders(
+            &HashMap::from([(entity.id, entity.clone())]),
+            &HashMap::from([(book.id, book)]),
+            &HashMap::from([(act.id, act)]),
+            &HashMap::new(),
+            date!(2026 - 03 - 10),
+        );
+
+        let convocation_reminders = reminders
+            .iter()
+            .filter(|reminder| reminder.source_rule == "act-convening-notice")
+            .collect::<Vec<_>>();
+        assert_eq!(convocation_reminders.len(), 1);
+
+        let reminder = convocation_reminders[0];
+        assert_eq!(reminder.due_date, "2026-03-20");
+        assert_eq!(reminder.status, "DueSoon");
+        assert_eq!(reminder.severity, "Warning");
+        assert_eq!(reminder.source_profile, "csc-commercial");
+        assert_eq!(reminder.law_refs, Vec::<DashboardLawReference>::new());
+        assert_eq!(
+            reminder.params.get("act_id").map(String::as_str),
+            Some(act_id_text.as_str())
+        );
+        assert_eq!(
+            reminder
+                .params
+                .get("required_notice_days")
+                .map(String::as_str),
+            Some("10")
+        );
+        assert_eq!(
+            reminder.params.get("meeting_date").map(String::as_str),
+            Some("2026-03-30")
+        );
+        assert_eq!(
+            reminder.params.get("notice_due_date").map(String::as_str),
+            Some("2026-03-20")
+        );
+        assert_eq!(
+            reminder.params.get("dispatch_date").map(String::as_str),
+            Some("")
+        );
+        assert_eq!(
+            reminder.params.get("antecedence_days").map(String::as_str),
+            Some("")
+        );
+        assert_eq!(
+            reminder.params.get("evidence_status").map(String::as_str),
+            Some("missing_or_unverifiable_dispatch_evidence")
+        );
+        for key in [
+            "local_advisory_only",
+            "legal_sufficiency_claimed",
+            "external_delivery_claimed",
+            "workflow_completion_claimed",
+        ] {
+            assert!(
+                reminder.params.contains_key(key),
+                "{key} no-claim param must be present: {reminder:?}"
+            );
+        }
+        assert_eq!(
+            reminder
+                .params
+                .get("local_advisory_only")
+                .map(String::as_str),
+            Some("true")
+        );
+        for key in [
+            "legal_sufficiency_claimed",
+            "external_delivery_claimed",
+            "workflow_completion_claimed",
+        ] {
+            assert_eq!(
+                reminder.params.get(key).map(String::as_str),
+                Some("false"),
+                "{key} must be false"
+            );
+        }
+        assert!(
+            reminder.reason.contains("local advisory"),
+            "reason must stay local/advisory: {reminder:?}"
+        );
+        assert!(
+            reminder.reason.contains("no legal sufficiency"),
+            "reason must avoid legal-sufficiency claims: {reminder:?}"
+        );
+        assert_eq!(
+            reminder
+                .action
+                .as_ref()
+                .map(|action| (action.kind.as_str(), action.route.as_deref())),
+            Some((
+                "open_act_convening_notice",
+                Some(format!("/atas/{act_id}").as_str())
+            ))
+        );
+        assert_eq!(
+            reminder.i18n.as_ref().map(|i18n| i18n.title_key.as_str()),
+            Some("notifications.reminder.act.conveningNotice.title")
+        );
+    }
+
+    #[test]
+    fn convocation_notice_short_evidence_surfaces_local_advisory_reminder() {
+        let mut entity = entity_of(EntityKind::SociedadeAnonima);
+        entity.statute = Some(StatuteOverrides {
+            convocation_notice_days: Some(10),
+            ..StatuteOverrides::default()
+        });
+        let mut book = Book::new(entity.id, BookKind::AssembleiaGeral);
+        book.state = BookState::Open;
+
+        let mut act = Act::draft(
+            book.id,
+            "Ata com antecedencia curta",
+            MeetingChannel::Physical,
+        );
+        act.state = ActState::Review;
+        act.meeting_date = Some(date!(2026 - 03 - 30));
+        act.attendance_reference = Some("Lista de presencas".to_owned());
+        act.members_present = Some(3);
+        act.convening = Some(Convening {
+            dispatch_date: Some(date!(2026 - 03 - 25)),
+            ..Convening::default()
+        });
+
+        let reminders = dashboard_reminders(
+            &HashMap::from([(entity.id, entity.clone())]),
+            &HashMap::from([(book.id, book)]),
+            &HashMap::from([(act.id, act)]),
+            &HashMap::new(),
+            date!(2026 - 03 - 10),
+        );
+
+        let reminder = reminders
+            .iter()
+            .find(|reminder| reminder.source_rule == "act-convening-notice")
+            .unwrap_or_else(|| panic!("missing short notice reminder: {reminders:?}"));
+        assert_eq!(reminder.due_date, "2026-03-20");
+        assert_eq!(
+            reminder.params.get("dispatch_date").map(String::as_str),
+            Some("2026-03-25")
+        );
+        assert_eq!(
+            reminder.params.get("antecedence_days").map(String::as_str),
+            Some("5")
+        );
+        assert_eq!(
+            reminder.params.get("evidence_status").map(String::as_str),
+            Some("short_dispatch_evidence")
+        );
+        assert!(
+            reminder
+                .reason
+                .contains("external delivery, or workflow completion is claimed")
+        );
+    }
+
+    #[test]
+    fn convocation_notice_sufficient_evidence_is_suppressed() {
+        let mut entity = entity_of(EntityKind::SociedadeAnonima);
+        entity.statute = Some(StatuteOverrides {
+            convocation_notice_days: Some(10),
+            ..StatuteOverrides::default()
+        });
+        let mut book = Book::new(entity.id, BookKind::AssembleiaGeral);
+        book.state = BookState::Open;
+
+        let mut act = Act::draft(
+            book.id,
+            "Ata com convocatoria suficiente",
+            MeetingChannel::Physical,
+        );
+        act.state = ActState::Review;
+        act.meeting_date = Some(date!(2026 - 03 - 30));
+        act.attendance_reference = Some("Lista de presencas".to_owned());
+        act.members_present = Some(3);
+        act.convening = Some(Convening {
+            dispatch_date: Some(date!(2026 - 03 - 15)),
+            ..Convening::default()
+        });
+
+        let reminders = dashboard_reminders(
+            &HashMap::from([(entity.id, entity)]),
+            &HashMap::from([(book.id, book)]),
+            &HashMap::from([(act.id, act)]),
+            &HashMap::new(),
+            date!(2026 - 03 - 10),
+        );
+        assert!(
+            reminders
+                .iter()
+                .all(|reminder| reminder.source_rule != "act-convening-notice"),
+            "sufficient dispatch evidence should suppress the reminder: {reminders:?}"
         );
     }
 

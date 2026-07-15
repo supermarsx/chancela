@@ -263,6 +263,10 @@ export const deDE: Catalog = {
   'notifications.reminder.act.attendance.body':
     '{act_title} von {entity_name} ist auf den {meeting_date} datiert und hat noch keine ausreichende Anwesenheitserfassung. Erfassen Sie die Anwesenheitsreferenz und entweder Anwesenheitszahlen oder strukturierte Teilnehmer, bevor Sie ihn weiterführen.',
   'notifications.reminder.act.attendance.action': 'Anwesenheit erfassen',
+  'notifications.reminder.act.conveningNotice.title': 'Einberufung prüfen: {act_title}',
+  'notifications.reminder.act.conveningNotice.body':
+    'Die Satzung erfasst {required_notice_days} Tage Vorlauf für {act_title} von {entity_name} mit Versammlungsdatum {meeting_date}; das lokale Hinweisdatum ist {notice_due_date}. Die erfassten Versandnachweise belegen diesen Vorlauf nicht. Nur lokaler Hinweis; keine rechtliche Ausreichendheit, externe Zustellung oder Workflow-Fertigstellung wird behauptet.',
+  'notifications.reminder.act.conveningNotice.action': 'Einberufung prüfen',
   'notifications.reminder.absentOwnerDispatch.title': 'Versandnachweis ausstehend: {act_title}',
   'notifications.reminder.absentOwnerDispatch.body':
     '{act_title} hat eine generierte Mitteilung an abwesende Eigentümer, aber der Versandnachweis des Operators ist {dispatch_evidence_status}. Fehlende Empfänger: {missing_recipients}. Diese Erinnerung ist nur ein Hinweis.',

@@ -265,6 +265,10 @@ export const ptPT = {
   'notifications.reminder.act.attendance.body':
     '{act_title} de {entity_name} está marcada para {meeting_date} e ainda não tem registo de presenças suficiente. Registe a referência de presenças e os totais ou participantes estruturados antes de a avançar.',
   'notifications.reminder.act.attendance.action': 'Registar presenças',
+  'notifications.reminder.act.conveningNotice.title': 'Rever convocatória: {act_title}',
+  'notifications.reminder.act.conveningNotice.body':
+    'Os estatutos registam {required_notice_days} dias de antecedência para {act_title} de {entity_name} com reunião marcada para {meeting_date}; a data local de aviso é {notice_due_date}. A evidência de expedição registada não demonstra essa antecedência. Aviso consultivo local; não afirma suficiência legal, entrega externa ou conclusão do workflow.',
+  'notifications.reminder.act.conveningNotice.action': 'Rever convocatória',
   'notifications.reminder.absentOwnerDispatch.title':
     'Evidência de expedição pendente: {act_title}',
   'notifications.reminder.absentOwnerDispatch.body':

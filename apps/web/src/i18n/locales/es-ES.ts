@@ -261,6 +261,10 @@ export const esES: Catalog = {
   'notifications.reminder.act.attendance.body':
     '{act_title} de {entity_name} tiene fecha {meeting_date} y aún no cuenta con un registro de asistencia suficiente. Registre la referencia de asistencia y los totales o asistentes estructurados antes de avanzarla.',
   'notifications.reminder.act.attendance.action': 'Registrar asistencia',
+  'notifications.reminder.act.conveningNotice.title': 'Revisar convocatoria: {act_title}',
+  'notifications.reminder.act.conveningNotice.body':
+    'Los estatutos registran {required_notice_days} días de preaviso para {act_title} de {entity_name} con reunión fechada el {meeting_date}; la fecha local de aviso es {notice_due_date}. La evidencia de envío registrada no demuestra esa antelación. Aviso consultivo local; no afirma suficiencia legal, entrega externa ni finalización del workflow.',
+  'notifications.reminder.act.conveningNotice.action': 'Revisar convocatoria',
   'notifications.reminder.absentOwnerDispatch.title': 'Evidencia de envío pendiente: {act_title}',
   'notifications.reminder.absentOwnerDispatch.body':
     '{act_title} tiene una comunicación generada para propietarios ausentes, pero la evidencia de envío del operador está {dispatch_evidence_status}. Destinatarios faltantes: {missing_recipients}. El recordatorio es solo consultivo.',

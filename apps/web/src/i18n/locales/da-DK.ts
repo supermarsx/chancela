@@ -257,6 +257,10 @@ export const daDK: Catalog = {
   'notifications.reminder.act.attendance.body':
     '{act_title} for {entity_name} er dateret {meeting_date} og har endnu ikke tilstrækkelig fremmøderegistrering. Registrer fremmødereferencen og enten fremmødetal eller strukturerede deltagere, før du fører det videre.',
   'notifications.reminder.act.attendance.action': 'Registrer fremmøde',
+  'notifications.reminder.act.conveningNotice.title': 'Gennemgå indkaldelse: {act_title}',
+  'notifications.reminder.act.conveningNotice.body':
+    'Vedtægterne registrerer {required_notice_days} varslingsdage for {act_title} hos {entity_name} med mødedato {meeting_date}; den lokale varslingsdato er {notice_due_date}. Den registrerede afsendelsesdokumentation viser ikke dette varsel. Kun lokal rådgivende markering; der påstås ingen juridisk tilstrækkelighed, ekstern levering eller workflow-afslutning.',
+  'notifications.reminder.act.conveningNotice.action': 'Gennemgå indkaldelse',
   'notifications.reminder.absentOwnerDispatch.title': 'Afsendelsesbevis afventer: {act_title}',
   'notifications.reminder.absentOwnerDispatch.body':
     '{act_title} har en genereret meddelelse til fraværende ejere, men operatørens afsendelsesbevis er {dispatch_evidence_status}. Manglende modtagere: {missing_recipients}. Påmindelsen er kun rådgivende.',

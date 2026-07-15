@@ -260,6 +260,10 @@ export const plPL: Catalog = {
   'notifications.reminder.act.attendance.body':
     '{act_title} dla {entity_name} ma datę {meeting_date} i nie ma jeszcze wystarczającej ewidencji obecności. Uzupełnij odniesienie do obecności oraz liczby obecnych lub ustrukturyzowanych uczestników przed przejściem dalej.',
   'notifications.reminder.act.attendance.action': 'Zarejestruj obecność',
+  'notifications.reminder.act.conveningNotice.title': 'Sprawdź zawiadomienie: {act_title}',
+  'notifications.reminder.act.conveningNotice.body':
+    'Statut rejestruje {required_notice_days} dni zawiadomienia dla {act_title} w {entity_name} z datą posiedzenia {meeting_date}; lokalna data zawiadomienia to {notice_due_date}. Zarejestrowany dowód wysyłki nie wykazuje tego wyprzedzenia. Wyłącznie lokalna wskazówka; nie potwierdza wystarczalności prawnej, doręczenia zewnętrznego ani zakończenia workflow.',
+  'notifications.reminder.act.conveningNotice.action': 'Sprawdź zawiadomienie',
   'notifications.reminder.absentOwnerDispatch.title': 'Dowód wysyłki oczekuje: {act_title}',
   'notifications.reminder.absentOwnerDispatch.body':
     '{act_title} ma wygenerowaną komunikację do nieobecnych właścicieli, ale dowód wysyłki operatora ma stan {dispatch_evidence_status}. Brakujący odbiorcy: {missing_recipients}. Przypomnienie ma charakter wyłącznie doradczy.',

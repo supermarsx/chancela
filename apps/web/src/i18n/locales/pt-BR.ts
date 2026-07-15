@@ -260,6 +260,10 @@ export const ptBR: Catalog = {
   'notifications.reminder.act.attendance.body':
     '{act_title} de {entity_name} está marcada para {meeting_date} e ainda não tem registro de presença suficiente. Registre a referência de presença e os totais ou participantes estruturados antes de avançá-la.',
   'notifications.reminder.act.attendance.action': 'Registrar presenças',
+  'notifications.reminder.act.conveningNotice.title': 'Revisar convocatória: {act_title}',
+  'notifications.reminder.act.conveningNotice.body':
+    'O estatuto registra {required_notice_days} dias de antecedência para {act_title} de {entity_name} com reunião marcada para {meeting_date}; a data local de aviso é {notice_due_date}. A evidência de expedição registrada não demonstra essa antecedência. Aviso consultivo local; não afirma suficiência legal, entrega externa ou conclusão do workflow.',
+  'notifications.reminder.act.conveningNotice.action': 'Revisar convocatória',
   'notifications.reminder.absentOwnerDispatch.title': 'Evidência de envio pendente: {act_title}',
   'notifications.reminder.absentOwnerDispatch.body':
     '{act_title} tem comunicação a condôminos ausentes gerada, mas a evidência de envio está {dispatch_evidence_status}. Destinatários ausentes: {missing_recipients}. O lembrete é apenas consultivo.',

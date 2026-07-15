@@ -257,6 +257,10 @@ export const enGB: Catalog = {
   'notifications.reminder.act.attendance.body':
     '{act_title} for {entity_name} is dated {meeting_date} and does not yet have enough attendance capture. Record the attendance reference and either presence counts or structured attendees before advancing it.',
   'notifications.reminder.act.attendance.action': 'Record attendance',
+  'notifications.reminder.act.conveningNotice.title': 'Review convening notice: {act_title}',
+  'notifications.reminder.act.conveningNotice.body':
+    'The statutes record {required_notice_days} notice days for {act_title} at {entity_name} with meeting date {meeting_date}; the local notice date is {notice_due_date}. Recorded dispatch evidence does not demonstrate that antecedence. Local advisory only; no legal sufficiency, external delivery, or workflow completion is claimed.',
+  'notifications.reminder.act.conveningNotice.action': 'Review convening notice',
   'notifications.reminder.absentOwnerDispatch.title': 'Dispatch evidence pending: {act_title}',
   'notifications.reminder.absentOwnerDispatch.body':
     '{act_title} has a generated absent-owner communication, but operator dispatch evidence is {dispatch_evidence_status}. Missing recipients: {missing_recipients}. This reminder is advisory only.',

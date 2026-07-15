@@ -279,8 +279,7 @@ pub struct Majority {
 ///
 /// Scope is deliberately honest about what can be *checked* against today's data (R5):
 /// `quorum` and `majority` drive real advisory checks over the structured act model, while
-/// `convocation_notice_days` is stored and surfaced only (no convocatória dispatch date is
-/// modeled yet).
+/// `convocation_notice_days` drives a local advisory check over recorded convening metadata.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct StatuteOverrides {
     /// Statutory quorum, if the statutes set one.
@@ -289,7 +288,8 @@ pub struct StatuteOverrides {
     /// Statutory majority for (non-unanimous) resolutions, if the statutes set one.
     #[serde(default)]
     pub majority: Option<Majority>,
-    /// Statutory convocation notice period in days (stored/surfaced only; not yet enforced).
+    /// Statutory convocation notice period in days, checked only as a local advisory over
+    /// recorded convening metadata.
     #[serde(default)]
     pub convocation_notice_days: Option<u16>,
 }

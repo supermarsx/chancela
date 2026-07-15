@@ -262,6 +262,10 @@ export const itIT: Catalog = {
   'notifications.reminder.act.attendance.body':
     '{act_title} di {entity_name} è datato {meeting_date} e non contiene ancora una registrazione sufficiente delle presenze. Registra il riferimento delle presenze e i totali o i partecipanti strutturati prima di farlo avanzare.',
   'notifications.reminder.act.attendance.action': 'Registrare le presenze',
+  'notifications.reminder.act.conveningNotice.title': 'Rivedi convocazione: {act_title}',
+  'notifications.reminder.act.conveningNotice.body':
+    'Lo statuto registra {required_notice_days} giorni di preavviso per {act_title} di {entity_name} con riunione datata {meeting_date}; la data locale di avviso è {notice_due_date}. La prova di invio registrata non dimostra tale anticipo. Avviso locale consultivo; non afferma sufficienza legale, consegna esterna o completamento del workflow.',
+  'notifications.reminder.act.conveningNotice.action': 'Rivedi convocazione',
   'notifications.reminder.absentOwnerDispatch.title': 'Prova di invio in sospeso: {act_title}',
   'notifications.reminder.absentOwnerDispatch.body':
     '{act_title} ha una comunicazione generata per proprietari assenti, ma la prova di invio dell’operatore è {dispatch_evidence_status}. Destinatari mancanti: {missing_recipients}. Il promemoria è solo consultivo.',

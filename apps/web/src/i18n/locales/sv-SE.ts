@@ -260,6 +260,10 @@ export const svSE: Catalog = {
   'notifications.reminder.act.attendance.body':
     '{act_title} för {entity_name} är daterat {meeting_date} och saknar fortfarande tillräcklig närvaroregistrering. Registrera närvaroreferensen och antingen närvarotal eller strukturerade deltagare innan du går vidare.',
   'notifications.reminder.act.attendance.action': 'Registrera närvaro',
+  'notifications.reminder.act.conveningNotice.title': 'Granska kallelse: {act_title}',
+  'notifications.reminder.act.conveningNotice.body':
+    'Stadgarna anger {required_notice_days} kallelsedagar för {act_title} hos {entity_name} med mötesdatum {meeting_date}; det lokala kallelsedatumet är {notice_due_date}. Registrerat avsändningsunderlag visar inte denna framförhållning. Endast lokal rådgivande markering; ingen juridisk tillräcklighet, extern leverans eller workflow-slutförande hävdas.',
+  'notifications.reminder.act.conveningNotice.action': 'Granska kallelse',
   'notifications.reminder.absentOwnerDispatch.title': 'Avsändningsbevis väntar: {act_title}',
   'notifications.reminder.absentOwnerDispatch.body':
     '{act_title} har ett genererat meddelande till frånvarande ägare, men operatörens avsändningsbevis är {dispatch_evidence_status}. Saknade mottagare: {missing_recipients}. Påminnelsen är endast rådgivande.',

@@ -264,6 +264,10 @@ export const frFR: Catalog = {
   'notifications.reminder.act.attendance.body':
     '{act_title} de {entity_name} est daté du {meeting_date} et ne contient pas encore de relevé de présence suffisant. Renseignez la référence de présence et les totaux ou participants structurés avant de le faire avancer.',
   'notifications.reminder.act.attendance.action': 'Enregistrer la présence',
+  'notifications.reminder.act.conveningNotice.title': 'Revoir la convocation : {act_title}',
+  'notifications.reminder.act.conveningNotice.body':
+    'Les statuts indiquent {required_notice_days} jours de préavis pour {act_title} de {entity_name} avec réunion datée du {meeting_date}; la date locale de préavis est {notice_due_date}. La preuve d’envoi enregistrée ne démontre pas ce délai. Avis consultatif local uniquement ; aucune suffisance juridique, remise externe ni finalisation du workflow n’est affirmée.',
+  'notifications.reminder.act.conveningNotice.action': 'Revoir la convocation',
   'notifications.reminder.absentOwnerDispatch.title': 'Preuve d’envoi en attente : {act_title}',
   'notifications.reminder.absentOwnerDispatch.body':
     '{act_title} comporte une communication générée pour les copropriétaires absents, mais la preuve d’envoi opérateur est {dispatch_evidence_status}. Destinataires manquants : {missing_recipients}. Le rappel est seulement consultatif.',

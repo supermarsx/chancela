@@ -848,10 +848,10 @@ impl RulePack for CooperativaRulePack {
 /// statutes, applied on top of the family pack by [`crate::profile::ProfilePack`].
 ///
 /// Only the knobs that can be genuinely checked against today's model fire: `majority`
-/// against structured [`VoteResult::Recorded`] tallies, and `quorum` against captured
-/// attendance counts. `convocation_notice_days` is stored/surfaced only (no dispatch date
-/// is modeled). Use [`statute_findings_for_entity`] when the entity is known so the overlay
-/// can also use complete weighted attendance metadata.
+/// against structured [`VoteResult::Recorded`] tallies, `quorum` against captured attendance
+/// counts, and `convocation_notice_days` against recorded convening metadata. Use
+/// [`statute_findings_for_entity`] when the entity is known so the overlay can also use complete
+/// weighted attendance metadata.
 pub fn statute_findings(act: &Act, statute: &StatuteOverrides) -> Vec<ComplianceIssue> {
     statute_findings_inner(act, None, statute)
 }
@@ -1018,13 +1018,50 @@ fn statute_findings_inner(
         }
     }
 
+    if let Some(required_days) = statute.convocation_notice_days {
+        match statute_convocation_notice_antecedence_days(act) {
+            None => issues.push(ComplianceIssue::warning(
+                "STATUTE/convocation-notice-unverified",
+                format!(
+                    "the statutes record a convocation notice period of {required_days} days, \
+                     but the act does not have enough recorded convening metadata to verify the \
+                     local antecedence advisory"
+                ),
+            )),
+            Some(actual_days) => {
+                if actual_days < i32::from(required_days) {
+                    issues.push(ComplianceIssue::warning(
+                        "STATUTE/convocation-notice",
+                        format!(
+                            "recorded convening notice antecedence ({actual_days} days) is below \
+                             the statutory notice period recorded for this entity \
+                             ({required_days} days); this is a local advisory over statute and \
+                             convening metadata only"
+                        ),
+                    ));
+                }
+            }
+        }
+    }
+
     issues
+}
+
+fn statute_convocation_notice_antecedence_days(act: &Act) -> Option<i32> {
+    let convening = act.convening.as_ref()?;
+    if let Some(days) = convening.antecedence_days {
+        return Some(i32::from(days));
+    }
+
+    let dispatch_date = convening.dispatch_date?;
+    let meeting_date = act.meeting_date?;
+    Some(meeting_date.to_julian_day() - dispatch_date.to_julian_day())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::act::{Act, AgendaItem};
+    use crate::act::{Act, AgendaItem, Convening};
     use crate::book::BookId;
     use crate::entity::{Entity, EntityKind, Nipc};
     use time::macros::{date, time};
@@ -1060,6 +1097,109 @@ mod tests {
     fn clean_act_has_no_issues() {
         let issues = CscArt63RulePack.check_act(&complete_act(), &sa_entity());
         assert!(issues.is_empty(), "unexpected issues: {issues:?}");
+    }
+
+    #[test]
+    fn statute_convocation_notice_missing_or_unverifiable_evidence_warns() {
+        let mut act = complete_act();
+        let statute = StatuteOverrides {
+            convocation_notice_days: Some(8),
+            ..StatuteOverrides::default()
+        };
+
+        let issues = statute_findings(&act, &statute);
+        let issue = issues
+            .iter()
+            .find(|issue| issue.rule_id == "STATUTE/convocation-notice-unverified")
+            .unwrap_or_else(|| panic!("missing unverified convocation notice warning: {issues:?}"));
+        assert_eq!(issue.severity, Severity::Warning);
+        assert!(
+            issue.message.contains("local antecedence advisory"),
+            "message must stay advisory: {issue:?}"
+        );
+
+        act.convening = Some(Convening {
+            dispatch_date: Some(date!(2026 - 02 - 20)),
+            ..Convening::default()
+        });
+        act.meeting_date = None;
+
+        let issues = statute_findings(&act, &statute);
+        assert!(
+            issues
+                .iter()
+                .any(|issue| issue.rule_id == "STATUTE/convocation-notice-unverified"),
+            "dispatch without a meeting date remains unverifiable: {issues:?}"
+        );
+    }
+
+    #[test]
+    fn statute_convocation_notice_short_recorded_or_computed_antecedence_warns() {
+        let mut act = complete_act();
+        act.convening = Some(Convening {
+            dispatch_date: Some(date!(2026 - 02 - 25)),
+            ..Convening::default()
+        });
+        let statute = StatuteOverrides {
+            convocation_notice_days: Some(8),
+            ..StatuteOverrides::default()
+        };
+
+        let issues = statute_findings(&act, &statute);
+        let issue = issues
+            .iter()
+            .find(|issue| issue.rule_id == "STATUTE/convocation-notice")
+            .unwrap_or_else(|| panic!("missing short convocation notice warning: {issues:?}"));
+        assert_eq!(issue.severity, Severity::Warning);
+        assert!(
+            issue.message.contains("local advisory"),
+            "message must avoid legal sufficiency claims: {issue:?}"
+        );
+
+        act.convening = Some(Convening {
+            antecedence_days: Some(7),
+            ..Convening::default()
+        });
+        let issues = statute_findings(&act, &statute);
+        assert!(
+            issues
+                .iter()
+                .any(|issue| issue.rule_id == "STATUTE/convocation-notice"),
+            "recorded short antecedence should warn: {issues:?}"
+        );
+    }
+
+    #[test]
+    fn statute_convocation_notice_sufficient_dispatch_evidence_passes() {
+        let mut act = complete_act();
+        act.convening = Some(Convening {
+            dispatch_date: Some(date!(2026 - 02 - 20)),
+            ..Convening::default()
+        });
+        let statute = StatuteOverrides {
+            convocation_notice_days: Some(8),
+            ..StatuteOverrides::default()
+        };
+
+        let issues = statute_findings(&act, &statute);
+        assert!(
+            !issues
+                .iter()
+                .any(|issue| issue.rule_id.starts_with("STATUTE/convocation-notice")),
+            "sufficient computed dispatch antecedence should pass: {issues:?}"
+        );
+
+        act.convening = Some(Convening {
+            antecedence_days: Some(8),
+            ..Convening::default()
+        });
+        let issues = statute_findings(&act, &statute);
+        assert!(
+            !issues
+                .iter()
+                .any(|issue| issue.rule_id.starts_with("STATUTE/convocation-notice")),
+            "sufficient recorded antecedence should pass: {issues:?}"
+        );
     }
 
     #[test]

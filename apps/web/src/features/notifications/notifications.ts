@@ -132,6 +132,11 @@ const REMINDER_COPY: Record<string, ReminderCopy> = {
     body: 'notifications.reminder.act.attendance.body',
     action: 'notifications.reminder.act.attendance.action',
   },
+  'act-convening-notice': {
+    title: 'notifications.reminder.act.conveningNotice.title',
+    body: 'notifications.reminder.act.conveningNotice.body',
+    action: 'notifications.reminder.act.conveningNotice.action',
+  },
   'imported-document-review-required': {
     title: 'notifications.reminder.importedDocumentReview.title',
     body: 'notifications.reminder.importedDocumentReview.body',

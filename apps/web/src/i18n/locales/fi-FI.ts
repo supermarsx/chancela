@@ -260,6 +260,10 @@ export const fiFI: Catalog = {
   'notifications.reminder.act.attendance.body':
     '{act_title} kohteelle {entity_name} on päivätty {meeting_date}, eikä siinä ole vielä riittävää läsnäolotallennetta. Kirjaa läsnäoloviite ja joko läsnäolomäärät tai jäsennellyt osallistujat ennen etenemistä.',
   'notifications.reminder.act.attendance.action': 'Kirjaa läsnäolo',
+  'notifications.reminder.act.conveningNotice.title': 'Tarkista kokouskutsu: {act_title}',
+  'notifications.reminder.act.conveningNotice.body':
+    'Säännöt kirjaavat {required_notice_days} ilmoituspäivää asialle {act_title} ({entity_name}) kokouspäivällä {meeting_date}; paikallinen ilmoituspäivä on {notice_due_date}. Tallennettu lähetysnäyttö ei osoita tätä ennakkoaikaa. Vain paikallinen neuvo; ei väitä oikeudellista riittävyyttä, ulkoista toimitusta tai workflow’n valmistumista.',
+  'notifications.reminder.act.conveningNotice.action': 'Tarkista kokouskutsu',
   'notifications.reminder.absentOwnerDispatch.title': 'Lähetysnäyttö odottaa: {act_title}',
   'notifications.reminder.absentOwnerDispatch.body':
     '{act_title} sisältää luodun poissaolevien omistajien viestin, mutta käyttäjän lähetysnäyttö on {dispatch_evidence_status}. Puuttuvat vastaanottajat: {missing_recipients}. Muistutus on vain neuvoa-antava.',

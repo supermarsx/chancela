@@ -495,6 +495,60 @@ describe('buildDashboardNotifications', () => {
     expect(items[0]?.detail).not.toContain('attendance_reference');
   });
 
+  it('renders convocation-notice reminders as local advisory act work', () => {
+    const items = buildDashboardNotifications(
+      dashboard({
+        reminders: [
+          reminder({
+            due_date: '2026-03-20',
+            status: 'DueSoon',
+            severity: 'Warning',
+            reason: 'Raw backend convocation notice fallback.',
+            source_rule: 'act-convening-notice',
+            source_profile: 'csc-commercial',
+            params: {
+              act_id: 'act-notice-1',
+              act_title: 'Ata de aprovação de contas',
+              book_id: 'book-1',
+              entity_id: 'entity-1',
+              entity_name: 'Acme, S.A.',
+              required_notice_days: '10',
+              meeting_date: '2026-03-30',
+              notice_due_date: '2026-03-20',
+              dispatch_date: '',
+              antecedence_days: '',
+              evidence_status: 'missing_or_unverifiable_dispatch_evidence',
+              local_advisory_only: 'true',
+              legal_sufficiency_claimed: 'false',
+              external_delivery_claimed: 'false',
+              workflow_completion_claimed: 'false',
+            },
+            action: {
+              kind: 'open_act_convening_notice',
+              label_key: 'notifications.reminder.act.conveningNotice.action',
+              api_href: '/v1/acts/act-notice-1',
+              route: null,
+            },
+          }),
+        ],
+      }),
+      t,
+    );
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      kind: 'reminder',
+      tone: 'accent',
+      badge: 'Próximo',
+      title: 'Rever convocatória: Ata de aprovação de contas',
+      detail:
+        'Os estatutos registam 10 dias de antecedência para Ata de aprovação de contas de Acme, S.A. com reunião marcada para 2026-03-30; a data local de aviso é 2026-03-20. A evidência de expedição registada não demonstra essa antecedência. Aviso consultivo local; não afirma suficiência legal, entrega externa ou conclusão do workflow.',
+      action: { href: '/atas/act-notice-1', label: 'Rever convocatória' },
+    });
+    expect(items[0]?.detail).not.toContain('Raw backend');
+    expect(items[0]?.detail).toContain('Aviso consultivo local');
+  });
+
   it('renders condominium annual reminders with localized advisory copy and entity action', () => {
     const items = buildDashboardNotifications(
       dashboard({

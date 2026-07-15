@@ -484,6 +484,11 @@ const REMINDER_COPY: Partial<
     body: 'notifications.reminder.annual.body',
     action: 'notifications.reminder.annual.action',
   },
+  'act-convening-notice': {
+    title: 'notifications.reminder.act.conveningNotice.title',
+    body: 'notifications.reminder.act.conveningNotice.body',
+    action: 'notifications.reminder.act.conveningNotice.action',
+  },
 };
 
 function alertWorkQueueItem(alert: DashboardAlert, index: number, t: TFunction): WorkQueueItem {
