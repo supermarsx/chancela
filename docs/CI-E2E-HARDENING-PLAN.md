@@ -1,9 +1,14 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `00078b0`,
+and implementation snapshot `35ddb1f`,
 including coverage notes for backend-only SCAP-backed signer-capacity evidence
-persistence for local PKCS#12 signing, the real-backend generated-convening
+persistence for local PKCS#12 signing, wp23 user-template authoring groundwork
+for store CRUD, `template.manage`, strict authoring validation, API
+CRUD/export/import, merged catalog contracts, i18n key coverage, and Minutas
+create/edit/import/export/delete UI actions, plus composed-server template
+fixture E2E wiring, the
+real-backend generated-convening
 dispatch-evidence browser proof, full composed-server E2E local pass after auth
 harness alignment, focused composed-server generated-convening
 dispatch-evidence E2E coverage, generated-convening dispatch-evidence
@@ -918,11 +923,11 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `00078b0`
+## Focused Gate Snapshot Through `35ddb1f`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08` and checkpoint-promoted on 2026-07-15 for
-current implementation head `00078b0`. This is not an exhaustive current
+current implementation head `35ddb1f`. This is not an exhaustive current
 green-run claim; the full-server E2E claim below is limited to local
 `chancela-server --features e2e` after auth harness alignment, and browser,
 Docker, desktop, package signing/notarization, image signing/attestation, and
@@ -2149,7 +2154,31 @@ settingsDefaults.test.ts contracts.test.ts`.
   full RBAC/delegation-policy completion, tenant authorization proof,
   legal-capacity verification, broad security certification, or spec
   completion.
-- Current checkpoint metadata/static checks through `00078b0`
+- Current `35ddb1f` wp23 template-authoring groundwork checks: focused
+  package and web gates passed with
+  `cargo test -p chancela-templates --locked`,
+  `cargo test -p chancela-authz --locked`,
+  `cargo test -p chancela-api --locked`,
+  `cargo test -p chancela-server --features e2e --locked --test e2e_contracts`,
+  `npm run build --workspace apps/web`,
+  `npm run test --workspace apps/web -- src/i18n/i18n.test.ts src/contracts/contracts.test.ts src/features/templates/TemplatesCatalogPage.test.tsx src/features/documents/ActDocumentPanel.test.tsx`,
+  `cargo fmt --all -- --check`, and `git diff --check`. These pin
+  `user_templates` document-row CRUD, `template.manage` permission coverage,
+  strict `validate_user_template` authoring validation with nested
+  unknown-field rejection, user-template API create/update/delete,
+  export/import, merged built-in plus user catalog summaries, refreshed
+  `TemplateSummary` / `TemplateImportVerdict` / `template.export.json`
+  contracts, client/hooks, 14-locale i18n key coverage, and the Minutas
+  user-template editor/import dialog/catalog actions, and composed-server
+  contract E2E wiring for `template.summary`, `template.import-verdict`, and
+  `template.export` fixtures. The `fae8fd7` commit in this stack is
+  locale-only; the API and contract implementation comes from the preceding
+  wp23 commits, `2530693` adds the UI layer, and `35ddb1f` adds server E2E
+  fixture wiring. This is authoring infrastructure only and does not complete
+  the template catalog, replace legal review, verify thresholds or law
+  references, certify provider/registry/DRE behavior, claim production
+  Postgres CI, or move the spec matrix beyond `PARTIAL=11`.
+- Current checkpoint metadata/static checks through `35ddb1f`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
@@ -2162,6 +2191,13 @@ settingsDefaults.test.ts contracts.test.ts`.
   `verified_by_scap`, mismatched declared-capacity 422 refusal, local
   `Granted` fixture boundaries, no live SCAP credentials/network proof, no UI
   picker rollout, and no legal-capacity/full-spec completion claim,
+  wp23 user-template authoring groundwork markers for `user_templates` store
+  CRUD, `template.manage`, strict `validate_user_template` unknown-field
+  rejection, user-template CRUD/export/import routes, merged catalog contracts,
+  `TemplateSummary`, `TemplateImportVerdict`, `template.export.json`, web
+  client/hooks, i18n locale-key coverage, TemplateEditorForm,
+  TemplateImportDialog, catalog create/edit/import/export/delete UI actions,
+  and e2e_contracts template summary/import-verdict/export fixture markers,
   real-backend generated-convening dispatch-evidence
   browser proof, focused composed-server generated-convening E2E evidence,
   generated-convening dispatch evidence metadata-only

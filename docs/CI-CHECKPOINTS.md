@@ -36,7 +36,13 @@ bounded data key-rotation receipt history for accepted guarded SQLCipher rekeys,
 guardrail acknowledgements, written-resolution evidence status binding and
 browser receipt proof, trust
 parsing, declared signer-capacity evidence preservation plus backend-only local
-PKCS#12 SCAP capacity evidence persistence, live-provider static assurance,
+PKCS#12 SCAP capacity evidence persistence, wp23 user-template authoring
+groundwork for `user_templates` store CRUD, `template.manage`, strict
+`validate_user_template` unknown-field rejection, user-template
+CRUD/export/import routes, merged catalog contracts, i18n locale keys, and
+Minutas create/edit/import/export/delete UI actions, plus composed-server
+template fixture E2E wiring,
+live-provider static assurance,
 MCP resource/prompt coverage including workflow provenance review
 guidance plus caller-supplied local JSON/text summary counts, draft-vs-signed
 comparison review guidance, and the
@@ -572,6 +578,29 @@ It intentionally reuses existing test surfaces:
   does not claim legal/template sufficiency, verified thresholds, channel
   permissibility, exhaustive law mapping, DRE/source authority, provider or
   registry integration, signing correctness, or legal effect.
+- User-authored template CRUD and authoring groundwork:
+  `cargo test -p chancela-templates --locked`,
+  `cargo test -p chancela-authz --locked`,
+  `cargo test -p chancela-api --locked`,
+  `cargo test -p chancela-server --features e2e --locked --test e2e_contracts`,
+  `npm run build --workspace apps/web`,
+  and
+  `npm run test --workspace apps/web -- src/i18n/i18n.test.ts src/contracts/contracts.test.ts src/features/templates/TemplatesCatalogPage.test.tsx src/features/documents/ActDocumentPanel.test.tsx`
+  pin wp23 `user_templates` store CRUD, `template.manage` authorization,
+  strict `validate_user_template` authoring validation including nested
+  unknown-field rejection, user-template API create/update/delete,
+  export/import, merged built-in plus user catalog summaries, contract
+  fixtures, client/hooks, i18n key coverage, and the committed Minutas UI for
+  create/edit, dry-run import, export/download, and delete actions behind
+  `template.manage`. The composed-server contract E2E now creates a
+  user-authored template, dry-run imports the same id to assert the conflict
+  verdict fixture, and exports the canonical authored JSON fixture. The
+  `fae8fd7` commit is locale-only; the API/contract behavior was landed in the
+  preceding wp23 commits, `2530693` adds the UI layer, and `35ddb1f` adds
+  server E2E fixture wiring. This is authoring
+  infrastructure only: no full template catalog completion, legal review,
+  law-reference/threshold verification, provider/registry/DRE acceptance, or
+  production Postgres CI claim is added.
 - Template law-reference corpus audit:
   `cargo test -p chancela-api --test law_reference_coverage --locked` builds a
   deterministic local report from the embedded template registry and embedded
@@ -618,7 +647,13 @@ evidence markers with `not_checked_by_scap` and
 `scap_capacity_evidence` markers with preprod/mock
 `declared_capacity_by_provider`, prod-fixture `verified_by_scap`, local
 `Granted` fixture evidence, mismatched-capacity 422 refusal, and no-SCAP
-fallback preservation, local CC batch-signing UI markers for
+fallback preservation, wp23 template authoring markers for `user_templates`
+store CRUD, `template.manage`, `validate_user_template`, nested unknown-field
+rejection, user-template CRUD/export/import route contracts, merged catalog
+contracts, `TemplateImportVerdict`, `TemplateSummary`, and 14-locale i18n key
+coverage, plus TemplateEditorForm, TemplateImportDialog, and catalog
+create/edit/import/export/delete UI markers, plus e2e_contracts template
+summary/import-verdict/export fixture markers, local CC batch-signing UI markers for
 BatchSigningPanel, `useCcBatchSign`, `POST /v1/signature/cc/batch-sign`,
 transient PIN clear/no-storage tests, route/current-act reset behavior,
 per-document result rendering, auth-mode reporting, and declared-capacity

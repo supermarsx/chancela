@@ -3368,6 +3368,76 @@ function assertCheckpointMap() {
     "CI/E2E hardening plan backend SCAP capacity boundary marker",
   );
   assertFileContains(
+    "crates/chancela-store/src/lib.rs",
+    "upsert_user_template",
+    "store user_templates upsert marker",
+  );
+  assertFileContains(
+    "crates/chancela-authz/src/permission.rs",
+    "TemplateManage",
+    "authz template.manage permission marker",
+  );
+  assertFileContains(
+    "crates/chancela-templates/src/authoring.rs",
+    "unknown_block_field_is_malformed",
+    "template authoring nested unknown-field coverage marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "user_template_management_routes_accept_encoded_ids_and_emit_ledger_events",
+    "API user-template CRUD/export/import route coverage marker",
+  );
+  assertFileContains(
+    "apps/web/src/contracts/contracts.test.ts",
+    "template.import-verdict.json",
+    "web template import contract fixture marker",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/i18n.test.ts",
+    "every non-source locale has exactly the source key set",
+    "web i18n locale key coverage marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/templates/TemplateEditorForm.tsx",
+    "Create/edit form for a user-authored template",
+    "web template editor form marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/templates/TemplateImportDialog.tsx",
+    "Import a user-authored template from a JSON file",
+    "web template import dialog marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/templates/TemplatesCatalogPage.tsx",
+    'perm="template.manage"',
+    "web template catalog action gate marker",
+  );
+  assertFileContains(
+    "crates/chancela-server/tests/e2e_contracts.rs",
+    "template.import-verdict",
+    "server e2e template import-verdict fixture marker",
+  );
+  assertFileContains(
+    "crates/chancela-server/tests/e2e_contracts.rs",
+    "/v1/templates/user-encosto-ata%2Fv1/export",
+    "server e2e template export fixture marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Current `35ddb1f` keeps Template Catalog/Roles & Access/API/UX/CI\n  **PARTIAL**",
+    "spec coverage wp23 template authoring partial checkpoint marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "User-authored template CRUD and authoring groundwork",
+    "CI checkpoints wp23 template authoring groundwork marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Current `35ddb1f` wp23 template-authoring groundwork checks",
+    "CI/E2E hardening plan wp23 template authoring checks marker",
+  );
+  assertFileContains(
     "crates/chancela-api/src/pdf_signature_validation.rs",
     "pdf_signature_validation_reports_multi_signature_local_renewal_plan",
     "PDF signature validation multi-signature renewal-plan coverage",
@@ -10561,12 +10631,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `00078b0`",
+    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `35ddb1f`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `00078b0`",
+    "Focused Gate Snapshot Through `35ddb1f`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -11231,7 +11301,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `00078b0`",
+    "Current checkpoint metadata/static checks through `35ddb1f`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -11766,7 +11836,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `00078b08b74e26bb44c2eb24c35682ba4efc04ba`",
+    "implementation snapshot `35ddb1fb7fa77b3c9afb6e9cf95f32678591e2e9`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(

@@ -1,6 +1,6 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-15 from current implementation snapshot `00078b08b74e26bb44c2eb24c35682ba4efc04ba`,
+*Updated 2026-07-15 from current implementation snapshot `35ddb1fb7fa77b3c9afb6e9cf95f32678591e2e9`,
 with committed evidence refreshes for the recently landed backend-only
 SCAP-backed signer-capacity evidence persistence for local PKCS#12 signing,
 real-backend
@@ -230,7 +230,11 @@ proof for generated Convocatoria dispatch-evidence metadata over the E2E
 backend, real generated-document dispatch-evidence `POST`/`GET`, dashboard
 deep-link routing, and persisted operator evidence row/status rendering,
 followed by `00078b0` backend-only SCAP-backed capacity evidence persistence
-for local PKCS#12 signing.
+for local PKCS#12 signing, and by `35ddb1f` wp23 user-template authoring
+groundwork covering store CRUD, `template.manage`, strict authoring validation,
+user-template API CRUD/export/import, merged catalog contracts, i18n keys, and
+web create/edit/import/export/delete catalog actions, plus composed-server
+contract E2E wiring for the template summary/import verdict/export fixtures.
 Earlier coverage text remains prior snapshot context. All top-level spec areas remain **PARTIAL**.
 This is an implementation and test coverage snapshot, not a legal certification,
 not production CMD approval, not DRE verification promotion, not full PDF/UA
@@ -260,6 +264,35 @@ being useful. The matrix below records the current factual coverage and the rema
 blockers.
 
 Implementation checkpoints covered here:
+
+- Current `35ddb1f` keeps Template Catalog/Roles & Access/API/UX/CI
+  **PARTIAL**: wp23 now has `user_templates` document-row CRUD in the store,
+  a first-class `template.manage` permission, public
+  `validate_user_template` authoring validation with nested unknown-field
+  rejection, API routes for user-authored template create/update/delete,
+  export/import, and merged built-in plus user template catalog summaries,
+  plus web client/hooks/contracts, 14-locale i18n key coverage, and the
+  committed Minutas UI for user-authored create/edit, dry-run import,
+  export/download, and delete actions behind `template.manage`. The
+  composed-server contract E2E now also creates a user-authored template,
+  dry-run imports the same id to assert the conflict verdict fixture, and
+  exports the canonical authored JSON fixture. The `fae8fd7` commit in this
+  stack is locale-only even though its subject mentions "contract"; the
+  contract/API evidence comes from the preceding wp23 commits, `2530693` adds
+  the UI layer, and `35ddb1f` adds the server E2E fixture wiring. Focused
+  validation passed with
+  `cargo test -p chancela-templates --locked`,
+  `cargo test -p chancela-authz --locked`,
+  `cargo test -p chancela-api --locked`,
+  `cargo test -p chancela-server --features e2e --locked --test e2e_contracts`,
+  `npm run build --workspace apps/web`,
+  `npm run test --workspace apps/web -- src/i18n/i18n.test.ts src/contracts/contracts.test.ts src/features/templates/TemplatesCatalogPage.test.tsx src/features/documents/ActDocumentPanel.test.tsx`,
+  `cargo fmt --all -- --check`, and `git diff --check`. This is template
+  authoring infrastructure and focused contract/i18n coverage only: it does
+  not complete the template catalog, replace legal review, verify law
+  references or thresholds, prove template wording sufficiency, certify
+  provider/registry/DRE behavior, add production Postgres CI, or make any
+  top-level spec row complete; statuses remain PARTIAL=11.
 
 - Current `00078b0` keeps Signatures & Trust/API/CI **PARTIAL**: backend
   signing now persists optional SCAP-backed signer-capacity evidence for the
