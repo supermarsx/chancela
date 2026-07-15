@@ -386,7 +386,7 @@ impl<T: HttpTransport> McpServer<T> {
                     "uri": MCP_DOCUMENT_ARCHIVE_REVIEW_SUMMARY_RESOURCE_URI,
                     "name": "document_archive_review_summary",
                     "title": "Document/Archive Review Summary",
-                    "description": "Read-only local document-bundle/archive evidence summary resource. Without arguments it returns static input guidance; with document_archive JSON it returns deterministic aggregate counts, technical evidence flags, PDF accessibility v10 summary fields, archive path counts, and missing-evidence blockers. Contains no secrets, performs no bridge, API, AI, legal-service, HTTP/SSE, or provider calls, does not expose raw reports, and makes no PDF/UA, DGLAB, legal-validity, signature-validity, archive-certification, provider-validation, external-validator-success, or legal-review claims.",
+                    "description": "Read-only local document-bundle/archive evidence summary resource. Without arguments it returns static input guidance; with document_archive JSON it returns deterministic aggregate counts, technical evidence flags, PDF accessibility v11 summary fields, archive path counts, and missing-evidence blockers. Contains no secrets, performs no bridge, API, AI, legal-service, HTTP/SSE, or provider calls, does not expose raw reports, and makes no PDF/UA, DGLAB, legal-validity, signature-validity, archive-certification, provider-validation, external-validator-success, or legal-review claims.",
                     "mimeType": "application/json",
                     "annotations": {
                         "audience": ["user", "assistant"],
@@ -1159,8 +1159,8 @@ impl<T: HttpTransport> McpServer<T> {
                     ],
                 },
                 {
-                    "id": "pdf_accessibility_v10",
-                    "title": "PDF accessibility v10",
+                    "id": "pdf_accessibility_v11",
+                    "title": "PDF accessibility v11",
                     "checkpoints": [
                         "Summarize report-version counts, known PDF/UA blocker codes, and table row/column header counts from supplied local JSON.",
                         "Count explicit false no-claim flags for PDF/UA, DGLAB, legal validity, signature validity, archive certification, provider validation, external-validator success, and legal review.",
@@ -2600,7 +2600,7 @@ struct DocumentArchiveExternalValidatorSummary {
 struct DocumentArchivePdfAccessibilitySummary {
     evidence_section_count: usize,
     report_version_counts: BTreeMap<String, usize>,
-    v10_report_count: usize,
+    v11_report_count: usize,
     blocker_counts: BTreeMap<String, usize>,
     blocker_total: usize,
     table_semantics_object_count: usize,
@@ -3302,8 +3302,8 @@ fn document_archive_review_summary_report_payload(arguments: &Value) -> Result<V
     if !pdf_accessibility_summary.evidence_present() {
         missing_evidence_blockers.insert("pdf_accessibility_evidence_missing");
     }
-    if pdf_accessibility_summary.v10_report_count == 0 {
-        missing_evidence_blockers.insert("pdf_accessibility_v10_report_missing");
+    if pdf_accessibility_summary.v11_report_count == 0 {
+        missing_evidence_blockers.insert("pdf_accessibility_v11_report_missing");
     }
     if !path_counts.evidence_index_present() {
         missing_evidence_blockers.insert("archive_evidence_index_missing");
@@ -3381,11 +3381,11 @@ fn document_archive_review_summary_report_payload(arguments: &Value) -> Result<V
             "provider_validation_performed": false,
             "external_validator_success_claimed": false
         },
-        "pdf_accessibility_v10_summary": {
+        "pdf_accessibility_v11_summary": {
             "evidence_present": pdf_accessibility_summary.evidence_present(),
             "evidence_section_count": pdf_accessibility_summary.evidence_section_count,
             "report_version_counts": pdf_accessibility_summary.report_version_counts,
-            "v10_report_count": pdf_accessibility_summary.v10_report_count,
+            "v11_report_count": pdf_accessibility_summary.v11_report_count,
             "blocker_total": pdf_accessibility_summary.blocker_total,
             "blocker_counts": pdf_accessibility_summary.blocker_counts,
             "table_header_counts": {
@@ -4509,8 +4509,8 @@ fn collect_document_archive_pdf_accessibility_summary(
                     .and_then(Value::as_u64)
                 {
                     increment_count(&mut summary.report_version_counts, version.to_string());
-                    if version == 10 {
-                        summary.v10_report_count += 1;
+                    if version == 11 {
+                        summary.v11_report_count += 1;
                     }
                 }
                 if let Some(blockers) = map.get("pdf_ua_blockers").and_then(Value::as_array) {
@@ -8419,7 +8419,7 @@ mod tests {
             "validation_and_fixity",
             "signed_document_state",
             "external_validator_attachments",
-            "pdf_accessibility_v10",
+            "pdf_accessibility_v11",
             "archive_paths",
         ] {
             assert!(
@@ -8470,13 +8470,13 @@ mod tests {
                         "provider_validation_claimed": false,
                         "external_validator_success_claimed": false,
                         "legal_review_completed": false,
-                        "report_version": 10,
+                        "report_version": 11,
                         "pdf_ua_blockers": [
                             "limited_tagged_structure",
                             "caller secret blocker value"
                         ],
                         "accessibility_report_json": {
-                            "version": 10,
+                            "version": 11,
                             "pdf_ua_claimed": false,
                             "pdf_ua_blockers": ["limited_tagged_structure"],
                             "tagged_structure": {
@@ -8714,32 +8714,32 @@ mod tests {
             json!(false)
         );
         assert_eq!(
-            report["pdf_accessibility_v10_summary"]["evidence_present"],
+            report["pdf_accessibility_v11_summary"]["evidence_present"],
             json!(true)
         );
         assert!(
-            report["pdf_accessibility_v10_summary"]["v10_report_count"]
+            report["pdf_accessibility_v11_summary"]["v11_report_count"]
                 .as_u64()
                 .unwrap()
                 >= 2,
             "parent sidecar and nested report JSON should be counted: {report}"
         );
         assert!(
-            report["pdf_accessibility_v10_summary"]["blocker_counts"]["limited_tagged_structure"]
+            report["pdf_accessibility_v11_summary"]["blocker_counts"]["limited_tagged_structure"]
                 .as_u64()
                 .unwrap()
                 >= 3,
             "known PDF/UA blocker observations should be counted without echoing raw values: {report}"
         );
         assert!(
-            report["pdf_accessibility_v10_summary"]["blocker_counts"]["other"]
+            report["pdf_accessibility_v11_summary"]["blocker_counts"]["other"]
                 .as_u64()
                 .unwrap()
                 >= 1,
             "unrecognized caller blocker text should be bucketed as other: {report}"
         );
         assert!(
-            report["pdf_accessibility_v10_summary"]["table_header_counts"]
+            report["pdf_accessibility_v11_summary"]["table_header_counts"]
                 ["row_header_cell_count_total"]
                 .as_u64()
                 .unwrap()
@@ -8747,7 +8747,7 @@ mod tests {
             "row-header cells should be counted from supplied table evidence: {report}"
         );
         assert!(
-            report["pdf_accessibility_v10_summary"]["table_header_counts"]
+            report["pdf_accessibility_v11_summary"]["table_header_counts"]
                 ["column_header_cell_count_total"]
                 .as_u64()
                 .unwrap()
@@ -8755,7 +8755,7 @@ mod tests {
             "column-header cells should be counted from supplied table evidence: {report}"
         );
         assert!(
-            report["pdf_accessibility_v10_summary"]["table_header_counts"]
+            report["pdf_accessibility_v11_summary"]["table_header_counts"]
                 ["row_header_scope_true_count"]
                 .as_u64()
                 .unwrap()
@@ -8763,7 +8763,7 @@ mod tests {
             "row-header scope evidence should be counted: {report}"
         );
         assert!(
-            report["pdf_accessibility_v10_summary"]["table_header_counts"]
+            report["pdf_accessibility_v11_summary"]["table_header_counts"]
                 ["column_header_scope_true_count"]
                 .as_u64()
                 .unwrap()
