@@ -11,7 +11,10 @@ use std::path::{Path as FsPath, PathBuf};
 use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
-use chancela_authz::{Permission, RoleId, Scope};
+use chancela_authz::{
+    Permission, RoleAssignment, RoleId, Scope, UserId as AuthzUserId, count_owner_admin_holders,
+    last_owner_guard,
+};
 use chancela_core::{Book, BookState, LegalHold};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -7887,6 +7890,43 @@ pub async fn erasure_execute(
     });
     let attestation_json = serde_json::to_string(&attestation)?;
 
+    // Reserve the subject's directory identity for erasure and validate anti-lockout/bootstrap
+    // invariants before any irreversible ledger/key mutation. Keep the write lock until the
+    // removal is committed so concurrent erasures cannot both observe a safe pre-removal state.
+    let mut users = state.users.write().await;
+    {
+        let Some(target) = users.get(&subject) else {
+            return Err(ApiError::NotFound);
+        };
+        if users.len() <= 1 {
+            return Err(ApiError::Conflict(
+                "não pode apagar o último utilizador".to_owned(),
+            ));
+        }
+        if target.active && users.values().filter(|u| u.active).count() <= 1 {
+            return Err(ApiError::Conflict(
+                "não pode apagar o último utilizador ativo".to_owned(),
+            ));
+        }
+        if target.active
+            && target
+                .role_assignments
+                .iter()
+                .any(RoleAssignment::is_owner_admin)
+        {
+            let active_owner_holders =
+                count_owner_admin_holders(users.values().filter(|u| u.active).flat_map(|u| {
+                    let uid = AuthzUserId(u.id.0);
+                    u.role_assignments.iter().map(move |a| (uid, a))
+                }));
+            if !last_owner_guard(active_owner_holders) {
+                return Err(ApiError::Conflict(
+                    "não pode apagar o último Proprietário".to_owned(),
+                ));
+            }
+        }
+    }
+
     // Step 1 — append `subject.erased` + destroy the subject DEK atomically (ledger event +
     // subject_keys row, one commits-or-rolls-back transaction). Actor = subject UUID (pseudonymous
     // convention); scope `user:{uuid}` → Application chain (no genesis-kind constraint).
@@ -7919,10 +7959,8 @@ pub async fn erasure_execute(
 
     // Step 2 — physically remove the subject's directory identity, write-through (rewrites
     // `users.json` on SQLite, reconciles the `users` table on Postgres — backend-agnostic).
-    {
-        let mut users = state.users.write().await;
-        users.remove(&subject);
-    }
+    users.remove(&subject);
+    drop(users);
     persist_users(&state).await?;
 
     // Step 3 — reclaim freed pages / dead tuples so deleted PII bytes do not linger (VACUUM cannot run
