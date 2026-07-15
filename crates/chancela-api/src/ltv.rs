@@ -89,6 +89,48 @@ pub struct LtvExecuteResponse {
     pub evidence: SignatureEvidenceStatus,
     /// The validated revocation evidence embedded by this round.
     pub revocation: CollectedRevocationEvidenceStatus,
+    /// PAdES B-LT/B-LTA embedded-evidence status: DSS presence, per-link revocation coverage, and
+    /// `/DocTimeStamp` renewal. Validation is live/production-grade; qualified *issuance* stays
+    /// external. A technical marker, not a legal claim.
+    pub b_lt_lta_status: BLtLtaStatusReport,
+}
+
+/// PAdES B-LT / B-LTA embedded-evidence status derived from the DSS + `/DocTimeStamp` reports and
+/// the per-link revocation collected by this round (wp26 §2.3).
+///
+/// Honesty (plan §3): the **validation** side is live/production-grade — the DSS revocation material
+/// embedded here was fetched + validated against the signer's issuer before embedding, and the
+/// archive timestamp binds the prior revision. Qualified **issuance** (a qualified certificate /
+/// qualified TSA) remains external-gated and is never claimed here.
+#[derive(Serialize)]
+pub struct BLtLtaStatusReport {
+    /// The validation grade this surface offers: live, production-grade embedded evidence.
+    pub validation_grade: &'static str,
+    /// The external wall: qualified issuance requires an external QTSP and is not conferred here.
+    pub qualified_issuance: &'static str,
+    /// Scope marker: technical evidence only, no legal claim.
+    pub status_scope: &'static str,
+    pub notice: &'static str,
+    /// Whether a `/DSS` dictionary is present in the updated artifact.
+    pub dss_present: bool,
+    /// Whether embedded OCSP/CRL revocation material is present in the `/DSS`.
+    pub revocation_evidence_present: bool,
+    /// Number of revocation responses (OCSP + CRL) embedded this round — per-link coverage.
+    pub revocation_links_covered: usize,
+    /// The "LT" of B-LT is present: a `/DSS` carrying revocation evidence.
+    pub b_lt_evidence_present: bool,
+    /// Whether a `/DocTimeStamp` archive timestamp is present (the "A" of B-LTA).
+    pub archive_timestamp_present: bool,
+    /// Number of `/DocTimeStamp` revisions observed.
+    pub doc_timestamp_count: usize,
+    /// Whether every observed `/DocTimeStamp` imprint validated against its covered revision.
+    pub doc_timestamp_imprints_valid: bool,
+    /// The "A" of B-LTA is present and imprint-valid.
+    pub b_lta_evidence_present: bool,
+    /// `"renewed"`, `"initial"`, or `"none"` — the archive-timestamp renewal-chain position.
+    pub renewal_status: &'static str,
+    pub legal_b_lt_claimed: bool,
+    pub legal_b_lta_claimed: bool,
 }
 
 /// `POST /v1/acts/{id}/signature/ltv/execute` — drive a full PAdES-B-LTA upgrade over the act's
@@ -223,6 +265,15 @@ async fn run_ltv_round(
     let evidence_status = signature_evidence_status(Some(&stored));
     let revocation_status = collected_revocation_status(&collected);
     let archive_timestamp_present = evidence_status.doc_timestamp.present;
+    let b_lt_lta_status = b_lt_lta_status(
+        evidence_status.dss.present,
+        evidence_status.dss.revocation_evidence_present,
+        revocation_status.ocsp_count + revocation_status.crl_count,
+        evidence_status.doc_timestamp.present,
+        evidence_status.doc_timestamp.count,
+        evidence_status.doc_timestamp.all_imprints_valid,
+        round,
+    );
     let audit_scope = act_audit_scope(&state, act_id).await?;
     let event_payload = json!({
         "act_id": act_id.to_string(),
@@ -274,5 +325,91 @@ async fn run_ltv_round(
         status_scope: TECHNICAL_EVIDENCE_ONLY,
         evidence: evidence_status,
         revocation: revocation_status,
+        b_lt_lta_status,
     }))
+}
+
+/// Derive the PAdES B-LT/B-LTA status from the embedded DSS + `/DocTimeStamp` reports and the
+/// per-link revocation coverage collected this round. Pure so it is directly unit-testable.
+fn b_lt_lta_status(
+    dss_present: bool,
+    revocation_evidence_present: bool,
+    revocation_links_covered: usize,
+    archive_timestamp_present: bool,
+    doc_timestamp_count: usize,
+    doc_timestamp_imprints_valid: bool,
+    round: LtvRound,
+) -> BLtLtaStatusReport {
+    let b_lt_evidence_present = dss_present && revocation_evidence_present;
+    let b_lta_evidence_present = archive_timestamp_present && doc_timestamp_imprints_valid;
+    let renewal_status = match (round, doc_timestamp_count) {
+        (LtvRound::Renew, _) => "renewed",
+        (LtvRound::Execute, n) if n > 1 => "renewed",
+        (LtvRound::Execute, 1) => "initial",
+        _ => "none",
+    };
+    BLtLtaStatusReport {
+        // The validation side is genuinely live: embedded revocation was validated against the
+        // signer's issuer before embedding, and the archive timestamp binds the prior revision.
+        validation_grade: "live_production_grade_validation",
+        // The external wall (plan §3): a qualified certificate / qualified TSA is minted externally.
+        qualified_issuance: "external_qtsp_required",
+        status_scope: TECHNICAL_EVIDENCE_ONLY,
+        notice: "Live/production-grade long-term-validation embedding; qualified issuance remains external. No legal B-LT/B-LTA claim.",
+        dss_present,
+        revocation_evidence_present,
+        revocation_links_covered,
+        b_lt_evidence_present,
+        archive_timestamp_present,
+        doc_timestamp_count,
+        doc_timestamp_imprints_valid,
+        b_lta_evidence_present,
+        renewal_status,
+        legal_b_lt_claimed: false,
+        legal_b_lta_claimed: false,
+    }
+}
+
+#[cfg(test)]
+mod b_lt_lta_tests {
+    use super::*;
+
+    #[test]
+    fn initial_execute_reports_b_lt_and_b_lta_present() {
+        let status = b_lt_lta_status(true, true, 2, true, 1, true, LtvRound::Execute);
+        assert!(status.b_lt_evidence_present);
+        assert!(status.b_lta_evidence_present);
+        assert_eq!(status.revocation_links_covered, 2);
+        assert_eq!(status.renewal_status, "initial");
+        assert_eq!(status.validation_grade, "live_production_grade_validation");
+        assert_eq!(status.qualified_issuance, "external_qtsp_required");
+        assert!(!status.legal_b_lt_claimed);
+        assert!(!status.legal_b_lta_claimed);
+    }
+
+    #[test]
+    fn renew_round_reports_renewed_regardless_of_count() {
+        let status = b_lt_lta_status(true, true, 3, true, 2, true, LtvRound::Renew);
+        assert_eq!(status.renewal_status, "renewed");
+        assert!(status.b_lta_evidence_present);
+    }
+
+    #[test]
+    fn missing_evidence_is_reported_honestly() {
+        // No DSS revocation and no archive timestamp: neither LT nor LTA evidence is present.
+        let status = b_lt_lta_status(false, false, 0, false, 0, false, LtvRound::Execute);
+        assert!(!status.b_lt_evidence_present);
+        assert!(!status.b_lta_evidence_present);
+        assert_eq!(status.renewal_status, "none");
+    }
+
+    #[test]
+    fn invalid_imprints_block_b_lta_evidence() {
+        let status = b_lt_lta_status(true, true, 1, true, 1, false, LtvRound::Execute);
+        assert!(status.b_lt_evidence_present);
+        assert!(
+            !status.b_lta_evidence_present,
+            "an archive timestamp with an invalid imprint is not B-LTA evidence"
+        );
+    }
 }

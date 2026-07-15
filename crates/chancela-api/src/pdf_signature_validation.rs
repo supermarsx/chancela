@@ -12,8 +12,13 @@ use axum::http::{HeaderMap, header};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
 use chancela_authz::{Permission, Scope};
+use chancela_signing::{
+    RevocationCache, RevocationEvidenceProvider, SignerTrustDecision, SignerTrustReport,
+    validate_signer_trust,
+};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 use x509_cert::der::Decode;
 
@@ -21,6 +26,7 @@ use crate::AppState;
 use crate::actor::CurrentActor;
 use crate::authz::require_permission;
 use crate::error::ApiError;
+use crate::trust::{LiveTrustStore, load_live_trust_store};
 
 pub(crate) const PDF_SIGNATURE_VALIDATION_MAX_BYTES: usize =
     crate::signature::OFFICIAL_SIGNATURE_IMPORT_MAX_BYTES;
@@ -32,6 +38,10 @@ const REPORT_SCOPE: &str = "local_technical_pdf_pades_evidence";
 const LEGAL_NOTICE: &str = "Local technical PDF/PAdES evidence validation only. No AMA \
 integration, live trusted-list validation, live revocation validation, qualified-status decision, or \
 legal-validity conclusion is performed or claimed.";
+const LEGAL_NOTICE_LIVE: &str = "Technical PDF/PAdES evidence validation plus a live end-to-end \
+signer-trust decision against the cached, LOTL-authenticated Trusted List (certificate path + \
+per-link revocation). No AMA integration, qualified-status decision, or legal-validity conclusion is \
+performed or claimed; qualified issuance remains external.";
 const NOT_PERFORMED: &str = "not_performed";
 const TECHNICAL_ONLY: &str = "technical_evidence_only";
 const LOCAL_TECHNICAL_EVIDENCE_ONLY: &str = "local_technical_evidence_only";
@@ -61,6 +71,19 @@ struct PdfSignatureValidationRequest {
     declared_sha256: Option<String>,
     #[serde(default, alias = "size_bytes")]
     declared_size_bytes: Option<usize>,
+    /// Opt-in: fold in a live end-to-end signer-trust decision (build the signer path to the cached,
+    /// LOTL-authenticated Trusted List QC anchor + TSL-resolved revocation). Off by default; the base
+    /// report stays local/offline. Requires a promoted live trust store (see `POST /v1/trust/refresh`
+    /// with `lotl: true`); otherwise the live section reports fail-closed without any network access.
+    #[serde(default, alias = "live_trust")]
+    live_signer_trust: Option<bool>,
+    /// Optional signer-chain intermediate CA certificates (base64 DER) to bridge the signer to a QC
+    /// anchor when the PDF does not embed them. Only used when `live_signer_trust` is set.
+    #[serde(default, alias = "intermediate_certs_base64")]
+    intermediate_certificates: Vec<String>,
+    /// Optional RFC 3339 validation time (revocation freshness anchor). Defaults to now.
+    #[serde(default)]
+    validation_time: Option<String>,
 }
 
 struct PdfValidationCandidate {
@@ -68,6 +91,9 @@ struct PdfValidationCandidate {
     filename: Option<String>,
     declared_sha256: Option<String>,
     declared_size_bytes: Option<usize>,
+    live_signer_trust: bool,
+    intermediate_certificates: Vec<Vec<u8>>,
+    validation_time: Option<OffsetDateTime>,
 }
 
 /// Top-level response for `POST /v1/signature/pdf/validate`.
@@ -87,6 +113,10 @@ pub struct PdfSignatureValidationResponse {
     pub trust: TrustValidationReport,
     pub revocation: RevocationValidationReport,
     pub qualification: QualificationValidationReport,
+    /// Present only when `live_signer_trust` was requested: the live end-to-end signer-trust
+    /// decision against the cached, LOTL-authenticated Trusted List. A technical report only.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub live_signer_trust: Option<LiveSignerTrustReport>,
     pub findings: Vec<PdfSignatureValidationFinding>,
 }
 
@@ -277,6 +307,40 @@ pub struct QualificationValidationReport {
     pub message: &'static str,
 }
 
+/// Live end-to-end signer-trust decision folded into the report when `live_signer_trust` is
+/// requested (wp26 §2.2). This is deliberately a **technical** report: it records the certificate
+/// path built from the PDF signer to a live, LOTL-authenticated Trusted List QC anchor and the
+/// per-link OCSP/CRL revocation outcome. It asserts no legal qualification and nothing about the
+/// probative weight of the signature.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct LiveSignerTrustReport {
+    /// Whether a live signer-trust evaluation actually ran. `false` when it was requested but no
+    /// authenticated trust store is available or no signer certificate could be read (fail-closed).
+    pub performed: bool,
+    /// `"accepted"`, `"rejected"`, or `"not_performed"`.
+    pub status: &'static str,
+    /// Whether a certificate path from the signer to a QC anchor was built.
+    pub certificate_path_valid: bool,
+    /// Number of certificates in the built path, when built.
+    pub certificate_path_len: Option<usize>,
+    /// Whether the built path terminated at a Trusted List QC anchor.
+    pub trust_anchor_matched: bool,
+    /// Whether the Trusted List the anchors came from was cryptographically authenticated.
+    pub trusted_list_authenticated: bool,
+    /// Whether the Trusted List the anchors came from was served from a stale fallback cache.
+    pub trusted_list_stale: bool,
+    /// Number of issuing links whose revocation was successfully checked.
+    pub revocation_checked_links: usize,
+    /// Whether any link's revocation was served stale from the offline fallback (never grounds trust).
+    pub revocation_stale: bool,
+    /// Human-readable technical reasons the decision was `rejected` (empty when accepted).
+    pub failure_reasons: Vec<String>,
+    /// Scope marker: technical evidence only.
+    pub status_scope: &'static str,
+    /// Human-readable summary of what was (or was not) evaluated.
+    pub message: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct PdfSignatureValidationFinding {
     pub severity: &'static str,
@@ -322,7 +386,154 @@ pub async fn validate_pdf_signature(
 ) -> Result<Json<PdfSignatureValidationResponse>, ApiError> {
     require_permission(&state, &actor, Permission::ActRead, Scope::Global).await?;
     let candidate = pdf_validation_candidate_from_request(&headers, &body)?;
-    Ok(Json(validate_pdf_signature_candidate(candidate)?))
+    let want_live = candidate.live_signer_trust;
+    let intermediates = candidate.intermediate_certificates.clone();
+    let validation_time = candidate.validation_time;
+    let live_bytes = want_live.then(|| candidate.bytes.clone());
+    let mut response = validate_pdf_signature_candidate(candidate)?;
+
+    if want_live {
+        let now = OffsetDateTime::now_utc();
+        let store = load_live_trust_store(state.data_dir(), now);
+        // The trust build (path + per-link revocation) can touch the network for revocation, so it
+        // runs on a blocking worker. It is only reachable when an operator opts in AND a live,
+        // authenticated trust store has been promoted; every fail-closed branch returns without any
+        // network access.
+        let report = tokio::task::spawn_blocking(move || {
+            evaluate_live_signer_trust(
+                live_bytes.as_deref(),
+                store,
+                &intermediates,
+                validation_time,
+            )
+        })
+        .await
+        .map_err(|e| ApiError::Internal(format!("live signer-trust worker failed: {e}")))?;
+        if report.performed {
+            response.legal_notice = LEGAL_NOTICE_LIVE;
+            response.trust = trust_live_performed();
+            response.revocation = revocation_live_performed(&response.signature.dss);
+        }
+        response.live_signer_trust = Some(report);
+    }
+
+    Ok(Json(response))
+}
+
+/// Compute the live end-to-end signer-trust report (wp26 §2.2), fail-closed.
+///
+/// Returns `performed: false` without any network access when the trust store is absent or
+/// unauthenticated, or when no signer certificate can be read from the PDF. Only when the store is
+/// authenticated and a signer is present does it build the path to a live QC anchor and check
+/// per-link revocation via [`validate_signer_trust`].
+fn evaluate_live_signer_trust(
+    pdf_bytes: Option<&[u8]>,
+    store: Option<LiveTrustStore>,
+    intermediates: &[Vec<u8>],
+    validation_time: Option<OffsetDateTime>,
+) -> LiveSignerTrustReport {
+    let Some(live) = store else {
+        return live_trust_not_performed(
+            "no live, LOTL-authenticated Trusted List has been promoted; refresh trust with an EU \
+             LOTL bootstrap before requesting a live signer-trust decision",
+        );
+    };
+    if !live.store.authenticated {
+        // Fail-closed: anchors from an unauthenticated list ground no trust decision.
+        return live_trust_not_performed(
+            "the cached Trusted List is not authenticated; a live signer-trust decision requires a \
+             LOTL-authenticated trust store",
+        );
+    }
+    let Some(bytes) = pdf_bytes else {
+        return live_trust_not_performed("no signer certificate was available to evaluate");
+    };
+    let signer_cert_der = match chancela_pades::validate_pdf_signature(bytes) {
+        Ok(report) => report.cades.signer_cert_der,
+        Err(_) => {
+            return live_trust_not_performed(
+                "no parseable PAdES signer certificate was available to evaluate",
+            );
+        }
+    };
+
+    let validation_time = validation_time.unwrap_or_else(|| {
+        let now = OffsetDateTime::now_utc();
+        now.replace_nanosecond(0).unwrap_or(now)
+    });
+    let report = validate_signer_trust(
+        &signer_cert_der,
+        intermediates,
+        &live.store,
+        &RevocationEvidenceProvider::http(),
+        &RevocationCache::new(),
+        validation_time,
+    );
+    live_trust_report_from(&report)
+}
+
+fn live_trust_not_performed(message: impl Into<String>) -> LiveSignerTrustReport {
+    LiveSignerTrustReport {
+        performed: false,
+        status: NOT_PERFORMED,
+        certificate_path_valid: false,
+        certificate_path_len: None,
+        trust_anchor_matched: false,
+        trusted_list_authenticated: false,
+        trusted_list_stale: false,
+        revocation_checked_links: 0,
+        revocation_stale: false,
+        failure_reasons: Vec::new(),
+        status_scope: TECHNICAL_ONLY,
+        message: message.into(),
+    }
+}
+
+fn live_trust_report_from(report: &SignerTrustReport) -> LiveSignerTrustReport {
+    let accepted = report.decision == SignerTrustDecision::Accepted;
+    LiveSignerTrustReport {
+        performed: true,
+        status: if accepted { "accepted" } else { "rejected" },
+        certificate_path_valid: report.certificate_path_valid,
+        certificate_path_len: report.certificate_path_len,
+        trust_anchor_matched: report.trust_anchor_matched,
+        trusted_list_authenticated: report.trusted_list_authenticated,
+        trusted_list_stale: report.trusted_list_stale,
+        revocation_checked_links: report.revocation_checked_links,
+        revocation_stale: report.revocation_stale,
+        failure_reasons: report.failure_reasons.clone(),
+        status_scope: TECHNICAL_ONLY,
+        message: if accepted {
+            "signer chained to a live, authenticated Trusted List QC anchor with fresh non-revoked \
+             revocation for every link (technical decision; no legal-qualification claim)"
+                .to_owned()
+        } else {
+            "signer trust was not established against the live Trusted List; see failure_reasons \
+             (technical decision; no legal-qualification claim)"
+                .to_owned()
+        },
+    }
+}
+
+fn trust_live_performed() -> TrustValidationReport {
+    TrustValidationReport {
+        status: "performed",
+        performed: true,
+        live_trusted_list_validation_performed: true,
+        ama_integration_performed: false,
+        message: "A live end-to-end signer-trust decision was evaluated against the cached, LOTL-authenticated Trusted List (see live_signer_trust). No AMA integration and no legal-qualification claim.",
+    }
+}
+
+fn revocation_live_performed(dss: &DssTechnicalReport) -> RevocationValidationReport {
+    RevocationValidationReport {
+        status: "performed",
+        live_fetch_performed: true,
+        freshness_validation_performed: true,
+        embedded_evidence_inspected: dss.present,
+        embedded_revocation_evidence_present: dss.revocation_evidence_present,
+        message: "Per-link OCSP/CRL revocation was checked against the TSL-resolved issuer for the built signer path (see live_signer_trust). No legal-qualification claim.",
+    }
 }
 
 fn pdf_validation_candidate_from_request(
@@ -338,11 +549,20 @@ fn pdf_validation_candidate_from_request(
         let bytes = B64
             .decode(req.content_base64.trim())
             .map_err(|e| ApiError::Unprocessable(format!("invalid base64 PDF content: {e}")))?;
+        let intermediate_certificates =
+            decode_intermediate_certificates(&req.intermediate_certificates)?;
+        let validation_time = match req.validation_time.as_deref() {
+            Some(raw) => Some(parse_validation_time(raw)?),
+            None => None,
+        };
         return Ok(PdfValidationCandidate {
             bytes,
             filename: non_empty(req.filename),
             declared_sha256: normalize_sha256(req.declared_sha256)?,
             declared_size_bytes: req.declared_size_bytes,
+            live_signer_trust: req.live_signer_trust.unwrap_or(false),
+            intermediate_certificates,
+            validation_time,
         });
     }
 
@@ -351,7 +571,29 @@ fn pdf_validation_candidate_from_request(
         filename: None,
         declared_sha256: None,
         declared_size_bytes: None,
+        // The raw-bytes path carries no JSON options, so live trust stays off by default.
+        live_signer_trust: false,
+        intermediate_certificates: Vec::new(),
+        validation_time: None,
     })
+}
+
+fn decode_intermediate_certificates(encoded: &[String]) -> Result<Vec<Vec<u8>>, ApiError> {
+    encoded
+        .iter()
+        .filter(|value| !value.trim().is_empty())
+        .map(|value| {
+            B64.decode(value.trim()).map_err(|e| {
+                ApiError::Unprocessable(format!("invalid base64 intermediate certificate: {e}"))
+            })
+        })
+        .collect()
+}
+
+fn parse_validation_time(raw: &str) -> Result<OffsetDateTime, ApiError> {
+    OffsetDateTime::parse(raw.trim(), &Rfc3339)
+        .map(|t| t.replace_nanosecond(0).unwrap_or(t))
+        .map_err(|e| ApiError::Unprocessable(format!("invalid validation_time (RFC 3339): {e}")))
 }
 
 fn validate_pdf_signature_candidate(
@@ -445,6 +687,7 @@ fn validate_pdf_signature_candidate(
         trust,
         revocation,
         qualification,
+        live_signer_trust: None,
         findings,
     })
 }
@@ -1806,5 +2049,65 @@ startxref
         assert_eq!(plan["next_action"], "record_dss_validation_time");
         assert_eq!(plan["has_local_evidence_gap"], true);
         assert_eq!(plan["all_local_planning_inputs_present"], false);
+    }
+}
+
+#[cfg(test)]
+mod live_signer_trust_tests {
+    use super::*;
+    use crate::trust::TrustStoreProvenance;
+    use time::macros::datetime;
+
+    const BUNDLED_PT_TSL: &[u8] = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../chancela-tsl/fixtures/pt-tsl-sample.xml"
+    ));
+    const NOW: OffsetDateTime = datetime!(2026-07-06 12:00:00 UTC);
+
+    fn live_store(authenticated: bool) -> LiveTrustStore {
+        let list = chancela_tsl::parse_tsl(BUNDLED_PT_TSL).expect("fixture parses");
+        LiveTrustStore {
+            store: chancela_tsl::TslTrustStore::from_list(&list, authenticated, false, NOW),
+            provenance: TrustStoreProvenance {
+                authenticated,
+                stale: false,
+                refreshed_at: String::new(),
+                territory: "PT".to_owned(),
+                lotl_url: None,
+                member_url: None,
+                qc_anchor_count: 0,
+                qtst_anchor_count: 0,
+            },
+        }
+    }
+
+    #[test]
+    fn live_trust_is_not_performed_without_a_store() {
+        // Requested but no promoted trust store: fail-closed, no network, no decision.
+        let report = evaluate_live_signer_trust(Some(b"not a pdf"), None, &[], Some(NOW));
+        assert!(!report.performed);
+        assert_eq!(report.status, NOT_PERFORMED);
+        assert!(report.message.contains("LOTL"));
+        assert!(report.failure_reasons.is_empty());
+    }
+
+    #[test]
+    fn live_trust_is_not_performed_against_unauthenticated_store() {
+        // An unauthenticated cached list grounds no trust decision (fail-closed) and never reaches
+        // the network — the guard returns before any path build / revocation fetch.
+        let report =
+            evaluate_live_signer_trust(Some(b"not a pdf"), Some(live_store(false)), &[], Some(NOW));
+        assert!(!report.performed);
+        assert!(!report.trusted_list_authenticated);
+        assert!(report.message.contains("not authenticated"));
+    }
+
+    #[test]
+    fn live_trust_is_not_performed_without_a_signer_certificate() {
+        // Authenticated store but no parseable signer: still fail-closed with no revocation fetch,
+        // because there is no signer certificate to build a path for.
+        let report = evaluate_live_signer_trust(None, Some(live_store(true)), &[], Some(NOW));
+        assert!(!report.performed);
+        assert!(report.message.contains("no signer certificate"));
     }
 }
