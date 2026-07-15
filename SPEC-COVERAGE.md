@@ -5275,3 +5275,37 @@ behavior, legal disposal, or legal-effect claims.
   completion.
 - `/api/v1` API keys are an implemented integration feature, but a bearer key is still an
   attenuated RBAC principal, not an interactive user session or step-up credential.
+- **wp26-xades — XML-signing vertical reconciliation (supersedes the earlier "not real C14N /
+  no multiple-reference / broad ECDSA / XAdES generation absent" markers above).** Several early
+  SIG entries (e.g. the "narrows the prior TSL fixture gap only; it is not real C14N … multiple-
+  reference … broad ECDSA" notes around the TSL XML-DSig and ASiC-inspection slices) predate the
+  `chancela-xades` crate and are now stale. As shipped:
+  - **Real in-crate XML C14N** (`chancela-xades::c14n`): W3C-REC Exclusive XML Canonicalization
+    (with `InclusiveNamespaces` PrefixList) and Inclusive Canonical XML 1.0, both with/without
+    comments, prefix-preserving over `quick-xml` raw events, with duplicate-`Id` (XSW) fail-closed
+    guards. Certified by a byte-exact vector suite whose expected outputs are now **provenance-
+    tagged against the W3C Canonical XML RECs** as the external oracle (see
+    `crates/chancela-xades/TESTING.md`). Honesty limit: a *live* `xmlsec1` / EU-DSS conformance run
+    is not runnable offline in this environment — it is documented as a manual maintainer step, and
+    the canonicalizer does not perform DTD attribute-defaulting or entity expansion.
+  - **Multiple-reference XML-DSig** and **enveloped / enveloping / detached** packaging are built,
+    not gaps.
+  - **XAdES-B, XAdES-T, and XAdES-LT generation** are built: B (`SigningTime` +
+    `SigningCertificateV2`), T (RFC 3161 `SignatureTimeStamp`), and **LT** (`CertificateValues` +
+    `RevocationValues`, reusing `chancela-signing::revocation`'s validated OCSP/CRL output — no
+    second revocation client). Validation detects and reports the level.
+  - **ASiC-S-XAdES and ASiC-E-XAdES production**, including single-signer **ASiC-E XAdES-LT**
+    (`sign_asic_e_xades_lt`) and multi-signer mixed CAdES/XAdES with an archive manifest.
+  - **Broader ECDSA**: RSA-PKCS1-SHA256 and ECDSA **P-256 / P-384 / P-521** with matched
+    **SHA-256/384/512** digest agility (SignatureMethod/DigestMethod/`CertDigest`/`r||s` widths and
+    curve-dispatched verify) are built and round-trip-tested at the `chancela-xades` layer. Scope
+    limit: the shared PKCS#12/hardware signer seam signs a fixed 32-byte SHA-256 digest, so the
+    local co-located and ASiC production signer lanes remain RSA-2048 / ECDSA-P256 (the real
+    Cartão de Cidadão / CMD material); P-384/P-521 as a *production signer* would need a
+    variable-length-digest seam and is a documented follow-on. CAdES/CMS stays SHA-256-only and
+    rejects the new curves explicitly, so PAdES/CAdES behaviour is unchanged.
+  - **Still out (unchanged non-goals):** **XAdES-LTA** (archive timestamp) is deferred — a design
+    sketch only (`crates/chancela-xades/TESTING.md`), never fake-green; and no trusted-list / QES /
+    eIDAS legal-effect determination is performed or claimed by any XAdES/ASiC path — those remain
+    `chancela-tsl` / policy concerns, and the API responses keep their "technical signature only"
+    notices intact.
