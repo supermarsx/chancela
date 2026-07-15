@@ -94,6 +94,7 @@ mod tests {
             sequence_number: None,
             issue_date_time: None,
             next_update,
+            other_tsl_pointers: Vec::new(),
             providers: Vec::new(),
         }
     }

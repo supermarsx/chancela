@@ -35,20 +35,30 @@
 
 #![forbid(unsafe_code)]
 
+pub mod c14n;
 pub mod cache;
+pub mod certpath;
 pub mod error;
+pub mod lotl;
 pub mod parse;
 pub mod query;
 pub mod record;
 pub mod source;
+pub mod trust_store;
 
 pub(crate) mod xmldsig;
 
+pub use c14n::{C14nAlgorithm, canonicalize};
 pub use cache::{CachedTsl, FALLBACK_TTL};
+pub use certpath::{CertPath, PathBuildOptions, build_path};
 pub use error::TslError;
+pub use lotl::{
+    AuthenticatedList, DEFAULT_LOTL_URL, ENV_LOTL_URL, bootstrap_member_tsl, ingest_lotl,
+    ingest_member_tsl, member_pointer,
+};
 pub use parse::{
-    DigitalIdentity, LocalizedText, ServiceHistoryEntry, ServiceStatus, TrustService,
-    TrustServiceProvider, TrustedList, parse_tsl,
+    DigitalIdentity, LocalizedText, OtherTslPointer, ServiceHistoryEntry, ServiceStatus,
+    TrustService, TrustServiceProvider, TrustedList, parse_tsl,
 };
 pub use query::{
     QtstMatchDetails, QtstServiceMatch, QualifiedStatus, TslClient, qualified_esig_services,
@@ -65,3 +75,4 @@ pub use source::{
     ENV_TSL_URL, FileTslSource, HttpTslSource, TslSource, TslTrustAnchors, validate_tsl_signature,
     validate_tsl_signature_with_anchors,
 };
+pub use trust_store::TslTrustStore;

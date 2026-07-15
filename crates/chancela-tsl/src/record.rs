@@ -736,6 +736,7 @@ mod tests {
             sequence_number: None,
             issue_date_time: None,
             next_update: None,
+            other_tsl_pointers: Vec::new(),
             providers: vec![TrustServiceProvider {
                 name: "Fornecedor".to_owned(),
                 names: vec![LocalizedText {

@@ -194,6 +194,30 @@ pub struct TrustServiceProvider {
     pub services: Vec<TrustService>,
 }
 
+/// A pointer to another Trusted List, parsed from `SchemeInformation/PointersToOtherTSL/
+/// OtherTSLPointer` (ETSI TS 119 612 §5.3.15). This is the element that turns a List of Trusted
+/// Lists (LOTL) into a directory of member-state TSLs: each pointer carries the location of a
+/// member-state list plus the certificate(s) that list's own XML-DSig signature is expected to
+/// verify against. Verifying a member-state TSL against the signer certificate carried by a pointer
+/// **inside an already-authenticated LOTL** is the real trust upgrade over a per-list fingerprint
+/// pin (wp26 §2.1). Absent on a national (non-LOTL) list, which carries no pointers.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct OtherTslPointer {
+    /// `TSLLocation` — the URL of the pointed-to Trusted List.
+    pub tsl_location: String,
+    /// `SchemeTerritory` from the pointer's `AdditionalInformation/OtherInformation` (e.g. `PT`),
+    /// used to select the member-state list to traverse to. `None` when the pointer omits it.
+    pub scheme_territory: Option<String>,
+    /// `MimeType` from the pointer's additional information (distinguishes an XML TSL pointer from a
+    /// PDF human-readable one), when present.
+    pub mime_type: Option<String>,
+    /// The DER-encoded signer certificate(s) from the pointer's
+    /// `ServiceDigitalIdentities/ServiceDigitalIdentity/DigitalId/X509Certificate` — the expected
+    /// XML-DSig signer(s) of the pointed-to list. May carry several to cover key rotation.
+    pub signer_certs: Vec<Vec<u8>>,
+}
+
 /// A parsed Trusted List (`TrustServiceStatusList`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TrustedList {
@@ -213,6 +237,9 @@ pub struct TrustedList {
     pub issue_date_time: Option<OffsetDateTime>,
     /// `NextUpdate/dateTime` — the validity window used for cache staleness, if parseable.
     pub next_update: Option<OffsetDateTime>,
+    /// Pointers to other Trusted Lists (`SchemeInformation/PointersToOtherTSL`). Populated on a
+    /// List of Trusted Lists (LOTL); empty on a national member-state list (wp26 §2.1).
+    pub other_tsl_pointers: Vec<OtherTslPointer>,
     /// The list's trust-service providers.
     pub providers: Vec<TrustServiceProvider>,
 }
@@ -250,6 +277,7 @@ pub fn parse_tsl(xml: &[u8]) -> Result<TrustedList, TslError> {
         sequence_number: None,
         issue_date_time: None,
         next_update: None,
+        other_tsl_pointers: Vec::new(),
         providers: Vec::new(),
     };
 
@@ -257,6 +285,7 @@ pub fn parse_tsl(xml: &[u8]) -> Result<TrustedList, TslError> {
     let mut cur_tsp: Option<TrustServiceProvider> = None;
     let mut cur_service: Option<TrustService> = None;
     let mut cur_history: Option<ServiceHistoryEntry> = None;
+    let mut cur_pointer: Option<OtherTslPointer> = None;
     // xml:lang of the Name element currently open, to prefer English names.
     let mut cur_name_lang: Option<String> = None;
 
@@ -283,6 +312,14 @@ pub fn parse_tsl(xml: &[u8]) -> Result<TrustedList, TslError> {
                     "ServiceHistoryInstance" if cur_service.is_some() => {
                         cur_history = Some(empty_history_entry());
                     }
+                    "OtherTSLPointer" => {
+                        cur_pointer = Some(OtherTslPointer {
+                            tsl_location: String::new(),
+                            scheme_territory: None,
+                            mime_type: None,
+                            signer_certs: Vec::new(),
+                        });
+                    }
                     "Name" => cur_name_lang = xml_lang(&e)?,
                     _ => {}
                 }
@@ -299,6 +336,7 @@ pub fn parse_tsl(xml: &[u8]) -> Result<TrustedList, TslError> {
                         cur_tsp.as_mut(),
                         cur_service.as_mut(),
                         cur_history.as_mut(),
+                        cur_pointer.as_mut(),
                     )?;
                 }
             }
@@ -321,6 +359,11 @@ pub fn parse_tsl(xml: &[u8]) -> Result<TrustedList, TslError> {
                     "TrustServiceProvider" if !in_history(&stack) => {
                         if let Some(tsp) = cur_tsp.take() {
                             list.providers.push(tsp);
+                        }
+                    }
+                    "OtherTSLPointer" => {
+                        if let Some(pointer) = cur_pointer.take() {
+                            list.other_tsl_pointers.push(pointer);
                         }
                     }
                     "Name" => cur_name_lang = None,
@@ -371,6 +414,7 @@ fn empty_history_entry() -> ServiceHistoryEntry {
 }
 
 /// Dispatch a text node to the right model field based on the element stack.
+#[allow(clippy::too_many_arguments)]
 fn handle_text(
     stack: &[String],
     text: &str,
@@ -379,12 +423,22 @@ fn handle_text(
     tsp: Option<&mut TrustServiceProvider>,
     service: Option<&mut TrustService>,
     history: Option<&mut ServiceHistoryEntry>,
+    pointer: Option<&mut OtherTslPointer>,
 ) -> Result<(), TslError> {
     let top = stack.last().map(String::as_str).unwrap_or("");
     // Current trust decisions ignore history, but parser/search tooling keeps it structured.
     if in_history_instance(stack) {
         if let Some(history) = history {
             handle_history_text(stack, text, name_lang, history)?;
+        }
+        return Ok(());
+    }
+
+    // LOTL pointers live inside SchemeInformation but must not be confused with the list's own
+    // scheme-level SchemeTerritory/DigitalId; dispatch them separately and early-return.
+    if in_pointer(stack) {
+        if let Some(pointer) = pointer {
+            handle_pointer_text(stack, text, pointer)?;
         }
         return Ok(());
     }
@@ -488,6 +542,33 @@ fn handle_text(
     Ok(())
 }
 
+/// Dispatch a text node inside an `OtherTSLPointer` subtree to the pointer being built. Namespaces
+/// vary across real LOTLs (the pointer's additional info is often `ns3:`/`ns5:`-prefixed), so we
+/// match on local names, exactly like the rest of the parser.
+fn handle_pointer_text(
+    stack: &[String],
+    text: &str,
+    pointer: &mut OtherTslPointer,
+) -> Result<(), TslError> {
+    let top = stack.last().map(String::as_str).unwrap_or("");
+    match top {
+        "TSLLocation" if pointer.tsl_location.is_empty() => {
+            pointer.tsl_location = text.to_owned();
+        }
+        "X509Certificate" if under(stack, "DigitalId") => {
+            pointer.signer_certs.push(decode_base64(text)?);
+        }
+        "SchemeTerritory" if pointer.scheme_territory.is_none() => {
+            pointer.scheme_territory = Some(text.to_owned());
+        }
+        "MimeType" if pointer.mime_type.is_none() => {
+            pointer.mime_type = Some(text.to_owned());
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
 fn handle_history_text(
     stack: &[String],
     text: &str,
@@ -565,6 +646,11 @@ fn in_history(stack: &[String]) -> bool {
 
 fn in_history_instance(stack: &[String]) -> bool {
     stack.iter().any(|s| s == "ServiceHistoryInstance")
+}
+
+/// True when the element stack is inside an `OtherTSLPointer` subtree (a LOTL pointer).
+fn in_pointer(stack: &[String]) -> bool {
+    stack.iter().any(|s| s == "OtherTSLPointer")
 }
 
 /// True when `ancestor` appears anywhere in the (non-top) element stack.
@@ -702,6 +788,49 @@ mod tests {
             service_supply_points: Vec::new(),
             history: Vec::new(),
         }
+    }
+
+    #[test]
+    fn parses_lotl_pointers_to_other_tsl() {
+        // A LOTL carries PointersToOtherTSL inside SchemeInformation; the pointer's own
+        // SchemeTerritory/DigitalId must not clobber the list-level scheme fields.
+        let xml = br#"<tsl:TrustServiceStatusList xmlns:tsl="http://uri.etsi.org/02231/v2#">
+          <tsl:SchemeInformation>
+            <tsl:SchemeTerritory>EU</tsl:SchemeTerritory>
+            <tsl:PointersToOtherTSL>
+              <tsl:OtherTSLPointer>
+                <tsl:ServiceDigitalIdentities><tsl:ServiceDigitalIdentity><tsl:DigitalId>
+                  <tsl:X509Certificate>Zm9vYmFy</tsl:X509Certificate>
+                </tsl:DigitalId></tsl:ServiceDigitalIdentity></tsl:ServiceDigitalIdentities>
+                <tsl:TSLLocation>https://example.test/TSL-PT.xml</tsl:TSLLocation>
+                <tsl:AdditionalInformation><tsl:OtherInformation>
+                  <tsl:SchemeTerritory>PT</tsl:SchemeTerritory>
+                  <ns5:MimeType xmlns:ns5="http://uri.etsi.org/02231/v2/additionaltypes#">application/vnd.etsi.tsl+xml</ns5:MimeType>
+                </tsl:OtherInformation></tsl:AdditionalInformation>
+              </tsl:OtherTSLPointer>
+            </tsl:PointersToOtherTSL>
+          </tsl:SchemeInformation>
+        </tsl:TrustServiceStatusList>"#;
+        let list = parse_tsl(xml).unwrap();
+        assert_eq!(list.scheme_territory, "EU");
+        assert_eq!(list.other_tsl_pointers.len(), 1);
+        let ptr = &list.other_tsl_pointers[0];
+        assert_eq!(ptr.tsl_location, "https://example.test/TSL-PT.xml");
+        assert_eq!(ptr.scheme_territory.as_deref(), Some("PT"));
+        assert_eq!(
+            ptr.mime_type.as_deref(),
+            Some("application/vnd.etsi.tsl+xml")
+        );
+        assert_eq!(ptr.signer_certs, vec![b"foobar".to_vec()]);
+    }
+
+    #[test]
+    fn national_list_has_no_pointers() {
+        let xml = br#"<TrustServiceStatusList xmlns="http://uri.etsi.org/02231/v2#">
+          <SchemeInformation><SchemeTerritory>PT</SchemeTerritory></SchemeInformation>
+        </TrustServiceStatusList>"#;
+        let list = parse_tsl(xml).unwrap();
+        assert!(list.other_tsl_pointers.is_empty());
     }
 
     #[test]
