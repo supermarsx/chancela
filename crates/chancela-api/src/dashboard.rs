@@ -39,9 +39,9 @@ use crate::dto::{
 };
 use crate::error::ApiError;
 use crate::privacy::{
-    BreachPlaybookId, BreachPlaybookRecord, PrivacyAdvisoryReviewStatus, PrivacyRecordStatus,
-    TransferControlId, TransferControlRecord, breach_playbook_advisory_review,
-    transfer_control_advisory_review,
+    BreachPlaybookId, BreachPlaybookRecord, DpiaRecord, DpiaRecordId, PrivacyAdvisoryReviewStatus,
+    PrivacyRecordStatus, TransferControlId, TransferControlRecord, breach_playbook_advisory_review,
+    dpia_advisory_review, transfer_control_advisory_review,
 };
 use crate::settings::WorkflowReminderSettings;
 
@@ -78,12 +78,14 @@ pub async fn dashboard(
     } else {
         None
     };
-    // entities → books → acts → follow_ups → registry_extracts → ledger (read locks; the global order).
+    // entities → books → acts → follow_ups → registry_extracts → dpia_records
+    // → breach_playbooks → transfer_controls → ledger (read locks; the global order).
     let entities = state.entities.read().await;
     let books = state.books.read().await;
     let acts = state.acts.read().await;
     let follow_ups = state.follow_ups.read().await;
     let registry_extracts = state.registry_extracts.read().await;
+    let dpia_records = state.dpia_records.read().await;
     let breach_playbooks = state.breach_playbooks.read().await;
     let transfer_controls = state.transfer_controls.read().await;
     let generated_dispatch_evidence =
@@ -166,6 +168,7 @@ pub async fn dashboard(
             generated_dispatch_evidence: &generated_dispatch_evidence,
             imported_documents: &imported_documents,
             registry_extracts: &registry_extracts,
+            dpia_records: &dpia_records,
             breach_playbooks: &breach_playbooks,
             transfer_controls: &transfer_controls,
         },
@@ -1312,6 +1315,7 @@ fn dashboard_reminders_with_follow_ups(
             generated_dispatch_evidence: &[],
             imported_documents: &[],
             registry_extracts,
+            dpia_records: &HashMap::new(),
             breach_playbooks: &HashMap::new(),
             transfer_controls: &HashMap::new(),
         },
@@ -1330,6 +1334,7 @@ struct ReminderInputs<'a> {
     generated_dispatch_evidence: &'a [GeneratedDispatchEvidenceSnapshot],
     imported_documents: &'a [StoredImportedDocumentMeta],
     registry_extracts: &'a HashMap<EntityId, RegistryExtract>,
+    dpia_records: &'a HashMap<DpiaRecordId, DpiaRecord>,
     breach_playbooks: &'a HashMap<BreachPlaybookId, BreachPlaybookRecord>,
     transfer_controls: &'a HashMap<TransferControlId, TransferControlRecord>,
 }
@@ -1347,6 +1352,7 @@ fn dashboard_reminders_with_generated_dispatch_evidence(
         generated_dispatch_evidence,
         imported_documents,
         registry_extracts,
+        dpia_records,
         breach_playbooks,
         transfer_controls,
     } = inputs;
@@ -1402,6 +1408,7 @@ fn dashboard_reminders_with_generated_dispatch_evidence(
     ));
     if policy.sources.privacy_control_reviews {
         reminders.extend(privacy_control_review_reminders(
+            dpia_records,
             breach_playbooks,
             transfer_controls,
             today,
@@ -2205,11 +2212,57 @@ fn generated_convening_dispatch_evidence_dashboard_reminder(
 }
 
 fn privacy_control_review_reminders(
+    dpia_records: &HashMap<DpiaRecordId, DpiaRecord>,
     breach_playbooks: &HashMap<BreachPlaybookId, BreachPlaybookRecord>,
     transfer_controls: &HashMap<TransferControlId, TransferControlRecord>,
     today: Date,
     due_soon_days: u16,
 ) -> Vec<DashboardReminder> {
+    let dpia_reminders = dpia_records.values().filter_map(|record| {
+        if record.status == PrivacyRecordStatus::Retired {
+            return None;
+        }
+        let summary = dpia_advisory_review(record, today, due_soon_days);
+        let review = &summary.review;
+        privacy_review_reminder_from_summary(
+            "privacy-dpia-review",
+            "privacy-dpia",
+            &record.id.to_string(),
+            &record.title,
+            record.status,
+            &review.status,
+            review.next_review_due_at.as_deref(),
+            review.last_reviewed_at.as_deref(),
+            review.last_drill_at.as_deref(),
+            review.days_until_due,
+            review.review_receipt_count,
+            review.drill_receipt_count,
+            review.receipt_count,
+            &[
+                (
+                    "authority_filing_claimed",
+                    summary.authority_filing_claimed.to_string(),
+                ),
+                (
+                    "legal_acceptance_claimed",
+                    summary.legal_acceptance_claimed.to_string(),
+                ),
+                (
+                    "legal_certification_claimed",
+                    summary.legal_certification_claimed.to_string(),
+                ),
+                (
+                    "external_delivery_claimed",
+                    summary.external_delivery_claimed.to_string(),
+                ),
+                ("completion_claimed", summary.completion_claimed.to_string()),
+                (
+                    "compliance_certification_claimed",
+                    summary.compliance_certification_claimed.to_string(),
+                ),
+            ],
+        )
+    });
     let breach_reminders = breach_playbooks.values().filter_map(|record| {
         if record.status == PrivacyRecordStatus::Retired {
             return None;
@@ -2229,6 +2282,7 @@ fn privacy_control_review_reminders(
             review.review_receipt_count,
             review.drill_receipt_count,
             review.receipt_count,
+            &[],
         )
     });
     let transfer_reminders = transfer_controls.values().filter_map(|record| {
@@ -2250,10 +2304,14 @@ fn privacy_control_review_reminders(
             review.review_receipt_count,
             review.drill_receipt_count,
             review.receipt_count,
+            &[],
         )
     });
 
-    breach_reminders.chain(transfer_reminders).collect()
+    dpia_reminders
+        .chain(breach_reminders)
+        .chain(transfer_reminders)
+        .collect()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2271,6 +2329,7 @@ fn privacy_review_reminder_from_summary(
     review_receipt_count: usize,
     drill_receipt_count: usize,
     receipt_count: usize,
+    extra_params: &[(&str, String)],
 ) -> Option<DashboardReminder> {
     let (dashboard_status, severity, reason_prefix) = match review_status {
         PrivacyAdvisoryReviewStatus::NoReceipt => (
@@ -2297,6 +2356,42 @@ fn privacy_review_reminder_from_summary(
         .or(last_drill_at)
         .unwrap_or("no local review/drill receipt");
 
+    let mut params = dashboard_alert_params([
+        ("record_id", record_id.to_owned()),
+        ("record_label", record_label.to_owned()),
+        ("record_status", format!("{record_status:?}")),
+        ("review_status", format!("{review_status:?}")),
+        ("next_review_due_at", next_due_text.to_owned()),
+        ("last_local_activity_at", last_activity.to_owned()),
+        (
+            "last_reviewed_at",
+            last_reviewed_at.unwrap_or_default().to_owned(),
+        ),
+        (
+            "last_drill_at",
+            last_drill_at.unwrap_or_default().to_owned(),
+        ),
+        (
+            "days_until_due",
+            days_until_due
+                .map(|value| value.to_string())
+                .unwrap_or_default(),
+        ),
+        ("receipt_count", receipt_count.to_string()),
+        ("review_receipt_count", review_receipt_count.to_string()),
+        ("drill_receipt_count", drill_receipt_count.to_string()),
+        ("local_advisory_only", "true".to_owned()),
+        ("authority_notification_claimed", "false".to_owned()),
+        ("subject_notification_claimed", "false".to_owned()),
+        ("transfer_approval_claimed", "false".to_owned()),
+        ("transfer_execution_claimed", "false".to_owned()),
+        ("external_delivery_configured", "false".to_owned()),
+        ("legal_completion_claimed", "false".to_owned()),
+    ]);
+    for (key, value) in extra_params {
+        params.insert((*key).to_owned(), value.clone());
+    }
+
     Some(DashboardReminder {
         due_date: next_due_text.to_owned(),
         severity: severity.to_owned(),
@@ -2304,44 +2399,15 @@ fn privacy_review_reminder_from_summary(
         reason: format!(
             "Privacy register item \"{record_label}\" {reason_prefix}. {due_phrase} \
              This dashboard reminder is local and advisory only; it does not notify authorities \
-             or subjects, approve or execute transfers, certify adequacy, or claim legal completion."
+             or subjects, file with authorities, approve or execute transfers, approve or complete \
+             DPIAs, perform external delivery, certify adequacy or compliance, claim production \
+             privacy compliance, or claim legal completion."
         ),
         entity_id: "privacy".to_owned(),
         entity_name: "Privacidade".to_owned(),
         source_rule: source_rule.to_owned(),
         source_profile: source_profile.to_owned(),
-        params: dashboard_alert_params([
-            ("record_id", record_id.to_owned()),
-            ("record_label", record_label.to_owned()),
-            ("record_status", format!("{record_status:?}")),
-            ("review_status", format!("{review_status:?}")),
-            ("next_review_due_at", next_due_text.to_owned()),
-            ("last_local_activity_at", last_activity.to_owned()),
-            (
-                "last_reviewed_at",
-                last_reviewed_at.unwrap_or_default().to_owned(),
-            ),
-            (
-                "last_drill_at",
-                last_drill_at.unwrap_or_default().to_owned(),
-            ),
-            (
-                "days_until_due",
-                days_until_due
-                    .map(|value| value.to_string())
-                    .unwrap_or_default(),
-            ),
-            ("receipt_count", receipt_count.to_string()),
-            ("review_receipt_count", review_receipt_count.to_string()),
-            ("drill_receipt_count", drill_receipt_count.to_string()),
-            ("local_advisory_only", "true".to_owned()),
-            ("authority_notification_claimed", "false".to_owned()),
-            ("subject_notification_claimed", "false".to_owned()),
-            ("transfer_approval_claimed", "false".to_owned()),
-            ("transfer_execution_claimed", "false".to_owned()),
-            ("external_delivery_configured", "false".to_owned()),
-            ("legal_completion_claimed", "false".to_owned()),
-        ]),
+        params,
         profile_calendar_plan: None,
         law_refs: Vec::new(),
         action: Some(dashboard_action(
@@ -2349,6 +2415,7 @@ fn privacy_review_reminder_from_summary(
             "notifications.reminder.privacy.review.action",
             Some(
                 match source_profile {
+                    "privacy-dpia" => "/v1/privacy/dpias",
                     "privacy-breach-playbook" => "/v1/privacy/breach-playbooks",
                     "privacy-transfer-control" => "/v1/privacy/transfer-controls",
                     _ => "/v1/privacy",
@@ -2981,8 +3048,8 @@ mod tests {
         BackupRecoveryDrillIsolatedRestoreVerification, BackupRecoveryDrillReceipt,
     };
     use crate::privacy::{
-        BreachEvidenceKind, BreachPlaybookEvidenceReceipt, PrivacyRiskLevel,
-        TransferControlEvidenceReceipt,
+        BreachEvidenceKind, BreachPlaybookEvidenceReceipt, DpiaEvidenceKind, DpiaEvidenceReceipt,
+        PrivacyRiskLevel, TransferControlEvidenceReceipt,
     };
     use crate::settings::{BackupRecoveryPolicySettings, WorkflowReminderSourceSettings};
     use chancela_core::{
@@ -3535,6 +3602,7 @@ mod tests {
                 generated_dispatch_evidence: &generated_dispatch_evidence,
                 imported_documents: &[],
                 registry_extracts: &HashMap::new(),
+                dpia_records: &HashMap::new(),
                 breach_playbooks: &HashMap::new(),
                 transfer_controls: &HashMap::new(),
             },
@@ -3557,12 +3625,36 @@ mod tests {
                 generated_dispatch_evidence: &generated_dispatch_evidence,
                 imported_documents: &[],
                 registry_extracts: &HashMap::new(),
+                dpia_records: &HashMap::new(),
                 breach_playbooks: &HashMap::new(),
                 transfer_controls: &HashMap::new(),
             },
             date!(2026 - 07 - 09),
             &WorkflowReminderSettings::default(),
         )
+    }
+
+    fn dpia_record(
+        id: &str,
+        title: &str,
+        status: PrivacyRecordStatus,
+        receipts: Vec<DpiaEvidenceReceipt>,
+    ) -> DpiaRecord {
+        DpiaRecord {
+            id: DpiaRecordId(Uuid::parse_str(id).expect("uuid")),
+            title: title.to_owned(),
+            purpose: "Local DPIA advisory review".to_owned(),
+            legal_basis: "Operator review basis".to_owned(),
+            data_categories: vec!["member contacts".to_owned()],
+            subprocessors: vec!["Processor SA".to_owned()],
+            risk_level: PrivacyRiskLevel::High,
+            status,
+            evidence_receipts: receipts,
+            created_at: "2025-01-01T00:00:00Z".to_owned(),
+            created_by: "operator".to_owned(),
+            updated_at: "2025-01-01T00:00:00Z".to_owned(),
+            updated_by: "operator".to_owned(),
+        }
     }
 
     fn breach_playbook_record(
@@ -3620,6 +3712,75 @@ mod tests {
 
     #[test]
     fn privacy_control_review_reminders_cover_missing_overdue_and_source_toggle() {
+        let missing_dpia = dpia_record(
+            "00000000-0000-4000-8000-000000000304",
+            "DPIA without receipt",
+            PrivacyRecordStatus::Active,
+            Vec::new(),
+        );
+        let due_soon_dpia = dpia_record(
+            "00000000-0000-4000-8000-000000000305",
+            "DPIA due soon",
+            PrivacyRecordStatus::Active,
+            vec![DpiaEvidenceReceipt {
+                id: "dpia-review-due-soon".to_owned(),
+                evidence_type: DpiaEvidenceKind::Review,
+                recorded_at: "2025-07-20T00:00:00Z".to_owned(),
+                recorded_by: "operator".to_owned(),
+                occurred_at: None,
+                notes: None,
+                authority_filing_completed: false,
+                legal_review_accepted: false,
+                legal_certification_completed: false,
+                external_delivery_completed: false,
+                dpia_completed: false,
+                compliance_certification_completed: false,
+            }],
+        );
+        let overdue_dpia = dpia_record(
+            "00000000-0000-4000-8000-000000000306",
+            "DPIA overdue",
+            PrivacyRecordStatus::Active,
+            vec![DpiaEvidenceReceipt {
+                id: "dpia-review-old".to_owned(),
+                evidence_type: DpiaEvidenceKind::Review,
+                recorded_at: "2025-06-01T00:00:00Z".to_owned(),
+                recorded_by: "operator".to_owned(),
+                occurred_at: None,
+                notes: None,
+                authority_filing_completed: false,
+                legal_review_accepted: false,
+                legal_certification_completed: false,
+                external_delivery_completed: false,
+                dpia_completed: false,
+                compliance_certification_completed: false,
+            }],
+        );
+        let current_dpia = dpia_record(
+            "00000000-0000-4000-8000-000000000307",
+            "Current DPIA review",
+            PrivacyRecordStatus::Active,
+            vec![DpiaEvidenceReceipt {
+                id: "dpia-review-current".to_owned(),
+                evidence_type: DpiaEvidenceKind::Review,
+                recorded_at: "2026-06-01T00:00:00Z".to_owned(),
+                recorded_by: "operator".to_owned(),
+                occurred_at: None,
+                notes: None,
+                authority_filing_completed: false,
+                legal_review_accepted: false,
+                legal_certification_completed: false,
+                external_delivery_completed: false,
+                dpia_completed: false,
+                compliance_certification_completed: false,
+            }],
+        );
+        let retired_dpia = dpia_record(
+            "00000000-0000-4000-8000-000000000308",
+            "Retired DPIA review",
+            PrivacyRecordStatus::Retired,
+            Vec::new(),
+        );
         let missing_breach = breach_playbook_record(
             "00000000-0000-4000-8000-000000000301",
             "Breach playbook without receipt",
@@ -3655,6 +3816,13 @@ mod tests {
                 data_transfer_executed: false,
             }],
         );
+        let dpia_records = HashMap::from([
+            (missing_dpia.id, missing_dpia),
+            (due_soon_dpia.id, due_soon_dpia),
+            (overdue_dpia.id, overdue_dpia),
+            (current_dpia.id, current_dpia),
+            (retired_dpia.id, retired_dpia),
+        ]);
         let breach_playbooks = HashMap::from([
             (missing_breach.id, missing_breach),
             (current_breach.id, current_breach),
@@ -3674,6 +3842,7 @@ mod tests {
                 generated_dispatch_evidence: &[],
                 imported_documents: &[],
                 registry_extracts: &HashMap::new(),
+                dpia_records: &dpia_records,
                 breach_playbooks: &breach_playbooks,
                 transfer_controls: &transfer_controls,
             },
@@ -3681,7 +3850,80 @@ mod tests {
             &policy,
         );
 
-        assert_eq!(reminders.len(), 2);
+        assert_eq!(reminders.len(), 5);
+        let missing_dpia_reminder = reminders
+            .iter()
+            .find(|reminder| {
+                reminder.source_rule == "privacy-dpia-review"
+                    && reminder.params.get("record_label")
+                        == Some(&"DPIA without receipt".to_owned())
+            })
+            .expect("missing DPIA reminder");
+        assert_eq!(missing_dpia_reminder.source_profile, "privacy-dpia");
+        assert_eq!(missing_dpia_reminder.status, "Pending");
+        assert_eq!(missing_dpia_reminder.due_date, "");
+        assert!(
+            missing_dpia_reminder
+                .reason
+                .contains("local and advisory only")
+        );
+        assert!(
+            missing_dpia_reminder
+                .reason
+                .contains("claim legal completion")
+        );
+        assert!(
+            missing_dpia_reminder
+                .reason
+                .contains("claim production privacy compliance")
+        );
+        assert_eq!(
+            missing_dpia_reminder
+                .action
+                .as_ref()
+                .and_then(|action| action.api_href.as_deref()),
+            Some("/v1/privacy/dpias")
+        );
+        assert_eq!(
+            missing_dpia_reminder
+                .action
+                .as_ref()
+                .and_then(|action| action.route.as_deref()),
+            Some("/configuracoes?sec=privacidade")
+        );
+        for key in [
+            "authority_filing_claimed",
+            "legal_acceptance_claimed",
+            "legal_certification_claimed",
+            "external_delivery_claimed",
+            "completion_claimed",
+            "compliance_certification_claimed",
+        ] {
+            assert_eq!(
+                missing_dpia_reminder.params.get(key).map(String::as_str),
+                Some("false"),
+                "{key} should remain a false/no-claim DPIA param",
+            );
+        }
+        assert!(reminders.iter().any(|reminder| {
+            reminder.source_rule == "privacy-dpia-review"
+                && reminder.params.get("record_label") == Some(&"DPIA due soon".to_owned())
+                && reminder.status == "DueSoon"
+                && reminder.due_date == "2026-07-20"
+                && reminder.params.get("days_until_due") == Some(&"11".to_owned())
+        }));
+        assert!(reminders.iter().any(|reminder| {
+            reminder.source_rule == "privacy-dpia-review"
+                && reminder.params.get("record_label") == Some(&"DPIA overdue".to_owned())
+                && reminder.status == "Overdue"
+                && reminder.due_date == "2026-06-01"
+        }));
+        assert!(reminders.iter().all(|reminder| {
+            reminder.params.get("record_label") != Some(&"Current DPIA review".to_owned())
+        }));
+        assert!(reminders.iter().all(|reminder| {
+            reminder.params.get("record_label") != Some(&"Retired DPIA review".to_owned())
+        }));
         assert!(reminders.iter().any(|reminder| {
             reminder.source_rule == "privacy-breach-playbook-review"
                 && reminder.status == "Pending"
@@ -3721,6 +3963,7 @@ mod tests {
                 generated_dispatch_evidence: &[],
                 imported_documents: &[],
                 registry_extracts: &HashMap::new(),
+                dpia_records: &dpia_records,
                 breach_playbooks: &breach_playbooks,
                 transfer_controls: &transfer_controls,
             },
@@ -5525,6 +5768,7 @@ mod tests {
                 generated_dispatch_evidence: &generated_dispatch_evidence,
                 imported_documents: &[],
                 registry_extracts: &fixture.registry_extracts,
+                dpia_records: &HashMap::new(),
                 breach_playbooks: &HashMap::new(),
                 transfer_controls: &HashMap::new(),
             },

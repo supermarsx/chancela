@@ -1186,6 +1186,23 @@ describe('DashboardPage', () => {
       ...baseDashboard,
       reminders: [
         {
+          due_date: '2026-07-20',
+          severity: 'Info',
+          status: 'DueSoon',
+          reason:
+            'Local DPIA review reminder only; no authority filing, legal approval, external delivery, completion, or compliance certification is claimed.',
+          entity_id: 'dpia-review-1',
+          entity_name: 'Biometric access DPIA',
+          source_rule: 'privacy-dpia-review',
+          source_profile: 'privacy-dpia',
+          action: {
+            kind: 'open_settings_privacy',
+            label_key: 'settings.privacy.title',
+            api_href: '/v1/privacy/dpias',
+            route: '/configuracoes?sec=privacidade',
+          },
+        },
+        {
           due_date: '2026-07-10',
           severity: 'Warning',
           status: 'Overdue',
@@ -1227,7 +1244,19 @@ describe('DashboardPage', () => {
     await openDashboardTab('Fila de trabalho');
 
     const queue = await screen.findByRole('list', { name: 'Fila de trabalho do painel' });
-    expect(within(queue).getAllByRole('listitem')).toHaveLength(2);
+    expect(within(queue).getAllByRole('listitem')).toHaveLength(3);
+
+    const dpia = within(queue).getByText('Biometric access DPIA').closest('li');
+    expect(dpia).toBeTruthy();
+    expect(within(dpia!).getByText('Próximo')).toBeTruthy();
+    expect(
+      within(dpia!).getByText('Fonte privacy-dpia-review / privacy-dpia'),
+    ).toBeTruthy();
+    expect(
+      within(dpia!)
+        .getByRole('link', { name: 'Biometric access DPIA' })
+        .getAttribute('href'),
+    ).toBe('/configuracoes?sec=privacidade');
 
     const breach = within(queue).getByText('Supplier token breach playbook').closest('li');
     expect(breach).toBeTruthy();

@@ -22,6 +22,7 @@ import {
 
 const USER_ID = 'd7e7ce4d-cc50-48bc-a0df-8705f7f42691';
 const PRIVACY_SETTINGS_ROUTE = '/configuracoes?sec=privacidade';
+const PRIVACY_DPIA_REVIEW_RULE = 'privacy-dpia-review';
 const PRIVACY_BREACH_REVIEW_RULE = 'privacy-breach-playbook-review';
 const PRIVACY_TRANSFER_REVIEW_RULE = 'privacy-transfer-control-review';
 
@@ -65,13 +66,21 @@ test('privacy control review reminders stay local and follow the settings source
 
   await page.goto('/?painel=queue');
   const initialQueue = await dashboardQueue(page);
+  await expect(initialQueue).toContainText('Biometric access DPIA');
   await expect(initialQueue).toContainText('Supplier token breach playbook');
   await expect(initialQueue).toContainText('UK support access transfer review');
+  await expect(initialQueue).toContainText(
+    `Fonte ${PRIVACY_DPIA_REVIEW_RULE} / privacy-dpia`,
+  );
   await expect(initialQueue).toContainText(
     `Fonte ${PRIVACY_BREACH_REVIEW_RULE} / breach:breach-review-e2e`,
   );
   await expect(initialQueue).toContainText(
     `Fonte ${PRIVACY_TRANSFER_REVIEW_RULE} / transfer:transfer-review-e2e`,
+  );
+  await expect(initialQueue.getByRole('link', { name: 'Biometric access DPIA' })).toHaveAttribute(
+    'href',
+    PRIVACY_SETTINGS_ROUTE,
   );
   await expect(
     initialQueue.getByRole('link', { name: 'Supplier token breach playbook' }),
@@ -94,6 +103,7 @@ test('privacy control review reminders stay local and follow the settings source
 
   await page.goto('/?painel=queue');
   await expect(page.getByText('Sem trabalho pendente derivado do painel.')).toBeVisible();
+  await expect(page.getByText(PRIVACY_DPIA_REVIEW_RULE)).toHaveCount(0);
   await expect(page.getByText(PRIVACY_BREACH_REVIEW_RULE)).toHaveCount(0);
   await expect(page.getByText(PRIVACY_TRANSFER_REVIEW_RULE)).toHaveCount(0);
 
@@ -366,6 +376,23 @@ function dashboardFixture(settings: Settings): Dashboard {
     alerts: [],
     reminders: privacyReviewsEnabled
       ? [
+          {
+            due_date: '2026-07-20',
+            severity: 'Info',
+            status: 'DueSoon',
+            reason:
+              'Local review reminder for DPIA evidence only; no authority filing, legal acceptance, external delivery, completion, or compliance certification is claimed.',
+            entity_id: 'dpia-review-e2e',
+            entity_name: 'Biometric access DPIA',
+            source_rule: PRIVACY_DPIA_REVIEW_RULE,
+            source_profile: 'privacy-dpia',
+            action: {
+              kind: 'open_settings_privacy',
+              label_key: 'settings.privacy.title',
+              api_href: '/v1/privacy/dpias',
+              route: PRIVACY_SETTINGS_ROUTE,
+            },
+          },
           {
             due_date: '2026-07-10',
             severity: 'Warning',
