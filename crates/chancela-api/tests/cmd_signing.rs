@@ -25,7 +25,7 @@ use der::{Encode, EncodePem};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use spki::{AlgorithmIdentifierOwned, SubjectPublicKeyInfoOwned};
-use tokio::sync::Mutex as AsyncMutex;
+use tokio::sync::RwLock as AsyncRwLock;
 use tower::ServiceExt;
 use x509_cert::certificate::{Certificate, TbsCertificate, Version};
 use x509_cert::name::Name;
@@ -67,7 +67,15 @@ const PROVIDER_CREDENTIAL_ENV_KEYS: [&str; 3] = [
     "CHANCELA_CREDENTIAL_KEY_FILE",
     "CHANCELA_CREDENTIAL_STRICT",
 ];
-static ENV_LOCK: AsyncMutex<()> = AsyncMutex::const_new(());
+/// Serializes access to the process-global `CHANCELA_CMD_*` / `CHANCELA_CREDENTIAL_*` env vars.
+///
+/// Every test drives `resolve_cmd_config`, which falls back to `CmdConfig::from_env()` whenever a
+/// test has no stored provider credentials — so ALL tests *read* these env vars during `initiate`.
+/// The env-*mutating* tests take the write lock (exclusive); the env-*reading* happy-path tests take
+/// the read lock (shared, so they still run in parallel with each other) but never overlap a mutator.
+/// Without this, a mutator's transient malformed-env fixture could leak into a concurrent happy-path
+/// test's `initiate` and spuriously flip it to 422 — the long-standing parallel-test race.
+static ENV_LOCK: AsyncRwLock<()> = AsyncRwLock::const_new(());
 
 // --- ephemeral in-test RSA signer (mirrors chancela-pades/signing tests) ----------------------
 
@@ -691,7 +699,7 @@ async fn expire_pending_session(state: &AppState, session_id: &str) {
 
 #[tokio::test]
 async fn cmd_initiate_uses_stored_application_id_with_env_cleared() {
-    let _guard = ENV_LOCK.lock().await;
+    let _guard = ENV_LOCK.write().await;
     let keys = restore_keys();
     let _env = EnvRestore::capture_and_remove(&keys);
     set_provider_credential_test_key();
@@ -727,7 +735,7 @@ async fn cmd_initiate_uses_stored_application_id_with_env_cleared() {
 
 #[tokio::test]
 async fn cmd_stored_application_id_beats_env_application_id() {
-    let _guard = ENV_LOCK.lock().await;
+    let _guard = ENV_LOCK.write().await;
     let keys = restore_keys();
     let _env = EnvRestore::capture(&keys);
     clear_cmd_env();
@@ -766,7 +774,7 @@ async fn cmd_stored_application_id_beats_env_application_id() {
 
 #[tokio::test]
 async fn cmd_partial_stored_record_fails_without_env_mixing() {
-    let _guard = ENV_LOCK.lock().await;
+    let _guard = ENV_LOCK.write().await;
     let keys = restore_keys();
     let _env = EnvRestore::capture(&keys);
     clear_cmd_env();
@@ -822,7 +830,7 @@ async fn cmd_partial_stored_record_fails_without_env_mixing() {
 
 #[tokio::test]
 async fn cmd_env_application_id_still_works_without_stored_record() {
-    let _guard = ENV_LOCK.lock().await;
+    let _guard = ENV_LOCK.write().await;
     let keys = restore_keys();
     let _env = EnvRestore::capture(&keys);
     clear_cmd_env();
@@ -862,7 +870,7 @@ async fn cmd_env_application_id_still_works_without_stored_record() {
 
 #[tokio::test]
 async fn cmd_malformed_env_fails_closed_without_settings_fallback() {
-    let _guard = ENV_LOCK.lock().await;
+    let _guard = ENV_LOCK.write().await;
     let keys = restore_keys();
     let _env = EnvRestore::capture(&keys);
     clear_cmd_env();
@@ -913,6 +921,8 @@ async fn cmd_malformed_env_fails_closed_without_settings_fallback() {
 
 #[tokio::test]
 async fn cmd_signing_round_trip_produces_a_validating_signed_pdf() {
+    // Read env under a shared lock so a concurrent env-mutating test can't leak its fixture.
+    let _env_guard = ENV_LOCK.read().await;
     let dir = TempDir::new();
     let leaf = RsaSigner::new("Amélia Marques (CMD teste)", 1);
     let issuer = RsaSigner::new("Encosto Estratégico — EC Teste", 2);
@@ -1117,6 +1127,8 @@ async fn cmd_signing_round_trip_produces_a_validating_signed_pdf() {
 
 #[tokio::test]
 async fn cmd_signing_timestamps_when_tsa_configured() {
+    // Read env under a shared lock so a concurrent env-mutating test can't leak its fixture.
+    let _env_guard = ENV_LOCK.read().await;
     let dir = TempDir::new();
     let leaf = RsaSigner::new("Amélia Marques (CMD teste)", 1);
     let issuer = RsaSigner::new("Encosto Estratégico — EC Teste", 2);
@@ -1196,6 +1208,8 @@ async fn cmd_signing_timestamps_when_tsa_configured() {
 
 #[tokio::test]
 async fn cmd_tsa_failure_leaves_no_signed_artifact() {
+    // Read env under a shared lock so a concurrent env-mutating test can't leak its fixture.
+    let _env_guard = ENV_LOCK.read().await;
     let dir = TempDir::new();
     let leaf = RsaSigner::new("Amélia Marques (CMD teste)", 1);
     let issuer = RsaSigner::new("Encosto Estratégico — EC Teste", 2);
@@ -1246,6 +1260,8 @@ async fn cmd_tsa_failure_leaves_no_signed_artifact() {
 
 #[tokio::test]
 async fn cmd_malformed_tsa_token_leaves_no_signed_artifact() {
+    // Read env under a shared lock so a concurrent env-mutating test can't leak its fixture.
+    let _env_guard = ENV_LOCK.read().await;
     let dir = TempDir::new();
     let leaf = RsaSigner::new("Amélia Marques (CMD teste)", 1);
     let issuer = RsaSigner::new("Encosto Estratégico — EC Teste", 2);
@@ -1296,7 +1312,7 @@ async fn cmd_malformed_tsa_token_leaves_no_signed_artifact() {
 
 #[tokio::test]
 async fn cmd_initiate_requires_application_id_and_leaves_no_signature() {
-    let _guard = ENV_LOCK.lock().await;
+    let _guard = ENV_LOCK.write().await;
     let _env = without_cmd_env();
     let dir = TempDir::new();
     let leaf = RsaSigner::new("Amélia Marques (CMD teste)", 1);
@@ -1338,7 +1354,7 @@ async fn cmd_initiate_requires_application_id_and_leaves_no_signature() {
 
 #[tokio::test]
 async fn cmd_prod_without_ama_certificate_fails_before_scmd_and_leaves_no_signature() {
-    let _guard = ENV_LOCK.lock().await;
+    let _guard = ENV_LOCK.write().await;
     let _env = without_cmd_env();
     let dir = TempDir::new();
     let leaf = RsaSigner::new("Amélia Marques (CMD teste)", 1);
@@ -1379,7 +1395,7 @@ async fn cmd_prod_without_ama_certificate_fails_before_scmd_and_leaves_no_signat
 
 #[tokio::test]
 async fn cmd_initiate_rejects_withdrawn_and_unknown_trust_policy() {
-    let _guard = ENV_LOCK.lock().await;
+    let _guard = ENV_LOCK.write().await;
     let _env = without_cmd_env();
     for trust_status in [TrustedListStatus::Withdrawn, TrustedListStatus::Unknown] {
         let dir = TempDir::new();
@@ -1419,6 +1435,8 @@ async fn cmd_initiate_rejects_withdrawn_and_unknown_trust_policy() {
 
 #[tokio::test]
 async fn pending_session_survives_a_restart_and_confirms() {
+    // Read env under a shared lock so a concurrent env-mutating test can't leak its fixture.
+    let _env_guard = ENV_LOCK.read().await;
     let dir = TempDir::new();
     let leaf = RsaSigner::new("Amélia Marques (CMD teste)", 1);
     let issuer = RsaSigner::new("Encosto Estratégico — EC Teste", 2);
@@ -1490,6 +1508,8 @@ async fn pending_session_survives_a_restart_and_confirms() {
 
 #[tokio::test]
 async fn pending_session_rejects_unknown_session_wrong_actor_and_wrong_act() {
+    // Read env under a shared lock so a concurrent env-mutating test can't leak its fixture.
+    let _env_guard = ENV_LOCK.read().await;
     let dir = TempDir::new();
     let leaf = RsaSigner::new("Amélia Marques (CMD teste)", 1);
     let issuer = RsaSigner::new("Encosto Estratégico — EC Teste", 2);
@@ -1556,6 +1576,8 @@ async fn pending_session_rejects_unknown_session_wrong_actor_and_wrong_act() {
 
 #[tokio::test]
 async fn expired_pending_session_returns_gone_and_leaves_no_signature() {
+    // Read env under a shared lock so a concurrent env-mutating test can't leak its fixture.
+    let _env_guard = ENV_LOCK.read().await;
     let dir = TempDir::new();
     let leaf = RsaSigner::new("Amélia Marques (CMD teste)", 1);
     let issuer = RsaSigner::new("Encosto Estratégico — EC Teste", 2);
@@ -1612,6 +1634,8 @@ async fn expired_pending_session_returns_gone_and_leaves_no_signature() {
 
 #[tokio::test]
 async fn cmd_confirm_transport_error_maps_to_422_and_leaves_no_signature() {
+    // Read env under a shared lock so a concurrent env-mutating test can't leak its fixture.
+    let _env_guard = ENV_LOCK.read().await;
     let dir = TempDir::new();
     let leaf = RsaSigner::new("Amélia Marques (CMD teste)", 1);
     let issuer = RsaSigner::new("Encosto Estratégico — EC Teste", 2);
@@ -1668,6 +1692,8 @@ async fn cmd_confirm_transport_error_maps_to_422_and_leaves_no_signature() {
 
 #[tokio::test]
 async fn wrong_otp_is_a_clean_error_and_leaves_no_signature() {
+    // Read env under a shared lock so a concurrent env-mutating test can't leak its fixture.
+    let _env_guard = ENV_LOCK.read().await;
     let dir = TempDir::new();
     let leaf = RsaSigner::new("Amélia Marques (CMD teste)", 1);
     let issuer = RsaSigner::new("Encosto Estratégico — EC Teste", 2);
@@ -1714,6 +1740,8 @@ async fn wrong_otp_is_a_clean_error_and_leaves_no_signature() {
 
 #[tokio::test]
 async fn require_qualified_gates_the_status_not_the_seal() {
+    // Read env under a shared lock so a concurrent env-mutating test can't leak its fixture.
+    let _env_guard = ENV_LOCK.read().await;
     let dir = TempDir::new();
     let leaf = RsaSigner::new("Amélia Marques (CMD teste)", 1);
     let issuer = RsaSigner::new("Encosto Estratégico — EC Teste", 2);
@@ -1789,6 +1817,8 @@ async fn require_qualified_gates_the_status_not_the_seal() {
 
 #[tokio::test]
 async fn initiate_before_seal_is_conflict() {
+    // Read env under a shared lock so a concurrent env-mutating test can't leak its fixture.
+    let _env_guard = ENV_LOCK.read().await;
     let dir = TempDir::new();
     let leaf = RsaSigner::new("Amélia Marques (CMD teste)", 1);
     let issuer = RsaSigner::new("Encosto Estratégico — EC Teste", 2);
