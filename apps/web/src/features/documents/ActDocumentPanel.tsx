@@ -1008,6 +1008,7 @@ function DocumentPdfAccessibilityEvidence({
   const status = metadataText(report?.evidence_status) ?? metadataText(index?.evidence_status);
   const source = metadataText(report?.report_source);
   const version = typeof report?.report_version === 'number' ? String(report.report_version) : null;
+  const pdfUaClaimed = report?.pdf_ua_claimed ?? index?.pdf_ua_claimed ?? false;
   const blockers = pdfAccessibilityBlockers(report, index);
   const unavailableReason =
     status === 'pdf_accessibility_report_unavailable'
@@ -1072,7 +1073,7 @@ function DocumentPdfAccessibilityEvidence({
         <div>
           <dt>{t('documents.accessibility.noClaimFlags')}</dt>
           <dd className="row-wrap">
-            <code className="mono">pdf_ua_claimed=false</code>
+            <code className="mono">pdf_ua_claimed={String(pdfUaClaimed)}</code>
             <code className="mono">dglab_certification_claimed=false</code>
             <code className="mono">legal_validity_claimed=false</code>
           </dd>

@@ -128,10 +128,10 @@ const bundle: DocumentBundle = {
       pdf_ua_claimed: false,
       dglab_certification_claimed: false,
       legal_validity_claimed: false,
-      report_version: 9,
+      report_version: 12,
       pdf_ua_blockers: ['limited_tagged_structure', 'missing_role_map'],
       accessibility_report_json: {
-        version: 9,
+        version: 12,
         pdf_ua_claimed: false,
         pdf_ua_blockers: ['limited_tagged_structure', 'missing_role_map'],
       },
@@ -867,7 +867,7 @@ describe('ActDocumentPanel — download only post-seal', () => {
     });
     expect(within(evidence).getByText('Evidência anexada')).toBeTruthy();
     expect(within(evidence).getByText('chancela_doc_pdfa_accessibility_report')).toBeTruthy();
-    expect(within(evidence).getByText('9')).toBeTruthy();
+    expect(within(evidence).getByText('12')).toBeTruthy();
     expect(within(evidence).getByText('2 bloqueio(s)')).toBeTruthy();
     expect(within(evidence).getByText('limited_tagged_structure')).toBeTruthy();
     expect(within(evidence).getByText('missing_role_map')).toBeTruthy();
@@ -947,6 +947,48 @@ describe('ActDocumentPanel — download only post-seal', () => {
       within(evidence).queryByText('evidence/pdf-accessibility/{document_id}.json'),
     ).toBeNull();
     expect(within(evidence).queryByRole('link')).toBeNull();
+  });
+
+  it('renders a true pdf_ua_claimed flag without adding a compliance claim badge', async () => {
+    const conformingBundle: DocumentBundle = {
+      ...bundle,
+      validation_report: {
+        ...bundle.validation_report,
+        evidence_index: {
+          ...bundle.validation_report.evidence_index!,
+          pdf_accessibility: {
+            ...bundle.validation_report.evidence_index!.pdf_accessibility!,
+            pdf_ua_claimed: true,
+            pdf_ua_blockers: [],
+          },
+        },
+        pdf_accessibility: {
+          ...bundle.validation_report.pdf_accessibility!,
+          pdf_ua_claimed: true,
+          pdf_ua_blockers: [],
+        },
+      },
+    };
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.includes('/document/bundle')) return json(conformingBundle);
+      const imports = emptyImports(url);
+      if (imports) return imports;
+      return Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    const sealed: ActView = { ...baseAct, state: 'Sealed', ata_number: 1 };
+    renderWithProviders(<ActDocumentPanel act={sealed} family="CommercialCompany" />);
+
+    const evidence = await screen.findByRole('group', {
+      name: 'Evidência técnica de acessibilidade PDF',
+    });
+    expect(within(evidence).getByText('pdf_ua_claimed=true')).toBeTruthy();
+    expect(within(evidence).getByText('dglab_certification_claimed=false')).toBeTruthy();
+    expect(within(evidence).getByText('legal_validity_claimed=false')).toBeTruthy();
+    expect(within(evidence).queryByText(/PDF\/UA conforme/i)).toBeNull();
+    expect(within(evidence).queryByText(/Certificação DGLAB confirmada/i)).toBeNull();
+    expect(within(evidence).queryByText(/Validade legal confirmada/i)).toBeNull();
   });
 
   it('renders missing template id and profile honestly instead of blank metadata', async () => {

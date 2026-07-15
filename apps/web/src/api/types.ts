@@ -1109,7 +1109,7 @@ export interface DocumentBundlePdfAccessibilityEvidenceIndex {
   archive_path_pattern: string;
   evidence_status: string;
   status_scope: string;
-  pdf_ua_claimed: false;
+  pdf_ua_claimed: boolean;
   dglab_certification_claimed: false;
   legal_validity_claimed: false;
   pdf_ua_blockers: string[];
@@ -1135,7 +1135,7 @@ export interface PdfAccessibilityEvidenceReport {
   act_id: string | null;
   template_id: string;
   report_source: string;
-  pdf_ua_claimed: false;
+  pdf_ua_claimed: boolean;
   dglab_certification_claimed: false;
   legal_validity_claimed: false;
   report_version: number | null;
