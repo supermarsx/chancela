@@ -10421,12 +10421,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `c2194d9`",
+    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `daf8288`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `c2194d9`",
+    "Focused Gate Snapshot Through `daf8288`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -11066,7 +11066,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `c2194d9`",
+    "Current checkpoint metadata/static checks through `daf8288`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -11601,7 +11601,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `c2194d90ebf970ff51ecfc308b5805059c926492`",
+    "implementation snapshot `daf8288a02febd0a8c0169ac56017e186d1bafb0`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -12271,38 +12271,58 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Current `c2194d9` keeps Workflows/Legal/Compliance/UX/API/CI **PARTIAL**",
+    "Current `daf8288` keeps Workflows/Legal/Compliance/UX/API/CI **PARTIAL**",
     "spec coverage convening recipient editor checkpoint marker",
   );
   assertFileContainsNormalized(
     "SPEC-COVERAGE.md",
-    "contact/reference value maps to the existing `reference` field because no separate contact field exists",
-    "spec coverage convening recipient reference-field boundary marker",
+    "`ConveningRecipient.contact` is now additive optional recipient contact metadata and remains distinct from dispatch proof/tracking `reference`",
+    "spec coverage convening recipient contact/reference split marker",
   );
   assertFileContainsNormalized(
     "SPEC-COVERAGE.md",
-    "dispatch evidence action stays disabled until recipient names exist in the persisted act",
+    "dispatch stamping updates proof `reference` / `dispatched_at` for matching persisted recipients while preserving existing `contact`",
     "spec coverage convening recipient persisted-state gate marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "Convocatoria templates render recipient contact and proof reference distinctly",
+    "spec coverage convening recipient template distinction marker",
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "Convening recipient editor markers pin local workflow metadata only",
+    "Convening recipient contact metadata markers pin local workflow/template\nmetadata only",
     "CI checkpoints convening recipient editor marker",
   );
   assertFileContainsNormalized(
     "docs/CI-CHECKPOINTS.md",
-    "maps contact/reference input to the existing `reference` field because there is no separate contact field",
-    "CI checkpoints convening recipient reference-field marker",
+    "`ConveningRecipient.contact` is additive optional contact metadata distinct from dispatch proof/tracking `reference`",
+    "CI checkpoints convening recipient contact/reference split marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current `c2194d9` convening recipient editor checks",
+    "Current `daf8288` convening recipient contact metadata checks",
     "CI/E2E hardening plan convening recipient editor marker",
   );
   assertFileContainsNormalized(
     "docs/CI-E2E-HARDENING-PLAN.md",
     "Local dispatch evidence stays disabled until recipient names exist in persisted act state",
     "CI/E2E hardening plan convening recipient persisted-state gate marker",
+  );
+  assertFileContains(
+    "crates/chancela-core/src/act.rs",
+    "local contact metadata). This is distinct from dispatch proof/tracking data.",
+    "core convening recipient contact metadata boundary marker",
+  );
+  assertFileContains(
+    "crates/chancela-core/src/act.rs",
+    "Do not treat this as contact metadata.",
+    "core convening recipient reference proof boundary marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/dto.rs",
+    "pub contact: Option<String>,",
+    "API convening recipient contact view/input marker",
   );
   assertFileContains(
     "apps/web/src/features/acts/AtaEditorPage.tsx",
@@ -12316,13 +12336,23 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/acts/AtaEditorPage.tsx",
-    "Contacto/referência",
-    "Ata editor convening recipient contact/reference UI marker",
+    "<Field label=\"Contacto\" htmlFor={contactId}>",
+    "Ata editor convening recipient contact UI marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/AtaEditorPage.tsx",
+    "<Field label=\"Referência de expedição\" htmlFor={referenceId}>",
+    "Ata editor convening recipient proof-reference UI marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/AtaEditorPage.tsx",
+    "contact: orNull(recipient.contact ?? '')",
+    "Ata editor convening recipient contact field marker",
   );
   assertFileContains(
     "apps/web/src/features/acts/AtaEditorPage.tsx",
     "reference: orNull(recipient.reference ?? '')",
-    "Ata editor convening recipient existing reference field marker",
+    "Ata editor convening recipient proof reference field marker",
   );
   assertFileContains(
     "apps/web/src/features/acts/AtaEditorPage.tsx",
@@ -12346,6 +12376,16 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/acts/AtaEditorStructured.test.tsx",
+    "contact: 'carla@example.test'",
+    "Ata editor convening recipient contact payload coverage marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/AtaEditorStructured.test.tsx",
+    "getByLabelText('Referência de expedição')",
+    "Ata editor convening recipient proof reference field coverage marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/AtaEditorStructured.test.tsx",
     "records convening dispatch evidence for a UI-added recipient after saving",
     "Ata editor convening recipient save-before-dispatch coverage marker",
   );
@@ -12356,8 +12396,48 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/e2e/convening-dispatch-evidence.spec.ts",
+    "contact: 'ana.socia@example.test'",
+    "browser convening recipient contact payload coverage marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/convening-dispatch-evidence.spec.ts",
+    "firstRecipient.getByLabel('Referência de expedição')",
+    "browser convening recipient proof reference field coverage marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/convening-dispatch-evidence.spec.ts",
     "await expect(recordButton).toBeDisabled();",
     "browser convening recipient dispatch-disabled-before-save marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "legacy reference must not be copied into contact",
+    "API convening recipient no legacy reference migration coverage marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "GET must not infer contact from legacy reference",
+    "API convening recipient no inferred contact coverage marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "assert_eq!(amelia[\"contact\"], \"amelia@example.test\");",
+    "API convening dispatch preserves recipient contact coverage marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "assert_eq!(amelia[\"reference\"], \"RC123\");",
+    "API convening dispatch proof reference stamping coverage marker",
+  );
+  assertFileContains(
+    "crates/chancela-templates/src/lib.rs",
+    "recipient contact missing",
+    "template convening recipient contact render coverage marker",
+  );
+  assertFileContains(
+    "crates/chancela-templates/src/lib.rs",
+    "dispatch reference missing",
+    "template convening recipient proof reference render coverage marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",

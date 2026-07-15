@@ -87,8 +87,8 @@ condominium annual profile-calendar Jan 15 local advisory markers plus
 dashboard-only annual reminder localization markers for CSC, association,
 foundation, and cooperative profile-calendar rules, convocation act-review
 guidance markers plus convening dispatch evidence capture markers, convening
-recipient editor metadata markers, and focused route-stubbed convening dispatch
-browser proof, and
+recipient contact metadata markers, and focused route-stubbed convening
+dispatch browser proof, and
 convocation-notice local WFL/legal-calendar advisory markers for
 `act-convening-notice` open-act reminders including the missing-meeting-date
 non-computed reminder path and focused `#convening-guidance` workflow UI
@@ -698,15 +698,18 @@ behavior, send notifications, perform external delivery, or claim legal
 authority, legal sufficiency, compliance completion, workflow completion,
 registry/DRE/provider acceptance, legal effect, or legal/compliance completion.
 
-Convening recipient editor markers pin local workflow metadata only: the Ata
-editor exposes recipient rows for name, contact/reference, channel, and
-dispatched date, persists them through the existing `updateAct` /
-`UpdateActBody.convening` path, filters blank-name rows out of the saved payload,
-and maps contact/reference input to the existing `reference` field because
-there is no separate contact field. Dispatch evidence remains disabled until
-recipient names are present in the persisted act, so UI-created recipients must
-be saved before local dispatch evidence can stamp them. These markers do not
-change backend behavior, send notifications, perform email/SMS/provider
+Convening recipient contact metadata markers pin local workflow/template
+metadata only: `ConveningRecipient.contact` is additive optional contact
+metadata distinct from dispatch proof/tracking `reference`; the Ata editor
+exposes separate `Contacto` and `Referência de expedição` inputs, persists
+contact through the existing `updateAct` / `UpdateActBody.convening` path, and
+filters blank-name rows out of the saved payload. Legacy ambiguous `reference`
+values are not migrated into `contact`. Dispatch evidence remains disabled
+until recipient names are present in the persisted act, so UI-created
+recipients must be saved before local dispatch evidence can stamp proof
+`reference` / `dispatched_at`; stamping preserves existing `contact`.
+Convocatoria templates render contact and proof reference distinctly. These
+markers do not send notifications, perform email/SMS/provider delivery, confirm
 delivery, prove legal sufficiency, complete compliance or workflow state, or
 claim registry/DRE/provider acceptance, legal effect, or legal/compliance
 completion.

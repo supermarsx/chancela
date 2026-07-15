@@ -1,8 +1,8 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `c2194d9`,
-including coverage notes for convening recipient editor metadata before local
+and implementation snapshot `daf8288`,
+including coverage notes for convening recipient contact metadata before local
 dispatch evidence stamping, route-stubbed convening dispatch browser proof,
 convening dispatch evidence capture UI,
 convocation reminder guidance routing,
@@ -893,11 +893,11 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `c2194d9`
+## Focused Gate Snapshot Through `daf8288`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08` and checkpoint-promoted on 2026-07-15 for
-current implementation head `c2194d9`. This is not an exhaustive current
+current implementation head `daf8288`. This is not an exhaustive current
 green-run claim; browser, Docker, desktop, package signing/notarization, image
 signing/attestation, and live-provider limits above still apply.
 
@@ -1848,19 +1848,20 @@ settingsDefaults.test.ts contracts.test.ts`.
   legal-authority, legal-sufficiency, provider, certification, external
   delivery, workflow-completion, DRE/source-authority, registry acceptance,
   legal effect, or legal/compliance completion claim.
-- Current `c2194d9` convening recipient editor checks: focused `npm run test
-  --workspace apps/web -- AtaEditorStructured.test.tsx` (27 tests), `npm run
-  test:browser --workspace apps/web -- e2e/convening-dispatch-evidence.spec.ts`
-  (1 Chromium test), `npm run build --workspace apps/web`, `git diff --check`,
-  and `git diff --check HEAD~1..HEAD` passed. The Ata editor now exposes
-  recipient rows for name, contact/reference, channel, and dispatched date,
-  persists them through the existing `updateAct` /
-  `UpdateActBody.convening` path, filters blank-name rows from the saved
-  payload, and maps contact/reference to the existing `reference` field because
-  there is no separate contact field. Local dispatch evidence stays disabled
-  until recipient names exist in persisted act state, so UI-created recipients
-  must be saved before dispatch evidence can stamp them. This remains local
-  workflow metadata/evidence capture only: no email/SMS/provider delivery,
+- Current `daf8288` convening recipient contact metadata checks: focused core,
+  API, template, AtaEditor convening, route-stubbed browser, web build, and
+  whitespace checks passed before this checkpoint. `ConveningRecipient.contact`
+  is additive optional recipient contact metadata distinct from dispatch
+  proof/tracking `reference`; the Ata editor exposes separate `Contacto` and
+  `Referência de expedição` inputs, persists contact through the existing
+  `updateAct` / `UpdateActBody.convening` path, filters blank-name rows from
+  the saved payload, and does not migrate legacy ambiguous `reference` values
+  into `contact`. Local dispatch evidence stays disabled until recipient names
+  exist in persisted act state, so UI-created recipients must be saved before
+  dispatch evidence can stamp proof `reference` / `dispatched_at`; stamping
+  preserves existing `contact`. Convocatoria templates render contact and proof
+  reference distinctly. This remains local workflow metadata/template/evidence
+  capture only: no email/SMS sending, provider delivery, delivery confirmation,
   legal sufficiency, compliance completion, workflow completion, legal effect,
   registry/DRE/provider acceptance, or legal/compliance completion claim is
   added.
@@ -2070,15 +2071,16 @@ settingsDefaults.test.ts contracts.test.ts`.
   full RBAC/delegation-policy completion, tenant authorization proof,
   legal-capacity verification, broad security certification, or spec
   completion.
-- Current checkpoint metadata/static checks through `c2194d9`
+- Current checkpoint metadata/static checks through `daf8288`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
   `git diff --check -- SPEC-COVERAGE.md docs\CI-E2E-HARDENING-PLAN.md
   docs\CI-CHECKPOINTS.md scripts\checkpoint-recent-landed.mjs`.
   These pin the spec snapshot,
-  hardening-plan head, route-stubbed convening dispatch browser proof,
-  convening dispatch evidence capture, convocation
+  hardening-plan head, convening recipient contact metadata, route-stubbed
+  convening dispatch browser proof, convening dispatch evidence capture,
+  convocation
   reminder guidance routing, convocation act-review guidance, convocation-notice
   advisory reminders, dashboard annual
   reminder localization, automated-review
