@@ -531,6 +531,7 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/privacy/dsr-requests/{id}/complete", RouteClass::Gated), // POST user.manage@Global
     ("/v1/privacy/processors", RouteClass::Gated),  // GET/POST user.manage|settings.manage@Global
     ("/v1/privacy/processors/{id}", RouteClass::Gated), // PATCH user.manage|settings.manage@Global
+    ("/v1/privacy/dpia-template", RouteClass::Gated), // GET user.manage|settings.manage@Global
     ("/v1/privacy/dpias", RouteClass::Gated),       // GET/POST user.manage|settings.manage@Global
     ("/v1/privacy/dpias/{id}", RouteClass::Gated),  // PATCH user.manage|settings.manage@Global
     ("/v1/privacy/breach-playbooks", RouteClass::Gated), // GET/POST user.manage|settings.manage@Global

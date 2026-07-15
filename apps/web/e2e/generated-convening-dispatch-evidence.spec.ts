@@ -556,6 +556,8 @@ function convocatoriaTemplateFixture(): TemplateSummary {
     rule_pack_id: 'csc',
     law_references: [],
     locale: 'pt-PT',
+    editable: false,
+    source: 'builtin',
   };
 }
 

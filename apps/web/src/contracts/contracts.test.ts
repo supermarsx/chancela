@@ -38,6 +38,7 @@ import {
   ENTITY_KINDS,
   LAW_DIPLOMA_KINDS,
   LAW_VERIFICATIONS,
+  LIFECYCLE_STAGES,
   LOCALES,
   MEETING_CHANNELS,
   NUMBERING_SCHEMES,
@@ -246,6 +247,9 @@ import {
   type RetentionWorkflowBlocker,
   type TransferControlEvidenceReceipt,
   type TransferControlView,
+  type TemplateImportVerdict,
+  type TemplateLawReference,
+  type TemplateSummary,
   type SigningCmdSettings,
   type SigningProviderMetadata,
   type SigningSettings,
@@ -3581,6 +3585,105 @@ function assertPaperBookOcrRun(obj: unknown, label: string): PaperBookOcrRunView
   return result;
 }
 
+function assertTemplateLawReference(obj: unknown, label: string): TemplateLawReference {
+  const reference = assertExactKeys<TemplateLawReference>(
+    obj,
+    {
+      source_id: true,
+      source_label: true,
+      citation: true,
+      source: true,
+      verification: true,
+    },
+    label,
+    ['article', 'threshold_id'],
+  );
+  expect(reference.source_id.length, `${label}.source_id should be non-empty`).toBeGreaterThan(0);
+  expect(
+    reference.source_label.length,
+    `${label}.source_label should be non-empty`,
+  ).toBeGreaterThan(0);
+  expect(reference.citation.length, `${label}.citation should be non-empty`).toBeGreaterThan(0);
+  inEnum(['RulePack', 'ThresholdRegistry'], reference.source, `${label}.source`);
+  inEnum(LAW_VERIFICATIONS, reference.verification, `${label}.verification`);
+  if (reference.article !== undefined && reference.article !== null) {
+    expect(reference.article.length, `${label}.article should be non-empty`).toBeGreaterThan(0);
+  }
+  if (reference.threshold_id !== undefined && reference.threshold_id !== null) {
+    expect(
+      reference.threshold_id.length,
+      `${label}.threshold_id should be non-empty`,
+    ).toBeGreaterThan(0);
+  }
+  return reference;
+}
+
+function assertTemplateSummary(obj: unknown, label: string): TemplateSummary {
+  const summary = assertExactKeys<TemplateSummary>(
+    obj,
+    {
+      id: true,
+      family: true,
+      stage: true,
+      channels: true,
+      signature_policy: true,
+      rule_pack_id: true,
+      law_references: true,
+      locale: true,
+      editable: true,
+      source: true,
+    },
+    label,
+  );
+  expect(summary.id.length, `${label}.id should be non-empty`).toBeGreaterThan(0);
+  inEnum(
+    ['CommercialCompany', 'Condominium', 'Association', 'Foundation', 'Cooperative'],
+    summary.family,
+    `${label}.family`,
+  );
+  inEnum(LIFECYCLE_STAGES, summary.stage, `${label}.stage`);
+  expect(Array.isArray(summary.channels), `${label}.channels should be an array`).toBe(true);
+  for (const channel of summary.channels) inEnum(MEETING_CHANNELS, channel, `${label}.channels[]`);
+  inEnum(
+    ['QualifiedPreferred', 'QualifiedOrHandwritten', 'ManualAttested'],
+    summary.signature_policy,
+    `${label}.signature_policy`,
+  );
+  expect(summary.rule_pack_id.length, `${label}.rule_pack_id should be non-empty`).toBeGreaterThan(
+    0,
+  );
+  expect(Array.isArray(summary.law_references), `${label}.law_references should be an array`).toBe(
+    true,
+  );
+  for (const [index, reference] of summary.law_references.entries()) {
+    assertTemplateLawReference(reference, `${label}.law_references[${index}]`);
+  }
+  inEnum(LOCALES, summary.locale, `${label}.locale`);
+  expect(typeof summary.editable, `${label}.editable should be boolean`).toBe('boolean');
+  inEnum(['builtin', 'user'], summary.source, `${label}.source`);
+  expect(summary.editable, `${label}.editable should match source`).toBe(summary.source === 'user');
+  return summary;
+}
+
+function assertTemplateImportVerdict(obj: unknown, label: string): TemplateImportVerdict {
+  const verdict = assertExactKeys<TemplateImportVerdict>(obj, { ok: true }, label, ['error']);
+  expect(typeof verdict.ok, `${label}.ok should be boolean`).toBe('boolean');
+  if (verdict.error !== undefined) {
+    const error = assertExactKeys<NonNullable<TemplateImportVerdict['error']>>(
+      verdict.error,
+      { code: true, message: true },
+      `${label}.error`,
+      ['field'],
+    );
+    expect(error.code.length, `${label}.error.code should be non-empty`).toBeGreaterThan(0);
+    expect(error.message.length, `${label}.error.message should be non-empty`).toBeGreaterThan(0);
+    if (error.field !== undefined) {
+      expect(error.field.length, `${label}.error.field should be non-empty`).toBeGreaterThan(0);
+    }
+  }
+  return verdict;
+}
+
 // --- Per-contract tests --------------------------------------------------------
 
 describe('contract fixtures parse through the real client', () => {
@@ -3885,6 +3988,52 @@ describe('contract fixtures parse through the real client', () => {
     expect(JSON.stringify(doc)).not.toContain('%PDF');
     expect(JSON.stringify(doc)).not.toContain('access_code');
     expect(JSON.stringify(doc)).not.toContain('legal_validity_claimed":true');
+  });
+
+  it('templates.json → TemplateSummary[] (GET /v1/templates)', async () => {
+    stubFetch(fixture('templates.json'));
+    const templates: TemplateSummary[] = await api.listTemplates();
+    expect(Array.isArray(templates), 'templates should be an array').toBe(true);
+    expect(templates.length, 'templates should include builtin and user examples').toBeGreaterThan(
+      1,
+    );
+    const builtin = assertTemplateSummary(templates[0], 'TemplateSummary[builtin]');
+    expect(builtin.source).toBe('builtin');
+    expect(builtin.editable).toBe(false);
+    const user = templates.find((template) => template.source === 'user');
+    if (!user) throw new Error('templates should include a user-authored example');
+    assertTemplateSummary(user, 'TemplateSummary[user]');
+  });
+
+  it('template.summary.json → TemplateSummary (POST /v1/templates)', async () => {
+    stubFetch(fixture('template.summary.json'), 201);
+    const summary: TemplateSummary = await api.createTemplate(fixture('template.export.json'));
+    const parsed = assertTemplateSummary(summary, 'TemplateSummary');
+    expect(parsed.id).toBe('user-encosto-ata/v1');
+    expect(parsed.source).toBe('user');
+    expect(parsed.editable).toBe(true);
+  });
+
+  it('template.import-verdict.json → TemplateImportVerdict (POST /v1/templates/import?dry_run=true)', async () => {
+    stubFetch(fixture('template.import-verdict.json'));
+    const verdict = await api.importTemplate(fixture('template.export.json'), { dryRun: true });
+    const parsed = assertTemplateImportVerdict(verdict, 'TemplateImportVerdict');
+    expect(parsed.ok).toBe(false);
+    expect(parsed.error?.code).toBe('conflict');
+  });
+
+  it('template.export.json → JSON download (GET /v1/templates/{id}/export)', async () => {
+    const body = fixture('template.export.json');
+    stubFetchRaw(body, 200, 'application/json', {
+      'Content-Disposition': 'attachment; filename="user-encosto-ata-v1.json"',
+    });
+    const exported = await api.exportTemplate('user-encosto-ata/v1');
+    expect(exported.text).toBe(body);
+    expect(exported.contentType).toBe('application/json');
+    expect(exported.headers.get('Content-Disposition')).toContain('user-encosto-ata-v1.json');
+    const json = JSON.parse(exported.text) as { id?: string; blocks?: unknown[] };
+    expect(json.id).toBe('user-encosto-ata/v1');
+    expect(Array.isArray(json.blocks), 'export carries authored blocks').toBe(true);
   });
 
   it('paper-book.import.json → PaperBookImportReport (POST /v1/books/paper-import/validate)', async () => {
@@ -7172,6 +7321,10 @@ describe('contract fixtures — cross-cutting guarantees', () => {
       'api-key.revoke.json',
       'api-key.rotate.json',
       'tsa.status.json',
+      'templates.json',
+      'template.summary.json',
+      'template.import-verdict.json',
+      'template.export.json',
     ]) {
       expect(names, `contracts/ should include ${expected}`).toContain(expected);
     }

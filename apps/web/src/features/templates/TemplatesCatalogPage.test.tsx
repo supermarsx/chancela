@@ -14,6 +14,8 @@ const CATALOG: TemplateSummary[] = [
     rule_pack_id: 'csc-art63/v2',
     law_references: [],
     locale: 'pt-PT',
+    editable: false,
+    source: 'builtin',
   },
   {
     id: 'csc-certidao-ata/v1',
@@ -24,6 +26,8 @@ const CATALOG: TemplateSummary[] = [
     rule_pack_id: 'csc-art63/v2',
     law_references: [],
     locale: 'pt-PT',
+    editable: false,
+    source: 'builtin',
   },
   {
     id: 'assoc-convocatoria-ga/v1',
@@ -44,6 +48,8 @@ const CATALOG: TemplateSummary[] = [
       },
     ],
     locale: 'pt-PT',
+    editable: false,
+    source: 'builtin',
   },
   {
     id: 'condominio-lista-presencas/v1',
@@ -54,6 +60,8 @@ const CATALOG: TemplateSummary[] = [
     rule_pack_id: 'condominio-dl268/v1',
     law_references: [],
     locale: 'pt-PT',
+    editable: false,
+    source: 'builtin',
   },
 ];
 
@@ -67,6 +75,8 @@ const EDGE_CATALOG: TemplateSummary[] = [
     rule_pack_id: 'assoc-cc/v1',
     law_references: [],
     locale: 'pt-PT',
+    editable: false,
+    source: 'builtin',
   },
   {
     id: 'assoc-convocatoria-ga/en',
@@ -77,6 +87,8 @@ const EDGE_CATALOG: TemplateSummary[] = [
     rule_pack_id: 'assoc-cc/v1',
     law_references: [],
     locale: 'en-US',
+    editable: false,
+    source: 'builtin',
   },
   {
     id: 'fundacao-reuniao/v1',
@@ -87,6 +99,8 @@ const EDGE_CATALOG: TemplateSummary[] = [
     rule_pack_id: 'fundacao-cc/v1',
     law_references: [],
     locale: 'pt-PT',
+    editable: false,
+    source: 'builtin',
   },
 ];
 

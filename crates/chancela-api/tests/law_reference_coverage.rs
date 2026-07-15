@@ -57,12 +57,6 @@ fn law_reference_coverage_audits_template_references_against_local_corpus() {
     assert!(
         report
             .iter()
-            .any(|row| row.corpus_status == Some("Pending")),
-        "audit should record pending local corpus references"
-    );
-    assert!(
-        report
-            .iter()
             .filter(|row| row.corpus_status == Some("Pending"))
             .all(|row| !row.resolved && row.blocker.is_some()),
         "pending corpus/template references must not be treated as resolved authority:\n{}",

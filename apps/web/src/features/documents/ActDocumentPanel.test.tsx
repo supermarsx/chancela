@@ -327,6 +327,8 @@ const certidaoTemplate: TemplateSummary = {
   rule_pack_id: 'condominio',
   law_references: [],
   locale: 'pt-PT',
+  editable: false,
+  source: 'builtin',
 };
 
 const extratoTemplate: TemplateSummary = {
@@ -338,6 +340,8 @@ const extratoTemplate: TemplateSummary = {
   rule_pack_id: 'condominio',
   law_references: [],
   locale: 'pt-PT',
+  editable: false,
+  source: 'builtin',
 };
 
 const convocatoriaTemplate: TemplateSummary = {
@@ -349,6 +353,8 @@ const convocatoriaTemplate: TemplateSummary = {
   rule_pack_id: 'condominio',
   law_references: [],
   locale: 'pt-PT',
+  editable: false,
+  source: 'builtin',
 };
 
 const generatedConvocatoria: GeneratedDocumentView = {
@@ -1543,12 +1549,13 @@ describe('ActDocumentPanel — generated absent-owner communications', () => {
       within(certidaoItem as HTMLElement).getByRole('button', { name: 'Ver evidência' }),
     );
     await waitFor(() =>
-      expect(screen.queryByRole('form', { name: 'Registar evidência da comunicação gerada' }))
-        .toBeNull(),
+      expect(
+        screen.queryByRole('form', { name: 'Registar evidência da comunicação gerada' }),
+      ).toBeNull(),
     );
-    expect(
-      calls.some((call) => call.url.includes('generated-certidao-1/dispatch-evidence')),
-    ).toBe(false);
+    expect(calls.some((call) => call.url.includes('generated-certidao-1/dispatch-evidence'))).toBe(
+      false,
+    );
 
     fireEvent.change(screen.getByLabelText('Modelo'), {
       target: { value: 'condominio-extrato-deliberacoes/v1' },
@@ -1589,9 +1596,9 @@ describe('ActDocumentPanel — generated absent-owner communications', () => {
       'ata-1-generated-condominio-extrato-deliberacoes-v1-generated-extrato-1.pdf',
     ]);
     expect(revokeUrl).toHaveBeenCalledWith('blob:generated-extrato');
-    expect(
-      calls.some((call) => call.url.includes('generated-extrato-1/dispatch-evidence')),
-    ).toBe(false);
+    expect(calls.some((call) => call.url.includes('generated-extrato-1/dispatch-evidence'))).toBe(
+      false,
+    );
   });
 
   it('selects and focuses dispatch evidence from the generated-document navigation target once', async () => {

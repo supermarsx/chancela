@@ -6203,7 +6203,10 @@ mod tests {
         );
         let exported: Value = serde_json::from_slice(&bytes).expect("export JSON");
         assert_eq!(exported["id"], id);
-        assert_eq!(exported["blocks"][0]["template"], "Ata revista n.º {{ ata_number }}");
+        assert_eq!(
+            exported["blocks"][0]["template"],
+            "Ata revista n.º {{ ata_number }}"
+        );
 
         let status = send_status(
             state.clone(),
@@ -6227,11 +6230,7 @@ mod tests {
             .collect();
         assert_eq!(
             kinds,
-            vec![
-                "template.created",
-                "template.updated",
-                "template.deleted"
-            ]
+            vec!["template.created", "template.updated", "template.deleted"]
         );
         assert!(template_events.iter().all(|event| event.scope == "global"));
 
@@ -6429,10 +6428,10 @@ mod tests {
             false
         );
         assert_eq!(report["pdf_accessibility"]["legal_validity_claimed"], false);
-        assert_eq!(report["pdf_accessibility"]["report_version"], json!(10));
+        assert_eq!(report["pdf_accessibility"]["report_version"], json!(11));
         assert_eq!(
             report["pdf_accessibility"]["accessibility_report_json"]["version"],
-            json!(10)
+            json!(11)
         );
         let table_semantics =
             &report["pdf_accessibility"]["accessibility_report_json"]["tagged_structure"]["tables"];

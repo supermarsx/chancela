@@ -186,6 +186,20 @@ async fn live_responses_match_the_canonical_contracts() {
     assert_eq!(status, 200);
     assert_shape("law.manifest", &law, &contract("law.manifest.json"));
 
+    // Template catalog (templates.json): merged shape includes built-in provenance/editability
+    // fields; this journey has no user-authored rows yet, so the live first element is a built-in.
+    let (status, templates) = h.get_json_auth("/v1/templates", &token).await;
+    assert_eq!(status, 200);
+    assert_shape("templates", &templates, &contract("templates.json"));
+    assert!(
+        templates
+            .as_array()
+            .expect("templates array")
+            .iter()
+            .any(|template| template["source"] == "builtin" && template["editable"] == false),
+        "template catalog exposes built-in provenance/editability: {templates}"
+    );
+
     // The ledger feed + dashboard (ledger.events.json, dashboard.json).
     let (status, events) = h.get_json("/v1/ledger/events").await;
     assert_eq!(status, 200);

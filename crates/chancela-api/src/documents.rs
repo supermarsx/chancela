@@ -9678,11 +9678,7 @@ mod tests {
             .collect();
         assert_eq!(
             kinds,
-            vec![
-                "template.created",
-                "template.deleted",
-                "template.created"
-            ]
+            vec!["template.created", "template.deleted", "template.created"]
         );
         assert!(
             template_events
@@ -9761,8 +9757,10 @@ mod tests {
         .expect("create ok");
         assert_eq!(created.status(), StatusCode::CREATED);
 
-        let replacement = valid_user_template_json()
-            .replace("Ata n.º {{ ata_number }}", "Ata revista n.º {{ ata_number }}");
+        let replacement = valid_user_template_json().replace(
+            "Ata n.º {{ ata_number }}",
+            "Ata revista n.º {{ ata_number }}",
+        );
         let replaced = replace_template(
             State(state.clone()),
             Path("user-encosto-ata/v1".to_owned()),
