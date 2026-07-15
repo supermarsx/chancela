@@ -962,6 +962,20 @@ export const frFR: Catalog = {
   'acts.aiReview.noClaim.workflow':
     'La revue humaine déverrouille seulement l’étape suivante du flux ; elle ne signe, ne scelle ni ne valide la confiance.',
 
+  'acts.workflowReview.title': 'Workflow provenance review',
+  'acts.workflowReview.body':
+    'Local aggregate for pasting into MCP resources/read; the browser does not call MCP.',
+  'acts.workflowReview.lifecycleBucket': 'Lifecycle',
+  'acts.workflowReview.aiHumanReviewBucket': 'AI review',
+  'acts.workflowReview.compliance': 'Compliance',
+  'acts.workflowReview.markerCounts': 'Markers',
+  'acts.workflowReview.missingUnknownCounts': 'Missing/unknown',
+  'acts.workflowReview.noClaimFlags': 'No claims',
+  'acts.workflowReview.packet.copy': 'Copy MCP payload',
+  'acts.workflowReview.packet.copiedButton': 'Payload copied',
+  'acts.workflowReview.packet.copied': 'MCP payload copied.',
+  'acts.workflowReview.packet.copyFailed': 'Could not copy the MCP payload.',
+
   // --- Compliance panel (chrome only; issue text stays backend-authored, UX-21) --
   'compliance.rules': 'Règles : {rulePack}',
   'compliance.errors.one': '{count} erreur',

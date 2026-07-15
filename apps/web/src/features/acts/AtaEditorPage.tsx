@@ -77,6 +77,10 @@ import { formatAtaNumber } from '../../format';
 import { useT } from '../../i18n';
 import { formatAiProvenanceReviewPacket } from './aiProvenanceReviewPacket';
 import {
+  buildWorkflowProvenanceReviewEvidence,
+  formatWorkflowProvenanceReviewCopyPayload,
+} from './workflowProvenanceReviewPacket';
+import {
   Badge,
   Button,
   Card,
@@ -2011,6 +2015,105 @@ function AiHumanReviewPanel({
   );
 }
 
+function WorkflowProvenanceReviewPanel({
+  act,
+  complianceReport,
+}: {
+  act: ActView;
+  complianceReport?: ComplianceReport | null;
+}) {
+  const t = useT();
+  const toast = useToast();
+  const markerCountsId = useId();
+  const missingCountsId = useId();
+  const noClaimsId = useId();
+  const [copiedPacket, setCopiedPacket] = useState(false);
+  const evidence = buildWorkflowProvenanceReviewEvidence(act, complianceReport);
+  const copyPayloadJson = formatWorkflowProvenanceReviewCopyPayload(act, complianceReport);
+  const workflow = evidence.workflows[0];
+  const markerCounts = Object.entries(evidence.workflow_summary.marker_counts);
+  const missingUnknownCounts = Object.entries(evidence.workflow_summary.missing_unknown_counts);
+  const noClaimFlags = Object.entries(evidence.no_claim_flags);
+  const hasMissingUnknowns = evidence.workflow_summary.missing_unknown_counts.total > 0;
+
+  async function copyReviewPacket() {
+    try {
+      await navigator.clipboard.writeText(copyPayloadJson);
+      setCopiedPacket(true);
+      window.setTimeout(() => setCopiedPacket(false), 1500);
+      toast.success(t('acts.workflowReview.packet.copied'));
+    } catch {
+      toast.error(t('acts.workflowReview.packet.copyFailed'));
+    }
+  }
+
+  return (
+    <div className="stack--tight workflow-review">
+      <div className="row-wrap ai-review__status">
+        <Badge tone={hasMissingUnknowns ? 'warn' : 'ok'}>{workflow.workflow_state}</Badge>
+        <Button
+          type="button"
+          variant="ghost"
+          icon={copiedPacket ? <Icon.Check /> : <Icon.Copy />}
+          onClick={() => void copyReviewPacket()}
+        >
+          {copiedPacket
+            ? t('acts.workflowReview.packet.copiedButton')
+            : t('acts.workflowReview.packet.copy')}
+        </Button>
+      </div>
+      <p className="muted">{t('acts.workflowReview.body')}</p>
+      <dl className="deflist deflist--tight ai-review__meta">
+        <div>
+          <dt>{t('acts.workflowReview.lifecycleBucket')}</dt>
+          <dd className="mono">{workflow.workflow_state}</dd>
+        </div>
+        <div>
+          <dt>{t('acts.workflowReview.aiHumanReviewBucket')}</dt>
+          <dd className="mono">{workflow.human_review.status}</dd>
+        </div>
+        <div>
+          <dt>{t('acts.workflowReview.compliance')}</dt>
+          <dd className="mono">
+            {`errors=${evidence.workflow_summary.compliance_buckets.errors} warnings=${evidence.workflow_summary.compliance_buckets.warnings}`}
+          </dd>
+        </div>
+      </dl>
+
+      <section className="stack--tight" aria-labelledby={markerCountsId}>
+        <h3 id={markerCountsId}>{t('acts.workflowReview.markerCounts')}</h3>
+        <dl className="deflist deflist--tight">
+          {markerCounts.map(([key, count]) => (
+            <div key={key}>
+              <dt className="mono">{key}</dt>
+              <dd>{count}</dd>
+            </div>
+          ))}
+        </dl>
+      </section>
+
+      <section className="stack--tight" aria-labelledby={missingCountsId}>
+        <h3 id={missingCountsId}>{t('acts.workflowReview.missingUnknownCounts')}</h3>
+        <dl className="deflist deflist--tight">
+          {missingUnknownCounts.map(([key, count]) => (
+            <div key={key}>
+              <dt className="mono">{key}</dt>
+              <dd>{count}</dd>
+            </div>
+          ))}
+        </dl>
+      </section>
+
+      <section className="stack--tight" aria-labelledby={noClaimsId}>
+        <h3 id={noClaimsId}>{t('acts.workflowReview.noClaimFlags')}</h3>
+        <p className="mono workflow-review__flags">
+          {noClaimFlags.map(([key, value]) => `${key}: ${String(value)}`).join(' · ')}
+        </p>
+      </section>
+    </div>
+  );
+}
+
 /** The PATCH body assembled from the working draft (all §2.4 fields, additive). */
 function draftToPatch(draft: Draft) {
   const recipients = normalizedConveningRecipients(draft.convening.recipients);
@@ -2870,6 +2973,10 @@ export function AtaEditorPage() {
               />
             </Card>
           ) : null}
+
+          <Card title={t('acts.workflowReview.title')}>
+            <WorkflowProvenanceReviewPanel act={a} complianceReport={compliance.data} />
+          </Card>
 
           <Card title={t('acts.compliance')}>
             {compliance.isLoading ? (

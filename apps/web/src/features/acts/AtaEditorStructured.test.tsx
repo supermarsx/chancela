@@ -14,6 +14,7 @@ import {
   buildAiProvenanceReviewPacket,
   formatAiProvenanceReviewPacket,
 } from './aiProvenanceReviewPacket';
+import { formatWorkflowProvenanceReviewCopyPayload } from './workflowProvenanceReviewPacket';
 import { ataFieldHelp } from './fieldHelp';
 import { makeClient } from '../../test/utils';
 import { ToastProvider } from '../../ui/toast';
@@ -986,6 +987,150 @@ describe('AtaEditorPage — AI human review gate', () => {
         formatAiProvenanceReviewPacket(withAi.ai_provenance!),
       ),
     );
+  });
+
+  it('renders workflow provenance counts and copies an aggregate MCP payload without raw values', async () => {
+    const withSensitiveWorkflowValues: ActView = {
+      ...actWithAiReview(aiReviewStatementSources),
+      id: 'SECRET_WORKFLOW_ACT_ID',
+      book_id: 'SECRET_WORKFLOW_BOOK_ID',
+      title: 'SECRET_WORKFLOW_TITLE',
+      deliberations: 'SECRET_WORKFLOW_DELIBERATIONS',
+      payload_digest: 'SECRET_WORKFLOW_DIGEST',
+      seal_event_seq: 14,
+      referenced_documents: [
+        { label: 'SECRET_WORKFLOW_DOC_LABEL', reference: 'SECRET_WORKFLOW_ACCESS_CODE' },
+      ],
+      attachments: [
+        { label: 'SECRET_WORKFLOW_ATTACHMENT', kind: 'Other', digest: 'SECRET_ATTACHMENT_DIGEST' },
+      ],
+      signatories: [
+        {
+          name: 'SECRET_WORKFLOW_SIGNATORY',
+          email: 'secret.workflow.signatory@example.pt',
+          capacity: 'Chair',
+          signed: true,
+        },
+      ],
+      ai_provenance: {
+        ...actWithAiReview(aiReviewStatementSources).ai_provenance!,
+        source: 'SECRET_WORKFLOW_AI_SOURCE',
+        tool: 'SECRET_WORKFLOW_AI_TOOL',
+        statement_source: 'SECRET_WORKFLOW_OPERATOR_PROMPT',
+        human_verification: {
+          status: 'pending_human_verification',
+          actor: 'secret.workflow.reviewer@example.pt',
+          reviewed_at: null,
+          note: 'SECRET_WORKFLOW_AI_NOTE',
+        },
+      },
+    };
+    const expectedCompliance: ComplianceReport = {
+      rule_pack: 'csc-art63/v2',
+      family: 'CommercialCompany',
+      statute_overlay: false,
+      issues: [],
+      errors: 0,
+      warnings: 0,
+      seal_allowed: true,
+    };
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+    const shared = stateful(withSensitiveWorkflowValues);
+    vi.stubGlobal('fetch', shared.fetchImpl);
+    renderEditor();
+
+    const heading = await screen.findByRole('heading', {
+      name: 'Revisão de proveniência do fluxo',
+    });
+    const panel = heading.closest('section')!;
+    await within(panel as HTMLElement).findByText('errors=0 warnings=0');
+
+    const lifecycleRow = within(panel as HTMLElement)
+      .getByText('Ciclo')
+      .closest('div')!;
+    const aiReviewRow = within(panel as HTMLElement)
+      .getByText('Revisão IA')
+      .closest('div')!;
+    expect(within(lifecycleRow as HTMLElement).getByText('approved')).toBeTruthy();
+    expect(within(aiReviewRow as HTMLElement).getByText('pending')).toBeTruthy();
+
+    const markerHeading = within(panel as HTMLElement).getByRole('heading', {
+      name: 'Marcadores',
+    });
+    const markerSection = markerHeading.closest('section')!;
+    const docs = within(markerSection as HTMLElement)
+      .getByText('docs')
+      .closest('div')!;
+    const signature = within(markerSection as HTMLElement)
+      .getByText('signature')
+      .closest('div')!;
+    const fingerprint = within(markerSection as HTMLElement)
+      .getByText('fingerprint')
+      .closest('div')!;
+    expect(within(docs as HTMLElement).getByText('2')).toBeTruthy();
+    expect(within(signature as HTMLElement).getByText('1')).toBeTruthy();
+    expect(within(fingerprint as HTMLElement).getByText('1')).toBeTruthy();
+
+    expect(within(panel as HTMLElement).getByText('Sem alegações')).toBeTruthy();
+    expect(within(panel as HTMLElement).getByText(/legal_validity: false/)).toBeTruthy();
+    expect(within(panel as HTMLElement).getByText(/workflow_completion: false/)).toBeTruthy();
+    expect(within(panel as HTMLElement).getByText(/api_from_mcp: false/)).toBeTruthy();
+    expect(within(panel as HTMLElement).getByText(/non_stdio_transport: false/)).toBeTruthy();
+
+    const panelText = panel.textContent ?? '';
+    for (const sensitive of [
+      'SECRET_WORKFLOW_ACT_ID',
+      'SECRET_WORKFLOW_BOOK_ID',
+      'SECRET_WORKFLOW_TITLE',
+      'SECRET_WORKFLOW_DELIBERATIONS',
+      'SECRET_WORKFLOW_DIGEST',
+      'SECRET_WORKFLOW_DOC_LABEL',
+      'SECRET_WORKFLOW_ACCESS_CODE',
+      'SECRET_WORKFLOW_SIGNATORY',
+      'secret.workflow.signatory@example.pt',
+      'SECRET_WORKFLOW_AI_SOURCE',
+      'SECRET_WORKFLOW_AI_TOOL',
+      'SECRET_WORKFLOW_OPERATOR_PROMPT',
+      'secret.workflow.reviewer@example.pt',
+      'SECRET_WORKFLOW_AI_NOTE',
+    ]) {
+      expect(panelText).not.toContain(sensitive);
+    }
+
+    fireEvent.click(
+      within(panel as HTMLElement).getByRole('button', { name: 'Copiar payload MCP' }),
+    );
+
+    await waitFor(() =>
+      expect(writeText).toHaveBeenCalledWith(
+        formatWorkflowProvenanceReviewCopyPayload(withSensitiveWorkflowValues, expectedCompliance),
+      ),
+    );
+    const copiedPayload = writeText.mock.calls[0][0] as string;
+    expect(copiedPayload).toContain('chancela://mcp/workflow-provenance-review');
+    expect(copiedPayload).toContain('"workflow_evidence"');
+    for (const sensitive of [
+      'SECRET_WORKFLOW_ACT_ID',
+      'SECRET_WORKFLOW_BOOK_ID',
+      'SECRET_WORKFLOW_TITLE',
+      'SECRET_WORKFLOW_DELIBERATIONS',
+      'SECRET_WORKFLOW_DIGEST',
+      'SECRET_WORKFLOW_DOC_LABEL',
+      'SECRET_WORKFLOW_ACCESS_CODE',
+      'SECRET_WORKFLOW_SIGNATORY',
+      'secret.workflow.signatory@example.pt',
+      'SECRET_WORKFLOW_AI_SOURCE',
+      'SECRET_WORKFLOW_AI_TOOL',
+      'SECRET_WORKFLOW_OPERATOR_PROMPT',
+      'secret.workflow.reviewer@example.pt',
+      'SECRET_WORKFLOW_AI_NOTE',
+    ]) {
+      expect(copiedPayload).not.toContain(sensitive);
+    }
   });
 
   it('records reject and accept decisions and only enables Signing after acceptance', async () => {

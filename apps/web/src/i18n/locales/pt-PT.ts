@@ -955,6 +955,20 @@ export const ptPT = {
   'acts.aiReview.noClaim.workflow':
     'A revisão humana desbloqueia apenas o próximo passo do fluxo; não assina, sela ou valida confiança.',
 
+  'acts.workflowReview.title': 'Revisão de proveniência do fluxo',
+  'acts.workflowReview.body':
+    'Agregado local para colar num resources/read MCP; o navegador não chama MCP.',
+  'acts.workflowReview.lifecycleBucket': 'Ciclo',
+  'acts.workflowReview.aiHumanReviewBucket': 'Revisão IA',
+  'acts.workflowReview.compliance': 'Conformidade',
+  'acts.workflowReview.markerCounts': 'Marcadores',
+  'acts.workflowReview.missingUnknownCounts': 'Em falta/desconhecido',
+  'acts.workflowReview.noClaimFlags': 'Sem alegações',
+  'acts.workflowReview.packet.copy': 'Copiar payload MCP',
+  'acts.workflowReview.packet.copiedButton': 'Payload copiado',
+  'acts.workflowReview.packet.copied': 'Payload MCP copiado.',
+  'acts.workflowReview.packet.copyFailed': 'Não foi possível copiar o payload MCP.',
+
   // --- Compliance panel (chrome only; issue text stays backend-authored, UX-21) --
   'compliance.rules': 'Regras: {rulePack}',
   'compliance.errors.one': '{count} erro',

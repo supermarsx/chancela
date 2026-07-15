@@ -1852,6 +1852,10 @@ a.btn.btn--iconOnly {
   gap: 0.55rem;
 }
 
+.workflow-review__flags {
+  overflow-wrap: anywhere;
+}
+
 .written-resolution-review {
   border: 1px solid var(--border);
   border-radius: var(--radius);
