@@ -231,6 +231,26 @@ const CONVOCATION_NOTICE_NO_CLAIMS =
 const CONVENING_DISPATCH_LOCAL_EVIDENCE_COPY =
   'Regista apenas evidência local de expedição e proveniência no ledger. Não envia email/SMS, não confirma entrega externa, não afirma suficiência legal, conclusão do workflow, aceitação por registo/DRE nem aceitação por prestador.';
 
+const emptyConveningRecipient = (): ActConveningRecipient => ({
+  name: '',
+  channel: null,
+  reference: null,
+  dispatched_at: null,
+});
+
+function normalizedConveningRecipients(
+  recipients: ActConveningRecipient[],
+): ActConveningRecipient[] {
+  return recipients
+    .map((recipient) => ({
+      name: recipient.name.trim(),
+      channel: recipient.channel,
+      reference: orNull(recipient.reference ?? ''),
+      dispatched_at: orNull(recipient.dispatched_at ?? ''),
+    }))
+    .filter((recipient) => recipient.name !== '');
+}
+
 function writtenResolutionReviewStatusOptions(
   t: ReturnType<typeof useT>,
 ): { value: WrittenResolutionReviewStatus; label: string }[] {
@@ -1315,6 +1335,17 @@ function ConveningEditor({
   ];
   const setConvening = <K extends keyof DraftConvening>(key: K, value: DraftConvening[K]) =>
     onChange({ ...convening, [key]: value });
+  const setRecipients = (recipients: ActConveningRecipient[]) =>
+    setConvening('recipients', recipients);
+  const addRecipient = () => setRecipients([...convening.recipients, emptyConveningRecipient()]);
+  const updateRecipient = (index: number, patch: Partial<ActConveningRecipient>) =>
+    setRecipients(
+      convening.recipients.map((recipient, i) =>
+        i === index ? { ...recipient, ...patch } : recipient,
+      ),
+    );
+  const removeRecipient = (index: number) =>
+    setRecipients(convening.recipients.filter((_, i) => i !== index));
 
   return (
     <div className="form">
@@ -1375,12 +1406,112 @@ function ConveningEditor({
           />
         </Field>
       </div>
+      <section className="stack--tight" aria-labelledby="ed-convening-recipients-title">
+        <div className="rowline">
+          <div>
+            <p className="field__label" id="ed-convening-recipients-title">
+              Destinatários da convocatória
+            </p>
+            <p className="field__hint">
+              Registos locais usados para evidência de expedição. Linhas sem nome não são
+              guardadas.
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="secondary"
+            icon={<Icon.Plus />}
+            disabled={disabled}
+            onClick={addRecipient}
+          >
+            Adicionar destinatário
+          </Button>
+        </div>
+        {convening.recipients.length === 0 ? (
+          <p className="muted">
+            Sem destinatários registados. Adicione pelo menos um destinatário antes de registar
+            evidência local de expedição.
+          </p>
+        ) : (
+          convening.recipients.map((recipient, index) => {
+            const rowLabel = `Destinatário ${index + 1}`;
+            const nameId = `ed-convening-recipient-${index}-name`;
+            const referenceId = `ed-convening-recipient-${index}-reference`;
+            const channelId = `ed-convening-recipient-${index}-channel`;
+            const dispatchedAtId = `ed-convening-recipient-${index}-dispatched-at`;
+            return (
+              <div className="form" role="group" aria-label={rowLabel} key={index}>
+                <div className="rowline">
+                  <Field label="Nome" htmlFor={nameId}>
+                    <Input
+                      id={nameId}
+                      value={recipient.name}
+                      disabled={disabled}
+                      onChange={(e) => updateRecipient(index, { name: e.target.value })}
+                    />
+                  </Field>
+                  <Field label="Contacto/referência" htmlFor={referenceId}>
+                    <Input
+                      id={referenceId}
+                      value={recipient.reference ?? ''}
+                      disabled={disabled}
+                      placeholder="Ex.: email, morada, registo interno"
+                      onChange={(e) =>
+                        updateRecipient(index, { reference: orNull(e.target.value) })
+                      }
+                    />
+                  </Field>
+                  <Field label="Meio" htmlFor={channelId}>
+                    <Select
+                      id={channelId}
+                      value={recipient.channel ?? ''}
+                      disabled={disabled}
+                      onChange={(e) =>
+                        updateRecipient(index, {
+                          channel: e.target.value === '' ? null : (e.target.value as DispatchChannel),
+                        })
+                      }
+                      options={channelOptions}
+                    />
+                  </Field>
+                </div>
+                <div className="rowline">
+                  <Field label="Expedido em" htmlFor={dispatchedAtId}>
+                    <Input
+                      id={dispatchedAtId}
+                      type="date"
+                      value={recipient.dispatched_at ?? ''}
+                      disabled={disabled}
+                      onChange={(e) =>
+                        updateRecipient(index, { dispatched_at: orNull(e.target.value) })
+                      }
+                    />
+                  </Field>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    icon={<Icon.Trash />}
+                    disabled={disabled}
+                    onClick={() => removeRecipient(index)}
+                  >
+                    Remover destinatário
+                  </Button>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </section>
     </div>
   );
 }
 
 function conveningDispatchRecipientNames(convening: DraftConvening): string[] {
-  return convening.recipients.map((recipient) => recipient.name.trim()).filter((name) => name !== '');
+  return normalizedConveningRecipients(convening.recipients).map((recipient) => recipient.name);
+}
+
+function conveningRecipientNames(recipients: ActConveningRecipient[]): string[] {
+  return normalizedConveningRecipients(recipients).map((recipient) => recipient.name);
 }
 
 function conveningDispatchEvidenceBody(
@@ -1402,6 +1533,7 @@ function conveningDispatchEvidenceBody(
 
 function ConveningDispatchEvidenceAction({
   convening,
+  persistedRecipients,
   disabled,
   pending,
   error,
@@ -1409,24 +1541,34 @@ function ConveningDispatchEvidenceAction({
   onRecord,
 }: {
   convening: DraftConvening;
+  persistedRecipients: ActConveningRecipient[];
   disabled: boolean;
   pending: boolean;
   error: unknown;
   scope: CanScope;
   onRecord: () => void;
 }) {
-  const recipientCount = conveningDispatchRecipientNames(convening).length;
+  const recipients = conveningDispatchRecipientNames(convening);
+  const recipientCount = recipients.length;
+  const persistedRecipientSet = new Set(conveningRecipientNames(persistedRecipients));
+  const recipientsPersisted =
+    recipientCount > 0 && recipients.every((recipient) => persistedRecipientSet.has(recipient));
   const hasDispatchDate = convening.dispatch_date.trim() !== '';
-  const ready = !disabled && !pending && hasDispatchDate && recipientCount > 0;
+  const ready = !disabled && !pending && hasDispatchDate && recipientsPersisted;
 
   return (
     <div className="stack--tight" aria-label="Evidência local de expedição da convocatória">
       {error ? <ErrorNote error={error} /> : null}
       <p className="field__hint">{CONVENING_DISPATCH_LOCAL_EVIDENCE_COPY}</p>
-      {hasDispatchDate && recipientCount > 0 ? (
+      {hasDispatchDate && recipientsPersisted ? (
         <p className="muted">
           Marca {recipientCount} destinatário(s) existente(s) com a data indicada e, se
           preenchidos, o meio e a referência local.
+        </p>
+      ) : hasDispatchDate && recipientCount > 0 ? (
+        <p className="muted">
+          Guarde a ata para persistir os destinatários antes de registar evidência local de
+          expedição.
         </p>
       ) : (
         <p className="muted">
@@ -1857,6 +1999,7 @@ function AiHumanReviewPanel({
 
 /** The PATCH body assembled from the working draft (all §2.4 fields, additive). */
 function draftToPatch(draft: Draft) {
+  const recipients = normalizedConveningRecipients(draft.convening.recipients);
   const convening: ActConvening | null =
     draft.convening.dispatch_date.trim() === '' &&
     draft.convening.antecedence_days.trim() === '' &&
@@ -1864,7 +2007,7 @@ function draftToPatch(draft: Draft) {
     draft.convening.evidence_reference.trim() === '' &&
     draft.convening.convener.trim() === '' &&
     draft.convening.convener_capacity === '' &&
-    draft.convening.recipients.length === 0 &&
+    recipients.length === 0 &&
     draft.convening.second_call == null
       ? null
       : {
@@ -1875,7 +2018,7 @@ function draftToPatch(draft: Draft) {
           antecedence_days: orNullNum(draft.convening.antecedence_days),
           channel: draft.convening.channel === '' ? null : draft.convening.channel,
           evidence_reference: orNull(draft.convening.evidence_reference),
-          recipients: draft.convening.recipients,
+          recipients,
           second_call: draft.convening.second_call,
         };
 
@@ -2572,6 +2715,7 @@ export function AtaEditorPage() {
               />
               <ConveningDispatchEvidenceAction
                 convening={draft.convening}
+                persistedRecipients={a.convening?.recipients ?? []}
                 disabled={readOnly}
                 pending={dispatchConvening.isPending}
                 error={dispatchConvening.error}

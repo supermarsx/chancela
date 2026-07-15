@@ -15,6 +15,7 @@ import {
   type Entity,
   type PermissionGrant,
   type Settings,
+  type UpdateActBody,
   type UserView,
 } from '../src/api/types';
 
@@ -34,7 +35,8 @@ test('dashboard convocation reminder routes to convening guidance and records lo
   page,
 }) => {
   const dispatchBodies: DispatchActConveningBody[] = [];
-  await routeConveningDispatchFixtures(page, dispatchBodies);
+  const patchBodies: UpdateActBody[] = [];
+  await routeConveningDispatchFixtures(page, dispatchBodies, patchBodies);
 
   await page.goto('/?painel=queue');
 
@@ -70,9 +72,42 @@ test('dashboard convocation reminder routes to convening guidance and records lo
   await expect(localEvidence).toContainText('aceitação por prestador');
 
   const recordButton = localEvidence.getByRole('button', { name: 'Registar expedição local' });
-  await expect(recordButton).toBeEnabled();
+  await expect(recordButton).toBeDisabled();
+
+  await page.getByRole('button', { name: 'Adicionar destinatário' }).click();
+  await page.getByRole('button', { name: 'Adicionar destinatário' }).click();
+
+  const firstRecipient = page.getByRole('group', { name: 'Destinatário 1' });
+  await firstRecipient.getByLabel('Nome').fill('Ana Sócia');
+  await firstRecipient.getByLabel('Contacto/referência').fill('ana.socia@example.test');
+  await firstRecipient.getByLabel('Meio').selectOption('Email');
+
+  const secondRecipient = page.getByRole('group', { name: 'Destinatário 2' });
+  await secondRecipient.getByLabel('Nome').fill('Bruno Sócio');
+  await secondRecipient.getByLabel('Contacto/referência').fill('bruno.socio@example.test');
+  await secondRecipient.getByLabel('Meio').selectOption('Email');
+
+  await expect(recordButton).toBeDisabled();
+  const saveResponse = waitForApiResponse(page, `/v1/acts/${ACT_ID}`, 'PATCH');
+  await page.getByRole('button', { name: 'Guardar' }).click();
+  expect((await saveResponse).status()).toBe(200);
+  expect(patchBodies.at(-1)?.convening?.recipients).toEqual([
+    {
+      name: 'Ana Sócia',
+      channel: 'Email',
+      reference: 'ana.socia@example.test',
+      dispatched_at: null,
+    },
+    {
+      name: 'Bruno Sócio',
+      channel: 'Email',
+      reference: 'bruno.socio@example.test',
+      dispatched_at: null,
+    },
+  ]);
 
   const dispatchResponse = waitForApiResponse(page, DISPATCH_PATH, 'POST');
+  await expect(recordButton).toBeEnabled();
   await recordButton.click();
   expect((await dispatchResponse).status()).toBe(200);
 
@@ -96,6 +131,7 @@ test('dashboard convocation reminder routes to convening guidance and records lo
 async function routeConveningDispatchFixtures(
   page: Page,
   dispatchBodies: DispatchActConveningBody[],
+  patchBodies: UpdateActBody[],
 ): Promise<void> {
   let act = actFixture();
 
@@ -157,6 +193,13 @@ async function routeConveningDispatchFixtures(
       return;
     }
     if (method === 'GET' && pathname === `/v1/acts/${ACT_ID}`) {
+      await fulfillJson(route, act);
+      return;
+    }
+    if (method === 'PATCH' && pathname === `/v1/acts/${ACT_ID}`) {
+      const body = request.postDataJSON() as UpdateActBody;
+      patchBodies.push(body);
+      act = { ...act, ...(body as Partial<ActView>) };
       await fulfillJson(route, act);
       return;
     }
@@ -423,10 +466,7 @@ function actFixture(): ActView {
       antecedence_days: null,
       channel: 'Email',
       evidence_reference: LOCAL_EVIDENCE_REFERENCE,
-      recipients: [
-        { name: 'Ana Sócia', channel: null, reference: null, dispatched_at: null },
-        { name: 'Bruno Sócio', channel: null, reference: null, dispatched_at: null },
-      ],
+      recipients: [],
       second_call: null,
     },
   };
