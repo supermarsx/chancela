@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/supermarsx/chancela/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/supermarsx/chancela/ci.yml?branch=main&style=flat-square&label=CI"></a>
   <a href="license.md"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue?style=flat-square"></a>
-  <img alt="Version" src="https://img.shields.io/badge/version-0.1.0-informational?style=flat-square">
+  <img alt="Version" src="https://img.shields.io/badge/version-26.1-informational?style=flat-square">
   <img alt="Rust" src="https://img.shields.io/badge/Rust-edition%202024-000000?logo=rust&logoColor=white&style=flat-square">
   <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white&style=flat-square">
   <img alt="Docker" src="https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white&style=flat-square">
