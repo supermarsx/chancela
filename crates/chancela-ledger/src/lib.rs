@@ -1086,6 +1086,21 @@ pub const RECOVERY_SCOPE: &str = "recovery";
 /// `book:`/`entity:` scope is avoided to sidestep the WFL-11 genesis-kind constraint).
 pub const SUBJECT_ERASED_KIND: &str = "subject.erased";
 
+/// The kind stamped on an append-only **rectification annotation** event (wp26-gdpr).
+///
+/// GDPR Art. 17(3)(b): PII embedded in sealed company acts (livro de atas), books, and signed legal
+/// documents carries a **statutory retention** obligation and cannot be erased — and rewriting it
+/// would break the signatures over it. The standard data-subject remedy is therefore **annotation**,
+/// not deletion: a correction is recorded as a NEW append-only event linked to the record, leaving the
+/// sealed/signed payload byte-identical (so its signatures stay valid). This is the norm; destructive
+/// erasure is the narrow exception for genuinely non-legally-required PII.
+pub const SUBJECT_RECTIFICATION_KIND: &str = "subject.rectification_noted";
+
+/// The kind stamped on an append-only **restriction-of-processing / objection** marker event
+/// (wp26-gdpr; GDPR Art. 18/21). Like [`SUBJECT_RECTIFICATION_KIND`], it is a new append-only event
+/// recorded against the record and never mutates any sealed/signed payload, so signatures stay valid.
+pub const SUBJECT_PROCESSING_RESTRICTED_KIND: &str = "subject.processing_restricted";
+
 /// Pseudonymous-actor convention for post-erasure accountability (wp26-gdpr).
 ///
 /// New event stamping SHOULD record `actor` as the subject **UUID**, not a human-readable username
@@ -1855,6 +1870,77 @@ mod tests {
         // still holds exactly its two seed members (entity.created + book.opened).
         assert_eq!(ledger.verify_chain(&ChainId::Global), Ok(n + 1));
         assert_eq!(ledger.verify_chain(&company(E1)), Ok(2));
+    }
+
+    #[test]
+    fn annotation_preserves_prior_sealed_events_byte_for_byte() {
+        // Art. 17(3)(b): a sealed act's PII is retained; the remedy is an append-only annotation that
+        // must NOT touch the sealed/signed event, so its hash (what a signature is computed over) stays
+        // identical. Subject Amélia Marques of Encosto Estratégico Lda (fictional).
+        let mut ledger = Ledger::new();
+        ledger.append(
+            "amelia.marques",
+            &entity_scope(E1),
+            "entity.created",
+            None,
+            b"e",
+        );
+        ledger.append(
+            "amelia.marques",
+            &book_scope(E1, B1),
+            "book.opened",
+            None,
+            b"termo",
+        );
+        // The sealed act — the signed legal record whose bytes must never change.
+        let sealed = ledger
+            .append(
+                "amelia.marques",
+                &act_scope(E1, B1, A1),
+                "act.sealed",
+                Some("sealed minute naming the subject"),
+                b"ata-payload",
+            )
+            .clone();
+        let n = ledger.verify().expect("verifies before annotation");
+
+        // Snapshot every event's frozen hash + payload_digest.
+        let before: Vec<([u8; 32], [u8; 32])> = ledger
+            .events()
+            .iter()
+            .map(|e| (e.hash, e.payload_digest))
+            .collect();
+
+        // Append the rectification annotation, scoped to the same act so it is discoverable alongside
+        // the sealed record but is a NEW event at the chain head — never a rewrite.
+        let annotation = ledger.append(
+            "11111111-1111-4111-8111-111111111111",
+            &act_scope(E1, B1, A1),
+            SUBJECT_RECTIFICATION_KIND,
+            Some(r#"{"field":"name","correction":"see rectification note"}"#),
+            b"rectification-note",
+        );
+        assert_eq!(annotation.kind, "subject.rectification_noted");
+
+        // The ledger still verifies at n+1 and every prior event is byte-identical (signatures valid).
+        assert_eq!(ledger.verify(), Ok(n + 1));
+        for (event, (hash, digest)) in ledger.events().iter().zip(before.iter()) {
+            assert_eq!(event.hash, *hash, "prior event hash frozen");
+            assert_eq!(
+                event.payload_digest, *digest,
+                "prior event payload_digest frozen"
+            );
+        }
+        // The sealed act specifically is untouched.
+        let sealed_now = ledger
+            .events()
+            .iter()
+            .find(|e| e.id == sealed.id)
+            .expect("sealed act still present");
+        assert_eq!(
+            sealed_now, &sealed,
+            "sealed act event is byte-identical after annotation"
+        );
     }
 
     // --- Membership derivation (frozen §3.2 grammar) ---------------------------------------
