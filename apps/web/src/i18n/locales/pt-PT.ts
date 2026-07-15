@@ -1416,6 +1416,9 @@ export const ptPT = {
   'legislacao.corpus.openArticle': 'Abrir {label}',
   'legislacao.corpus.badge.verified': 'Verificado',
   'legislacao.corpus.badge.pending': 'Por verificar',
+  'legislacao.corpus.badge.automatedReview': 'Revisão automática',
+  'legislacao.corpus.badge.automatedReviewHelp':
+    'Texto oficial captado e revisto por um processo automático. NÃO aprovado juridicamente por revisor humano — recomenda-se revisão jurídica humana antes de confiar.',
   'legislacao.corpus.back': 'Voltar aos diplomas',
   'legislacao.corpus.backToDiploma': 'Voltar a {title}',
   'legislacao.corpus.diploma.notFound': 'Diploma não encontrado.',

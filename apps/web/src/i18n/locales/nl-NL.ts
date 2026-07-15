@@ -1412,6 +1412,9 @@ export const nlNL: Catalog = {
   'legislacao.corpus.openArticle': '{label} openen',
   'legislacao.corpus.badge.verified': 'Geverifieerd',
   'legislacao.corpus.badge.pending': 'In behandeling',
+  'legislacao.corpus.badge.automatedReview': 'Automatische controle',
+  'legislacao.corpus.badge.automatedReviewHelp':
+    'Officiële tekst vastgelegd en gecontroleerd door een geautomatiseerd proces. NIET juridisch goedgekeurd door een menselijke beoordelaar — een menselijke juridische controle wordt aanbevolen voordat u erop vertrouwt.',
   'legislacao.corpus.back': 'Terug naar de regelingen',
   'legislacao.corpus.backToDiploma': 'Terug naar {title}',
   'legislacao.corpus.diploma.notFound': 'Regeling niet gevonden.',

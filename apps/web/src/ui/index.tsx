@@ -205,7 +205,7 @@ export function Table({ head, children }: { head: ReactNode; children: ReactNode
 
 // --- Badge ----------------------------------------------------------------------
 
-type BadgeTone = 'neutral' | 'accent' | 'warn' | 'error' | 'ok';
+type BadgeTone = 'neutral' | 'accent' | 'warn' | 'error' | 'ok' | 'info';
 
 export function Badge({ tone = 'neutral', children }: { tone?: BadgeTone; children: ReactNode }) {
   return <span className={`badge badge--${tone}`}>{children}</span>;

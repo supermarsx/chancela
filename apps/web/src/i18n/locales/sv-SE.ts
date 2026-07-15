@@ -1408,6 +1408,9 @@ export const svSE: Catalog = {
   'legislacao.corpus.openArticle': 'Öppna {label}',
   'legislacao.corpus.badge.verified': 'Verifierad',
   'legislacao.corpus.badge.pending': 'Väntar',
+  'legislacao.corpus.badge.automatedReview': 'Automatisk granskning',
+  'legislacao.corpus.badge.automatedReviewHelp':
+    'Officiell text infångad och granskad av en automatiserad process. INTE juridiskt godkänd av en mänsklig granskare – en mänsklig juridisk granskning rekommenderas innan du förlitar dig på den.',
   'legislacao.corpus.back': 'Tillbaka till rättsakterna',
   'legislacao.corpus.backToDiploma': 'Tillbaka till {title}',
   'legislacao.corpus.diploma.notFound': 'Rättsakt hittades inte.',

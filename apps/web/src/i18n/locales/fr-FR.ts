@@ -1422,6 +1422,9 @@ export const frFR: Catalog = {
   'legislacao.corpus.openArticle': 'Ouvrir {label}',
   'legislacao.corpus.badge.verified': 'Vérifié',
   'legislacao.corpus.badge.pending': 'En attente',
+  'legislacao.corpus.badge.automatedReview': 'Révision automatisée',
+  'legislacao.corpus.badge.automatedReviewHelp':
+    'Texte officiel capturé et vérifié par un processus automatisé. NON validé juridiquement par un relecteur humain — une révision juridique humaine est recommandée avant de s’y fier.',
   'legislacao.corpus.back': 'Retour aux textes',
   'legislacao.corpus.backToDiploma': 'Retour à {title}',
   'legislacao.corpus.diploma.notFound': 'Texte introuvable.',

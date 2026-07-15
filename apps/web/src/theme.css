@@ -412,6 +412,8 @@ a:focus-visible {
   --error-bg: #f7e0e0;
   --ok: #1f6f4a;
   --ok-bg: #e2f0e8;
+  --info: #1d4e89;
+  --info-bg: #e4ebf5;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -422,6 +424,8 @@ a:focus-visible {
     --error-bg: #3a1c1d;
     --ok: #7fd3a8;
     --ok-bg: #163a2a;
+    --info: #93b8e8;
+    --info-bg: #15233a;
   }
 }
 
@@ -1143,6 +1147,21 @@ a.btn.btn--iconOnly {
   color: var(--error);
   background: var(--error-bg);
   border-color: var(--error);
+}
+
+/* Automated-review tier — an info-toned badge, distinct from the green `ok` (human-verified) and
+   the amber `warn` (Pending/unverified) badges. */
+.badge--info {
+  color: var(--info);
+  background: var(--info-bg);
+  border-color: var(--info);
+}
+
+/* A tier badge paired with its "?" help affordance (automated-review caveat tooltip). */
+.leg-corpus__badge-help {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
 }
 
 /* Empty states. */
@@ -2652,6 +2671,8 @@ a.btn.btn--iconOnly {
   --error-bg: #f7e0e0;
   --ok: #1f6f4a;
   --ok-bg: #e2f0e8;
+  --info: #1d4e89;
+  --info-bg: #e4ebf5;
   --leather-base: #d9c9a6;
   --leather-highlight: rgba(255, 249, 230, 0.55);
   --leather-shadow: rgba(120, 90, 30, 0.4);
@@ -2675,6 +2696,8 @@ a.btn.btn--iconOnly {
   --error-bg: #3a1c1d;
   --ok: #7fd3a8;
   --ok-bg: #163a2a;
+  --info: #93b8e8;
+  --info-bg: #15233a;
   --leather-base: #0e2019;
   --leather-highlight: rgba(200, 165, 85, 0.09);
   --leather-shadow: rgba(0, 0, 0, 0.55);

@@ -212,6 +212,8 @@ describe('buildDashboardNotifications', () => {
                 verification: 'Pending',
                 source_url: null,
                 source_complete: false,
+                review_method: null,
+                review_note: null,
               },
             ],
             source: 'registry_extracts.orgaos',

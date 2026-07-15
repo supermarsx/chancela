@@ -1409,6 +1409,9 @@ export const daDK: Catalog = {
   'legislacao.corpus.openArticle': 'Åbn {label}',
   'legislacao.corpus.badge.verified': 'Verificeret',
   'legislacao.corpus.badge.pending': 'Afventer',
+  'legislacao.corpus.badge.automatedReview': 'Automatisk gennemgang',
+  'legislacao.corpus.badge.automatedReviewHelp':
+    'Officiel tekst indfanget og gennemgået af en automatiseret proces. IKKE juridisk godkendt af en menneskelig bedømmer — en menneskelig juridisk gennemgang anbefales, før du forlader dig på den.',
   'legislacao.corpus.back': 'Tilbage til retsakterne',
   'legislacao.corpus.backToDiploma': 'Tilbage til {title}',
   'legislacao.corpus.diploma.notFound': 'Retsakt ikke fundet.',

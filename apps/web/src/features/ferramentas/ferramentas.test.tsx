@@ -1308,7 +1308,7 @@ describe('Ferramentas — sub-tab animation + indicator', () => {
     source_note: 'Corpus de teste.',
     digest: 'a'.repeat(64),
     origin: 'Embedded',
-    counts: { diplomas: 0, articles: 0, verified: 0, pending: 0 },
+    counts: { diplomas: 0, articles: 0, verified: 0, automated_review: 0, pending: 0 },
     diplomas: [],
   };
 

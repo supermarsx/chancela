@@ -1409,6 +1409,9 @@ export const plPL: Catalog = {
   'legislacao.corpus.openArticle': 'Otwórz {label}',
   'legislacao.corpus.badge.verified': 'Zweryfikowany',
   'legislacao.corpus.badge.pending': 'Oczekuje',
+  'legislacao.corpus.badge.automatedReview': 'Weryfikacja automatyczna',
+  'legislacao.corpus.badge.automatedReviewHelp':
+    'Tekst urzędowy pozyskany i sprawdzony w procesie automatycznym. NIE zatwierdzony prawnie przez recenzenta będącego człowiekiem — przed poleganiem na nim zalecana jest weryfikacja prawna przez człowieka.',
   'legislacao.corpus.back': 'Powrót do aktów',
   'legislacao.corpus.backToDiploma': 'Powrót do {title}',
   'legislacao.corpus.diploma.notFound': 'Nie znaleziono aktu.',

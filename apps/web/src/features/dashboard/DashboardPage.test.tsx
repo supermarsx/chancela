@@ -975,6 +975,8 @@ describe('DashboardPage', () => {
               verification: 'Pending',
               source_url: null,
               source_complete: false,
+              review_method: null,
+              review_note: null,
             },
           ],
           action: {
@@ -1037,6 +1039,8 @@ describe('DashboardPage', () => {
               verification: 'Pending',
               source_url: null,
               source_complete: false,
+              review_method: null,
+              review_note: null,
             },
           ],
           action: {
@@ -1282,6 +1286,8 @@ describe('DashboardPage', () => {
               verification: 'Verified',
               source_url: 'https://dre.example.test/source',
               source_complete: true,
+              review_method: null,
+              review_note: null,
             },
           ],
           action: {

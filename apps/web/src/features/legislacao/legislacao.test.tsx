@@ -363,7 +363,7 @@ describe('Legislação — corpus reader (full text, t55-E3)', () => {
     source_note: 'Corpus de teste.',
     digest: 'a'.repeat(64),
     origin: 'Embedded',
-    counts: { diplomas: 2, articles: 3, verified: 1, pending: 2 },
+    counts: { diplomas: 2, articles: 3, verified: 1, automated_review: 0, pending: 2 },
     diplomas: [
       {
         id: 'eidas-910-2014',
@@ -375,6 +375,7 @@ describe('Legislação — corpus reader (full text, t55-E3)', () => {
         eli: 'https://eur-lex.europa.eu/eli/reg/2014/910/oj',
         article_count: 1,
         verified_count: 1,
+        automated_review_count: 0,
         pending_count: 0,
       },
       {
@@ -386,6 +387,7 @@ describe('Legislação — corpus reader (full text, t55-E3)', () => {
         official_url: 'https://diariodarepublica.pt/x',
         article_count: 2,
         verified_count: 0,
+        automated_review_count: 0,
         pending_count: 2,
       },
     ],

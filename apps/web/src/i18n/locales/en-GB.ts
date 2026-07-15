@@ -1401,6 +1401,9 @@ export const enGB: Catalog = {
   'legislacao.corpus.openArticle': 'Open {label}',
   'legislacao.corpus.badge.verified': 'Verified',
   'legislacao.corpus.badge.pending': 'Pending',
+  'legislacao.corpus.badge.automatedReview': 'Automated review',
+  'legislacao.corpus.badge.automatedReviewHelp':
+    'Official text captured and reviewed by an automated process. NOT legally approved by a human reviewer — human legal review is recommended before relying on it.',
   'legislacao.corpus.back': 'Back to instruments',
   'legislacao.corpus.backToDiploma': 'Back to {title}',
   'legislacao.corpus.diploma.notFound': 'Instrument not found.',

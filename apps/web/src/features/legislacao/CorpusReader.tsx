@@ -38,6 +38,7 @@ import type {
   LawCorpusView,
   LawDiplomaSummaryView,
   LawSearchHitView,
+  LawVerification,
 } from '../../api/types';
 import { useT } from '../../i18n';
 import type { TFunction } from '../../i18n';
@@ -46,6 +47,7 @@ import {
   Button,
   EmptyState,
   ErrorNote,
+  FieldHelp,
   Input,
   Loading,
   InlineWarning,
@@ -55,10 +57,36 @@ import {
 } from '../../ui';
 import { ExternalLink } from './links';
 
-/** Verified vs Pending — visually distinct badges so authenticity is never ambiguous. */
-function AuthenticityBadge({ verified }: { verified: boolean }) {
+/**
+ * Verified / automated-review / Pending — three visually distinct badges so authenticity is never
+ * ambiguous. Pass `verification` for a per-article/hit tier (the honest three-state badge); pass
+ * `verified` for an aggregate (whole-diploma) coverage badge that only knows human-verified vs not.
+ *
+ * The `automated_review` tier is its OWN thing: authentic vendored statutory text that was reviewed
+ * by an AUTOMATED process and is NOT human-legally-approved. It gets an info-toned badge (never the
+ * green human-verified badge, never the loud Pending warning) plus a "?" help affordance carrying
+ * the honest caveat — the API's `review_note` when present, else an i18n fallback.
+ */
+function AuthenticityBadge({
+  verification,
+  verified,
+  reviewNote,
+}: {
+  verification?: LawVerification;
+  verified?: boolean;
+  reviewNote?: string | null;
+}) {
   const t = useT();
-  return verified ? (
+  if (verification === 'automated_review') {
+    return (
+      <span className="leg-corpus__badge-help">
+        <Badge tone="info">{t('legislacao.corpus.badge.automatedReview')}</Badge>
+        <FieldHelp text={reviewNote?.trim() || t('legislacao.corpus.badge.automatedReviewHelp')} />
+      </span>
+    );
+  }
+  const isVerified = verification !== undefined ? verification === 'Verified' : Boolean(verified);
+  return isVerified ? (
     <Badge tone="ok">{t('legislacao.corpus.badge.verified')}</Badge>
   ) : (
     <Badge tone="warn">{t('legislacao.corpus.badge.pending')}</Badge>
@@ -78,7 +106,9 @@ function formatCitationLine(citation: LawCitationView, t: TFunction): string {
   const state =
     citation.verification === 'Verified'
       ? t('legislacao.corpus.badge.verified')
-      : t('legislacao.citations.pendingState');
+      : citation.verification === 'automated_review'
+        ? t('legislacao.corpus.badge.automatedReview')
+        : t('legislacao.citations.pendingState');
   const source = citation.source_url ? ` — ${citation.source_url}` : '';
   return `- ${citation.citation} [${state}]${source}`;
 }
@@ -131,11 +161,7 @@ function CitationShelf({
           {citations.map((citation) => (
             <li key={citationKey(citation)} className="leg-citations__item">
               <span className="leg-citations__text mono">{citation.citation}</span>
-              <Badge tone={citation.verification === 'Verified' ? 'ok' : 'warn'}>
-                {citation.verification === 'Verified'
-                  ? t('legislacao.corpus.badge.verified')
-                  : t('legislacao.corpus.badge.pending')}
-              </Badge>
+              <AuthenticityBadge verification={citation.verification} />
               {citation.verification === 'Pending' ? (
                 <span className="muted">{t('legislacao.citations.pendingNote')}</span>
               ) : null}
@@ -240,10 +266,14 @@ function CorpusOverview({ onOpenDiploma }: { onOpenDiploma: (id: string) => void
 
 // --- Article rendering (shared by the diploma detail + the single-article view) ---------------
 
-/** The full body of one article — verbatim for Verified, or the flagged marker for Pending. */
+/**
+ * The full body of one article — verbatim text for a Verified OR automated-review article (both
+ * carry genuine statutory text; the tier badge + tooltip disclose that automated-review text is
+ * not yet human-legally-approved), or the flagged marker only for a Pending article.
+ */
 function ArticleBody({ article }: { article: LawArticleView }) {
   const t = useT();
-  if (!article.verified) {
+  if (article.verification === 'Pending') {
     // NEVER present a Pending article's (un-sourced) body as law: render the backend's loud
     // marker inside an explicit warning that says the verified text is not yet available.
     return (
@@ -328,7 +358,10 @@ function ArticleCard({
           {articleTitle(article.label, article.heading)}
         </button>
         <span className="leg-corpus__article-actions">
-          <AuthenticityBadge verified={article.verified} />
+          <AuthenticityBadge
+            verification={article.verification}
+            reviewNote={article.source.review_note}
+          />
           <Button
             type="button"
             variant="ghost"
@@ -449,7 +482,10 @@ function ArticleView({
             </h3>
           </div>
           <span className="leg-corpus__article-actions">
-            <AuthenticityBadge verified={article.verified} />
+            <AuthenticityBadge
+              verification={article.verification}
+              reviewNote={article.source.review_note}
+            />
             <Button
               type="button"
               variant="ghost"
@@ -495,7 +531,7 @@ function SearchHit({
     >
       <span className="leg-corpus__hit-head">
         <span className="leg-corpus__hit-title">{articleTitle(hit.label, hit.heading)}</span>
-        <AuthenticityBadge verified={hit.verified} />
+        <AuthenticityBadge verification={hit.verification} />
       </span>
       <span className="leg-corpus__hit-diploma muted">{hit.diploma_title}</span>
       <span className="leg-corpus__hit-snippet">{hit.snippet}</span>

@@ -1426,6 +1426,9 @@ export const deDE: Catalog = {
   'legislacao.corpus.openArticle': '{label} öffnen',
   'legislacao.corpus.badge.verified': 'Geprüft',
   'legislacao.corpus.badge.pending': 'Ausstehend',
+  'legislacao.corpus.badge.automatedReview': 'Automatische Prüfung',
+  'legislacao.corpus.badge.automatedReviewHelp':
+    'Amtlicher Text automatisch erfasst und geprüft. NICHT durch einen menschlichen Prüfer rechtlich freigegeben – eine menschliche juristische Prüfung wird empfohlen, bevor man sich darauf verlässt.',
   'legislacao.corpus.back': 'Zurück zu den Rechtsakten',
   'legislacao.corpus.backToDiploma': 'Zurück zu {title}',
   'legislacao.corpus.diploma.notFound': 'Rechtsakt nicht gefunden.',

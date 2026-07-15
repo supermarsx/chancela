@@ -1414,6 +1414,9 @@ export const esES: Catalog = {
   'legislacao.corpus.openArticle': 'Abrir {label}',
   'legislacao.corpus.badge.verified': 'Verificado',
   'legislacao.corpus.badge.pending': 'Pendiente',
+  'legislacao.corpus.badge.automatedReview': 'Revisión automática',
+  'legislacao.corpus.badge.automatedReviewHelp':
+    'Texto oficial capturado y revisado por un proceso automático. NO aprobado jurídicamente por un revisor humano; se recomienda una revisión jurídica humana antes de confiar en él.',
   'legislacao.corpus.back': 'Volver a las normas',
   'legislacao.corpus.backToDiploma': 'Volver a {title}',
   'legislacao.corpus.diploma.notFound': 'Norma no encontrada.',

@@ -1415,6 +1415,9 @@ export const itIT: Catalog = {
   'legislacao.corpus.openArticle': 'Apri {label}',
   'legislacao.corpus.badge.verified': 'Verificato',
   'legislacao.corpus.badge.pending': 'In attesa',
+  'legislacao.corpus.badge.automatedReview': 'Revisione automatica',
+  'legislacao.corpus.badge.automatedReviewHelp':
+    'Testo ufficiale acquisito e verificato da un processo automatico. NON approvato giuridicamente da un revisore umano: si raccomanda una revisione giuridica umana prima di farvi affidamento.',
   'legislacao.corpus.back': 'Torna agli atti',
   'legislacao.corpus.backToDiploma': 'Torna a {title}',
   'legislacao.corpus.diploma.notFound': 'Atto non trovato.',

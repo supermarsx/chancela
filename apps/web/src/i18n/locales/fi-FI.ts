@@ -1408,6 +1408,9 @@ export const fiFI: Catalog = {
   'legislacao.corpus.openArticle': 'Avaa {label}',
   'legislacao.corpus.badge.verified': 'Todennettu',
   'legislacao.corpus.badge.pending': 'Odottaa',
+  'legislacao.corpus.badge.automatedReview': 'Automaattinen tarkistus',
+  'legislacao.corpus.badge.automatedReviewHelp':
+    'Virallinen teksti kaapattu ja tarkistettu automaattisella prosessilla. EI ihmisen tekemää oikeudellista hyväksyntää – suositellaan ihmisen tekemää oikeudellista tarkistusta ennen siihen luottamista.',
   'legislacao.corpus.back': 'Takaisin säädöksiin',
   'legislacao.corpus.backToDiploma': 'Takaisin: {title}',
   'legislacao.corpus.diploma.notFound': 'Säädöstä ei löytynyt.',
