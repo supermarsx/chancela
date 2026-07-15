@@ -6253,6 +6253,56 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-mcp/src/server.rs",
+    '"id": "pdf_accessibility_v11"',
+    "MCP document/archive PDF accessibility v11 checkpoint id marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    '"pdf_accessibility_v11_summary": {',
+    "MCP document/archive PDF accessibility v11 summary marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    '"v11_report_count": pdf_accessibility_summary.v11_report_count',
+    "MCP document/archive PDF accessibility v11 count marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    'missing_evidence_blockers.insert("pdf_accessibility_v11_report_missing");',
+    "MCP document/archive PDF accessibility missing v11 blocker marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    '"report_version": 11',
+    "MCP document/archive PDF accessibility fixture report version marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    '"version": 11',
+    "MCP document/archive PDF accessibility nested fixture version marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    '"pdf_ua_blockers": ["limited_tagged_structure"]',
+    "MCP document/archive PDF accessibility fixture blocker marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    'report["pdf_accessibility_v11_summary"]["blocker_counts"]["other"]',
+    "MCP document/archive PDF accessibility unknown blocker bucket marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    '"row_header_cell_count": 3',
+    "MCP document/archive PDF accessibility row-header fixture marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    '"column_header_cell_count": 4',
+    "MCP document/archive PDF accessibility column-header fixture marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
     '"raw_reports_exposed": false',
     "MCP document/archive no raw-report exposure marker",
   );
@@ -10635,12 +10685,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `2d84112`",
+    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `39eb4ae`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `2d84112`",
+    "Focused Gate Snapshot Through `39eb4ae`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -10860,7 +10910,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current working-tree MCP document/archive review summary checks",
+    "Current `39eb4ae` MCP document/archive PDF accessibility v11 alignment checks",
     "CI/E2E hardening plan MCP document/archive checks marker",
   );
   assertFileContains(
@@ -10882,6 +10932,16 @@ function assertCheckpointMap() {
     "docs/CI-E2E-HARDENING-PLAN.md",
     "no PDF/UA conformance, no DGLAB certification, no legal\n  validity",
     "CI/E2E hardening plan MCP document/archive no-claim marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "`pdf_accessibility_v11`, `pdf_accessibility_v11_summary`,\n  `v11_report_count`, `pdf_accessibility_v11_report_missing`",
+    "CI/E2E hardening plan MCP document/archive v11 field marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "fixture\n  `report_version: 11`, nested `accessibility_report_json.version: 11`, known\n  `limited_tagged_structure` blockers",
+    "CI/E2E hardening plan MCP document/archive v11 fixture marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -11305,7 +11365,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `2d84112`",
+    "Current checkpoint metadata/static checks through `39eb4ae`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -11840,8 +11900,38 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `2d8411204ea1f09db21e3a74eca98366e6e20c51`",
+    "implementation snapshot `39eb4ae6df3b881363faf9d40a950f2aada473a2`",
     "spec coverage current implementation snapshot marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Current `39eb4ae` keeps AI/MCP, Documents/Archive, and CI **PARTIAL**",
+    "spec coverage MCP document/archive v11 current checkpoint marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Static guidance advertises\n  `pdf_accessibility_v11`, and argumented `arguments.document_archive` summaries\n  emit `pdf_accessibility_v11_summary`, `v11_report_count`",
+    "spec coverage MCP document/archive v11 field marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "`limited_tagged_structure` blocker counts, `other` buckets for unrecognized\n  caller blocker text",
+    "spec coverage MCP document/archive blocker bucket marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "`pdf_accessibility_v11_report_missing` when no v11 report is supplied",
+    "spec coverage MCP document/archive missing v11 blocker marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "The\n  fixture report is version 11 in both `report_version` and nested\n  `accessibility_report_json.version`",
+    "spec coverage MCP document/archive fixture report v11 marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "does not claim PDF/UA\n  conformance, DGLAB certification, legal validity, signature validity, provider\n  validation, external-validator success, trust validation, legal review, full\n  archive completion, AI/MCP completion, or spec completion",
+    "spec coverage MCP document/archive explicit no-claim marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
@@ -11897,6 +11987,16 @@ function assertCheckpointMap() {
     "docs/CI-CHECKPOINTS.md",
     "Ata editor\nworkflow provenance review panel that copies a sanitized local\n`arguments.workflow_evidence` payload",
     "CI checkpoints workflow provenance panel marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "document/archive review summary markers for `pdf_accessibility_v11`,\n`pdf_accessibility_v11_summary`, `v11_report_count`,\n`pdf_accessibility_v11_report_missing`, fixture `report_version: 11`",
+    "CI checkpoints MCP document/archive v11 markers",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "known\n`limited_tagged_structure` blockers, `other` blocker buckets, row/column\ntable-header counts",
+    "CI checkpoints MCP document/archive blocker/count markers",
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
@@ -12047,6 +12147,11 @@ function assertCheckpointMap() {
     "scripts/check-spec-coverage.mjs",
     "\"docs/ARCHITECTURE.md\"",
     "spec coverage checker architecture checkpoint path allowlist marker",
+  );
+  assertFileContains(
+    "scripts/check-spec-coverage.mjs",
+    "\"docs/comparison.md\"",
+    "spec coverage checker comparison docs checkpoint path allowlist marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",

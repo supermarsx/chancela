@@ -67,7 +67,14 @@ workflow provenance review panel that copies a sanitized local
 `arguments.workflow_evidence` payload for
 `chancela://mcp/workflow-provenance-review` without raw IDs, names, emails,
 titles, deliberations, access codes, digests, browser MCP calls, AI-01/AI-02,
-or full AI/MCP completion claims, draft-vs-signed comparison review guidance, and the
+or full AI/MCP completion claims, draft-vs-signed comparison review guidance,
+document/archive review summary markers for `pdf_accessibility_v11`,
+`pdf_accessibility_v11_summary`, `v11_report_count`,
+`pdf_accessibility_v11_report_missing`, fixture `report_version: 11`, known
+`limited_tagged_structure` blockers, `other` blocker buckets, row/column
+table-header counts, local caller-supplied JSON only, and no PDF/UA/DGLAB/legal/
+signature/provider/external-validator/trust/legal-review/full-archive/spec
+completion claims, and the
 `chancela://mcp/meeting-metadata-extraction-review` local review aid over
 caller-supplied meeting JSON/text metadata, the bounded local
 provenance panel with deterministic local counts and a deterministic

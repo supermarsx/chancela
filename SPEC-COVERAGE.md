@@ -1,9 +1,10 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-15 from current implementation snapshot `2d8411204ea1f09db21e3a74eca98366e6e20c51`,
-with committed evidence refreshes for the browser workflow provenance review
-panel and sanitized local MCP workflow-provenance copy payload, generated
-document coverage fixture alignment, CI coverage-waiver debt guard, and the
+*Updated 2026-07-15 from current implementation snapshot `39eb4ae6df3b881363faf9d40a950f2aada473a2`,
+with committed evidence refreshes for the MCP document/archive PDF accessibility
+v11 identifier, count, blocker, and fixture-report alignment, the browser
+workflow provenance review panel and sanitized local MCP workflow-provenance copy
+payload, generated document coverage fixture alignment, CI coverage-waiver debt guard, and the
 recently landed full ignored Postgres store backend sweep with per-test child
 database isolation, logical restore JSON text-to-jsonb binding,
 child-database cleanup proof, and the backend-only
@@ -243,7 +244,8 @@ contract E2E wiring for the template summary/import verdict/export fixtures,
 followed by `71fc536` targeted Postgres store CI, `628b613` per-test
 isolated full ignored Postgres backend sweep proof, `6b33517` coverage-waiver
 static debt guard, `0954b53` generated-document coverage fixture alignment,
-and `2d84112` browser workflow provenance review panel.
+`2d84112` browser workflow provenance review panel, and `39eb4ae` MCP
+document/archive PDF accessibility v11 alignment.
 Earlier coverage text remains prior snapshot context. All top-level spec areas remain **PARTIAL**.
 This is an implementation and test coverage snapshot, not a legal certification,
 not production CMD approval, not DRE verification promotion, not full PDF/UA
@@ -273,6 +275,27 @@ being useful. The matrix below records the current factual coverage and the rema
 blockers.
 
 Implementation checkpoints covered here:
+
+- Current `39eb4ae` keeps AI/MCP, Documents/Archive, and CI **PARTIAL**: the
+  MCP document/archive review summary now aligns its PDF accessibility checkpoint
+  identifiers and deterministic aggregate report with the current PDF
+  accessibility report version 11. Static guidance advertises
+  `pdf_accessibility_v11`, and argumented `arguments.document_archive` summaries
+  emit `pdf_accessibility_v11_summary`, `v11_report_count`, version-count maps,
+  `limited_tagged_structure` blocker counts, `other` buckets for unrecognized
+  caller blocker text, row/column table-header totals, and
+  `pdf_accessibility_v11_report_missing` when no v11 report is supplied. The
+  fixture report is version 11 in both `report_version` and nested
+  `accessibility_report_json.version`, with row-header count 3, column-header
+  count 4, row/column scope flags, and explicit false no-claim fields. This
+  remains a caller-supplied local JSON summary only: it performs no bridge, API,
+  AI-provider, legal-service, HTTP/SSE, provider, signature, archive, DGLAB,
+  trust-list, or external-validator calls, echoes no raw reports, path values,
+  raw PDF bytes, IDs, notes, digests, or secrets, and does not claim PDF/UA
+  conformance, DGLAB certification, legal validity, signature validity, provider
+  validation, external-validator success, trust validation, legal review, full
+  archive completion, AI/MCP completion, or spec completion; statuses remain
+  PARTIAL=11.
 
 - Current `2d84112` keeps AI/MCP, Workflows, UX, and CI **PARTIAL**: the
   Ata editor now renders a browser-side workflow provenance review panel from
@@ -1602,25 +1625,30 @@ Implementation checkpoints covered here:
   filing/completion, disposal, deletion, redaction, anonymization, erasure,
   legal-hold mutation, retention-policy mutation, AI/MCP completion, or
   provider/legal-service assurance.
-- Working tree keeps AI/MCP/Documents/Archive/CI **PARTIAL**: MCP now
+- Current `39eb4ae` keeps AI/MCP/Documents/Archive/CI **PARTIAL**: MCP now
   advertises the read-only
   `chancela://mcp/document-archive-review-summary` resource. With no arguments
   it returns local input-shape guidance and no-claim boundaries; with
   `arguments.document_archive` JSON it returns deterministic aggregate counts
   for validation report/status, digest/fixity fields, signed-document state,
-  external-validator attachment statuses, PDF accessibility report versions,
-  PDF/UA blocker observations, row/column table-header evidence, archive and
+  external-validator attachment statuses, PDF accessibility v11 report versions,
+  `pdf_accessibility_v11_summary`, `v11_report_count`, `limited_tagged_structure`
+  and `other` blocker counts, row/column table-header totals, archive and
   evidence-index path markers, no-claim flag observations, and missing-evidence
-  blockers. The report avoids echoing raw reports, digest values, path values,
-  IDs, notes, raw PDF bytes, or secrets; makes no bridge/API/AI-provider/
+  blockers including `pdf_accessibility_v11_report_missing`. The fixture report
+  is version 11 in both `report_version` and nested
+  `accessibility_report_json.version`, and the summary counts row-header cells,
+  column-header cells, and row/column header scope flags from supplied local
+  JSON. The report avoids echoing raw reports, digest values, path values, IDs,
+  notes, raw PDF bytes, or secrets; makes no bridge/API/AI-provider/
   legal-service/HTTP/SSE/provider calls; and keeps PDF/UA conformance, DGLAB
   certification, legal validity, signature validity, archive certification,
   provider validation, external-validator success, trust validation, and legal
   review claims false. This is caller-supplied local JSON review signal only,
   not PDF/UA conformance, DGLAB certification, legal validity, signature
   validity, archive certification, provider validation, external-validator
-  success, trust validation, legal review, AI/MCP completion, or provider/legal
-  assurance.
+  success, trust validation, legal review, full archive completion, AI/MCP
+  completion, spec completion, or provider/legal assurance.
 - Working tree keeps Data/Roles/Workflows/CI **PARTIAL**: `GET /v1/dashboard`
   now returns `recent_events: []` for guest/minimal redaction callers while
   Owner and `Leitor` sessions keep the recent ledger-event feed. Guest remains

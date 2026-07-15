@@ -1,10 +1,11 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `2d84112`,
-including coverage notes for the Ata editor workflow provenance review panel,
-generated-document coverage fixture alignment, CI coverage-waiver debt guard,
-and the full ignored Postgres store backend sweep with
+and implementation snapshot `39eb4ae`,
+including coverage notes for the MCP document/archive PDF accessibility v11
+identifier/count/blocker alignment, fixture report version 11, the Ata editor
+workflow provenance review panel, generated-document coverage fixture alignment,
+CI coverage-waiver debt guard, and the full ignored Postgres store backend sweep with
 per-test child database isolation, child database cleanup, logical restore
 JSON text-to-jsonb binding, and backend-only SCAP-backed signer-capacity evidence
 persistence for local PKCS#12 signing, wp23 user-template authoring groundwork
@@ -412,9 +413,14 @@ test operating checklist for driving Chancela toward release confidence.
   it returns local input-shape guidance and no-claim boundaries; with
   `arguments.document_archive` it returns deterministic aggregate counts for
   validation report/status, digest/fixity fields, signed-document metadata,
-  external-validator attachment statuses, PDF accessibility v11 report/blocker
-  and row/column table-header evidence, archive/evidence-index path markers,
-  no-claim flag observations, and missing-evidence blockers. It echoes no raw
+  external-validator attachment statuses, the `pdf_accessibility_v11` checkpoint,
+  `pdf_accessibility_v11_summary`, `v11_report_count`, PDF accessibility v11
+  report/blocker and row/column table-header evidence, archive/evidence-index path
+  markers, no-claim flag observations, and missing-evidence blockers including
+  `pdf_accessibility_v11_report_missing`. Fixture coverage uses
+  `report_version: 11` plus nested `accessibility_report_json.version: 11`,
+  `limited_tagged_structure` known blockers, `other` buckets for unrecognized
+  caller blocker text, and row-header/column-header count and scope fields. It echoes no raw
   reports, digest values, path values, IDs, notes, raw PDF bytes, or secrets;
   makes no bridge/API/AI-provider/legal-service/HTTP/SSE/provider calls; and
   keeps PDF/UA conformance, DGLAB certification, legal validity, signature
@@ -423,7 +429,8 @@ test operating checklist for driving Chancela toward release confidence.
   caller-supplied local JSON review signal only, not PDF/UA conformance, DGLAB
   certification, legal validity, signature validity, archive certification,
   provider validation, external-validator success, trust validation, legal
-  review, AI/MCP completion, or provider/legal assurance.
+  review, full archive completion, AI/MCP completion, spec completion, or
+  provider/legal assurance.
 - The current MCP meeting metadata extraction review slice adds the read-only
   `chancela://mcp/meeting-metadata-extraction-review` resource. With no
   arguments it returns static human-review guidance; with
@@ -958,11 +965,11 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `2d84112`
+## Focused Gate Snapshot Through `39eb4ae`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08` and checkpoint-promoted on 2026-07-15 for
-current implementation head `2d84112`. This is not an exhaustive current
+current implementation head `39eb4ae`. This is not an exhaustive current
 green-run claim; the full-server E2E claim below is limited to local
 `chancela-server --features e2e` after auth harness alignment, and browser,
 Docker, desktop, package signing/notarization, image signing/attestation, and
@@ -1484,16 +1491,20 @@ settingsDefaults.test.ts contracts.test.ts`.
   certification, transfer approval/execution, notification, external calls,
   register mutation, automated legal decision, or risk-scoring authority, and
   it keeps the spec matrix at `PARTIAL=11`.
-- Current working-tree MCP document/archive review summary checks: focused
+- Current `39eb4ae` MCP document/archive PDF accessibility v11 alignment checks: focused
   `cargo test -p chancela-mcp --locked document_archive_review_summary` coverage
   pins the read-only `chancela://mcp/document-archive-review-summary` resource,
   static no-argument input guidance, deterministic aggregate report mode for
   `arguments.document_archive`, local JSON only, raw-report/no-echo coverage,
   no extra resource params, no bridge/API/AI-provider/legal-service/HTTP/SSE/
   provider calls, aggregate counts for validation report/status, digest/fixity
-  fields, signed-document state, external-validator attachments/statuses, PDF
-  accessibility v11 report versions, PDF/UA blocker deltas, row/column table-header
-  evidence, archive/evidence-index path markers, no-claim observations, and
+  fields, signed-document state, external-validator attachments/statuses,
+  `pdf_accessibility_v11`, `pdf_accessibility_v11_summary`,
+  `v11_report_count`, `pdf_accessibility_v11_report_missing`, fixture
+  `report_version: 11`, nested `accessibility_report_json.version: 11`, known
+  `limited_tagged_structure` blockers, `other` buckets for unrecognized caller
+  blocker text, row/column table-header counts and scope flags,
+  archive/evidence-index path markers, no-claim observations, and
   missing-evidence blockers, plus false PDF/UA conformance, DGLAB
   certification, legal validity, signature validity, qualified-signature,
   archive-certification, provider-validation, external-validator-success,
@@ -1501,7 +1512,8 @@ settingsDefaults.test.ts contracts.test.ts`.
   review signal only: no PDF/UA conformance, no DGLAB certification, no legal
   validity, no signature validity, no archive certification, no provider
   validation, no external-validator success, no trust validation, no legal
-  review, no provider/legal assurance, and no AI or MCP completion claim.
+  review, no full archive completion, no spec completion, no provider/legal
+  assurance, and no AI or MCP completion claim.
 - Current working-tree sealed-act chronology projection checks: focused API/UI
   evidence pins `sealed_act_projection` on `GET /v1/entities/{id}/chronology`
   for local sealed or archived acts, including provenance rows, local nodes and
@@ -2257,15 +2269,18 @@ settingsDefaults.test.ts contracts.test.ts`.
   does not claim production Postgres readiness, TLS readiness, HA readiness,
   migration completeness, RPO/RTO certification, split-brain prevention,
   failover certification, legal/DR certification, or spec completion.
-- Current checkpoint metadata/static checks through `2d84112`
+- Current checkpoint metadata/static checks through `39eb4ae`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
   `git diff --check -- SPEC-COVERAGE.md docs\CI-E2E-HARDENING-PLAN.md
   docs\CI-CHECKPOINTS.md scripts\checkpoint-recent-landed.mjs`.
   These pin the spec snapshot,
-  hardening-plan head, browser workflow provenance review panel and sanitized
-  local MCP payload markers, generated-document coverage fixture alignment,
+  hardening-plan head, MCP document/archive PDF accessibility v11 identifiers
+  and counts, `pdf_accessibility_v11_summary`, `v11_report_count`,
+  `pdf_accessibility_v11_report_missing`, fixture report version 11,
+  browser workflow provenance review panel and sanitized local MCP payload
+  markers, generated-document coverage fixture alignment,
   CI coverage-waiver static debt guard, backend-only SCAP-backed local PKCS#12
   `scap_capacity_evidence` persistence, `not_checked_by_scap` fallback,
   preprod/mock `declared_capacity_by_provider`, prod-fixture

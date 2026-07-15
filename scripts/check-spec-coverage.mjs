@@ -36,6 +36,7 @@ const checkpointPaths = new Set([
   "docs/CI-CHECKPOINTS.md",
   "docs/CI-E2E-HARDENING-PLAN.md",
   "docs/CI-RELEASE-HARDENING.md",
+  "docs/comparison.md",
   "docs/ci-assurance-waivers.json",
   "package.json",
   "scripts/check-ci-assurance-waivers.mjs",
