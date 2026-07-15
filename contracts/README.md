@@ -28,6 +28,7 @@ counts, state transitions). Together they pin both shape and semantics.
 | `act.working-copy.md`                  | Markdown working-copy export — `GET /v1/acts/{id}/document/working-copy`                   | DOC-02 working-copy export                                         |
 | `ledger.events.json`                   | `[LedgerEventView]` — `GET /v1/ledger/events`                                              | t5 §2.6                                                            |
 | `dashboard.json`                       | `DashboardResponse` — `GET /v1/dashboard`                                                  | t5 §2.7                                                            |
+| `dashboard.guest.json`                 | guest/minimal-redacted `DashboardResponse` — `GET /v1/dashboard` with empty recent events   | dashboard read-redaction                                           |
 | `settings.json`                        | `Settings` — `GET/PUT /v1/settings`                                                        | t8 §2.8 (`t8-e1.md`)                                               |
 | `platform.services.json`               | `PlatformServicesResponse` — `GET /v1/platform/services`                                   | platform service status/control                                    |
 | `platform.control.json`                | `PlatformControlResponse` — `POST /v1/platform/services/{id}/actions/{action}`             | platform service desired-state control                             |

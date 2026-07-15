@@ -4601,6 +4601,66 @@ describe('contract fixtures parse through the real client', () => {
     );
   });
 
+  it('dashboard.guest.json → Dashboard guest/minimal recent-event redaction', async () => {
+    const guestBody = fixture('dashboard.guest.json');
+    stubFetch(guestBody);
+    const dash: Dashboard = await api.dashboard();
+    assertExactKeys<Dashboard>(
+      dash,
+      {
+        entities: true,
+        books_open: true,
+        books_total: true,
+        acts_total: true,
+        acts_draft: true,
+        acts_awaiting_signature: true,
+        acts_sealed: true,
+        unresolved_compliance: true,
+        ledger_length: true,
+        ledger_valid: true,
+        current_work: true,
+        alerts: true,
+        reminders: true,
+        recent_events: true,
+      },
+      'Dashboard guest/minimal',
+    );
+    expect(dash.ledger_length).toBeGreaterThan(0);
+    expect(dash.recent_events).toEqual([]);
+
+    for (const forbiddenKey of [
+      'actor_id',
+      'actor',
+      'justification',
+      'scope',
+      'payload_digest',
+      'prev_hash',
+      'hash',
+      'chains',
+      'attestation',
+    ]) {
+      expect(guestBody, `guest dashboard must not expose ${forbiddenKey}`).not.toMatch(
+        new RegExp(`"${forbiddenKey}"\\s*:`),
+      );
+    }
+
+    const ownerDash = JSON.parse(fixture('dashboard.json')) as Dashboard;
+    const ownerEvent = ownerDash.recent_events[0];
+    if (!ownerEvent) throw new Error('dashboard.json should include an owner-visible event');
+    for (const ownerOnlyValue of [
+      ownerEvent.actor,
+      ownerEvent.justification,
+      ownerEvent.kind,
+      ownerEvent.payload_digest,
+      ownerEvent.prev_hash,
+      ownerEvent.hash,
+    ]) {
+      expect(guestBody, `guest dashboard leaked owner event value ${ownerOnlyValue}`).not.toContain(
+        ownerOnlyValue,
+      );
+    }
+  });
+
   it('settings.json → Settings (GET/PUT /v1/settings)', async () => {
     stubFetch(fixture('settings.json'));
     const settings = (await api.getSettings()) as SettingsWire;
@@ -7277,6 +7337,7 @@ describe('contract fixtures — cross-cutting guarantees', () => {
       'act.sealed.json',
       'ledger.events.json',
       'dashboard.json',
+      'dashboard.guest.json',
       'settings.json',
       'registry.extract.json',
       'cae.entry.json',
