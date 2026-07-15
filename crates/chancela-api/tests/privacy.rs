@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
-use chancela_api::{AppState, User, UserId, router};
+use chancela_api::{AppState, User, UserId, provision_subject_dek, router};
 use chancela_authz::{
     LEITOR_ROLE_ID, OWNER_ROLE_ID, Permission, Role, RoleAssignment, RoleCatalog, RoleId, Scope,
 };
@@ -6519,4 +6519,396 @@ async fn privacy_register_load_tolerates_malformed_and_old_files() {
     assert_eq!(dpias.len(), 1);
     assert_eq!(dpias[0]["id"], json!(old_dpia_id.to_string()));
     assert_eq!(dpias[0]["subprocessors"], json!([]));
+}
+
+// =================================================================================================
+// wp26-gdpr — destructive right-to-erasure workflow (preflight -> approve -> execute -> attest).
+// The MERGE-GATE test proves ledger integrity is preserved across a real destructive erasure.
+// Subject Amelia Marques of Encosto Estrategico Lda (fictional). Never real names.
+// =================================================================================================
+
+/// Insert an interactive admin user (Owner @ Global) with a password session, returning its token.
+async fn insert_admin_session(state: &AppState, id: UserId, username: &str) -> String {
+    insert_user(
+        state,
+        id,
+        username,
+        RoleAssignment::new(OWNER_ROLE_ID, Scope::Global),
+    )
+    .await;
+    open_session(state, id).await
+}
+
+async fn create_erasure_dsr(state: &AppState, subject: UserId, actor_token: &str) -> String {
+    let (status, created) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                &format!("/v1/privacy/users/{subject}/dsr-requests"),
+                json!({ "request_type": "erasure" }),
+            ),
+            actor_token,
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::CREATED,
+        "erasure DSR created: {created}"
+    );
+    created["id"].as_str().expect("request id").to_owned()
+}
+
+#[tokio::test]
+async fn erasure_preflight_enumerates_targets_and_carveouts() {
+    let tmp = TempDir::new();
+    let state = AppState::with_data_dir(tmp.dir.clone());
+    let (_owner, owner_token) = bootstrap_owner(&state).await;
+    let subject = UserId(Uuid::from_u128(0xA3E1));
+    insert_user(
+        &state,
+        subject,
+        "amelia.marques",
+        RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global),
+    )
+    .await;
+    let request_id = create_erasure_dsr(&state, subject, &owner_token).await;
+
+    let (status, report) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                &format!("/v1/privacy/users/{subject}/dsr-requests/{request_id}/erasure/preflight"),
+                json!({}),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "preflight: {report}");
+    assert_eq!(report["status"], json!("ready_for_approval"));
+    assert_eq!(report["subject_user_id"], json!(subject.to_string()));
+    let targets = report["erasable_targets"].as_array().expect("targets");
+    assert!(
+        targets.iter().any(
+            |t| t["collection"] == json!("users") && t["technique"] == json!("physical_delete")
+        ),
+        "users row is an erasable target: {report}"
+    );
+    let carveouts = report["retained_carveouts"].as_array().expect("carveouts");
+    assert!(
+        carveouts
+            .iter()
+            .any(|c| c["collection"] == json!("ledger_events")),
+        "ledger events retained as a carve-out: {report}"
+    );
+    assert!(
+        report["preflight_digest"]
+            .as_str()
+            .is_some_and(|d| d.len() == 64),
+        "preflight digest is a 64-hex sha256: {report}"
+    );
+}
+
+#[tokio::test]
+async fn erasure_approve_enforces_dual_control_and_confirmation() {
+    let tmp = TempDir::new();
+    let state = AppState::with_data_dir(tmp.dir.clone());
+    let (_owner, owner_token) = bootstrap_owner(&state).await;
+    let auditor_token =
+        insert_admin_session(&state, UserId(Uuid::from_u128(0xA0D1)), "auditor").await;
+    let subject = UserId(Uuid::from_u128(0xA3E2));
+    insert_user(
+        &state,
+        subject,
+        "amelia.marques",
+        RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global),
+    )
+    .await;
+    let request_id = create_erasure_dsr(&state, subject, &owner_token).await;
+
+    let (_s, report) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                &format!("/v1/privacy/users/{subject}/dsr-requests/{request_id}/erasure/preflight"),
+                json!({}),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    let digest = report["preflight_digest"]
+        .as_str()
+        .expect("digest")
+        .to_owned();
+
+    let approve_uri =
+        format!("/v1/privacy/users/{subject}/dsr-requests/{request_id}/erasure/approve");
+    // The requester (owner) cannot self-approve -- dual control.
+    let (status, body) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                &approve_uri,
+                json!({
+                    "preflight_digest": digest,
+                    "subject_confirmation": subject.to_string(),
+                    "acknowledge_carveouts": true
+                }),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "self-approval blocked by dual control: {body}"
+    );
+
+    // Wrong subject confirmation is rejected.
+    let (status, _b) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                &approve_uri,
+                json!({
+                    "preflight_digest": digest,
+                    "subject_confirmation": "not-the-subject",
+                    "acknowledge_carveouts": true
+                }),
+            ),
+            &auditor_token,
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "confirmation mismatch"
+    );
+
+    // Missing carve-out acknowledgement is rejected.
+    let (status, _b) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                &approve_uri,
+                json!({
+                    "preflight_digest": digest,
+                    "subject_confirmation": subject.to_string(),
+                    "acknowledge_carveouts": false
+                }),
+            ),
+            &auditor_token,
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "carve-outs must be acked"
+    );
+
+    // A distinct approver with the correct confirmation + ack succeeds.
+    let (status, body) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                &approve_uri,
+                json!({
+                    "preflight_digest": digest,
+                    "subject_confirmation": subject.to_string(),
+                    "acknowledge_carveouts": true
+                }),
+            ),
+            &auditor_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "distinct approver approves: {body}");
+    assert_eq!(
+        body["erasure_authorization"]["approved_by"],
+        json!("auditor")
+    );
+    assert_eq!(
+        body["erasure_authorization"]["requested_by"],
+        json!("owner")
+    );
+}
+
+#[tokio::test]
+async fn erasure_execute_rejects_unapproved_request() {
+    let tmp = TempDir::new();
+    let state = AppState::with_data_dir(tmp.dir.clone());
+    let (_owner, owner_token) = bootstrap_owner(&state).await;
+    let subject = UserId(Uuid::from_u128(0xA3E3));
+    insert_user(
+        &state,
+        subject,
+        "amelia.marques",
+        RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global),
+    )
+    .await;
+    let request_id = create_erasure_dsr(&state, subject, &owner_token).await;
+    let execute_uri =
+        format!("/v1/privacy/users/{subject}/dsr-requests/{request_id}/erasure/execute");
+
+    let (status, body) = send(
+        state.clone(),
+        with_session(
+            post_json(&execute_uri, json!({ "preflight_digest": "deadbeef" })),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "execute needs approval first: {body}"
+    );
+}
+
+/// THE MERGE-GATE (plan P5): a real destructive erasure must preserve ledger integrity.
+#[tokio::test]
+async fn merge_gate_erasure_preserves_ledger_integrity_and_destroys_dek() {
+    let tmp = TempDir::new();
+    let state = AppState::with_data_dir(tmp.dir.clone());
+    let (_owner, owner_token) = bootstrap_owner(&state).await;
+    let auditor_token =
+        insert_admin_session(&state, UserId(Uuid::from_u128(0xA0D9)), "auditor").await;
+    let subject = UserId(Uuid::from_u128(0xA3E9));
+    let subject_id = subject.to_string();
+    insert_user(
+        &state,
+        subject,
+        "amelia.marques",
+        RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global),
+    )
+    .await;
+
+    // Provision a per-subject DEK and encrypt a PII field under it (the crypto-erase target).
+    let dek = provision_subject_dek(&state, &subject_id).expect("provision subject DEK");
+    let crypto = state
+        .provider_credentials
+        .subject_dek_crypto()
+        .expect("subject DEK crypto");
+    let envelope = crypto
+        .encrypt_field(
+            &dek,
+            &subject_id,
+            "email",
+            b"amelia@encosto-estrategico.test",
+        )
+        .expect("encrypt PII under DEK");
+    // Sanity: the DEK currently decrypts the PII.
+    assert_eq!(
+        crypto
+            .decrypt_field(&dek, &subject_id, "email", &envelope)
+            .expect("decrypt while DEK lives")
+            .as_slice(),
+        b"amelia@encosto-estrategico.test"
+    );
+
+    let request_id = create_erasure_dsr(&state, subject, &owner_token).await;
+
+    // Preflight -> approve (distinct principal).
+    let (_s, report) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                &format!("/v1/privacy/users/{subject}/dsr-requests/{request_id}/erasure/preflight"),
+                json!({}),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    let digest = report["preflight_digest"]
+        .as_str()
+        .expect("digest")
+        .to_owned();
+    assert!(
+        report["subject_dek_present"].as_bool().unwrap_or(false),
+        "the provisioned DEK is enumerated: {report}"
+    );
+    let (status, _b) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                &format!("/v1/privacy/users/{subject}/dsr-requests/{request_id}/erasure/approve"),
+                json!({
+                    "preflight_digest": digest,
+                    "subject_confirmation": subject_id,
+                    "acknowledge_carveouts": true
+                }),
+            ),
+            &auditor_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "approval succeeds");
+
+    // BEFORE: ledger verifies at n.
+    let n = {
+        let ledger = state.ledger.read().await;
+        ledger.verify().expect("ledger verifies before erasure")
+    };
+
+    // EXECUTE the destructive erasure.
+    let (status, executed) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                &format!("/v1/privacy/users/{subject}/dsr-requests/{request_id}/erasure/execute"),
+                json!({ "preflight_digest": digest }),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "erasure executes: {executed}");
+    assert_eq!(executed["status"], json!("completed"));
+    assert_eq!(executed["outcome"], json!("partially_fulfilled"));
+    assert_eq!(executed["erasure_execution"]["dek_destroyed"], json!(true));
+
+    // (a) AFTER: ledger verifies at n+1 -- exactly one appended `subject.erased` event, nothing mutated.
+    {
+        let ledger = state.ledger.read().await;
+        assert_eq!(
+            ledger.verify(),
+            Ok(n + 1),
+            "erasure appended exactly one event and preserved integrity"
+        );
+        // (d) the subject.erased attestation is present.
+        assert!(
+            ledger.events().iter().any(|e| e.kind == "subject.erased"),
+            "subject.erased attestation appended"
+        );
+    }
+
+    // (b) subject store reads return none.
+    assert!(
+        !state.users.read().await.contains_key(&subject),
+        "subject users row physically removed"
+    );
+
+    // (c) the subject DEK is destroyed -> decrypt is now impossible (PII irrecoverable, incl. backups).
+    let store = state.store.as_ref().expect("durable store");
+    let key_row = store
+        .get_subject_key(&subject_id)
+        .expect("subject key read")
+        .expect("row still exists as an erasure tombstone");
+    assert!(key_row.erased_at.is_some(), "DEK marked erased");
+    assert!(
+        key_row.wrapped_dek.is_empty(),
+        "wrapped DEK bytes destroyed"
+    );
+    assert!(
+        crypto
+            .unwrap_dek(&subject_id, &key_row.wrapped_dek)
+            .is_err(),
+        "destroyed DEK can no longer be unwrapped -- the PII ciphertext is cryptographically dead"
+    );
 }

@@ -221,6 +221,7 @@ pub use roles::{
 // Signature-provider credential model + encrypted sidecar (t77 S2). Re-exported so the credential
 // API/assembly slices (S3/S4) can name these and so the crypto core's consumers are reachable from
 // the crate root (the crate-private `CredentialSecretStore` itself stays internal).
+pub use privacy::provision_subject_dek;
 pub use secretstore::{CredentialKeySource, ProtectionLevel, SecretEnvelope, SecretStoreError};
 pub use secretstore_persist::{
     CmdCredentialFields, CredentialEntry, CredentialFieldSet, CredentialMode,
@@ -1908,6 +1909,18 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/v1/privacy/users/{user_id}/dsr-requests/{request_id}/complete",
             post(privacy::complete_user_dsr_request),
+        )
+        .route(
+            "/v1/privacy/users/{user_id}/dsr-requests/{request_id}/erasure/preflight",
+            post(privacy::erasure_preflight),
+        )
+        .route(
+            "/v1/privacy/users/{user_id}/dsr-requests/{request_id}/erasure/approve",
+            post(privacy::erasure_approve),
+        )
+        .route(
+            "/v1/privacy/users/{user_id}/dsr-requests/{request_id}/erasure/execute",
+            post(privacy::erasure_execute),
         )
         .route(
             "/v1/privacy/dsr-requests/{id}",
