@@ -5852,6 +5852,16 @@ function assertCheckpointMap() {
     "CI checkpoints TSL canonicalization hardening marker",
   );
   assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "LOTL/member-state bootstrap checkpoint: `8bbe944` replaces the",
+    "CI checkpoints LOTL/member-state bootstrap marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "authentication/bootstrap evidence only; it does not claim production\n  trust-list validity",
+    "CI checkpoints LOTL bootstrap no-overclaim marker",
+  );
+  assertFileContains(
     "crates/chancela-tsl/src/record.rs",
     "lookup_matches_complete_certificate_fingerprint_and_ski_only",
     "TSL record identifier lookup regression coverage",
@@ -10885,12 +10895,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `33e70bb`",
+    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `8bbe944`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `33e70bb`",
+    "Focused Gate Snapshot Through `8bbe944`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -11570,7 +11580,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `33e70bb`",
+    "Current checkpoint metadata/static checks through `8bbe944`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -11812,6 +11822,16 @@ function assertCheckpointMap() {
     "docs/CI-E2E-HARDENING-PLAN.md",
     "Current `33e70bb` TSL XML-DSig checks",
     "CI/E2E hardening plan TSL P-256 XML-DSig checks marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Current `8bbe944` LOTL/member-state bootstrap checkpoint",
+    "CI/E2E hardening plan LOTL/member-state checkpoint marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "authentication/bootstrap evidence only:\n  it is not production trust-list validity",
+    "CI/E2E hardening plan LOTL no-overclaim marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -12145,8 +12165,18 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `33e70bb655d73d5abad4a597492b1673d75bd45a`",
+    "implementation snapshot `8bbe944e17bb0dc6663d3341da715a9e0faad5e0`",
     "spec coverage current implementation snapshot marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Current `8bbe944` keeps Signatures/Trust/CI **PARTIAL**",
+    "spec coverage LOTL current checkpoint marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "authentication/bootstrap evidence only: it does not claim production\n  trust-list validity",
+    "spec coverage LOTL no-overclaim marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",

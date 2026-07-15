@@ -617,6 +617,15 @@ It intentionally reuses existing test surfaces:
   This remains bounded technical TSL parsing evidence only; it does not claim
   legal trust certification, production trust-list validity, certificate path/
   revocation policy validation, or broad XML-DSig profile support.
+- LOTL/member-state bootstrap checkpoint: `8bbe944` replaces the
+  `chancela-tsl` LOTL stub with live EU LOTL ingestion and member-state TSL
+  traversal. The static checkpoint pins `ingest_lotl`, `member_pointer`,
+  `ingest_member_tsl`, `bootstrap_member_tsl`, and the double-gated ignored
+  `bootstraps_live_pt_tsl_from_eu_lotl` network test. This is
+  authentication/bootstrap evidence only; it does not claim production
+  trust-list validity, certificate path/revocation policy validation,
+  qualified-status determination, legal trust certification, live provider
+  approval, or full trust implementation.
 - API trust/import/static hardening markers: the static map pins
   `outbound_url_policy_rejects_reserved_ipv4_zero_eight`,
   `local_trust_url_test_allowance_is_scoped_to_registered_origin`,

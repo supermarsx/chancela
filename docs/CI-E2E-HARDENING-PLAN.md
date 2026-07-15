@@ -1,7 +1,7 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `33e70bb`,
+and implementation snapshot `8bbe944`,
 including coverage notes for the settled PDF/UA v12 gated-claim lane, XAdES
 C14N/digest-agility/B/T/LT/ASiC evidence, archive PDF accessibility
 propagation, the MCP document/archive PDF accessibility v12
@@ -982,11 +982,11 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `33e70bb`
+## Focused Gate Snapshot Through `8bbe944`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08` and checkpoint-promoted on 2026-07-15 for
-current implementation head `33e70bb`. This is not an exhaustive current
+current implementation head `8bbe944`. This is not an exhaustive current
 green-run claim; the full-server E2E claim below is limited to local
 `chancela-server --features e2e` after auth harness alignment, and browser,
 Docker, desktop, production package signing/notarization, production image
@@ -1878,6 +1878,14 @@ settingsDefaults.test.ts contracts.test.ts`.
   policy validation, legal trust certification, production trust-list validity,
   multiple-reference support for the TSL importer, or transform-chain support
   for the TSL importer.
+- Current `8bbe944` LOTL/member-state bootstrap checkpoint: static
+  `chancela-tsl` markers pin live EU LOTL ingestion, member-state pointer
+  selection, member-state TSL authentication against the signer certificate
+  carried by the authenticated LOTL pointer, and the double-gated ignored
+  live LOTL-to-PT network test. This is authentication/bootstrap evidence only:
+  it is not production trust-list validity, certificate path/revocation policy
+  validation, qualified-status determination, legal trust certification, live
+  provider approval, or full trust implementation.
 - Current `50854dd` XAdES reconciliation checks: `chancela-xades` now pins real
   in-crate XML C14N against W3C REC-derived vectors, duplicate-`Id` fail-closed
   guards, multiple-reference XML-DSig packaging, SHA-384/512 digest agility for
@@ -2381,7 +2389,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   production-readiness, TLS/key-custody, vulnerability-free scan, SBOM,
   signature/attestation, HA/failover/RPO/RTO, legal/DR certification, cloud
   deployment readiness, or spec-completion claim is made.
-- Current checkpoint metadata/static checks through `33e70bb`
+- Current checkpoint metadata/static checks through `8bbe944`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
@@ -2389,7 +2397,8 @@ settingsDefaults.test.ts contracts.test.ts`.
   docs\CI-CHECKPOINTS.md docs\CI-RELEASE-HARDENING.md docs\extras.md
   scripts\checkpoint-recent-landed.mjs scripts\check-spec-coverage.mjs`.
   These pin the spec snapshot,
-  hardening-plan head, mobile API base URL/shell-detection markers, subject DEK
+  hardening-plan head, LOTL/member-state bootstrap markers, mobile API base
+  URL/shell-detection markers, subject DEK
   secret-store binding markers, opt-in
   release signing hooks/status artifacts, Postgres
   rustls TLS `sslmode=prefer` proof and no-`verify-full`/production-readiness

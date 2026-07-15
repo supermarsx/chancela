@@ -1,6 +1,6 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-15 from current implementation snapshot `33e70bb655d73d5abad4a597492b1673d75bd45a`,
+*Updated 2026-07-15 from current implementation snapshot `8bbe944e17bb0dc6663d3341da715a9e0faad5e0`,
 with committed evidence refreshes for mobile API base URL indirection and
 shell detection, subject DEK secret-store binding, the settled PDF/UA v12 gated-claim lane,
 XAdES C14N/digest-agility/B/T/LT/ASiC evidence, archive PDF accessibility
@@ -1936,6 +1936,18 @@ Implementation checkpoints covered here:
   official DGLAB export, government filing, import path, disposal execution,
   DGLAB certification, legal archival certification, PDF/A/PAdES/PDF-UA
   certification, authority approval, or legal archive acceptance is implemented.
+- Current `8bbe944` keeps Signatures/Trust/CI **PARTIAL**: `chancela-tsl`
+  now replaces the LOTL stub with live EU LOTL ingestion and member-state
+  TSL traversal APIs. The implementation authenticates the LOTL against pinned
+  OJEU signing anchors, selects a member-state pointer such as `PT`, and
+  authenticates the member-state TSL against the signer certificate carried by
+  that authenticated LOTL pointer. Local source/test markers cover pointer
+  selection, fail-closed empty-anchor and missing-signer-certificate paths, and
+  the double-gated ignored live LOTL-to-PT bootstrap test. This is
+  authentication/bootstrap evidence only: it does not claim production
+  trust-list validity, certificate path/revocation policy validation, qualified
+  status, legal trust certification, provider approval, or full spec
+  completion; statuses remain PARTIAL=11.
 - Current `33e70bb` keeps Signatures/Trust/CI **PARTIAL**: the TSL XML-DSig
   verifier now resolves bounded same-document `URI="#id"` references when a
   unique matching element is present in the supported minimal TSL shape, rejects
