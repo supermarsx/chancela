@@ -1,4 +1,6 @@
 {
   "algorithm": "inclusive",
-  "mode": "document"
+  "mode": "document",
+  "rule": "attribute-value normalization and escaping: a character reference such as &#9; is re-serialized as &#x9; and a \" is escaped as &quot;",
+  "provenance": "derived from W3C Canonical XML 1.0 REC (xml-c14n-20010315) §3.4 and XML 1.0 §3.3.3 (CDATA-type attribute-value normalization) rules; expected output computed by hand from the spec rules, not from a third-party tool. See v18 for the verbatim §3.4 REC worked example."
 }

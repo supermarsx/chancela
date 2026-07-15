@@ -1,4 +1,6 @@
 {
   "algorithm": "exclusive",
-  "mode": "document"
+  "mode": "document",
+  "rule": "a default namespace declaration is pruned when the element uses a prefixed name and nothing in scope visibly utilizes the default namespace",
+  "provenance": "derived from W3C Exclusive XML Canonicalization 1.0 REC (xml-exc-c14n-20020718) §2 rule (the default namespace is not visibly utilized by a prefixed element); expected output computed by hand from the spec rule, not from a third-party tool."
 }

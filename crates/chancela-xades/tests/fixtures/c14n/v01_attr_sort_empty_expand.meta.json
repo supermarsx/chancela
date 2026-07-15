@@ -1,4 +1,6 @@
 {
   "algorithm": "inclusive",
-  "mode": "document"
+  "mode": "document",
+  "rule": "attributes are sorted by (namespace URI, local name) and empty elements are expanded to a start/end tag pair",
+  "provenance": "derived from W3C Canonical XML 1.0 REC (xml-c14n-20010315) §2.3 (empty elements) and §2.4 (document order / attribute sorting) rules; expected output computed by hand from the spec rules, not from a third-party tool. See v19 for a verbatim-REC attribute/namespace ordering example."
 }

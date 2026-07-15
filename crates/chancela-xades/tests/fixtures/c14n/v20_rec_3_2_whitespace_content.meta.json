@@ -1,0 +1,6 @@
+{
+  "algorithm": "inclusive",
+  "mode": "document",
+  "rule": "whitespace in document content is preserved byte-for-byte (REC §3.2)",
+  "provenance": "W3C Canonical XML 1.0 REC (xml-c14n-20010315) §3.2 worked example, transcribed verbatim; the only omitted line is the XML declaration, which canonicalization removes"
+}

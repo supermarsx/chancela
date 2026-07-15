@@ -1,4 +1,6 @@
 {
   "algorithm": "inclusive-with-comments",
-  "mode": "document"
+  "mode": "document",
+  "rule": "comments are retained in the with-comments canonicalization form",
+  "provenance": "derived from W3C Canonical XML 1.0 REC (xml-c14n-20010315) §2.3 rule (the with-comments variant retains comments); expected output computed by hand from the spec rule, not from a third-party tool. See v10 for the complementary without-comments case."
 }

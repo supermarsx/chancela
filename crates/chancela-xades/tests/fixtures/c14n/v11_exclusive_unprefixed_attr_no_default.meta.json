@@ -1,4 +1,6 @@
 {
   "algorithm": "exclusive",
-  "mode": "document"
+  "mode": "document",
+  "rule": "an unprefixed attribute is in no namespace and does not visibly utilize the default namespace, so xmlns= is still pruned when the element itself is prefixed",
+  "provenance": "derived from W3C Exclusive XML Canonicalization 1.0 REC (xml-exc-c14n-20020718) §2 visibly-utilized rule (unprefixed attributes do not utilize the default declaration); expected output computed by hand from the spec rule, not from a third-party tool."
 }

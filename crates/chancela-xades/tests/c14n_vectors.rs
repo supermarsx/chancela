@@ -1,15 +1,22 @@
-//! Reference-vector suite for the in-crate XML canonicalizer (t67-e2, plan §0.2 / §5 risk 1).
+//! Reference-vector suite for the in-crate XML canonicalizer (t67-e2, plan §0.2 / §5 risk 1;
+//! interop-certified under wp26-xades E1).
 //!
 //! Each vector is a triple under `tests/fixtures/c14n/`:
 //!   * `<name>.in.xml`   — the input document,
 //!   * `<name>.out`      — the exact expected canonical bytes (no trailing newline),
-//!   * `<name>.meta.json` — `{ algorithm, mode, id?, inclusive_prefixes? }`.
+//!   * `<name>.meta.json` — `{ algorithm, mode, id?, inclusive_prefixes?, rule, provenance }`.
 //!
-//! The vectors are derived from the W3C Canonical XML 1.0 and Exclusive XML Canonicalization RECs
-//! and the behaviours exercised by the Apache Santuario / xmlsec interop test data (namespace
-//! pruning, PrefixList, default-namespace handling, attribute ordering, character escaping,
-//! comment/PI handling, and line-ending / attribute-value normalization). These MUST pass before
-//! any XAdES level machinery is trusted.
+//! Every vector carries an auditable `provenance` string naming its external oracle. The oracle is
+//! the standard itself: the W3C Canonical XML 1.0 REC (xml-c14n-20010315) and the Exclusive XML
+//! Canonicalization 1.0 REC (xml-exc-c14n-20020718). Vectors fall into two honestly-labelled classes
+//! (see `crates/chancela-xades/TESTING.md` for the full interop-certification write-up):
+//!   * verbatim-REC worked examples transcribed byte-for-byte from a REC section (v18–v20), and
+//!   * hand-derived-from-rule vectors whose expected bytes were computed by hand from a cited REC
+//!     rule (v01–v17), each `provenance` string saying so explicitly.
+//!
+//! `xmlsec1` / EU DSS were not available offline, so no live third-party tool run backs these bytes;
+//! the manual conformance procedure for a reference machine that has them is documented in
+//! `TESTING.md`. These MUST pass before any XAdES level machinery is trusted.
 
 use std::path::{Path, PathBuf};
 
@@ -47,6 +54,21 @@ fn run_vector(meta_path: &Path) {
         &std::fs::read(meta_path).unwrap_or_else(|e| panic!("read {name}.meta.json: {e}")),
     )
     .unwrap_or_else(|e| panic!("parse {name}.meta.json: {e}"));
+
+    // Every committed vector must carry an auditable external-oracle citation (wp26-xades E1): a
+    // non-empty `provenance` (which REC section / rule grounds the expected bytes) and a `rule`
+    // one-liner. A vector with no provenance reads as self-generated and is rejected here.
+    let provenance = meta["provenance"]
+        .as_str()
+        .unwrap_or_else(|| panic!("vector `{name}` is missing a `provenance` string"));
+    assert!(
+        provenance.trim().len() >= 20,
+        "vector `{name}` has an empty/too-short `provenance`: {provenance:?}"
+    );
+    assert!(
+        meta["rule"].as_str().map(str::trim).is_some_and(|r| !r.is_empty()),
+        "vector `{name}` is missing a `rule` description"
+    );
 
     let alg = parse_alg(meta["algorithm"].as_str().expect("algorithm"));
     let incl_owned: Vec<String> = meta
@@ -94,8 +116,8 @@ fn all_c14n_reference_vectors_pass() {
         .collect();
     metas.sort();
     assert!(
-        metas.len() >= 12,
-        "expected the committed reference-vector suite (>=12 vectors), found {}",
+        metas.len() >= 20,
+        "expected the committed reference-vector suite (>=20 vectors), found {}",
         metas.len()
     );
     for meta in metas {

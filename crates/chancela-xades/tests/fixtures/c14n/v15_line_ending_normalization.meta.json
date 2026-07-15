@@ -1,4 +1,6 @@
 {
   "algorithm": "inclusive",
-  "mode": "document"
+  "mode": "document",
+  "rule": "literal line endings are normalized (CRLF and lone CR to LF) while a &#xD; character reference is preserved as a real CR and re-serialized as &#xD;",
+  "provenance": "derived from W3C Canonical XML 1.0 REC (xml-c14n-20010315) §3.4 together with XML 1.0 §2.11 end-of-line handling rules; expected output computed by hand from the spec rules, not from a third-party tool. See v18 for the verbatim §3.4 REC worked example that also exercises &#xD;."
 }
