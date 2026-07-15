@@ -817,7 +817,11 @@ async fn act_patch_survives_restart_before_seal() {
     advance_to_signing(&h, &act_id, Some(&token)).await;
 
     let (status, sealed) = h
-        .post_json_auth(&format!("/v1/acts/{act_id}/seal"), json!({}), &token)
+        .post_json_auth(
+            &format!("/v1/acts/{act_id}/seal"),
+            manual_signature_seal_body("Arquivo E2E / Patch persisted ata"),
+            &token,
+        )
         .await;
     assert_eq!(
         status, 200,
@@ -941,7 +945,11 @@ async fn condominium_absent_owner_communication_auto_generates_and_keeps_canonic
     advance_to_signing(&h, &act_id, Some(&token)).await;
 
     let (status, sealed) = h
-        .post_json_auth(&format!("/v1/acts/{act_id}/seal"), json!({}), &token)
+        .post_json_auth(
+            &format!("/v1/acts/{act_id}/seal"),
+            manual_signature_seal_body("Arquivo E2E / Condominium ata"),
+            &token,
+        )
         .await;
     assert_eq!(status, 200, "seal condominium act: {sealed}");
     assert_eq!(

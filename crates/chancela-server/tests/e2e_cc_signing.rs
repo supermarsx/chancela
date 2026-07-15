@@ -35,7 +35,7 @@ async fn seal_act(h: &ServerHarness) -> (String, String) {
     let (status, sealed) = h
         .post_json_auth(
             &format!("/v1/acts/{act_id}/seal"),
-            serde_json::json!({}),
+            manual_signature_seal_body("Arquivo E2E / CC signing ata"),
             &token,
         )
         .await;

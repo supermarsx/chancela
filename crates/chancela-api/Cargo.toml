@@ -10,6 +10,7 @@ description = "Axum HTTP layer for Chancela: in-memory entity CRUD and ledger ve
 
 [features]
 default = []
+e2e = []
 sqlcipher = ["chancela-store/sqlcipher"]
 # wp14 Phase 2: enable the off-by-default PostgreSQL durability backend (self-hosted server only).
 # Propagates to chancela-store's `postgres` feature so `CHANCELA_DB_BACKEND=postgres` + `DATABASE_URL`

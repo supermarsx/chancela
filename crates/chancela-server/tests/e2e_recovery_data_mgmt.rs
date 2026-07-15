@@ -19,6 +19,8 @@ mod common;
 use common::*;
 use serde_json::json;
 
+const LEGACY_NO_HASH_SESSION_TOKEN: &str = "e2e-legacy-no-hash-owner-session";
+
 /// Seed an entity → book → sealed ata #1, returning `(entity_id, book_id)`.
 async fn seed_domain(h: &ServerHarness, token: &str) -> (String, String) {
     let entity_id = create_entity(
@@ -35,7 +37,11 @@ async fn seed_domain(h: &ServerHarness, token: &str) -> (String, String) {
     fill_act_contents(h, &act_id, token).await;
     advance_to_signing(h, &act_id, Some(token)).await;
     let (status, _) = h
-        .post_json_auth(&format!("/v1/acts/{act_id}/seal"), json!({}), token)
+        .post_json_auth(
+            &format!("/v1/acts/{act_id}/seal"),
+            manual_signature_seal_body("Arquivo E2E / Recovery ata"),
+            token,
+        )
         .await;
     assert_eq!(status, 200, "seal ata #1");
     (entity_id, book_id)
@@ -48,20 +54,10 @@ async fn seed_domain(h: &ServerHarness, token: &str) -> (String, String) {
 )]
 async fn a_broken_chain_gates_mutations_then_reanchor_repairs_and_reopens() {
     let mut h = ServerHarness::start().await;
-    // A signed-in operator WITH a password, set now (while healthy): the last-resort re-anchor now
-    // requires step-up re-auth, and once the instance boots degraded a domain mutation like setting a
-    // secret is 503-gated — so the credential must exist before the restart. The user (and its
-    // password) persist across the restart in the durable roster.
+    // A signed-in operator WITH a password: the last-resort re-anchor requires step-up re-auth, and
+    // the shared E2E user helper creates the credential before any degraded restart.
     let user_id = create_user(&h, "e2e.operator", "E2E Operator").await;
     let token = open_session(&h, &user_id).await;
-    let (status, _) = h
-        .post_json_auth(
-            &format!("/v1/users/{user_id}/secret"),
-            json!({ "password": "Reancorar-Cadeia5!" }),
-            &token,
-        )
-        .await;
-    assert_eq!(status, 200, "set operator password");
     let (entity_id, _book_id) = seed_domain(&h, &token).await;
 
     // Healthy baseline: the integrity report is clean and not degraded.
@@ -91,16 +87,13 @@ async fn a_broken_chain_gates_mutations_then_reanchor_repairs_and_reopens() {
     }
     h.start_again().await;
 
-    // Re-authenticate BEFORE the gated reads below: the in-memory session dropped on restart, and the
-    // operator holds a password so the harness' passwordless auto-reopen cannot sign in — do it
-    // explicitly WITH the password (the session endpoint stays open even while degraded). RBAC
-    // (t64-E3): the integrity report and entity reads below are permission-gated (`ledger.read` /
-    // `entity.read`), so the operator must be signed in.
+    // Re-authenticate BEFORE the gated reads below: the in-memory session dropped on restart, and
+    // RBAC (t64-E3) gates the integrity report and entity reads (`ledger.read` / `entity.read`).
     let user_id = create_user_or_signin(&h).await;
     let (status, s) = h
         .post_json(
             "/v1/session",
-            json!({ "user_id": user_id, "password": "Reancorar-Cadeia5!" }),
+            json!({ "user_id": user_id, "password": E2E_TEST_PASSWORD }),
         )
         .await;
     assert_eq!(status, 200, "re-open session with password: {s}");
@@ -154,7 +147,7 @@ async fn a_broken_chain_gates_mutations_then_reanchor_repairs_and_reopens() {
             "/v1/ledger/recovery/reanchor",
             json!({
                 "reason": "cópia de segurança indisponível — re-ancoragem autorizada",
-                "reauth": { "password": "Reancorar-Cadeia5!" }
+                "reauth": { "password": E2E_TEST_PASSWORD }
             }),
             &token,
         )
@@ -201,11 +194,13 @@ async fn a_passwordless_owner_recovers_a_degraded_instance_without_step_up() {
     // breaks could never be recovered by anyone.
     let mut h = ServerHarness::start().await;
     let user_id = create_user(&h, "amelia.marques", "Amélia Marques").await; // first user = Owner
-    let token = open_session(&h, &user_id).await; // passwordless session
+    let token = open_session(&h, &user_id).await;
     let (entity_id, _book_id) = seed_domain(&h, &token).await;
 
     // --- Tamper a stored event byte on disk, then restart into the degraded state ------------------
     h.stop();
+    remove_persisted_password_hash(&h.data_dir, &user_id);
+    write_e2e_session_seed(&h.data_dir, &user_id, LEGACY_NO_HASH_SESSION_TOKEN);
     let db_path = h.data_dir.join(chancela_store::DB_FILE);
     {
         let conn = rusqlite::Connection::open(&db_path).expect("open store db");
@@ -225,11 +220,18 @@ async fn a_passwordless_owner_recovers_a_degraded_instance_without_step_up() {
     }
     h.start_again().await;
 
-    // Re-open a PASSWORDLESS session (the in-memory session dropped on restart; the user holds no
-    // password, so a plain passwordless sign-in works — and the session endpoint stays open while
-    // degraded).
-    let user_id = create_user_or_signin(&h).await;
-    let token = open_session(&h, &user_id).await;
+    // The public session endpoint intentionally rejects legacy no-hash users; the e2e-only seed file
+    // above mirrors the API unit tests' direct `seed_session` seam so this composed test can exercise
+    // the recovery handler with a real session and a persisted legacy user.
+    let token = LEGACY_NO_HASH_SESSION_TOKEN.to_owned();
+    h.set_default_token(&token);
+    let (status, roster) = h.get_json_noauth("/v1/session/roster").await;
+    assert_eq!(status, 200, "legacy roster: {roster}");
+    assert_eq!(roster["users"][0]["id"], user_id);
+    assert_eq!(roster["users"][0]["has_secret"], false);
+    let (status, session) = h.get_json_auth("/v1/session", &token).await;
+    assert_eq!(status, 200, "seeded legacy session resolves: {session}");
+    assert_eq!(session["user"]["id"], user_id);
 
     // The instance booted degraded and pinpoints the break.
     let (_, health) = h.get_json("/health").await;
@@ -300,17 +302,9 @@ async fn a_passwordless_owner_recovers_a_degraded_instance_without_step_up() {
 async fn backend_domain_wipe_requires_step_up_reauth_and_preserves_the_ledger() {
     let h = ServerHarness::start().await;
 
-    // A signed-in operator WITH a password (self-service first-secret is free), for step-up re-auth.
+    // A signed-in operator WITH a password, for step-up re-auth.
     let user_id = create_user(&h, "amelia.marques", "Amélia Marques").await;
     let token = open_session(&h, &user_id).await;
-    let (status, _) = h
-        .post_json_auth(
-            &format!("/v1/users/{user_id}/secret"),
-            json!({ "password": "Limpar-Dados6!X" }),
-            &token,
-        )
-        .await;
-    assert_eq!(status, 200, "set first password");
 
     let (entity_id, _book_id) = seed_domain(&h, &token).await;
     let (_, verify_before) = h.get_json("/v1/ledger/verify").await;
@@ -334,7 +328,7 @@ async fn backend_domain_wipe_requires_step_up_reauth_and_preserves_the_ledger() 
                 "scope": "backend_domain",
                 "confirm_phrase": "LIMPAR DADOS",
                 "export_first": true,
-                "reauth": { "password": "Limpar-Dados6!X" }
+                "reauth": { "password": E2E_TEST_PASSWORD }
             }),
             &token,
         )

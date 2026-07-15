@@ -48,11 +48,12 @@
       "category": "BookLifecycle",
       "message": "Open book 3f1c8e40-0000-4000-8000-000000000010 has no acts recorded yet. Draft a new ata or import historical minutes when appropriate.",
       "params": {
+        "act_id": "4b3c2d00-0000-4000-8000-000000000003",
+        "act_title": "Ata da Assembleia Geral Anual",
         "book_id": "3f1c8e40-0000-4000-8000-000000000010",
         "entity_id": "2f1c8e40-0000-4000-8000-000000000001",
-        "book_kind": "AssembleiaGeral",
-        "next_ata_number": "1",
-        "recommended_actions": "draft_ata,import_minutes"
+        "current_state": "Sealed",
+        "recommended_actions": "archive_act"
       },
       "target": {
         "entity_id": "2f1c8e40-0000-4000-8000-000000000001",

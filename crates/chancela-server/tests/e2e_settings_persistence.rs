@@ -132,8 +132,20 @@ fn sample_settings() -> Value {
                 "sources": {
                     "profile_calendar": true,
                     "act_follow_ups": false,
-                    "attendance_hygiene": true
+                    "attendance_hygiene": true,
+                    "privacy_control_reviews": true
                 }
+            }
+        },
+        "data_management": {
+            "retained_export_cleanup": {
+                "minimum_age_days": 30,
+                "keep_latest": 5
+            },
+            "backup_recovery": {
+                "max_drill_age_days": 90,
+                "target_rpo_minutes": 1440,
+                "target_rto_minutes": 240
             }
         },
         "appearance": { "theme": "dark", "leather_texture": false, "texture_intensity": 25, "button_texture": false },
@@ -190,7 +202,8 @@ async fn settings_round_trip_validation_and_persistence() {
             "sources": {
                 "profile_calendar": true,
                 "act_follow_ups": true,
-                "attendance_hygiene": true
+                "attendance_hygiene": true,
+                "privacy_control_reviews": true
             }
         })
     );

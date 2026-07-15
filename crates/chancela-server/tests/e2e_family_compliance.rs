@@ -43,8 +43,8 @@ async fn condominium_is_sealed_by_the_condominio_pack_and_survives_restart() {
     let book_id = open_book(&h, &entity_id, &token).await;
 
     // A condominium ata: essential matters (free-text summary) PLUS a structured deliberation
-    // carrying a per-vote result. It has NO mesa, NO agenda, NO meeting time — none of which the
-    // DL 268/94 pack requires.
+    // carrying a per-vote result. It has NO mesa, NO agenda, NO meeting time. Missing time is a
+    // warning, not a blocking error; missing mesa stays irrelevant for this family.
     let act_id = draft_act(
         &h,
         &book_id,
@@ -86,9 +86,13 @@ async fn condominium_is_sealed_by_the_condominio_pack_and_survives_restart() {
     assert_eq!(comp["errors"], 0, "no CSC mesa/agenda Errors here: {comp}");
     assert_eq!(comp["seal_allowed"], true);
 
-    // Seal with NO mesa and NO acknowledgement — the condo pack has nothing to flag.
+    // Seal with NO mesa, acknowledging the non-blocking missing-time warning.
     let (status, sealed) = h
-        .post_json_auth(&format!("/v1/acts/{act_id}/seal"), json!({}), &token)
+        .post_json_auth(
+            &format!("/v1/acts/{act_id}/seal"),
+            manual_signature_seal_body_with_ack("Arquivo E2E / Condominium ata", true),
+            &token,
+        )
         .await;
     assert_eq!(status, 200, "condo seal without a mesa: {sealed}");
     assert_eq!(sealed["ata_number"], 1);
@@ -196,7 +200,11 @@ async fn csc_seal_blocked_without_mesa_then_passes_and_survives_restart() {
 
     // Sealing is refused with 422 and the refusal carries the mesa Error.
     let (status, body) = h
-        .post_json_auth(&format!("/v1/acts/{act_id}/seal"), json!({}), &token)
+        .post_json_auth(
+            &format!("/v1/acts/{act_id}/seal"),
+            manual_signature_seal_body("Arquivo E2E / CSC missing mesa ata"),
+            &token,
+        )
         .await;
     assert_eq!(status, 422, "seal refused without a mesa: {body}");
     assert!(
@@ -232,7 +240,7 @@ async fn csc_seal_blocked_without_mesa_then_passes_and_survives_restart() {
     let (status, sealed) = h
         .post_json_auth(
             &format!("/v1/acts/{act_id}/seal"),
-            json!({ "acknowledge_warnings": ack }),
+            manual_signature_seal_body_with_ack("Arquivo E2E / CSC completed ata", ack),
             &token,
         )
         .await;
@@ -376,7 +384,7 @@ async fn statute_two_thirds_majority_overlay_fires_then_clears() {
     let (status, sealed) = h
         .post_json_auth(
             &format!("/v1/acts/{act_id}/seal"),
-            json!({ "acknowledge_warnings": ack }),
+            manual_signature_seal_body_with_ack("Arquivo E2E / Statute overlay ata", ack),
             &token,
         )
         .await;

@@ -77,7 +77,11 @@ async fn users_session_actor_and_persistence_across_restart() {
     advance_to_signing(&h, &act_id, Some(&token)).await;
     let (status, sealed) = h
         // The fully-filled CSC ata (mesa set via the wire, t31) has no findings — no ack needed.
-        .post_json_auth(&format!("/v1/acts/{act_id}/seal"), json!({}), &token)
+        .post_json_auth(
+            &format!("/v1/acts/{act_id}/seal"),
+            manual_signature_seal_body("Arquivo E2E / Actor ata"),
+            &token,
+        )
         .await;
     assert_eq!(status, 200);
     assert_eq!(sealed["ata_number"], 1);

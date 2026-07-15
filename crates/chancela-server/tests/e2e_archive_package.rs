@@ -253,7 +253,11 @@ async fn book_archive_package_is_valid_deterministic_and_read_only() {
     fill_act_contents(&h, &act_id, &token).await;
     advance_to_signing(&h, &act_id, Some(&token)).await;
     let (status, sealed) = h
-        .post_json_auth(&format!("/v1/acts/{act_id}/seal"), json!({}), &token)
+        .post_json_auth(
+            &format!("/v1/acts/{act_id}/seal"),
+            manual_signature_seal_body("Arquivo E2E / Export package ata"),
+            &token,
+        )
         .await;
     assert_eq!(status, 200, "seal: {sealed}");
     let document_id = sealed["document"]["id"].as_str().expect("document id");
@@ -619,7 +623,11 @@ async fn persisted_legal_hold_survives_restart_and_blocks_partial_disposal() {
     fill_act_contents(&h, &act_id, &token).await;
     advance_to_signing(&h, &act_id, Some(&token)).await;
     let (status, sealed) = h
-        .post_json_auth(&format!("/v1/acts/{act_id}/seal"), json!({}), &token)
+        .post_json_auth(
+            &format!("/v1/acts/{act_id}/seal"),
+            manual_signature_seal_body("Arquivo E2E / Legal hold ata"),
+            &token,
+        )
         .await;
     assert_eq!(status, 200, "seal act before hold: {sealed}");
     let document_id = sealed["document"]["id"].as_str().expect("document id");
@@ -717,11 +725,9 @@ async fn persisted_legal_hold_survives_restart_and_blocks_partial_disposal() {
         status, 409,
         "hold must block disposal simulation after restart: {rejected}"
     );
-    assert!(
-        rejected["error"]
-            .as_str()
-            .is_some_and(|error| error.contains("hold legal ativo")),
-        "blocked disposal error identifies active hold: {rejected}"
+    assert_eq!(
+        rejected["error"],
+        "disposição bloqueada; consulte os motivos de elegibilidade antes de executar"
     );
     assert!(
         rejected.get("would_delete").is_none(),

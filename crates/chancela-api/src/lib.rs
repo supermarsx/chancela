@@ -241,6 +241,45 @@ pub use settings::{
 pub use trust::{LocalTrustUrlTestAllowance, allow_local_trust_url_for_tests};
 pub use users::{User, UserId};
 
+#[cfg(feature = "e2e")]
+#[derive(serde::Deserialize)]
+struct E2eSessionSeed {
+    token: String,
+    user_id: uuid::Uuid,
+}
+
+#[cfg(feature = "e2e")]
+pub async fn seed_e2e_sessions_from_data_dir(state: &AppState) {
+    let Some(data_dir) = state.data_dir() else {
+        return;
+    };
+    let path = data_dir.join(".chancela-e2e-session-seed.json");
+    let Ok(bytes) = std::fs::read(&path) else {
+        return;
+    };
+    let seed: E2eSessionSeed = serde_json::from_slice(&bytes)
+        .unwrap_or_else(|e| panic!("invalid e2e session seed {}: {e}", path.display()));
+    let user_id = users::UserId(seed.user_id);
+    {
+        let users = state.users.read().await;
+        assert!(
+            users.get(&user_id).is_some_and(|u| u.active),
+            "e2e session seed references an absent or inactive user: {user_id}"
+        );
+    }
+    state.sessions.write().await.insert(
+        seed.token,
+        session::SessionEntry {
+            user_id,
+            unlocked_key: None,
+            expires_at: time::OffsetDateTime::now_utc()
+                + time::Duration::seconds(actor::SESSION_TTL_SECS),
+        },
+    );
+    std::fs::remove_file(&path)
+        .unwrap_or_else(|e| panic!("remove consumed e2e session seed {}: {e}", path.display()));
+}
+
 #[derive(Default)]
 pub struct ExportCleanupPreviewStore {
     pub(crate) records: HashMap<String, data_status::ExportCleanupPreviewRecord>,

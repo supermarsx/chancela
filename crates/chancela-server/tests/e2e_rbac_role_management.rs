@@ -49,7 +49,11 @@ async fn owner_assigns_scoped_gestor_and_assignee_acts_within_scope() {
     let (status, amelia_user) = h
         .post_json_auth(
             "/v1/users",
-            json!({ "username": "amelia.marques", "display_name": "Amélia Marques" }),
+            json!({
+                "username": "amelia.marques",
+                "display_name": "Amélia Marques",
+                "password": E2E_TEST_PASSWORD
+            }),
             &owner,
         )
         .await;
@@ -101,7 +105,7 @@ async fn owner_assigns_scoped_gestor_and_assignee_acts_within_scope() {
         "the scoped assignment is reflected back: {assignments}"
     );
 
-    // Amélia (passwordless) signs in and acts.
+    // Amélia signs in and acts.
     let amelia_tok = open_session(&h, &amelia).await;
 
     // WITHIN scope: opening a book in entity 1 → 201.

@@ -130,7 +130,9 @@ async fn concurrent_seals_keep_contiguous_ledger_sequences_and_unique_ata_number
             let resp = client
                 .post(url)
                 .header(SESSION_HEADER, token)
-                .json(&json!({}))
+                .json(&manual_signature_seal_body(
+                    "Arquivo E2E / Concurrent seal ata",
+                ))
                 .send()
                 .await
                 .expect("seal request sent");

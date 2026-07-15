@@ -28,7 +28,10 @@
     "rule_pack_id": "csc-art63/v2",
     "version": "v2",
     "family": "CommercialCompany",
-    "profile": "SociedadeAnonima"
+    "profile": "SociedadeAnonima",
+    "manual_signature_original_reference": {
+      "storage_reference": "Arquivo E2E / Contract ata"
+    }
   },
   "retifies": null
 }

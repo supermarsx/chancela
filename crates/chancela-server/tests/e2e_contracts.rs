@@ -106,7 +106,11 @@ async fn live_responses_match_the_canonical_contracts() {
     advance_to_signing(&h, &act_id, Some(&token)).await;
     let (status, _) = h
         // The fully-filled CSC ata (mesa set via the wire, t31) has no findings — no ack needed.
-        .post_json_auth(&format!("/v1/acts/{act_id}/seal"), json!({}), &token)
+        .post_json_auth(
+            &format!("/v1/acts/{act_id}/seal"),
+            manual_signature_seal_body("Arquivo E2E / Contract ata"),
+            &token,
+        )
         .await;
     assert_eq!(status, 200);
     let (status, act) = h.get_json(&format!("/v1/acts/{act_id}")).await;

@@ -56,6 +56,8 @@ async fn main() {
         eprintln!("invalid Chancela startup configuration: {e}");
         std::process::exit(2);
     });
+    #[cfg(feature = "e2e")]
+    chancela_api::seed_e2e_sessions_from_data_dir(&state).await;
 
     // Kick off a best-effort background refresh of the CAE catalog. Non-blocking and offline-safe:
     // it no-ops without a configured `CHANCELA_CAE_URL` or while the cached table is still fresh,

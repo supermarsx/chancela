@@ -40,6 +40,9 @@ use serde_json::{Value, json};
 /// The `X-Chancela-Session` header the API resolves the ledger actor from.
 pub const SESSION_HEADER: &str = "x-chancela-session";
 
+/// Deterministic strong password used by the shared E2E user/session helpers.
+pub const E2E_TEST_PASSWORD: &str = "Teste-Forte7!X";
+
 // ---------------------------------------------------------------------------------------------
 // Server harness
 // ---------------------------------------------------------------------------------------------
@@ -109,6 +112,9 @@ pub struct ServerHarness {
     /// unauthenticated-mutation-is-401 assertion keeps using `post_json`). Interior mutability so the
     /// `&self` helpers can set it; reset by `restart`/`start_again` (the in-memory session is dropped).
     default_token: std::sync::Mutex<Option<String>>,
+    /// Credentials for the session the harness may reopen after a restart. Recorded only by shared
+    /// helpers that know the deterministic password; tests with custom credentials re-auth manually.
+    default_login: std::sync::Mutex<Option<(String, String)>>,
 }
 
 impl ServerHarness {
@@ -140,6 +146,7 @@ impl ServerHarness {
             opts,
             client,
             default_token: std::sync::Mutex::new(None),
+            default_login: std::sync::Mutex::new(None),
         };
         harness.wait_ready().await;
         harness
@@ -149,6 +156,19 @@ impl ServerHarness {
     /// [`open_session`]; a journey rarely needs to call it directly.
     pub fn set_default_token(&self, token: &str) {
         *self.default_token.lock().expect("default_token lock") = Some(token.to_owned());
+    }
+
+    /// Record credentials for the session that should be reopened after a restart.
+    pub fn set_default_login(&self, user_id: &str, password: &str) {
+        *self.default_login.lock().expect("default_login lock") =
+            Some((user_id.to_owned(), password.to_owned()));
+    }
+
+    fn default_login(&self) -> Option<(String, String)> {
+        self.default_login
+            .lock()
+            .expect("default_login lock")
+            .clone()
     }
 
     /// The current auto-auth token, if a session has been opened.
@@ -202,24 +222,27 @@ impl ServerHarness {
         }
     }
 
-    /// Re-establish the auto-auth session by signing in as the earliest active **passwordless** user
-    /// (the bootstrap Owner, in journeys that never set a secret) from the unauthenticated roster.
-    /// Used after a restart drops the in-memory session (t64-E3). Skips users that hold a secret — it
-    /// cannot know their password, and a failed passwordless attempt would trip the sign-in backoff;
-    /// those journeys re-authenticate explicitly (with the password) themselves. A no-op if no
-    /// passwordless active user exists.
+    /// Re-establish the auto-auth session using credentials recorded by the shared E2E helpers.
+    /// Used after a restart drops the in-memory session (t64-E3). Journeys with custom credentials
+    /// re-authenticate explicitly so this helper does not guess passwords and trip sign-in backoff.
     pub async fn reopen_default_session(&self) {
-        let (_s, roster) = self.get_json_noauth("/v1/session/roster").await;
-        let Some(uid) = roster["users"].as_array().and_then(|users| {
-            users
-                .iter()
-                .find(|u| u["has_secret"] == serde_json::Value::Bool(false))
-                .and_then(|u| u["id"].as_str())
-        }) else {
+        let Some((user_id, password)) = self.default_login() else {
             return;
         };
+        let (_s, roster) = self.get_json_noauth("/v1/session/roster").await;
+        let active = roster["users"].as_array().is_some_and(|users| {
+            users
+                .iter()
+                .any(|u| u["id"].as_str() == Some(user_id.as_str()))
+        });
+        if !active {
+            return;
+        }
         let (status, s) = self
-            .post_json("/v1/session", json!({ "user_id": uid }))
+            .post_json(
+                "/v1/session",
+                json!({ "user_id": user_id, "password": password }),
+            )
             .await;
         if status == 200 {
             if let Some(t) = s["token"].as_str() {
@@ -769,12 +792,99 @@ pub async fn advance_to_signing(h: &ServerHarness, act_id: &str, token: Option<&
     }
 }
 
+/// Body required by the current manual-signature seal contract.
+pub fn manual_signature_seal_body(storage_reference: &str) -> Value {
+    json!({
+        "manual_signature_original_reference": {
+            "storage_reference": storage_reference
+        }
+    })
+}
+
+/// Body required by the manual-signature seal contract, including warning acknowledgement.
+pub fn manual_signature_seal_body_with_ack(
+    storage_reference: &str,
+    acknowledge_warnings: bool,
+) -> Value {
+    json!({
+        "acknowledge_warnings": acknowledge_warnings,
+        "manual_signature_original_reference": {
+            "storage_reference": storage_reference
+        }
+    })
+}
+
+/// Assert the current DOC-03 technical validation report shape inside a preservation bundle.
+pub fn assert_document_bundle_validation_report(bundle: &Value, act_id: &str) {
+    let report = &bundle["validation_report"];
+    assert_eq!(report["report_kind"], "document_bundle_validation");
+    assert_eq!(report["scope"], "generated_document_bundle");
+    assert_eq!(report["status"], "technical_warning");
+    assert_eq!(
+        report["evidence_index"]["index_kind"],
+        "document_bundle_evidence_index"
+    );
+    assert_eq!(
+        report["evidence_index"]["status_scope"],
+        "technical_metadata_only"
+    );
+    assert_eq!(report["evidence_index"]["act_id"], act_id);
+    assert_eq!(
+        report["evidence_index"]["document_id"],
+        bundle["document"]["id"]
+    );
+    assert_eq!(
+        report["evidence_index"]["bundle_paths"]["canonical_pdf_download"],
+        format!("/v1/acts/{act_id}/document")
+    );
+    assert_eq!(
+        report["evidence_index"]["bundle_paths"]["validation_report_json_pointer"],
+        "/validation_report"
+    );
+}
+
+/// Model a pre-password-contract user in a single test data dir by removing its persisted verifier.
+pub fn remove_persisted_password_hash(data_dir: &Path, user_id: &str) {
+    let path = data_dir.join("users.json");
+    let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    let mut users: Vec<Value> = serde_json::from_slice(&bytes)
+        .unwrap_or_else(|e| panic!("parse {} as user list: {e}", path.display()));
+    let mut found = false;
+    for user in &mut users {
+        if user["id"].as_str() == Some(user_id) {
+            user.as_object_mut()
+                .expect("persisted user is an object")
+                .remove("password_hash");
+            found = true;
+        }
+    }
+    assert!(found, "user {user_id} exists in {}", path.display());
+    let json = serde_json::to_vec_pretty(&users)
+        .unwrap_or_else(|e| panic!("serialize {}: {e}", path.display()));
+    std::fs::write(&path, json).unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
+}
+
+/// Write the one-shot e2e session fixture consumed by the server's `e2e` feature at startup.
+pub fn write_e2e_session_seed(data_dir: &Path, user_id: &str, token: &str) {
+    let path = data_dir.join(".chancela-e2e-session-seed.json");
+    std::fs::write(
+        &path,
+        serde_json::to_vec_pretty(&json!({ "user_id": user_id, "token": token }))
+            .expect("serialize e2e session seed"),
+    )
+    .unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
+}
+
 /// Create a user and return its id.
 pub async fn create_user(h: &ServerHarness, username: &str, display_name: &str) -> String {
     let (status, user) = h
         .post_json(
             "/v1/users",
-            json!({ "username": username, "display_name": display_name }),
+            json!({
+                "username": username,
+                "display_name": display_name,
+                "password": E2E_TEST_PASSWORD
+            }),
         )
         .await;
     assert_eq!(status, 201, "create user: {user}");
@@ -785,11 +895,15 @@ pub async fn create_user(h: &ServerHarness, username: &str, display_name: &str) 
 /// auto-auth session for GET reads (t64-E3), so the journey's permission-gated reads carry it.
 pub async fn open_session(h: &ServerHarness, user_id: &str) -> String {
     let (status, s) = h
-        .post_json("/v1/session", json!({ "user_id": user_id }))
+        .post_json(
+            "/v1/session",
+            json!({ "user_id": user_id, "password": E2E_TEST_PASSWORD }),
+        )
         .await;
     assert_eq!(status, 200, "open session: {s}");
     let token = s["token"].as_str().expect("session token").to_owned();
     h.set_default_token(&token);
+    h.set_default_login(user_id, E2E_TEST_PASSWORD);
     token
 }
 

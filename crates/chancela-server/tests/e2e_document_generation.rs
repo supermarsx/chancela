@@ -15,7 +15,7 @@
 //!   sha-256 of the fetched bytes;
 //!   (d) `GET /v1/acts/{id}/document/preview` returns a well-formed `DocumentModel` JSON pre- AND
 //!   post-seal;
-//!   (e) the DOC-03 `bundle` endpoint returns the reserved `validation_report: null` shape;
+//!   (e) the DOC-03 `bundle` endpoint returns the technical validation report shape;
 //!   (f) `GET /v1/templates` (bare and `?family=&stage=` filtered) lists the spine templates.
 //! - **PDF/A-2u structural conformance** on the bytes the running server served — re-implemented
 //!   here (chancela_doc's `selfcheck` is `mod`-private, not exported, so we cannot reuse it as a
@@ -44,7 +44,7 @@ mod common;
 
 use common::*;
 use lopdf::{Document, Object};
-use serde_json::{Value, json};
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 /// Fetch raw bytes (not JSON) from the running server: `(status, content_type, body)`. The harness
@@ -371,7 +371,11 @@ async fn document_pipeline_end_to_end_and_pdfa_conformance() {
 
     // ----- Seal → the act's PDF/A-2u document is produced -----------------------------------------
     let (status, sealed) = h
-        .post_json_auth(&format!("/v1/acts/{act_id}/seal"), json!({}), &token)
+        .post_json_auth(
+            &format!("/v1/acts/{act_id}/seal"),
+            manual_signature_seal_body("Arquivo E2E / Document generation ata"),
+            &token,
+        )
         .await;
     assert_eq!(status, 200, "seal: {sealed}");
     assert_eq!(sealed["act"]["state"], "Sealed");
@@ -422,7 +426,7 @@ async fn document_pipeline_end_to_end_and_pdfa_conformance() {
     assert_eq!(status, 200, "post-seal preview: {post_model}");
     assert_well_formed_document_model(&post_model);
 
-    // (e) the DOC-03 bundle returns the reserved `validation_report: null` shape.
+    // (e) the DOC-03 bundle returns the technical validation report shape.
     let (status, bundle) = h
         .get_json(&format!("/v1/acts/{act_id}/document/bundle"))
         .await;
@@ -441,10 +445,7 @@ async fn document_pipeline_end_to_end_and_pdfa_conformance() {
         "bundle byte_length matches the served bytes"
     );
     assert!(bundle["attachments_manifest"].is_array());
-    assert!(
-        bundle["validation_report"].is_null(),
-        "the DOC-03 validation-report slot is reserved for Wave D (null): {bundle}"
-    );
+    assert_document_bundle_validation_report(&bundle, &act_id);
 
     // (f) GET /v1/templates lists the spine templates, bare and family/stage-filtered.
     let (status, all) = h.get_json("/v1/templates").await;
@@ -508,7 +509,11 @@ async fn sealed_document_digest_is_deterministic_across_servers() {
         let h = ServerHarness::start().await;
         let (token, _e, _b, act_id) = spine_up_to_signing(&h).await;
         let (status, sealed) = h
-            .post_json_auth(&format!("/v1/acts/{act_id}/seal"), json!({}), &token)
+            .post_json_auth(
+                &format!("/v1/acts/{act_id}/seal"),
+                manual_signature_seal_body("Arquivo E2E / Deterministic ata"),
+                &token,
+            )
             .await;
         assert_eq!(status, 200, "seal: {sealed}");
         let digest = sealed["document"]["pdf_digest"]

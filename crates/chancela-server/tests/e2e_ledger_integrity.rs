@@ -52,7 +52,11 @@ async fn ledger_integrity_and_secret_sweeps() {
     advance_to_signing(&h, &act_id, Some(&token)).await;
     let (status, _) = h
         // The fully-filled CSC ata (mesa set via the wire, t31) has no findings — no ack needed.
-        .post_json_auth(&format!("/v1/acts/{act_id}/seal"), json!({}), &token)
+        .post_json_auth(
+            &format!("/v1/acts/{act_id}/seal"),
+            manual_signature_seal_body("Arquivo E2E / Ledger integrity ata"),
+            &token,
+        )
         .await;
     assert_eq!(status, 200);
 

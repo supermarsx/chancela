@@ -44,7 +44,11 @@ async fn books_acts_full_seal_lifecycle() {
 
     // Seal → ata #1, Sealed, a 64-hex payload digest. No warnings to acknowledge.
     let (status, sealed) = h
-        .post_json_auth(&format!("/v1/acts/{act_id}/seal"), json!({}), &token)
+        .post_json_auth(
+            &format!("/v1/acts/{act_id}/seal"),
+            manual_signature_seal_body("Arquivo E2E / Ata AG anual"),
+            &token,
+        )
         .await;
     assert_eq!(status, 200, "seal: {sealed}");
     assert_eq!(sealed["ata_number"], 1);
@@ -70,18 +74,14 @@ async fn books_acts_full_seal_lifecycle() {
         "the seal appended a document.generated event: {events}"
     );
 
-    // The DOC-03 bundle is preserved (PDF bytes + metadata), with the Wave-D validation-report
-    // slot explicitly reserved (null).
+    // The DOC-03 bundle is preserved (PDF bytes + metadata + technical validation report).
     let (status, bundle) = h
         .get_json(&format!("/v1/acts/{act_id}/document/bundle"))
         .await;
     assert_eq!(status, 200, "bundle: {bundle}");
     assert_eq!(bundle["pdf"]["media_type"], "application/pdf");
     assert!(bundle["pdf"]["byte_length"].as_u64().expect("length") > 0);
-    assert!(
-        bundle["validation_report"].is_null(),
-        "the DOC-03 validation-report slot is reserved for Wave D"
-    );
+    assert_document_bundle_validation_report(&bundle, &act_id);
 
     // The act now reads Sealed with its ata number.
     let (status, got) = h.get_json(&format!("/v1/acts/{act_id}")).await;

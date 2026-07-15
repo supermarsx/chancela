@@ -8,7 +8,6 @@
 mod common;
 
 use common::*;
-use serde_json::json;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[cfg_attr(
@@ -42,7 +41,11 @@ async fn compliance_refuses_underfilled_seal_and_out_of_order_seal() {
 
     // Sealing it is a 422 carrying the non-empty, all-Error issue list.
     let (status, body) = h
-        .post_json_auth(&format!("/v1/acts/{act_id}/seal"), json!({}), &token)
+        .post_json_auth(
+            &format!("/v1/acts/{act_id}/seal"),
+            manual_signature_seal_body("Arquivo E2E / Ata underfilled"),
+            &token,
+        )
         .await;
     assert_eq!(status, 422, "underfilled seal: {body}");
     let issues = body["issues"].as_array().expect("issues array");
@@ -55,7 +58,11 @@ async fn compliance_refuses_underfilled_seal_and_out_of_order_seal() {
     // A second ata, never advanced to Signing, cannot be sealed out of order (409).
     let draft_id = draft_act(&h, &book_id, "Ainda rascunho", Some(&token)).await;
     let (status, body) = h
-        .post_json_auth(&format!("/v1/acts/{draft_id}/seal"), json!({}), &token)
+        .post_json_auth(
+            &format!("/v1/acts/{draft_id}/seal"),
+            manual_signature_seal_body("Arquivo E2E / Ata draft"),
+            &token,
+        )
         .await;
     assert_eq!(status, 409, "out-of-order seal: {body}");
     assert!(body["error"].is_string());

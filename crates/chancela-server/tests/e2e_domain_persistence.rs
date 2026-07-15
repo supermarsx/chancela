@@ -83,7 +83,11 @@ async fn full_domain_survives_restart_and_the_chain_continues() {
     advance_to_signing(&h, &act_id, Some(&token)).await;
     let (status, sealed) = h
         // The fully-filled CSC ata (mesa set via the wire, t31) has no findings — no ack needed.
-        .post_json_auth(&format!("/v1/acts/{act_id}/seal"), json!({}), &token)
+        .post_json_auth(
+            &format!("/v1/acts/{act_id}/seal"),
+            manual_signature_seal_body("Arquivo E2E / Domain ata 1"),
+            &token,
+        )
         .await;
     assert_eq!(status, 200, "seal: {sealed}");
     assert_eq!(sealed["ata_number"], 1);
@@ -224,7 +228,11 @@ async fn full_domain_survives_restart_and_the_chain_continues() {
     advance_to_signing(&h, &act2, Some(&token)).await;
     let (status, sealed2) = h
         // The fully-filled CSC ata (mesa set via the wire, t31) has no findings — no ack needed.
-        .post_json_auth(&format!("/v1/acts/{act2}/seal"), json!({}), &token)
+        .post_json_auth(
+            &format!("/v1/acts/{act2}/seal"),
+            manual_signature_seal_body("Arquivo E2E / Domain ata 2"),
+            &token,
+        )
         .await;
     assert_eq!(status, 200, "post-restart seal: {sealed2}");
     assert_eq!(

@@ -19,7 +19,7 @@ path = "src/main.rs"
 # `ignored` (0 processes spawned, ~0s) while `cargo test -p chancela-server --features e2e` runs
 # them against the real cargo-built binary. Mirrors the house `network-tests`/`hardware-tests`
 # double-gate; the npm script `test:e2e` selects exactly this feature.
-e2e = []
+e2e = ["chancela-api/e2e"]
 # Optional SQLCipher support for encrypted at-rest SQLite stores. The default remains plaintext
 # bundled SQLite; configuring CHANCELA_DB_KEY/CHANCELA_DB_KEY_FILE without this feature fails closed.
 sqlcipher = ["chancela-api/sqlcipher", "chancela-store/sqlcipher"]
