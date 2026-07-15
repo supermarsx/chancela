@@ -26,6 +26,10 @@ x509-cert = { workspace = true }
 spki = { workspace = true }
 rsa = { workspace = true }
 p256 = { workspace = true }
+# Broader ECDSA for XML-signing: P-384/SHA-384 + P-521/SHA-512 SignatureMethod agility and
+# fixed-width r||s encoding/verify (xmldsig.rs / validate.rs). Same der-0.7/RustCrypto-0.13 family.
+p384 = { workspace = true }
+p521 = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }

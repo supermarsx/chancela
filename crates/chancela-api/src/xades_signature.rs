@@ -320,7 +320,20 @@ pub async fn sign_xades(
         })
         .map_err(|e| SigningError::Xades(e.to_string()))?;
 
-        let raw = source.sign_signed_attributes(&prepared.signed_info_digest())?;
+        // The co-located PKCS#12 lane signs a 32-byte SHA-256 digest (RSA-2048 / ECDSA-P256, the
+        // real Cartão de Cidadão / CMD material). Wider-curve XAdES profiles (P-384/P-521 with
+        // SHA-384/512) are a crate-level capability that needs a variable-length signer seam.
+        let signed_info_digest: [u8; 32] = prepared
+            .signed_info_digest()
+            .as_slice()
+            .try_into()
+            .map_err(|_| {
+                SigningError::Xades(
+                    "the local PKCS#12 signer only supports SHA-256 XAdES profiles (RSA/ECDSA-P256)"
+                        .to_owned(),
+                )
+            })?;
+        let raw = source.sign_signed_attributes(&signed_info_digest)?;
         let assembled = prepared
             .assemble(&raw)
             .map_err(|e| SigningError::Xades(e.to_string()))?;
@@ -455,6 +468,8 @@ fn xmldsig_algorithm_label(alg: SignatureAlgorithm) -> &'static str {
     match alg {
         SignatureAlgorithm::RsaPkcs1Sha256 => "rsa-sha256",
         SignatureAlgorithm::EcdsaP256Sha256 => "ecdsa-sha256",
+        SignatureAlgorithm::EcdsaP384Sha384 => "ecdsa-sha384",
+        SignatureAlgorithm::EcdsaP521Sha512 => "ecdsa-sha512",
         _ => "unknown",
     }
 }

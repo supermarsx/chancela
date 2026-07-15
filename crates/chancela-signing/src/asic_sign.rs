@@ -89,8 +89,20 @@ fn produce_detached_xades(
 
     // The provider signs the SignedInfo digest exactly as it signs a CAdES signed-attributes digest
     // (a raw signature over a 32-byte SHA-256): the XMLDSig SignatureValue encoding is handled by
-    // `PreparedXades::assemble` (DER→r||s for ECDSA, passthrough for RSA).
-    let raw = provider.sign_signed_attributes(&prepared.signed_info_digest())?;
+    // `PreparedXades::assemble` (DER→r||s for ECDSA, passthrough for RSA). This lane infers RSA/P-256
+    // from the signer cert, so the SignedInfo digest is always SHA-256 (32 bytes); a wider-curve
+    // profile (SHA-384/512) would need a variable-length signer seam and is rejected here.
+    let signed_info_digest: [u8; 32] = prepared
+        .signed_info_digest()
+        .as_slice()
+        .try_into()
+        .map_err(|_| {
+            SigningError::Xades(
+                "this signer lane only supports SHA-256 XAdES profiles (RSA/ECDSA-P256)"
+                    .to_string(),
+            )
+        })?;
+    let raw = provider.sign_signed_attributes(&signed_info_digest)?;
     let assembled = prepared.assemble(&raw).map_err(xades_err)?;
 
     match level {

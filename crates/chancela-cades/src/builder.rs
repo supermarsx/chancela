@@ -33,17 +33,32 @@ pub fn signed_attributes_digest(
 }
 
 /// The `SignerInfo.signatureAlgorithm` identifier for a given profile.
-fn signature_algorithm_id(algorithm: SignatureAlgorithm) -> AlgorithmIdentifierOwned {
+///
+/// CAdES-B here is fixed to a SHA-256 signed-attributes digest (see [`signed_attributes_digest`]),
+/// so only the two SHA-256 profiles are assemblable. The P-384/SHA-384 and P-521/SHA-512 profiles
+/// exist for XML-signing (XAdES) and are rejected here rather than silently mislabelled over a
+/// SHA-256 imprint — keeping CAdES/PAdES honest and unchanged.
+fn signature_algorithm_id(
+    algorithm: SignatureAlgorithm,
+) -> Result<AlgorithmIdentifierOwned, CadesError> {
     match algorithm {
-        SignatureAlgorithm::RsaPkcs1Sha256 => AlgorithmIdentifierOwned {
+        SignatureAlgorithm::RsaPkcs1Sha256 => Ok(AlgorithmIdentifierOwned {
             oid: oids::RSA_ENCRYPTION,
             // rsaEncryption carries NULL parameters (RFC 3370 §3.2).
             parameters: Some(Any::null()),
-        },
-        SignatureAlgorithm::EcdsaP256Sha256 => AlgorithmIdentifierOwned {
+        }),
+        SignatureAlgorithm::EcdsaP256Sha256 => Ok(AlgorithmIdentifierOwned {
             oid: oids::ECDSA_WITH_SHA256,
             parameters: None,
-        },
+        }),
+        // ecdsa-with-SHA384 (1.2.840.10045.4.3.3) / ecdsa-with-SHA512 (1.2.840.10045.4.3.4):
+        // valid XAdES profiles, but CAdES-B here only digests signed attributes with SHA-256.
+        SignatureAlgorithm::EcdsaP384Sha384 => Err(CadesError::UnsupportedAlgorithm {
+            oid: der::asn1::ObjectIdentifier::new_unwrap("1.2.840.10045.4.3.3"),
+        }),
+        SignatureAlgorithm::EcdsaP521Sha512 => Err(CadesError::UnsupportedAlgorithm {
+            oid: der::asn1::ObjectIdentifier::new_unwrap("1.2.840.10045.4.3.4"),
+        }),
     }
 }
 
@@ -74,7 +89,7 @@ pub fn assemble_cades_b(
         sid,
         digest_alg: alg_sha256(),
         signed_attrs: Some(signed_attrs),
-        signature_algorithm: signature_algorithm_id(raw.algorithm),
+        signature_algorithm: signature_algorithm_id(raw.algorithm)?,
         signature: OctetString::new(raw.signature.clone())?,
         unsigned_attrs: None,
     };

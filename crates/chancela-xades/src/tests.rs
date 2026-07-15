@@ -27,6 +27,10 @@ use crate::xmldsig::{DIGEST_SHA256, DS_NS, Reference, XADES_NS, XmlDsigBuilder};
 
 const SHA256_WITH_RSA: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.113549.1.1.11");
 const ECDSA_WITH_SHA256: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.10045.4.3.2");
+const ECDSA_WITH_SHA384: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.10045.4.3.3");
+const ECDSA_WITH_SHA512: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.10045.4.3.4");
+const EC_PUBLIC_KEY: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.10045.2.1");
+const SECP521R1: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.3.132.0.35");
 
 const SHA256_DIGEST_INFO_PREFIX: [u8; 19] = [
     0x30, 0x31, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01, 0x05,
@@ -46,6 +50,14 @@ enum TestSigner {
     },
     Ecdsa {
         key: p256::ecdsa::SigningKey,
+        cert_der: Vec<u8>,
+    },
+    EcdsaP384 {
+        key: p384::ecdsa::SigningKey,
+        cert_der: Vec<u8>,
+    },
+    EcdsaP521 {
+        key: p521::ecdsa::SigningKey,
         cert_der: Vec<u8>,
     },
 }
@@ -89,36 +101,102 @@ impl TestSigner {
         Self::Ecdsa { key, cert_der }
     }
 
+    fn new_ecdsa_p384(cn: &str, serial: u8) -> Self {
+        use p384::ecdsa::SigningKey;
+        use p384::ecdsa::signature::Signer;
+        use rsa::rand_core::OsRng;
+        let key = SigningKey::random(&mut OsRng);
+        let verifying = *key.verifying_key();
+        let spki = SubjectPublicKeyInfoOwned::from_key(verifying).expect("p384 spki");
+        let sig_alg = AlgorithmIdentifierOwned {
+            oid: ECDSA_WITH_SHA384,
+            parameters: None,
+        };
+        let signer_key = key.clone();
+        let cert_der = build_self_signed(cn, serial, spki, sig_alg, |tbs| {
+            let sig: p384::ecdsa::Signature = signer_key.sign(tbs);
+            sig.to_der().as_bytes().to_vec()
+        });
+        Self::EcdsaP384 { key, cert_der }
+    }
+
+    fn new_ecdsa_p521(cn: &str, serial: u8) -> Self {
+        use p521::ecdsa::signature::Signer;
+        use p521::ecdsa::{SigningKey, VerifyingKey};
+        use rsa::rand_core::OsRng;
+        let key = SigningKey::random(&mut OsRng);
+        // p521 0.13 has no SPKI `EncodePublicKey`; assemble the SubjectPublicKeyInfo by hand from
+        // the uncompressed SEC1 point (mirrors how the validator reads it back via from_sec1_bytes).
+        let verifying = VerifyingKey::from(&key);
+        let point = verifying.to_encoded_point(false);
+        let spki = SubjectPublicKeyInfoOwned {
+            algorithm: AlgorithmIdentifierOwned {
+                oid: EC_PUBLIC_KEY,
+                parameters: Some(Any::encode_from(&SECP521R1).expect("secp521r1 any")),
+            },
+            subject_public_key: BitString::from_bytes(point.as_bytes()).expect("p521 point bits"),
+        };
+        let sig_alg = AlgorithmIdentifierOwned {
+            oid: ECDSA_WITH_SHA512,
+            parameters: None,
+        };
+        let signer_key = key.clone();
+        let cert_der = build_self_signed(cn, serial, spki, sig_alg, |tbs| {
+            let sig: p521::ecdsa::Signature = signer_key.sign(tbs);
+            sig.to_der().as_bytes().to_vec()
+        });
+        Self::EcdsaP521 { key, cert_der }
+    }
+
     fn algorithm(&self) -> SignatureAlgorithm {
         match self {
             TestSigner::Rsa { .. } => SignatureAlgorithm::RsaPkcs1Sha256,
             TestSigner::Ecdsa { .. } => SignatureAlgorithm::EcdsaP256Sha256,
+            TestSigner::EcdsaP384 { .. } => SignatureAlgorithm::EcdsaP384Sha384,
+            TestSigner::EcdsaP521 { .. } => SignatureAlgorithm::EcdsaP521Sha512,
         }
     }
 
     fn cert_der(&self) -> Vec<u8> {
         match self {
-            TestSigner::Rsa { cert_der, .. } | TestSigner::Ecdsa { cert_der, .. } => {
-                cert_der.clone()
-            }
+            TestSigner::Rsa { cert_der, .. }
+            | TestSigner::Ecdsa { cert_der, .. }
+            | TestSigner::EcdsaP384 { cert_der, .. }
+            | TestSigner::EcdsaP521 { cert_der, .. } => cert_der.clone(),
         }
     }
 
-    /// Sign a 32-byte digest exactly as the real token/remote signer would: RSA → PKCS#1 v1.5 over
-    /// `DigestInfo`; ECDSA → raw over the prehash, DER-encoded (r, s) as the [`RawSignature`] contract.
-    fn sign_digest(&self, digest: &[u8; 32]) -> Vec<u8> {
+    /// Sign the SignedInfo digest exactly as the real token/remote signer would: RSA → PKCS#1 v1.5
+    /// over `DigestInfo` (SHA-256, 32 bytes); ECDSA → raw over the prehash (SHA-256/384/512 per
+    /// curve → 32/48/64 bytes), DER-encoded (r, s) as the [`RawSignature`] contract.
+    fn sign_digest(&self, digest: &[u8]) -> Vec<u8> {
         match self {
-            TestSigner::Rsa { key, .. } => sign_rsa_digest_info(key, digest),
+            TestSigner::Rsa { key, .. } => {
+                let d: &[u8; 32] = digest.try_into().expect("RSA XAdES digest is SHA-256");
+                sign_rsa_digest_info(key, d)
+            }
             TestSigner::Ecdsa { key, .. } => {
                 use p256::ecdsa::signature::hazmat::PrehashSigner;
                 let sig: p256::ecdsa::Signature =
-                    key.sign_prehash(digest).expect("ecdsa prehash sign");
+                    key.sign_prehash(digest).expect("p256 prehash sign");
+                sig.to_der().as_bytes().to_vec()
+            }
+            TestSigner::EcdsaP384 { key, .. } => {
+                use p384::ecdsa::signature::hazmat::PrehashSigner;
+                let sig: p384::ecdsa::Signature =
+                    key.sign_prehash(digest).expect("p384 prehash sign");
+                sig.to_der().as_bytes().to_vec()
+            }
+            TestSigner::EcdsaP521 { key, .. } => {
+                use p521::ecdsa::signature::hazmat::PrehashSigner;
+                let sig: p521::ecdsa::Signature =
+                    key.sign_prehash(digest).expect("p521 prehash sign");
                 sig.to_der().as_bytes().to_vec()
             }
         }
     }
 
-    fn raw_signature(&self, digest: &[u8; 32]) -> RawSignature {
+    fn raw_signature(&self, digest: &[u8]) -> RawSignature {
         RawSignature::new(
             self.algorithm(),
             self.sign_digest(digest),
@@ -247,6 +325,73 @@ fn xades_b_enveloping_roundtrip_ecdsa() {
     assert_valid_b(&xml);
 }
 
+/// Broader ECDSA (wp26-xades E2): P-384 with a matched SHA-384 profile round-trips end to end —
+/// the SignedInfo digest is SHA-384 (48 bytes), the r||s SignatureValue is 96 bytes, and every
+/// Reference/CertDigest uses SHA-384. Verification recomputes and checks all of it.
+#[test]
+fn xades_b_enveloping_roundtrip_ecdsa_p384() {
+    let signer = TestSigner::new_ecdsa_p384("Chancela P384 XAdES", 11);
+    // The prepared SignedInfo digest must be SHA-384-wide before we even sign.
+    let prepared = prepare_xades(enveloping_request(&signer, XadesLevel::B)).expect("prepare");
+    assert_eq!(
+        prepared.signed_info_digest().len(),
+        48,
+        "P-384 profile hashes SignedInfo with SHA-384"
+    );
+    let raw = signer.raw_signature(&prepared.signed_info_digest());
+    let xml = prepared.assemble(&raw).unwrap().into_bytes().unwrap();
+    assert_valid_b(&xml);
+    // The emitted SignatureMethod/DigestMethod must be the SHA-384 URIs.
+    let text = String::from_utf8(xml).unwrap();
+    assert!(
+        text.contains("ecdsa-sha384"),
+        "SignatureMethod is ecdsa-sha384"
+    );
+    assert!(
+        text.contains("xmldsig-more#sha384"),
+        "DigestMethod is SHA-384"
+    );
+}
+
+/// Broader ECDSA (wp26-xades E2): P-521 with a matched SHA-512 profile round-trips (SignedInfo
+/// digest 64 bytes, r||s 132 bytes).
+#[test]
+fn xades_b_enveloping_roundtrip_ecdsa_p521() {
+    let signer = TestSigner::new_ecdsa_p521("Chancela P521 XAdES", 12);
+    let prepared = prepare_xades(enveloping_request(&signer, XadesLevel::B)).expect("prepare");
+    assert_eq!(
+        prepared.signed_info_digest().len(),
+        64,
+        "P-521 profile hashes SignedInfo with SHA-512"
+    );
+    let raw = signer.raw_signature(&prepared.signed_info_digest());
+    let xml = prepared.assemble(&raw).unwrap().into_bytes().unwrap();
+    assert_valid_b(&xml);
+    let text = String::from_utf8(xml).unwrap();
+    assert!(
+        text.contains("ecdsa-sha512"),
+        "SignatureMethod is ecdsa-sha512"
+    );
+    assert!(text.contains("xmlenc#sha512"), "DigestMethod is SHA-512");
+}
+
+/// A P-384 signature whose SignatureValue is tampered must not verify (curve-specific verify path).
+#[test]
+fn corrupted_p384_signature_is_rejected() {
+    let signer = TestSigner::new_ecdsa_p384("P384 corrupt", 13);
+    let prepared = prepare_xades(enveloping_request(&signer, XadesLevel::B)).unwrap();
+    let mut raw = signer.raw_signature(&prepared.signed_info_digest());
+    let last = raw.signature.len() - 1;
+    raw.signature[last] ^= 0xff;
+    let xml = prepared.assemble(&raw).unwrap().into_bytes().unwrap();
+    let report = validate_xades(&xml).expect("validate");
+    assert!(
+        !report.signature_valid,
+        "corrupted P-384 signature must not verify"
+    );
+    assert!(!report.is_valid_b());
+}
+
 #[test]
 fn xades_b_detached_roundtrip() {
     let signer = TestSigner::new_ecdsa("Detached", 3);
@@ -326,6 +471,36 @@ fn tampered_object_breaks_reference_digest() {
         "tampered object must fail its digest"
     );
     assert!(!report.is_valid_b());
+}
+
+#[test]
+fn missing_reference_digest_method_is_rejected() {
+    let signer = TestSigner::new_ecdsa("Missing DigestMethod", 14);
+    let xml = sign_to_bytes(&signer, enveloping_request(&signer, XadesLevel::B));
+    let text = String::from_utf8(xml).unwrap();
+    let digest_method =
+        format!("<ds:DigestMethod Algorithm=\"{DIGEST_SHA256}\"></ds:DigestMethod>");
+    let tampered = text.replacen(&digest_method, "", 1);
+
+    let err = validate_xades(tampered.as_bytes()).expect_err("missing DigestMethod must fail");
+    assert!(
+        matches!(err, crate::XadesError::Verification(msg) if msg.contains("reference without DigestMethod")),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn unknown_reference_digest_method_is_rejected() {
+    let signer = TestSigner::new_ecdsa("Unknown DigestMethod", 15);
+    let xml = sign_to_bytes(&signer, enveloping_request(&signer, XadesLevel::B));
+    let text = String::from_utf8(xml).unwrap();
+    let tampered = text.replacen(DIGEST_SHA256, "urn:chancela:test:unknown-digest", 1);
+
+    let err = validate_xades(tampered.as_bytes()).expect_err("unknown DigestMethod must fail");
+    assert!(
+        matches!(err, crate::XadesError::Verification(msg) if msg.contains("unsupported DigestMethod urn:chancela:test:unknown-digest")),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]
@@ -422,7 +597,7 @@ fn unsigned_signed_properties_blob_is_not_valid_b() {
         id: None,
         ref_type: None,
         transforms: vec![C14nAlgorithm::ExclusiveWithoutComments.uri().to_string()],
-        digest: obj_digest,
+        digest: obj_digest.to_vec(),
     });
     builder.add_object(object_xml.to_string());
     // Append an unsigned SignedProperties carrying SigningTime + SigningCertificateV2, not covered

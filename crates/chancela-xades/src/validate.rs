@@ -16,7 +16,10 @@ use x509_cert::certificate::Certificate;
 use crate::c14n::{self, C14nAlgorithm};
 use crate::error::XadesError;
 use crate::xades::XadesLevel;
-use crate::xmldsig::{DS_NS, SIG_ECDSA_SHA256, SIG_RSA_SHA256, XADES_NS, sha256};
+use crate::xmldsig::{
+    DS_NS, DigestAlgorithm, SIG_ECDSA_SHA256, SIG_ECDSA_SHA384, SIG_ECDSA_SHA512, SIG_RSA_SHA256,
+    XADES_NS,
+};
 
 /// The outcome of validating a XAdES signature.
 #[derive(Debug, Clone)]
@@ -147,23 +150,21 @@ pub fn validate_xades(xml: &[u8]) -> Result<XadesValidationReport, XadesError> {
             .map_err(|_| XadesError::Verification("DigestValue is not base64".into()))?;
 
         let c14n_alg = reference_c14n_algorithm(r);
+        let digest_alg = reference_digest_algorithm(r)?;
 
-        let computed: Option<[u8; 32]> = if let Some(id) = uri.strip_prefix('#') {
-            Some(sha256(&c14n::canonicalize_element_by_id(
-                xml,
-                id,
-                c14n_alg,
-                &[],
-            )?))
+        let computed: Option<Vec<u8>> = if let Some(id) = uri.strip_prefix('#') {
+            Some(digest_alg.digest(&c14n::canonicalize_element_by_id(xml, id, c14n_alg, &[])?))
         } else if uri.is_empty() {
             // Enveloped: strip the enclosing Signature and canonicalize the document.
             let exclude: Vec<&str> = signature_id.into_iter().collect();
-            Some(sha256(&c14n::canonicalize_document_excluding_ids(
-                xml,
-                &exclude,
-                c14n_alg,
-                &[],
-            )?))
+            Some(
+                digest_alg.digest(&c14n::canonicalize_document_excluding_ids(
+                    xml,
+                    &exclude,
+                    c14n_alg,
+                    &[],
+                )?),
+            )
         } else {
             // External detached reference — cannot dereference without the bytes.
             None
@@ -252,6 +253,20 @@ fn reference_c14n_algorithm(reference: &roxmltree::Node) -> C14nAlgorithm {
         .unwrap_or(C14nAlgorithm::ExclusiveWithoutComments)
 }
 
+/// The message-digest algorithm named by a reference's `ds:DigestMethod`.
+fn reference_digest_algorithm(reference: &roxmltree::Node) -> Result<DigestAlgorithm, XadesError> {
+    let method = reference
+        .children()
+        .find(|n| n.has_tag_name((DS_NS, "DigestMethod")))
+        .ok_or_else(|| XadesError::Verification("reference without DigestMethod".into()))?;
+    let algorithm = method
+        .attribute("Algorithm")
+        .ok_or_else(|| XadesError::Verification("DigestMethod without Algorithm".into()))?;
+    DigestAlgorithm::from_uri(algorithm).ok_or_else(|| {
+        XadesError::Verification(format!("unsupported DigestMethod {algorithm}"))
+    })
+}
+
 /// The first `KeyInfo/X509Data/X509Certificate`, decoded to DER.
 fn first_x509_certificate(signature: &roxmltree::Node) -> Result<Option<Vec<u8>>, XadesError> {
     let cert_node = signature
@@ -286,7 +301,11 @@ fn verify_signature(
     if signature_method == SIG_RSA_SHA256 {
         verify_rsa(&cert, signature, message)
     } else if signature_method == SIG_ECDSA_SHA256 {
-        verify_ecdsa(&cert, signature, message)
+        verify_ecdsa_p256(&cert, signature, message)
+    } else if signature_method == SIG_ECDSA_SHA384 {
+        verify_ecdsa_p384(&cert, signature, message)
+    } else if signature_method == SIG_ECDSA_SHA512 {
+        verify_ecdsa_p521(&cert, signature, message)
     } else {
         Err(XadesError::Verification(format!(
             "unsupported SignatureMethod {signature_method}"
@@ -318,19 +337,72 @@ fn verify_rsa(cert: &Certificate, signature: &[u8], message: &[u8]) -> Result<()
         .map_err(|_| XadesError::Verification("RSA signature did not verify".into()))
 }
 
-fn verify_ecdsa(cert: &Certificate, signature: &[u8], message: &[u8]) -> Result<(), XadesError> {
+/// Re-encode the certificate's SPKI as DER (the form the RustCrypto `from_public_key_der` wants).
+fn spki_der(cert: &Certificate) -> Result<Vec<u8>, XadesError> {
+    cert.tbs_certificate
+        .subject_public_key_info
+        .to_der()
+        .map_err(|_| XadesError::Verification("cannot re-encode SPKI".into()))
+}
+
+fn verify_ecdsa_p256(
+    cert: &Certificate,
+    signature: &[u8],
+    message: &[u8],
+) -> Result<(), XadesError> {
     use p256::ecdsa::signature::Verifier;
     use p256::ecdsa::{Signature, VerifyingKey};
     use p256::pkcs8::DecodePublicKey;
 
-    let spki_der = cert
+    let verifying_key = VerifyingKey::from_public_key_der(&spki_der(cert)?)
+        .map_err(|_| XadesError::Verification("bad P-256 key".into()))?;
+    // XMLDSig `ecdsa-sha256` carries the fixed-width r||s value (64 bytes), not DER. `Verifier`
+    // hashes `message` with SHA-256 (the curve's associated digest).
+    let sig = Signature::from_slice(signature)
+        .map_err(|_| XadesError::Verification("bad ECDSA signature encoding".into()))?;
+    verifying_key
+        .verify(message, &sig)
+        .map_err(|_| XadesError::Verification("ECDSA signature did not verify".into()))
+}
+
+fn verify_ecdsa_p384(
+    cert: &Certificate,
+    signature: &[u8],
+    message: &[u8],
+) -> Result<(), XadesError> {
+    use p384::ecdsa::signature::Verifier;
+    use p384::ecdsa::{Signature, VerifyingKey};
+    use p384::pkcs8::DecodePublicKey;
+
+    let verifying_key = VerifyingKey::from_public_key_der(&spki_der(cert)?)
+        .map_err(|_| XadesError::Verification("bad P-384 key".into()))?;
+    // `ecdsa-sha384`: fixed-width r||s (96 bytes); `Verifier` hashes with SHA-384.
+    let sig = Signature::from_slice(signature)
+        .map_err(|_| XadesError::Verification("bad ECDSA signature encoding".into()))?;
+    verifying_key
+        .verify(message, &sig)
+        .map_err(|_| XadesError::Verification("ECDSA signature did not verify".into()))
+}
+
+fn verify_ecdsa_p521(
+    cert: &Certificate,
+    signature: &[u8],
+    message: &[u8],
+) -> Result<(), XadesError> {
+    use p521::ecdsa::signature::Verifier;
+    use p521::ecdsa::{Signature, VerifyingKey};
+
+    // p521 0.13 has no SPKI `DecodePublicKey`; take the SEC1 public-key point straight from the
+    // certificate's SubjectPublicKeyInfo BIT STRING (the uncompressed `04 || X || Y` encoding).
+    let point = cert
         .tbs_certificate
         .subject_public_key_info
-        .to_der()
-        .map_err(|_| XadesError::Verification("cannot re-encode SPKI".into()))?;
-    let verifying_key = VerifyingKey::from_public_key_der(&spki_der)
-        .map_err(|_| XadesError::Verification("bad P-256 key".into()))?;
-    // XMLDSig `ecdsa-sha256` carries the fixed-width r||s value, not DER.
+        .subject_public_key
+        .as_bytes()
+        .ok_or_else(|| XadesError::Verification("P-521 SPKI is not octet-aligned".into()))?;
+    let verifying_key = VerifyingKey::from_sec1_bytes(point)
+        .map_err(|_| XadesError::Verification("bad P-521 key".into()))?;
+    // `ecdsa-sha512`: fixed-width r||s (132 bytes); `Verifier` hashes with SHA-512.
     let sig = Signature::from_slice(signature)
         .map_err(|_| XadesError::Verification("bad ECDSA signature encoding".into()))?;
     verifying_key

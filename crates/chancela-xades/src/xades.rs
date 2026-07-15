@@ -27,7 +27,8 @@ use x509_cert::serial_number::SerialNumber;
 use crate::c14n::{self, C14nAlgorithm};
 use crate::error::XadesError;
 use crate::xmldsig::{
-    self, DS_NS, REF_TYPE_SIGNED_PROPERTIES, Reference, XADES_NS, XmlDsigBuilder, sha256,
+    self, DS_NS, DigestAlgorithm, REF_TYPE_SIGNED_PROPERTIES, Reference, XADES_NS, XmlDsigBuilder,
+    sha256,
 };
 
 /// The XAdES conformance level.
@@ -122,13 +123,15 @@ pub struct PreparedXades {
     packaging: SignaturePackaging,
     level: XadesLevel,
     sig_alg: SignatureAlgorithm,
-    signed_info_digest: [u8; 32],
+    signed_info_digest: Vec<u8>,
 }
 
 impl PreparedXades {
-    /// The digest the signing device signs: SHA-256 over the exclusive-C14N of `<ds:SignedInfo>`.
-    pub fn signed_info_digest(&self) -> [u8; 32] {
-        self.signed_info_digest
+    /// The digest the signing device signs: the exclusive-C14N of `<ds:SignedInfo>` hashed under the
+    /// signature's matched digest (SHA-256 for RSA/P-256 → 32 bytes, SHA-384 for P-384 → 48 bytes,
+    /// SHA-512 for P-521 → 64 bytes).
+    pub fn signed_info_digest(&self) -> Vec<u8> {
+        self.signed_info_digest.clone()
     }
 
     /// Assemble the signature around `raw`. For enveloping/detached packaging the result is a
@@ -244,16 +247,18 @@ fn escape_xml_text(s: &str) -> String {
     out
 }
 
-/// Build the `<xades:SignedProperties>` element (with an `Id`).
+/// Build the `<xades:SignedProperties>` element (with an `Id`). The `CertDigest` is taken under the
+/// signature's matched `digest_alg`, so the whole XAdES profile uses a single hash.
 fn build_signed_properties(
     signed_props_id: &str,
     signing_cert_der: &[u8],
     signing_time: OffsetDateTime,
+    digest_alg: DigestAlgorithm,
 ) -> Result<String, XadesError> {
     let cert = Certificate::from_der(signing_cert_der)
         .map_err(|_| XadesError::Verification("signer certificate is not valid DER".into()))?;
 
-    let cert_digest = sha256(signing_cert_der);
+    let cert_digest = digest_alg.digest(signing_cert_der);
     let issuer_serial = IssuerSerial {
         issuer: vec![GeneralName::DirectoryName(
             cert.tbs_certificate.issuer.clone(),
@@ -277,7 +282,7 @@ fn build_signed_properties(
     s.push_str("<xades:CertDigest>");
     s.push_str(&format!(
         "<ds:DigestMethod Algorithm=\"{}\"></ds:DigestMethod>",
-        xmldsig::DIGEST_SHA256
+        digest_alg.uri()
     ));
     s.push_str(&format!(
         "<ds:DigestValue>{}</ds:DigestValue>",
@@ -297,12 +302,14 @@ fn build_signed_properties(
 }
 
 /// The digest of `<xades:SignedProperties>` over its exclusive-C14N, computed exactly as a validator
-/// would from the assembled document (namespaces declared in an ancestor context).
+/// would from the assembled document (namespaces declared in an ancestor context), under
+/// `digest_alg`.
 fn signed_properties_digest(
     signed_props_xml: &str,
     signed_props_id: &str,
     signature_id: &str,
-) -> Result<[u8; 32], XadesError> {
+    digest_alg: DigestAlgorithm,
+) -> Result<Vec<u8>, XadesError> {
     let wrapper = format!(
         "<xades:QualifyingProperties xmlns:ds=\"{DS_NS}\" xmlns:xades=\"{XADES_NS}\" \
          Target=\"#{signature_id}\">{signed_props_xml}</xades:QualifyingProperties>"
@@ -313,11 +320,15 @@ fn signed_properties_digest(
         C14nAlgorithm::ExclusiveWithoutComments,
         &[],
     )?;
-    Ok(sha256(&c14n))
+    Ok(digest_alg.digest(&c14n))
 }
 
-/// The digest of an enveloping `<ds:Object>` over its exclusive-C14N.
-fn object_digest(object_xml: &str, object_id: &str) -> Result<[u8; 32], XadesError> {
+/// The digest of an enveloping `<ds:Object>` over its exclusive-C14N, under `digest_alg`.
+fn object_digest(
+    object_xml: &str,
+    object_id: &str,
+    digest_alg: DigestAlgorithm,
+) -> Result<Vec<u8>, XadesError> {
     let wrapper = format!("<ds:Signature xmlns:ds=\"{DS_NS}\">{object_xml}</ds:Signature>");
     let c14n = c14n::canonicalize_element_by_id(
         wrapper.as_bytes(),
@@ -325,7 +336,7 @@ fn object_digest(object_xml: &str, object_id: &str) -> Result<[u8; 32], XadesErr
         C14nAlgorithm::ExclusiveWithoutComments,
         &[],
     )?;
-    Ok(sha256(&c14n))
+    Ok(digest_alg.digest(&c14n))
 }
 
 /// Splice a `<ds:Signature>` as the last child of an XML document's root element.
@@ -353,14 +364,21 @@ pub fn prepare_xades(req: XadesSignRequest) -> Result<PreparedXades, XadesError>
         ));
     }
 
+    let digest_alg = xmldsig::digest_algorithm_for(req.sig_alg)?;
+
     let signed_props_id = format!("{}-signedprops", req.signature_id);
     let signed_props_xml = build_signed_properties(
         &signed_props_id,
         &req.signing_cert_der,
         req.context.signing_time,
+        digest_alg,
     )?;
-    let sp_digest =
-        signed_properties_digest(&signed_props_xml, &signed_props_id, &req.signature_id)?;
+    let sp_digest = signed_properties_digest(
+        &signed_props_xml,
+        &signed_props_id,
+        &req.signature_id,
+        digest_alg,
+    )?;
 
     let mut builder = XmlDsigBuilder::new(req.signature_id.clone(), req.sig_alg);
     builder.declare_ns("xades", XADES_NS);
@@ -375,7 +393,7 @@ pub fn prepare_xades(req: XadesSignRequest) -> Result<PreparedXades, XadesError>
                     ObjectContent::Xml(x) => x.clone(),
                 };
                 let object_xml = format!("<ds:Object Id=\"{}\">{}</ds:Object>", obj.id, inner);
-                let digest = object_digest(&object_xml, &obj.id)?;
+                let digest = object_digest(&object_xml, &obj.id, digest_alg)?;
                 builder.add_reference(Reference {
                     uri: format!("#{}", obj.id),
                     id: None,
@@ -393,7 +411,7 @@ pub fn prepare_xades(req: XadesSignRequest) -> Result<PreparedXades, XadesError>
                     id: None,
                     ref_type: None,
                     transforms: Vec::new(),
-                    digest: sha256(&r.bytes),
+                    digest: digest_alg.digest(&r.bytes),
                 });
             }
         }
@@ -411,7 +429,7 @@ pub fn prepare_xades(req: XadesSignRequest) -> Result<PreparedXades, XadesError>
                     xmldsig::TRANSFORM_ENVELOPED.to_string(),
                     C14nAlgorithm::ExclusiveWithoutComments.uri().to_string(),
                 ],
-                digest: sha256(&c14n),
+                digest: digest_alg.digest(&c14n),
             });
         }
     }

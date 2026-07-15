@@ -13,7 +13,7 @@
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as B64;
 use chancela_cades::{RawSignature, SignatureAlgorithm};
-use sha2::{Digest, Sha256};
+use sha2::{Digest, Sha256, Sha384, Sha512};
 
 use crate::c14n::{self, C14nAlgorithm};
 use crate::error::XadesError;
@@ -25,20 +25,88 @@ pub const XADES_NS: &str = "http://uri.etsi.org/01903/v1.3.2#";
 
 /// `DigestMethod` algorithm URI for SHA-256.
 pub const DIGEST_SHA256: &str = "http://www.w3.org/2001/04/xmlenc#sha256";
+/// `DigestMethod` algorithm URI for SHA-384.
+pub const DIGEST_SHA384: &str = "http://www.w3.org/2001/04/xmldsig-more#sha384";
+/// `DigestMethod` algorithm URI for SHA-512.
+pub const DIGEST_SHA512: &str = "http://www.w3.org/2001/04/xmlenc#sha512";
 /// `SignatureMethod` algorithm URI for RSASSA-PKCS1-v1_5 over SHA-256.
 pub const SIG_RSA_SHA256: &str = "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256";
 /// `SignatureMethod` algorithm URI for ECDSA-P256 over SHA-256.
 pub const SIG_ECDSA_SHA256: &str = "http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha256";
+/// `SignatureMethod` algorithm URI for ECDSA-P384 over SHA-384.
+pub const SIG_ECDSA_SHA384: &str = "http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha384";
+/// `SignatureMethod` algorithm URI for ECDSA-P521 over SHA-512.
+pub const SIG_ECDSA_SHA512: &str = "http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha512";
 /// Enveloped-signature transform URI.
 pub const TRANSFORM_ENVELOPED: &str = "http://www.w3.org/2000/09/xmldsig#enveloped-signature";
 /// `Type` attribute value marking a `Reference` to the XAdES `SignedProperties`.
 pub const REF_TYPE_SIGNED_PROPERTIES: &str = "http://uri.etsi.org/01903#SignedProperties";
+
+/// The message-digest algorithm that the whole signature (SignedInfo, every Reference, and the
+/// XAdES `CertDigest`) is computed with. XMLDSig permits mixing hashes, but a matched profile
+/// (the same hash throughout, paired to the signature curve) is the ETSI-baseline convention this
+/// crate emits and what interop validators expect.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum DigestAlgorithm {
+    /// SHA-256 (paired with RSA-PKCS1-SHA256 and ECDSA-P256).
+    Sha256,
+    /// SHA-384 (paired with ECDSA-P384).
+    Sha384,
+    /// SHA-512 (paired with ECDSA-P521).
+    Sha512,
+}
+
+impl DigestAlgorithm {
+    /// The `DigestMethod` algorithm URI.
+    pub fn uri(self) -> &'static str {
+        match self {
+            DigestAlgorithm::Sha256 => DIGEST_SHA256,
+            DigestAlgorithm::Sha384 => DIGEST_SHA384,
+            DigestAlgorithm::Sha512 => DIGEST_SHA512,
+        }
+    }
+
+    /// Resolve a `DigestMethod` URI to the enum, if supported.
+    pub fn from_uri(uri: &str) -> Option<Self> {
+        match uri {
+            DIGEST_SHA256 => Some(DigestAlgorithm::Sha256),
+            DIGEST_SHA384 => Some(DigestAlgorithm::Sha384),
+            DIGEST_SHA512 => Some(DigestAlgorithm::Sha512),
+            _ => None,
+        }
+    }
+
+    /// The digest of `bytes` under this algorithm.
+    pub fn digest(self, bytes: &[u8]) -> Vec<u8> {
+        match self {
+            DigestAlgorithm::Sha256 => Sha256::digest(bytes).to_vec(),
+            DigestAlgorithm::Sha384 => Sha384::digest(bytes).to_vec(),
+            DigestAlgorithm::Sha512 => Sha512::digest(bytes).to_vec(),
+        }
+    }
+}
+
+/// The `DigestAlgorithm` matched to a signature profile.
+pub fn digest_algorithm_for(alg: SignatureAlgorithm) -> Result<DigestAlgorithm, XadesError> {
+    match alg {
+        SignatureAlgorithm::RsaPkcs1Sha256 | SignatureAlgorithm::EcdsaP256Sha256 => {
+            Ok(DigestAlgorithm::Sha256)
+        }
+        SignatureAlgorithm::EcdsaP384Sha384 => Ok(DigestAlgorithm::Sha384),
+        SignatureAlgorithm::EcdsaP521Sha512 => Ok(DigestAlgorithm::Sha512),
+        other => Err(XadesError::NotYetSupported(format!(
+            "no XMLDSig DigestMethod for {other:?}"
+        ))),
+    }
+}
 
 /// The `SignatureMethod` algorithm URI for a [`RawSignature`] profile.
 pub fn signature_method_uri(alg: SignatureAlgorithm) -> Result<&'static str, XadesError> {
     match alg {
         SignatureAlgorithm::RsaPkcs1Sha256 => Ok(SIG_RSA_SHA256),
         SignatureAlgorithm::EcdsaP256Sha256 => Ok(SIG_ECDSA_SHA256),
+        SignatureAlgorithm::EcdsaP384Sha384 => Ok(SIG_ECDSA_SHA384),
+        SignatureAlgorithm::EcdsaP521Sha512 => Ok(SIG_ECDSA_SHA512),
         other => Err(XadesError::NotYetSupported(format!(
             "no XMLDSig SignatureMethod for {other:?}"
         ))),
@@ -55,14 +123,26 @@ pub fn sha256(bytes: &[u8]) -> [u8; 32] {
 /// Convert a signing device's [`RawSignature`] signature value into the raw form XMLDSig requires
 /// for `SignatureValue`.
 ///
-/// XMLDSig's `ecdsa-sha256` carries the fixed-width `r || s` concatenation (64 bytes for P-256),
-/// **not** the DER `ECDSA-Sig-Value` that [`RawSignature`] holds (that DER form is what CMS/CAdES
-/// use). RSA-PKCS1 signatures are identical in both encodings.
+/// XMLDSig's `ecdsa-sha*` carries the fixed-width `r || s` concatenation (64 bytes for P-256, 96 for
+/// P-384, 132 for P-521), **not** the DER `ECDSA-Sig-Value` that [`RawSignature`] holds (that DER
+/// form is what CMS/CAdES use). RSA-PKCS1 signatures are identical in both encodings.
 pub fn signature_value_bytes(raw: &RawSignature) -> Result<Vec<u8>, XadesError> {
     match raw.algorithm {
         SignatureAlgorithm::RsaPkcs1Sha256 => Ok(raw.signature.clone()),
         SignatureAlgorithm::EcdsaP256Sha256 => {
             use p256::ecdsa::Signature;
+            let sig = Signature::from_der(&raw.signature)
+                .map_err(|_| XadesError::Verification("ECDSA signature is not valid DER".into()))?;
+            Ok(sig.to_bytes().to_vec())
+        }
+        SignatureAlgorithm::EcdsaP384Sha384 => {
+            use p384::ecdsa::Signature;
+            let sig = Signature::from_der(&raw.signature)
+                .map_err(|_| XadesError::Verification("ECDSA signature is not valid DER".into()))?;
+            Ok(sig.to_bytes().to_vec())
+        }
+        SignatureAlgorithm::EcdsaP521Sha512 => {
+            use p521::ecdsa::Signature;
             let sig = Signature::from_der(&raw.signature)
                 .map_err(|_| XadesError::Verification("ECDSA signature is not valid DER".into()))?;
             Ok(sig.to_bytes().to_vec())
@@ -85,8 +165,9 @@ pub struct Reference {
     pub ref_type: Option<String>,
     /// Transform algorithm URIs, applied in order.
     pub transforms: Vec<String>,
-    /// SHA-256 `DigestValue` over the (transformed) referenced content.
-    pub digest: [u8; 32],
+    /// `DigestValue` over the (transformed) referenced content, under the signature's matched
+    /// [`DigestAlgorithm`] (SHA-256/384/512).
+    pub digest: Vec<u8>,
 }
 
 /// Builder for a single `<ds:Signature>` over a set of prepared references and embedded objects.
@@ -151,9 +232,15 @@ impl XmlDsigBuilder {
         format!("{}-sigvalue", self.signature_id)
     }
 
+    /// The message-digest algorithm matched to this signature's profile (SHA-256/384/512).
+    pub fn digest_algorithm(&self) -> Result<DigestAlgorithm, XadesError> {
+        digest_algorithm_for(self.sig_alg)
+    }
+
     /// Serialize the `<ds:SignedInfo>` element (with an `Id` so it can be located for
     /// canonicalization).
     fn signed_info_xml(&self) -> Result<String, XadesError> {
+        let digest_uri = self.digest_algorithm()?.uri();
         let mut s = String::new();
         s.push_str(&format!("<ds:SignedInfo Id=\"{}\">", self.signed_info_id()));
         s.push_str(&format!(
@@ -182,11 +269,11 @@ impl XmlDsigBuilder {
                 s.push_str("</ds:Transforms>");
             }
             s.push_str(&format!(
-                "<ds:DigestMethod Algorithm=\"{DIGEST_SHA256}\"></ds:DigestMethod>"
+                "<ds:DigestMethod Algorithm=\"{digest_uri}\"></ds:DigestMethod>"
             ));
             s.push_str(&format!(
                 "<ds:DigestValue>{}</ds:DigestValue>",
-                B64.encode(r.digest)
+                B64.encode(&r.digest)
             ));
             s.push_str("</ds:Reference>");
         }
@@ -213,9 +300,11 @@ impl XmlDsigBuilder {
         )
     }
 
-    /// The digest the signer signs: SHA-256 over the exclusive-C14N of `<ds:SignedInfo>`.
-    pub fn signed_info_digest(&self) -> Result<[u8; 32], XadesError> {
-        Ok(sha256(&self.signed_info_c14n()?))
+    /// The digest the signer signs: the exclusive-C14N of `<ds:SignedInfo>` hashed under the
+    /// signature's matched [`DigestAlgorithm`] (SHA-256 for RSA/P-256, SHA-384 for P-384, SHA-512
+    /// for P-521). Length is 32/48/64 bytes accordingly.
+    pub fn signed_info_digest(&self) -> Result<Vec<u8>, XadesError> {
+        Ok(self.digest_algorithm()?.digest(&self.signed_info_c14n()?))
     }
 
     /// Assemble the finished `<ds:Signature>` around `raw`. The embedded `SignedInfo` is byte-identical
