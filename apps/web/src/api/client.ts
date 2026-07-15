@@ -72,6 +72,7 @@ import type {
   EntityChronologyView,
   EntityFamily,
   LifecycleStage,
+  TemplateImportVerdict,
   TemplateSummary,
   ImportFromRegistryBody,
   LawEntryView,
@@ -254,7 +255,10 @@ export const SESSION_HEADER = 'X-Chancela-Session';
 
 /** Shape of an error response body; `issues`/`warnings`/`pin_status` are endpoint-specific. */
 interface ApiErrorBody {
-  error: string;
+  error?: string;
+  code?: string;
+  field?: string;
+  message?: string;
   issues?: ComplianceIssue[];
   warnings?: ComplianceIssue[];
   /** In-app CC PIN rejection (t67): `"wrong_pin"`/`"blocked"`. Never carries the PIN. */
@@ -265,6 +269,8 @@ interface ApiErrorBody {
 
 export class ApiError extends Error {
   readonly status: number;
+  readonly code?: string;
+  readonly field?: string;
   readonly issues?: ComplianceIssue[];
   readonly warnings?: ComplianceIssue[];
   /**
@@ -276,9 +282,11 @@ export class ApiError extends Error {
   readonly triesLeft?: string;
 
   constructor(status: number, body: ApiErrorBody) {
-    super(body.error || t('error.requestFailed', { status }));
+    super(body.error || body.message || t('error.requestFailed', { status }));
     this.name = 'ApiError';
     this.status = status;
+    this.code = body.code;
+    this.field = body.field;
     this.issues = body.issues;
     this.warnings = body.warnings;
     this.pinStatus = body.pin_status;
@@ -387,6 +395,12 @@ const post = <T>(path: string, body?: unknown) =>
 const postRawJsonText = <T>(path: string, rawJson: string) =>
   request<T>(path, {
     method: 'POST',
+    body: rawJson,
+    headers: { 'Content-Type': 'application/json' },
+  });
+const putRawJsonText = <T>(path: string, rawJson: string) =>
+  request<T>(path, {
+    method: 'PUT',
     body: rawJson,
     headers: { 'Content-Type': 'application/json' },
   });
@@ -582,6 +596,18 @@ function trustSearchQuery(
   };
 }
 
+function importTemplate(rawJson: string, options: { dryRun: true }): Promise<TemplateImportVerdict>;
+function importTemplate(rawJson: string, options?: { dryRun?: false }): Promise<TemplateSummary>;
+function importTemplate(
+  rawJson: string,
+  options: { dryRun?: boolean } = {},
+): Promise<TemplateSummary | TemplateImportVerdict> {
+  return postRawJsonText<TemplateSummary | TemplateImportVerdict>(
+    `/v1/templates/import${query({ dry_run: options.dryRun ? 'true' : undefined })}`,
+    rawJson,
+  );
+}
+
 export const api = {
   health: () => get<HealthResponse>('/health'),
 
@@ -668,6 +694,13 @@ export const api = {
     ),
   listTemplates: (params: { family?: EntityFamily; stage?: LifecycleStage } = {}) =>
     get<TemplateSummary[]>(`/v1/templates${query(params)}`),
+  createTemplate: (rawJson: string) => postRawJsonText<TemplateSummary>('/v1/templates', rawJson),
+  updateTemplate: (id: string, rawJson: string) =>
+    putRawJsonText<TemplateSummary>(`/v1/templates/${encodeURIComponent(id)}`, rawJson),
+  deleteTemplate: (id: string) => del<void>(`/v1/templates/${encodeURIComponent(id)}`),
+  exportTemplate: (id: string) =>
+    fetchTextDownload(`/v1/templates/${encodeURIComponent(id)}/export`),
+  importTemplate,
   // The persisted PDF/A bytes (`GET /v1/acts/{id}/document`, `application/pdf`). Fetched
   // as a Blob (not JSON) so it can be triggered as a download with an honest filename;
   // carries the session token like every other request. 404 until sealed.

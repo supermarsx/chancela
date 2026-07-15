@@ -976,10 +976,12 @@ export interface TemplateLawReference {
   threshold_id?: string | null;
 }
 
+export type TemplateSource = 'builtin' | 'user' | string;
+
 /**
- * One template-catalog entry (`GET /v1/templates?family=&stage=`, t48-e5). Informational
- * for v1 — metadata is copied from the authored template asset. `signature_policy` is a
- * preference hint, not signature validation or a legal-validity conclusion.
+ * One template-catalog entry (`GET /v1/templates?family=&stage=`, t48-e5/wp23). Metadata is copied
+ * from the authored template asset; `editable`/`source` identify whether it is a read-only built-in
+ * or a user-authored template that can be managed through the template API.
  */
 export interface TemplateSummary {
   id: string;
@@ -989,6 +991,66 @@ export interface TemplateSummary {
   signature_policy: SignaturePolicyHint;
   rule_pack_id: string;
   law_references: TemplateLawReference[];
+  locale: string;
+  editable: boolean;
+  source: TemplateSource;
+}
+
+export interface TemplateErrorBody {
+  code: string;
+  field?: string;
+  message: string;
+}
+
+export interface TemplateImportVerdict {
+  ok: boolean;
+  error?: TemplateErrorBody;
+}
+
+/**
+ * One key/value row inside an authored `KeyValue` block (`KvRowSpec`, wp23). Both `key` and
+ * `value` are minijinja template strings rendered against the record context — not resolved text.
+ */
+export interface TemplateKvRowSpec {
+  key: string;
+  value: string;
+}
+
+/**
+ * An authored template block (`BlockSpec`, wp23) — a `kind`-tagged union mirroring
+ * `chancela-templates::BlockSpec`. Unlike the rendered {@link Block}, prose blocks here carry
+ * *minijinja template strings* (not resolved text); structural blocks project typed record fields.
+ * `#[serde(deny_unknown_fields)]` server-side, so authored JSON must match these shapes exactly.
+ */
+export type TemplateBlockSpec =
+  | { kind: 'Heading'; level: number; template: string }
+  | { kind: 'Paragraph'; items?: string | null; template: string }
+  | { kind: 'KeyValue'; items?: string | null; rows: TemplateKvRowSpec[] }
+  | {
+      kind: 'VoteTable';
+      items: string;
+      label: string;
+      vote_field?: string;
+      unanimous_total?: string | null;
+    }
+  | { kind: 'SignatureBlock'; source: string; role: string; name: string }
+  | { kind: 'PageBreak' }
+  | { kind: 'Rule' };
+
+/**
+ * The canonical authored template spec (`TemplateSpecDto`, wp23) — the request body for
+ * `POST`/`PUT /v1/templates` and the payload of `GET /v1/templates/{id}/export`. `law_references`
+ * are SERVER-DERIVED and therefore NEVER authored, stored, or re-imported (they are absent here).
+ * `id` must match `^user-[a-z0-9-]+/v[0-9]+$`; `blocks` is non-empty.
+ */
+export interface TemplateSpec {
+  id: string;
+  family: EntityFamily;
+  stage: LifecycleStage;
+  channels: MeetingChannel[];
+  signature_policy: SignaturePolicyHint;
+  rule_pack_id: string;
+  blocks: TemplateBlockSpec[];
   locale: string;
 }
 

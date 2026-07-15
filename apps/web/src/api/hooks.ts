@@ -130,6 +130,8 @@ import type {
   TslCatalogSearchParams,
   TslRefreshRequest,
   TsaCatalogSearchParams,
+  TemplateSummary,
+  TemplateImportVerdict,
 } from './types';
 import { api, type ActDocumentWorkingCopyFormat } from './client';
 import { clearSessionToken, onSessionCleared, setSessionToken } from './session';
@@ -1024,6 +1026,81 @@ export function useTemplates(family?: EntityFamily, stage?: LifecycleStage, enab
     queryFn: () => api.listTemplates({ family, stage }),
     enabled,
     staleTime: 60_000,
+  });
+}
+
+/**
+ * Create a user-authored template (`POST /v1/templates`, wp23). On success refetches the whole
+ * template catalog (every family × stage variant) so the new template appears. 422/409 surface as
+ * an `ApiError` carrying `code`/`field` for the editor to map to a field-level message.
+ */
+export function useCreateTemplate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (rawJson: string) => api.createTemplate(rawJson),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['templates'] });
+    },
+  });
+}
+
+/**
+ * Replace a user-authored template (`PUT /v1/templates/{id}`, wp23). The body `id` must equal the
+ * path `id` (else 422 `id_mismatch`); 404 for a built-in or unknown id. Refetches the catalog.
+ */
+export function useUpdateTemplate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, rawJson }: { id: string; rawJson: string }) =>
+      api.updateTemplate(id, rawJson),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['templates'] });
+    },
+  });
+}
+
+/**
+ * Delete a user-authored template (`DELETE /v1/templates/{id}`, wp23). 404 for a built-in or
+ * unknown id. Refetches the catalog so the removed template disappears.
+ */
+export function useDeleteTemplate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.deleteTemplate(id),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['templates'] });
+    },
+  });
+}
+
+/**
+ * Export one template's canonical JSON (`GET /v1/templates/{id}/export`, wp23). A mutation so the
+ * button gets `isPending` for free; the caller triggers the browser download from the returned
+ * text/Blob (the endpoint rides an `attachment; filename="<id>.json"` disposition).
+ */
+export function useExportTemplate() {
+  return useMutation({ mutationFn: (id: string) => api.exportTemplate(id) });
+}
+
+/**
+ * Import a template (`POST /v1/templates/import`, wp23). `dryRun` returns a validation verdict
+ * WITHOUT persisting (the import dialog's preflight); a committed import behaves like create
+ * (201 → `TemplateSummary`) and refetches the catalog. Only the committed path invalidates.
+ */
+export function useImportTemplate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      rawJson,
+      dryRun,
+    }: {
+      rawJson: string;
+      dryRun?: boolean;
+    }): Promise<TemplateSummary | TemplateImportVerdict> =>
+      dryRun ? api.importTemplate(rawJson, { dryRun: true }) : api.importTemplate(rawJson),
+    onSuccess: (_result, { dryRun }) => {
+      if (!dryRun) void qc.invalidateQueries({ queryKey: ['templates'] });
+    },
   });
 }
 
