@@ -67,13 +67,6 @@ Sources: [livrodeatasdigital.pt](https://livrodeatasdigital.pt/),
 [app.arkeyvata.pt](https://app.arkeyvata.pt/),
 [ECO/SAPO coverage (2024-06-18)](https://eco.sapo.pt/2024/06/18/conhece-a-nova-solucao-de-atas-digitais/).
 
-!!! warning "About the name \"arkeydata\""
-    The task brief named a tool as **"arkeydata"**. The closest verifiable
-    Portuguese product is **Arkeyvata** (the *Livro de Atas Digital* SaaS
-    above); "arkeydata" appears to be a spelling variant of that name. If you
-    actually meant a different product, please share the exact name or URL and
-    this row can be corrected.
-
 **JUFIL — Júlio Santos & Filhos, Lda.** (`jufil.pt`). A long-established PT
 maker of *livro de atas* and record books, sold in laser/inkjet A4 formats
 **bundled with drafting software** delivered on CD or by download. The bundled
