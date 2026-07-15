@@ -173,7 +173,9 @@ fixtures, off-by-default Postgres store runtime write/read markers, Postgres
 logical backup/restore/recovery source and test markers, Postgres per-book
 export/import/start-over plus restore-preflight markers, local advisory-lock
 cluster write-gate and fail-closed promotion handoff markers, ignored
-`DATABASE_URL` live tests, and remaining SQLite-only internal
+`DATABASE_URL` live tests, full ignored `postgres_backend` 10-test local
+Docker/Postgres sweep markers with per-test child database isolation, child
+database cleanup, and `$1::text::jsonb` logical restore binding, and remaining SQLite-only internal
 `UnsupportedOnPostgres` boundaries, SQLite-default
 feature/config-gated database backend selection markers, and the standalone
 desktop Cargo workspace.
@@ -222,8 +224,16 @@ postgres_backend runtime_reads_and_writes_roundtrip_on_postgres -- --ignored
 --test-threads=1` against a disposable GitHub Actions `chancela_store_ci`
 database; API seed-dataset, logical restore, cluster/failover/feed/sidecar, and
 other live PG tests remain opt-in unless `DATABASE_URL` points at a throwaway
-database. They do not prove file-to-DB sidecar migration, backup/restore
-execution, production Postgres readiness, broad live DB validation, migration
+database. The stronger `628b613` proof is a separate local Docker/Postgres run
+of
+`cargo test -p chancela-store --features postgres --locked --test postgres_backend -- --ignored --test-threads=1`
+with the full ignored `postgres_backend` suite at `10 passed`; it uses per-test
+child databases derived from `DATABASE_URL`, drops those child databases during
+cleanup so successful sweeps leave no per-test child DBs behind, and covers the
+logical restore `$1::text::jsonb` row binding fix. They
+do not prove file-to-DB sidecar migration, backup/restore execution, production
+Postgres readiness, broad API/product live DB validation beyond the store
+backend sweep, API Postgres CI, migration
 completeness, production HA readiness, consensus correctness, split-brain
 impossibility, live failover certification, cloud deployment readiness,
 TLS/remote PG readiness, multi-node operational certification,

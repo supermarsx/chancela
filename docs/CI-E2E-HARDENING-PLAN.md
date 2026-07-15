@@ -1,8 +1,10 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `35ddb1f`,
-including coverage notes for backend-only SCAP-backed signer-capacity evidence
+and implementation snapshot `628b613`,
+including coverage notes for the full ignored Postgres store backend sweep with
+per-test child database isolation, child database cleanup, logical restore
+JSON text-to-jsonb binding, and backend-only SCAP-backed signer-capacity evidence
 persistence for local PKCS#12 signing, wp23 user-template authoring groundwork
 for store CRUD, `template.manage`, strict authoring validation, API
 CRUD/export/import, merged catalog contracts, i18n key coverage, and Minutas
@@ -49,6 +51,8 @@ role archetype explicitness, Postgres store runtime write/read marker coverage,
 Postgres logical backup/restore/recovery marker coverage,
 Postgres per-book export/import/start-over plus restore-preflight marker coverage,
 local advisory-lock cluster write gating and fail-closed promotion handoff markers,
+full ignored `postgres_backend` local Docker/Postgres sweep proof with per-test
+child database isolation and `10 passed`,
 SQLite-default feature/config-gated backend selection, DPIA template/guidance
 checkpoint coverage,
 plus data-status
@@ -111,7 +115,9 @@ test operating checklist for driving Chancela toward release confidence.
   postgres_backend runtime_reads_and_writes_roundtrip_on_postgres -- --ignored
   --test-threads=1`. It is limited to the store integration test binary; API
   seed, logical restore, cluster/failover/feed, sidecar, TLS, HA, and migration
-  coverage remain outside this CI lane.
+  coverage remain outside this CI lane. The full ignored `postgres_backend`
+  10-test sweep is pinned below as local Docker/Postgres store-backend proof,
+  not as broadened default CI.
 - Web format, ESLint, Vitest/V8 coverage thresholds, and Vite build run on Node
   20 and Node 24; the web CI test command is
   `npm run test:coverage --workspace apps/web`.
@@ -931,11 +937,11 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `35ddb1f`
+## Focused Gate Snapshot Through `628b613`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08` and checkpoint-promoted on 2026-07-15 for
-current implementation head `35ddb1f`. This is not an exhaustive current
+current implementation head `628b613`. This is not an exhaustive current
 green-run claim; the full-server E2E claim below is limited to local
 `chancela-server --features e2e` after auth harness alignment, and browser,
 Docker, desktop, package signing/notarization, image signing/attestation, and
@@ -1057,10 +1063,17 @@ settingsDefaults.test.ts contracts.test.ts`.
   start-over coherence, and bad-bundle preflight refusal. SQLite remains the
   default, Postgres selection is feature/config gated, and the current live
   Postgres CI lane is limited to the store runtime write/read round-trip test
-  against a disposable `chancela_store_ci` database. Only direct SQLite
+  against a disposable `chancela_store_ci` database. The `628b613` local
+  Docker/Postgres proof runs the full ignored `postgres_backend` store test
+  binary with per-test child database isolation and `10 passed`, covers runtime,
+  persist/reload, logical restore, per-book, recovery/start-over, and bad-bundle
+  paths, drops child databases during cleanup so successful sweeps leave no
+  per-test child DBs behind, and fixes logical restore row insertion with
+  `$1::text::jsonb` before `jsonb_populate_record`. Only direct SQLite
   internals remain fail-closed on Postgres. It is not production Postgres
   readiness, global read-freshness certification for settings/users/roles/
-  sidecars, broad live DB validation, migration completeness, production HA
+  sidecars, broad API/product live DB validation beyond the store backend sweep,
+  API Postgres CI, migration completeness, production HA
   readiness, consensus correctness, split-brain impossibility, live failover
   certification, cloud deployment readiness, TLS/remote PG readiness,
   multi-node operational certification, backup-policy/RPO/RTO certification,
@@ -2187,7 +2200,23 @@ settingsDefaults.test.ts contracts.test.ts`.
   the template catalog, replace legal review, verify thresholds or law
   references, certify provider/registry/DRE behavior, claim production
   Postgres CI, or move the spec matrix beyond `PARTIAL=11`.
-- Current checkpoint metadata/static checks through `35ddb1f`
+- Current `628b613` full ignored Postgres store sweep checks: local
+  Docker/Postgres validation passed targeted logical restore, persist/reload,
+  and runtime store tests, then passed
+  `cargo test -p chancela-store --features postgres --locked --test postgres_backend -- --ignored --test-threads=1`
+  with the full ignored `postgres_backend` suite at `10 passed`, followed by
+  `cargo fmt -p chancela-store -- --check` and `git diff --check`. The
+  implementation creates a per-test child database from `DATABASE_URL`, points
+  each ignored store-backend test at that child URL, and drops the child
+  database during cleanup so successful sweeps leave no per-test child DBs
+  behind. It also fixes logical restore row insertion by casting exported JSON
+  text through `$1::text::jsonb` before `jsonb_populate_record`. This is store
+  backend live Postgres coverage only: it does not broaden default CI beyond
+  the targeted `71fc536` store runtime lane, does not add API Postgres CI, and
+  does not claim production Postgres readiness, TLS readiness, HA readiness,
+  migration completeness, RPO/RTO certification, split-brain prevention,
+  failover certification, legal/DR certification, or spec completion.
+- Current checkpoint metadata/static checks through `628b613`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
@@ -2284,8 +2313,11 @@ settingsDefaults.test.ts contracts.test.ts`.
   post-act `Certidao`/`Extrato` sealed-provenance semantic lint markers,
   Postgres store runtime/logical recovery source/test markers,
   local advisory-lock cluster write-gate and fail-closed promotion handoff
-  markers, SQLite-default feature/config-gated backend selector markers, and
-  no-production-readiness/HA-readiness caveats,
+  markers, full ignored `postgres_backend` 10-test local Docker/Postgres sweep
+  proof, per-test child database isolation and cleanup markers,
+  `$1::text::jsonb` logical restore binding markers, SQLite-default
+  feature/config-gated backend selector markers, and
+  no-production-readiness/API-Postgres-CI/HA-readiness caveats,
   delegation legal-basis requirement, trimmed storage, legacy missing-basis
   display, compliance-panel `legal_basis` internal Legislação corpus deep links,
   and no legal/HR/SCAP/access-policy certification or legal-verification

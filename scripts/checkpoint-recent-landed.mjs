@@ -10631,12 +10631,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `35ddb1f`",
+    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `628b613`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `35ddb1f`",
+    "Focused Gate Snapshot Through `628b613`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -11301,7 +11301,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `35ddb1f`",
+    "Current checkpoint metadata/static checks through `628b613`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -11836,7 +11836,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `35ddb1fb7fa77b3c9afb6e9cf95f32678591e2e9`",
+    "implementation snapshot `628b61361f9d6a65b3bc8e6a4bba56a4a0445dfb`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -12186,7 +12186,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "not production Postgres readiness, broad live DB validation, migration\n  completeness, production HA readiness, consensus",
+    "not production Postgres readiness, global read-freshness certification\n  for settings/users/roles/sidecars, broad API/product live DB validation beyond\n  the store backend sweep",
     "spec coverage Postgres no-production-readiness caveat marker",
   );
   assertFileContains(
@@ -13016,7 +13016,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Postgres store runtime/logical recovery source/test markers,\n  local advisory-lock cluster write-gate and fail-closed promotion handoff\n  markers, SQLite-default feature/config-gated backend selector markers",
+    "Postgres store runtime/logical recovery source/test markers,\n  local advisory-lock cluster write-gate and fail-closed promotion handoff\n  markers, full ignored `postgres_backend` 10-test local Docker/Postgres sweep\n  proof",
     "CI/E2E hardening plan database backend selector checkpoint marker",
   );
   assertFileContains(
@@ -13053,6 +13053,41 @@ function assertCheckpointMap() {
     "SPEC-COVERAGE.md",
     "one live store runtime write/read CI gate",
     "spec coverage narrow Postgres live CI marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Current `628b613` keeps Data/Architecture/CI **PARTIAL**",
+    "spec coverage full ignored Postgres sweep checkpoint marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "full ignored `postgres_backend` sweep at `10 passed`",
+    "spec coverage full ignored Postgres sweep pass marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "full ignored `postgres_backend` 10-test local\nDocker/Postgres sweep markers with per-test child database isolation",
+    "CI checkpoints full ignored Postgres sweep marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "successful sweeps leave no per-test child DBs behind",
+    "CI checkpoints Postgres child database cleanup marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Current `628b613` full ignored Postgres store sweep checks",
+    "CI/E2E hardening plan full ignored Postgres sweep checkpoint marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "full ignored `postgres_backend` 10-test local Docker/Postgres sweep\n  proof",
+    "CI/E2E hardening plan full ignored Postgres sweep proof marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "does not add API Postgres CI",
+    "CI/E2E hardening plan no API Postgres CI marker",
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
@@ -13164,6 +13199,11 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-store/tests/postgres_backend.rs",
+    "persist_and_reload_event_roundtrips_on_postgres",
+    "store Postgres persist/reload ignored test marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/tests/postgres_backend.rs",
     "runtime_reads_and_writes_roundtrip_on_postgres",
     "store Postgres runtime ignored test marker",
   );
@@ -13189,8 +13229,53 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-store/tests/postgres_backend.rs",
+    "per_book_export_import_roundtrips_on_postgres",
+    "store Postgres per-book export/import ignored test marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/tests/postgres_backend.rs",
+    "per_book_import_quarantines_tamper_and_refuses_collision_atomically_on_postgres",
+    "store Postgres per-book tamper/collision ignored test marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/tests/postgres_backend.rs",
+    "per_book_start_over_stays_coherent_on_postgres",
+    "store Postgres per-book start-over ignored test marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/tests/postgres_backend.rs",
+    "restore_preflight_is_non_destructive_and_rejects_a_bad_bundle_on_postgres",
+    "store Postgres restore-preflight ignored test marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/tests/postgres_backend.rs",
+    "struct IsolatedPostgresDb",
+    "store Postgres per-test child database harness marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/tests/postgres_backend.rs",
+    "let database_name = isolated_database_name(parent_name, tag);",
+    "store Postgres child database naming marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/tests/postgres_backend.rs",
+    "CREATE DATABASE {}",
+    "store Postgres child database create marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/tests/postgres_backend.rs",
+    "DROP DATABASE IF EXISTS {}",
+    "store Postgres child database cleanup marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/tests/postgres_backend.rs",
     "#[ignore = \"requires a live PostgreSQL at DATABASE_URL\"]",
     "store Postgres live database ignore marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/src/pg_backup.rs",
+    "$1::text::jsonb",
+    "store Postgres logical restore text-to-jsonb binding marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
@@ -13204,7 +13289,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "one live store runtime write/read CI gate, and marker\n  coverage plus local advisory-lock/fail-closed gating only",
+    "local live store-backend sweep proof only, not\n  production Postgres readiness",
     "spec coverage Postgres narrow live gate caveat marker",
   );
   assertFileContains(

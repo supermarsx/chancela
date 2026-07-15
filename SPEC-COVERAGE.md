@@ -1,7 +1,10 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-15 from current implementation snapshot `35ddb1fb7fa77b3c9afb6e9cf95f32678591e2e9`,
-with committed evidence refreshes for the recently landed backend-only
+*Updated 2026-07-15 from current implementation snapshot `628b61361f9d6a65b3bc8e6a4bba56a4a0445dfb`,
+with committed evidence refreshes for the recently landed full ignored
+Postgres store backend sweep with per-test child database isolation, logical
+restore JSON text-to-jsonb binding, child-database cleanup proof, and the
+backend-only
 SCAP-backed signer-capacity evidence persistence for local PKCS#12 signing,
 real-backend
 generated-convening dispatch-evidence browser proof, full composed-server E2E
@@ -234,7 +237,9 @@ for local PKCS#12 signing, and by `35ddb1f` wp23 user-template authoring
 groundwork covering store CRUD, `template.manage`, strict authoring validation,
 user-template API CRUD/export/import, merged catalog contracts, i18n keys, and
 web create/edit/import/export/delete catalog actions, plus composed-server
-contract E2E wiring for the template summary/import verdict/export fixtures.
+contract E2E wiring for the template summary/import verdict/export fixtures,
+followed by `71fc536` targeted Postgres store CI and `628b613` per-test
+isolated full ignored Postgres backend sweep proof.
 Earlier coverage text remains prior snapshot context. All top-level spec areas remain **PARTIAL**.
 This is an implementation and test coverage snapshot, not a legal certification,
 not production CMD approval, not DRE verification promotion, not full PDF/UA
@@ -246,7 +251,7 @@ legal document acceptance, signed-PDF legal validity, legal archive
 certification, official DGLAB acceptance/export, paper-book OCR accuracy,
 canonical minutes/legal conversion, destructive retention execution, or
 destructive GDPR erasure, production Postgres readiness, live Postgres database
-validation, migration completeness, production HA readiness, consensus
+validation beyond the store backend sweep, migration completeness, production HA readiness, consensus
 correctness, split-brain impossibility, live failover certification, cloud
 deployment readiness, TLS/remote PG readiness, multi-node operational
 certification, or
@@ -264,6 +269,23 @@ being useful. The matrix below records the current factual coverage and the rema
 blockers.
 
 Implementation checkpoints covered here:
+
+- Current `628b613` keeps Data/Architecture/CI **PARTIAL**: the live Postgres
+  store test harness now creates a per-test child database from the configured
+  `DATABASE_URL`, points each ignored `postgres_backend` case at its own child
+  URL, and drops the child database during cleanup so successful runs leave no
+  per-test child databases behind. Local Docker/Postgres validation passed
+  `cargo test -p chancela-store --features postgres --locked --test postgres_backend -- --ignored --test-threads=1`
+  with the full ignored `postgres_backend` sweep at `10 passed`, after targeted
+  logical restore, persist, and runtime checks. `pg_backup` logical restore now
+  binds exported row JSON through `$1::text::jsonb` before
+  `jsonb_populate_record`, fixing the Postgres restore insert path covered by
+  that sweep. The proof is live Postgres store-backend test coverage only:
+  default CI remains the narrower targeted store runtime write/read lane from
+  `71fc536`, and this does not claim API Postgres CI, production Postgres
+  readiness, TLS readiness, HA readiness, migration completeness, RPO/RTO
+  certification, split-brain prevention, failover certification, legal/DR
+  certification, or any top-level spec completion; statuses remain PARTIAL=11.
 
 - Current `35ddb1f` keeps Template Catalog/Roles & Access/API/UX/CI
   **PARTIAL**: wp23 now has `user_templates` document-row CRUD in the store,
@@ -1120,13 +1142,21 @@ Implementation checkpoints covered here:
   instead of a SQLite temp-file drill. Ignored live-Postgres tests cover
   per-book export/import round-trip, tamper quarantine and collision-refuse
   atomicity, per-book start-over coherence, and restore-preflight refusal of a
-  bad bundle. Only direct SQLite internals (`Store::locked_conn` and `Tx::raw`)
+  bad bundle. The `628b613` test-isolation sweep then ran the full ignored
+  `postgres_backend` binary against local Docker/Postgres with per-test child
+  databases and `10 passed`, including runtime persistence, logical restore,
+  per-book, recovery/start-over, and bad-bundle paths; the harness cleanup
+  drops each child database after the store handles are gone. The same commit
+  fixes logical restore row insertion by casting exported JSON text through
+  `$1::text::jsonb` before `jsonb_populate_record`. Only direct SQLite internals
+  (`Store::locked_conn` and `Tx::raw`)
   remain fail-closed on Postgres. This is optional backend plumbing and logical
   recovery marker coverage plus local advisory-lock/fail-closed gating and
-  covered-feed marker coverage only:
+  covered-feed marker coverage plus live store-backend sweep proof only:
   SQLite remains the default, Postgres selection is feature/config gated, and
   this is not production Postgres readiness, global read-freshness certification
-  for settings/users/roles/sidecars, broad live DB validation, migration
+  for settings/users/roles/sidecars, broad API/product live DB validation beyond
+  the store backend sweep, migration
   completeness, production HA readiness, consensus correctness,
   split-brain impossibility, live failover certification, cloud deployment
   readiness, TLS/remote PG readiness, multi-node operational certification,
@@ -2943,10 +2973,16 @@ behavior, legal disposal, or legal-effect claims.
   `chancela_store_ci` database. `9ddced8` adds Postgres per-book
   export/import/imported-bundle/start-over portability plus non-destructive
   logical-bundle `restore_preflight` evidence, with remaining fail-closed arms
-  limited to SQLite-only internals. This is optional runtime/logical-recovery
-  backend plumbing, one live store runtime write/read CI gate, and marker
-  coverage plus local advisory-lock/fail-closed gating only, not production
-  Postgres readiness, broad live DB validation, migration completeness,
+  limited to SQLite-only internals. `628b613` adds the stronger local live-store
+  proof: the full ignored `postgres_backend` test binary ran against
+  Docker/Postgres with per-test child database isolation and `10 passed`, the
+  harness drops each child database during cleanup, and logical restore binds
+  exported JSON rows through `$1::text::jsonb` before `jsonb_populate_record`.
+  This is optional runtime/logical-recovery backend plumbing, one live store
+  runtime write/read CI gate, marker coverage plus local advisory-lock/
+  fail-closed gating, and local live store-backend sweep proof only, not
+  production Postgres readiness, broad API/product live DB validation beyond the
+  store backend sweep, API Postgres CI, migration completeness,
   production HA readiness, consensus correctness, split-brain impossibility,
   live failover certification, cloud deployment readiness, TLS/remote PG
   readiness, multi-node operational certification, backup-policy/RPO/RTO
