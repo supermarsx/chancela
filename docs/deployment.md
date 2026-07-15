@@ -47,8 +47,19 @@ CHANCELA_HOST_PORT=18080 docker compose -f docker/docker-compose.yml --profile s
 ```
 
 The container runs non-root (UID/GID `65532`), read-only rootfs, all
-capabilities dropped, with a `GET /health` healthcheck and a persistent volume at
-`/var/lib/chancela`.
+capabilities dropped, `no-new-privileges:true`, `/tmp` as tmpfs scratch, with a
+`GET /health` healthcheck and a persistent volume at `/var/lib/chancela`.
+
+You can validate this profile with the shipped Docker smoke scripts without
+rebuilding an image:
+
+```sh
+scripts/docker-smoke.sh --compose-profile chancela-server:local
+```
+
+```powershell
+scripts\docker-smoke.ps1 -Image chancela-server:local -ComposeProfile
+```
 
 ### Validation-worker sidecar
 
@@ -88,13 +99,53 @@ each secret does. The credential-store root key
 (`CHANCELA_CREDENTIAL_KEY_FILE`) is **required** on Postgres — there is no
 SQLCipher-derived key source on this backend.
 
+The app is built with
+`CARGO_FEATURES="chancela-server/sqlcipher chancela-server/postgres chancela-server/redis"`
+and still keeps a small writable volume at `/var/lib/chancela` for the credential
+sidecar (`provider-credentials.enc.json`), the CAE/law/TSL caches, and the JSON
+sidecars. The `postgres:16-alpine` service takes its database/user from
+`CHANCELA_PG_DB` / `CHANCELA_PG_USER` (defaults `chancela`), is **not** published
+to the host, and is reached only on the compose network; the app waits for its
+`pg_isready` health before serving. `redis:7-alpine` runs AOF persistence with
+`maxmemory` + `allkeys-lru` and is a pure cache — the app is fully correct with
+Redis down. All three services carry `deploy.resources.limits`.
+
+!!! warning "Never scale this profile"
+    The profile pins `deploy.replicas: 1`. Because the app is
+    in-memory-authoritative and allocates the ledger `seq` in process, two
+    instances against one Postgres would violate the single-writer design.
+    Postgres is durability, **not** scale-out — for availability across hosts use
+    the [multi-node overlay](#multi-node-leaderfollower), which elects exactly one
+    writer.
+
 !!! note "Encryption at rest on Postgres"
     Vanilla PostgreSQL has no transparent whole-DB encryption, so this profile
     does **not** provide SQLCipher's file-level ciphertext. Protect the
     `chancela-pgdata` volume with host disk encryption (LUKS or an encrypted
-    block device). TLS to Postgres (`sslmode=verify-full`) is not wired in this
-    lane — the backend uses `NoTls` on the local compose network. See
-    [`docker/DEPLOYMENT-PROFILES.md`](https://github.com/supermarsx/chancela/blob/main/docker/DEPLOYMENT-PROFILES.md).
+    block device) — this is disk-level only: a DB superuser or a live memory dump
+    still sees plaintext, a materially weaker guarantee than SQLCipher. The
+    credential store keeps its own app-layer XChaCha20-Poly1305 encryption
+    regardless. TLS to Postgres (`sslmode=verify-full`) is not wired in this lane
+    — the backend uses `NoTls` on the local compose network; a remote Postgres
+    deployment needs a future TLS connector first.
+
+### Backup and restore on Postgres
+
+The in-app backup endpoint (`POST /v1/backup`, SQLite `VACUUM INTO`) is
+**unsupported on the Postgres backend** — there is no `.db` file to snapshot or
+swap. Use **PG-native tooling**: `pg_dump` / `pg_restore` for logical backups, or
+PITR (WAL archiving + base backups) for point-in-time recovery. For example:
+
+```sh
+docker compose -f docker/docker-compose.yml --profile postgres \
+  exec postgres pg_dump -U chancela chancela > chancela-$(date -u +%Y%m%dT%H%M%SZ).sql
+```
+
+!!! info "Write throughput on Postgres"
+    On SQLite a store write is a microsecond-scale local file write; on Postgres
+    it becomes a network round-trip. The app routes those hot store calls through
+    `spawn_blocking` so a tokio worker is not blocked while the single ledger
+    write lock is held. Throughput remains bounded by the single-writer design.
 
 ## Hardened images (production path)
 

@@ -76,14 +76,25 @@ Used only by the cluster overlay (see [Deployment → Multi-node](deployment.md#
 
 ## Secrets (Postgres profile)
 
-File-based docker secrets under `docker/secrets/` (real files are gitignored;
-only `*.example` templates are committed):
+The `postgres` compose profile reads three file-based docker secrets from
+`docker/secrets/`. The real files are **gitignored** — only the `*.example`
+templates are committed, so never commit a real secret.
 
 | Secret file | Injected as | Purpose |
 |---|---|---|
-| `postgres_password` | `POSTGRES_PASSWORD_FILE` | Postgres user password. |
+| `postgres_password` | `POSTGRES_PASSWORD_FILE` | Postgres superuser password. |
 | `database_url` | `DATABASE_URL_FILE` | Full libpq URL **including the same password**; references the `postgres` service by name. |
-| `credential_key` | `CHANCELA_CREDENTIAL_KEY_FILE` | Provider-credential store root key (required on Postgres). |
+| `credential_key` | `CHANCELA_CREDENTIAL_KEY_FILE` | Provider-credential store root key (required on Postgres — there is no SQLCipher `DerivedFromDbKey` source). |
+
+### Setting up the secret files
+
+Copy each template, then fill it in with a strong value:
+
+```sh
+cp docker/secrets/postgres_password.example docker/secrets/postgres_password
+cp docker/secrets/database_url.example      docker/secrets/database_url
+cp docker/secrets/credential_key.example    docker/secrets/credential_key
+```
 
 Generate strong values, e.g.:
 
@@ -92,7 +103,14 @@ openssl rand -base64 32 > docker/secrets/postgres_password   # also paste into d
 openssl rand -base64 48 > docker/secrets/credential_key
 ```
 
-The password inside `database_url` **must match** `postgres_password`.
+The password inside `database_url` **must match** `postgres_password`, otherwise
+the app cannot authenticate to Postgres. The `database_url` template uses
+`sslmode=disable` because this lane connects over the local compose network with
+the current `NoTls` backend; remote Postgres with `sslmode=verify-full` needs a
+future TLS connector before it is supported.
+
+The authoritative copy of these instructions lives next to the (gitignored)
+secrets directory in `docker/secrets/README.md`.
 
 ## In-app Settings sections
 

@@ -1,5 +1,7 @@
 # Docker secrets (postgres profile)
 
+> Also documented on the site: [Configuration → Secrets](https://supermarsx.github.io/chancela/configuration/#secrets-postgres-profile).
+
 The `postgres` compose profile (`docker/docker-compose.yml`) reads three
 file-based docker secrets from this directory. The real files are **gitignored**
 (see `.gitignore` here) — only the `*.example` templates are committed. Never

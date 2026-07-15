@@ -83,12 +83,36 @@ markdown_extensions:
       emoji_index: !!python/name:material.extensions.emoji.twemoji
       emoji_generator: !!python/name:material.extensions.emoji.to_svg
 
+# Keep internal engineering artefacts OUT of the published site. mkdocs renders
+# every *.md under docs_dir by default, which would otherwise publish CI/planning
+# docs and the ~50 compliance/ evidence files as unlisted-but-URL-reachable
+# pages. exclude_docs (mkdocs >= 1.6) drops them from the build entirely; they
+# stay in the repo. Do NOT add ARCHITECTURE.md or AI-PROVENANCE.md here — both
+# are promoted into the nav below.
+exclude_docs: |
+  B-LT-DSS-IMPLEMENTATION-PLAN.md
+  CI-CHECKPOINTS.md
+  CI-E2E-HARDENING-PLAN.md
+  CI-RELEASE-HARDENING.md
+  ci-assurance-waivers.json
+  compliance/
+  fixtures/
+
 nav:
   - Home: index.md
-  - Deployment: deployment.md
+  - Deployment:
+      - Overview & profiles: deployment.md
+      - High availability & failover: HA-FAILOVER.md
   - Configuration: configuration.md
-  - Capabilities: capabilities.md
+  - Capabilities:
+      - Overview: capabilities.md
+      - Office / working-copy exports: OFFICE-DOCUMENT-EXPORT.md
+      - AI & MCP provenance: AI-PROVENANCE.md
+      - Portuguese e-signature integration: CMD-LEGAL-INTEGRATION.md
   - Requirements: requirements.md
   - Comparison: comparison.md
   - Security & Hardening: security/hardened-docker.md
   - Extras: extras.md
+  - Reference:
+      - Architecture overview: ARCHITECTURE.md
+      - Specification (repo): https://github.com/supermarsx/chancela/blob/main/spec.md
