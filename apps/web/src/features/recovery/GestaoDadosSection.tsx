@@ -61,6 +61,7 @@ import {
   type ResetOutcomeView,
   type SyncHandoffPreflightReport,
 } from '../../api/types';
+import { saveBlobAs, saveBlobResultMessage, type SaveBlobResult } from '../../desktop/saveFile';
 import { useLocale, useT, type MessageKey, type TFunction } from '../../i18n';
 import {
   Badge,
@@ -92,6 +93,8 @@ type Dialog = 'none' | 'frontend' | 'startover' | 'domain' | 'factory' | 'full';
 type GestaoTab = 'armazenamento' | 'copias' | 'chaves';
 
 const DEFAULT_EXPORT_CLEANUP_POLICY = DEFAULT_SETTINGS.data_management.retained_export_cleanup;
+const SYNC_HANDOFF_PREFLIGHT_EXPORT_FILENAME = 'chancela-sync-handoff-preflight.json';
+const SYNC_HANDOFF_PREFLIGHT_EXPORT_CONTENT_TYPE = 'application/json;charset=utf-8';
 
 function exportCleanupBody(
   policy: typeof DEFAULT_EXPORT_CLEANUP_POLICY,
@@ -424,6 +427,10 @@ function StatusBadge({
   if (value === null) return <Badge>{'—'}</Badge>;
   const ok = positive ? value : !value;
   return <Badge tone={ok ? 'ok' : 'warn'}>{value ? t('common.yes') : t('common.no')}</Badge>;
+}
+
+function syncHandoffPreflightReportJson(report: SyncHandoffPreflightReport): string {
+  return `${JSON.stringify(report, null, 2)}\n`;
 }
 
 function DataDatabaseEncryptionReadiness({
@@ -931,10 +938,14 @@ function SyncHandoffPreflightReportCard({
   report,
   locale,
   t,
+  savingJson,
+  onSaveJson,
 }: {
   report: SyncHandoffPreflightReport;
   locale: string;
   t: TFunction;
+  savingJson: boolean;
+  onSaveJson: () => void;
 }) {
   const ready = report.readiness.local_handoff_review_ready;
   const blocked = report.blockers.length > 0;
@@ -981,6 +992,18 @@ function SyncHandoffPreflightReportCard({
             <Badge tone={badgeTone}>{verdictSymbol}</Badge> {t(verdictWhy)}
           </p>
           <p className="field__hint">{t('data.status.syncHandoff.nonMutating')}</p>
+        </div>
+
+        <div className="form__actions">
+          <Button
+            type="button"
+            variant="secondary"
+            icon={<Icon.Save />}
+            disabled={savingJson}
+            onClick={onSaveJson}
+          >
+            {savingJson ? t('common.saving') : t('pdfValidator.report.saveJson')}
+          </Button>
         </div>
 
         {hasActionable ? (
@@ -1663,6 +1686,7 @@ function DataStatusPanel({
   const [drillPassphrase, setDrillPassphrase] = useState('');
   const [drillNotes, setDrillNotes] = useState('');
   const [drillCustodyLocation, setDrillCustodyLocation] = useState('');
+  const [savingSyncHandoffPreflight, setSavingSyncHandoffPreflight] = useState(false);
   const [lastBackup, setLastBackup] = useState<BackupManifest | null>(null);
   const [lastDrillReceipt, setLastDrillReceipt] = useState<BackupRecoveryDrillReceipt | null>(null);
   const [lastPreflight, setLastPreflight] = useState<DataKeyRotationPreflight | null>(null);
@@ -1728,6 +1752,36 @@ function DataStatusPanel({
       toast.success(t('data.status.copyDone'));
     } catch (err) {
       toast.error(err);
+    }
+  }
+
+  function showSaveResult(result: SaveBlobResult) {
+    if (result.kind === 'cancelled') {
+      toast.info(saveBlobResultMessage(result));
+      return;
+    }
+    toast.success(saveBlobResultMessage(result));
+  }
+
+  async function saveSyncHandoffPreflightReport(report: SyncHandoffPreflightReport) {
+    setSavingSyncHandoffPreflight(true);
+    try {
+      const blob = new Blob([syncHandoffPreflightReportJson(report)], {
+        type: SYNC_HANDOFF_PREFLIGHT_EXPORT_CONTENT_TYPE,
+      });
+      showSaveResult(
+        await saveBlobAs({
+          blob,
+          filename: SYNC_HANDOFF_PREFLIGHT_EXPORT_FILENAME,
+          contentType: SYNC_HANDOFF_PREFLIGHT_EXPORT_CONTENT_TYPE,
+          filters: [{ name: 'JSON', extensions: ['json'] }],
+          preferBrowserSavePicker: true,
+        }),
+      );
+    } catch (err) {
+      toast.error(err);
+    } finally {
+      setSavingSyncHandoffPreflight(false);
     }
   }
 
@@ -2272,6 +2326,10 @@ function DataStatusPanel({
                 report={syncHandoffPreflight.data}
                 locale={locale}
                 t={t}
+                savingJson={savingSyncHandoffPreflight}
+                onSaveJson={() =>
+                  void saveSyncHandoffPreflightReport(syncHandoffPreflight.data)
+                }
               />
             ) : null}
           </section>

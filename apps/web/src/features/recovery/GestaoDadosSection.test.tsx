@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
-import { GestaoDadosSection } from './GestaoDadosSection';
 import { renderWithProviders } from '../../test/utils';
 import {
   DEFAULT_SETTINGS,
@@ -8,10 +7,28 @@ import {
   type SyncHandoffPreflightReport,
 } from '../../api/types';
 
+const saveFileMock = vi.hoisted(() => ({
+  saveBlobAs: vi.fn(),
+  saveBlobResultMessage: vi.fn((result: { filename: string }) => `Guardado: ${result.filename}`),
+}));
+
+vi.mock('../../desktop/saveFile', () => saveFileMock);
+
+import { GestaoDadosSection } from './GestaoDadosSection';
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+function blobText(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsText(blob);
   });
 }
 
@@ -548,6 +565,8 @@ function installFetch(
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  saveFileMock.saveBlobAs.mockReset();
+  saveFileMock.saveBlobResultMessage.mockClear();
 });
 
 // The Gestão de dados surface splits into three sub-sub-tabs reached through the shared
@@ -633,6 +652,51 @@ describe('GestaoDadosSection', () => {
     expect(document.body.textContent).toContain(
       'use explicit existing confirmation endpoints for any later export/import/recovery action',
     );
+  });
+
+  it('saves the loaded sync handoff preflight report as JSON without extra requests', async () => {
+    saveFileMock.saveBlobAs.mockResolvedValue({
+      kind: 'browser-save',
+      filename: 'chancela-sync-handoff-preflight.json',
+      contentType: 'application/json;charset=utf-8',
+      bytes: 2048,
+    });
+
+    const calls = installFetch();
+    renderWithProviders(<GestaoDadosSection />);
+    await selectTab(TAB_BACKUP);
+
+    expect(await screen.findByText('Evidência local insuficiente para rever o handoff')).toBeTruthy();
+    const callsBeforeSave = calls.length;
+    fireEvent.click(await screen.findByRole('button', { name: 'Guardar JSON' }));
+
+    await waitFor(() => expect(saveFileMock.saveBlobAs).toHaveBeenCalledTimes(1));
+    expect(calls).toHaveLength(callsBeforeSave);
+
+    const saved = saveFileMock.saveBlobAs.mock.calls[0][0] as {
+      blob: Blob;
+      filename: string;
+      contentType: string;
+      filters: { name: string; extensions: string[] }[];
+      preferBrowserSavePicker: boolean;
+    };
+    expect(saved.filename).toBe('chancela-sync-handoff-preflight.json');
+    expect(saved.contentType).toBe('application/json;charset=utf-8');
+    expect(saved.filters).toEqual([{ name: 'JSON', extensions: ['json'] }]);
+    expect(saved.preferBrowserSavePicker).toBe(true);
+    expect(saved.blob).toBeInstanceOf(Blob);
+    expect(saved.blob.type).toBe('application/json;charset=utf-8');
+
+    const text = await blobText(saved.blob);
+    expect(text).toBe(`${JSON.stringify(defaultSyncHandoffPreflight, null, 2)}\n`);
+    expect(JSON.parse(text)).toEqual(defaultSyncHandoffPreflight);
+    expect(saveFileMock.saveBlobResultMessage).toHaveBeenCalledWith({
+      kind: 'browser-save',
+      filename: 'chancela-sync-handoff-preflight.json',
+      contentType: 'application/json;charset=utf-8',
+      bytes: 2048,
+    });
+    expect(calls.filter((call) => call.method !== 'GET')).toHaveLength(0);
   });
 
   it('renders durable storage, folder affordances, ledger state and usage breakdown', async () => {
