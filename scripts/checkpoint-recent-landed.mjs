@@ -10895,12 +10895,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `e08605e`",
+    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `6093e7e`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `e08605e`",
+    "Focused Gate Snapshot Through `6093e7e`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -11580,7 +11580,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `e08605e`",
+    "Current checkpoint metadata/static checks through `6093e7e`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -12170,13 +12170,18 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `e08605eb817a62bbc2d46c24c110384a4ba1bfe5`",
+    "implementation snapshot `6093e7e9fb2a343df800c3a0cb8477a8c05d7e21`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Current `e08605e` keeps Legal/Data/API/UX/CI **PARTIAL**",
+    "Current `6093e7e` keeps Legal/Data/API/UX/CI **PARTIAL**",
     "spec coverage erasure workflow current checkpoint marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "tenant-chain ledger membership, tenant-aware archive\n  chain labeling, tenant scope handling in entity activity indexing",
+    "spec coverage tenant-chain integration marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
@@ -12190,7 +12195,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "legal GDPR compliance/completion, legal disposal approval,\n  production key-custody proof, or full spec completion",
+    "legal GDPR compliance/completion, legal disposal approval,\n  production key-custody proof, full multi-tenancy isolation certification",
     "spec coverage erasure workflow no-overclaim marker",
   );
   assertFileContains(
@@ -12205,7 +12210,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "Signing DSS/trust-validation checkpoint: `63df508` is the signing validation\n  implementation checkpoint inside the current `e08605e` snapshot",
+    "Signing DSS/trust-validation checkpoint: `63df508` is the signing validation\n  implementation checkpoint inside the current `6093e7e` snapshot",
     "CI checkpoints signing validation snapshot marker",
   );
   assertFileContains(
@@ -12230,7 +12235,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "GDPR sealed-record annotation/remedy checkpoint through `e08605e`",
+    "GDPR sealed-record annotation/remedy checkpoint through `6093e7e`",
     "CI/E2E hardening plan GDPR sealed-record annotation marker",
   );
   assertFileContains(
@@ -12239,9 +12244,19 @@ function assertCheckpointMap() {
     "CI checkpoints GDPR sealed-record annotation marker",
   );
   assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "Tenant-chain integration markers pin only `6093e7e` tenant-chain ledger\nmembership",
+    "CI checkpoints tenant-chain integration marker",
+  );
+  assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `e08605e`",
+    "Current checkpoint metadata/static checks through `6093e7e`",
     "CI/E2E hardening plan checkpoint metadata head marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Tenant-chain integration checkpoint through `6093e7e`",
+    "CI/E2E hardening plan tenant-chain integration marker",
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",

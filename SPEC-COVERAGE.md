@@ -1,11 +1,12 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-15 from current implementation snapshot `e08605eb817a62bbc2d46c24c110384a4ba1bfe5`,
+*Updated 2026-07-15 from current implementation snapshot `6093e7e9fb2a343df800c3a0cb8477a8c05d7e21`,
 with committed evidence refreshes for mobile API base URL indirection and
 shell detection, the mobile companion foundation docs/scripts, destructive
 erasure preflight/approve/execute route wiring plus local gate evidence,
 append-only rectification/restriction ledger annotation routes and remedy
-classification framing,
+classification framing, tenant-chain ledger membership and authorization-chain
+integration evidence,
 subject DEK secret-store binding, the settled PDF/UA v12 gated-claim lane,
 XAdES C14N/digest-agility/B/T/LT/ASiC evidence, archive PDF accessibility
 propagation, the MCP document/archive PDF accessibility
@@ -282,7 +283,8 @@ dashboard contract fixture and web parsing coverage for existing recent-event
 redaction, `82424b8` dashboard checkpoint pinning, the PDF/UA lane
 (`c17e1be`, `fd07081`, `e84630c`, `7c08393`, `6ff9901`, `92de3e7`), the
 XAdES lane (`1d881f9`, `2325baf`, `305310d`, `56648f0`, `50854dd`), and
-`99d15a4` archive PDF accessibility propagation.
+`99d15a4` archive PDF accessibility propagation, and `6093e7e`
+tenant-chain ledger/API integration evidence.
 Earlier coverage text remains prior snapshot context. All top-level spec areas remain **PARTIAL**.
 This is an implementation and test coverage snapshot, not a legal certification,
 not production CMD approval, not DRE verification promotion, not universal PDF/UA
@@ -1945,7 +1947,7 @@ Implementation checkpoints covered here:
   official DGLAB export, government filing, import path, disposal execution,
   DGLAB certification, legal archival certification, PDF/A/PAdES/PDF-UA
   certification, authority approval, or legal archive acceptance is implemented.
-- Current `e08605e` keeps Legal/Data/API/UX/CI **PARTIAL**: the implementation
+- Current `6093e7e` keeps Legal/Data/API/UX/CI **PARTIAL**: the implementation
   snapshot includes the prior `842b7f2` mobile API base URL/shell-detection
   slice, `d43b82a` mobile companion foundation docs plus inert desktop package
   Android companion scripts, `33e70bb` subject-DEK secret-store binding,
@@ -1957,15 +1959,18 @@ Implementation checkpoints covered here:
   annotation routes/kinds and preflight `remedy=annotation` classification for
   statutory-retention cases, with ledger tests proving prior sealed/signed event
   bytes, hashes, and payload digests stay frozen while verification advances.
-  `e08605e` documents that annotation/restriction is the standard retained-record
+  the current snapshot documents that annotation/restriction is the standard retained-record
   remedy framing and destructive crypto-erasure is the narrow non-retained-PII
-  exception.
+  exception. `6093e7e` adds tenant-chain ledger membership, tenant-aware archive
+  chain labeling, tenant scope handling in entity activity indexing, and tenant
+  scope preservation through role/authorization resolution paths.
   This is bounded local API and documentation evidence only: it does not claim a
   shipped native mobile app, iOS/Android packaging readiness, offline sync,
   production connector readiness, physical deletion, anonymization, backup or
   archive rewrite, legal GDPR compliance/completion, legal disposal approval,
-  production key-custody proof, or full spec completion; statuses remain
-  PARTIAL=11.
+  production key-custody proof, full multi-tenancy isolation certification,
+  tenant-wide authorization completeness, or full spec completion; statuses
+  remain PARTIAL=11.
 - Current `63df508` keeps Signatures/Trust/CI **PARTIAL**: the implementation
   snapshot includes the prior `8bbe944` `chancela-tsl` LOTL/member-state
   bootstrap, `6292d75` revocation cache and offline fallback, `ead1aaa`
