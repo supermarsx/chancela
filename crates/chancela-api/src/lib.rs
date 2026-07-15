@@ -184,7 +184,9 @@ use axum::routing::{any, delete, get, patch, post, put};
 use chancela_cae::{CaeCatalog, CaeSource, CaeSourceChain};
 use chancela_cmd::ScmdTransport;
 use chancela_core::external_signing::{ExternalSignatureEnvelope, ExternalSignatureEnvelopeId};
-use chancela_core::{Act, ActId, Book, BookId, DEFAULT_TENANT_ID, Entity, EntityId, Tenant, TenantId};
+use chancela_core::{
+    Act, ActId, Book, BookId, DEFAULT_TENANT_ID, Entity, EntityId, Tenant, TenantId,
+};
 use chancela_csc::{CscConfig, CscTransport};
 use chancela_ledger::{Event, Ledger, LedgerError};
 use chancela_registry::{RegistryExtract, RegistryTransport};
