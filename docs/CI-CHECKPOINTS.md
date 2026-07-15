@@ -304,6 +304,14 @@ It intentionally reuses existing test surfaces:
   `npm run test --workspace apps/web -- src/features/books/books.test.tsx`
   including the direct `GET /v1/books/{id}/archive/local-dglab-interchange-manifest`
   call, `.json` save behavior, and no ZIP/export/archive mutation.
+- Web Data Management sync/handoff local JSON evidence export:
+  `npm run test --workspace apps/web -- src/features/recovery/GestaoDadosSection.test.tsx`
+  includes the already-loaded `GET /v1/sync/handoff-preflight` report save path,
+  `chancela-sync-handoff-preflight.json`, `application/json;charset=utf-8`,
+  browser save-picker preference, no extra request, and no remote
+  upload/download/import, active sync, connector action, record mutation,
+  DGLAB/archive certification, legal-validity, or production sync-readiness
+  claim. This is local evidence export only.
 - Web BookDetail paper-book conversion evidence:
   `npm run test --workspace apps/web -- src/features/books/books.test.tsx`
   also pins reviewed conversion execution evidence rendering, dossier-bound

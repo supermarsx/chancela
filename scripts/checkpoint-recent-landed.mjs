@@ -9295,9 +9295,44 @@ function assertCheckpointMap() {
     "web sync handoff conservative UI coverage",
   );
   assertFileContains(
+    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "const SYNC_HANDOFF_PREFLIGHT_EXPORT_FILENAME = 'chancela-sync-handoff-preflight.json';",
+    "web sync handoff local JSON filename marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "const SYNC_HANDOFF_PREFLIGHT_EXPORT_CONTENT_TYPE = 'application/json;charset=utf-8';",
+    "web sync handoff local JSON content-type marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "function syncHandoffPreflightReportJson(report: SyncHandoffPreflightReport): string",
+    "web sync handoff in-memory JSON serialization marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "preferBrowserSavePicker: true",
+    "web sync handoff browser save-picker marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "saves the loaded sync handoff preflight report as JSON without extra requests",
+    "web sync handoff local JSON export coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "expect(calls).toHaveLength(callsBeforeSave)",
+    "web sync handoff no-extra-request save coverage",
+  );
+  assertFileContains(
     "SPEC-COVERAGE.md",
     "`GET /v1/sync/handoff-preflight`\n  now adds a read-only local sync/handoff",
     "spec coverage sync handoff endpoint marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "save/export the already-loaded `GET /v1/sync/handoff-preflight` report as\n  local JSON through the browser save picker",
+    "spec coverage sync handoff local export boundary marker",
   );
   assertFileContainsNormalized(
     "SPEC-COVERAGE.md",
@@ -9313,6 +9348,21 @@ function assertCheckpointMap() {
     "docs/CI-E2E-HARDENING-PLAN.md",
     "untrusted backup-directory candidates, verified recovery-drill receipt evidence projection, rejection of malformed/unverified recovery receipts",
     "CI/E2E hardening plan sync handoff no-claim marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "browser save-picker JSON export for the already-loaded report only and no target-path, remote upload/download/import, connector, or mutation control",
+    "CI/E2E hardening plan sync handoff local export boundary marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "Web Data Management sync/handoff local JSON evidence export:",
+    "CI checkpoints sync handoff local export lane marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "This is local evidence export only.",
+    "CI checkpoints sync handoff local export no-claim marker",
   );
   assertFileContains(
     "apps/web/src/features/recovery/LivrosIntegridadeSection.test.tsx",
@@ -10685,12 +10735,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `9f4caff`",
+    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `6bba291`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `9f4caff`",
+    "Focused Gate Snapshot Through `6bba291`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -11365,7 +11415,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `9f4caff`",
+    "Current checkpoint metadata/static checks through `6bba291`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -11900,13 +11950,13 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `9f4caff0ca46018c479cbbe2ffcebf780e710824`",
+    "implementation snapshot `6bba291527ca65b44cfb64366d9f11d7c1ec5184`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Current `9f4caff` keeps Architecture/Release/CI **PARTIAL**",
-    "spec coverage hardened Docker current snapshot marker",
+    "Current `6bba291` keeps Data/Roles/UX/CI **PARTIAL**",
+    "spec coverage sync handoff export current snapshot marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",

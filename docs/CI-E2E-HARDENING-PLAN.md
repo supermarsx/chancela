@@ -1,7 +1,7 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `9f4caff`,
+and implementation snapshot `6bba291`,
 including coverage notes for the MCP document/archive PDF accessibility v11
 identifier/count/blocker alignment, fixture report version 11, the Ata editor
 workflow provenance review panel, generated-document coverage fixture alignment,
@@ -62,7 +62,8 @@ plus data-status
 sidecar classification and backend-neutral durability/sidecar telemetry,
 read-only local DGLAB interchange manifest API
 scaffolding and BookDetail JSON download,
-local sync/handoff preflight readiness reporting over existing evidence only,
+local sync/handoff preflight readiness reporting over existing evidence only
+plus Data Management local JSON export of the already-loaded report,
 archive filter reset icon-only clear-control coverage,
 raw-byte per-book import preflight operator preview,
 richer Ata editor AI statement-source provenance rendering and deterministic
@@ -248,7 +249,11 @@ test operating checklist for driving Chancela toward release confidence.
   items, operator actions, and explicit no-claim flags. It
   accepts no target path, scans only the configured data directory's existing
   `backups` folder, and does not call providers, networks, connectors, uploads,
-  downloads, imports, background jobs, or mutating record paths. Treat this as
+  downloads, imports, background jobs, or mutating record paths. Data Management
+  can save the already-loaded report as local JSON through the browser save
+  picker only; that export makes no extra request and performs no remote
+  upload/download/import, sync, connector, evidence refresh, or record mutation.
+  Treat this as
   operator handoff review evidence only, not active sync, connector protocol
   compatibility, production sync readiness, legal validity, DGLAB/archive
   certification, signing/notarization/attestation, deployment readiness, or
@@ -966,11 +971,11 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `9f4caff`
+## Focused Gate Snapshot Through `6bba291`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08` and checkpoint-promoted on 2026-07-15 for
-current implementation head `9f4caff`. This is not an exhaustive current
+current implementation head `6bba291`. This is not an exhaustive current
 green-run claim; the full-server E2E claim below is limited to local
 `chancela-server --features e2e` after auth harness alignment, and browser,
 Docker, desktop, package signing/notarization, image signing/attestation, and
@@ -1900,10 +1905,12 @@ settingsDefaults.test.ts contracts.test.ts`.
   malformed/unverified recovery receipts, book bundle/import-preflight route
   availability, archive/local DGLAB evidence counts, and false no-claim flags.
   Web contract coverage pins `sync.handoff-preflight.json` and the typed
-  client/hook shape, while the Data Management panel renders only a local report
-  card with no action control or target-path input. This remains local handoff
+  client/hook shape, while the Data Management panel renders a local report
+  card with a browser save-picker JSON export for the already-loaded report only
+  and no target-path, remote upload/download/import, connector, or mutation
+  control. This remains local handoff
   review evidence only: no active sync, connector protocol, background job,
-  upload/download/import, record mutation, production sync readiness, external
+  remote upload/download/import, record mutation, production sync readiness, external
   connector compatibility, legal validity, DGLAB/archive certification,
   signing/notarization/attestation, deployment readiness, or external-system
   readiness is implemented or proven.
@@ -2282,7 +2289,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   production-readiness, TLS/key-custody, vulnerability-free scan, SBOM,
   signature/attestation, HA/failover/RPO/RTO, legal/DR certification, cloud
   deployment readiness, or spec-completion claim is made.
-- Current checkpoint metadata/static checks through `9f4caff`
+- Current checkpoint metadata/static checks through `6bba291`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and

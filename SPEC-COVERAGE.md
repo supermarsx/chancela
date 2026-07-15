@@ -1,6 +1,6 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-15 from current implementation snapshot `9f4caff0ca46018c479cbbe2ffcebf780e710824`,
+*Updated 2026-07-15 from current implementation snapshot `6bba291527ca65b44cfb64366d9f11d7c1ec5184`,
 with committed evidence refreshes for the MCP document/archive PDF accessibility
 v11 identifier, count, blocker, and fixture-report alignment, the browser
 workflow provenance review panel and sanitized local MCP workflow-provenance copy
@@ -250,7 +250,8 @@ documentation, `5f0281e` checkpoint pinning for that MCP alignment, `03784e5`
 additive hardened Docker image/Compose/operations documentation, `cc5b1f4`
 dashboard hero documentation asset, `08c9a19` README reformulation, and
 `13787eb` README intro expansion, followed by `9f4caff` MkDocs site and Pages
-workflow documentation.
+workflow documentation, and `6bba291` Data Management local JSON evidence
+export for the already-loaded sync/handoff preflight report.
 Earlier coverage text remains prior snapshot context. All top-level spec areas remain **PARTIAL**.
 This is an implementation and test coverage snapshot, not a legal certification,
 not production CMD approval, not DRE verification promotion, not full PDF/UA
@@ -281,7 +282,17 @@ blockers.
 
 Implementation checkpoints covered here:
 
-- Current `9f4caff` keeps Architecture/Release/CI **PARTIAL**: the current
+- Current `6bba291` keeps Data/Roles/UX/CI **PARTIAL**: Data Management can
+  save/export the already-loaded `GET /v1/sync/handoff-preflight` report as
+  local JSON through the browser save picker (`chancela-sync-handoff-preflight.json`).
+  The export serializes the in-memory report only, makes no extra GET or remote
+  request, and performs no remote upload/download/import, active sync,
+  connector protocol action, record mutation, DGLAB/archive certification, legal
+  validity, or production sync readiness work. Focused `GestaoDadosSection`
+  coverage pins the `.json` filename, content type, save-picker preference,
+  no-extra-request boundary, and unchanged false no-claim flags.
+
+- Prior `9f4caff` keeps Architecture/Release/CI **PARTIAL**: the current
   implementation snapshot includes the additive `03784e5` hardened Docker lane
   plus the follow-on comparison, dashboard hero, and README documentation commits
   plus the MkDocs site/Pages workflow commit through `9f4caff` so the checker
@@ -1450,7 +1461,11 @@ Implementation checkpoints covered here:
   `backups` directory under the configured data directory when one is configured,
   and performs no provider, network, connector, upload, download, import, or
   record-mutation work. Web types/client/hook/contract coverage plus the Data
-  Management summary render the local report without action controls. This is
+  Management summary render the local report and can save/export the
+  already-loaded report as local JSON via the browser save picker. The save
+  action serializes the in-memory report only, uses the `.json` filename, makes
+  no extra GET or remote request, and performs no remote upload/download/import,
+  sync action, connector action, evidence refresh, or record mutation. This is
   local operator handoff review evidence only; it is not active sync, connector
   protocol compatibility, background sync, production sync readiness, legal
   validity, DGLAB/archive certification, signing/notarization/attestation, or
