@@ -23,8 +23,10 @@ use chancela_tsa::mock::{
 };
 use chancela_tsa::{QualifiedTimestampPolicy, TimestampRequest, verify_response};
 use chancela_tsl::{
-    DigitalIdentity, LocalizedText, ServiceHistoryEntry, ServiceStatus, TrustService,
-    TrustServiceProvider, TrustedList, parse_tsl, validate_tsl_signature,
+    AuthenticatedList, DEFAULT_LOTL_URL, DEFAULT_PT_TSL_URL, DigitalIdentity, ENV_LOTL_URL,
+    LocalizedText, ServiceHistoryEntry, ServiceStatus, TrustService, TrustServiceProvider,
+    TrustedList, TslTrustAnchors, TslTrustStore, ingest_lotl, ingest_member_tsl, member_pointer,
+    parse_tsl, validate_tsl_signature,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -54,6 +56,12 @@ const CACHE_CANDIDATES: &[&str] = &[
 ];
 const TRUST_CACHE_FILE: &str = "tsl.xml";
 const TRUST_REFRESH_STATUS_FILE: &str = "tsl-refresh-status.json";
+/// Sidecar recording the provenance (authenticated/stale + anchor counts) of the trust material
+/// promoted from the last live EU LOTL → member-state bootstrap. The anchors themselves are always
+/// re-derived from the cached `tsl.xml`; this file only carries the flags a parsed list cannot.
+const TRUST_STORE_PROVENANCE_FILE: &str = "tsl-trust-store.json";
+/// Default member-state territory selected from the LOTL when a refresh does not name one.
+const DEFAULT_TRUST_TERRITORY: &str = "PT";
 const DEFAULT_TSL_FETCH_TIMEOUT_SECONDS: u16 = 30;
 const DEFAULT_TSL_FETCH_MAX_BYTES: u64 = 25 * 1024 * 1024;
 
@@ -186,10 +194,24 @@ pub struct TslRefreshStatusView {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct TslRefreshRequest {
     pub url: Option<String>,
     pub path: Option<String>,
+    /// When `true`, refresh performs a live EU LOTL → member-state (default `PT`) trust bootstrap:
+    /// the LOTL is fetched and authenticated against the pinned OJEU anchors, the member-state
+    /// pointer is selected, and the member TSL is authenticated against that LOTL-derived signer
+    /// before promotion. Fail-closed; falls back to the on-disk cache flagged `stale` when the live
+    /// fetch fails.
+    #[serde(default)]
+    pub lotl: Option<bool>,
+    /// Optional member-state territory to bootstrap (defaults to `PT`). Only used with `lotl`.
+    #[serde(default)]
+    pub territory: Option<String>,
+    /// Optional override for the EU LOTL location (defaults to `CHANCELA_LOTL_URL` /
+    /// [`chancela_tsl::DEFAULT_LOTL_URL`]). Still SSRF-vetted + size-bounded. Only used with `lotl`.
+    #[serde(default)]
+    pub lotl_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -541,6 +563,13 @@ pub async fn trust_status(
 /// Portuguese default. The imported XML is parsed and its XML-DSig/trust-anchor status is recorded.
 /// Only authenticated lists are cached as `tsl.xml`; invalid signatures fail closed and preserve the
 /// previous cache.
+///
+/// When the request sets `lotl: true`, refresh instead performs a **live EU LOTL → member-state**
+/// trust bootstrap (wp26 §2.1): the LOTL is fetched + authenticated against the pinned OJEU anchors,
+/// the member-state pointer is selected, and the member TSL is authenticated against that
+/// LOTL-derived signer before promotion. The derived [`TslTrustStore`] provenance is cached to the
+/// data dir. Fail-closed (an unauthenticated list is never promoted) with graceful offline fallback
+/// to the on-disk cached copy flagged `stale`.
 pub async fn refresh_trust_tsl(
     State(state): State<AppState>,
     actor: CurrentActor,
@@ -554,8 +583,14 @@ pub async fn refresh_trust_tsl(
         )
     })?;
     let tsl_selection = state.settings.read().await.signing.runtime_tsl_selection();
+    let use_lotl = request.lotl.unwrap_or(false);
     let attempt = tokio::task::spawn_blocking(move || {
-        import_tsl_to_cache(data_dir, tsl_selection, request, OffsetDateTime::now_utc())
+        let now = OffsetDateTime::now_utc();
+        if use_lotl {
+            import_tsl_via_lotl(data_dir, tsl_selection, request, now)
+        } else {
+            import_tsl_to_cache(data_dir, tsl_selection, request, now)
+        }
     })
     .await
     .map_err(|e| ApiError::Internal(format!("TSL import worker failed: {e}")))??;
@@ -811,6 +846,281 @@ fn import_tsl_to_cache(
 
     persist_refresh_status(&status_path, &status)?;
     Ok(status)
+}
+
+// --- Live EU LOTL → member-state trust bootstrap (wp26 E10, §2.1) ------------------------------
+
+/// Provenance of the trust material promoted by the last live LOTL bootstrap.
+///
+/// The anchor *bytes* are always re-derived from the cached `tsl.xml`; this sidecar only carries the
+/// `authenticated`/`stale` flags (which a parsed list cannot express) plus counts for observability.
+/// A trust decision never silently upgrades an unauthenticated or stale store (fail-closed).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct TrustStoreProvenance {
+    pub authenticated: bool,
+    pub stale: bool,
+    pub refreshed_at: String,
+    pub territory: String,
+    pub lotl_url: Option<String>,
+    pub member_url: Option<String>,
+    pub qc_anchor_count: usize,
+    pub qtst_anchor_count: usize,
+}
+
+/// A live [`TslTrustStore`] reconstructed from the cached member-state TSL plus its provenance.
+pub(crate) struct LiveTrustStore {
+    pub store: TslTrustStore,
+    #[allow(dead_code)]
+    pub provenance: TrustStoreProvenance,
+}
+
+/// Authenticate a member-state TSL against a live LOTL (both already fetched), fail-closed.
+///
+/// Verifies the LOTL's own XML-DSig against the pinned OJEU `anchors`, selects the member-state
+/// pointer for `territory`, and verifies the member TSL against the signer certificate that
+/// authenticated LOTL pointer carries. Any failure (empty anchors, unverifiable LOTL, missing
+/// pointer, unverifiable member list) is an error — an unauthenticated list is never returned.
+fn authenticate_member_via_lotl(
+    lotl_xml: &[u8],
+    member_xml: &[u8],
+    anchors: &TslTrustAnchors,
+    territory: &str,
+) -> Result<AuthenticatedList, String> {
+    let lotl = ingest_lotl(lotl_xml, anchors).map_err(|e| e.to_string())?;
+    let pointer = member_pointer(&lotl, territory).ok_or_else(|| {
+        format!("authenticated LOTL carries no member-state pointer for territory {territory:?}")
+    })?;
+    ingest_member_tsl(member_xml, pointer).map_err(|e| e.to_string())
+}
+
+/// Resolve the EU LOTL location: explicit override → `CHANCELA_LOTL_URL` → pinned default.
+fn resolve_lotl_url(override_url: Option<&str>) -> String {
+    if let Some(url) = override_url
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        return url.to_owned();
+    }
+    std::env::var(ENV_LOTL_URL)
+        .ok()
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| DEFAULT_LOTL_URL.to_owned())
+}
+
+/// Resolve the member-state TSL location: explicit request URL → configured runtime source → the
+/// Portuguese default. The list is authenticated against the LOTL pointer regardless of its origin.
+fn resolve_member_tsl_url(selection: &RuntimeTslSelection, request_url: Option<&str>) -> String {
+    if let Some(url) = request_url.map(str::trim).filter(|value| !value.is_empty()) {
+        return url.to_owned();
+    }
+    selection
+        .selected
+        .as_ref()
+        .and_then(|source| source.location.url())
+        .map(str::to_owned)
+        .unwrap_or_else(|| DEFAULT_PT_TSL_URL.to_owned())
+}
+
+/// Live LOTL → member-state trust bootstrap into the trust cache (wp26 §2.1).
+fn import_tsl_via_lotl(
+    data_dir: PathBuf,
+    selection: RuntimeTslSelection,
+    request: TslRefreshRequest,
+    now: OffsetDateTime,
+) -> Result<TslRefreshStatusView, ApiError> {
+    std::fs::create_dir_all(&data_dir)
+        .map_err(|e| ApiError::Internal(format!("failed to create TSL cache directory: {e}")))?;
+    let target_path = data_dir.join(TRUST_CACHE_FILE);
+    let status_path = data_dir.join(TRUST_REFRESH_STATUS_FILE);
+    let provenance_path = data_dir.join(TRUST_STORE_PROVENANCE_FILE);
+    let target_display = target_path.display().to_string();
+
+    let territory = request
+        .territory
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_ascii_uppercase())
+        .unwrap_or_else(|| DEFAULT_TRUST_TERRITORY.to_owned());
+    let lotl_url = resolve_lotl_url(request.lotl_url.as_deref());
+    let member_url = resolve_member_tsl_url(&selection, request.url.as_deref());
+
+    // Root of trust: the pinned OJEU LOTL signing anchor(s). An empty set fails closed inside
+    // `ingest_lotl`, but we surface a configuration error early so the operator knows the anchor —
+    // not the bytes — is missing.
+    let anchors = TslTrustAnchors::from_env().map_err(|e| {
+        ApiError::Unprocessable(format!("LOTL trust anchor configuration error: {e}"))
+    })?;
+
+    // Fetch the LOTL then the member TSL, both SSRF-vetted + size-bounded (never the raw
+    // `HttpTslSource`, which does no egress vetting).
+    let fetched = fetch_bounded_tsl_url(
+        &lotl_url,
+        DEFAULT_TSL_FETCH_TIMEOUT_SECONDS,
+        DEFAULT_TSL_FETCH_MAX_BYTES,
+    )
+    .and_then(|lotl_bytes| {
+        fetch_bounded_tsl_url(
+            &member_url,
+            DEFAULT_TSL_FETCH_TIMEOUT_SECONDS,
+            DEFAULT_TSL_FETCH_MAX_BYTES,
+        )
+        .map(|member_bytes| (lotl_bytes, member_bytes))
+    });
+
+    let (lotl_bytes, member_bytes) = match fetched {
+        Ok(pair) => pair,
+        Err(fetch_err) => {
+            // Graceful offline fallback: keep the on-disk cached copy and flag its provenance stale
+            // so downstream decisions know the material was not re-confirmed live (never a silent
+            // upgrade). The previous authenticated cache remains servable.
+            let fallback_note = mark_trust_store_stale(&provenance_path);
+            let status = failed_refresh_status(
+                now,
+                TslRefreshSourceKind::Url,
+                Some(lotl_url),
+                None,
+                Some(target_display),
+                format!("live LOTL/{territory} TSL fetch failed: {fetch_err}{fallback_note}"),
+            );
+            persist_refresh_status(&status_path, &status)?;
+            return Ok(status);
+        }
+    };
+
+    match authenticate_member_via_lotl(&lotl_bytes, &member_bytes, &anchors, &territory) {
+        Ok(authenticated) => {
+            // Promote only an authenticated list. Write the member bytes to the cache atomically so a
+            // crash mid-write never leaves a truncated `tsl.xml`.
+            let tmp_path = target_path.with_extension("xml.tmp");
+            std::fs::write(&tmp_path, &member_bytes)
+                .map_err(|e| ApiError::Internal(format!("failed to write TSL cache: {e}")))?;
+            std::fs::rename(&tmp_path, &target_path)
+                .map_err(|e| ApiError::Internal(format!("failed to replace TSL cache: {e}")))?;
+
+            let store = TslTrustStore::from_list(
+                &authenticated.list,
+                authenticated.authenticated,
+                authenticated.stale,
+                now,
+            );
+            let provenance = TrustStoreProvenance {
+                authenticated: store.authenticated,
+                stale: store.stale,
+                refreshed_at: format_time(now),
+                territory: territory.clone(),
+                lotl_url: Some(lotl_url),
+                member_url: Some(member_url.clone()),
+                qc_anchor_count: store.qc_anchors.len(),
+                qtst_anchor_count: store.qtst_anchors.len(),
+            };
+            persist_trust_store_provenance(&provenance_path, &provenance)?;
+
+            let status = lotl_success_status(&authenticated.list, now, member_url, target_display);
+            persist_refresh_status(&status_path, &status)?;
+            Ok(status)
+        }
+        Err(auth_err) => {
+            // Fail-closed: an unauthenticated list is never promoted and the previous cache is
+            // preserved (the fetch succeeded, so nothing here is stale — this is a hard rejection).
+            let status = failed_refresh_status(
+                now,
+                TslRefreshSourceKind::Url,
+                Some(lotl_url),
+                None,
+                Some(target_display),
+                format!(
+                    "live LOTL trust bootstrap failed authentication for territory {territory:?}: {auth_err}"
+                ),
+            );
+            persist_refresh_status(&status_path, &status)?;
+            Ok(status)
+        }
+    }
+}
+
+/// Build the refresh status for a successfully authenticated LOTL-bootstrapped member TSL. The
+/// signature is reported `Valid` because authentication is LOTL-derived (not the national anchor
+/// pin), and the trusted counts reflect that authentication.
+fn lotl_success_status(
+    list: &TrustedList,
+    now: OffsetDateTime,
+    member_url: String,
+    target_path: String,
+) -> TslRefreshStatusView {
+    let services = list.services().count();
+    let ca_qc_services = list.services().filter(|s| s.is_ca_qc()).count();
+    let qualified_esignature_services = list
+        .services()
+        .filter(|s| qualifies_for_esignature(s, now))
+        .count();
+    TslRefreshStatusView {
+        attempted_at: format_time(now),
+        source_kind: TslRefreshSourceKind::Url,
+        source_url: Some(member_url),
+        source_path: None,
+        target_path: Some(target_path),
+        outcome: TslRefreshOutcome::Success,
+        validation: TslValidationView {
+            checked_at: format_time(now),
+            signature: TslSignatureStatus::Valid,
+            error: None,
+        },
+        providers: Some(list.providers.len()),
+        services: Some(services),
+        ca_qc_services: Some(ca_qc_services),
+        qualified_esignature_services: Some(qualified_esignature_services),
+        // Authenticated via the live LOTL: qualified services are also trusted.
+        trusted_esignature_services: Some(qualified_esignature_services),
+        error: None,
+    }
+}
+
+fn persist_trust_store_provenance(
+    path: &std::path::Path,
+    provenance: &TrustStoreProvenance,
+) -> Result<(), ApiError> {
+    let bytes = serde_json::to_vec_pretty(provenance).map_err(|e| {
+        ApiError::Internal(format!("failed to serialize trust-store provenance: {e}"))
+    })?;
+    std::fs::write(path, bytes)
+        .map_err(|e| ApiError::Internal(format!("failed to persist trust-store provenance: {e}")))
+}
+
+fn read_trust_store_provenance(path: &std::path::Path) -> Option<TrustStoreProvenance> {
+    let bytes = std::fs::read(path).ok()?;
+    serde_json::from_slice(&bytes).ok()
+}
+
+/// Flag the persisted trust-store provenance `stale` after a failed live fetch, returning a note for
+/// the refresh status. When no provenance exists there is nothing to fall back to.
+fn mark_trust_store_stale(provenance_path: &std::path::Path) -> String {
+    match read_trust_store_provenance(provenance_path) {
+        Some(mut provenance) => {
+            provenance.stale = true;
+            let _ = persist_trust_store_provenance(provenance_path, &provenance);
+            "; falling back to the on-disk cached trust material flagged stale".to_owned()
+        }
+        None => "; no cached trust material available for fallback".to_owned(),
+    }
+}
+
+/// Load the live [`TslTrustStore`] reconstructed from the cached member-state TSL and its provenance
+/// sidecar. Returns `None` (fail-closed) when no provenance was recorded — i.e. no live LOTL
+/// bootstrap has promoted trust material yet. The anchors are re-derived from `tsl.xml`; the
+/// `authenticated`/`stale` flags come from the sidecar.
+pub(crate) fn load_live_trust_store(
+    data_dir: Option<PathBuf>,
+    now: OffsetDateTime,
+) -> Option<LiveTrustStore> {
+    let dir = data_dir?;
+    let provenance = read_trust_store_provenance(&dir.join(TRUST_STORE_PROVENANCE_FILE))?;
+    let cached = find_cached_tsl(Some(dir))?;
+    let xml = std::fs::read(&cached).ok()?;
+    let list = parse_tsl(&xml).ok()?;
+    let store = TslTrustStore::from_list(&list, provenance.authenticated, provenance.stale, now);
+    Some(LiveTrustStore { store, provenance })
 }
 
 fn read_bounded_tsl_file(path: &str, max_bytes: u64) -> Result<Vec<u8>, String> {
@@ -2604,6 +2914,7 @@ mod tests {
             TslRefreshRequest {
                 url: None,
                 path: Some(source.display().to_string()),
+                ..TslRefreshRequest::default()
             },
             NOW,
         )
@@ -2647,6 +2958,7 @@ mod tests {
             TslRefreshRequest {
                 url: None,
                 path: Some(source.display().to_string()),
+                ..TslRefreshRequest::default()
             },
             NOW,
         )
@@ -2669,6 +2981,7 @@ mod tests {
             TslRefreshRequest {
                 url: Some("http://127.0.0.1:9/tsl.xml".to_owned()),
                 path: None,
+                ..TslRefreshRequest::default()
             },
             NOW,
         )
@@ -2691,6 +3004,99 @@ mod tests {
                 .as_deref()
                 .is_some_and(|e| e.contains("unsafe outbound URL"))
         );
+    }
+
+    #[test]
+    fn lotl_bootstrap_fails_closed_without_pinned_anchor() {
+        // The LOTL is the system root of trust: with no pinned OJEU anchor it can never be
+        // authenticated, so no member-state list is ever promoted (fail-closed).
+        let err = authenticate_member_via_lotl(
+            BUNDLED_PT_TSL,
+            BUNDLED_PT_TSL,
+            &TslTrustAnchors::new(),
+            "PT",
+        )
+        .expect_err("empty anchors must fail closed");
+        assert!(err.to_ascii_lowercase().contains("anchor"), "{err}");
+    }
+
+    #[test]
+    fn lotl_bootstrap_fails_closed_on_unverifiable_lotl() {
+        // Even with an anchor configured, an unsigned/garbage LOTL must not authenticate — the
+        // signature has to verify first (never a silent upgrade).
+        let anchors = TslTrustAnchors::new().with_cert_der(b"some pinned OJEU cert der");
+        let err = authenticate_member_via_lotl(
+            b"<TrustServiceStatusList/>",
+            BUNDLED_PT_TSL,
+            &anchors,
+            "PT",
+        )
+        .expect_err("an unverifiable LOTL must never authenticate a member list");
+        assert!(!err.is_empty(), "{err}");
+    }
+
+    #[test]
+    fn trust_store_provenance_round_trips_and_reconstructs_store() {
+        let tmp = TempDir::new();
+        // Cache a member-state TSL and record it as authenticated (as a successful live bootstrap
+        // would). The store is re-derived from the cached XML; the flags come from the sidecar.
+        std::fs::write(tmp.0.join(TRUST_CACHE_FILE), BUNDLED_PT_TSL).expect("cache");
+        let list = parse_tsl(BUNDLED_PT_TSL).expect("fixture parses");
+        let store = TslTrustStore::from_list(&list, true, false, NOW);
+        let provenance = TrustStoreProvenance {
+            authenticated: true,
+            stale: false,
+            refreshed_at: format_time(NOW),
+            territory: "PT".to_owned(),
+            lotl_url: Some("https://example.test/eu-lotl.xml".to_owned()),
+            member_url: Some("https://example.test/pt-tsl.xml".to_owned()),
+            qc_anchor_count: store.qc_anchors.len(),
+            qtst_anchor_count: store.qtst_anchors.len(),
+        };
+        persist_trust_store_provenance(&tmp.0.join(TRUST_STORE_PROVENANCE_FILE), &provenance)
+            .expect("persist provenance");
+
+        let loaded = load_live_trust_store(Some(tmp.0.clone()), NOW).expect("live store");
+        assert!(loaded.provenance.authenticated);
+        assert!(!loaded.provenance.stale);
+        assert!(loaded.store.authenticated);
+        assert!(!loaded.store.stale);
+        assert_eq!(loaded.store.qc_anchors, store.qc_anchors);
+        assert_eq!(loaded.store.qtst_anchors, store.qtst_anchors);
+    }
+
+    #[test]
+    fn load_live_trust_store_is_none_without_provenance() {
+        // Fail-closed: a cached TSL with no provenance sidecar (e.g. a legacy national import) yields
+        // no live trust store — trust material is only reconstructed for a promoted LOTL bootstrap.
+        let tmp = TempDir::new();
+        std::fs::write(tmp.0.join(TRUST_CACHE_FILE), BUNDLED_PT_TSL).expect("cache");
+        assert!(load_live_trust_store(Some(tmp.0.clone()), NOW).is_none());
+    }
+
+    #[test]
+    fn offline_fallback_marks_provenance_stale() {
+        let tmp = TempDir::new();
+        let provenance_path = tmp.0.join(TRUST_STORE_PROVENANCE_FILE);
+        let provenance = TrustStoreProvenance {
+            authenticated: true,
+            stale: false,
+            refreshed_at: format_time(NOW),
+            territory: "PT".to_owned(),
+            lotl_url: None,
+            member_url: None,
+            qc_anchor_count: 1,
+            qtst_anchor_count: 0,
+        };
+        persist_trust_store_provenance(&provenance_path, &provenance).expect("persist");
+
+        let note = mark_trust_store_stale(&provenance_path);
+        assert!(note.contains("stale"), "{note}");
+        let reloaded = read_trust_store_provenance(&provenance_path).expect("reload");
+        assert!(reloaded.stale, "fallback must flag the cached store stale");
+        // A missing sidecar has nothing to fall back to.
+        let missing = mark_trust_store_stale(&tmp.0.join("absent.json"));
+        assert!(missing.contains("no cached trust material"), "{missing}");
     }
 
     #[test]
@@ -2754,6 +3160,7 @@ mod tests {
             TslRefreshRequest {
                 url: None,
                 path: None,
+                ..TslRefreshRequest::default()
             },
             NOW,
         )
