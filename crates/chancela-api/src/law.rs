@@ -621,6 +621,14 @@ pub struct LawSourceView {
     pub source_digest: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub retrieved_at: Option<String>,
+    /// The automated process that produced an `AutomatedReview` body (e.g. `"automated-capture"`).
+    /// Present only on automated-review sources; a human-`Verified` or `Pending` source omits it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub review_method: Option<String>,
+    /// The standing honest caveat carried by `AutomatedReview` text (automated review only, NOT
+    /// human-legally-approved, human legal review recommended). Present only for that tier.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub review_note: Option<String>,
     /// Whether this source cites a complete authentic origin.
     pub complete: bool,
 }
@@ -635,6 +643,8 @@ impl LawSourceView {
             url: s.url.clone(),
             source_digest: s.source_digest.clone(),
             retrieved_at: s.retrieved_at.clone(),
+            review_method: s.review_method.clone(),
+            review_note: s.review_note.clone(),
             complete: s.is_complete(),
         }
     }
@@ -748,12 +758,21 @@ pub struct LawDiplomaSummaryView {
     pub eli: Option<String>,
     pub article_count: usize,
     pub verified_count: usize,
+    /// Automated-review authentic articles (vendored + auto-reviewed, NOT human-legally-approved).
+    /// Distinct from both `verified_count` and `pending_count` so a reader can badge the tier
+    /// honestly instead of lumping automated-review text in with unverified placeholders.
+    pub automated_review_count: usize,
     pub pending_count: usize,
 }
 
 impl LawDiplomaSummaryView {
     fn from_diploma(d: &LawDiploma) -> Self {
         let verified = d.articles.iter().filter(|a| a.is_verified()).count();
+        let automated_review = d
+            .articles
+            .iter()
+            .filter(|a| a.is_automated_review())
+            .count();
         LawDiplomaSummaryView {
             id: d.id.clone(),
             kind: d.kind,
@@ -764,7 +783,8 @@ impl LawDiplomaSummaryView {
             eli: d.eli.clone(),
             article_count: d.articles.len(),
             verified_count: verified,
-            pending_count: d.articles.len() - verified,
+            automated_review_count: automated_review,
+            pending_count: d.articles.len() - verified - automated_review,
         }
     }
 }

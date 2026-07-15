@@ -11419,11 +11419,14 @@ mod tests {
             64,
             "sha256 hex"
         );
-        // The committed corpus (t55-E1): 9 diplomas, 153 Verified + 40 Pending = 193 articles.
+        // The committed corpus (wp22): 9 diplomas, 193 articles across three honest authenticity
+        // tiers — 153 human-`Verified` + 39 `automated_review` (vendored + auto-reviewed, NOT
+        // human-approved) + 1 `Pending` (no vendored text).
         assert_eq!(body["counts"]["diplomas"], 9);
         assert_eq!(body["counts"]["articles"], 193);
         assert_eq!(body["counts"]["verified"], 153);
-        assert_eq!(body["counts"]["pending"], 40);
+        assert_eq!(body["counts"]["automated_review"], 39);
+        assert_eq!(body["counts"]["pending"], 1);
 
         let diplomas = body["diplomas"].as_array().expect("diplomas array");
         assert_eq!(diplomas.len(), 9);
@@ -11436,15 +11439,19 @@ mod tests {
         assert_eq!(eidas["kind"], "RegulamentoUe");
         assert_eq!(eidas["article_count"], 52);
         assert_eq!(eidas["verified_count"], 52);
+        assert_eq!(eidas["automated_review_count"], 0);
         assert_eq!(eidas["pending_count"], 0);
 
-        // CSC is still Pending (DRE text awaits E1b) — every article unverified, none presented.
+        // CSC is now fully automated-review (wp22): its 15 articles carry vendored, auto-reviewed
+        // statutory text — NOT human-`Verified`, and not `Pending` placeholders either. The per-
+        // diploma counts keep the tier distinct instead of lumping it into pending.
         let csc = diplomas
             .iter()
             .find(|d| d["id"] == "csc")
             .expect("csc diploma");
         assert_eq!(csc["verified_count"], 0);
-        assert_eq!(csc["pending_count"], 15);
+        assert_eq!(csc["automated_review_count"], 15);
+        assert_eq!(csc["pending_count"], 0);
     }
 
     #[tokio::test]
@@ -11478,18 +11485,43 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn law_corpus_pending_diploma_never_leaks_a_body() {
-        // A Pending diploma (csc) renders the loud marker for every article — never a raw body.
-        let (status, body) = send(AppState::default(), get("/v1/law/corpus/csc")).await;
+    async fn law_corpus_pending_article_never_leaks_a_body() {
+        // dl-76-a-2006 is a mixed diploma (wp22): article 1 is automated-review authentic text,
+        // article 2 is still a Pending placeholder. The invariant under test: a Pending article
+        // renders the loud marker and never a raw body, while an automated-review article carries
+        // real vendored text yet is NOT human-`Verified` (no marker, complete source).
+        let (status, body) = send(AppState::default(), get("/v1/law/corpus/dl-76-a-2006")).await;
         assert_eq!(status, StatusCode::OK, "body: {body}");
         let articles = body["articles"].as_array().expect("articles");
-        assert!(!articles.is_empty());
-        for a in articles {
-            assert_eq!(a["verified"], false);
-            assert_eq!(a["verification"], "Pending");
-            assert_eq!(a["body"], chancela_law::UNVERIFIED_MARKER);
-            assert_eq!(a["source"]["complete"], false);
-        }
+
+        let pending = articles
+            .iter()
+            .find(|a| a["number"] == "2")
+            .expect("pending article 2");
+        assert_eq!(pending["verified"], false);
+        assert_eq!(pending["verification"], "Pending");
+        assert_eq!(pending["body"], chancela_law::UNVERIFIED_MARKER);
+        assert_eq!(pending["source"]["complete"], false);
+
+        let automated = articles
+            .iter()
+            .find(|a| a["number"] == "1")
+            .expect("automated-review article 1");
+        // Automated-review is authentic text: it is NOT the loud marker and its source is complete,
+        // but `verified` stays false — it is not human-legally-approved.
+        assert_eq!(automated["verified"], false);
+        assert_eq!(automated["verification"], "automated_review");
+        assert_ne!(automated["body"], chancela_law::UNVERIFIED_MARKER);
+        assert!(automated["body"].as_str().expect("body").trim().len() > 0);
+        assert_eq!(automated["source"]["complete"], true);
+        assert_eq!(automated["source"]["review_method"], "automated-capture");
+        assert!(
+            automated["source"]["review_note"]
+                .as_str()
+                .expect("review_note")
+                .contains("NÃO aprovado juridicamente"),
+            "automated-review source carries the human-approval caveat"
+        );
     }
 
     #[tokio::test]
@@ -11536,11 +11568,13 @@ mod tests {
         assert_eq!(citations[0]["source_complete"], true);
         assert!(citations[0]["source_url"].is_string());
 
-        // CSC/DRE text in the embedded corpus is still pending. The resolver must never upgrade it.
+        // csc:63 is now automated-review authentic text (wp22): the resolver must surface that tier
+        // faithfully (complete source, real url) and must NOT upgrade it to human-`Verified`.
         assert_eq!(citations[1]["source_id"], "csc");
-        assert_eq!(citations[1]["verification"], "Pending");
-        assert_eq!(citations[1]["source_complete"], false);
-        assert!(citations[1]["source_url"].is_null());
+        assert_eq!(citations[1]["verification"], "automated_review");
+        assert_ne!(citations[1]["verification"], "Verified");
+        assert_eq!(citations[1]["source_complete"], true);
+        assert!(citations[1]["source_url"].is_string());
     }
 
     #[tokio::test]

@@ -72,10 +72,12 @@
           "diploma_id": "dl-76-a-2006",
           "article": "1",
           "label": "Artigo 1",
-          "heading": "",
-          "verification": "Pending",
-          "source_url": null,
-          "source_complete": false
+          "heading": "Objecto",
+          "verification": "automated_review",
+          "source_url": "https://diariodarepublica.pt/dr/detalhe/decreto-lei/76-a-2006-620286",
+          "source_complete": true,
+          "review_method": "automated-capture",
+          "review_note": "Revisão automatizada (wp22): texto estatutário oficial obtido por captura automatizada do espelho consolidado da Procuradoria-Geral Distrital de Lisboa (pgdlisboa.pt, nid=731) em 2026-07-15 e verificado por processo automatizado. NÃO aprovado juridicamente por revisor humano (sem marcador LEGAL_APPROVED_FOR_VERIFIED). Recomenda-se revisão jurídica humana antes de confiar."
         }
       ],
       "action": {
@@ -124,10 +126,12 @@
           "diploma_id": "dl-76-a-2006",
           "article": "1",
           "label": "Artigo 1",
-          "heading": "",
-          "verification": "Pending",
-          "source_url": null,
-          "source_complete": false
+          "heading": "Objecto",
+          "verification": "automated_review",
+          "source_url": "https://diariodarepublica.pt/dr/detalhe/decreto-lei/76-a-2006-620286",
+          "source_complete": true,
+          "review_method": "automated-capture",
+          "review_note": "Revisão automatizada (wp22): texto estatutário oficial obtido por captura automatizada do espelho consolidado da Procuradoria-Geral Distrital de Lisboa (pgdlisboa.pt, nid=731) em 2026-07-15 e verificado por processo automatizado. NÃO aprovado juridicamente por revisor humano (sem marcador LEGAL_APPROVED_FOR_VERIFIED). Recomenda-se revisão jurídica humana antes de confiar."
         },
         {
           "diploma_id": "dl-76-a-2006",
@@ -136,7 +140,9 @@
           "heading": "",
           "verification": "Pending",
           "source_url": null,
-          "source_complete": false
+          "source_complete": false,
+          "review_method": null,
+          "review_note": null
         }
       ],
       "action": {
@@ -225,9 +231,11 @@
           "article": "399",
           "label": "Artigo 399.º",
           "heading": "Remuneração dos administradores",
-          "verification": "Pending",
-          "source_url": null,
-          "source_complete": false
+          "verification": "automated_review",
+          "source_url": "https://diariodarepublica.pt/dr/legislacao-consolidada/decreto-lei/1986-34443975",
+          "source_complete": true,
+          "review_method": "automated-capture",
+          "review_note": "Revisão automatizada (wp22): texto estatutário oficial obtido por captura automatizada do espelho consolidado da Procuradoria-Geral Distrital de Lisboa (pgdlisboa.pt, nid=524) em 2026-07-15 e verificado por processo automatizado. NÃO aprovado juridicamente por revisor humano (sem marcador LEGAL_APPROVED_FOR_VERIFIED). Recomenda-se revisão jurídica humana antes de confiar."
         }
       ],
       "action": {
@@ -331,7 +339,9 @@
           "heading": "",
           "verification": "Pending",
           "source_url": null,
-          "source_complete": false
+          "source_complete": false,
+          "review_method": null,
+          "review_note": null
         }
       ],
       "action": {

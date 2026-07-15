@@ -13,7 +13,7 @@ use chancela_core::{
     evaluate_profile_calendar_rule, profile_calendar_plan_for, profile_for, rule_pack_for,
     supports_profile_calendar_plan,
 };
-use chancela_law::LawCatalog;
+use chancela_law::{LawCatalog, Verification};
 use chancela_registry::RegistryExtract;
 use chancela_store::{
     StoredDocument, StoredFollowUp, StoredFollowUpStatus, StoredGeneratedDocumentDispatchEvidence,
@@ -1090,6 +1090,18 @@ fn dashboard_action(
     }
 }
 
+/// The corpus authenticity tier as its stable wire string, matching the [`Verification`] serde
+/// value: `"Verified"` (human-approved) / `"automated_review"` (vendored + auto-reviewed, NOT
+/// human-approved) / `"Pending"` (no text). Kept in lockstep with the enum's serde so the dashboard
+/// contract and the `/v1/law` corpus surface agree on the badge value.
+fn law_verification_wire(v: Verification) -> &'static str {
+    match v {
+        Verification::Verified => "Verified",
+        Verification::AutomatedReview => "automated_review",
+        Verification::Pending => "Pending",
+    }
+}
+
 fn law_refs(refs: &[(&str, &str)]) -> Vec<DashboardLawReference> {
     let catalog = LawCatalog::embedded();
     refs.iter()
@@ -1101,9 +1113,12 @@ fn law_refs(refs: &[(&str, &str)]) -> Vec<DashboardLawReference> {
                     article: article.number.clone(),
                     label: article.label.clone(),
                     heading: article.heading.clone(),
-                    verification: format!("{:?}", article.verification),
+                    verification: law_verification_wire(article.verification).to_owned(),
                     source_url: article.source.url.clone(),
                     source_complete: article.source.is_complete(),
+                    // Only automated-review articles carry these; verified/pending leave them null.
+                    review_method: article.source.review_method.clone(),
+                    review_note: article.source.review_note.clone(),
                 })
                 .unwrap_or_else(|| DashboardLawReference {
                     diploma_id: (*diploma_id).to_owned(),
@@ -1113,6 +1128,8 @@ fn law_refs(refs: &[(&str, &str)]) -> Vec<DashboardLawReference> {
                     verification: "Missing".to_owned(),
                     source_url: None,
                     source_complete: false,
+                    review_method: None,
+                    review_note: None,
                 })
         })
         .collect()
@@ -2459,6 +2476,9 @@ fn calendar_law_refs(preset: &CalendarPreset) -> Vec<DashboardLawReference> {
             verification: law_ref.source_status.dashboard_verification().to_owned(),
             source_url: None,
             source_complete: false,
+            // Calendar-preset refs carry only their preset source-status, never corpus provenance.
+            review_method: None,
+            review_note: None,
         })
         .collect()
 }
@@ -3395,8 +3415,12 @@ mod tests {
         assert_eq!(alert.law_refs.len(), 1);
         assert_eq!(alert.law_refs[0].diploma_id, "csc");
         assert_eq!(alert.law_refs[0].article, "255");
-        assert_eq!(alert.law_refs[0].verification, "Pending");
-        assert!(!alert.law_refs[0].source_complete);
+        // csc:255 is now automated-review authentic text (wp22): a distinct honest tier, NOT
+        // human-`Verified`, but backed by a complete source. The "no human approval without the
+        // marker" invariant holds — it must never render as `Verified`.
+        assert_eq!(alert.law_refs[0].verification, "automated_review");
+        assert_ne!(alert.law_refs[0].verification, "Verified");
+        assert!(alert.law_refs[0].source_complete);
         let expected_route = format!("/entidades/{}", entity.id);
         assert_eq!(
             alert
@@ -3445,8 +3469,24 @@ mod tests {
         assert_eq!(alert.law_refs[0].diploma_id, "csc");
         assert_eq!(alert.law_refs[0].article, "399");
         assert_eq!(alert.law_refs[0].heading, "Remuneração dos administradores");
-        assert_eq!(alert.law_refs[0].verification, "Pending");
-        assert!(!alert.law_refs[0].source_complete);
+        // csc:399 is now automated-review authentic text (wp22): NOT human-`Verified`, but sourced.
+        assert_eq!(alert.law_refs[0].verification, "automated_review");
+        assert_ne!(alert.law_refs[0].verification, "Verified");
+        assert!(alert.law_refs[0].source_complete);
+        // The automated-review tier carries its method + standing caveat so the client can badge it
+        // honestly and show the "human legal review recommended" tooltip.
+        assert_eq!(
+            alert.law_refs[0].review_method.as_deref(),
+            Some("automated-capture")
+        );
+        assert!(
+            alert.law_refs[0]
+                .review_note
+                .as_deref()
+                .is_some_and(|note| note.contains("Revisão automatizada")
+                    && note.contains("NÃO aprovado juridicamente")),
+            "automated-review ref carries the pt-PT human-approval caveat"
+        );
         assert_eq!(
             alert.params.get("office").map(String::as_str),
             Some("administration")

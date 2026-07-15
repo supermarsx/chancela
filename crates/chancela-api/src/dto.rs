@@ -2661,6 +2661,13 @@ pub struct DashboardTargetLinks {
 }
 
 /// One law-corpus article reference attached to a dashboard actionable.
+///
+/// `verification` carries the corpus authenticity tier on the wire as `"Verified"` /
+/// `"automated_review"` / `"Pending"` (the [`chancela_law::Verification`] serde value). An
+/// `"automated_review"` reference is authentic vendored text reviewed by an automated process but
+/// **not** human-legally-approved; `review_method` (e.g. `"automated-capture"`) and `review_note`
+/// (the standing pt-PT caveat) are populated for that tier so the client can badge it honestly and
+/// show the caveat tooltip. Both are `null` for `Verified`/`Pending`/`Missing` references.
 #[derive(Debug, Serialize, Clone, PartialEq, Eq)]
 pub struct DashboardLawReference {
     pub diploma_id: String,
@@ -2670,6 +2677,8 @@ pub struct DashboardLawReference {
     pub verification: String,
     pub source_url: Option<String>,
     pub source_complete: bool,
+    pub review_method: Option<String>,
+    pub review_note: Option<String>,
 }
 
 /// Client-facing action metadata for dashboard actionables.
