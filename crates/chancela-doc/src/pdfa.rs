@@ -149,7 +149,9 @@ pub fn write(doc: &DocumentModel) -> Result<Vec<u8>, DocError> {
     pdf.set_object(oi_id, Object::Dictionary(oi));
 
     // --- XMP metadata (uncompressed, no /Filter) -------------------------------------------------
-    let xmp_bytes = xmp::packet(doc, &accessibility.metadata);
+    // Emit the PDF/UA-1 identifier only when the document conforms to the writer's UA profile; a
+    // non-conforming model stays a plain PDF/A-2U file with no UA claim.
+    let xmp_bytes = xmp::packet(doc, &accessibility.metadata, accessibility.pdf_ua_claimed);
     let mut meta_dict = Dictionary::new();
     meta_dict.set("Type", name("Metadata"));
     meta_dict.set("Subtype", name("XML"));

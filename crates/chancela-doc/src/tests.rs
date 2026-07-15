@@ -783,6 +783,40 @@ fn metadata_is_uncompressed_pdfa2u() {
 }
 
 #[test]
+fn xmp_packet_carries_pdfua_identifier_only_when_claimed() {
+    let doc = fixture();
+    let metadata = pdfa::accessibility_report(&doc).metadata;
+
+    // Without a claim: a plain, valid PDF/A-2U packet — no UA identifier, no extension schema.
+    let without = String::from_utf8(crate::xmp::packet(&doc, &metadata, false)).unwrap();
+    assert!(
+        !without.contains("pdfuaid"),
+        "no PDF/UA identifier without a claim"
+    );
+    assert!(!without.contains("pdfaExtension"));
+    assert!(without.contains("<pdfaid:part>2</pdfaid:part>"));
+    assert!(without.contains("<pdfaid:conformance>U</pdfaid:conformance>"));
+
+    // With a claim: PDF/UA-1 identifier + mandatory pdfaExtension schema description, still a
+    // valid PDF/A-2U packet.
+    let with = String::from_utf8(crate::xmp::packet(&doc, &metadata, true)).unwrap();
+    assert!(with.contains("xmlns:pdfuaid=\"http://www.aiim.org/pdfua/ns/id/\""));
+    assert!(with.contains("<pdfuaid:part>1</pdfuaid:part>"));
+    assert!(with.contains("<pdfaExtension:schemas>"));
+    assert!(with.contains("<pdfaSchema:prefix>pdfuaid</pdfaSchema:prefix>"));
+    assert!(with.contains(
+        "<pdfaSchema:namespaceURI>http://www.aiim.org/pdfua/ns/id/</pdfaSchema:namespaceURI>"
+    ));
+    assert!(with.contains("<pdfaProperty:name>part</pdfaProperty:name>"));
+    assert!(with.contains("<pdfaProperty:valueType>Integer</pdfaProperty:valueType>"));
+    assert!(with.contains("<pdfaid:part>2</pdfaid:part>"));
+    assert!(with.contains("<pdfaid:conformance>U</pdfaid:conformance>"));
+    // The UA description is reused from the model subject.
+    assert!(with.contains("<dc:description>"));
+    assert!(with.contains("Deliberação sobre contas"));
+}
+
+#[test]
 fn accessibility_metadata_falls_back_for_missing_title_language() {
     let mut doc = DocumentModel::new(" \t\n", "Encosto Estratégico Lda", "Sem título");
     doc.language = "  ".to_string();
