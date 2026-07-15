@@ -626,14 +626,17 @@ It intentionally reuses existing test surfaces:
   trust-list validity, certificate path/revocation policy validation,
   qualified-status determination, legal trust certification, live provider
   approval, or full trust implementation.
-- Signing DSS/trust-validation checkpoint: `93175c0` is the current
+- Signing DSS/trust-validation checkpoint: `63df508` is the current
   implementation snapshot for the signing validation batch. Static markers pin
   `6292d75` revocation cache plus graceful offline fallback, `ead1aaa`
   full-chain PAdES DSS evidence assembly from validated chain plus revocation
   material, `9be5e00` live end-entity signer-path validation with TSL-resolved
-  revocation trust-decision reporting, and `93175c0` public signer trust
-  validation export. This remains bounded technical validation evidence only;
-  it does not claim production trust-list validity, legal certificate path/
+  revocation trust-decision reporting, `93175c0` public signer trust
+  validation export, `4de850b` live LOTL trust bootstrap, `119d91c`
+  full-chain signer trust plus B-LT/B-LTA technical status surfacing in the
+  API, and `63df508` cryptographic CA-link verification in the offline PAdES
+  LTV verifier. This remains bounded technical validation evidence only; it
+  does not claim production trust-list validity, legal certificate path/
   revocation policy sufficiency, qualified status, eIDAS/QES compliance, legal
   trust certification, provider approval, or full signing acceptance.
 - API trust/import/static hardening markers: the static map pins

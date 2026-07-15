@@ -10895,12 +10895,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `93175c0`",
+    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `63df508`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `93175c0`",
+    "Focused Gate Snapshot Through `63df508`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -11580,7 +11580,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `93175c0`",
+    "Current checkpoint metadata/static checks through `63df508`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -11825,7 +11825,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current `93175c0` signing trust validation checkpoint",
+    "Current `63df508` signing trust validation checkpoint",
     "CI/E2E hardening plan signing trust validation checkpoint marker",
   );
   assertFileContains(
@@ -12170,12 +12170,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `93175c0b862c7a723e3e0096b18cd34ccb6d0f38`",
+    "implementation snapshot `63df508f602d83fbf73d1064f7b64bacaa140119`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Current `93175c0` keeps Signatures/Trust/CI **PARTIAL**",
+    "Current `63df508` keeps Signatures/Trust/CI **PARTIAL**",
     "spec coverage signing trust validation current checkpoint marker",
   );
   assertFileContains(
@@ -12185,7 +12185,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "Signing DSS/trust-validation checkpoint: `93175c0` is the current\n  implementation snapshot",
+    "Signing DSS/trust-validation checkpoint: `63df508` is the current\n  implementation snapshot",
     "CI checkpoints signing validation current snapshot marker",
   );
   assertFileContains(

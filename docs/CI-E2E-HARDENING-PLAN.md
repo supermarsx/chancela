@@ -1,7 +1,7 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `93175c0`,
+and implementation snapshot `63df508`,
 including coverage notes for the settled PDF/UA v12 gated-claim lane, XAdES
 C14N/digest-agility/B/T/LT/ASiC evidence, archive PDF accessibility
 propagation, the MCP document/archive PDF accessibility v12
@@ -12,8 +12,9 @@ per-test child database isolation, child database cleanup, logical restore
 JSON text-to-jsonb binding, and backend-only SCAP-backed signer-capacity evidence
 persistence for local PKCS#12 signing, revocation cache graceful offline
 fallback, full-chain PAdES DSS evidence assembly from validated chains plus
-revocation material, live end-entity signer-path validation, TSL-resolved
-revocation trust-decision reporting, exported signer trust validation surface,
+revocation material, live LOTL trust bootstrap, live end-entity signer-path
+validation, TSL-resolved revocation trust-decision reporting, API B-LT/B-LTA
+technical status surfacing, and offline PAdES LTV CA-link verification,
 wp23 user-template authoring groundwork
 for store CRUD, `template.manage`, strict authoring validation, API
 CRUD/export/import, merged catalog contracts, i18n key coverage, and Minutas
@@ -986,11 +987,11 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `93175c0`
+## Focused Gate Snapshot Through `63df508`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08` and checkpoint-promoted on 2026-07-15 for
-current implementation head `93175c0`. This is not an exhaustive current
+current implementation head `63df508`. This is not an exhaustive current
 green-run claim; the full-server E2E claim below is limited to local
 `chancela-server --features e2e` after auth harness alignment, and browser,
 Docker, desktop, production package signing/notarization, production image
@@ -1882,14 +1883,17 @@ settingsDefaults.test.ts contracts.test.ts`.
   policy validation, legal trust certification, production trust-list validity,
   multiple-reference support for the TSL importer, or transform-chain support
   for the TSL importer.
-- Current `93175c0` signing trust validation checkpoint: static markers pin
+- Current `63df508` signing trust validation checkpoint: static markers pin
   the prior `8bbe944` live EU LOTL/member-state bootstrap, `6292d75`
   revocation cache and graceful offline fallback, `ead1aaa` full-chain PAdES
   DSS evidence assembly from validated chain plus revocation material,
   `9be5e00` live end-entity signer-path validation with TSL-resolved
-  revocation trust-decision reporting, and `93175c0` public signer trust
-  validation export. This is bounded technical validation evidence only: it is
-  not production trust-list validity, legal certificate path/revocation policy
+  revocation trust-decision reporting, `93175c0` public signer trust
+  validation export, `4de850b` live LOTL trust bootstrap, `119d91c`
+  full-chain signer trust plus B-LT/B-LTA technical status surfacing in the
+  API, and `63df508` cryptographic CA-link verification in the offline PAdES
+  LTV verifier. This is bounded technical validation evidence only: it is not
+  production trust-list validity, legal certificate path/revocation policy
   sufficiency, qualified-status determination, eIDAS/QES compliance, legal
   trust certification, live provider approval, or full trust implementation.
 - Current `50854dd` XAdES reconciliation checks: `chancela-xades` now pins real
@@ -2395,13 +2399,13 @@ settingsDefaults.test.ts contracts.test.ts`.
   production-readiness, TLS/key-custody, vulnerability-free scan, SBOM,
   signature/attestation, HA/failover/RPO/RTO, legal/DR certification, cloud
   deployment readiness, or spec-completion claim is made.
-- Current checkpoint metadata/static checks through `93175c0`
+- Current checkpoint metadata/static checks through `63df508`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
-  `git diff --check -- SPEC-COVERAGE.md docs\CI-E2E-HARDENING-PLAN.md
-  docs\CI-CHECKPOINTS.md docs\CI-RELEASE-HARDENING.md docs\extras.md
-  scripts\checkpoint-recent-landed.mjs scripts\check-spec-coverage.mjs`.
+  `git diff --check -- SPEC-COVERAGE.md docs/CI-CHECKPOINTS.md
+  docs/CI-E2E-HARDENING-PLAN.md scripts/checkpoint-recent-landed.mjs
+  scripts/check-spec-coverage.mjs`.
   These pin the spec snapshot,
   hardening-plan head, LOTL/member-state bootstrap markers, mobile API base
   URL/shell-detection markers, subject DEK
