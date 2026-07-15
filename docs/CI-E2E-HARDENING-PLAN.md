@@ -1,8 +1,9 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `82d3554`,
-including coverage notes for convocation reminder guidance routing,
+and implementation snapshot `caae1bf`,
+including coverage notes for convening dispatch evidence capture UI,
+convocation reminder guidance routing,
 missing-meeting-date convocation reminders, convocation act-review guidance and
 convocation-notice local WFL/legal-calendar advisory reminders, condominium
 annual local advisory Jan 15 profile-calendar
@@ -890,11 +891,11 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `82d3554`
+## Focused Gate Snapshot Through `caae1bf`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08` and checkpoint-promoted on 2026-07-15 for
-current implementation head `82d3554`. This is not an exhaustive current
+current implementation head `caae1bf`. This is not an exhaustive current
 green-run claim; browser, Docker, desktop, package signing/notarization, image
 signing/attestation, and live-provider limits above still apply.
 
@@ -1845,6 +1846,19 @@ settingsDefaults.test.ts contracts.test.ts`.
   legal-authority, legal-sufficiency, provider, certification, external
   delivery, workflow-completion, DRE/source-authority, registry acceptance,
   legal effect, or legal/compliance completion claim.
+- Current `caae1bf` convening dispatch evidence capture checks: focused
+  `npm run test --workspace apps/web -- AtaEditorStructured.test.tsx`, `npm
+  run test --workspace apps/web -- client.test.ts`, `npm run build --workspace
+  apps/web`, `cargo test -p chancela-api --locked dispatch_`, and `git diff
+  --check` coverage pins local workflow evidence capture through the existing
+  `POST /v1/acts/{id}/convening/dispatch` endpoint. The Ata editor builds the
+  dispatch body from existing `act.convening` recipients, required
+  `dispatched_at`, and optional channel/reference metadata, then records local
+  provenance and updates matching convening recipient stamps from the returned
+  `ActView`; no backend changes were needed. This does not create recipients,
+  send email/SMS, confirm external delivery, compute legal sufficiency, complete
+  the workflow, or claim registry/DRE/provider acceptance, legal effect, or
+  legal/compliance completion.
 - Current `82d3554` convocation reminder guidance routing checks: focused
   `npm run test --workspace apps/web -- DashboardPage.test.tsx
   notifications.test.ts AtaEditorStructured.test.tsx` passed 64 tests, `npm
@@ -2027,15 +2041,16 @@ settingsDefaults.test.ts contracts.test.ts`.
   full RBAC/delegation-policy completion, tenant authorization proof,
   legal-capacity verification, broad security certification, or spec
   completion.
-- Current checkpoint metadata/static checks through `82d3554`
+- Current checkpoint metadata/static checks through `caae1bf`
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
   `git diff --check -- SPEC-COVERAGE.md docs\CI-E2E-HARDENING-PLAN.md
   docs\CI-CHECKPOINTS.md scripts\checkpoint-recent-landed.mjs`.
   These pin the spec snapshot,
-  hardening-plan head, convocation reminder guidance routing, convocation
-  act-review guidance, convocation-notice advisory reminders, dashboard annual
+  hardening-plan head, convening dispatch evidence capture, convocation
+  reminder guidance routing, convocation act-review guidance, convocation-notice
+  advisory reminders, dashboard annual
   reminder localization, automated-review
   dashboard contract surfacing, Arquivo advanced-filter count badge,
   all-filtered archive export streaming/cap scope, MCP meeting

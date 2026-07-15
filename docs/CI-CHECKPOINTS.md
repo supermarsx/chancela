@@ -86,10 +86,11 @@ absent-owner evidence UI and dashboard absent-owner dispatch-evidence reminders,
 condominium annual profile-calendar Jan 15 local advisory markers plus
 dashboard-only annual reminder localization markers for CSC, association,
 foundation, and cooperative profile-calendar rules, convocation act-review
-guidance markers plus convocation-notice local WFL/legal-calendar advisory
-markers for `act-convening-notice` open-act reminders including the
-missing-meeting-date non-computed reminder path and focused
-`#convening-guidance` workflow UI routing depth,
+guidance markers plus convening dispatch evidence capture markers and
+convocation-notice local WFL/legal-calendar advisory markers for
+`act-convening-notice` open-act reminders including the missing-meeting-date
+non-computed reminder path and focused `#convening-guidance` workflow UI
+routing depth,
 compact validator-report actions, template provenance UI, release clean-source
 provenance gating, local CC batch-signing UI markers for BatchSigningPanel,
 `useCcBatchSign`, `POST /v1/signature/cc/batch-sign`, optional transient PIN
@@ -680,6 +681,20 @@ imported-document review notification/export browser E2E marker plus the
 guardrail acknowledgement payload, ordered review-history rendering, and
 canonical act-document download assertions; Playwright execution remains in the
 browser jobs so this recent-landed lane stays focused.
+
+Convening dispatch evidence capture markers pin local workflow evidence capture
+only: the web client exposes `dispatchActConvening`, `useDispatchActConvening`,
+and `DispatchActConveningBody` for the existing
+`POST /v1/acts/{id}/convening/dispatch` endpoint; the Ata editor builds a
+dispatch body from the existing convening recipients plus required
+`dispatched_at` and optional channel/reference metadata; the focused
+editor/client tests pin the endpoint request, recipient stamping, local success
+copy, and the explicit no email/SMS, no external-delivery confirmation, no
+legal-sufficiency, no workflow-completion, and no registry/DRE/provider
+acceptance copy. These markers do not create recipients, change backend
+behavior, send notifications, perform external delivery, or claim legal
+authority, legal sufficiency, compliance completion, workflow completion,
+registry/DRE/provider acceptance, legal effect, or legal/compliance completion.
 
 Convocation-notice advisory markers pin the local statute/convening evidence
 slice only: core `STATUTE/convocation-notice-*` warnings for missing,

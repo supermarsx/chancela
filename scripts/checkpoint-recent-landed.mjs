@@ -10421,12 +10421,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `82d3554`",
+    "Updated 2026-07-15 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `caae1bf`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `82d3554`",
+    "Focused Gate Snapshot Through `caae1bf`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -11066,7 +11066,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `82d3554`",
+    "Current checkpoint metadata/static checks through `caae1bf`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -11601,7 +11601,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `82d3554fdd20b0eaff809e4ff809bdd2b1bce5dc`",
+    "implementation snapshot `caae1bfdb05338905654afe90ee480ae7b876f49`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -12103,6 +12103,106 @@ function assertCheckpointMap() {
     "docs/CI-E2E-HARDENING-PLAN.md",
     "dashboard reminder emission needs `meeting_date` to compute `notice_due_date`",
     "CI/E2E hardening plan convocation-notice limitation marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Current `caae1bf` keeps Workflows/Legal/Compliance/UX/API/CI **PARTIAL**",
+    "spec coverage convening dispatch evidence capture checkpoint marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "the Ata editor now builds a bounded dispatch body from the existing `act.convening` recipients",
+    "spec coverage convening dispatch body source marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "The existing endpoint accepts required `dispatched_at` plus optional `actor`, `channel`, `reference`, and `recipients`, returns `ActView`, stamps matching `convening.recipients`, and appends `convening.dispatched` ledger evidence; no backend changes were needed",
+    "spec coverage convening dispatch existing endpoint marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "records evidence only for recipients already present in `act.convening`, does not create recipients, does not perform email/SMS/external delivery",
+    "spec coverage convening dispatch residual limitation marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Current `caae1bf` convening dispatch evidence capture checks",
+    "CI/E2E hardening plan convening dispatch evidence marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "local workflow evidence capture through the existing `POST /v1/acts/{id}/convening/dispatch` endpoint",
+    "CI/E2E hardening plan convening dispatch endpoint marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "Convening dispatch evidence capture markers pin local workflow evidence capture\nonly",
+    "CI checkpoints convening dispatch evidence marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-CHECKPOINTS.md",
+    "These markers do not create recipients, change backend behavior, send notifications, perform external delivery",
+    "CI checkpoints convening dispatch no-backend-delivery marker",
+  );
+  assertFileContains(
+    "apps/web/src/api/types.ts",
+    "export interface DispatchActConveningBody",
+    "web type act convening dispatch body marker",
+  );
+  assertFileContains(
+    "apps/web/src/api/client.ts",
+    "post<ActView>(`/v1/acts/${id}/convening/dispatch`, body)",
+    "web client act convening dispatch endpoint marker",
+  );
+  assertFileContains(
+    "apps/web/src/api/hooks.ts",
+    "export function useDispatchActConvening(id: string)",
+    "web hook act convening dispatch mutation marker",
+  );
+  assertFileContains(
+    "apps/web/src/api/hooks.ts",
+    "mutationFn: (body: DispatchActConveningBody) => api.dispatchActConvening(id, body)",
+    "web hook act convening dispatch client marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/AtaEditorPage.tsx",
+    "function conveningDispatchEvidenceBody",
+    "Ata editor convening dispatch body builder marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/AtaEditorPage.tsx",
+    "const recipients = conveningDispatchRecipientNames(convening);",
+    "Ata editor convening dispatch existing recipients marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/AtaEditorPage.tsx",
+    "if (dispatchedAt === '' || recipients.length === 0) return null;",
+    "Ata editor convening dispatch required date and recipient marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/AtaEditorPage.tsx",
+    "Não envia email/SMS, não confirma entrega externa, não afirma suficiência legal, conclusão do workflow, aceitação por registo/DRE nem aceitação por prestador.",
+    "Ata editor convening dispatch no-claim copy marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/AtaEditorPage.tsx",
+    "toast.success('Evidência local de expedição registada.');",
+    "Ata editor convening dispatch success copy marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/AtaEditorStructured.test.tsx",
+    "records convening dispatch evidence through the endpoint as local provenance only",
+    "Ata editor convening dispatch local evidence unit coverage marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/AtaEditorStructured.test.tsx",
+    "recipients: ['Ana Sócia', 'Bruno Sócio']",
+    "Ata editor convening dispatch recipient payload coverage marker",
+  );
+  assertFileContains(
+    "apps/web/src/api/client.test.ts",
+    "records act convening dispatch evidence through the act endpoint",
+    "web client act convening dispatch endpoint coverage marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
