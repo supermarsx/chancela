@@ -77,6 +77,10 @@ export default defineConfig({
         'src/i18n/types.ts',
         'src/ui/toast/types.ts',
       ],
+      // CI waiver ci.coverage.thresholds.non_web_unit: these thresholds apply
+      // only to apps/web Vitest/V8 unit tests. Browser/desktop/Docker/live-provider
+      // coverage thresholds remain explicit waiver debt outside the apps/web
+      // Vitest/V8 unit-test lane.
       thresholds: {
         statements: 90,
         branches: 78,

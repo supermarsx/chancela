@@ -270,6 +270,20 @@ blockers.
 
 Implementation checkpoints covered here:
 
+- Current CI assurance waiver guard keeps CI **PARTIAL**:
+  `docs/ci-assurance-waivers.json` records waiver
+  `ci.coverage.thresholds.non_web_unit`, and
+  `npm run check:ci-assurance-waivers` verifies its required owner, review
+  cadence, review scope, and no-claim text. The guard also asserts backing
+  caveats in this file, `docs/CI-E2E-HARDENING-PLAN.md`,
+  `.github/workflows/ci.yml`, and `apps/web/vite.config.ts`.
+  browser/desktop/Docker/live-provider coverage thresholds remain explicit
+  waiver debt outside the apps/web Vitest/V8 unit-test lane. This is static
+  debt accounting only: it does not add browser, desktop, Docker, or
+  live-provider thresholds; does not add browser-matrix enforcement, release
+  readiness, legal/provider/signing assurance, Docker attestation, or
+  production readiness; and does not reduce PARTIAL=11.
+
 - Current `628b613` keeps Data/Architecture/CI **PARTIAL**: the live Postgres
   store test harness now creates a per-test child database from the configured
   `DATABASE_URL`, points each ignored `postgres_backend` case at its own child
@@ -4641,7 +4655,9 @@ behavior, legal disposal, or legal-effect claims.
   legal-validity, authoritative-source certification, or AI-quality assessment.
 - CI/release assurance: broaden browser E2E for critical workflows beyond the current focused
   signed-invite, export/save, imported-document review/notification-export, notification-popup, and
-  data-key rotation execution regressions, add or explicitly waive coverage thresholds beyond the web unit-test lane, convert
+  data-key rotation execution regressions, retire the explicit
+  `ci.coverage.thresholds.non_web_unit` waiver by adding threshold-backed
+  coverage beyond the web unit-test lane, convert
   compile-only live signature seams into controlled integration lanes where credentials/hardware
   exist, harden package provenance beyond manifest/checksum/source metadata, SBOM package-linkage
   checks, and release-trust metadata-anchor guards, move Docker profiles toward production HA/ops
@@ -5035,7 +5051,9 @@ behavior, legal disposal, or legal-effect claims.
   cross-cutting coverage, and web unit tests now enforce coverage thresholds, but the current
   browser suite is not exhaustive, the signed-invite/export/save/imported review/notification-popup
   browser slices are focused regressions, static checkpoint markers are deletion/rename guards, and
-  other lanes do not have broad coverage thresholds.
+  the `ci.coverage.thresholds.non_web_unit` waiver records that
+  browser/desktop/Docker/live-provider coverage thresholds remain explicit
+  waiver debt outside the apps/web Vitest/V8 unit-test lane.
 - Written-resolution evidence warnings, checklist/digest status, and seal-digest
   binding are operator-supplied evidence records only; they are not proof of
   written consent, quorum, vote threshold, participant identity, or legal

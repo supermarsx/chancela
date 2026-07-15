@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "waivers": [
+    {
+      "id": "ci.coverage.thresholds.non_web_unit",
+      "status": "accepted_debt",
+      "owner": "Engineering / CI",
+      "scope": "Broad coverage thresholds for browser E2E, desktop smoke/check, Docker build/smoke, and live-provider compile/no-run lanes outside the apps/web Vitest/V8 unit-test lane.",
+      "review_scope": [
+        "Browser E2E coverage thresholds outside apps/web Vitest/V8 unit tests",
+        "Desktop smoke/check coverage thresholds outside apps/web Vitest/V8 unit tests",
+        "Docker build/smoke coverage thresholds outside apps/web Vitest/V8 unit tests",
+        "Live-provider compile/no-run coverage thresholds outside apps/web Vitest/V8 unit tests"
+      ],
+      "review_cadence": "quarterly",
+      "next_review_due": "2026-10-15",
+      "no_claim": "This waiver records explicit CI debt only. It does not claim broad coverage threshold enforcement for browser, desktop, Docker, or live-provider lanes; browser-matrix enforcement; release readiness; provider, legal, or signing assurance; Docker attestation; production readiness; or a reduced PARTIAL count."
+    }
+  ]
+}

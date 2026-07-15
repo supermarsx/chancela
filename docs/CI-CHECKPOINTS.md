@@ -26,6 +26,24 @@ This is static/compile-time assurance only. It does not use credentials, make
 network calls, touch card readers, or run live tests, and it does not prove live
 provider validity or authority approval.
 
+## CI Assurance Waivers
+
+`npm run check:ci-assurance-waivers` parses
+`docs/ci-assurance-waivers.json` and fails if the
+`ci.coverage.thresholds.non_web_unit` waiver loses required status, owner,
+review scope, review cadence, review due date, or no-claim text. It also checks
+that the waiver stays wired into package scripts and the cheap CI metadata lane.
+
+browser/desktop/Docker/live-provider coverage thresholds remain explicit waiver
+debt outside the apps/web Vitest/V8 unit-test lane. The checker verifies that
+this caveat remains visible in `SPEC-COVERAGE.md`,
+`docs/CI-E2E-HARDENING-PLAN.md`, `.github/workflows/ci.yml`, and
+`apps/web/vite.config.ts`. This is no-claim static debt accounting only: it
+does not add browser, desktop, Docker, or live-provider thresholds,
+browser-matrix enforcement, release readiness, provider/legal/signing
+assurance, Docker attestation, production readiness, or a spec completion
+claim.
+
 ## Recent Landed Areas
 
 `npm run test:checkpoint:recent-landed` is a focused local and CI guard for
@@ -771,7 +789,7 @@ completion boundaries, plus document-bundle
 `evidence/generated-dispatch/{document_id}.json` sidecar/index markers,
 focused composed-server generated-convening E2E persistence/restart/archive
 sidecar/read-only export markers,
-live-provider assurance markers, validator manifest,
+live-provider assurance markers, CI assurance waiver guard markers, validator manifest,
 Arquivo paged-ledger route/default-limit/cursor markers, 1000+ event first-page
 and load-more coverage, `Store::ledger_events_page` persisted-pager markers,
 API after-reload/memory-clear store-pager coverage, shared list/export search

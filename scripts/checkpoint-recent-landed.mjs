@@ -84,6 +84,10 @@ const checks = [
     command: npmCommand(["run", "check:live-provider-assurance"]),
   },
   {
+    name: "CI assurance waiver static gate",
+    command: npmCommand(["run", "check:ci-assurance-waivers"]),
+  },
+  {
     name: "API local PKCS#12 signing tests",
     command: [
       "cargo",
@@ -13038,6 +13042,41 @@ function assertCheckpointMap() {
     "docs/CI-CHECKPOINTS.md",
     "Default CI now runs only the store runtime\nwrite/read test",
     "CI checkpoints narrow Postgres live CI marker",
+  );
+  assertFileContains(
+    "docs/ci-assurance-waivers.json",
+    "\"id\": \"ci.coverage.thresholds.non_web_unit\"",
+    "CI assurance waiver manifest marker",
+  );
+  assertFileContains(
+    "scripts/check-ci-assurance-waivers.mjs",
+    "browser/desktop/Docker/live-provider coverage thresholds remain explicit waiver debt outside the apps/web Vitest/V8 unit-test lane",
+    "CI assurance waiver checker debt marker",
+  );
+  assertFileContains(
+    "package.json",
+    "\"check:ci-assurance-waivers\": \"node scripts/check-ci-assurance-waivers.mjs\"",
+    "CI assurance waiver package script marker",
+  );
+  assertFileContains(
+    ".github/workflows/ci.yml",
+    "npm run check:ci-assurance-waivers",
+    "CI assurance waiver workflow metadata marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "ci.coverage.thresholds.non_web_unit",
+    "spec coverage CI assurance waiver marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "browser/desktop/Docker/live-provider coverage thresholds remain explicit waiver debt outside the apps/web Vitest/V8 unit-test lane",
+    "CI/E2E hardening plan CI assurance waiver marker",
+  );
+  assertFileContains(
+    "apps/web/vite.config.ts",
+    "CI waiver ci.coverage.thresholds.non_web_unit",
+    "web Vitest coverage threshold waiver comment marker",
   );
   assertFileContains(
     ".github/workflows/ci.yml",

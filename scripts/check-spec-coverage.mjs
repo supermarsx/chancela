@@ -27,12 +27,17 @@ const expectedSpecs = [
 ];
 const allowedStatuses = new Set(["PARTIAL", "BLOCKED", "COMPLETE"]);
 const checkpointPaths = new Set([
+  ".github/workflows/ci.yml",
   "SPEC-COVERAGE.md",
+  "apps/web/vite.config.ts",
   "docs/AI-PROVENANCE.md",
   "docs/ARCHITECTURE.md",
   "docs/CI-CHECKPOINTS.md",
   "docs/CI-E2E-HARDENING-PLAN.md",
   "docs/CI-RELEASE-HARDENING.md",
+  "docs/ci-assurance-waivers.json",
+  "package.json",
+  "scripts/check-ci-assurance-waivers.mjs",
   "scripts/check-spec-coverage.mjs",
   "scripts/checkpoint-recent-landed.mjs",
 ]);

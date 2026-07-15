@@ -42,6 +42,12 @@ jobs:
       - name: Check spec coverage tracker
         run: npm run check:spec-coverage
 
+      # ci.coverage.thresholds.non_web_unit: browser/desktop/Docker/live-provider
+      # coverage thresholds remain explicit waiver debt outside the apps/web
+      # Vitest/V8 unit-test lane.
+      - name: Check CI assurance waivers
+        run: npm run check:ci-assurance-waivers
+
       - name: Check live-provider assurance gates
         run: npm run check:live-provider-assurance
 

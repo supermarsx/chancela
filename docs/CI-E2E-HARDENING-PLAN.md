@@ -121,6 +121,10 @@ test operating checklist for driving Chancela toward release confidence.
 - Web format, ESLint, Vitest/V8 coverage thresholds, and Vite build run on Node
   20 and Node 24; the web CI test command is
   `npm run test:coverage --workspace apps/web`.
+- `npm run check:ci-assurance-waivers` enforces the explicit
+  `ci.coverage.thresholds.non_web_unit` debt record. browser/desktop/Docker/live-provider
+  coverage thresholds remain explicit waiver debt outside the apps/web
+  Vitest/V8 unit-test lane; the guard does not add those thresholds.
 - Supply-chain CI generates and validates a CycloneDX dependency SBOM from
   `package-lock.json` plus `cargo metadata --locked`, uploads npm/Cargo advisory
   reports, and can make those reports blocking only on manual runs with
@@ -170,7 +174,9 @@ test operating checklist for driving Chancela toward release confidence.
 
 - Current browser e2e coverage is smoke/edge oriented rather than exhaustive.
   The enforced coverage thresholds are Vitest/V8 web-unit thresholds, so they do
-  not prove browser, desktop, Docker, or live-provider coverage.
+  not prove browser, desktop, Docker, or live-provider coverage. The
+  `ci.coverage.thresholds.non_web_unit` waiver keeps that gap explicit in CI; it
+  does not add those thresholds.
 - Live signature/provider seams are compile-only checks; they do not exercise
   live CMD, CSC/QTSP, CC hardware, production TSL, or production TSA paths.
 - Release packages are unsigned/not notarized, and Docker images are not
