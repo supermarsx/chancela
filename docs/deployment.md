@@ -179,9 +179,18 @@ docker compose -f docker/docker-compose.yml --profile postgres \
 
 !!! info "Write throughput on Postgres"
     On SQLite a store write is a microsecond-scale local file write; on Postgres
-    it becomes a network round-trip. The app routes those hot store calls through
-    `spawn_blocking` so a tokio worker is not blocked while the single ledger
-    write lock is held. Throughput remains bounded by the single-writer design.
+    it becomes a network round-trip. The write path is asynchronous:
+    `AppState::persist_write_through` is an `async fn`, and the durable store
+    transaction itself is a **synchronous** driver call (the store keeps a sync
+    `postgres`+r2d2 / rusqlite driver by design — no `tokio-postgres`/sqlx swap).
+    To keep a tokio worker from blocking on that synchronous call, it is offloaded
+    onto tokio's blocking thread pool via `Store::persist_blocking_async`, a thin
+    wrapper that runs the existing sync `Store::persist` inside
+    `tokio::task::spawn_blocking`. The async worker thread is freed for other
+    requests while the write is in flight, but the ledger write lock is still held
+    across the `.await` (a held lock cannot interleave sequence numbers), so
+    **throughput remains bounded by the single-writer design** — the offload frees
+    the worker thread, not the write lock.
 
 ## Hardened images (production path)
 

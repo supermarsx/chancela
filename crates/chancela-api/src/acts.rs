@@ -72,7 +72,10 @@ pub async fn draft_act(
     let payload = serde_json::to_vec(&act)?;
     // Validating append (t54): reject a chain-breaking append before mutating the ledger.
     crate::try_append_event(&mut ledger, &actor, &scope, "act.drafted", None, &payload)?;
-    state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_act(&act))?;
+    let act_for_store = act.clone();
+    state
+        .persist_write_through(&mut ledger, 1, move |tx| tx.upsert_act(&act_for_store))
+        .await?;
     state.attest_latest(&attestor, &ledger).await;
 
     let view = ActView::from(&act);
@@ -257,14 +260,19 @@ pub async fn patch_act(
     )?;
     #[cfg(test)]
     if next.title == "__chancela_test_fail_patch_persist__" {
-        state.persist_write_through(&mut ledger, 1, |_tx| {
-            Err(chancela_store::StoreError::BadBackup(
-                "injected patch persistence failure".to_owned(),
-            ))
-        })?;
+        state
+            .persist_write_through(&mut ledger, 1, |_tx| {
+                Err(chancela_store::StoreError::BadBackup(
+                    "injected patch persistence failure".to_owned(),
+                ))
+            })
+            .await?;
         unreachable!("injected persistence failure must return an error");
     }
-    state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_act(&next))?;
+    let next_for_store = next.clone();
+    state
+        .persist_write_through(&mut ledger, 1, move |tx| tx.upsert_act(&next_for_store))
+        .await?;
     state.attest_latest(&attestor, &ledger).await;
     *act = next;
 
@@ -369,13 +377,18 @@ pub async fn advance_act(
     }
 
     let appended_events = 1 + usize::from(signing_snapshot.is_some());
-    state.persist_write_through(&mut ledger, appended_events, |tx| {
-        tx.upsert_act(&next)?;
-        if let Some(snapshot) = &signing_snapshot {
-            tx.upsert_document(&snapshot.stored)?;
-        }
-        Ok(())
-    })?;
+    let next_for_store = next.clone();
+    // `Generated` is not `Clone`; capture only the owned `stored` document the tx needs.
+    let snapshot_stored_for_store = signing_snapshot.as_ref().map(|s| s.stored.clone());
+    state
+        .persist_write_through(&mut ledger, appended_events, move |tx| {
+            tx.upsert_act(&next_for_store)?;
+            if let Some(stored) = &snapshot_stored_for_store {
+                tx.upsert_document(stored)?;
+            }
+            Ok(())
+        })
+        .await?;
     state.attest_latest(&attestor, &ledger).await;
     *act = next;
 
@@ -451,7 +464,10 @@ pub async fn verify_ai_human_review(
         Some(justification),
         &payload,
     )?;
-    state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_act(&next))?;
+    let next_for_store = next.clone();
+    state
+        .persist_write_through(&mut ledger, 1, move |tx| tx.upsert_act(&next_for_store))
+        .await?;
     state.attest_latest(&attestor, &ledger).await;
     *act = next;
 
@@ -897,14 +913,23 @@ pub async fn seal_act_handler(
                     }
                 }
             }
-            state.persist_write_through(&mut ledger, base_events + generated_docs.len(), |tx| {
-                tx.upsert_book(&book_next)?;
-                tx.upsert_act(&act_next)?;
-                for made in &generated_docs {
-                    tx.upsert_document(&made.stored)?;
-                }
-                Ok(())
-            })?;
+            let book_for_store = book_next.clone();
+            let act_for_store = act_next.clone();
+            // `Generated` is not `Clone`; capture only the owned `stored` documents the tx needs.
+            let docs_stored_for_store: Vec<_> = generated_docs
+                .iter()
+                .map(|made| made.stored.clone())
+                .collect();
+            state
+                .persist_write_through(&mut ledger, base_events + generated_docs.len(), move |tx| {
+                    tx.upsert_book(&book_for_store)?;
+                    tx.upsert_act(&act_for_store)?;
+                    for stored in &docs_stored_for_store {
+                        tx.upsert_document(stored)?;
+                    }
+                    Ok(())
+                })
+                .await?;
             for made in &generated_docs {
                 crate::documents::publish_generated_document_read_model(&state, &made.stored).await;
             }
@@ -1035,7 +1060,10 @@ pub async fn archive_act(
     let scope = format!("entity:{}/book:{}/act:{}", entity_id, next.book_id, next.id);
     let payload = serde_json::to_vec(&next)?;
     crate::try_append_event(&mut ledger, &actor, &scope, "act.archived", None, &payload)?;
-    state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_act(&next))?;
+    let next_for_store = next.clone();
+    state
+        .persist_write_through(&mut ledger, 1, move |tx| tx.upsert_act(&next_for_store))
+        .await?;
     state.attest_latest(&attestor, &ledger).await;
     *act = next;
 
@@ -1124,7 +1152,10 @@ pub async fn convening_dispatch(
         Some(&justification),
         &payload,
     )?;
-    state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_act(&next))?;
+    let next_for_store = next.clone();
+    state
+        .persist_write_through(&mut ledger, 1, move |tx| tx.upsert_act(&next_for_store))
+        .await?;
     state.attest_latest(&attestor, &ledger).await;
     *act = next;
 
@@ -1316,6 +1347,7 @@ mod tests {
         .expect("book genesis");
         state
             .persist_write_through(&mut ledger, 2, |_tx| Ok(()))
+            .await
             .expect("ledger genesis persists");
     }
 
@@ -1454,6 +1486,70 @@ mod tests {
                 .get(&act.id)
                 .map(|row| row.title.as_str()),
             Some("Original title")
+        );
+    }
+
+    /// wp27-e9 invariant #4 (atomicity across the async boundary): `persist_write_through` is now an
+    /// `async fn` that offloads the durable transaction onto tokio's blocking pool via
+    /// `Store::persist_blocking_async` (`spawn_blocking`). A durable-write failure — surfaced from
+    /// inside that offloaded closure — must still leave the in-memory ledger UNMUTATED (rebuilt
+    /// without the just-appended tail) and must NOT advance the durable chain. This runs on the
+    /// **multi-threaded** runtime (the production flavor), so the failure is observed after a real
+    /// worker→blocking-thread→worker handoff, and the ledger write guard is held across the whole
+    /// `.await` (no release/reacquire), which is what keeps sequence numbers from interleaving.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn failed_persist_leaves_in_memory_ledger_unmutated_across_async_boundary() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.path());
+        let entity = entity_of(EntityKind::SociedadePorQuotas);
+        let book = opened_book(&entity, BookKind::AssembleiaGeral);
+        seed_opened_book_ledger(&state, &entity, &book).await;
+
+        let events_before = state.ledger.read().await.len();
+
+        // Append an event in memory, then attempt a durable persist whose `upserts` closure fails
+        // *inside* the offloaded blocking task. The write guard is held across the `.await`.
+        let error = {
+            let mut ledger = state.ledger.write().await;
+            crate::try_append_event(
+                &mut ledger,
+                "patch.owner",
+                &format!("entity:{}/book:{}", entity.id, book.id),
+                "book.metadata_noted",
+                None,
+                b"tail event that must be rolled back",
+            )
+            .expect("append tail event");
+            assert_eq!(
+                ledger.len(),
+                events_before + 1,
+                "the event is appended to the in-memory ledger before the durable write"
+            );
+            state
+                .persist_write_through(&mut ledger, 1, |_tx| {
+                    Err(chancela_store::StoreError::BadBackup(
+                        "injected durable-write failure across the async boundary".to_owned(),
+                    ))
+                })
+                .await
+                .expect_err("a failed durable persist must return an error")
+        };
+        assert!(matches!(error, ApiError::Internal(_)));
+
+        // The in-memory ledger was rebuilt WITHOUT the just-appended tail event.
+        assert_eq!(
+            state.ledger.read().await.len(),
+            events_before,
+            "a failed persist must leave the in-memory ledger unmutated"
+        );
+
+        // The durable chain never advanced: a fresh state hydrated from the same data dir reloads
+        // exactly the pre-failure length.
+        let restarted = AppState::with_data_dir(tmp.path());
+        assert_eq!(
+            restarted.ledger.read().await.len(),
+            events_before,
+            "a failed persist must not extend the durable chain"
         );
     }
 

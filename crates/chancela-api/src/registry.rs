@@ -834,7 +834,10 @@ pub async fn request_registry_auto_update(
             &payload,
         );
         let seq = ledger.events().last().map(|e| e.seq);
-        if let Err(e) = state.persist_write_through(&mut ledger, 1, |_tx| Ok(())) {
+        if let Err(e) = state
+            .persist_write_through(&mut ledger, 1, |_tx| Ok(()))
+            .await
+        {
             current_state.status = RegistryAutoUpdateStatus::Failed;
             current_state.last_error = Some(format!("failed to persist audit event: {e:?}"));
             return Err(e);
@@ -910,10 +913,14 @@ pub async fn import_into_entity(
             Some("registry import"),
             &payload,
         );
-        state.persist_write_through(&mut ledger, 1, |tx| {
-            tx.upsert_entity(&next)?;
-            tx.upsert_registry_extract(eid, &extract)
-        })?;
+        let next_for_store = next.clone();
+        let extract_for_store = extract.clone();
+        state
+            .persist_write_through(&mut ledger, 1, move |tx| {
+                tx.upsert_entity(&next_for_store)?;
+                tx.upsert_registry_extract(eid, &extract_for_store)
+            })
+            .await?;
         state.attest_latest(&attestor, &ledger).await;
         *entity = next;
         extracts.insert(eid, extract.clone());
@@ -1039,10 +1046,14 @@ pub async fn import_from_registry(
             Some("registry import"),
             &imported,
         );
-        state.persist_write_through(&mut ledger, 2, |tx| {
-            tx.upsert_entity(&entity)?;
-            tx.upsert_registry_extract(eid, &extract)
-        })?;
+        let entity_for_store = entity.clone();
+        let extract_for_store = extract.clone();
+        state
+            .persist_write_through(&mut ledger, 2, move |tx| {
+                tx.upsert_entity(&entity_for_store)?;
+                tx.upsert_registry_extract(eid, &extract_for_store)
+            })
+            .await?;
         state.attest_latest(&attestor, &ledger).await;
         entities.insert(eid, entity.clone());
         extracts.insert(eid, extract.clone());

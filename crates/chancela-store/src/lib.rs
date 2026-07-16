@@ -3273,6 +3273,45 @@ impl Store {
         }
     }
 
+    /// Async wrapper over [`Store::persist`] (wp27-e9): offload the synchronous, blocking store
+    /// transaction onto tokio's blocking thread pool so the calling async worker thread is never
+    /// blocked while the ledger write lock is held.
+    ///
+    /// The store driver stays synchronous by deliberate design (wp16; §2.3 Option A) — this does
+    /// **not** make the database async. It only moves the blocking transaction off the async worker
+    /// via `spawn_blocking`, which requires the closure to be `Send + 'static`: callers therefore
+    /// pass an **owned** closure (no borrows of caller-local state). [`Store`] is cheap to clone
+    /// (`Arc<Mutex<..>>` / pooled connections), so the clone captured by the blocking task shares
+    /// the *same* single SQLite connection / advisory-locked Postgres writer — every ordering,
+    /// single-writer, and atomicity invariant is preserved verbatim.
+    pub async fn persist_blocking_async<F>(&self, f: F) -> Result<(), StoreError>
+    where
+        F: FnOnce(&Tx<'_>) -> Result<(), StoreError> + Send + 'static,
+    {
+        self.persist_result_blocking_async(f).await
+    }
+
+    /// Async, value-returning counterpart of [`Store::persist_blocking_async`], mirroring
+    /// [`Store::persist_result`] for the idempotent write sites that report whether they inserted a
+    /// row. Same `spawn_blocking` offload and `Send + 'static` closure requirement; `T` crosses the
+    /// blocking-task boundary and so must also be `Send + 'static`.
+    pub async fn persist_result_blocking_async<T, F>(&self, f: F) -> Result<T, StoreError>
+    where
+        T: Send + 'static,
+        F: FnOnce(&Tx<'_>) -> Result<T, StoreError> + Send + 'static,
+    {
+        // Cheap clone (shared `Arc<Mutex<..>>` / pool) so the blocking task drives the exact same
+        // underlying connection and advisory-locked writer as the caller.
+        let store = self.clone();
+        match tokio::task::spawn_blocking(move || store.persist_result(f)).await {
+            Ok(result) => result,
+            // Re-raise a panic in the transaction on the caller, matching the previous behaviour of
+            // the inline synchronous call (a panic unwound the request task). `spawn_blocking` tasks
+            // are not cancellable once started, so a non-panic `JoinError` does not occur here.
+            Err(join_error) => std::panic::resume_unwind(join_error.into_panic()),
+        }
+    }
+
     /// Snapshot the database with `VACUUM INTO` (transactionally consistent, no downtime), bundle
     /// it with the given `sidecars` and a `manifest.json` into a single zip under
     /// `<data_dir>/backups/`, and return the [`BackupManifest`] (frozen §3.2).

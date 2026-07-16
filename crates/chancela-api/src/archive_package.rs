@@ -1158,7 +1158,9 @@ async fn execute_book_disposal(
         Some("Archive disposal execution recorded without physical deletion"),
         &payload,
     )?;
-    state.persist_write_through(&mut ledger, 1, |_| Ok(()))?;
+    state
+        .persist_write_through(&mut ledger, 1, |_| Ok(()))
+        .await?;
     let event = ledger
         .events()
         .last()
@@ -2572,14 +2574,19 @@ mod tests {
             let book_scope = format!("entity:{}/book:{}", entity.id, book.id);
             ledger.append("owner", &book_scope, "book.opened", None, b"opened");
             ledger.append("owner", &book_scope, "book.closed", None, b"closed");
+            let entity_for_store = entity.clone();
+            let book_for_store = book.clone();
+            let act_for_store = act.clone();
+            let document_for_store = document.clone();
             state
-                .persist_write_through(&mut ledger, 3, |tx| {
-                    tx.upsert_entity(&entity)?;
-                    tx.upsert_book(&book)?;
-                    tx.upsert_act(&act)?;
-                    tx.upsert_document(&document)?;
+                .persist_write_through(&mut ledger, 3, move |tx| {
+                    tx.upsert_entity(&entity_for_store)?;
+                    tx.upsert_book(&book_for_store)?;
+                    tx.upsert_act(&act_for_store)?;
+                    tx.upsert_document(&document_for_store)?;
                     Ok(())
                 })
+                .await
                 .expect("persist archive fixture");
         }
 

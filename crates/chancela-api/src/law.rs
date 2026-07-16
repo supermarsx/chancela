@@ -407,7 +407,9 @@ pub async fn fetch_law(
             &payload,
         );
         // Persist the audit event; the PDF + its metadata are durable via the `laws/` archive.
-        state.persist_write_through(&mut ledger, 1, |_tx| Ok(()))?;
+        state
+            .persist_write_through(&mut ledger, 1, |_tx| Ok(()))
+            .await?;
         state.attest_latest(&attestor, &ledger).await;
     }
 
@@ -486,7 +488,9 @@ pub async fn delete_law_pdf(
             &payload,
         );
         // Persist the audit event; the archive removal is durable via the `laws/` state file.
-        state.persist_write_through(&mut ledger, 1, |_tx| Ok(()))?;
+        state
+            .persist_write_through(&mut ledger, 1, |_tx| Ok(()))
+            .await?;
         state.attest_latest(&attestor, &ledger).await;
     }
 

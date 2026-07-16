@@ -572,10 +572,14 @@ pub async fn start_over_book(
                 None,
                 &payload,
             )?;
-            state.persist_write_through(&mut ledger, 2, |tx| {
-                tx.upsert_book(&new_book)?;
-                tx.upsert_document(&made.stored)
-            })?;
+            let new_book_for_store = new_book.clone();
+            let stored_for_store = made.stored.clone();
+            state
+                .persist_write_through(&mut ledger, 2, move |tx| {
+                    tx.upsert_book(&new_book_for_store)?;
+                    tx.upsert_document(&stored_for_store)
+                })
+                .await?;
             state
                 .documents
                 .write()
@@ -583,7 +587,12 @@ pub async fn start_over_book(
                 .insert(made.stored.act_id, made.stored.clone());
         }
         None => {
-            state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_book(&new_book))?;
+            let new_book_for_store = new_book.clone();
+            state
+                .persist_write_through(&mut ledger, 1, move |tx| {
+                    tx.upsert_book(&new_book_for_store)
+                })
+                .await?;
         }
     }
     state.attest_latest(&attestor, &ledger).await;

@@ -25,7 +25,6 @@ postgres = [
     "dep:r2d2",
     "dep:r2d2_postgres",
     "dep:rustls",
-    "dep:tokio",
     "dep:tokio-rustls",
     "dep:rustls-native-certs",
 ]
@@ -66,9 +65,14 @@ r2d2_postgres = { version = "0.18", optional = true }
 # `tokio-rustls` in `pg_tls.rs`, so the sync `postgres`+r2d2 stack gains sslmode=require/verify-full
 # WITHOUT dragging in OpenSSL (`postgres-native-tls`/`postgres-openssl`). rustls + its trust-root /
 # PEM parsing is provided by rustls' own `pki_types`, so no unmaintained helper dependency is
-# required. `tokio` is needed only for the `AsyncRead`/`AsyncWrite` trait bounds the tokio-postgres
-# TLS traits require; the sync driver still owns its own runtime.
+# required. `tokio` is needed for the `AsyncRead`/`AsyncWrite` trait bounds the tokio-postgres
+# TLS traits require (postgres feature) AND, unconditionally, for `spawn_blocking` in
+# `Store::persist_blocking_async` (wp27-e9): the async write-path wrapper offloads the synchronous
+# `Store::persist` onto tokio's blocking pool so a chancela-api worker thread is never blocked while
+# the ledger write lock is held. Only the `rt` feature is needed and it is compile-only for the
+# non-server editions (the method is invoked solely from chancela-api's tokio runtime); the sync
+# store driver itself is unchanged.
 rustls = { version = "0.23", optional = true }
-tokio = { version = "1", optional = true, default-features = false }
+tokio = { version = "1", default-features = false, features = ["rt"] }
 tokio-rustls = { version = "0.26", optional = true }
 rustls-native-certs = { version = "0.8", optional = true }

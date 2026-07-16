@@ -395,7 +395,10 @@ async fn persist_target_registry_change(
             error.kind()
         )));
     }
-    if let Err(error) = state.persist_write_through(&mut ledger, 1, |_tx| Ok(())) {
+    if let Err(error) = state
+        .persist_write_through(&mut ledger, 1, |_tx| Ok(()))
+        .await
+    {
         if let Err(rollback_error) = write_targets_atomic(&path, previous) {
             eprintln!(
                 "connector target sidecar rollback failed after ledger persistence failure: {}",
@@ -1040,7 +1043,10 @@ pub(crate) async fn run_target(
         );
         match append {
             Err(error) => Err(error),
-            Ok(()) => match state.persist_write_through(&mut ledger, 1, |_tx| Ok(())) {
+            Ok(()) => match state
+                .persist_write_through(&mut ledger, 1, |_tx| Ok(()))
+                .await
+            {
                 Ok(()) => {
                     state.attest_latest(&attestor, &ledger).await;
                     Ok(())
@@ -1241,7 +1247,9 @@ async fn audit_staged_job_action(
         Some(&format!("connector-job:{}", snapshot.job.id)),
         &payload,
     )?;
-    state.persist_write_through(&mut ledger, 1, |_tx| Ok(()))?;
+    state
+        .persist_write_through(&mut ledger, 1, |_tx| Ok(()))
+        .await?;
     state.attest_latest(attestor, &ledger).await;
     Ok(())
 }

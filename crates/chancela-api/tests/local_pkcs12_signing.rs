@@ -496,8 +496,10 @@ fn local_sign_req_with_body(act_id: &str, token: &str, body: Value) -> Request<B
 
 #[tokio::test]
 async fn local_pkcs12_signs_as_advanced_technical_evidence_only() {
-    let mut state = AppState::default();
-    state.local_signing = true;
+    let state = AppState {
+        local_signing: true,
+        ..Default::default()
+    };
     let (token, _) = bootstrap(&state).await;
     state
         .settings
@@ -641,8 +643,10 @@ async fn local_pkcs12_signs_as_advanced_technical_evidence_only() {
 
 #[tokio::test]
 async fn local_pkcs12_scap_capacity_preprod_is_provider_declared_only() {
-    let mut state = AppState::default();
-    state.local_signing = true;
+    let state = AppState {
+        local_signing: true,
+        ..Default::default()
+    };
     let (token, _) = bootstrap(&state).await;
     disable_timestamping(&state).await;
     let book_id = seed_book(&state, &token).await;
@@ -712,8 +716,10 @@ async fn local_pkcs12_persists_verified_scap_capacity_evidence_from_prod_fixture
         std::env::set_var("CHANCELA_SCAP_SECRET", "local-pkcs12-scap-secret");
     }
 
-    let mut state = AppState::default();
-    state.local_signing = true;
+    let state = AppState {
+        local_signing: true,
+        ..Default::default()
+    };
     let (token, _) = bootstrap(&state).await;
     disable_timestamping(&state).await;
     let book_id = seed_book(&state, &token).await;
@@ -815,8 +821,10 @@ async fn local_pkcs12_persists_verified_scap_capacity_evidence_from_prod_fixture
 
 #[tokio::test]
 async fn local_pkcs12_rejects_mismatched_capacity_and_scap_attribute() {
-    let mut state = AppState::default();
-    state.local_signing = true;
+    let state = AppState {
+        local_signing: true,
+        ..Default::default()
+    };
     let (token, _) = bootstrap(&state).await;
     let book_id = seed_book(&state, &token).await;
     let act_id = create_signing_act(&state, &token, &book_id).await;
@@ -856,8 +864,10 @@ async fn local_pkcs12_rejects_mismatched_capacity_and_scap_attribute() {
 
 #[tokio::test]
 async fn local_pkcs12_wrong_passphrase_leaves_no_artifact() {
-    let mut state = AppState::default();
-    state.local_signing = true;
+    let state = AppState {
+        local_signing: true,
+        ..Default::default()
+    };
     let (token, _) = bootstrap(&state).await;
     let book_id = seed_book(&state, &token).await;
     let act_id = create_signing_act(&state, &token, &book_id).await;

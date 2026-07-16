@@ -7962,12 +7962,14 @@ pub async fn erasure_execute(
             .unwrap_or_default();
         let subject_key = subject_id.clone();
         let erased_at = executed_at.clone();
-        state.persist_write_through(&mut ledger, 1, move |tx| {
-            if dek_present {
-                tx.destroy_subject_key(&subject_key, &erased_at)?;
-            }
-            Ok(())
-        })?;
+        state
+            .persist_write_through(&mut ledger, 1, move |tx| {
+                if dek_present {
+                    tx.destroy_subject_key(&subject_key, &erased_at)?;
+                }
+                Ok(())
+            })
+            .await?;
         state.attest_latest(&attestor, &ledger).await;
         event_id
     };
@@ -8159,7 +8161,9 @@ async fn record_subject_annotation(
             .last()
             .map(|e| e.id.to_string())
             .unwrap_or_default();
-        state.persist_write_through(&mut ledger, 1, |_tx| Ok(()))?;
+        state
+            .persist_write_through(&mut ledger, 1, |_tx| Ok(()))
+            .await?;
         state.attest_latest(attestor, &ledger).await;
         (event_id, ledger.len())
     };
@@ -8429,7 +8433,9 @@ async fn record_dsr_event_locked(
         Some(justification),
         &bytes,
     )?;
-    state.persist_write_through(&mut ledger, 1, |_tx| Ok(()))?;
+    state
+        .persist_write_through(&mut ledger, 1, |_tx| Ok(()))
+        .await?;
     state.attest_latest(attestor, &ledger).await;
     Ok(())
 }
@@ -8453,7 +8459,9 @@ async fn record_privacy_event<T: Serialize>(
         Some(justification),
         &bytes,
     )?;
-    state.persist_write_through(&mut ledger, 1, |_| Ok(()))?;
+    state
+        .persist_write_through(&mut ledger, 1, |_| Ok(()))
+        .await?;
     state.attest_latest(attestor, &ledger).await;
     Ok(())
 }

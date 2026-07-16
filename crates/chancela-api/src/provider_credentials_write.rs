@@ -633,7 +633,9 @@ async fn audit(
     let bytes = serde_json::to_vec(&payload).unwrap_or_default();
     let mut ledger = state.ledger.write().await;
     ledger.append(&actor_label, AUDIT_SCOPE, kind, None, &bytes);
-    state.persist_write_through(&mut ledger, 1, |_tx| Ok(()))?;
+    state
+        .persist_write_through(&mut ledger, 1, |_tx| Ok(()))
+        .await?;
     state.attest_latest(attestor, &ledger).await;
     Ok(())
 }

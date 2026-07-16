@@ -192,7 +192,9 @@ pub async fn control_service(
             Some("platform service control requested"),
             &payload_bytes,
         );
-        state.persist_write_through(&mut ledger, 1, |_tx| Ok(()))?;
+        state
+            .persist_write_through(&mut ledger, 1, |_tx| Ok(()))
+            .await?;
         state.attest_latest(&attestor, &ledger).await;
     }
 

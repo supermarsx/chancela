@@ -1117,11 +1117,11 @@ impl AppState {
     /// memory matches the untouched durable chain) and a `500` error is returned; the caller must
     /// then **not** commit its aggregate change to the in-memory maps. This keeps memory and disk
     /// from ever diverging (the plan's ruling).
-    fn persist_write_through(
+    async fn persist_write_through(
         &self,
         ledger: &mut Ledger,
         event_count: usize,
-        upserts: impl FnOnce(&Tx<'_>) -> Result<(), StoreError>,
+        upserts: impl FnOnce(&Tx<'_>) -> Result<(), StoreError> + Send + 'static,
     ) -> Result<(), ApiError> {
         let Some(store) = &self.store else {
             return Ok(());
@@ -1143,13 +1143,24 @@ impl AppState {
         let len = ledger.len();
         // The events just appended are the tail of the chain; persist them plus the changed
         // aggregates atomically (one commits-or-rolls-back transaction).
+        //
+        // wp27-e9: the durable write is offloaded onto tokio's blocking pool via
+        // `persist_blocking_async` so this async worker thread is not blocked while the ledger write
+        // lock is held. `spawn_blocking` requires an owned (`Send + 'static`) closure, so the tail
+        // `events` (already an owned clone) and the caller-supplied `upserts` (now `Send + 'static`)
+        // are MOVED into it — the `&mut Ledger` guard is NOT captured; it stays on this task and is
+        // reconciled below only after the await. The guard is held across the await unchanged (no
+        // release/reacquire), so no `seq` can interleave (invariant #1).
         let events: Vec<Event> = ledger.events()[len - event_count..].to_vec();
-        if let Err(e) = store.persist(|tx| {
-            for event in &events {
-                tx.append_event(event)?;
-            }
-            upserts(tx)
-        }) {
+        if let Err(e) = store
+            .persist_blocking_async(move |tx| {
+                for event in &events {
+                    tx.append_event(event)?;
+                }
+                upserts(tx)
+            })
+            .await
+        {
             // Roll the in-memory ledger back to match the (unchanged) durable chain on disk.
             let kept: Vec<Event> = ledger.events()[..len - event_count].to_vec();
             *ledger = Ledger::try_from_events(kept).0;
@@ -14442,6 +14453,7 @@ mod tests {
             ledger.append("api", "settings", "settings.changed", None, b"after backup");
             state
                 .persist_write_through(&mut ledger, 1, |_tx| Ok(()))
+                .await
                 .expect("persist post-backup event");
         }
         std::fs::write(
@@ -14507,6 +14519,7 @@ mod tests {
             ledger.append("api", "settings", "settings.changed", None, b"after backup");
             state
                 .persist_write_through(&mut ledger, 1, |_tx| Ok(()))
+                .await
                 .expect("persist post-backup event");
         }
         std::fs::write(

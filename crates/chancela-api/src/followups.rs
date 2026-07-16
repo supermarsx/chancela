@@ -106,7 +106,12 @@ pub async fn create_follow_up(
         Some("create follow-up"),
         &payload,
     )?;
-    state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_follow_up(&follow_up))?;
+    let follow_up_for_store = follow_up.clone();
+    state
+        .persist_write_through(&mut ledger, 1, move |tx| {
+            tx.upsert_follow_up(&follow_up_for_store)
+        })
+        .await?;
     state.attest_latest(&attestor, &ledger).await;
 
     let view = FollowUpView::from(&follow_up);
@@ -155,7 +160,12 @@ pub async fn patch_follow_up(
         Some("update follow-up"),
         &payload,
     )?;
-    state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_follow_up(&next))?;
+    let next_for_store = next.clone();
+    state
+        .persist_write_through(&mut ledger, 1, move |tx| {
+            tx.upsert_follow_up(&next_for_store)
+        })
+        .await?;
     state.attest_latest(&attestor, &ledger).await;
 
     *follow_up = next;
@@ -205,7 +215,12 @@ pub async fn complete_follow_up(
         Some("complete follow-up"),
         &payload,
     )?;
-    state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_follow_up(&next))?;
+    let next_for_store = next.clone();
+    state
+        .persist_write_through(&mut ledger, 1, move |tx| {
+            tx.upsert_follow_up(&next_for_store)
+        })
+        .await?;
     state.attest_latest(&attestor, &ledger).await;
 
     *follow_up = next;

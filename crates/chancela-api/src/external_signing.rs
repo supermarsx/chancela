@@ -824,7 +824,9 @@ async fn record_envelope_event(
     let scope = act_audit_scope(state, act_id).await?;
     let mut ledger = state.ledger.write().await;
     try_append_event(&mut ledger, actor, &scope, kind, None, &payload)?;
-    state.persist_write_through(&mut ledger, 1, |_| Ok(()))?;
+    state
+        .persist_write_through(&mut ledger, 1, |_| Ok(()))
+        .await?;
     state.attest_latest(attestor, &ledger).await;
     Ok(())
 }

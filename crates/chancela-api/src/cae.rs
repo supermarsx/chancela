@@ -574,7 +574,9 @@ async fn finish_chain_refresh(
             &payload,
         );
         // Persist the audit event; the catalog itself is durable via its `cae-catalog.json` cache.
-        state.persist_write_through(&mut ledger, 1, |_tx| Ok(()))?;
+        state
+            .persist_write_through(&mut ledger, 1, |_tx| Ok(()))
+            .await?;
         state.attest_latest(&attestor, &ledger).await;
         drop(ledger);
         return Ok(Json(CaeRefreshView {
@@ -650,7 +652,9 @@ async fn legacy_refresh(
             Some("cae catalog updated"),
             &payload,
         );
-        state.persist_write_through(&mut ledger, 1, |_tx| Ok(()))?;
+        state
+            .persist_write_through(&mut ledger, 1, |_tx| Ok(()))
+            .await?;
         state.attest_latest(&attestor, &ledger).await;
     }
     Ok(Json(CaeRefreshView {

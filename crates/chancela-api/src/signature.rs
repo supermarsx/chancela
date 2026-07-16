@@ -1697,8 +1697,10 @@ pub async fn initiate_cmd_signature(
     let act = acts.get(&act_id).ok_or(ApiError::NotFound)?;
     ensure_signing_state(act.state)?;
     if let Some(store) = &state.store {
+        let pending_for_store = pending.clone();
         store
-            .persist(|tx| tx.upsert_pending_cmd_session(&pending))
+            .persist_blocking_async(move |tx| tx.upsert_pending_cmd_session(&pending_for_store))
+            .await
             .map_err(|e| AppState::map_store_write_error("failed to persist pending session", e))?;
     }
     state
@@ -1848,10 +1850,14 @@ pub async fn confirm_cmd_signature(
             None,
             &payload,
         )?;
-        state.persist_write_through(&mut ledger, 1, |tx| {
-            tx.upsert_signed_document(&stored)?;
-            tx.delete_pending_cmd_session(&session_id)
-        })?;
+        let stored_for_store = stored.clone();
+        let session_id_for_store = session_id.clone();
+        state
+            .persist_write_through(&mut ledger, 1, move |tx| {
+                tx.upsert_signed_document(&stored_for_store)?;
+                tx.delete_pending_cmd_session(&session_id_for_store)
+            })
+            .await?;
         drop(acts);
         state.attest_latest(&attestor, &ledger).await;
     }
@@ -2285,7 +2291,12 @@ pub async fn attach_dss_evidence(
             None,
             &payload,
         )?;
-        state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_signed_document(&stored))?;
+        let stored_for_store = stored.clone();
+        state
+            .persist_write_through(&mut ledger, 1, move |tx| {
+                tx.upsert_signed_document(&stored_for_store)
+            })
+            .await?;
         drop(acts);
         state.attest_latest(&attestor, &ledger).await;
     }
@@ -2392,7 +2403,12 @@ pub async fn collect_revocation_evidence(
             None,
             &payload,
         )?;
-        state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_signed_document(&stored))?;
+        let stored_for_store = stored.clone();
+        state
+            .persist_write_through(&mut ledger, 1, move |tx| {
+                tx.upsert_signed_document(&stored_for_store)
+            })
+            .await?;
         drop(acts);
         state.attest_latest(&attestor, &ledger).await;
     }
@@ -2497,7 +2513,12 @@ pub async fn append_archive_timestamp(
             None,
             &payload,
         )?;
-        state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_signed_document(&stored))?;
+        let stored_for_store = stored.clone();
+        state
+            .persist_write_through(&mut ledger, 1, move |tx| {
+                tx.upsert_signed_document(&stored_for_store)
+            })
+            .await?;
         drop(acts);
         state.attest_latest(&attestor, &ledger).await;
     }
@@ -2918,7 +2939,12 @@ pub(crate) async fn persist_cc_signed_pdf(
             None,
             &payload,
         )?;
-        state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_signed_document(&stored))?;
+        let stored_for_store = stored.clone();
+        state
+            .persist_write_through(&mut ledger, 1, move |tx| {
+                tx.upsert_signed_document(&stored_for_store)
+            })
+            .await?;
         drop(acts);
         state.attest_latest(attestor, &ledger).await;
     }
@@ -3563,8 +3589,10 @@ pub async fn initiate_remote_signature(
     let act = acts.get(&act_id).ok_or(ApiError::NotFound)?;
     ensure_signing_state(act.state)?;
     if let Some(store) = &state.store {
+        let pending_for_store = pending.clone();
         store
-            .persist(|tx| tx.upsert_pending_cmd_session(&pending))
+            .persist_blocking_async(move |tx| tx.upsert_pending_cmd_session(&pending_for_store))
+            .await
             .map_err(|e| AppState::map_store_write_error("failed to persist pending session", e))?;
     }
     state
@@ -3746,13 +3774,15 @@ pub async fn initiate_remote_batch_signature(
     if let Some(store) = &state.store
         && !pending_rows.is_empty()
     {
+        let pending_rows_for_store = pending_rows.clone();
         store
-            .persist(|tx| {
-                for pending in &pending_rows {
+            .persist_blocking_async(move |tx| {
+                for pending in &pending_rows_for_store {
                     tx.upsert_pending_cmd_session(pending)?;
                 }
                 Ok(())
             })
+            .await
             .map_err(|e| {
                 AppState::map_store_write_error("failed to persist pending sessions", e)
             })?;
@@ -3927,10 +3957,14 @@ pub async fn confirm_remote_signature(
             None,
             &payload,
         )?;
-        state.persist_write_through(&mut ledger, 1, |tx| {
-            tx.upsert_signed_document(&stored)?;
-            tx.delete_pending_cmd_session(&session_id)
-        })?;
+        let stored_for_store = stored.clone();
+        let session_id_for_store = session_id.clone();
+        state
+            .persist_write_through(&mut ledger, 1, move |tx| {
+                tx.upsert_signed_document(&stored_for_store)?;
+                tx.delete_pending_cmd_session(&session_id_for_store)
+            })
+            .await?;
         drop(acts);
         state.attest_latest(&attestor, &ledger).await;
     }
@@ -4805,7 +4839,12 @@ pub async fn import_official_signature(
             None,
             &payload,
         )?;
-        state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_signed_document(&stored))?;
+        let stored_for_store = stored.clone();
+        state
+            .persist_write_through(&mut ledger, 1, move |tx| {
+                tx.upsert_signed_document(&stored_for_store)
+            })
+            .await?;
         drop(acts);
         state.attest_latest(&attestor, &ledger).await;
     }
@@ -5032,7 +5071,12 @@ pub async fn sign_local_pkcs12_signature(
             None,
             &payload,
         )?;
-        state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_signed_document(&stored))?;
+        let stored_for_store = stored.clone();
+        state
+            .persist_write_through(&mut ledger, 1, move |tx| {
+                tx.upsert_signed_document(&stored_for_store)
+            })
+            .await?;
         drop(acts);
         state.attest_latest(&attestor, &ledger).await;
     }
@@ -5755,7 +5799,9 @@ async fn record_external_invite_event(
     let payload = serde_json::to_vec(view)?;
     let mut ledger = state.ledger.write().await;
     crate::try_append_event(&mut ledger, actor, scope, kind, None, &payload)?;
-    state.persist_write_through(&mut ledger, 1, |_| Ok(()))?;
+    state
+        .persist_write_through(&mut ledger, 1, |_| Ok(()))
+        .await?;
     state.attest_latest(attestor, &ledger).await;
     Ok(())
 }
@@ -5796,7 +5842,9 @@ async fn record_linked_external_invite_created_events(
         AppState::rollback_ledger_events(&mut ledger, 1);
         return Err(err);
     }
-    state.persist_write_through(&mut ledger, 2, |_| Ok(()))?;
+    state
+        .persist_write_through(&mut ledger, 2, |_| Ok(()))
+        .await?;
     state.attest_latest(attestor, &ledger).await;
     Ok(())
 }
@@ -5992,9 +6040,12 @@ async fn store_external_invite_signed_pdf_evidence(
             None,
             &payload,
         )?;
-        state.persist_write_through(&mut ledger, 1, |tx| {
-            tx.upsert_signed_document(&prepared.stored)
-        })?;
+        let stored_for_store = prepared.stored.clone();
+        state
+            .persist_write_through(&mut ledger, 1, move |tx| {
+                tx.upsert_signed_document(&stored_for_store)
+            })
+            .await?;
         drop(acts);
         state.attest_latest(attestor, &ledger).await;
     }
@@ -7388,13 +7439,17 @@ async fn find_pending_for_act(state: &AppState, act_id: ActId) -> Option<Pending
 /// Delete a pending session (durable + in-memory): consumed / expired / cancelled.
 async fn consume_pending(state: &AppState, session_id: &str) {
     let mut remove_memory = true;
-    if let Some(store) = &state.store
-        && let Err(e) = store.persist(|tx| tx.delete_pending_cmd_session(session_id))
-    {
-        if matches!(e, StoreError::NotLeader) {
-            remove_memory = false;
-        } else {
-            eprintln!("chancela-api: failed to persist pending session deletion: {e}");
+    if let Some(store) = &state.store {
+        let session_id_owned = session_id.to_owned();
+        if let Err(e) = store
+            .persist_blocking_async(move |tx| tx.delete_pending_cmd_session(&session_id_owned))
+            .await
+        {
+            if matches!(e, StoreError::NotLeader) {
+                remove_memory = false;
+            } else {
+                eprintln!("chancela-api: failed to persist pending session deletion: {e}");
+            }
         }
     }
     if remove_memory {

@@ -393,7 +393,12 @@ pub(crate) async fn create_group(
         Some(&object),
         &payload,
     )?;
-    state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_company_group(&group))?;
+    let group_for_store = group.clone();
+    state
+        .persist_write_through(&mut ledger, 1, move |tx| {
+            tx.upsert_company_group(&group_for_store)
+        })
+        .await?;
     state.attest_latest(&attestor, &ledger).await;
     groups.insert(group.id, group.clone());
     drop(ledger);
@@ -460,7 +465,12 @@ pub(crate) async fn patch_group(
         Some(&object),
         &payload,
     )?;
-    state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_company_group(&next))?;
+    let next_for_store = next.clone();
+    state
+        .persist_write_through(&mut ledger, 1, move |tx| {
+            tx.upsert_company_group(&next_for_store)
+        })
+        .await?;
     state.attest_latest(&attestor, &ledger).await;
     groups.insert(group_id, next.clone());
     drop(ledger);
@@ -528,13 +538,17 @@ pub(crate) async fn archive_group(
         Some(&object),
         &payload,
     )?;
-    state.persist_write_through(&mut ledger, 1, |tx| {
-        tx.upsert_company_group(&next)?;
-        for library in &archived_libraries {
-            tx.upsert_group_template_library(library)?;
-        }
-        Ok(())
-    })?;
+    let next_for_store = next.clone();
+    let archived_libraries_for_store = archived_libraries.clone();
+    state
+        .persist_write_through(&mut ledger, 1, move |tx| {
+            tx.upsert_company_group(&next_for_store)?;
+            for library in &archived_libraries_for_store {
+                tx.upsert_group_template_library(library)?;
+            }
+            Ok(())
+        })
+        .await?;
     state.attest_latest(&attestor, &ledger).await;
     groups.insert(group_id, next);
     for library in archived_libraries {
@@ -604,7 +618,10 @@ pub(crate) async fn assign_entity(
         Some(&object),
         &payload,
     )?;
-    state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_entity(&next))?;
+    let next_for_store = next.clone();
+    state
+        .persist_write_through(&mut ledger, 1, move |tx| tx.upsert_entity(&next_for_store))
+        .await?;
     state.attest_latest(&attestor, &ledger).await;
     entities.insert(entity_id, next.clone());
     Ok(Json(EntityView::from(&next)))
@@ -654,7 +671,10 @@ pub(crate) async fn remove_entity(
         Some(&object),
         &payload,
     )?;
-    state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_entity(&next))?;
+    let next_for_store = next.clone();
+    state
+        .persist_write_through(&mut ledger, 1, move |tx| tx.upsert_entity(&next_for_store))
+        .await?;
     state.attest_latest(&attestor, &ledger).await;
     entities.insert(entity_id, next.clone());
     Ok(Json(EntityView::from(&next)))
@@ -738,10 +758,14 @@ pub(crate) async fn create_template_library(
         Some(&object),
         &payload,
     )?;
-    state.persist_write_through(&mut ledger, 1, |tx| {
-        tx.upsert_group_template_library(&library)?;
-        tx.insert_group_template_library_revision(&revision)
-    })?;
+    let library_for_store = library.clone();
+    let revision_for_store = revision.clone();
+    state
+        .persist_write_through(&mut ledger, 1, move |tx| {
+            tx.upsert_group_template_library(&library_for_store)?;
+            tx.insert_group_template_library_revision(&revision_for_store)
+        })
+        .await?;
     state.attest_latest(&attestor, &ledger).await;
     libraries.insert(library.id, library.clone());
     revisions.insert((group_id, library.id, 1), revision.clone());
@@ -837,7 +861,12 @@ pub(crate) async fn patch_template_library(
         Some(&object),
         &payload,
     )?;
-    state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_group_template_library(&next))?;
+    let next_for_store = next.clone();
+    state
+        .persist_write_through(&mut ledger, 1, move |tx| {
+            tx.upsert_group_template_library(&next_for_store)
+        })
+        .await?;
     state.attest_latest(&attestor, &ledger).await;
     libraries.insert(library_id, next.clone());
     drop(ledger);
@@ -890,7 +919,12 @@ pub(crate) async fn archive_template_library(
         Some(&object),
         &payload,
     )?;
-    state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_group_template_library(&next))?;
+    let next_for_store = next.clone();
+    state
+        .persist_write_through(&mut ledger, 1, move |tx| {
+            tx.upsert_group_template_library(&next_for_store)
+        })
+        .await?;
     state.attest_latest(&attestor, &ledger).await;
     libraries.insert(library_id, next);
     Ok(StatusCode::NO_CONTENT)
@@ -960,9 +994,12 @@ pub(crate) async fn append_template_library_revision(
         Some(&object),
         &payload,
     )?;
-    state.persist_write_through(&mut ledger, 1, |tx| {
-        tx.insert_group_template_library_revision(&revision)
-    })?;
+    let revision_for_store = revision.clone();
+    state
+        .persist_write_through(&mut ledger, 1, move |tx| {
+            tx.insert_group_template_library_revision(&revision_for_store)
+        })
+        .await?;
     state.attest_latest(&attestor, &ledger).await;
     revisions.insert((group_id, library_id, revision.revision), revision.clone());
     Ok((StatusCode::CREATED, Json(revision)))

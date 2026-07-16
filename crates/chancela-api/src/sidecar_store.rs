@@ -32,7 +32,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use chancela_authz::{Role, RoleCatalog};
-use chancela_store::{Store, StoreError};
+use chancela_store::{Store, StoreError, Tx};
 
 use crate::AppState;
 use crate::delegations::StoredDelegation;
@@ -61,32 +61,62 @@ fn existing_ids(store: &Store, table: DocumentTable) -> Result<Vec<(String, Stri
 /// delete any DB row whose id is no longer present in memory. This mirrors the whole-document atomic
 /// file write (the file always reflects the full in-memory collection), so a delete (a removed role)
 /// is honoured and never lingers. Runs under the store's writer/leader gate on Postgres.
+/// The shared single-transaction body: upsert every current `(id, json)` row and delete any DB row
+/// whose id is no longer present. Factored out so the synchronous boot-seed path
+/// ([`reconcile_documents`]) and the async write-through path ([`reconcile_documents_async`]) run
+/// byte-identical SQL.
+fn reconcile_documents_tx(
+    tx: &Tx<'_>,
+    table: DocumentTable,
+    rows: &[(String, String)],
+    existing: &[(String, String)],
+) -> Result<(), StoreError> {
+    let present: HashSet<&str> = rows.iter().map(|(id, _)| id.as_str()).collect();
+    for (id, json) in rows {
+        match table {
+            DocumentTable::Users => tx.upsert_user(id, json)?,
+            DocumentTable::Roles => tx.upsert_role(id, json)?,
+            DocumentTable::Delegations => tx.upsert_delegation(id, json)?,
+        }
+    }
+    for (id, _) in existing {
+        if !present.contains(id.as_str()) {
+            match table {
+                DocumentTable::Users => tx.delete_user(id)?,
+                DocumentTable::Roles => tx.delete_role(id)?,
+                DocumentTable::Delegations => tx.delete_delegation(id)?,
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Synchronous reconcile — used by the boot-time seed/migration path ([`persist_seed`] via
+/// [`hydrate_from_store`]), which runs before the async request runtime is a concern.
 fn reconcile_documents(
     store: &Store,
     table: DocumentTable,
     rows: Vec<(String, String)>,
 ) -> Result<(), StoreError> {
     let existing = existing_ids(store, table)?;
-    let present: HashSet<&str> = rows.iter().map(|(id, _)| id.as_str()).collect();
-    store.persist(|tx| {
-        for (id, json) in &rows {
-            match table {
-                DocumentTable::Users => tx.upsert_user(id, json)?,
-                DocumentTable::Roles => tx.upsert_role(id, json)?,
-                DocumentTable::Delegations => tx.upsert_delegation(id, json)?,
-            }
-        }
-        for (id, _) in &existing {
-            if !present.contains(id.as_str()) {
-                match table {
-                    DocumentTable::Users => tx.delete_user(id)?,
-                    DocumentTable::Roles => tx.delete_role(id)?,
-                    DocumentTable::Delegations => tx.delete_delegation(id)?,
-                }
-            }
-        }
-        Ok(())
-    })
+    store.persist(|tx| reconcile_documents_tx(tx, table, &rows, &existing))
+}
+
+/// Async reconcile for the request-path write-through (wp27-e9): offload the blocking store
+/// transaction onto the blocking pool via [`Store::persist_blocking_async`] so the async worker
+/// thread is not blocked. The sidecar read guard is held across this `.await` by the caller — that
+/// preserves the snapshot-to-durable-write exclusion and is safe (a read guard held across `.await`
+/// does not block; the offload just moves the SQL off the worker). `rows`, `existing`, and the
+/// `Copy` `table` are owned and moved into the `Send + 'static` closure.
+async fn reconcile_documents_async(
+    store: &Store,
+    table: DocumentTable,
+    rows: Vec<(String, String)>,
+) -> Result<(), StoreError> {
+    let existing = existing_ids(store, table)?;
+    store
+        .persist_blocking_async(move |tx| reconcile_documents_tx(tx, table, &rows, &existing))
+        .await
 }
 
 /// Persist a boot-time seed/migration write, tolerating the writer-leader gate. A **follower** node
@@ -138,7 +168,8 @@ pub(crate) async fn persist_users(state: &AppState) -> Result<(), ApiError> {
         // reconciled. This preserves the file-backed path's snapshot-to-durable-write
         // exclusion: a concurrent writer cannot mutate auth state and persist it while
         // this older whole-table snapshot is still able to commit last.
-        reconcile_documents(store, DocumentTable::Users, rows)
+        reconcile_documents_async(store, DocumentTable::Users, rows)
+            .await
             .map_err(|e| AppState::map_store_write_error("failed to persist users", e))?;
         return Ok(());
     }
@@ -165,7 +196,8 @@ pub(crate) async fn persist_roles(state: &AppState) -> Result<(), ApiError> {
         // Keep the sidecar read lock held until the authoritative DB snapshot has been
         // reconciled so stale whole-table role snapshots cannot commit after newer
         // role mutations.
-        reconcile_documents(store, DocumentTable::Roles, rows)
+        reconcile_documents_async(store, DocumentTable::Roles, rows)
+            .await
             .map_err(|e| AppState::map_store_write_error("failed to persist roles", e))?;
         return Ok(());
     }
@@ -194,7 +226,8 @@ pub(crate) async fn persist_delegations(state: &AppState) -> Result<(), ApiError
         // Keep the sidecar read lock held until the authoritative DB snapshot has been
         // reconciled so stale whole-table delegation snapshots cannot commit after
         // newer delegation mutations.
-        reconcile_documents(store, DocumentTable::Delegations, rows)
+        reconcile_documents_async(store, DocumentTable::Delegations, rows)
+            .await
             .map_err(|e| AppState::map_store_write_error("failed to persist delegations", e))?;
         return Ok(());
     }
@@ -218,7 +251,8 @@ pub(crate) async fn persist_settings(
         };
         let json = serde_json::to_string(settings).map_err(|e| serialize_error("settings", e))?;
         store
-            .persist(|tx| tx.put_settings(&json))
+            .persist_blocking_async(move |tx| tx.put_settings(&json))
+            .await
             .map_err(|e| AppState::map_store_write_error("failed to persist settings", e))?;
         return Ok(());
     }

@@ -194,8 +194,10 @@ mod tests {
 
     #[tokio::test]
     async fn configured_origin_gets_bounded_preflight_and_disallowed_origin_does_not() {
-        let mut state = crate::AppState::default();
-        state.cors = CorsConfig::parse("http://tauri.localhost").unwrap();
+        let state = crate::AppState {
+            cors: CorsConfig::parse("http://tauri.localhost").unwrap(),
+            ..Default::default()
+        };
         let app = crate::router(state);
 
         let response = app

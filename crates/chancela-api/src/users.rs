@@ -372,7 +372,9 @@ pub async fn create_user(
             Some("user created"),
             &payload,
         );
-        state.persist_write_through(&mut ledger, 1, |_tx| Ok(()))?;
+        state
+            .persist_write_through(&mut ledger, 1, |_tx| Ok(()))
+            .await?;
         state.attest_latest(&attestor, &ledger).await;
     }
 
@@ -611,7 +613,9 @@ async fn record_secret_denied(
         Some("cross-user credential reset refused (no valid proof)"),
         &payload,
     );
-    state.persist_write_through(&mut ledger, 1, |_tx| Ok(()))?;
+    state
+        .persist_write_through(&mut ledger, 1, |_tx| Ok(()))
+        .await?;
     state.attest_latest(attestor, &ledger).await;
     Ok(())
 }
@@ -729,7 +733,9 @@ async fn record_user_event(
     let actor = actor.resolve("api");
     let mut ledger = state.ledger.write().await;
     ledger.append(&actor, "user", kind, Some(justification), &payload);
-    state.persist_write_through(&mut ledger, 1, |_tx| Ok(()))?;
+    state
+        .persist_write_through(&mut ledger, 1, |_tx| Ok(()))
+        .await?;
     state.attest_latest(attestor, &ledger).await;
     Ok(())
 }

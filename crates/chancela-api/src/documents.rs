@@ -1772,7 +1772,12 @@ pub async fn import_document(
         None,
         &payload,
     )?;
-    state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_imported_document(&stored))?;
+    let stored_for_store = stored.clone();
+    state
+        .persist_write_through(&mut ledger, 1, move |tx| {
+            tx.upsert_imported_document(&stored_for_store)
+        })
+        .await?;
     state.attest_latest(&attestor, &ledger).await;
     drop(ledger);
 
@@ -1892,16 +1897,22 @@ pub async fn review_imported_document(
         None,
         &payload,
     )?;
-    state.persist_write_through(&mut ledger, 1, |tx| {
-        tx.review_imported_document(
-            &id,
-            status,
-            Some(reviewed_at),
-            Some(&reviewed_by),
-            review_note.as_deref(),
-            &acknowledged_guardrail_ids,
-        )
-    })?;
+    let id_for_store = id.clone();
+    let reviewed_by_for_store = reviewed_by.clone();
+    let review_note_for_store = review_note.clone();
+    let acknowledged_guardrail_ids_for_store = acknowledged_guardrail_ids.clone();
+    state
+        .persist_write_through(&mut ledger, 1, move |tx| {
+            tx.review_imported_document(
+                &id_for_store,
+                status,
+                Some(reviewed_at),
+                Some(&reviewed_by_for_store),
+                review_note_for_store.as_deref(),
+                &acknowledged_guardrail_ids_for_store,
+            )
+        })
+        .await?;
     state.attest_latest(&attestor, &ledger).await;
     drop(ledger);
 
@@ -4757,7 +4768,12 @@ pub async fn generate_document(
         None,
         &payload,
     )?;
-    state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_document(&made.stored))?;
+    let stored_for_store = made.stored.clone();
+    state
+        .persist_write_through(&mut ledger, 1, move |tx| {
+            tx.upsert_document(&stored_for_store)
+        })
+        .await?;
     state.attest_latest(&attestor, &ledger).await;
     drop(ledger);
 
@@ -4967,13 +4983,16 @@ pub async fn record_generated_document_dispatch_evidence(
         .last()
         .expect("just-appended dispatch evidence event")
         .clone();
-    let upsert = match store.persist_result(|tx| {
-        let upsert = tx.upsert_generated_document_dispatch_evidence(&evidence)?;
-        if upsert.inserted() {
-            tx.append_event(&event)?;
-        }
-        Ok(upsert)
-    }) {
+    let upsert = match store
+        .persist_result_blocking_async(move |tx| {
+            let upsert = tx.upsert_generated_document_dispatch_evidence(&evidence)?;
+            if upsert.inserted() {
+                tx.append_event(&event)?;
+            }
+            Ok(upsert)
+        })
+        .await
+    {
         Ok(upsert) => upsert,
         Err(e) => {
             AppState::rollback_ledger_events(&mut ledger, 1);
@@ -7784,9 +7803,13 @@ async fn persist_created_user_template(
         Some(&id),
         &payload,
     )?;
-    state.persist_write_through(&mut ledger, 1, |tx| {
-        tx.upsert_user_template(&id, &stored_json)
-    })?;
+    let id_for_store = id.clone();
+    let stored_json_for_store = stored_json.clone();
+    state
+        .persist_write_through(&mut ledger, 1, move |tx| {
+            tx.upsert_user_template(&id_for_store, &stored_json_for_store)
+        })
+        .await?;
     state.attest_latest(attestor, &ledger).await;
     drop(ledger);
 
@@ -7871,9 +7894,13 @@ pub async fn replace_template(
         Some(&id),
         &payload,
     )?;
-    state.persist_write_through(&mut ledger, 1, |tx| {
-        tx.upsert_user_template(&id, &stored_json)
-    })?;
+    let id_for_store = id.clone();
+    let stored_json_for_store = stored_json.clone();
+    state
+        .persist_write_through(&mut ledger, 1, move |tx| {
+            tx.upsert_user_template(&id_for_store, &stored_json_for_store)
+        })
+        .await?;
     state.attest_latest(&attestor, &ledger).await;
     drop(ledger);
 
@@ -7918,7 +7945,12 @@ pub async fn delete_template(
         Some(&id),
         &payload,
     )?;
-    state.persist_write_through(&mut ledger, 1, |tx| tx.delete_user_template(&id))?;
+    let id_for_store = id.clone();
+    state
+        .persist_write_through(&mut ledger, 1, move |tx| {
+            tx.delete_user_template(&id_for_store)
+        })
+        .await?;
     state.attest_latest(&attestor, &ledger).await;
     drop(ledger);
 
@@ -9075,7 +9107,6 @@ mod tests {
                     || has_finding(&report, "signature_evidence_unvalidated")
             );
         }
-
     }
 
     #[test]
