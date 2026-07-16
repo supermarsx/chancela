@@ -24,9 +24,11 @@ cp docker/secrets/credential_key.example    docker/secrets/credential_key
 The password inside `database_url` **must match** `postgres_password`, otherwise
 the app cannot authenticate to Postgres.
 
-The template uses `sslmode=disable` because this compose lane connects to the
-local Compose network with the current `NoTls` backend. Remote Postgres with
-`sslmode=verify-full` needs a future TLS connector before it is supported.
+The template uses `sslmode=verify-full`. The compose profile's isolated
+`postgres-tls-init` service creates or renews a private CA and a certificate
+whose SAN covers `postgres` and `localhost`. The CA is mounted read-only into
+the app; no CA private key is exposed to the app container. Insecure
+`disable`/`prefer`/`require` modes are rejected by the backend.
 
 Generate strong values, for example:
 

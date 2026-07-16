@@ -35,7 +35,7 @@ jobs:
             artifact-suffix: macos
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Install PC/SC system deps (Linux)
         if: runner.os == 'Linux'
@@ -62,17 +62,20 @@ jobs:
           perl -MConfig -e 'print qq(perl=$^X\narch=$Config{archname}\nversion=$]\n)'
 
       - name: Install Rust toolchain (stable)
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1a3a6d54512beeaffd394f8d516ca16f2c506a20 # 1.97.0
 
       - name: Cache cargo build
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc # v2.9.1
 
       - name: Install Node 24
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
           cache: npm
           cache-dependency-path: package-lock.json
+
+      - name: Activate npm 12.0.1
+        run: npm install --global npm@12.0.1
 
       - name: Install npm dependencies
         run: npm ci --no-audit --no-fund
@@ -197,7 +200,7 @@ jobs:
           Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value "- Dependency SBOM: ``$sbomPath``"
 
       - name: Upload package artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: chancela-package-${{ matrix.artifact-suffix }}
           path: ${{ steps.collect.outputs.package }}
@@ -205,7 +208,7 @@ jobs:
           retention-days: 30
 
       - name: Upload manifest and checksum artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: chancela-release-metadata-${{ matrix.artifact-suffix }}
           path: ${{ steps.collect.outputs.metadata }}

@@ -6,6 +6,9 @@
 # Server plus bounded validation-worker sidecar:
 #   docker compose -f docker/docker-compose.yml --profile validation-worker up --build
 #
+# Dedicated durable sync/backup worker (safe local targets by default):
+#   docker compose -f docker/docker-compose.yml --profile worker up --build
+#
 # Postgres durability backend plus Redis cache service:
 #   docker compose -f docker/docker-compose.yml --profile postgres up --build
 #
@@ -21,6 +24,7 @@ services:
     profiles:
       - single-node
       - validation-worker
+      - worker
     build:
       # Context is the repo root so the Dockerfile can see the whole workspace.
       context: ..
@@ -104,6 +108,53 @@ services:
     restart: unless-stopped
 
   # -----------------------------------------------------------------------
+  # Dedicated ARC-20 sync/backup worker. Sync and backup resolve to separate
+  # target IDs in the mounted config; the committed example uses two distinct
+  # local directories and contains no credential values.
+  # -----------------------------------------------------------------------
+  worker:
+    profiles:
+      - worker
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.worker
+    image: ${CHANCELA_WORKER_IMAGE:-chancela-worker:latest}
+    user: "65532:65532"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
+    environment:
+      CHANCELA_CONNECTOR_SECRETS_DIR: /run/chancela-connector-secrets
+      # Required for every non-local target. Exact hosts only; private DNS
+      # destinations also require their resolved IP/CIDR in this list.
+      CHANCELA_CONNECTOR_ALLOWED_HOSTS: ${CHANCELA_CONNECTOR_ALLOWED_HOSTS:-}
+    volumes:
+      # Same durable volume as the API: the API owns sources/staging and the
+      # worker owns queue transitions/receipts beneath /worker.
+      - chancela-data:/var/lib/chancela
+      - ${CHANCELA_WORKER_CONFIG:-./worker-config.example.json}:/etc/chancela-worker/config.json:ro
+      - ${CHANCELA_CONNECTOR_SECRETS_HOST_DIR:-./connector-secrets}:/run/chancela-connector-secrets:ro
+    depends_on:
+      server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/chancela-worker", "healthcheck", "--data-dir", "/var/lib/chancela/worker/queue", "--max-age-seconds", "120"]
+      interval: 30s
+      timeout: 3s
+      start_period: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512m
+    restart: unless-stopped
+
+  # -----------------------------------------------------------------------
   # `postgres` profile: PostgreSQL durability backend plus a Redis cache service.
   #
   #   docker compose -f docker/docker-compose.yml --profile postgres up --build
@@ -114,10 +165,33 @@ services:
   # holds authoritative state in memory and allocates the ledger `seq` in
   # process, so exactly ONE `chancela` instance may write. Never scale it.
   # -----------------------------------------------------------------------
+  postgres-tls-init:
+    profiles:
+      - postgres
+    image: alpine/openssl:3.5.7@sha256:3da6a24cdaa2f2ac8ef4defb322249fae6159983104653a9e5312f5b75dac7af
+    user: "0:0"
+    read_only: true
+    network_mode: none
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+    security_opt:
+      - no-new-privileges:true
+    entrypoint: ["/bin/sh", "/usr/local/bin/postgres-tls-init.sh"]
+    volumes:
+      - ./postgres-tls-init.sh:/usr/local/bin/postgres-tls-init.sh:ro
+      - chancela-pg-tls:/tls
+    tmpfs:
+      - /tmp
+    restart: "no"
+
   postgres:
     profiles:
       - postgres
-    image: postgres:16-alpine
+    image: postgres:18.4-alpine3.23@sha256:996d0920e4ff9df1fc19dacb904492f3c1ec0ec1cc338f0ad7123be7731c5f5e
     # The official image drops privileges to the internal `postgres` user for
     # the server process; keep no-new-privileges on top of that.
     security_opt:
@@ -135,15 +209,29 @@ services:
       # (LUKS / encrypted block storage) - see DEPLOYMENT-PROFILES.md:
       # Postgres has no transparent whole-DB encryption, so at-rest protection
       # is volume-level, NOT SQLCipher file-level ciphertext.
-      - chancela-pgdata:/var/lib/postgresql/data
+      # PostgreSQL 18 moved PGDATA below this parent directory so future
+      # pg_upgrade --link migrations can operate across versioned children.
+      - chancela-pgdata:/var/lib/postgresql
+      - chancela-pg-tls:/var/lib/postgresql/tls:ro
     # Not published to the host: the DB is reachable only on the compose
-    # network. Remote Postgres/TLS is not wired in this lane: the current
-    # backend uses NoTls, so sslmode=verify-full requires a future TLS connector.
+    # network. TLS is still mandatory and hostname/CA verified by the app.
     expose:
       - "5432"
+    command:
+      - postgres
+      - -c
+      - ssl=on
+      - -c
+      - ssl_cert_file=/var/lib/postgresql/tls/server.crt
+      - -c
+      - ssl_key_file=/var/lib/postgresql/tls/server.key
     healthcheck:
       test:
-        ["CMD-SHELL", "pg_isready -U ${CHANCELA_PG_USER:-chancela} -d ${CHANCELA_PG_DB:-chancela}"]
+        - CMD-SHELL
+        - >-
+          PGPASSWORD="$$(cat /run/secrets/postgres_password)"
+          psql "host=localhost port=5432 user=$${POSTGRES_USER} dbname=$${POSTGRES_DB} sslmode=verify-full sslrootcert=/var/lib/postgresql/tls/ca.crt"
+          -tAc 'SELECT 1' | grep -qx 1
       interval: 10s
       timeout: 5s
       start_period: 15s
@@ -154,11 +242,14 @@ services:
           cpus: "2.0"
           memory: 1g
     restart: unless-stopped
+    depends_on:
+      postgres-tls-init:
+        condition: service_completed_successfully
 
   redis:
     profiles:
       - postgres
-    image: redis:7-alpine
+    image: redis:8.8.0-alpine3.23@sha256:9d317178eceac8454a2284a9e6df2466b93c745529947f0cd42a0fa9609d7005
     # Cache-aside service. Authoritative state stays in the app/Postgres path;
     # cache operations fail open and do not affect correctness.
     command:
@@ -221,6 +312,7 @@ services:
       # libpq connection string (incl. the password) as a docker secret. It
       # references the `postgres` service by name on the compose network.
       DATABASE_URL_FILE: /run/secrets/database_url
+      CHANCELA_PG_TLS_ROOT_CERT: /run/chancela-postgres-tls/ca.crt
       # Optional shared Redis cache-aside; inert if unreachable (fail-open).
       REDIS_URL: redis://redis:6379
       # REQUIRED on Postgres: the provider-credential store root key. Without
@@ -236,6 +328,7 @@ services:
         host_ip: 127.0.0.1
     volumes:
       - chancela-app-data:/var/lib/chancela
+      - chancela-pg-tls:/run/chancela-postgres-tls:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -261,6 +354,7 @@ volumes:
   chancela-data:
   chancela-validation-worker-data:
   chancela-pgdata:
+  chancela-pg-tls:
   chancela-redisdata:
   chancela-app-data:
 

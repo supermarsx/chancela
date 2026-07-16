@@ -144,12 +144,11 @@ fn find_signer_cert(
     match sid {
         SignerIdentifier::IssuerAndSerialNumber(ias) => {
             for choice in certs.0.iter() {
-                if let CertificateChoices::Certificate(cert) = choice {
-                    if cert.tbs_certificate.issuer == ias.issuer
-                        && cert.tbs_certificate.serial_number == ias.serial_number
-                    {
-                        return Ok(cert.clone());
-                    }
+                if let CertificateChoices::Certificate(cert) = choice
+                    && cert.tbs_certificate.issuer == ias.issuer
+                    && cert.tbs_certificate.serial_number == ias.serial_number
+                {
+                    return Ok(cert.clone());
                 }
             }
             Err(CadesError::SignerCertNotFound)
@@ -177,10 +176,10 @@ fn verify_signing_certificate_v2(
         .ok_or(CadesError::EmptySigningCertificateV2)?;
 
     // Hash algorithm: accept default (None) or explicit SHA-256; reject any other.
-    if let Some(alg) = &cert.hash_algorithm {
-        if alg.oid != oids::ID_SHA256 {
-            return Err(CadesError::UnsupportedSigningCertHashAlgorithm);
-        }
+    if let Some(alg) = &cert.hash_algorithm
+        && alg.oid != oids::ID_SHA256
+    {
+        return Err(CadesError::UnsupportedSigningCertHashAlgorithm);
     }
 
     let computed = crate::attrs::sha256(signer_cert_der);

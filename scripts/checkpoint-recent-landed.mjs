@@ -907,7 +907,7 @@ function assertCheckpointMap() {
     "web hook paper-book OCR canonical rehearsal query marker",
   );
   assertFileContains(
-    "apps/web/src/features/books/BookDetailPage.tsx",
+    "apps/web/src/i18n/locales/pt-PT.ts",
     "Relatório OCR/canónico local",
     "BookDetail paper-book OCR canonical rehearsal panel marker",
   );
@@ -12294,29 +12294,24 @@ function assertCheckpointMap() {
     "spec coverage readyz degraded-mode-only marker",
   );
   assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Recent `974040e`/`afe7111` keeps Data/Architecture/CI **PARTIAL**",
-    "spec coverage Postgres TLS checkpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "live `prefer` round-trip only; it is not live\n  `verify-full` CA/hostname proof",
-    "spec coverage Postgres TLS no verify-full proof marker",
-  );
-  assertFileContains(
     "crates/chancela-store/src/pg_tls.rs",
-    "defaulting to `prefer`",
-    "Postgres rustls TLS default prefer marker",
+    "defaulting to `verify-full`",
+    "Postgres rustls TLS fail-closed default marker",
   );
   assertFileContains(
     "crates/chancela-store/tests/postgres_backend.rs",
-    "sslmode_prefer_opens_and_roundtrips_on_postgres",
-    "Postgres sslmode prefer live test marker",
+    "sslmode_verify_full_opens_and_roundtrips_on_postgres",
+    "Postgres sslmode verify-full live test marker",
+  );
+  assertFileContains(
+    ".github/workflows/ci.yml",
+    "sslmode_verify_full_opens_and_roundtrips_on_postgres",
+    "CI Postgres verify-full live test marker",
   );
   assertFileContains(
     "docs/extras.md",
-    "Current checkpoint coverage includes the live\n`sslmode=prefer` round-trip only",
-    "extras Postgres TLS prefer-only boundary marker",
+    "CI now creates an ephemeral CA\nand hostname-valid server certificate",
+    "extras Postgres verified-TLS boundary marker",
   );
   assertFileContains(
     "crates/chancela-api/src/observability.rs",
@@ -12425,12 +12420,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "Dockerfile.hardened",
-    "gcr.io/distroless/cc-debian12:nonroot@sha256:",
+    "gcr.io/distroless/cc-debian13:nonroot@sha256:",
     "hardened Dockerfile distroless digest marker",
   );
   assertFileContains(
     "Dockerfile.hardened",
-    "COPY --from=busybox:uclibc@sha256:",
+    "COPY --from=busybox:1.37.0-uclibc@sha256:",
     "hardened Dockerfile busybox digest marker",
   );
   assertFileContains(
@@ -12714,9 +12709,14 @@ function assertCheckpointMap() {
     "CI checkpoints spec coverage declared snapshot guard marker",
   );
   assertFileContains(
-    "scripts/check-spec-coverage.mjs",
-    "ancestor reached through pure spec/checker checkpoint commits",
-    "spec coverage checker chained checkpoint convention marker",
+    "scripts/spec-coverage-snapshot-policy.mjs",
+    '"--diff-filter=ACDMRTUXB"',
+    "spec coverage checker merge-aware final-tree policy marker",
+  );
+  assertFileContains(
+    "scripts/check-spec-coverage-snapshot.test.mjs",
+    "accepts a clean merge whose resulting drift is checkpoint-only",
+    "spec coverage checker merge-policy regression marker",
   );
   assertFileContains(
     "scripts/check-spec-coverage.mjs",
@@ -13199,13 +13199,13 @@ function assertCheckpointMap() {
     "Ata editor convening dispatch required date and recipient marker",
   );
   assertFileContains(
-    "apps/web/src/features/acts/AtaEditorPage.tsx",
+    "apps/web/src/i18n/locales/pt-PT.ts",
     "Não envia email/SMS, não confirma entrega externa, não afirma suficiência legal, conclusão do workflow, aceitação por registo/DRE nem aceitação por prestador.",
     "Ata editor convening dispatch no-claim copy marker",
   );
   assertFileContains(
-    "apps/web/src/features/acts/AtaEditorPage.tsx",
-    "toast.success('Evidência local de expedição registada.');",
+    "apps/web/src/i18n/locales/pt-PT.ts",
+    "Evidência local de expedição registada.",
     "Ata editor convening dispatch success copy marker",
   );
   assertFileContains(
@@ -13320,12 +13320,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/acts/AtaEditorPage.tsx",
-    "<Field label=\"Contacto\" htmlFor={contactId}>",
+    "<Field label={t('acts.convening.recipients.contact')} htmlFor={contactId}>",
     "Ata editor convening recipient contact UI marker",
   );
   assertFileContains(
     "apps/web/src/features/acts/AtaEditorPage.tsx",
-    "<Field label=\"Referência de expedição\" htmlFor={referenceId}>",
+    "label={t('acts.convening.recipients.reference')}",
     "Ata editor convening recipient proof-reference UI marker",
   );
   assertFileContains(
@@ -13349,8 +13349,8 @@ function assertCheckpointMap() {
     "Ata editor convening dispatch persisted recipient gate marker",
   );
   assertFileContains(
-    "apps/web/src/features/acts/AtaEditorPage.tsx",
-    "Guarde a ata para persistir os destinatários antes de registar evidência local de\n          expedição.",
+    "apps/web/src/i18n/locales/pt-PT.ts",
+    "Guarde a ata para persistir os destinatários antes de registar evidência local de expedição.",
     "Ata editor convening recipient save-before-dispatch copy marker",
   );
   assertFileContains(
@@ -13529,22 +13529,22 @@ function assertCheckpointMap() {
     "CI checkpoints convocation act-review guidance marker",
   );
   assertFileContains(
-    "apps/web/src/features/acts/AtaEditorPage.tsx",
-    "CONVOCATION_NOTICE_ADVISORY_TITLE = 'Aviso local da convocatória estatutária'",
+    "apps/web/src/i18n/locales/pt-PT.ts",
+    "Aviso local da convocatória estatutária",
     "Ata editor convocation notice advisory title marker",
   );
   assertFileContains(
-    "apps/web/src/features/acts/AtaEditorPage.tsx",
+    "apps/web/src/i18n/locales/pt-PT.ts",
     "Registe a data da reunião para calcular a data local de aviso.",
     "Ata editor convocation meeting-date guidance marker",
   );
   assertFileContains(
-    "apps/web/src/features/acts/AtaEditorPage.tsx",
+    "apps/web/src/i18n/locales/pt-PT.ts",
     "Registe data/meio de expedição, antecedência efetiva e referência da prova conservada.",
     "Ata editor convocation evidence guidance marker",
   );
   assertFileContains(
-    "apps/web/src/features/acts/AtaEditorPage.tsx",
+    "apps/web/src/i18n/locales/pt-PT.ts",
     "Apenas metadados locais; não afirma suficiência jurídica, entrega externa válida nem conclusão do workflow.",
     "Ata editor convocation no-claim guidance marker",
   );

@@ -4,6 +4,8 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { assertSnapshotPathPolicy } from "./spec-coverage-snapshot-policy.mjs";
+
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const coveragePath = join(repoRoot, "SPEC-COVERAGE.md");
 const aiProvenancePath = join(repoRoot, "docs", "AI-PROVENANCE.md");
@@ -42,7 +44,9 @@ const checkpointPaths = new Set([
   "package.json",
   "scripts/check-ci-assurance-waivers.mjs",
   "scripts/check-spec-coverage.mjs",
+  "scripts/check-spec-coverage-snapshot.test.mjs",
   "scripts/checkpoint-recent-landed.mjs",
+  "scripts/spec-coverage-snapshot-policy.mjs",
 ]);
 
 const body = readFileSync(coveragePath, "utf8");
@@ -56,7 +60,7 @@ const snapshotCommit = gitRevParse(`${declaredSnapshotCommit}^{commit}`);
 const snapshotCommitShort = snapshotCommit.slice(0, 7);
 const rows = parseSpecRows(body);
 
-assertSnapshotCommitIsCurrentOrCheckpointParent();
+assertSnapshotCommitIsCurrentOrCheckpointTree();
 
 assert.equal(
   rows.length,
@@ -223,72 +227,13 @@ function assertIncludes(markdown, needle, label) {
   );
 }
 
-function assertSnapshotCommitIsCurrentOrCheckpointParent() {
-  if (snapshotCommit === currentHead) {
-    return;
-  }
-
-  let candidate = currentHead;
-  const checkpointCommits = [];
-
-  while (candidate !== snapshotCommit) {
-    const parents = gitCommitParents(candidate);
-    assert.equal(
-      parents.length,
-      1,
-      `implementation snapshot ${snapshotCommit} is not current HEAD ${currentHead}, and checkpoint candidate ${candidate} is not a single-parent commit`,
-    );
-
-    const changedPaths = gitChangedPaths(candidate);
-    assert.ok(
-      changedPaths.length > 0,
-      `checkpoint candidate ${candidate} has no changed paths to classify as a pure spec/checker checkpoint commit`,
-    );
-
-    const nonCheckpointPaths = changedPaths.filter(
-      (path) => !checkpointPaths.has(path),
-    );
-    assert.deepEqual(
-      nonCheckpointPaths,
-      [],
-      `implementation snapshot ${snapshotCommit} is behind checkpoint commit ${candidate}, but that commit also changes non-checkpoint files: ${nonCheckpointPaths.join(
-        ", ",
-      )}`,
-    );
-
-    checkpointCommits.push(candidate);
-    candidate = parents[0];
-  }
-
-  assert.ok(
-    checkpointCommits.length > 0,
-    `implementation snapshot ${snapshotCommit} must match current HEAD ${currentHead} or an ancestor reached through pure spec/checker checkpoint commits`,
-  );
-}
-
-function gitCommitParents(revision) {
-  const line = gitOutput(["rev-list", "--parents", "-n", "1", revision]);
-  const [head, ...parents] = line.split(/\s+/u);
-  assert.equal(
-    head,
-    gitRevParse(revision),
-    `git rev-list ${revision} did not match rev-parse ${revision}`,
-  );
-  return parents;
-}
-
-function gitChangedPaths(revision) {
-  const output = gitOutput([
-    "diff-tree",
-    "--no-commit-id",
-    "--name-only",
-    "-r",
-    revision,
-  ]);
-  if (output.length === 0) {
-    return [];
-  }
-  return output.split(/\r?\n/u).filter(Boolean);
+function assertSnapshotCommitIsCurrentOrCheckpointTree() {
+  assertSnapshotPathPolicy({
+    repoRoot,
+    snapshotCommit,
+    currentHead,
+    checkpointPaths,
+  });
 }
 
 function gitRevParse(revision) {

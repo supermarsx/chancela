@@ -28,7 +28,6 @@ postgres = [
     "dep:tokio",
     "dep:tokio-rustls",
     "dep:rustls-native-certs",
-    "dep:rustls-pemfile",
 ]
 
 [dependencies]
@@ -66,11 +65,10 @@ r2d2_postgres = { version = "0.18", optional = true }
 # TLS for the synchronous Postgres connection (wp25). A rustls `MakeTlsConnect` is implemented over
 # `tokio-rustls` in `pg_tls.rs`, so the sync `postgres`+r2d2 stack gains sslmode=require/verify-full
 # WITHOUT dragging in OpenSSL (`postgres-native-tls`/`postgres-openssl`). rustls + its trust-root /
-# PEM helpers are already compiled elsewhere in the workspace, so this adds only dependency edges,
-# no new crate versions. `tokio` is needed only for the `AsyncRead`/`AsyncWrite` trait bounds the
-# tokio-postgres TLS traits require; the sync driver still owns its own runtime.
+# PEM parsing is provided by rustls' own `pki_types`, so no unmaintained helper dependency is
+# required. `tokio` is needed only for the `AsyncRead`/`AsyncWrite` trait bounds the tokio-postgres
+# TLS traits require; the sync driver still owns its own runtime.
 rustls = { version = "0.23", optional = true }
 tokio = { version = "1", optional = true, default-features = false }
 tokio-rustls = { version = "0.26", optional = true }
 rustls-native-certs = { version = "0.8", optional = true }
-rustls-pemfile = { version = "2", optional = true }

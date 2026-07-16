@@ -479,10 +479,10 @@ fn handle_text(
             }
         }
         "URI" if under(stack, "TSPInformationURI") => {
-            if let Some(tsp) = tsp {
-                if !tsp.information_uris.iter().any(|uri| uri == text) {
-                    tsp.information_uris.push(text.to_owned());
-                }
+            if let Some(tsp) = tsp
+                && !tsp.information_uris.iter().any(|uri| uri == text)
+            {
+                tsp.information_uris.push(text.to_owned());
             }
         }
         "ServiceTypeIdentifier" => {

@@ -72,10 +72,10 @@ pub fn resolve_data_dir(flag: Option<PathBuf>) -> PathBuf {
     if let Some(dir) = flag {
         return dir;
     }
-    if let Ok(raw) = std::env::var(DATA_DIR_ENV) {
-        if !raw.trim().is_empty() {
-            return PathBuf::from(raw);
-        }
+    if let Ok(raw) = std::env::var(DATA_DIR_ENV)
+        && !raw.trim().is_empty()
+    {
+        return PathBuf::from(raw);
     }
     if let Ok(start) = std::env::current_dir() {
         for base in start.ancestors() {
@@ -156,10 +156,10 @@ pub fn read_users(path: &Path) -> Result<Vec<User>, Box<dyn std::error::Error>> 
 /// Atomically write the `users.json` array (tmp file + rename), sorted by `created_at` then id — the
 /// same deterministic document shape the api writes.
 pub fn write_users_atomic(path: &Path, users: &[User]) -> Result<(), std::io::Error> {
-    if let Some(parent) = path.parent() {
-        if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent)?;
-        }
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent)?;
     }
     let mut list: Vec<&User> = users.iter().collect();
     list.sort_by(|a, b| a.created_at.cmp(&b.created_at).then(a.id.0.cmp(&b.id.0)));
@@ -183,12 +183,12 @@ pub fn server_binary() -> PathBuf {
     } else {
         "chancela-server"
     };
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            let sibling = dir.join(name);
-            if sibling.exists() {
-                return sibling;
-            }
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(dir) = exe.parent()
+    {
+        let sibling = dir.join(name);
+        if sibling.exists() {
+            return sibling;
         }
     }
     PathBuf::from(name)

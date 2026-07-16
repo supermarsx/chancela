@@ -803,10 +803,10 @@ fn find_manifest_for_signature<'a>(
 ) -> Option<(&'a str, Vec<u8>, ParsedManifest)> {
     for mpath in manifest_paths {
         let bytes = member(members, mpath)?;
-        if let Ok(parsed) = parse_asic_manifest(bytes) {
-            if parsed.signature_uri == signature_path {
-                return Some((mpath, bytes.to_vec(), parsed));
-            }
+        if let Ok(parsed) = parse_asic_manifest(bytes)
+            && parsed.signature_uri == signature_path
+        {
+            return Some((mpath, bytes.to_vec(), parsed));
         }
     }
     None

@@ -43,12 +43,14 @@ ingress, put a TLS-terminating reverse proxy (nginx, Caddy, Traefik) in front:
   reading the `/health` role, reads to any node) or let clients follow the `307`
   write redirects.
 
-The optional Postgres backend now uses a rustls connector and honors `sslmode`
-from `CHANCELA_PG_SSLMODE` or `DATABASE_URL` (`disable`, `prefer`, `require`,
-`verify-full`; default `prefer`). Use `verify-full` plus a trusted root CA for a
-networked or managed Postgres. Current checkpoint coverage includes the live
-`sslmode=prefer` round-trip only; it is not a live `verify-full` CA/hostname
-proof or production remote-database readiness claim.
+The optional Postgres backend uses a rustls connector and requires authenticated
+`verify-full` transport. `CHANCELA_PG_SSLMODE` takes precedence over
+`DATABASE_URL`; `verify-ca` is accepted and hardened to `verify-full`, while
+`disable`, `prefer`, and `require` fail closed. CI now creates an ephemeral CA
+and hostname-valid server certificate and runs the ignored live
+`sslmode_verify_full_opens_and_roundtrips_on_postgres` test. That proves the
+connector and CI certificate path, not production remote-database, CA-custody,
+HA, failover, or RPO/RTO readiness.
 
 The API emits `Strict-Transport-Security` on responses. It is useful only after
 the app is behind a real HTTPS-terminating proxy because browsers ignore HSTS

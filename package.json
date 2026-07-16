@@ -3,22 +3,26 @@
   "version": "26.1.0",
   "private": true,
   "type": "module",
+  "packageManager": "npm@12.0.1",
   "description": "Portugal-compliant livro de atas and corporate acts ledger/archive platform.",
   "license": "MIT",
   "workspaces": [
     "apps/web"
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=24.15.0",
+    "npm": ">=12.0.1"
   },
   "scripts": {
     "init": "node -e \"const c=require('child_process'),w=process.platform==='win32',r=c.spawnSync(w?'powershell':'bash',w?['-NoProfile','-ExecutionPolicy','Bypass','-File','scripts/init.ps1']:['scripts/init.sh'],{stdio:'inherit'});process.exit(r.status==null?1:r.status)\"",
     "dev": "node -e \"const c=require('child_process'),w=process.platform==='win32',r=c.spawnSync(w?'powershell':'bash',w?['-NoProfile','-ExecutionPolicy','Bypass','-File','scripts/dev.ps1']:['scripts/dev.sh'],{stdio:'inherit'});process.exit(r.status==null?1:r.status)\"",
     "check:versions": "node scripts/check-versions.mjs",
     "check:spec-coverage": "node scripts/check-spec-coverage.mjs",
+    "test:spec-coverage-policy": "node --test scripts/check-spec-coverage-snapshot.test.mjs",
     "check:ci-assurance-waivers": "node scripts/check-ci-assurance-waivers.mjs",
     "check:live-provider-assurance": "node scripts/check-live-provider-assurance.mjs",
     "check:encrypted-build-defaults": "node scripts/check-encrypted-build-defaults.mjs",
+    "check:supply-chain-pins": "node scripts/check-supply-chain-pins.mjs",
     "lint": "npm run lint:rust && npm run lint:web",
     "lint:rust": "cargo clippy --workspace --all-targets --locked -- -D warnings",
     "lint:web": "npm run lint --workspace apps/web",

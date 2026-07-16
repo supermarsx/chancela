@@ -797,7 +797,7 @@ function guardCiDockerWorkflow(ciText) {
 
   requireTextIncludes(
     dockerJob,
-    "uses: docker/build-push-action@v6",
+    "uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0",
     ".github/workflows/ci.yml jobs.docker must build through docker/build-push-action",
   );
   requireTextMatches(

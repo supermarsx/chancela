@@ -26,9 +26,10 @@ hardened images described in
 |---|---|---|---|
 | `single-node` | SQLite (SQLCipher) | Simplest self-host; file-level encryption at rest | `docker/docker-compose.yml` |
 | `validation-worker` | SQLite | `single-node` plus a bounded isolation/health sidecar | `docker/docker-compose.yml` |
-| `postgres` | PostgreSQL 16 + Redis 7 | Networked DB, PG-native backup tooling | `docker/docker-compose.yml` |
+| `worker` | SQLite (SQLCipher) | `single-node` plus the durable sync/backup connector worker on a shared data volume | `docker/docker-compose.yml` |
+| `postgres` | PostgreSQL 18.4 + Redis 8.8 | Networked DB, PG-native backup tooling | `docker/docker-compose.yml` |
 | Hardened `single-node` / `postgres` | as above | Production posture: distroless, read-only rootfs, digest-pinned | `docker-compose.hardened.yml` |
-| Multi-node overlay | PostgreSQL 16 + Redis 7 | Leader + read-followers with failover (see [HA](#multi-node-leaderfollower)) | `docker/docker-compose.cluster.yml` |
+| Multi-node overlay | PostgreSQL 18.4 + Redis 8.8 | Leader + read-followers with failover (see [HA](#multi-node-leaderfollower)) | `docker/docker-compose.cluster.yml` |
 
 ## Single node (SQLite)
 
@@ -64,18 +65,36 @@ scripts\docker-smoke.ps1 -Image chancela-server:local -ComposeProfile
 ### Validation-worker sidecar
 
 Adds a bounded second container (same image, its own volume, internal port
-`8081`) for isolation and health validation. It is a deployment-profile
-placeholder, **not** a dedicated async worker (the repo ships no separate worker
-entrypoint yet):
+`8081`) for isolation and health validation. It remains a deployment-profile
+placeholder and is unrelated to the dedicated connector worker:
 
 ```sh
 docker compose -f docker/docker-compose.yml --profile validation-worker up --build
 ```
 
+### Durable sync and backup worker
+
+The `worker` profile starts `chancela-server` and the dedicated non-root
+`chancela-worker` image together:
+
+```sh
+docker compose -f docker/docker-compose.yml --profile worker up --build
+```
+
+Both services mount `chancela-data` at `/var/lib/chancela`. The API owns
+tenant-scoped connector configuration, materializes only server-selected
+artifacts below `/var/lib/chancela/worker/sources`, and publishes audited jobs
+to `/var/lib/chancela/worker/queue`; the worker consumes that queue and writes
+status/receipts there. The config and secret directories are separate read-only
+mounts. Set `CHANCELA_CONNECTOR_ALLOWED_HOSTS` before selecting a network
+target, and set `CHANCELA_CONNECTOR_SECRETS_HOST_DIR` to a protected directory
+for file-backed credentials. See [Sync, backup, and connector worker](connectors-worker.md).
+
 ## Postgres durability backend + Redis cache
 
-Brings up the app compiled with the Postgres backend, a `postgres:16-alpine`
-service, and a `redis:7-alpine` cache-aside. Postgres and Redis are **not**
+Brings up the app compiled with the Postgres backend, a
+`postgres:18.4-alpine3.23` service, and a `redis:8.8.0-alpine3.23`
+cache-aside. Postgres and Redis are **not**
 published to the host — they are reachable only on the compose network.
 
 1. Create the real secret files from the committed templates and fill them in:
@@ -103,12 +122,28 @@ The app is built with
 `CARGO_FEATURES="chancela-server/sqlcipher chancela-server/postgres chancela-server/redis"`
 and still keeps a small writable volume at `/var/lib/chancela` for the credential
 sidecar (`provider-credentials.enc.json`), the CAE/law/TSL caches, and the JSON
-sidecars. The `postgres:16-alpine` service takes its database/user from
+sidecars. The PostgreSQL 18.4 service takes its database/user from
 `CHANCELA_PG_DB` / `CHANCELA_PG_USER` (defaults `chancela`), is **not** published
-to the host, and is reached only on the compose network; the app waits for its
-`pg_isready` health before serving. `redis:7-alpine` runs AOF persistence with
+to the host, and is reached only on the compose network. A one-shot,
+network-disabled `postgres-tls-init` service creates/renews the private CA and
+server certificate in `chancela-pg-tls`; PostgreSQL health performs a real
+`sslmode=verify-full` query before the app starts. Redis 8.8 runs AOF persistence with
 `maxmemory` + `allkeys-lru` and is a pure cache — the app is fully correct with
 Redis down. All three services carry `deploy.resources.limits`.
+
+!!! danger "Upgrading an existing PostgreSQL 16 volume"
+    PostgreSQL major-version data directories are not binary-compatible, and
+    PostgreSQL 18 also moved the official image's `PGDATA` beneath
+    `/var/lib/postgresql/18/docker`. Do not point 18.4 at an existing 16 data
+    directory. Take and verify a `pg_dump`/`pg_dumpall` backup (or perform a
+    deliberate `pg_upgrade`), start 18.4 with a fresh volume, restore, and run
+    the ledger verification checks before returning the deployment to service.
+
+!!! warning "Redis 8 licensing"
+    Redis 8 is distributed under the RSALv2, SSPLv1, or AGPLv3 choices. Review
+    the selected licence for the deployment/distribution model. Chancela uses
+    Redis only as an optional cache and remains correct if the service is
+    omitted.
 
 !!! warning "Never scale this profile"
     The profile pins `deploy.replicas: 1`. Because the app is
@@ -125,9 +160,10 @@ Redis down. All three services carry `deploy.resources.limits`.
     block device) — this is disk-level only: a DB superuser or a live memory dump
     still sees plaintext, a materially weaker guarantee than SQLCipher. The
     credential store keeps its own app-layer XChaCha20-Poly1305 encryption
-    regardless. TLS to Postgres (`sslmode=verify-full`) is not wired in this lane
-    — the backend uses `NoTls` on the local compose network; a remote Postgres
-    deployment needs a future TLS connector first.
+    regardless. PostgreSQL transport is always authenticated with
+    `sslmode=verify-full`: the compose CA is mounted read-only into the app, and
+    insecure TLS modes fail closed. Managed/remote Postgres deployments must
+    mount their provider CA and set `CHANCELA_PG_TLS_ROOT_CERT` accordingly.
 
 ### Backup and restore on Postgres
 

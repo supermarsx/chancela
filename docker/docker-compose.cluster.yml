@@ -48,6 +48,7 @@ services:
       CHANCELA_DATA_DIR: /var/lib/chancela
       CHANCELA_DB_BACKEND: postgres
       DATABASE_URL_FILE: /run/secrets/database_url
+      CHANCELA_PG_TLS_ROOT_CERT: /run/chancela-postgres-tls/ca.crt
       # Redis is REQUIRED in multi-node: cluster-wide sessions + global sign-in rate-limits.
       REDIS_URL: redis://redis:6379
       CHANCELA_CREDENTIAL_KEY_FILE: /run/secrets/credential_key
@@ -65,6 +66,7 @@ services:
       - credential_key
     volumes:
       - chancela-cluster-data:/var/lib/chancela
+      - chancela-pg-tls:/run/chancela-postgres-tls:ro
     depends_on:
       postgres:
         condition: service_healthy

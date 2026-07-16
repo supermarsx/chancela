@@ -98,13 +98,13 @@ impl CscTransport for HttpCscTransport {
         let resp = req.send().map_err(|e| CscError::Transport(e.to_string()))?;
         let status = resp.status();
         // Reject oversized bodies before buffering.
-        if let Some(len) = resp.content_length() {
-            if len > MAX_CSC_RESPONSE {
-                return Err(CscError::ResponseTooLarge {
-                    content_length: len,
-                    limit: MAX_CSC_RESPONSE,
-                });
-            }
+        if let Some(len) = resp.content_length()
+            && len > MAX_CSC_RESPONSE
+        {
+            return Err(CscError::ResponseTooLarge {
+                content_length: len,
+                limit: MAX_CSC_RESPONSE,
+            });
         }
         let bytes = resp
             .bytes()

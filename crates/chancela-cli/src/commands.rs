@@ -105,13 +105,11 @@ pub fn status(ctx: &Ctx) -> Cmd {
             "CHAIN BROKEN"
         }
     );
-    if !healthy {
-        if let Some(b) = first_break(report) {
-            println!(
-                "  First break    {} — {} (chain_seq {:?})",
-                b.chain, b.message, b.chain_seq
-            );
-        }
+    if !healthy && let Some(b) = first_break(report) {
+        println!(
+            "  First break    {} — {} (chain_seq {:?})",
+            b.chain, b.message, b.chain_seq
+        );
     }
     println!("  Entities       {entities}");
     println!("  Books          {books}");

@@ -14,6 +14,9 @@
 #     cp docker/secrets/credential_key.example    docker/secrets/credential_key
 #     docker compose -f docker-compose.hardened.yml --profile postgres up --build
 #
+#   Dedicated durable sync/backup worker:
+#     docker compose -f docker-compose.hardened.yml --profile worker up --build
+#
 # Full rationale + system requirements: docs/security/hardened-docker.md
 #
 # HONEST SCOPE (unchanged from docker/DEPLOYMENT-PROFILES.md): this is a
@@ -72,7 +75,7 @@ services:
   # -----------------------------------------------------------------------
   server:
     <<: *app-hardening
-    profiles: [single-node]
+    profiles: [single-node, worker]
     build:
       context: .
       dockerfile: Dockerfile.hardened
@@ -109,15 +112,73 @@ services:
           memory: 256m
 
   # -----------------------------------------------------------------------
+  # Dedicated ARC-20 sync/backup worker. It has no listening socket, uses its
+  # own durable queue volume, and is healthy only while heartbeats remain fresh.
+  # -----------------------------------------------------------------------
+  worker:
+    <<: *app-hardening
+    profiles: [worker]
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.worker
+    image: ${CHANCELA_WORKER_IMAGE:-chancela-worker:hardened}
+    user: "65532:65532"
+    tmpfs:
+      - /tmp:size=64m
+    environment:
+      CHANCELA_CONNECTOR_SECRETS_DIR: /run/chancela-connector-secrets
+      CHANCELA_CONNECTOR_ALLOWED_HOSTS: ${CHANCELA_CONNECTOR_ALLOWED_HOSTS:-}
+    volumes:
+      - chancela-data:/var/lib/chancela
+      - ${CHANCELA_WORKER_CONFIG:-./docker/worker-config.example.json}:/etc/chancela-worker/config.json:ro
+      - ${CHANCELA_CONNECTOR_SECRETS_HOST_DIR:-./docker/connector-secrets}:/run/chancela-connector-secrets:ro
+    networks: [edge]
+    depends_on:
+      server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/chancela-worker", "healthcheck", "--data-dir", "/var/lib/chancela/worker/queue", "--max-age-seconds", "120"]
+      interval: 30s
+      timeout: 3s
+      start_period: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512m
+          pids: 128
+        reservations:
+          memory: 128m
+
+  # -----------------------------------------------------------------------
   # postgres profile: PG durability backend + Redis cache + the app.
   #
   # SINGLE-WRITER by design (see header + docker/DEPLOYMENT-PROFILES.md).
   # -----------------------------------------------------------------------
+  postgres-tls-init:
+    profiles: [postgres]
+    image: alpine/openssl:3.5.7@sha256:3da6a24cdaa2f2ac8ef4defb322249fae6159983104653a9e5312f5b75dac7af
+    user: "0:0"
+    read_only: true
+    network_mode: none
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER]
+    security_opt:
+      - no-new-privileges:true
+    entrypoint: ["/bin/sh", "/usr/local/bin/postgres-tls-init.sh"]
+    volumes:
+      - ./docker/postgres-tls-init.sh:/usr/local/bin/postgres-tls-init.sh:ro
+      - chancela-pg-tls:/tls
+    tmpfs:
+      - /tmp:size=16m
+    restart: "no"
+
   postgres:
     <<: *infra-hardening
     profiles: [postgres]
-    # postgres:16-alpine — pinned by digest (refresh deliberately; see docs).
-    image: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
+    # postgres:18.4-alpine3.23 — pinned by multi-arch manifest digest.
+    image: postgres:18.4-alpine3.23@sha256:996d0920e4ff9df1fc19dacb904492f3c1ec0ec1cc338f0ad7123be7731c5f5e
     # cap_drop ALL then add back ONLY what the official entrypoint needs to
     # chown the data dir and drop from root to the internal `postgres` user.
     cap_drop: [ALL]
@@ -135,12 +196,26 @@ services:
       # Put this on ENCRYPTED storage (LUKS / encrypted block device): vanilla
       # Postgres has no whole-DB encryption, so at-rest protection is volume
       # level, NOT SQLCipher file-level ciphertext. See DEPLOYMENT-PROFILES.md.
-      - chancela-pgdata:/var/lib/postgresql/data
+      - chancela-pgdata:/var/lib/postgresql
+      - chancela-pg-tls:/var/lib/postgresql/tls:ro
     networks: [backend]              # internal network only; never published
     expose:
       - "5432"
+    command:
+      - postgres
+      - -c
+      - ssl=on
+      - -c
+      - ssl_cert_file=/var/lib/postgresql/tls/server.crt
+      - -c
+      - ssl_key_file=/var/lib/postgresql/tls/server.key
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${CHANCELA_PG_USER:-chancela} -d ${CHANCELA_PG_DB:-chancela}"]
+      test:
+        - CMD-SHELL
+        - >-
+          PGPASSWORD="$$(cat /run/secrets/postgres_password)"
+          psql "host=localhost port=5432 user=$${POSTGRES_USER} dbname=$${POSTGRES_DB} sslmode=verify-full sslrootcert=/var/lib/postgresql/tls/ca.crt"
+          -tAc 'SELECT 1' | grep -qx 1
       interval: 10s
       timeout: 5s
       start_period: 15s
@@ -153,12 +228,15 @@ services:
           pids: 256
         reservations:
           memory: 256m
+    depends_on:
+      postgres-tls-init:
+        condition: service_completed_successfully
 
   redis:
     <<: *infra-hardening
     profiles: [postgres]
-    # redis:7-alpine — pinned by digest.
-    image: redis:7-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
+    # redis:8.8.0-alpine3.23 — pinned by multi-arch manifest digest.
+    image: redis:8.8.0-alpine3.23@sha256:9d317178eceac8454a2284a9e6df2466b93c745529947f0cd42a0fa9609d7005
     # Cache-aside only: the app is fully correct with Redis down (fail-open).
     command:
       ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
@@ -203,6 +281,7 @@ services:
       CHANCELA_DATA_DIR: /var/lib/chancela
       CHANCELA_DB_BACKEND: postgres
       DATABASE_URL_FILE: /run/secrets/database_url
+      CHANCELA_PG_TLS_ROOT_CERT: /run/chancela-postgres-tls/ca.crt
       REDIS_URL: redis://redis:6379
       # REQUIRED on Postgres: the provider-credential store root key (no
       # SQLCipher DerivedFromDbKey source). Delivered as a docker secret file.
@@ -218,6 +297,7 @@ services:
       - /tmp:size=64m
     volumes:
       - chancela-app-data:/var/lib/chancela
+      - chancela-pg-tls:/run/chancela-postgres-tls:ro
     networks: [edge, backend]        # edge to publish loopback; backend to reach DB
     depends_on:
       postgres:
@@ -252,6 +332,7 @@ networks:
 volumes:
   chancela-data:
   chancela-pgdata:
+  chancela-pg-tls:
   chancela-redisdata:
   chancela-app-data:
 

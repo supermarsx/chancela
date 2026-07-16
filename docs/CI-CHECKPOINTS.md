@@ -284,18 +284,18 @@ impossibility, live failover certification, cloud deployment readiness, live
 backup-policy/RPO/RTO certification, destructive operation safety, legal/DR
 certification, external service dependency, or external sync readiness.
 
-The wp25 Postgres TLS markers prove source and focused live-store coverage for
-the rustls connector only. `crates/chancela-store/src/pg_tls.rs` resolves
+The current Postgres TLS gate proves the rustls connector through a live,
+hostname-verified path. `crates/chancela-store/src/pg_tls.rs` resolves
 `sslmode` from `CHANCELA_PG_SSLMODE` before `DATABASE_URL`, defaults to
-`prefer`, strips URL and keyword-form `sslmode` before handing the DSN to
-`postgres::Config`, supports `disable`/`prefer`/`require`/`verify-full`, treats
-`verify-ca` as the stricter verify-full posture, and fails closed if
-verify-full cannot load trusted roots. The live ignored test
-`sslmode_prefer_opens_and_roundtrips_on_postgres` proves the connector and
-`sslmode=prefer` round-trip against a plain or TLS-capable test Postgres only.
-It does not prove live `verify-full` CA/hostname validation, production remote
-Postgres readiness, HA/failover, migration completeness, RPO/RTO, legal/DR
-certification, or broader API Postgres CI.
+`verify-full`, treats `verify-ca` as the stricter verify-full posture, rejects
+`disable`/`prefer`/`require`, and fails closed if trusted roots cannot be
+loaded. CI creates an ephemeral private CA and a server certificate whose SAN
+covers `localhost`, enables TLS on the disposable PostgreSQL service, verifies
+that service with `psql sslmode=verify-full`, then runs
+`sslmode_verify_full_opens_and_roundtrips_on_postgres`. This proves the CI
+connector/CA/hostname path, not production CA custody, remote Postgres
+readiness, HA/failover, migration completeness, RPO/RTO, legal/DR
+certification, or broad API Postgres coverage.
 
 It intentionally reuses existing test surfaces:
 

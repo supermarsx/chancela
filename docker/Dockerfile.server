@@ -21,7 +21,7 @@
 #     the process needs no writable image paths; scratch space is a tmpfs.
 
 ########################  Stage 1: Rust build  ########################
-FROM rust:1-slim-bookworm AS rust-build
+FROM rust:1.97.0-slim-trixie@sha256:466074ef42a9485c726d71017fa629f1954cd5e09b473dcd00467ddc6afdc753 AS rust-build
 WORKDIR /build
 
 # Cargo features compiled into `chancela-server`. Defaults to today's
@@ -49,7 +49,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     && cp target/release/chancela-server /chancela-server
 
 ########################  Stage 2: Web build  ########################
-FROM node:22-slim AS web-build
+FROM node:24.18.0-trixie-slim@sha256:ae91dcc111a68c9d2d81ff2a17bda61be126426176fde6fe7d08ab13b7f50573 AS web-build
 WORKDIR /app
 
 # Install dependencies first so the npm layer is cached independently of source
@@ -69,11 +69,11 @@ COPY . .
 RUN npm run build --workspace apps/web
 
 ########################  Stage 3: Runtime  ########################
-FROM gcr.io/distroless/cc-debian12:nonroot AS runtime
+FROM gcr.io/distroless/cc-debian13:nonroot@sha256:d97bc0a941b8d4be647dc0ee75b264ddbb772f1ac5ba690a4309c00723b23775 AS runtime
 
 # distroless is shell-less; copy a single static busybox purely so HEALTHCHECK
 # has a tiny HTTP client. No other utilities are added.
-COPY --from=busybox:uclibc /bin/busybox /usr/bin/busybox
+COPY --from=busybox:1.37.0-uclibc@sha256:39e0df8c4d65953b55c344f017e1ff2e0031a7454b3c24e6b76d402f207e315a /bin/busybox /usr/bin/busybox
 
 COPY --from=rust-build /chancela-server /usr/local/bin/chancela-server
 COPY --from=web-build /app/apps/web/dist /srv/web

@@ -90,13 +90,13 @@ impl ScmdTransport for HttpScmdTransport {
         // Reject oversized bodies before buffering (t41-e4 H4). A declared Content-Length
         // over the limit is a fast-fail; an absent/chunked Content-Length is caught after
         // the read by capping the buffered bytes.
-        if let Some(len) = resp.content_length() {
-            if len > MAX_CMD_RESPONSE {
-                return Err(CmdError::ResponseTooLarge {
-                    content_length: len,
-                    limit: MAX_CMD_RESPONSE,
-                });
-            }
+        if let Some(len) = resp.content_length()
+            && len > MAX_CMD_RESPONSE
+        {
+            return Err(CmdError::ResponseTooLarge {
+                content_length: len,
+                limit: MAX_CMD_RESPONSE,
+            });
         }
         let bytes = resp
             .bytes()

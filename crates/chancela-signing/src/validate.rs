@@ -164,13 +164,13 @@ pub fn validate_signature(
         SignatureFormat::ASiC => match crate::asic::extract_asic_container(&artifact.signature)? {
             AsicContainer::S(container) => {
                 let packaged_digest = crate::asic::sha256_content_digest(&container.content);
-                if let Some(expected) = content_digest {
-                    if expected != &packaged_digest {
-                        return Err(SigningError::Asic(
-                            "ASiC payload digest does not match the supplied content digest"
-                                .to_string(),
-                        ));
-                    }
+                if let Some(expected) = content_digest
+                    && expected != &packaged_digest
+                {
+                    return Err(SigningError::Asic(
+                        "ASiC payload digest does not match the supplied content digest"
+                            .to_string(),
+                    ));
                 }
                 validate_cades_member(artifact, container.cades_signature_der, &packaged_digest)
             }

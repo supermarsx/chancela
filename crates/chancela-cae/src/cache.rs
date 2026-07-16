@@ -161,10 +161,10 @@ pub fn spawn_background_refresh(data_dir: Option<PathBuf>) {
             Err(_) => return,
         };
         // Skip when the cache file is present and still within the TTL.
-        if let Some(dir) = &data_dir {
-            if cache_is_fresh(&dir.join(CACHE_FILE)) {
-                return;
-            }
+        if let Some(dir) = &data_dir
+            && cache_is_fresh(&dir.join(CACHE_FILE))
+        {
+            return;
         }
         match refresh(&source, data_dir.as_deref()) {
             Ok((_, outcome)) if outcome.updated => {

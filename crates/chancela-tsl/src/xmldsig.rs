@@ -305,10 +305,10 @@ pub(crate) fn parse_signature(xml: &[u8]) -> Result<ParsedSignature, TslError> {
                         digest_value: Vec::new(),
                     });
                 } else if in_signature && local == "Transform" && cur_reference.is_some() {
-                    if let Some(uri) = read_algorithm_attr(&e) {
-                        if let Some(r) = cur_reference.as_mut() {
-                            r.transforms.push(uri);
-                        }
+                    if let Some(uri) = read_algorithm_attr(&e)
+                        && let Some(r) = cur_reference.as_mut()
+                    {
+                        r.transforms.push(uri);
                     }
                 } else if in_signature && local == "CanonicalizationMethod" && in_signed_info {
                     if let Some(uri) = read_algorithm_attr(&e) {
@@ -318,12 +318,13 @@ pub(crate) fn parse_signature(xml: &[u8]) -> Result<ParsedSignature, TslError> {
                     if let Some(uri) = read_algorithm_attr(&e) {
                         sig.signature_method = uri;
                     }
-                } else if in_signature && local == "DigestMethod" && cur_reference.is_some() {
-                    if let Some(uri) = read_algorithm_attr(&e) {
-                        if let Some(r) = cur_reference.as_mut() {
-                            r.digest_method = uri;
-                        }
-                    }
+                } else if in_signature
+                    && local == "DigestMethod"
+                    && cur_reference.is_some()
+                    && let Some(uri) = read_algorithm_attr(&e)
+                    && let Some(r) = cur_reference.as_mut()
+                {
+                    r.digest_method = uri;
                 }
             }
             Event::Empty(e) => {
@@ -351,25 +352,27 @@ pub(crate) fn parse_signature(xml: &[u8]) -> Result<ParsedSignature, TslError> {
                         digest_value: Vec::new(),
                     });
                 } else if in_signature && local == "Transform" && cur_reference.is_some() {
-                    if let Some(uri) = read_algorithm_attr(&e) {
-                        if let Some(r) = cur_reference.as_mut() {
-                            r.transforms.push(uri);
-                        }
+                    if let Some(uri) = read_algorithm_attr(&e)
+                        && let Some(r) = cur_reference.as_mut()
+                    {
+                        r.transforms.push(uri);
                     }
                 } else if in_signature && local == "DigestMethod" && cur_reference.is_some() {
-                    if let Some(uri) = read_algorithm_attr(&e) {
-                        if let Some(r) = cur_reference.as_mut() {
-                            r.digest_method = uri;
-                        }
+                    if let Some(uri) = read_algorithm_attr(&e)
+                        && let Some(r) = cur_reference.as_mut()
+                    {
+                        r.digest_method = uri;
                     }
                 } else if in_signature && local == "CanonicalizationMethod" && in_signed_info {
                     if let Some(uri) = read_algorithm_attr(&e) {
                         sig.canonicalization_method = uri;
                     }
-                } else if in_signature && local == "SignatureMethod" && in_signed_info {
-                    if let Some(uri) = read_algorithm_attr(&e) {
-                        sig.signature_method = uri;
-                    }
+                } else if in_signature
+                    && local == "SignatureMethod"
+                    && in_signed_info
+                    && let Some(uri) = read_algorithm_attr(&e)
+                {
+                    sig.signature_method = uri;
                 }
             }
             Event::Text(e) if in_signature_value || in_x509_cert || in_digest_value => {
@@ -660,12 +663,11 @@ fn reference_digest_matches(reference: &Reference, resolved_content: &[u8]) -> b
     // (the enveloped-signature transform resolves to `None` and is skipped). A canonicalization
     // error simply removes that candidate — the raw candidate above stays the fail-closed default.
     for transform in &reference.transforms {
-        if let Some(alg) = C14nAlgorithm::from_uri(transform) {
-            if let Ok(canon) = crate::c14n::canonicalize(resolved_content, alg) {
-                if sha2::Sha256::digest(&canon).as_slice() == reference.digest_value.as_slice() {
-                    return true;
-                }
-            }
+        if let Some(alg) = C14nAlgorithm::from_uri(transform)
+            && let Ok(canon) = crate::c14n::canonicalize(resolved_content, alg)
+            && sha2::Sha256::digest(&canon).as_slice() == reference.digest_value.as_slice()
+        {
+            return true;
         }
     }
     false
@@ -686,12 +688,11 @@ fn signed_info_candidates(
     let mut candidates: Vec<Vec<u8>> = Vec::with_capacity(2);
 
     // Primary: real C14N over the hoisted subtree (best-effort; skipped on any failure).
-    if let Some(alg) = C14nAlgorithm::from_uri(canonicalization_method) {
-        if let Ok(hoisted) = hoist_signed_info_namespaces(xml, start, end) {
-            if let Ok(canon) = crate::c14n::canonicalize(&hoisted, alg) {
-                candidates.push(canon);
-            }
-        }
+    if let Some(alg) = C14nAlgorithm::from_uri(canonicalization_method)
+        && let Ok(hoisted) = hoist_signed_info_namespaces(xml, start, end)
+        && let Ok(canon) = crate::c14n::canonicalize(&hoisted, alg)
+    {
+        candidates.push(canon);
     }
 
     // Fallback: the raw SignedInfo bytes with leading whitespace trimmed.

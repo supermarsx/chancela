@@ -258,22 +258,21 @@ fn check_ca_constraints(
             "{label} basicConstraints does not mark a CA"
         )));
     }
-    if let Some(max) = basic.1.path_len_constraint {
-        if ca_count_below > usize::from(max) {
-            return Err(path_error(format!("{label} pathLenConstraint exceeded")));
-        }
+    if let Some(max) = basic.1.path_len_constraint
+        && ca_count_below > usize::from(max)
+    {
+        return Err(path_error(format!("{label} pathLenConstraint exceeded")));
     }
 
     if let Some((_, usage)) = cert
         .tbs_certificate
         .get::<KeyUsage>()
         .map_err(|e| path_error(format!("{label} keyUsage extension: {e}")))?
+        && !usage.key_cert_sign()
     {
-        if !usage.key_cert_sign() {
-            return Err(path_error(format!(
-                "{label} keyUsage is present but does not allow keyCertSign"
-            )));
-        }
+        return Err(path_error(format!(
+            "{label} keyUsage is present but does not allow keyCertSign"
+        )));
     }
 
     Ok(())

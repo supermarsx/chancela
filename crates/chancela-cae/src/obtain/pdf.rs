@@ -161,13 +161,13 @@ fn merge_continuations(raw: Vec<(Vec<String>, String)>) -> Vec<(Vec<String>, Str
     for (codes, desig) in raw {
         if !codes.is_empty() {
             merged.push((codes, desig));
-        } else if let Some(prev) = merged.last_mut() {
-            if !prev.1.trim_end().ends_with('.') {
-                if let Some(stripped) = prev.1.strip_suffix('-') {
-                    prev.1 = format!("{stripped}{desig}");
-                } else {
-                    prev.1 = format!("{} {}", prev.1, desig).trim().to_string();
-                }
+        } else if let Some(prev) = merged.last_mut()
+            && !prev.1.trim_end().ends_with('.')
+        {
+            if let Some(stripped) = prev.1.strip_suffix('-') {
+                prev.1 = format!("{stripped}{desig}");
+            } else {
+                prev.1 = format!("{} {}", prev.1, desig).trim().to_string();
             }
         }
     }
@@ -210,22 +210,23 @@ fn build(rows: Vec<(Vec<String>, String)>, revision: CaeRevision) -> Vec<CaeEntr
         }
     }
 
-    if revision == CaeRevision::Rev3 && !map.contains_key("843") {
-        if let Some(child) = map.get("8430") {
-            let entry = CaeEntry {
-                code: "843".to_string(),
-                designation: child.designation.clone(),
-                level: CaeLevel::Grupo,
-                revision,
-                parent: Some("84".to_string()),
-            };
-            let pos = order
-                .iter()
-                .position(|c| c == "8430")
-                .unwrap_or(order.len());
-            order.insert(pos, "843".to_string());
-            map.insert("843".to_string(), entry);
-        }
+    if revision == CaeRevision::Rev3
+        && !map.contains_key("843")
+        && let Some(child) = map.get("8430")
+    {
+        let entry = CaeEntry {
+            code: "843".to_string(),
+            designation: child.designation.clone(),
+            level: CaeLevel::Grupo,
+            revision,
+            parent: Some("84".to_string()),
+        };
+        let pos = order
+            .iter()
+            .position(|c| c == "8430")
+            .unwrap_or(order.len());
+        order.insert(pos, "843".to_string());
+        map.insert("843".to_string(), entry);
     }
 
     order.into_iter().filter_map(|c| map.remove(&c)).collect()
@@ -240,14 +241,13 @@ fn page_height(doc: &Document, page_id: ObjectId) -> Option<f64> {
     let mut id = page_id;
     for _ in 0..32 {
         let dict = doc.get_object(id).ok()?.as_dict().ok()?;
-        if let Ok(mb) = dict.get(b"MediaBox") {
-            if let Object::Array(a) = resolve(doc, mb) {
-                if a.len() == 4 {
-                    let y0 = as_f64(&a[1]);
-                    let y1 = as_f64(&a[3]);
-                    return Some((y1 - y0).abs());
-                }
-            }
+        if let Ok(mb) = dict.get(b"MediaBox")
+            && let Object::Array(a) = resolve(doc, mb)
+            && a.len() == 4
+        {
+            let y0 = as_f64(&a[1]);
+            let y1 = as_f64(&a[3]);
+            return Some((y1 - y0).abs());
         }
         match dict.get(b"Parent") {
             Ok(Object::Reference(pid)) => id = *pid,
@@ -309,10 +309,10 @@ impl FontInfo {
         }
         // Fallback for simple fonts without a mapping entry: treat the byte as Windows-1252
         // (WinAnsi), the encoding these diploma fonts declare.
-        if !self.two_byte {
-            if let Some(c) = char::from_u32(code) {
-                return fixup_cp1252(c).to_string();
-            }
+        if !self.two_byte
+            && let Some(c) = char::from_u32(code)
+        {
+            return fixup_cp1252(c).to_string();
         }
         String::new()
     }
@@ -371,6 +371,11 @@ fn mat_mul(a: Mat, b: Mat) -> Mat {
 
 const IDENTITY: Mat = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
 
+/// Per-page decompression ceiling for official CAE PDF content streams. Source downloads are
+/// already capped at 50 MiB; bounding each decoded page as well prevents a compressed stream from
+/// expanding without limit during catalog refresh.
+const MAX_DECOMPRESSED_PAGE_BYTES: usize = 64 * 1024 * 1024;
+
 /// Extract positioned words from one page by interpreting its text-showing operators.
 fn extract_words(
     doc: &Document,
@@ -379,7 +384,7 @@ fn extract_words(
     revision: CaeRevision,
 ) -> Vec<Word> {
     let fonts = build_fonts(doc, page_id);
-    let content = match doc.get_page_content(page_id) {
+    let content = match doc.get_page_content_with_limit(page_id, MAX_DECOMPRESSED_PAGE_BYTES) {
         Ok(c) => c,
         Err(_) => return Vec::new(),
     };
@@ -461,11 +466,11 @@ fn extract_words(
             }
             "'" | "\"" => {
                 // `'`: T* then show. `"`: aw ac string → set word/char spacing, then T* + show.
-                if op.operator == "\"" {
-                    if let (Some(aw), Some(ac)) = (op.operands.first(), op.operands.get(1)) {
-                        word_spacing = as_f64(aw);
-                        char_spacing = as_f64(ac);
-                    }
+                if op.operator == "\""
+                    && let (Some(aw), Some(ac)) = (op.operands.first(), op.operands.get(1))
+                {
+                    word_spacing = as_f64(aw);
+                    char_spacing = as_f64(ac);
                 }
                 tlm = mat_mul([1.0, 0.0, 0.0, 1.0, 0.0, -leading], tlm);
                 tm = tlm;
@@ -697,16 +702,15 @@ fn build_simple_widths(doc: &Document, dict: &Dictionary) -> WidthModel {
 fn build_type0_widths(doc: &Document, dict: &Dictionary) -> WidthModel {
     let mut cid_widths = HashMap::new();
     let mut default = 1000.0;
-    if let Ok(Object::Array(descs)) = dict.get(b"DescendantFonts").map(|o| resolve(doc, o)) {
-        if let Some(df) = descs.first() {
-            if let Object::Dictionary(dfd) = resolve(doc, df) {
-                if let Ok(dw) = dfd.get(b"DW") {
-                    default = as_f64(dw);
-                }
-                if let Ok(Object::Array(w)) = dfd.get(b"W").map(|o| resolve(doc, o)) {
-                    parse_cid_widths(w, &mut cid_widths);
-                }
-            }
+    if let Ok(Object::Array(descs)) = dict.get(b"DescendantFonts").map(|o| resolve(doc, o))
+        && let Some(df) = descs.first()
+        && let Object::Dictionary(dfd) = resolve(doc, df)
+    {
+        if let Ok(dw) = dfd.get(b"DW") {
+            default = as_f64(dw);
+        }
+        if let Ok(Object::Array(w)) = dfd.get(b"W").map(|o| resolve(doc, o)) {
+            parse_cid_widths(w, &mut cid_widths);
         }
     }
     WidthModel::Type0 {

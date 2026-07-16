@@ -24,7 +24,7 @@ domain core drives three editions: an offline **desktop** monolith (Tauri v2), a
 
 ## 1. Workspace layout
 
-Rust workspace (`Cargo.toml`, edition 2024, `rust-version` 1.85, resolver 3). Members live
+Rust workspace (`Cargo.toml`, edition 2024, `rust-version` 1.97, resolver 3). Members live
 under `crates/*`; internal edges are path deps so the workspace resolves with no registry. The
 DAG is acyclic and the domain/security crates never depend on `chancela-api`.
 
@@ -38,6 +38,8 @@ DAG is acyclic and the domain/security crates never depend on `chancela-api`.
 | `crates/chancela-archive` | Deterministic internal preservation-package builder (DOC-20, spec 08): ZIP manifest, checksums, provenance, rights/language metadata, signing/evidence sidecars, preservation level, retention/legal-hold metadata, and DGLAB-aligned producer/interchange metadata. It explicitly does not claim official DGLAB interchange or certification. |
 | `crates/chancela-api` | Axum HTTP layer over everything: DTOs, handlers, `AppState`, the router, the RBAC gate, and the degraded gate. |
 | `crates/chancela-server` | The `chancela-server` binary (`main.rs`); binds `127.0.0.1:8080` (`CHANCELA_ADDR`), serves the API + the web bundle from `apps/web/dist`. |
+| `crates/chancela-connectors` | ARC-20/21 protocol boundary for local, WebDAV, Graph, Drive, SFTP, FTPS, SMB, and backup-only S3 targets; credential references, egress policy, integrity evidence, and redacted receipts. |
+| `crates/chancela-worker` | WFL-40 filesystem-backed queue, immutable target snapshots, audited stage/publish lifecycle, retries/cancellation, crash recovery, and heartbeat. |
 
 ### Documents + registry data
 
@@ -68,6 +70,14 @@ DAG is acyclic and the domain/security crates never depend on `chancela-api`.
 | `crates/chancela-authz` | Scoped RBAC core: permission catalog, `Global`/`Entity`/`Book` scopes, roles-as-data, scoped delegation, and the escalation/attenuation invariants. Pure leaf. |
 | `crates/chancela-apikey` | API-key model: sha256-hashed shown-once keys as **attenuated RBAC principals**, per-key rate limiting. Pure leaf. |
 | `crates/chancela-mcp` | Off-by-default MCP server exposing platform ops as permission-gated tools over stdio. HTTP client of the integration API. |
+
+Connector targets add `Integration` and `Repository` leaves to the scoped RBAC
+graph. The API persists credential-reference-only target records, accepts only
+server-owned act/backup artifact selectors, and commits a metadata-only ledger
+event before publishing a staged job. The worker shares
+`<CHANCELA_DATA_DIR>/worker` with the server but receives configuration and
+secrets through separate read-only mounts. Operator DTOs omit source paths,
+idempotency keys, target snapshots, and secret values.
 
 ### Apps
 
@@ -195,7 +205,7 @@ and parsed (with `deny_unknown_fields`) into runtime `TemplateSpec`s (versioned 
 `blocks`, `locale`). `Registry::find(family, stage)` is the picker. **Block structure is registry
 data; minijinja fills only prose fragments** — `render(spec, ctx) -> DocumentModel` is
 deterministic (no clock, no RNG; a stateless env per call). Whitespace-only prose is dropped
-(giving `{% if %}` conditionals for free); empty KeyValue rows are omitted. Author-facing filters:
+(so conditional template blocks need no special cleanup); empty KeyValue rows are omitted. Author-facing filters:
 `long_date`, `channel_label`, `role_label`, and the `threshold()` function.
 
 ### The `DocumentModel` seam (`crates/chancela-core/src/document_model.rs`)
@@ -223,18 +233,20 @@ identifier (`pdfuaid:part=1`) plus the mandatory `pdfaExtension` schema descript
 A document that doesn't clear the bar stays plain PDF/A-2U — there is no fabricated claim and
 no silent downgrade of the PDF/A metadata either way.
 
-**The enforced in-repo gate is `crates/chancela-doc/src/selfcheck.rs`**, run on every
+**The first enforced gate is `crates/chancela-doc/src/selfcheck.rs`**, run on every
 `pdfa::write()` call. For every document it asserts `/MarkInfo /Marked true`, a
 `/StructTreeRoot` with a non-empty `/RoleMap`, catalog `/Lang`, `/ViewerPreferences
 /DisplayDocTitle true`, and that no text-showing operator sits outside a marked-content scope;
 when the XMP carries the `pdfuaid` identifier it additionally asserts the extension-schema
 description and that the tagged heading hierarchy never skips a level. There is deliberately no
-native PDF/UA validator wired into CI (distroless ethos) — `selfcheck::verify` is the gate, and
-it fails closed (`DocError::Conformance`).
+Java validator in the runtime images (distroless ethos); `selfcheck::verify` remains the
+fail-closed (`DocError::Conformance`) application boundary.
 
-**veraPDF is opt-in, not CI-gated:** `verapdf --flavour ua1 doc.pdf` (exit 0 == PDF/UA-1
-conformant) and `verapdf --flavour 2u doc.pdf` (PDF/A-2U) are the external validators for anyone
-who wants a second, independent opinion; nothing in CI installs or invokes veraPDF.
+**Independent CI gate:** CI generates a deterministic representative document and validates the
+exact emitted bytes with checksum-pinned veraPDF using both `--flavour 2u` and `--flavour ua1`.
+The PDF and both machine-readable reports are retained as workflow artifacts. This validates the
+machine-checkable PDF/A-2U and PDF/UA-1 rules independently of Chancela's own parser; it does not
+replace the human PDF/UA checkpoints required for release/accessibility review.
 
 **Signed-file caveat (deferred G14):** the PDF/UA claim is scoped to the document exactly as
 `pdfa::write` produces it — **before** `chancela-pades::sign_pdf` runs. The signature widget
@@ -312,6 +324,31 @@ documents, mutate signed records, or prove legal/signature validity.
   that can be opened in office suites. It carries a non-evidentiary warning plus preserved-document
   metadata; the canonical record remains the stored PDF/A or signed PDF. The route is read-only,
   uses the document-read gate, and does not append ledger events.
+
+### Opt-in zero-knowledge repositories
+
+`crates/chancela-zk` defines the strict client/server trust boundary and
+`crates/chancela-api/src/zk_repository.rs` implements it. A trusted client creates a random CEK,
+encrypts content with AES-256-GCM and canonical associated data, and sends a manifest before a
+separate opaque ciphertext upload. The server validates digest, length, immutable contiguous
+version, and nonce/key-reference uniqueness; it stores neither plaintext nor a raw CEK, private key,
+WebAuthn PRF output, or recovery share, and exposes no decrypt route.
+
+The durable layout is `<data_dir>/zk-repositories/`: an atomically replaced `index.json`, immutable
+UUID-derived `objects/<repository>/<object>/<version>.bin` files, resumable upload manifests, and a
+crash-only staging area. Every existing path component is checked for symlinks before access.
+Startup verifies every referenced blob and removes unreferenced crash orphans. The complete root is
+part of the existing digest-verified backup/restore and domain-wipe lifecycle. Repository and
+immutable archive resources are first-class RBAC scopes below Tenant and Repository respectively;
+policy, manifest, commit, and readability-export transitions are ledger-audited with metadata only.
+
+PostgreSQL does not make this filesystem layout shared. HA therefore fails closed unless
+`CHANCELA_ZK_SHARED_OBJECT_ROOT` explicitly resolves to the same shared-mounted
+`<data_dir>/zk-repositories` path on every node. A node-local directory must not be presented as an
+HA object store. Readability transfer is step-up protected and supports only a client-validated
+decrypted Chancela preservation package or stored ciphertext plus a client-produced compact JWE.
+Generated documentation states that no external import or legal-archive certification is proven and
+that zero-knowledge encryption does not remove GDPR obligations.
 
 ---
 
@@ -765,7 +802,7 @@ hand-authored token stylesheet.
   fail-closed route-coverage guard forces every new API route to be explicitly classified
   Exempt/Session/Gated. Lint is `clippy --all-targets -D warnings`.
 - **CI coverage.** GitHub Actions run Rust format/clippy/tests on Ubuntu, Windows, and macOS; web
-  format/lint/tests/build on Node 20 and 24; composed server E2E on every PR/push; Docker server
+  format/lint/tests/build on Node 24; composed server E2E on every PR/push; Docker server
   image builds on main; Playwright browser E2E on main or `run-browser-tests`; and Windows Tauri
   desktop smoke on main or `run-desktop-tests`. Browser and desktop jobs upload failure artifacts.
 - **Authenticity / no-fabrication.** Two hard rules are enforced in code, not just convention:

@@ -16,8 +16,29 @@ are baked into an image.
 |---|---|
 | `CHANCELA_ADDR` | Bind address for the server, e.g. `0.0.0.0:8080` inside the container. |
 | `CHANCELA_DATA_DIR` | Durable data directory (SQLite store, credential sidecar, CAE/law/TSL caches, JSON sidecars). Compose mounts a named volume at `/var/lib/chancela`. |
+| `CHANCELA_ZK_SHARED_OBJECT_ROOT` | Required before zero-knowledge repository routes are enabled with PostgreSQL/HA. It must resolve exactly to the shared-mounted `<CHANCELA_DATA_DIR>/zk-repositories` directory on every node so backup/restore addresses the same opaque-object root. It is not an encryption key. |
 | `CHANCELA_HOST_PORT` | Host port the compose file publishes on `127.0.0.1` (default `8080`). |
 | `CHANCELA_WEB_DIST` | Path to the built web UI assets (set by the image). |
+
+## Connector worker
+
+The `worker` Compose profile shares only the server's durable data volume. Its
+configuration and credentials remain read-only runtime inputs.
+
+| Variable | Purpose |
+|---|---|
+| `CHANCELA_WORKER_CONFIG` | Host path to the worker JSON configuration mounted read-only at `/etc/chancela-worker/config.json`. |
+| `CHANCELA_CONNECTOR_ALLOWED_HOSTS` | Required comma-separated exact host/IP/CIDR allowlist for non-local targets. Wildcards are rejected; private DNS results also require an explicit IP/CIDR. |
+| `CHANCELA_CONNECTOR_SECRETS_DIR` | In-container canonical root for file-backed connector secrets. Compose fixes this to `/run/chancela-connector-secrets`. |
+| `CHANCELA_CONNECTOR_SECRETS_HOST_DIR` | Protected host directory mounted read-only at the connector secrets root. |
+| `CHANCELA_CONNECTOR_SECRET_<NAME>` | Direct runtime secret value. References in target configuration must use this strict namespace. |
+| `CHANCELA_CONNECTOR_SECRET_<NAME>_FILE` | File containing the secret; it must canonicalize beneath `CHANCELA_CONNECTOR_SECRETS_DIR` without symlink components and be at most 64 KiB. |
+
+API-created jobs use server-derived paths below
+`<CHANCELA_DATA_DIR>/worker/sources` and the durable queue at
+`<CHANCELA_DATA_DIR>/worker/queue`. These locations are not caller-configurable
+API fields. See [Sync, backup, and connector worker](connectors-worker.md) for
+target schemas, RBAC, and the outbound-network boundary.
 
 ## Database backend
 
@@ -104,10 +125,13 @@ openssl rand -base64 48 > docker/secrets/credential_key
 ```
 
 The password inside `database_url` **must match** `postgres_password`, otherwise
-the app cannot authenticate to Postgres. The `database_url` template uses
-`sslmode=disable` because this lane connects over the local compose network with
-the current `NoTls` backend; remote Postgres with `sslmode=verify-full` needs a
-future TLS connector before it is supported.
+the app cannot authenticate to Postgres. The template uses
+`sslmode=verify-full`. Before Postgres starts, the isolated
+`postgres-tls-init` service creates or renews a private compose CA and a server
+certificate valid for `postgres`/`localhost`; the CA is mounted read-only into
+the app and selected with `CHANCELA_PG_TLS_ROOT_CERT`. Insecure
+`disable`/`prefer`/`require` modes are rejected by the backend even on the local
+compose network.
 
 The authoritative copy of these instructions lives next to the (gitignored)
 secrets directory in `docker/secrets/README.md`.

@@ -386,10 +386,10 @@ fn classify_raw(insc: &RegistryEvent) -> (ChronologyKind, String) {
 /// The best available act-kind label for a raw inscrição: the joined apresentação act kinds, else
 /// the entry's `kind_hint`.
 fn raw_label(insc: &RegistryEvent) -> String {
-    if let Some(ap) = insc.detail.as_ref().and_then(|d| d.apresentacao.as_ref()) {
-        if !ap.act_kinds.is_empty() {
-            return ap.act_kinds.join(", ");
-        }
+    if let Some(ap) = insc.detail.as_ref().and_then(|d| d.apresentacao.as_ref())
+        && !ap.act_kinds.is_empty()
+    {
+        return ap.act_kinds.join(", ");
     }
     insc.kind_hint.clone().unwrap_or_default()
 }

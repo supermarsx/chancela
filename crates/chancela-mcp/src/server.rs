@@ -2910,11 +2910,11 @@ fn collect_workflow_evidence_records<'a>(value: &'a Value, records: &mut Vec<&'a
         Value::Object(map) => {
             for (key, child) in map {
                 let normalized = normalize_chronology_label(key);
-                if WORKFLOW_EVIDENCE_RECORD_ARRAY_KEYS.contains(&normalized.as_str()) {
-                    if let Value::Array(values) = child {
-                        records.extend(values.iter().filter(|value| value.is_object()));
-                        continue;
-                    }
+                if WORKFLOW_EVIDENCE_RECORD_ARRAY_KEYS.contains(&normalized.as_str())
+                    && let Value::Array(values) = child
+                {
+                    records.extend(values.iter().filter(|value| value.is_object()));
+                    continue;
                 }
                 collect_workflow_evidence_records(child, records);
             }
@@ -4748,11 +4748,11 @@ fn meeting_agenda_array_counts(value: &Value) -> (usize, usize) {
             .iter()
             .fold((0usize, 0usize), |mut counts, (key, child)| {
                 let normalized = normalize_chronology_label(key);
-                if MEETING_AGENDA_ARRAY_KEYS.contains(&normalized.as_str()) {
-                    if let Value::Array(items) = child {
-                        counts.0 += 1;
-                        counts.1 += items.len();
-                    }
+                if MEETING_AGENDA_ARRAY_KEYS.contains(&normalized.as_str())
+                    && let Value::Array(items) = child
+                {
+                    counts.0 += 1;
+                    counts.1 += items.len();
                 }
                 let child_counts = meeting_agenda_array_counts(child);
                 counts.0 += child_counts.0;

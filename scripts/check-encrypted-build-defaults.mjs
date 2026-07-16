@@ -43,6 +43,17 @@ function assertRegex(value, regex, label) {
   }
 }
 
+function dockerArgDefault(dockerfile, name, label) {
+  const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = dockerfile.match(
+    new RegExp(`^ARG\\s+${escapedName}=(?:"([^"]*)"|'([^']*)'|([^\\s#]+))\\s*$`, "m"),
+  );
+  if (!match) {
+    fail(`${label}: missing an explicit default for ARG ${name}`);
+  }
+  return match[1] ?? match[2] ?? match[3];
+}
+
 function checkRootReleaseBuild() {
   const pkg = readJson("package.json");
   const buildRust = script(pkg, "build:rust", "root package.json");
@@ -56,13 +67,41 @@ function checkRootReleaseBuild() {
 }
 
 function checkDockerBuild() {
-  const dockerfile = readText("docker/Dockerfile.server");
-  assertContains(dockerfile, "perl", "Dockerfile SQLCipher vendored OpenSSL dependency");
-  assertRegex(
-    dockerfile,
-    /cargo build --release -p chancela-server --locked --features chancela-server\/sqlcipher/,
-    "Dockerfile server build",
-  );
+  for (const relativePath of ["docker/Dockerfile.server", "Dockerfile.hardened"]) {
+    const dockerfile = readText(relativePath);
+    assertContains(
+      dockerfile,
+      "perl",
+      `${relativePath} SQLCipher vendored OpenSSL dependency`,
+    );
+    const cargoFeatures = dockerArgDefault(
+      dockerfile,
+      "CARGO_FEATURES",
+      relativePath,
+    );
+    assertContains(
+      cargoFeatures,
+      "chancela-server/sqlcipher",
+      `${relativePath} default CARGO_FEATURES`,
+    );
+    assertRegex(
+      dockerfile,
+      /cargo build --release -p chancela-server --locked --features "\$\{CARGO_FEATURES\}"/,
+      `${relativePath} server build consumes CARGO_FEATURES`,
+    );
+  }
+
+  for (const relativePath of [
+    "docker/docker-compose.yml",
+    "docker-compose.hardened.yml",
+  ]) {
+    const compose = readText(relativePath);
+    assertRegex(
+      compose,
+      /CARGO_FEATURES:\s*["']chancela-server\/sqlcipher chancela-server\/postgres chancela-server\/redis["']/,
+      `${relativePath} Postgres image feature override`,
+    );
+  }
 }
 
 function checkDesktopBuild() {

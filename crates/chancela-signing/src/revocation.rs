@@ -300,13 +300,13 @@ impl RevocationHttpTransport for BoundedHttpRevocationTransport {
             .send()
             .map_err(|e| RevocationError::Http(e.to_string()))?;
         let status = response.status().as_u16();
-        if let Some(len) = response.content_length() {
-            if len > limits.max_response_bytes as u64 {
-                return Err(RevocationError::HttpLimitExceeded {
-                    url: url.to_string(),
-                    limit: limits.max_response_bytes,
-                });
-            }
+        if let Some(len) = response.content_length()
+            && len > limits.max_response_bytes as u64
+        {
+            return Err(RevocationError::HttpLimitExceeded {
+                url: url.to_string(),
+                limit: limits.max_response_bytes,
+            });
         }
 
         let mut body = Vec::new();
@@ -344,13 +344,13 @@ impl RevocationHttpTransport for BoundedHttpRevocationTransport {
             .send()
             .map_err(|e| RevocationError::Http(e.to_string()))?;
         let status = response.status().as_u16();
-        if let Some(len) = response.content_length() {
-            if len > limits.max_response_bytes as u64 {
-                return Err(RevocationError::HttpLimitExceeded {
-                    url: url.to_string(),
-                    limit: limits.max_response_bytes,
-                });
-            }
+        if let Some(len) = response.content_length()
+            && len > limits.max_response_bytes as u64
+        {
+            return Err(RevocationError::HttpLimitExceeded {
+                url: url.to_string(),
+                limit: limits.max_response_bytes,
+            });
         }
 
         let mut body = Vec::new();
@@ -824,12 +824,12 @@ pub fn discover_revocation_uris(cert: &Certificate) -> DiscoveredRevocationUris 
                     }
                 }
             }
-        } else if ext.extn_id == OID_AUTHORITY_INFO_ACCESS {
-            if let Ok(aia) = AuthorityInfoAccessSyntax::from_der(ext.extn_value.as_bytes()) {
-                for access in aia.0 {
-                    if access.access_method == OID_OCSP {
-                        push_http_uri(&mut discovered.ocsp_urls, &access.access_location);
-                    }
+        } else if ext.extn_id == OID_AUTHORITY_INFO_ACCESS
+            && let Ok(aia) = AuthorityInfoAccessSyntax::from_der(ext.extn_value.as_bytes())
+        {
+            for access in aia.0 {
+                if access.access_method == OID_OCSP {
+                    push_http_uri(&mut discovered.ocsp_urls, &access.access_location);
                 }
             }
         }

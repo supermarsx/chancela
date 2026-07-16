@@ -114,15 +114,15 @@ impl Pkcs12IdentitySelector {
     }
 
     fn matches(&self, metadata: &BagMetadata) -> bool {
-        if let Some(expected) = &self.friendly_name {
-            if metadata.friendly_name.as_ref() != Some(expected) {
-                return false;
-            }
+        if let Some(expected) = &self.friendly_name
+            && metadata.friendly_name.as_ref() != Some(expected)
+        {
+            return false;
         }
-        if let Some(expected) = &self.local_key_id {
-            if metadata.local_key_id.as_ref() != Some(expected) {
-                return false;
-            }
+        if let Some(expected) = &self.local_key_id
+            && metadata.local_key_id.as_ref() != Some(expected)
+        {
+            return false;
         }
         true
     }

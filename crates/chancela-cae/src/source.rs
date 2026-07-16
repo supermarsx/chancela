@@ -20,12 +20,12 @@ pub(crate) const MAX_RESPONSE_BYTES: u64 = 50 * 1024 * 1024;
 /// so an overshoot is detected without unbounded memory allocation (defense-in-depth for servers
 /// that omit or lie about `Content-Length`).
 pub(crate) fn read_bounded(response: reqwest::blocking::Response) -> Result<Vec<u8>, CaeError> {
-    if let Some(len) = response.content_length() {
-        if len > MAX_RESPONSE_BYTES {
-            return Err(CaeError::Http(format!(
-                "response exceeds size limit: {len} bytes (max {MAX_RESPONSE_BYTES})"
-            )));
-        }
+    if let Some(len) = response.content_length()
+        && len > MAX_RESPONSE_BYTES
+    {
+        return Err(CaeError::Http(format!(
+            "response exceeds size limit: {len} bytes (max {MAX_RESPONSE_BYTES})"
+        )));
     }
     let mut bytes = Vec::new();
     response

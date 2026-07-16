@@ -185,17 +185,16 @@ pub fn validate_xades(xml: &[u8]) -> Result<XadesValidationReport, XadesError> {
                 // the `xades:SignedProperties` carrying the mandatory `SigningCertificateV2`/
                 // `SigningTime`. Resolving by the same `#id` the digest covered (Id uniqueness was
                 // enforced above) prevents an unsigned blob elsewhere from satisfying the check.
-                if let Some(node) = find_element_by_id(&doc, id) {
-                    if node.has_tag_name((XADES_NS, "SignedProperties"))
-                        && node
-                            .descendants()
-                            .any(|n| n.has_tag_name((XADES_NS, "SigningCertificateV2")))
-                        && node
-                            .descendants()
-                            .any(|n| n.has_tag_name((XADES_NS, "SigningTime")))
-                    {
-                        signed_properties_signed = true;
-                    }
+                if let Some(node) = find_element_by_id(&doc, id)
+                    && node.has_tag_name((XADES_NS, "SignedProperties"))
+                    && node
+                        .descendants()
+                        .any(|n| n.has_tag_name((XADES_NS, "SigningCertificateV2")))
+                    && node
+                        .descendants()
+                        .any(|n| n.has_tag_name((XADES_NS, "SigningTime")))
+                {
+                    signed_properties_signed = true;
                 }
             }
         }

@@ -159,14 +159,15 @@ pub(crate) fn find_text(xml: &str, local: &str) -> Option<String> {
                 }
             }
             Ok(Event::End(e)) => {
-                if let Some(cd) = capture_depth {
-                    if e.local_name().as_ref() == target && cd == depth {
-                        let is_best = best.as_ref().is_none_or(|(d, _)| cd < *d);
-                        if is_best {
-                            best = Some((cd, std::mem::take(&mut value)));
-                        }
-                        capture_depth = None;
+                if let Some(cd) = capture_depth
+                    && e.local_name().as_ref() == target
+                    && cd == depth
+                {
+                    let is_best = best.as_ref().is_none_or(|(d, _)| cd < *d);
+                    if is_best {
+                        best = Some((cd, std::mem::take(&mut value)));
                     }
+                    capture_depth = None;
                 }
                 depth -= 1;
             }

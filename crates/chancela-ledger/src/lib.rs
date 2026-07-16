@@ -905,14 +905,14 @@ fn check_chain_genesis(
             seq: link.seq,
         });
     }
-    if let Some(expected) = chain.expected_genesis_kind() {
-        if event_kind != expected {
-            return Err(LedgerError::ChainGenesisWrong {
-                chain: chain.clone(),
-                expected: expected.to_owned(),
-                found: event_kind.to_owned(),
-            });
-        }
+    if let Some(expected) = chain.expected_genesis_kind()
+        && event_kind != expected
+    {
+        return Err(LedgerError::ChainGenesisWrong {
+            chain: chain.clone(),
+            expected: expected.to_owned(),
+            found: event_kind.to_owned(),
+        });
     }
     Ok(())
 }
@@ -1345,14 +1345,14 @@ impl Ledger {
             match head_idx.get(chain) {
                 // Empty chain ⇒ this event is its genesis: enforce the genesis-kind rule.
                 None => {
-                    if let Some(expected) = chain.expected_genesis_kind() {
-                        if kind != expected {
-                            return Err(AppendError::ChainGenesisWrong {
-                                chain: chain.clone(),
-                                expected: expected.to_owned(),
-                                found: kind.to_owned(),
-                            });
-                        }
+                    if let Some(expected) = chain.expected_genesis_kind()
+                        && kind != expected
+                    {
+                        return Err(AppendError::ChainGenesisWrong {
+                            chain: chain.clone(),
+                            expected: expected.to_owned(),
+                            found: kind.to_owned(),
+                        });
                     }
                 }
                 // Non-empty chain ⇒ its tail must self-verify, else we'd extend a broken chain.
@@ -1367,13 +1367,13 @@ impl Ledger {
             }
         }
         // The global tail must also self-verify before we link a new event onto it.
-        if let Some(idx) = self.events.len().checked_sub(1) {
-            if let Some(b) = self.tail_break(&ChainId::Global, idx) {
-                return Err(AppendError::BrokenChainTail {
-                    chain: ChainId::Global,
-                    break_: b,
-                });
-            }
+        if let Some(idx) = self.events.len().checked_sub(1)
+            && let Some(b) = self.tail_break(&ChainId::Global, idx)
+        {
+            return Err(AppendError::BrokenChainTail {
+                chain: ChainId::Global,
+                break_: b,
+            });
         }
 
         let timestamp = OffsetDateTime::now_utc();
@@ -1709,22 +1709,22 @@ fn genesis_break(chain: &ChainId, event: &Event, link: &ChainLink) -> Option<Cha
             ),
         });
     }
-    if let Some(expected) = chain.expected_genesis_kind() {
-        if event.kind != expected {
-            return Some(ChainBreak {
-                chain: chain.clone(),
-                kind: BreakKind::ChainGenesisWrong,
-                global_seq: Some(event.seq),
-                chain_seq: Some(link.seq),
-                event_id: Some(event.id),
-                expected_hash: None,
-                actual_hash: None,
-                message: format!(
-                    "chain {chain} genesis kind wrong: expected {expected:?}, found {:?}",
-                    event.kind
-                ),
-            });
-        }
+    if let Some(expected) = chain.expected_genesis_kind()
+        && event.kind != expected
+    {
+        return Some(ChainBreak {
+            chain: chain.clone(),
+            kind: BreakKind::ChainGenesisWrong,
+            global_seq: Some(event.seq),
+            chain_seq: Some(link.seq),
+            event_id: Some(event.id),
+            expected_hash: None,
+            actual_hash: None,
+            message: format!(
+                "chain {chain} genesis kind wrong: expected {expected:?}, found {:?}",
+                event.kind
+            ),
+        });
     }
     None
 }

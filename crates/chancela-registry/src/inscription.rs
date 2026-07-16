@@ -97,10 +97,10 @@ fn split_acts(s: &str) -> Vec<String> {
 
 /// The folded text used to classify the act: the parsed act kinds, else the first plain body line.
 fn classification_blob(ap: &Option<Apresentacao>, body: &[String]) -> String {
-    if let Some(a) = ap {
-        if !a.act_kinds.is_empty() {
-            return fold(&a.act_kinds.join(", "));
-        }
+    if let Some(a) = ap
+        && !a.act_kinds.is_empty()
+    {
+        return fold(&a.act_kinds.join(", "));
     }
     body.iter()
         .find(|l| !l.trim().is_empty() && split_label(l).is_none() && !fold(l).starts_with("ap."))
@@ -336,10 +336,10 @@ fn organ_line(
         "residencia/sede" | "residencia" => {
             let mut j = i + 1;
             let addr = consume_address(body, &mut j, value.to_owned());
-            if let Some(m) = last_member(organs) {
-                if !addr.is_empty() {
-                    m.residencia = Some(addr);
-                }
+            if let Some(m) = last_member(organs)
+                && !addr.is_empty()
+            {
+                m.residencia = Some(addr);
             }
             return j;
         }

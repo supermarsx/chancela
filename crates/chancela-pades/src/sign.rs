@@ -183,12 +183,12 @@ fn prepare_incremental(
     opts: &SignOptions,
     appearance: Option<&SealAppearance>,
 ) -> Result<PreparedSignature, PadesError> {
-    if let Some(app) = appearance {
-        if !(app.placement.w > 0.0 && app.placement.h > 0.0) {
-            return Err(PadesError::MalformedStructure(
-                "seal appearance width and height must be positive".into(),
-            ));
-        }
+    if let Some(app) = appearance
+        && !(app.placement.w > 0.0 && app.placement.h > 0.0)
+    {
+        return Err(PadesError::MalformedStructure(
+            "seal appearance width and height must be positive".into(),
+        ));
     }
 
     let doc =
@@ -595,7 +595,7 @@ fn decode_hex(hex: &[u8]) -> Option<Vec<u8>> {
         .copied()
         .filter(|b| !b.is_ascii_whitespace())
         .collect();
-    if trimmed.len() % 2 != 0 {
+    if !trimmed.len().is_multiple_of(2) {
         return None;
     }
     let val = |b: u8| -> Option<u8> {

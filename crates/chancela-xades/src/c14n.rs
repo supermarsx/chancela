@@ -772,12 +772,11 @@ impl Dom {
                 _ => {
                     // No namespace in scope for this prefix. For the default namespace, emit
                     // `xmlns=""` to undeclare only if an ancestor rendered a non-empty default.
-                    if pfx.is_empty() {
-                        if let Some(prev) = rendered.get("") {
-                            if !prev.is_empty() {
-                                out.push((String::new(), String::new()));
-                            }
-                        }
+                    if pfx.is_empty()
+                        && let Some(prev) = rendered.get("")
+                        && !prev.is_empty()
+                    {
+                        out.push((String::new(), String::new()));
                     }
                 }
             }
@@ -796,10 +795,10 @@ fn inclusive_ns_to_render(
     for (pfx, uri) in new_scope {
         if pfx.is_empty() && uri.is_empty() {
             // Default undeclaration: emit `xmlns=""` only to cancel an inherited non-empty default.
-            if let Some(prev) = rendered.get("") {
-                if !prev.is_empty() {
-                    out.push((String::new(), String::new()));
-                }
+            if let Some(prev) = rendered.get("")
+                && !prev.is_empty()
+            {
+                out.push((String::new(), String::new()));
             }
             continue;
         }

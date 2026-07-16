@@ -228,12 +228,12 @@ fn path_placeholders(template: &str) -> Vec<&str> {
     let bytes = template.as_bytes();
     let mut i = 0;
     while i < bytes.len() {
-        if bytes[i] == b'{' {
-            if let Some(off) = template[i + 1..].find('}') {
-                out.push(&template[i + 1..i + 1 + off]);
-                i = i + 1 + off + 1;
-                continue;
-            }
+        if bytes[i] == b'{'
+            && let Some(off) = template[i + 1..].find('}')
+        {
+            out.push(&template[i + 1..i + 1 + off]);
+            i = i + 1 + off + 1;
+            continue;
         }
         i += 1;
     }

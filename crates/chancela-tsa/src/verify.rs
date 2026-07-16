@@ -249,10 +249,10 @@ fn extract_tsa_certificate(
     };
 
     for choice in certificates.0.iter() {
-        if let CertificateChoices::Certificate(certificate) = choice {
-            if certificate_matches_sid(certificate, sid)? {
-                return Ok(Some(certificate.clone()));
-            }
+        if let CertificateChoices::Certificate(certificate) = choice
+            && certificate_matches_sid(certificate, sid)?
+        {
+            return Ok(Some(certificate.clone()));
         }
     }
 

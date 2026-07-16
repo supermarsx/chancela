@@ -820,12 +820,12 @@ fn verify_table_cell_attributes(
                 String::from_utf8_lossy(scope)
             )));
         }
-    } else if let Ok(attrs) = elem.get(b"A").and_then(Object::as_dict) {
-        if attrs.has(b"Scope") {
-            return Err(fail(
-                "tagged table topology /TD carries a header /Scope attribute".into(),
-            ));
-        }
+    } else if let Ok(attrs) = elem.get(b"A").and_then(Object::as_dict)
+        && attrs.has(b"Scope")
+    {
+        return Err(fail(
+            "tagged table topology /TD carries a header /Scope attribute".into(),
+        ));
     }
     Ok(())
 }
@@ -936,7 +936,7 @@ fn parse_parent_tree_nums(
     nums: &[Object],
     fail: &dyn Fn(String) -> DocError,
 ) -> Result<BTreeMap<i64, Vec<ObjectId>>, DocError> {
-    if nums.len() % 2 != 0 {
+    if !nums.len().is_multiple_of(2) {
         return Err(fail(
             "/ParentTree /Nums must contain key/value pairs".into(),
         ));
@@ -1230,10 +1230,10 @@ fn collect_heading_levels(
             let Ok(elem) = doc.get_object(*id).and_then(Object::as_dict) else {
                 return;
             };
-            if let Ok(role) = elem.get(b"S").and_then(Object::as_name) {
-                if let Some(level) = heading_level(role) {
-                    levels.push(level);
-                }
+            if let Ok(role) = elem.get(b"S").and_then(Object::as_name)
+                && let Some(level) = heading_level(role)
+            {
+                levels.push(level);
             }
             if let Ok(kids) = elem.get(b"K") {
                 collect_heading_levels(doc, kids, levels, seen);

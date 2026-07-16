@@ -52,8 +52,8 @@ of headroom and monitor it; put the Postgres data volume on **encrypted storage*
 | cgroups | v2 | Required for the memory / CPU / **pids** limits to be enforced. |
 | Docker Engine | 24.0+ | BuildKit is the default builder; `docker compose up` honours `deploy.resources.limits`. |
 | Docker Compose | v2.20+ | v2 syntax; `deploy.resources.limits.pids` support. |
-| PostgreSQL | 16 (`postgres:16-alpine`) | `postgres` profile only. Pinned by digest. |
-| Redis | 7 (`redis:7-alpine`) | `postgres` profile only, cache-aside. Pinned by digest. |
+| PostgreSQL | 18.4 (`postgres:18.4-alpine3.23`) | `postgres` profile only. Pinned by digest. |
+| Redis | 8.8 (`redis:8.8.0-alpine3.23`) | `postgres` profile only, cache-aside. Pinned by digest; review its RSALv2/SSPLv1/AGPLv3 licensing. |
 
 Linux is the target runtime. Docker Desktop on macOS/Windows works for local
 builds and smoke tests, but the read-only-rootfs, seccomp, and capability
@@ -125,7 +125,7 @@ services built from our own code (`server`, `chancela`); "Infra" = the official
 - [x] **Multi-stage build.** Rust and Node toolchains, source, and build caches
   never reach the final image → smaller attack surface, no compilers/package
   managers to abuse post-exploit.
-- [x] **Distroless final base** (`gcr.io/distroless/cc-debian12:nonroot`). No
+- [x] **Distroless final base** (`gcr.io/distroless/cc-debian13:nonroot`). No
   shell, no package manager, no general userland → far fewer binaries an attacker
   can pivot through.
 - [x] **All base images pinned by digest** (`@sha256:…`), not floating tags → a
@@ -239,7 +239,7 @@ The password inside `database_url` **must match** `postgres_password`, or the ap
 cannot authenticate. Example (fictional) `database_url`:
 
 ```
-postgres://chancela:S0me-long-random-value@postgres:5432/chancela?sslmode=disable
+postgres://chancela:S0me-long-random-value@postgres:5432/chancela?sslmode=verify-full
 ```
 
 Full details: [`docker/secrets/README.md`](https://github.com/supermarsx/chancela/blob/main/docker/secrets/README.md).
@@ -258,10 +258,22 @@ Vanilla Postgres has **no** transparent whole-DB encryption, so this profile doe
 **not** provide SQLCipher's file-level ciphertext for the Postgres data. Protect
 the `chancela-pgdata` volume with **host volume/disk encryption** (LUKS or an
 encrypted block device). This is disk-level: a DB superuser or a live memory dump
-still sees plaintext — a materially weaker guarantee than SQLCipher. TLS to
-Postgres (`sslmode=verify-full`) is **not** wired in this lane (the backend uses
-`NoTls` on the local compose network); a remote Postgres needs a future TLS
-connector first. See the
+still sees plaintext — a materially weaker guarantee than SQLCipher. PostgreSQL
+transport is authenticated with `sslmode=verify-full`; the isolated TLS-init
+container writes a private CA/server certificate volume that is mounted
+read-only by Postgres and the app. A remote Postgres must use its provider CA.
+
+### Zero-knowledge object-root warning
+
+Zero-knowledge repositories keep only opaque immutable ciphertext in
+`<data_dir>/zk-repositories`; keys and decryption remain in trusted clients. PostgreSQL does not
+share that filesystem automatically. In a multi-node deployment, mount the same protected object
+root on every node and set `CHANCELA_ZK_SHARED_OBJECT_ROOT` to that exact path. Without the explicit
+setting the repository API returns `503` fail-closed. Never configure a node-local path and describe
+it as HA. Include the shared root in encrypted off-site backup custody: the built-in backup manifest
+digests it recursively, but zero-knowledge encryption still leaves GDPR, retention, access-control,
+and breach-response obligations in force.
+See the
 [Deployment overview](../deployment.md) for the
 full at-rest discussion.
 
@@ -319,8 +331,9 @@ purpose** (e.g. to pick up a base image security fix) rather than reverting to
 floating tags. Resolve the current digest for a tag with:
 
 ```sh
-docker buildx imagetools inspect rust:1-slim-bookworm --format '{{.Manifest.Digest}}'
-docker buildx imagetools inspect gcr.io/distroless/cc-debian12:nonroot --format '{{.Manifest.Digest}}'
+docker buildx imagetools inspect rust:1.97.0-slim-trixie --format '{{.Manifest.Digest}}'
+docker buildx imagetools inspect node:24.18.0-trixie-slim --format '{{.Manifest.Digest}}'
+docker buildx imagetools inspect gcr.io/distroless/cc-debian13:nonroot --format '{{.Manifest.Digest}}'
 ```
 
 Then update the digest in the relevant `FROM`/`image:` line and rebuild.

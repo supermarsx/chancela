@@ -133,18 +133,21 @@ test operating checklist for driving Chancela toward release confidence.
 - A dedicated SQLCipher feature lane runs on Windows, pins Strawberry Perl ahead
   of vendored OpenSSL, and runs
   `cargo test -p chancela-store --locked --features sqlcipher sqlcipher`.
-- A dedicated Postgres store backend lane runs the existing ignored
-  `runtime_reads_and_writes_roundtrip_on_postgres` test against a disposable
-  GitHub Actions `chancela_store_ci` database with
+- A dedicated Postgres store backend lane runs the ignored
+  `runtime_reads_and_writes_roundtrip_on_postgres` and
+  `sslmode_verify_full_opens_and_roundtrips_on_postgres` tests against a disposable
+  GitHub Actions PostgreSQL 18.4 database configured with an ephemeral CA and
+  hostname-verified server certificate. The runtime test uses the backend's
+  secure default and the TLS test supplies `sslmode=verify-full` explicitly:
   `cargo test -p chancela-store --features postgres --locked --test
-  postgres_backend runtime_reads_and_writes_roundtrip_on_postgres -- --ignored
-  --test-threads=1`. It is limited to the store integration test binary; API
-  seed, logical restore, cluster/failover/feed, sidecar, TLS, HA, and migration
-  coverage remain outside this CI lane. The full ignored `postgres_backend`
-  10-test sweep is pinned below as local Docker/Postgres store-backend proof,
+  postgres_backend <test-name> -- --ignored --test-threads=1`. This proves the
+  live store/TLS path but remains limited to the store integration test binary;
+  API seed, logical restore, cluster/failover/feed, sidecar, HA, and migration
+  coverage remain outside this CI lane. Historical full ignored
+  `postgres_backend` sweeps are pinned below as local Docker/Postgres store-backend proof,
   not as broadened default CI.
 - Web format, ESLint, Vitest/V8 coverage thresholds, and Vite build run on Node
-  20 and Node 24; the web CI test command is
+  24; the web CI test command is
   `npm run test:coverage --workspace apps/web`.
 - `npm run check:ci-assurance-waivers` enforces the explicit
   `ci.coverage.thresholds.non_web_unit` debt record. browser/desktop/Docker/live-provider
@@ -2421,16 +2424,16 @@ settingsDefaults.test.ts contracts.test.ts`.
   does not claim production Postgres readiness, live `verify-full` CA/hostname
   proof, production TLS readiness, HA readiness, migration completeness, RPO/RTO certification, split-brain prevention,
   failover certification, legal/DR certification, or spec completion.
-- Current `974040e`/`afe7111` Postgres TLS checks: source markers pin the
-  rustls `MakeTlsConnect` implementation, `CHANCELA_PG_SSLMODE` precedence over
-  `DATABASE_URL`, URL/keyword-form `sslmode` stripping, default `prefer`,
-  `disable`/`prefer`/`require`/`verify-full` handling, `verify-ca` hardening to
-  verify-full, and fail-closed root-CA loading for verify-full. The live ignored
-  store test `sslmode_prefer_opens_and_roundtrips_on_postgres` proves the
-  connector and `sslmode=prefer` round-trip against a plain or TLS-capable test
-  Postgres only. This does not prove a live `verify-full` CA/hostname path,
-  production remote-Postgres readiness, HA/failover, migration completeness,
-  RPO/RTO, or legal/DR certification.
+- Current Postgres TLS checks supersede the older opportunistic-TLS checkpoint.
+  Source markers pin `CHANCELA_PG_SSLMODE` precedence over `DATABASE_URL`,
+  default `verify-full`, rejection of `disable`/`prefer`/`require`,
+  `verify-ca` hardening to verify-full, and fail-closed root loading. CI creates
+  an ephemeral CA and hostname-valid server certificate, verifies PostgreSQL
+  with `psql sslmode=verify-full`, and runs the ignored live store test
+  `sslmode_verify_full_opens_and_roundtrips_on_postgres`. This proves the CI
+  connector/CA/hostname path, not production CA custody, remote-Postgres
+  readiness, HA/failover, migration completeness, RPO/RTO, or legal/DR
+  certification.
 - Current `03784e5` hardened Docker checks: reviewed
   `Dockerfile.hardened`, `docker-compose.hardened.yml`, and
   `docs/security/hardened-docker.md`, then validated
@@ -2455,7 +2458,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   URL/shell-detection markers, subject DEK
   secret-store binding markers, opt-in
   release signing hooks/status artifacts, Postgres
-  rustls TLS `sslmode=prefer` proof and no-`verify-full`/production-readiness
+  rustls TLS `sslmode=verify-full` CI proof and no-production-readiness
   boundary, observability `/metrics`/`/livez`/`/readyz` request-id/route-label
   markers, runtime HSTS, single-node in-memory rate-limiting, absolute session
   lifetime, reset/reload cleanup, and CurrentAttestor cap markers, MCP

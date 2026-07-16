@@ -285,10 +285,10 @@ fn derive_template_law_references(
         push_unique_law_reference(&mut refs, r);
     }
     for threshold_id in threshold_references_in_blocks(blocks) {
-        if let Some(threshold) = find_threshold(&threshold_id) {
-            if let Some(r) = threshold_law_reference(threshold) {
-                push_unique_law_reference(&mut refs, r);
-            }
+        if let Some(threshold) = find_threshold(&threshold_id)
+            && let Some(r) = threshold_law_reference(threshold)
+        {
+            push_unique_law_reference(&mut refs, r);
         }
     }
     refs
@@ -863,16 +863,15 @@ fn long_date(value: String) -> String {
         "dezembro",
     ];
     let parts: Vec<&str> = value.split('-').collect();
-    if parts.len() == 3 {
-        if let (Ok(y), Ok(m), Ok(d)) = (
+    if parts.len() == 3
+        && let (Ok(y), Ok(m), Ok(d)) = (
             parts[0].parse::<i32>(),
             parts[1].parse::<usize>(),
             parts[2].parse::<u32>(),
-        ) {
-            if (1..=12).contains(&m) {
-                return format!("{d} de {} de {y}", MESES[m - 1]);
-            }
-        }
+        )
+        && (1..=12).contains(&m)
+    {
+        return format!("{d} de {} de {y}", MESES[m - 1]);
     }
     value
 }

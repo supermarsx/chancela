@@ -575,19 +575,18 @@ fn condominium_permilage_warnings(act: &Act) -> Vec<ComplianceIssue> {
     }
 
     for slot in &act.signatories {
-        if slot.capacity == SignatoryCapacity::CondoOwner {
-            if let Some(value) = slot.permilage {
-                if value > 1000 {
-                    issues.push(ComplianceIssue::warning(
-                        "DL268/permilage-value",
-                        format!(
-                            "condómino {:?} records permilagem {value}, above the 1000 total \
+        if slot.capacity == SignatoryCapacity::CondoOwner
+            && let Some(value) = slot.permilage
+            && value > 1000
+        {
+            issues.push(ComplianceIssue::warning(
+                "DL268/permilage-value",
+                format!(
+                    "condómino {:?} records permilagem {value}, above the 1000 total \
                              scale; confirm the captured fraction",
-                            slot.name
-                        ),
-                    ));
-                }
-            }
+                    slot.name
+                ),
+            ));
         }
     }
 

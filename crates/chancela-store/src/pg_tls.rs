@@ -41,6 +41,7 @@ use postgres::config::{Config, SslMode};
 use postgres::tls::{ChannelBinding, MakeTlsConnect, TlsConnect, TlsStream};
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::crypto::{CryptoProvider, verify_tls12_signature, verify_tls13_signature};
+use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use rustls::{
     ClientConfig, DigitallySignedStruct, Error as RustlsError, RootCertStore, SignatureScheme,
@@ -489,9 +490,8 @@ fn load_roots() -> Result<RootCertStore, StoreError> {
             let pem = std::fs::read(&path).map_err(|e| {
                 StoreError::PgTls(format!("reading {ROOT_CERT_ENV} file {path:?}: {e}"))
             })?;
-            let mut reader = io::BufReader::new(&pem[..]);
             let mut added = 0usize;
-            for cert in rustls_pemfile::certs(&mut reader) {
+            for cert in CertificateDer::pem_slice_iter(&pem) {
                 let cert = cert
                     .map_err(|e| StoreError::PgTls(format!("parsing root CA PEM {path:?}: {e}")))?;
                 roots

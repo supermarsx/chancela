@@ -19,7 +19,9 @@
 
 use std::path::{Path, PathBuf};
 
-use chancela_core::ActId;
+use chancela_core::{
+    ActId, CompanyGroup, GroupTemplateLibrary, GroupTemplateLibraryRevision, TenantId,
+};
 use chancela_ledger::Ledger;
 use chancela_store::recovery::ResetScope;
 use chancela_store::{
@@ -233,6 +235,67 @@ fn persist_and_reload_event_roundtrips_on_postgres() {
     assert!(
         loaded.chain_status.is_ok(),
         "replayed chain must verify clean"
+    );
+}
+
+/// The group graph uses the same document-in-relational contract on Postgres as SQLite, including
+/// immutable composite-key revisions and aggregate-snapshot reloads.
+#[test]
+#[ignore = "requires a live PostgreSQL at DATABASE_URL"]
+fn company_groups_and_template_library_revisions_roundtrip_on_postgres() {
+    let Some(isolated) = isolated_postgres("group-roundtrip") else {
+        return;
+    };
+    let database_url = isolated.url();
+    let store = Store::open_backend(StoreBackendSelection::Postgres {
+        database_url: database_url.clone(),
+    })
+    .expect("open postgres backend");
+    let tenant_id = TenantId::new();
+    let group = CompanyGroup::new(tenant_id, "Grupo Encosto", OffsetDateTime::UNIX_EPOCH);
+    let library = GroupTemplateLibrary::new(&group, "Atas", OffsetDateTime::UNIX_EPOCH);
+    let revision = GroupTemplateLibraryRevision {
+        group_id: group.id,
+        library_id: library.id,
+        tenant_id,
+        revision: 1,
+        template_ids: vec!["csc-ata-ag/v1".to_owned()],
+        created_at: OffsetDateTime::UNIX_EPOCH,
+        created_by: "postgres-test".to_owned(),
+    };
+    store
+        .persist(|tx| {
+            tx.upsert_company_group(&group)?;
+            tx.upsert_group_template_library(&library)?;
+            tx.insert_group_template_library_revision(&revision)
+        })
+        .expect("persist group graph");
+    assert!(
+        store
+            .persist(|tx| tx.insert_group_template_library_revision(&revision))
+            .is_err(),
+        "the composite key refuses rewriting revision one"
+    );
+    let snapshot = store
+        .cluster_load_aggregates()
+        .expect("load group snapshot");
+    assert_eq!(snapshot.company_groups.get(&group.id), Some(&group));
+    assert_eq!(
+        snapshot.group_template_libraries.get(&library.id),
+        Some(&library)
+    );
+    assert_eq!(snapshot.group_template_library_revisions.len(), 1);
+    drop(store);
+
+    let reopened = Store::open_backend(StoreBackendSelection::Postgres { database_url })
+        .expect("reopen postgres backend");
+    let loaded = reopened.load().expect("reload group graph");
+    assert_eq!(loaded.company_groups.get(&group.id), Some(&group));
+    assert_eq!(
+        loaded
+            .group_template_library_revisions
+            .get(&(group.id, library.id, 1)),
+        Some(&revision)
     );
 }
 
@@ -1241,10 +1304,10 @@ fn per_book_import_quarantines_tamper_and_refuses_collision_atomically_on_postgr
         (m.unwrap(), map)
     };
     // Corrupt a member WITHOUT updating its manifest digest → member-digest mismatch → quarantined.
-    if let Some(ev) = members.get_mut("events.jsonl") {
-        if let Some(b) = ev.first_mut() {
-            *b ^= 0xFF;
-        }
+    if let Some(ev) = members.get_mut("events.jsonl")
+        && let Some(b) = ev.first_mut()
+    {
+        *b ^= 0xFF;
     }
     let tampered_path = data_dir.join("tampered.zip");
     {
@@ -1422,24 +1485,22 @@ fn restore_preflight_is_non_destructive_and_rejects_a_bad_bundle_on_postgres() {
     let _ = std::fs::remove_dir_all(&data_dir);
 }
 
-/// wp25 — opening with an explicit `sslmode` drives the connection through the new rustls TLS
-/// connector ([`chancela_store::pg_tls`]) instead of `NoTls`. `prefer` is the default posture and is
-/// non-breaking: it negotiates TLS if the server offers it and falls back to plaintext otherwise, so
-/// this round-trip passes against a plain test Postgres AND a TLS-enabled one. It proves the rustls
-/// `MakeTlsConnect` integrates with the synchronous `postgres` + r2d2 stack (pool + writer) and that
-/// `sslmode=` is parsed out of the DSN and honored. For an end-to-end `verify-full` proof point,
-/// run against a TLS Postgres with `CHANCELA_PG_SSLMODE=verify-full` and
-/// `CHANCELA_PG_TLS_ROOT_CERT` pointing at its CA.
+/// Opening with an explicit `sslmode=verify-full` drives the connection through the rustls TLS
+/// connector ([`chancela_store::pg_tls`]) instead of `NoTls`. The server must present a certificate
+/// chaining to `CHANCELA_PG_TLS_ROOT_CERT` (or an OS root) whose SAN matches the DSN host. This proves
+/// the rustls `MakeTlsConnect` integrates with the synchronous `postgres` + r2d2 stack (pool +
+/// writer), and that the explicit URL mode is stripped, resolved, and enforced without falling back
+/// to an unauthenticated or plaintext connection.
 #[test]
 #[ignore = "requires a live PostgreSQL at DATABASE_URL"]
-fn sslmode_prefer_opens_and_roundtrips_on_postgres() {
-    let Some(isolated) = isolated_postgres("sslmode-prefer") else {
+fn sslmode_verify_full_opens_and_roundtrips_on_postgres() {
+    let Some(isolated) = isolated_postgres("sslmode-verify-full") else {
         return;
     };
     // The isolated URL is libpq keyword form; append an explicit sslmode the resolver must honor.
-    let database_url = format!("{} sslmode=prefer", isolated.url());
+    let database_url = format!("{} sslmode=verify-full", isolated.url());
     let store = Store::open_backend(StoreBackendSelection::Postgres { database_url })
-        .expect("open postgres backend with sslmode=prefer");
+        .expect("open postgres backend with sslmode=verify-full");
 
     let mut ledger = Ledger::new();
     let event = ledger
@@ -1448,12 +1509,12 @@ fn sslmode_prefer_opens_and_roundtrips_on_postgres() {
             "application",
             "app.started",
             None,
-            b"postgres-tls-prefer",
+            b"postgres-tls-verify-full",
         )
         .clone();
     store
         .persist(|tx| tx.append_event(&event))
-        .expect("persist over the resolved (prefer) connection");
+        .expect("persist over the resolved verified-TLS connection");
 
     let loaded = store.load().expect("reload over the resolved connection");
     assert_eq!(
@@ -1463,7 +1524,7 @@ fn sslmode_prefer_opens_and_roundtrips_on_postgres() {
     );
     assert!(
         loaded.chain_status.is_ok(),
-        "replayed chain verifies over the prefer connection"
+        "replayed chain verifies over the verified-TLS connection"
     );
 }
 

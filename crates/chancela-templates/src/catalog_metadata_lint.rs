@@ -299,14 +299,14 @@ pub fn validate_catalog_metadata(assets: &[(&str, &str)]) -> Vec<CatalogMetadata
             }
         }
 
-        if let Some(id) = &template_id {
-            if let Some(first_asset) = seen_ids.insert(id.clone(), (*asset).to_string()) {
-                issues.push(metadata_issue(
-                    asset,
-                    Some(id),
-                    CatalogMetadataIssueKind::DuplicateId { first_asset },
-                ));
-            }
+        if let Some(id) = &template_id
+            && let Some(first_asset) = seen_ids.insert(id.clone(), (*asset).to_string())
+        {
+            issues.push(metadata_issue(
+                asset,
+                Some(id),
+                CatalogMetadataIssueKind::DuplicateId { first_asset },
+            ));
         }
 
         if missing_required {

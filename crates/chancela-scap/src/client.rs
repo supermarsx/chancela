@@ -59,10 +59,10 @@ impl<T: ScapTransport> ScapClient<T> {
     /// List attribute providers, applying the config's provider filter when present.
     pub fn list_providers(&self) -> Result<Vec<AttributeProvider>, ScapError> {
         let mut providers = self.transport.list_providers()?;
-        if let Some(filter) = &self.config.provider_filter {
-            if !filter.is_empty() {
-                providers.retain(|p| filter.iter().any(|id| id == &p.id));
-            }
+        if let Some(filter) = &self.config.provider_filter
+            && !filter.is_empty()
+        {
+            providers.retain(|p| filter.iter().any(|id| id == &p.id));
         }
         Ok(providers)
     }

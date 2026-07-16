@@ -177,8 +177,8 @@ any positive claim.
   intentionally carry **no** signing commands and always record an honest
   unsigned status; this is enforced by a static guard in
   `scripts/check-release-trust.mjs`. Signing is isolated to this opt-in workflow.
-- Action versions are pinned (`sigstore/cosign-installer@v3`,
-  `docker/build-push-action@v6`, `docker/login-action@v3`,
+- Action versions are pinned (`sigstore/cosign-installer@v4.1.2`,
+  `docker/build-push-action@v7.3.0`, `docker/login-action@v4.4.0`,
   `anchore/syft:v1.9.0`, and the `actions/*@v4` set).
 - The recorded trust status is derived from what actually ran, not hardcoded. A
   missing identity yields a skipped step and an unsigned record — never a false

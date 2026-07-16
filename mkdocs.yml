@@ -102,6 +102,7 @@ nav:
   - Home: index.md
   - Deployment:
       - Overview & profiles: deployment.md
+      - Sync, backup & connector worker: connectors-worker.md
       - High availability & failover: HA-FAILOVER.md
       - PostgreSQL backup & restore: postgres-backup-restore.md
   - Configuration: configuration.md
@@ -111,6 +112,7 @@ nav:
       - AI & MCP provenance: AI-PROVENANCE.md
       - Portuguese e-signature integration: CMD-LEGAL-INTEGRATION.md
   - Requirements: requirements.md
+  - Dependency management: dependency-management.md
   - Comparison: comparison.md
   - Security & Hardening: security/hardened-docker.md
   - Release signing & provenance: release-signing.md

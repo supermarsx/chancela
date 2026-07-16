@@ -198,14 +198,14 @@ pub(crate) fn split_label(line: &str) -> Option<(String, String)> {
 /// the same line (after the colon) or, for two-cell table layouts, on the following non-empty line.
 fn find_field<F: Fn(&str) -> bool>(lines: &[String], is_label: F) -> Option<String> {
     for (i, line) in lines.iter().enumerate() {
-        if let Some((label, value)) = split_label(line) {
-            if is_label(&label) {
-                if !value.is_empty() {
-                    return Some(value);
-                }
-                if let Some(next) = lines[i + 1..].iter().find(|l| !l.trim().is_empty()) {
-                    return Some(next.trim().to_owned());
-                }
+        if let Some((label, value)) = split_label(line)
+            && is_label(&label)
+        {
+            if !value.is_empty() {
+                return Some(value);
+            }
+            if let Some(next) = lines[i + 1..].iter().find(|l| !l.trim().is_empty()) {
+                return Some(next.trim().to_owned());
             }
         }
     }

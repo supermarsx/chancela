@@ -129,18 +129,19 @@ confirm `ledger_verified` is `true`.
 
 The Postgres backend connects over a rustls-based TLS connector. The posture is
 resolved from `CHANCELA_PG_SSLMODE` (highest precedence) or the `sslmode=`
-parameter of `DATABASE_URL`, defaulting to `prefer`:
+parameter of `DATABASE_URL`, defaulting to `verify-full`:
 
 | Mode | Encrypted | Server certificate verified | Use |
 | --- | --- | --- | --- |
-| `disable` | No | — | Trusted, isolated private network (the historical behaviour; the default Docker Compose profile keeps the database on an internal network). |
-| `prefer` (default) | If the server offers it | No | Non-breaking default: encrypts opportunistically, falls back to plaintext against a non-TLS server. |
-| `require` | Yes (mandatory) | No | Encrypts against passive eavesdropping; does not defend against an active man-in-the-middle. |
-| `verify-full` (also accepts `verify-ca`) | Yes (mandatory) | Yes — root CA + hostname | Recommended for a networked or managed Postgres. |
+| `disable` | No | — | Rejected: plaintext database transport is not supported. |
+| `prefer` | Maybe | No | Rejected: fallback to plaintext or an unauthenticated peer is not supported. |
+| `require` | Yes | No | Rejected: encryption without server authentication is insufficient. |
+| `verify-full` (default; `verify-ca` is hardened to this mode) | Yes | Yes — root CA + hostname | Required for compose, networked, and managed Postgres. |
 
-The default is `prefer` so an existing private-network deployment keeps working
-unchanged while a TLS-capable server is encrypted automatically. For a networked or
-managed database, set `verify-full`.
+Existing deployments using an insecure mode must provision a trusted server
+certificate and CA before upgrading. The local compose profile does this with
+its isolated `postgres-tls-init` service; managed deployments should mount the
+provider's CA bundle.
 
 Configuration:
 

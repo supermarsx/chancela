@@ -58,7 +58,7 @@ pub fn ecdsa_signature_to_der(raw: &[u8]) -> Result<Vec<u8>, SmartcardError> {
     if is_der_ecdsa_sig_value(raw) {
         return Ok(raw.to_vec());
     }
-    if raw.is_empty() || raw.len() % 2 != 0 {
+    if raw.is_empty() || !raw.len().is_multiple_of(2) {
         return Err(SmartcardError::MalformedSignature(format!(
             "expected even-length IEEE-P1363 r‖s, got {} bytes",
             raw.len()

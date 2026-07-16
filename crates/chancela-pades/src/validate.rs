@@ -354,40 +354,37 @@ fn benign_ltv_object_ids(full: &lopdf::Document, base: &lopdf::Document) -> BTre
             }
         }
         // The catalog itself counts as benign only if its sole change is wiring in `/DSS`.
-        if let Some(base_catalog) = document_catalog(base) {
-            if catalog_change_is_dss_only(base_catalog, catalog) {
-                benign.insert(root_id);
-            }
+        if let Some(base_catalog) = document_catalog(base)
+            && catalog_change_is_dss_only(base_catalog, catalog)
+        {
+            benign.insert(root_id);
         }
     }
 
     // --- DocTimeStamp revision: every `/DocTimeStamp` dictionary and its `/Sig` form field ---
     for (id, obj) in &full.objects {
-        if let Ok(dict) = obj.as_dict() {
-            if dict
+        if let Ok(dict) = obj.as_dict()
+            && (dict
                 .get_type()
                 .map(|ty| ty == b"DocTimeStamp")
                 .unwrap_or(false)
-                || is_doc_timestamp_field(full, dict)
-            {
-                benign.insert(*id);
-            }
+                || is_doc_timestamp_field(full, dict))
+        {
+            benign.insert(*id);
         }
     }
     // …and the AcroForm that lists those fields, only if it changed nothing but `/Fields`/`/SigFlags`.
     if let Ok(acroform_ref) = catalog
         .get(b"AcroForm")
         .and_then(lopdf::Object::as_reference)
-    {
-        if let (Ok(full_acroform), Some(base_acroform)) = (
+        && let (Ok(full_acroform), Some(base_acroform)) = (
             full.get_object(acroform_ref)
                 .and_then(lopdf::Object::as_dict),
             document_acroform(base),
-        ) {
-            if acroform_change_is_field_list_only(base_acroform, full_acroform) {
-                benign.insert(acroform_ref);
-            }
-        }
+        )
+        && acroform_change_is_field_list_only(base_acroform, full_acroform)
+    {
+        benign.insert(acroform_ref);
     }
 
     benign
@@ -1053,10 +1050,10 @@ fn ocsp_certids(der: &[u8]) -> Vec<OcspCertId> {
             if tag != 0x30 {
                 continue;
             }
-            if let Some((0x30, certid)) = der_children(single).into_iter().next() {
-                if let Some(id) = parse_certid(certid) {
-                    ids.push(id);
-                }
+            if let Some((0x30, certid)) = der_children(single).into_iter().next()
+                && let Some(id) = parse_certid(certid)
+            {
+                ids.push(id);
             }
         }
         Some(ids)

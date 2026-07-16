@@ -356,7 +356,10 @@ fn decode_png(data: &[u8]) -> Result<DecodedImage, PadesError> {
     let mut reader = decoder
         .read_info()
         .map_err(|e| PadesError::MalformedStructure(format!("PNG header: {e}")))?;
-    let mut buf = vec![0u8; reader.output_buffer_size()];
+    let output_size = reader.output_buffer_size().ok_or_else(|| {
+        PadesError::MalformedStructure("PNG dimensions overflow the output buffer size".to_owned())
+    })?;
+    let mut buf = vec![0u8; output_size];
     let info = reader
         .next_frame(&mut buf)
         .map_err(|e| PadesError::MalformedStructure(format!("PNG decode: {e}")))?;

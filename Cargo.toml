@@ -6,7 +6,7 @@ exclude = ["apps/desktop/src-tauri"]
 [workspace.package]
 version = "26.1.0"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.97"
 license = "MIT"
 authors = ["Chancela contributors"]
 repository = "https://github.com/chancela/chancela"
@@ -60,6 +60,13 @@ chancela-authz = { path = "crates/chancela-authz" }
 # chancela-authz + sha2/rand_core/serde/time/uuid — must NOT depend on chancela-api/store. See
 # .orchestration/plans/t65.md §3.1/§3.2.
 chancela-apikey = { path = "crates/chancela-apikey" }
+# Opt-in zero-knowledge repository wire/storage contracts (ARC-30..33 / SCP-D3). The API stores
+# only validated manifests and opaque ciphertext; trusted clients own encryption and key custody.
+chancela-zk = { path = "crates/chancela-zk" }
+# Durable ARC-20/21 connector execution. The API queues immutable, tenant-bound work for the
+# dedicated worker; connectors remain credential-reference-only leaf clients.
+chancela-connectors = { path = "crates/chancela-connectors" }
+chancela-worker = { path = "crates/chancela-worker" }
 # MCP server (t65-E2): exposes platform ops as permission-gated MCP tools over stdio, authenticating
 # to the integration API (/api/v1) with an API key (one RBAC path — authz is server-side). Binary +
 # library crate; OFF by default. Deps: serde/serde_json/reqwest/thiserror (all workspace-inherited) —
@@ -91,7 +98,7 @@ time = { version = "0.3", features = ["serde", "formatting", "parsing", "macros"
 axum = "0.8"
 tokio = { version = "1", features = ["full"] }
 tower = "0.5"
-tower-http = { version = "0.6", features = ["fs"] }
+tower-http = { version = "0.7", features = ["fs"] }
 # minijinja (t48 D1): runtime text-interpolation for the template catalog. Templates are shippable,
 # per-locale *content* (not compile-time askama structs); minijinja renders directly from any
 # serde::Serialize record. Apache-2.0, serde-only (no new transitive-dep risk to the der-0.7 pins).
@@ -131,24 +138,22 @@ roxmltree = "0.21"                                          # read-only XML pars
 # lopdf: DEVIATION from t4.md §1.1 — 0.43.0's default `time` datetime backend fails to compile
 # against time 0.3.45 (uses `FormatItem::StringLiteral`, removed from `time`). Drop that backend;
 # keep chrono+jiff+rayon (the rest of the default set) so datetime + parallelism still work.
-lopdf = { version = "0.43", default-features = false, features = ["chrono", "jiff", "rayon"] } # object-level PDF (PAdES sig dict built by us)
+lopdf = { version = "0.44", default-features = false, features = ["chrono", "jiff", "rayon"] } # object-level PDF (PAdES sig dict built by us)
 base64 = "0.22"                                             # CMD wire fields, PEM
 # png (t67 §1.4): minimal PNG decoder for visible-seal raster embedding (e3 decodes PNG → a raw
 # FlateDecode PDF XObject; JPEG is stored as DCTDecode bytes with no decode). Pulls only
 # miniz_oxide/fdeflate/flate2/crc32fast/bitflags — NO ASN.1 crates, so it is safe vs the load-bearing
 # der-0.7 / cms-0.2 / x509-cert-0.2 pins (verified: those versions are unchanged in Cargo.lock).
-png = "0.17"
+png = "0.18"
 # scraper (html5ever): malformed-HTML-tolerant DOM/text for the certidão permanente parser (t11).
 # Independent of the load-bearing der-0.7 pins; used only to get a clean DOM, extraction is
 # label-driven off the legally-stable Portuguese field names. Exact patch pinned below.
-scraper = "0.23"
-# reqwest: rustls avoids the Linux OpenSSL build dep; native certs keep the OS trust store for
-# TSA/CA chains. `blocking` supports chancela-tsa's synchronous TsaTransport (no tokio dep, §2.1).
-# DEVIATION from t4.md §1.1/§4: the plan's `rustls-tls-native-roots` feature is a reqwest-0.12
-# name; in 0.13 it split into `rustls` (backend) + `rustls-native-certs` (OS trust store).
+scraper = "0.27"
+# reqwest: its 0.13 `rustls` feature uses the platform verifier (OS trust store) without pulling in
+# the native OpenSSL backend. `blocking` supports chancela-tsa's synchronous TsaTransport (no tokio
+# dependency, §2.1). The older `rustls-native-certs` feature was removed in reqwest 0.13.4.
 reqwest = { version = "0.13", default-features = false, features = [
     "rustls",
-    "rustls-native-certs",
     "json",
     "blocking",
 ] }
@@ -160,10 +165,10 @@ reqwest = { version = "0.13", default-features = false, features = [
 # compiling SQLite from source is real but one-off. Encryption (SQLCipher, A3) is a later
 # `bundled-sqlcipher` feature swap issuing `PRAGMA key` — no schema/caller change. Independent
 # of the der-0.7/RustCrypto pins above (libsqlite3-sys pulls no ASN.1 crates). See t30.md §D1.
-rusqlite = { version = "0.39", features = ["bundled"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
 # zip: pure-Rust archive writer for the hot-backup bundle (VACUUM INTO db + JSON sidecars +
 # manifest → one .zip). MIT. Default features are fine (deflate); no native dep. See t30.md §D6.
-zip = "2"
+zip = "8.6"
 
 # --- Audit attestation & optional passwords (t29) --------------------------------------
 # argon2 (argon2id): password hashing/verification (a single PHC string) AND the separate KEK
@@ -176,7 +181,7 @@ argon2 = "0.5"
 # at rest in users.json. Chosen over AES-GCM — pure-Rust, no AES-NI-detection surface, and its
 # 24-byte random nonce removes any nonce-counter to manage across restarts. Pulls aead 0.5 +
 # chacha20 + poly1305; independent of the der-0.7 pins (no ASN.1 crates). See t29.md §3.
-chacha20poly1305 = "0.10"
+chacha20poly1305 = "0.11"
 
 # --- Optional cache layer (wp14 Phase 4) -----------------------------------------------
 # moka: an in-process concurrent cache — powers the `Ledger::verify()` verdict memo (the real
@@ -186,9 +191,9 @@ chacha20poly1305 = "0.10"
 moka = { version = "0.12", default-features = false, features = ["sync"] }
 # redis: the OPTIONAL Redis cache-aside backend (chancela-api's off-by-default `redis` feature).
 # `default-features = false` keeps only the synchronous connection (no async/tokio, no TLS) — a
-# tiny surface used via the version-stable `redis::cmd(..).query(..)` API. Pinned to 1.2 (1.3 needs
-# rustc 1.88, above the workspace MSRV of 1.85). Absent feature ⇒ not compiled at all.
-redis = { version = "1.2", default-features = false }
+# tiny surface used via the version-stable `redis::cmd(..).query(..)` API. Absent feature ⇒ not
+# compiled at all.
+redis = { version = "1.4", default-features = false }
 
 [profile.release]
 lto = "thin"

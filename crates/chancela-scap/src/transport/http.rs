@@ -110,12 +110,12 @@ impl HttpScapTransport {
 
     fn read_body(resp: reqwest::blocking::Response) -> Result<String, ScapError> {
         let status = resp.status();
-        if let Some(len) = resp.content_length() {
-            if len > MAX_SCAP_RESPONSE {
-                return Err(ScapError::Transport(format!(
-                    "response too large: {len} bytes exceeds {MAX_SCAP_RESPONSE}"
-                )));
-            }
+        if let Some(len) = resp.content_length()
+            && len > MAX_SCAP_RESPONSE
+        {
+            return Err(ScapError::Transport(format!(
+                "response too large: {len} bytes exceeds {MAX_SCAP_RESPONSE}"
+            )));
         }
         let bytes = resp
             .bytes()
@@ -149,10 +149,10 @@ impl ScapTransport for HttpScapTransport {
         let body = self.get_json("providers")?;
         let mut providers: Vec<AttributeProvider> =
             serde_json::from_str(&body).map_err(|e| ScapError::Transport(e.to_string()))?;
-        if let Some(filter) = &self.config.provider_filter {
-            if !filter.is_empty() {
-                providers.retain(|p| filter.iter().any(|id| id == &p.id));
-            }
+        if let Some(filter) = &self.config.provider_filter
+            && !filter.is_empty()
+        {
+            providers.retain(|p| filter.iter().any(|id| id == &p.id));
         }
         Ok(providers)
     }
