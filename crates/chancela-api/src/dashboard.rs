@@ -64,6 +64,13 @@ pub async fn dashboard(
     let can_view_backup_recovery_freshness = authz
         .permits(Permission::LedgerRecover, Scope::Global)
         || authz.permits(Permission::DataBackup, Scope::Global);
+    let can_view_failed_sync_jobs = authz.permits(Permission::DataExport, Scope::Global);
+    let can_view_pending_backup_jobs = authz.permits(Permission::DataBackup, Scope::Global);
+    let operator_job_counts = if can_view_failed_sync_jobs || can_view_pending_backup_jobs {
+        crate::connector_jobs::dashboard_job_counts(&state).await
+    } else {
+        crate::connector_jobs::DashboardJobCounts::default()
+    };
     let redaction = read_redaction_for_actor(&state, &actor).await?;
     let settings = state.settings.read().await;
     let reminder_policy = settings.workflow.reminders.clone();
@@ -112,16 +119,16 @@ pub async fn dashboard(
             ActState::Signing => {
                 acts_awaiting_signature += 1;
                 // A Signing act still carrying compliance errors is "unresolved".
-                if let Some(book) = books.get(&act.book_id) {
-                    if let Some(entity) = entities.get(&book.entity_id) {
-                        // Per-family dispatch (R4): check against the entity's own pack.
-                        let has_error = rule_pack_for(entity)
-                            .check_act(act, entity)
-                            .iter()
-                            .any(|i| i.severity == Severity::Error);
-                        if has_error {
-                            unresolved_compliance += 1;
-                        }
+                if let Some(book) = books.get(&act.book_id)
+                    && let Some(entity) = entities.get(&book.entity_id)
+                {
+                    // Per-family dispatch (R4): check against the entity's own pack.
+                    let has_error = rule_pack_for(entity)
+                        .check_act(act, entity)
+                        .iter()
+                        .any(|i| i.severity == Severity::Error);
+                    if has_error {
+                        unresolved_compliance += 1;
                     }
                 }
             }
@@ -185,6 +192,16 @@ pub async fn dashboard(
         acts_awaiting_signature,
         acts_sealed,
         unresolved_compliance,
+        failed_sync_jobs: if can_view_failed_sync_jobs {
+            operator_job_counts.failed_sync_jobs
+        } else {
+            0
+        },
+        pending_backup_jobs: if can_view_pending_backup_jobs {
+            operator_job_counts.pending_backup_jobs
+        } else {
+            0
+        },
         ledger_length,
         ledger_valid,
         current_work,

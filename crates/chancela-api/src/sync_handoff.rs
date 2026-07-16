@@ -1,7 +1,8 @@
 //! Local sync/handoff preflight readiness report.
 //!
-//! This is a read-only composition endpoint. It does not implement active sync, connector
-//! protocols, background jobs, provider calls, uploads/downloads, imports, or record mutation.
+//! This is a read-only composition endpoint. Connector protocols and audited jobs are implemented
+//! elsewhere; this preflight does not invoke providers, upload/download, import, or mutate records,
+//! and it does not certify production connector compatibility or active-replica collaboration.
 
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
@@ -575,7 +576,7 @@ fn local_file_label(value: &str) -> String {
 fn no_claims() -> SyncHandoffNoClaims {
     SyncHandoffNoClaims {
         active_sync_implemented: false,
-        connector_protocol_implemented: false,
+        connector_protocol_implemented: true,
         background_job_configured: false,
         upload_or_download_performed: false,
         import_performed: false,

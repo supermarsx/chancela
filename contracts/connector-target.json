@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "id": "4c200000-0000-4000-8000-000000000001",
+  "repository_id": "4c210000-0000-4000-8000-000000000001",
+  "tenant_id": "74656e61-6e74-0000-0000-000000000001",
+  "name": "Nextcloud evidence mirror",
+  "enabled": true,
+  "purposes": ["sync", "backup"],
+  "kind": "web_dav",
+  "config": {
+    "kind": "web_dav",
+    "id": "4c200000-0000-4000-8000-000000000001",
+    "base_url": "https://cloud.example/remote.php/dav/files/chancela",
+    "auth": {
+      "mode": "basic",
+      "username": "chancela",
+      "password_ref": "CHANCELA_CONNECTOR_SECRET_NEXTCLOUD"
+    },
+    "timeout_seconds": 60,
+    "allow_insecure_http": false
+  },
+  "credential_storage": "environment_or_confined_file_reference",
+  "created_at": "2026-07-16T12:00:00Z",
+  "updated_at": "2026-07-16T12:00:00Z",
+  "archived_at": null
+}

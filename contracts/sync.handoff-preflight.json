@@ -99,7 +99,7 @@
   },
   "no_claims": {
     "active_sync_implemented": false,
-    "connector_protocol_implemented": false,
+    "connector_protocol_implemented": true,
     "background_job_configured": false,
     "upload_or_download_performed": false,
     "import_performed": false,

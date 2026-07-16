@@ -1,0 +1,26 @@
+{
+  "source_root": "/var/lib/chancela/worker/sources",
+  "targets": {
+    "purposes": {
+      "sync": "local-sync",
+      "backup": "local-backup"
+    },
+    "targets": [
+      {
+        "kind": "local",
+        "id": "local-sync",
+        "root": "/var/lib/chancela/worker/targets/sync"
+      },
+      {
+        "kind": "local",
+        "id": "local-backup",
+        "root": "/var/lib/chancela/worker/targets/backup"
+      }
+    ]
+  },
+  "poll_interval_ms": 1000,
+  "max_parallel_jobs": 2,
+  "max_job_attempts": 4,
+  "retry_initial_ms": 1000,
+  "retry_max_ms": 60000
+}

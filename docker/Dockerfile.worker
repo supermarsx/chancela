@@ -1,0 +1,50 @@
+# syntax=docker/dockerfile:1
+#
+# Dedicated ARC-20 sync/backup worker image. The final image is distroless,
+# non-root, read-only-rootfs compatible, and contains no configuration or
+# credential values. Runtime configuration is mounted by Compose.
+
+########################  Stage 1: Rust build  ########################
+FROM rust:1.97.0-slim-trixie@sha256:466074ef42a9485c726d71017fa629f1954cd5e09b473dcd00467ddc6afdc753 AS rust-build
+WORKDIR /build
+
+# aws-lc (used by the maintained S3 SDK TLS stack) needs a native C/CMake
+# toolchain. Build-only packages never enter the runtime image.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends build-essential cmake perl pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY . .
+
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/build/target \
+    cargo build --release --locked -p chancela-worker \
+    && cp target/release/chancela-worker /chancela-worker
+
+########################  Stage 2: Runtime  ########################
+FROM gcr.io/distroless/cc-debian13:nonroot@sha256:d97bc0a941b8d4be647dc0ee75b264ddbb772f1ac5ba690a4309c00723b23775 AS runtime
+
+LABEL org.opencontainers.image.title="chancela-worker" \
+      org.opencontainers.image.description="Durable Chancela sync and backup worker" \
+      org.opencontainers.image.source="https://github.com/chancela/chancela" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.base.name="gcr.io/distroless/cc-debian13:nonroot" \
+      org.opencontainers.image.base.digest="sha256:d97bc0a941b8d4be647dc0ee75b264ddbb772f1ac5ba690a4309c00723b23775"
+
+COPY --from=rust-build /chancela-worker /usr/local/bin/chancela-worker
+# Create the mount point without embedding a runtime configuration.
+COPY --chown=nonroot:nonroot docker/.chancela-data.keep /etc/chancela-worker/.keep
+# Seed the paths shared with chancela-server. The API writes only beneath
+# /var/lib/chancela/worker/sources and publishes audited jobs to queue.
+COPY --chown=nonroot:nonroot docker/.chancela-data.keep /var/lib/chancela/worker/sources/.keep
+COPY --chown=nonroot:nonroot docker/.chancela-data.keep /var/lib/chancela/worker/targets/sync/.keep
+COPY --chown=nonroot:nonroot docker/.chancela-data.keep /var/lib/chancela/worker/targets/backup/.keep
+COPY --chown=nonroot:nonroot docker/.chancela-data.keep /var/lib/chancela/worker/queue/.keep
+
+USER 65532:65532
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+    CMD ["/usr/local/bin/chancela-worker", "healthcheck", "--data-dir", "/var/lib/chancela/worker/queue", "--max-age-seconds", "120"]
+
+ENTRYPOINT ["/usr/local/bin/chancela-worker"]
+CMD ["run", "--config", "/etc/chancela-worker/config.json", "--data-dir", "/var/lib/chancela/worker/queue"]

@@ -1,0 +1,34 @@
+[package]
+name = "chancela-connectors"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "ARC-20/21 sync and backup connector foundation for Chancela"
+
+[dependencies]
+async-trait = "0.1.89"
+aws-sdk-s3 = { version = "=1.138.0", default-features = false, features = ["default-https-client", "http-1x", "rt-tokio"] }
+base64 = "0.22.1"
+bytes.workspace = true
+percent-encoding = "2.3.2"
+reqwest = { workspace = true, features = ["stream"] }
+russh = { version = "0.62.2", default-features = false, features = ["ring"] }
+russh-sftp = "2.3.0"
+rustls-native-certs = "0.8.2"
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+smb2 = "0.13.1"
+suppaftp = { version = "10.0.1", default-features = false, features = ["tokio-rustls-ring"] }
+thiserror.workspace = true
+tokio.workspace = true
+tokio-util = { version = "0.7.18", features = ["io"] }
+uuid.workspace = true
+zeroize = "1.8.2"
+
+[dev-dependencies]
+axum.workspace = true
+tower.workspace = true
