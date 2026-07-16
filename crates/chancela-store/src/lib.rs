@@ -1249,6 +1249,10 @@ pub struct StoredImportedDocumentMeta {
     pub operator_review_note: Option<String>,
     /// Stable guardrail ids explicitly acknowledged by the operator during the review transition.
     pub operator_acknowledged_guardrail_ids: Vec<String>,
+    /// Complete bounded local recognition, extraction, and signature-validation report. The JSON
+    /// is retained beside the original bytes as linked technical evidence and is never canonical
+    /// document content.
+    pub technical_validation_report_json: String,
 }
 
 /// One stored operator review decision for an imported document. This is append-only technical
@@ -2571,7 +2575,7 @@ impl Store {
                 "SELECT id, act_id, filename, declared_content_type, detected_content_type, \
                  sha256, size_bytes, imported_at, imported_by, operator_review_status, \
                  operator_reviewed_at, operator_reviewed_by, operator_review_note, \
-                 operator_acknowledged_guardrail_ids_json \
+                 operator_acknowledged_guardrail_ids_json, technical_validation_report_json \
                  FROM imported_documents \
                  WHERE act_id = ?1 ORDER BY imported_at DESC, rowid DESC",
             )?;
@@ -2585,7 +2589,7 @@ impl Store {
                 "SELECT id, act_id, filename, declared_content_type, detected_content_type, \
                  sha256, size_bytes, imported_at, imported_by, operator_review_status, \
                  operator_reviewed_at, operator_reviewed_by, operator_review_note, \
-                 operator_acknowledged_guardrail_ids_json \
+                 operator_acknowledged_guardrail_ids_json, technical_validation_report_json \
                  FROM imported_documents \
                  ORDER BY imported_at DESC, rowid DESC",
             )?;
@@ -2611,7 +2615,7 @@ impl Store {
             "SELECT id, act_id, filename, declared_content_type, detected_content_type, sha256, \
              size_bytes, imported_at, imported_by, operator_review_status, operator_reviewed_at, \
              operator_reviewed_by, operator_review_note, operator_acknowledged_guardrail_ids_json, \
-             bytes FROM imported_documents \
+             technical_validation_report_json, bytes FROM imported_documents \
              WHERE id = ?1",
         )?;
         stmt.query_row(params![id], row_to_imported_document)
@@ -4010,8 +4014,9 @@ impl Tx<'_> {
                      (id, act_id, filename, declared_content_type, detected_content_type, sha256, \
                       size_bytes, imported_at, imported_by, operator_review_status, \
                       operator_reviewed_at, operator_reviewed_by, operator_review_note, \
-                      operator_acknowledged_guardrail_ids_json, bytes) \
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+                      operator_acknowledged_guardrail_ids_json, technical_validation_report_json, \
+                      bytes) \
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
                     params![
                         doc.meta.id,
                         act_id,
@@ -4027,6 +4032,7 @@ impl Tx<'_> {
                         doc.meta.operator_reviewed_by,
                         doc.meta.operator_review_note,
                         guardrails_json,
+                        doc.meta.technical_validation_report_json,
                         doc.bytes,
                     ],
                 )?;
@@ -4043,8 +4049,9 @@ impl Tx<'_> {
                      (id, act_id, filename, declared_content_type, detected_content_type, sha256, \
                       size_bytes, imported_at, imported_by, operator_review_status, \
                       operator_reviewed_at, operator_reviewed_by, operator_review_note, \
-                      operator_acknowledged_guardrail_ids_json, bytes) \
-                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) \
+                      operator_acknowledged_guardrail_ids_json, technical_validation_report_json, \
+                      bytes) \
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) \
                      ON CONFLICT (id) DO UPDATE SET act_id = EXCLUDED.act_id, \
                      filename = EXCLUDED.filename, \
                      declared_content_type = EXCLUDED.declared_content_type, \
@@ -4056,7 +4063,9 @@ impl Tx<'_> {
                      operator_reviewed_by = EXCLUDED.operator_reviewed_by, \
                      operator_review_note = EXCLUDED.operator_review_note, \
                      operator_acknowledged_guardrail_ids_json = \
-                     EXCLUDED.operator_acknowledged_guardrail_ids_json, bytes = EXCLUDED.bytes",
+                     EXCLUDED.operator_acknowledged_guardrail_ids_json, \
+                     technical_validation_report_json = \
+                     EXCLUDED.technical_validation_report_json, bytes = EXCLUDED.bytes",
                     &[
                         &doc.meta.id,
                         &act_id,
@@ -4072,6 +4081,7 @@ impl Tx<'_> {
                         &reviewed_by,
                         &review_note,
                         &guardrails_json,
+                        &doc.meta.technical_validation_report_json,
                         &bytes,
                     ],
                 )?;
@@ -5766,6 +5776,7 @@ fn row_to_imported_document_meta(
     let operator_reviewed_by: Option<String> = row.get(11)?;
     let operator_review_note: Option<String> = row.get(12)?;
     let operator_acknowledged_guardrail_ids_json: String = row.get(13)?;
+    let technical_validation_report_json: String = row.get(14)?;
     Ok(imported_document_meta_from_raw(
         id,
         act_id_raw,
@@ -5781,6 +5792,7 @@ fn row_to_imported_document_meta(
         operator_reviewed_by,
         operator_review_note,
         operator_acknowledged_guardrail_ids_json,
+        technical_validation_report_json,
     ))
 }
 
@@ -5803,7 +5815,8 @@ fn row_to_imported_document(
     let operator_reviewed_by: Option<String> = row.get(11)?;
     let operator_review_note: Option<String> = row.get(12)?;
     let operator_acknowledged_guardrail_ids_json: String = row.get(13)?;
-    let bytes: Vec<u8> = row.get(14)?;
+    let technical_validation_report_json: String = row.get(14)?;
+    let bytes: Vec<u8> = row.get(15)?;
     Ok((|| {
         Ok(StoredImportedDocument {
             meta: imported_document_meta_from_raw(
@@ -5821,6 +5834,7 @@ fn row_to_imported_document(
                 operator_reviewed_by,
                 operator_review_note,
                 operator_acknowledged_guardrail_ids_json,
+                technical_validation_report_json,
             )?,
             bytes,
         })
@@ -5866,6 +5880,7 @@ fn imported_document_meta_from_raw(
     operator_reviewed_by: Option<String>,
     operator_review_note: Option<String>,
     operator_acknowledged_guardrail_ids_json: String,
+    technical_validation_report_json: String,
 ) -> Result<StoredImportedDocumentMeta, StoreError> {
     let size_bytes = usize::try_from(size_raw).map_err(|_| {
         StoreError::Io(std::io::Error::new(
@@ -5879,6 +5894,7 @@ fn imported_document_meta_from_raw(
         .transpose()?;
     let operator_acknowledged_guardrail_ids =
         serde_json::from_str(&operator_acknowledged_guardrail_ids_json)?;
+    serde_json::from_str::<serde_json::Value>(&technical_validation_report_json)?;
     Ok(StoredImportedDocumentMeta {
         id,
         act_id,
@@ -5899,6 +5915,7 @@ fn imported_document_meta_from_raw(
         operator_reviewed_by,
         operator_review_note,
         operator_acknowledged_guardrail_ids,
+        technical_validation_report_json,
     })
 }
 
@@ -6681,6 +6698,16 @@ pub(crate) fn configure_and_migrate(conn: &rusqlite::Connection) -> Result<(), S
         conn.execute_batch(
             "ALTER TABLE imported_documents ADD COLUMN \
              operator_acknowledged_guardrail_ids_json TEXT NOT NULL DEFAULT '[]';",
+        )?;
+    }
+    if !table_has_column(
+        conn,
+        "imported_documents",
+        "technical_validation_report_json",
+    )? {
+        conn.execute_batch(
+            "ALTER TABLE imported_documents ADD COLUMN \
+             technical_validation_report_json TEXT NOT NULL DEFAULT '{}';",
         )?;
     }
 

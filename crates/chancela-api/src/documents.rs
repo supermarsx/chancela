@@ -15,7 +15,7 @@
 //! and does not enter the document bytes.
 
 use std::collections::BTreeSet;
-use std::io::{Cursor, Write};
+use std::io::{Cursor, Read, Write};
 use std::path::Component;
 use std::sync::LazyLock;
 
@@ -30,6 +30,10 @@ use chancela_core::{
     Act, ActId, ActState, Block, Book, BookKind, Convening, DispatchChannel, DocumentModel, Entity,
     EntityFamily, LifecycleStage, MeetingChannel, NumberingScheme, PresenceMode, Run,
     SignaturePolicyHint, TermoDeAbertura, TermoDeEncerramento,
+};
+use chancela_signing::{
+    BaselineProfile, EvidentiaryLevel, SignatureArtifact, SignatureFormat, SigningFamily,
+    validate_asic_container, validate_signature,
 };
 use chancela_store::{
     StoredDocument, StoredGeneratedDocumentDispatchEvidence, StoredImportedDocument,
@@ -85,6 +89,16 @@ const ZIP_EMPTY_MAGIC: &[u8; 22] =
     b"PK\x05\x06\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00";
 const ZIP_SPANNED_MAGIC: &[u8; 4] = b"PK\x07\x08";
 const ZIP_UNCOMPRESSED_WARNING_BYTES: u64 = 256 * 1024 * 1024;
+/// Hard in-memory extraction limits for untrusted office/bundle evidence. Extraction is inspection
+/// only: no member is written to disk or promoted to a canonical document.
+const DOCUMENT_CONTAINER_MAX_MEMBERS: usize = 256;
+const DOCUMENT_CONTAINER_MAX_MEMBER_BYTES: u64 = 8 * 1024 * 1024;
+const DOCUMENT_CONTAINER_MAX_EXTRACTED_BYTES: u64 = 32 * 1024 * 1024;
+const DOCUMENT_MAIL_MAX_HEADER_BYTES: usize = 64 * 1024;
+const DOCUMENT_MAIL_MAX_HEADERS: usize = 200;
+const DOCUMENT_MAIL_MAX_PARTS: usize = 128;
+const DOCUMENT_MAIL_MAX_DEPTH: usize = 4;
+const DOCUMENT_MAIL_MAX_BOUNDARY_BYTES: usize = 200;
 
 const NON_CANONICAL_EVIDENCE_WARNING: &str = "Imported bytes are preserved only as \
 non-canonical evidence; no legal conversion, PDF/A conformance, signature validity, or canonical \
@@ -729,8 +743,13 @@ pub struct DocumentImportValidationReport {
     pub legacy_word: LegacyWordDocRecognitionReport,
     pub image: ImageRecognitionReport,
     pub text: TextDocumentRecognitionReport,
+    pub office: OfficeDocumentRecognitionReport,
+    pub rtf: RtfRecognitionReport,
+    pub email: EmailRecognitionReport,
     pub zip_bundle: ZipBundleRecognitionReport,
     pub signature: SignedPdfSignalReport,
+    pub signature_evidence: DocumentSignatureEvidenceReport,
+    pub extraction_limits: DocumentExtractionLimitsReport,
     pub can_accept_non_canonical_import: bool,
     pub findings: Vec<DocumentValidationFinding>,
 }
@@ -866,12 +885,142 @@ pub struct ZipBundleRecognitionReport {
     pub is_zip: bool,
     pub readable: bool,
     pub entry_count: usize,
+    pub file_count: usize,
+    pub extracted_entry_count: usize,
     pub unsafe_entry_count: usize,
     pub unsafe_entry_names: Vec<String>,
+    pub duplicate_entry_count: usize,
+    pub duplicate_entry_names: Vec<String>,
     pub total_uncompressed_size: Option<u64>,
+    pub total_extracted_size: u64,
     pub extraction_performed: bool,
     pub canonical_pdfa_generated: bool,
+    pub members: Vec<ContainerMemberReport>,
     pub validation_error: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct OfficeDocumentRecognitionReport {
+    pub is_office_document: bool,
+    pub format: Option<&'static str>,
+    pub package_readable: bool,
+    pub required_members_present: bool,
+    pub macro_payload_detected: bool,
+    pub package_members_extracted_for_inspection: bool,
+    pub conversion_performed: bool,
+    pub canonical_pdfa_generated: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RtfRecognitionReport {
+    pub claimed: bool,
+    pub is_rtf: bool,
+    pub structurally_valid: bool,
+    pub maximum_group_depth: usize,
+    pub object_or_package_control_word_detected: bool,
+    pub conversion_performed: bool,
+    pub canonical_pdfa_generated: bool,
+    pub validation_error: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct EmailRecognitionReport {
+    pub claimed: bool,
+    pub is_email: bool,
+    pub readable: bool,
+    pub header_count: usize,
+    pub mime_part_count: usize,
+    pub attachment_count: usize,
+    pub decoded_attachment_bytes: u64,
+    pub extraction_performed: bool,
+    pub canonical_pdfa_generated: bool,
+    pub attachments: Vec<ContainerMemberReport>,
+    pub validation_error: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ContainerMemberReport {
+    pub path: String,
+    pub media_type: String,
+    pub size_bytes: usize,
+    pub sha256: String,
+    pub signature_claimed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct DocumentExtractionLimitsReport {
+    pub upload_max_bytes: usize,
+    pub archive_max_members: usize,
+    pub extracted_member_max_bytes: u64,
+    pub extracted_total_max_bytes: u64,
+    pub mail_header_max_bytes: usize,
+    pub mail_header_max_count: usize,
+    pub mail_part_max_count: usize,
+    pub mail_nesting_max_depth: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct DocumentSignatureEvidenceReport {
+    pub signature_claim_detected: bool,
+    pub claimed_signature_count: usize,
+    pub validation_performed_count: usize,
+    pub cryptographically_valid_count: usize,
+    pub all_claimed_signatures_valid: Option<bool>,
+    pub trust_validation: &'static str,
+    pub legal_validity_claimed: bool,
+    pub validations: Vec<DocumentSignatureValidationEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct DocumentSignatureValidationEntry {
+    pub format: &'static str,
+    pub status: &'static str,
+    pub signature_path: String,
+    pub signed_content_path: Option<String>,
+    pub signed_content_sha256: Option<String>,
+    pub validation_performed: bool,
+    pub cryptographically_valid: bool,
+    pub signer_certificate_sha256: Option<String>,
+    pub signing_time: Option<String>,
+    pub validation_error: Option<String>,
+    pub trust_validation: &'static str,
+    pub legal_validity_claimed: bool,
+}
+
+#[derive(Debug, Clone)]
+struct ExtractedEvidenceMember {
+    path: String,
+    media_type: String,
+    bytes: Vec<u8>,
+}
+
+impl ExtractedEvidenceMember {
+    fn report(&self) -> ContainerMemberReport {
+        ContainerMemberReport {
+            path: self.path.clone(),
+            media_type: self.media_type.clone(),
+            size_bytes: self.bytes.len(),
+            sha256: sha256_hex(&self.bytes),
+            signature_claimed: claimed_signature_format(
+                &self.path,
+                Some(&self.media_type),
+                &self.bytes,
+            )
+            .is_some(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct ZipInspection {
+    report: ZipBundleRecognitionReport,
+    members: Vec<ExtractedEvidenceMember>,
+}
+
+#[derive(Debug, Clone)]
+struct MailInspection {
+    report: EmailRecognitionReport,
+    parts: Vec<ExtractedEvidenceMember>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -1022,9 +1171,29 @@ fn validate_document_candidate_with_fixity(
     let legacy_word = recognize_legacy_word_doc(bytes, declared.as_deref(), filename.as_deref());
     let image = recognize_image(bytes, declared.as_deref(), filename.as_deref());
     let text = recognize_text_document(bytes, declared.as_deref(), filename.as_deref());
-    let zip_bundle = recognize_zip_bundle(bytes);
-    let detected_content_type =
-        detect_candidate_content_type(bytes, pdf.is_pdf, &legacy_word, &image, &text, &zip_bundle);
+    let zip_inspection = inspect_zip_bundle(bytes);
+    let zip_bundle = zip_inspection.report.clone();
+    let office = recognize_office_document(&zip_inspection);
+    let rtf = recognize_rtf_document(bytes, declared.as_deref(), filename.as_deref());
+    let mail_inspection = inspect_email_document(bytes, declared.as_deref(), filename.as_deref());
+    let email = mail_inspection.report.clone();
+    let top_level_signature_claim = claimed_signature_format(
+        filename.as_deref().unwrap_or("candidate"),
+        declared.as_deref(),
+        bytes,
+    );
+    let detected_content_type = detect_candidate_content_type(
+        bytes,
+        pdf.is_pdf,
+        &legacy_word,
+        &image,
+        &text,
+        &office,
+        &rtf,
+        &email,
+        top_level_signature_claim,
+        &zip_bundle,
+    );
     let declared_matches_detected = declared
         .as_deref()
         .map(|value| content_type_base(value) == detected_content_type);
@@ -1040,6 +1209,14 @@ fn validate_document_candidate_with_fixity(
     } else {
         unsigned_pdf_signal_report()
     };
+    let signature_evidence = validate_document_signature_evidence(
+        bytes,
+        detected_content_type,
+        filename.as_deref(),
+        &signature,
+        &zip_inspection.members,
+        &mail_inspection.parts,
+    );
     let mut findings = Vec::new();
 
     if bytes.is_empty() {
@@ -1083,6 +1260,9 @@ fn validate_document_candidate_with_fixity(
         || legacy_word.is_ole_cfb
         || image.is_image
         || text.is_supported_text
+        || office.is_office_document
+        || rtf.is_rtf
+        || email.is_email
         || zip_bundle.is_zip;
     if !known_supported_family && !bytes.is_empty() {
         findings.push(DocumentValidationFinding::error(
@@ -1170,6 +1350,59 @@ fn validate_document_candidate_with_fixity(
             "no XML schema validation, CSV semantic validation, or PDF/A conversion was performed",
         ));
     }
+    if office.is_office_document {
+        findings.push(DocumentValidationFinding::warning(
+            "non_canonical_import_only",
+            NON_CANONICAL_EVIDENCE_WARNING,
+        ));
+        findings.push(DocumentValidationFinding::info(
+            "office_package_detected",
+            format!(
+                "{} package members were extracted under fixed in-memory limits for inspection only",
+                office.format.unwrap_or("office document")
+            ),
+        ));
+        if office.macro_payload_detected {
+            findings.push(DocumentValidationFinding::warning(
+                "office_macro_payload_preserved_not_executed",
+                "a macro payload is present; it was preserved as opaque evidence and was not executed",
+            ));
+        }
+    }
+    if rtf.claimed {
+        if !rtf.structurally_valid {
+            findings.push(DocumentValidationFinding::error(
+                "rtf_structure_invalid",
+                rtf.validation_error
+                    .clone()
+                    .unwrap_or_else(|| "RTF structure validation failed".to_owned()),
+            ));
+        } else {
+            findings.push(DocumentValidationFinding::info(
+                "rtf_detected",
+                "RTF evidence was structurally screened without executing objects, packages, fields, or macros",
+            ));
+        }
+    }
+    if email.claimed {
+        if !email.readable {
+            findings.push(DocumentValidationFinding::error(
+                "email_malformed_or_unsafe",
+                email
+                    .validation_error
+                    .clone()
+                    .unwrap_or_else(|| "email/MIME parsing failed".to_owned()),
+            ));
+        } else {
+            findings.push(DocumentValidationFinding::info(
+                "email_evidence_extracted",
+                format!(
+                    "email structure and {} attachment(s) were decoded under fixed in-memory limits for inspection only",
+                    email.attachment_count
+                ),
+            ));
+        }
+    }
     if zip_bundle.is_zip {
         findings.push(DocumentValidationFinding::warning(
             "non_canonical_import_only",
@@ -1177,11 +1410,11 @@ fn validate_document_candidate_with_fixity(
         ));
         findings.push(DocumentValidationFinding::info(
             "zip_bundle_detected",
-            "ZIP bundle evidence detected; central-directory member names were inspected without extracting files",
+            "ZIP bundle evidence detected; safe members were extracted in memory under fixed member/count/total limits",
         ));
         findings.push(DocumentValidationFinding::info(
-            "zip_not_extracted",
-            "ZIP members were not extracted or converted; this import does not become the canonical PDF/A record",
+            "zip_bounded_inspection_only",
+            "ZIP members were not written to disk or converted; this import does not become the canonical PDF/A record",
         ));
         if !zip_bundle.readable {
             findings.push(DocumentValidationFinding::error(
@@ -1199,6 +1432,16 @@ fn validate_document_candidate_with_fixity(
                     "ZIP archive contains {} unsafe member path(s); examples: {}",
                     zip_bundle.unsafe_entry_count,
                     zip_bundle.unsafe_entry_names.join(", ")
+                ),
+            ));
+        }
+        if zip_bundle.duplicate_entry_count > 0 {
+            findings.push(DocumentValidationFinding::error(
+                "zip_duplicate_entry_name",
+                format!(
+                    "ZIP archive contains {} duplicate member path(s); examples: {}",
+                    zip_bundle.duplicate_entry_count,
+                    zip_bundle.duplicate_entry_names.join(", ")
                 ),
             ));
         }
@@ -1296,6 +1539,41 @@ fn validate_document_candidate_with_fixity(
             _ => {}
         }
     }
+    for validation in &signature_evidence.validations {
+        match validation.status {
+            "valid" => findings.push(DocumentValidationFinding::info(
+                "signature_evidence_valid_local_technical",
+                format!(
+                    "{} signature evidence at {} passed local cryptographic validation; trust and legal effect were not assessed",
+                    validation.format, validation.signature_path
+                ),
+            )),
+            "invalid" => findings.push(DocumentValidationFinding::error(
+                "signature_evidence_invalid",
+                format!(
+                    "{} signature evidence at {} is invalid: {}",
+                    validation.format,
+                    validation.signature_path,
+                    validation
+                        .validation_error
+                        .as_deref()
+                        .unwrap_or("local cryptographic validation failed")
+                ),
+            )),
+            _ => findings.push(DocumentValidationFinding::error(
+                "signature_evidence_unvalidated",
+                format!(
+                    "{} signature evidence at {} could not be validated: {}",
+                    validation.format,
+                    validation.signature_path,
+                    validation
+                        .validation_error
+                        .as_deref()
+                        .unwrap_or("required signed content was unavailable or ambiguous")
+                ),
+            )),
+        }
+    }
 
     let can_accept_non_canonical_import =
         !findings.iter().any(|finding| finding.severity == "error");
@@ -1327,8 +1605,13 @@ fn validate_document_candidate_with_fixity(
         legacy_word,
         image,
         text,
+        office,
+        rtf,
+        email,
         zip_bundle,
         signature,
+        signature_evidence,
+        extraction_limits: document_extraction_limits(),
         can_accept_non_canonical_import,
         findings,
     }
@@ -1372,6 +1655,8 @@ pub struct ImportedDocumentView {
     pub operator_reviewed_by: Option<String>,
     pub operator_review_note: Option<String>,
     pub acknowledged_guardrail_ids: Vec<String>,
+    /// Persisted bounded recognition/extraction/signature report linked to the original bytes.
+    pub technical_validation: Value,
     pub review_history: Vec<ImportedDocumentReviewHistoryEntryView>,
     pub operator_review_notice: &'static str,
     pub non_canonical: bool,
@@ -1453,6 +1738,7 @@ pub async fn import_document(
     let id = Uuid::new_v4().to_string();
     let imported_at = OffsetDateTime::now_utc();
     let event_scope = imported_document_event_scope(&state, act_id, &id).await?;
+    let technical_validation_report_json = serde_json::to_string(&report)?;
     let stored = StoredImportedDocument {
         meta: StoredImportedDocumentMeta {
             id: id.clone(),
@@ -1471,6 +1757,7 @@ pub async fn import_document(
             operator_reviewed_by: None,
             operator_review_note: None,
             operator_acknowledged_guardrail_ids: Vec::new(),
+            technical_validation_report_json,
         },
         bytes: candidate.bytes,
     };
@@ -1723,6 +2010,8 @@ fn imported_document_view(
         operator_reviewed_by: meta.operator_reviewed_by.clone(),
         operator_review_note: meta.operator_review_note.clone(),
         acknowledged_guardrail_ids: meta.operator_acknowledged_guardrail_ids.clone(),
+        technical_validation: serde_json::from_str(&meta.technical_validation_report_json)
+            .expect("store validates imported-document technical report JSON"),
         review_history: imported_document_review_history_view(history),
         operator_review_notice: IMPORTED_DOCUMENT_REVIEW_NOTICE,
         non_canonical: true,
@@ -1756,6 +2045,7 @@ fn imported_document_view_with_redaction(
         view.operator_review_note = view
             .operator_review_note
             .map(|_| crate::dto::REDACTED.to_owned());
+        view.technical_validation = json!({ "redacted": true });
         for entry in &mut view.review_history {
             entry.reviewed_by = entry
                 .reviewed_by
@@ -1818,7 +2108,10 @@ fn imported_document_initial_review_status(
 ) -> StoredImportedDocumentReviewStatus {
     match content_type_base(detected_content_type).as_str() {
         "image/png" | "image/jpeg" => StoredImportedDocumentReviewStatus::OcrReviewRequired,
-        "application/msword" => {
+        "application/msword"
+        | "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        | "application/vnd.oasis.opendocument.text"
+        | "application/rtf" => {
             StoredImportedDocumentReviewStatus::CanonicalConversionReviewRequired
         }
         _ => StoredImportedDocumentReviewStatus::OperatorReviewRequired,
@@ -1829,6 +2122,12 @@ fn imported_document_preservation_policy(
     meta: &StoredImportedDocumentMeta,
 ) -> DocumentPreservationPolicyReport {
     let mut policy = document_preservation_policy(&meta.detected_content_type, true, true);
+    let signature_state = imported_document_signature_validation_state(meta);
+    if signature_state.claim_detected && signature_state.all_claimed_valid {
+        policy.signed_artifact_status = "locally_validated_signature_evidence_non_canonical";
+    } else if signature_state.claim_detected {
+        policy.signed_artifact_status = "signature_evidence_validation_incomplete";
+    }
     policy.review_state = meta.operator_review_status.as_str();
     match meta.operator_review_status {
         StoredImportedDocumentReviewStatus::ReviewedNonCanonicalOriginalOnly => {
@@ -1857,8 +2156,21 @@ fn imported_document_canonical_conversion_preflight(
     let base = content_type_base(&meta.detected_content_type);
     document_canonical_conversion_preflight_from_flags(
         base.as_str(),
-        base == "application/msword" || base == "application/vnd.ms-office",
-        base == "application/msword",
+        matches!(
+            base.as_str(),
+            "application/msword"
+                | "application/vnd.ms-office"
+                | "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                | "application/vnd.oasis.opendocument.text"
+                | "application/rtf"
+        ),
+        matches!(
+            base.as_str(),
+            "application/msword"
+                | "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                | "application/vnd.oasis.opendocument.text"
+                | "application/rtf"
+        ),
         review_state,
         true,
     )
@@ -1876,6 +2188,15 @@ fn imported_document_download_content_type(detected_content_type: &str) -> &'sta
     match content_type_base(detected_content_type).as_str() {
         "application/pdf" => "application/pdf",
         "application/msword" => "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => {
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        }
+        "application/vnd.oasis.opendocument.text" => "application/vnd.oasis.opendocument.text",
+        "application/rtf" | "text/rtf" => "application/rtf",
+        "message/rfc822" => "message/rfc822",
+        "application/vnd.etsi.asic-e+zip" => "application/vnd.etsi.asic-e+zip",
+        "application/vnd.etsi.asic-s+zip" => "application/vnd.etsi.asic-s+zip",
+        "application/pkcs7-signature" => "application/pkcs7-signature",
         "application/zip" => "application/zip",
         "image/png" => "image/png",
         "image/jpeg" => "image/jpeg",
@@ -1889,6 +2210,13 @@ fn imported_document_download_extension(detected_content_type: &str) -> &'static
     match content_type_base(detected_content_type).as_str() {
         "application/pdf" => "pdf",
         "application/msword" => "doc",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => "docx",
+        "application/vnd.oasis.opendocument.text" => "odt",
+        "application/rtf" | "text/rtf" => "rtf",
+        "message/rfc822" => "eml",
+        "application/vnd.etsi.asic-e+zip" => "asice",
+        "application/vnd.etsi.asic-s+zip" => "asics",
+        "application/pkcs7-signature" => "p7s",
         "application/zip" => "zip",
         "image/png" => "png",
         "image/jpeg" => "jpg",
@@ -1901,6 +2229,7 @@ fn imported_document_download_extension(detected_content_type: &str) -> &'static
 fn imported_document_event_payload(meta: &StoredImportedDocumentMeta) -> Value {
     let classification = document_evidence_classification(&meta.detected_content_type);
     let preservation_policy = imported_document_preservation_policy(meta);
+    let signature_state = imported_document_signature_validation_state(meta);
     json!({
         "document_id": meta.id.clone(),
         "act_id": meta.act_id.as_ref().map(ToString::to_string),
@@ -1917,6 +2246,12 @@ fn imported_document_event_payload(meta: &StoredImportedDocumentMeta) -> Value {
         "operator_reviewed_by": meta.operator_reviewed_by.clone(),
         "operator_review_note_in_payload": false,
         "acknowledged_guardrail_ids": meta.operator_acknowledged_guardrail_ids.clone(),
+        "technical_validation_report_sha256": sha256_hex(
+            meta.technical_validation_report_json.as_bytes()
+        ),
+        "signature_claim_detected": signature_state.claim_detected,
+        "all_claimed_signatures_valid": signature_state.claim_detected
+            .then_some(signature_state.all_claimed_valid),
         "guardrail_acknowledgement": {
             "required_guardrail_ids": imported_document_review_guardrail_checklist(),
             "acknowledged_guardrail_ids": meta.operator_acknowledged_guardrail_ids.clone(),
@@ -1939,11 +2274,38 @@ fn imported_document_event_payload(meta: &StoredImportedDocumentMeta) -> Value {
             preservation_policy.review_state,
         ),
         "canonical_pdfa_generated": false,
-        "signature_validation_performed": false,
+        "signature_validation_performed": signature_state.validation_performed,
         "preservation_policy": preservation_policy,
         "legal_acceptance_claimed": false,
         "legal_validity_claimed": false,
     })
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct ImportedDocumentSignatureValidationState {
+    claim_detected: bool,
+    validation_performed: bool,
+    all_claimed_valid: bool,
+}
+
+fn imported_document_signature_validation_state(
+    meta: &StoredImportedDocumentMeta,
+) -> ImportedDocumentSignatureValidationState {
+    let Ok(report) = serde_json::from_str::<Value>(&meta.technical_validation_report_json) else {
+        return ImportedDocumentSignatureValidationState::default();
+    };
+    let signature = &report["signature_evidence"];
+    ImportedDocumentSignatureValidationState {
+        claim_detected: signature["signature_claim_detected"]
+            .as_bool()
+            .unwrap_or(false),
+        validation_performed: signature["validation_performed_count"]
+            .as_u64()
+            .is_some_and(|count| count > 0),
+        all_claimed_valid: signature["all_claimed_signatures_valid"]
+            .as_bool()
+            .unwrap_or(false),
+    }
 }
 
 fn imported_document_review_event_payload(
@@ -2380,73 +2742,1105 @@ fn sniff_text_kind(text: &str) -> Option<&'static str> {
     None
 }
 
-fn recognize_zip_bundle(bytes: &[u8]) -> ZipBundleRecognitionReport {
+fn inspect_zip_bundle(bytes: &[u8]) -> ZipInspection {
     let is_zip = bytes.starts_with(ZIP_MAGIC)
         || bytes.starts_with(ZIP_EMPTY_MAGIC)
         || bytes.starts_with(ZIP_SPANNED_MAGIC);
     if !is_zip {
-        return ZipBundleRecognitionReport {
-            is_zip: false,
-            readable: false,
-            entry_count: 0,
-            unsafe_entry_count: 0,
-            unsafe_entry_names: Vec::new(),
-            total_uncompressed_size: None,
-            extraction_performed: false,
-            canonical_pdfa_generated: false,
-            validation_error: None,
+        return ZipInspection {
+            report: empty_zip_recognition_report(false),
+            members: Vec::new(),
         };
     }
 
     let mut archive = match ZipArchive::new(Cursor::new(bytes)) {
         Ok(archive) => archive,
         Err(err) => {
-            return ZipBundleRecognitionReport {
-                is_zip: true,
-                readable: false,
-                entry_count: 0,
-                unsafe_entry_count: 0,
-                unsafe_entry_names: Vec::new(),
-                total_uncompressed_size: None,
-                extraction_performed: false,
-                canonical_pdfa_generated: false,
-                validation_error: Some(format!("ZIP archive could not be read: {err}")),
+            let mut report = empty_zip_recognition_report(true);
+            report.validation_error = Some(format!("ZIP archive could not be read: {err}"));
+            return ZipInspection {
+                report,
+                members: Vec::new(),
             };
         }
     };
 
     let mut unsafe_entry_count = 0usize;
     let mut unsafe_entry_names = Vec::new();
+    let mut duplicate_entry_count = 0usize;
+    let mut duplicate_entry_names = Vec::new();
+    let mut names = BTreeSet::new();
     let mut total_uncompressed_size = 0u64;
-    let mut validation_error = None;
-    for index in 0..archive.len() {
-        let file = match archive.by_index(index) {
+    let mut total_extracted_size = 0u64;
+    let mut file_count = 0usize;
+    let mut validation_errors = Vec::new();
+    let mut members = Vec::new();
+    if archive.len() > DOCUMENT_CONTAINER_MAX_MEMBERS {
+        validation_errors.push(format!(
+            "ZIP archive has {} members; at most {} are accepted",
+            archive.len(),
+            DOCUMENT_CONTAINER_MAX_MEMBERS
+        ));
+    }
+    let inspected_members = archive.len().min(DOCUMENT_CONTAINER_MAX_MEMBERS);
+    for index in 0..inspected_members {
+        let mut file = match archive.by_index(index) {
             Ok(file) => file,
             Err(err) => {
-                validation_error = Some(format!("ZIP member {index} could not be read: {err}"));
-                break;
+                validation_errors.push(format!("ZIP member {index} could not be read: {err}"));
+                continue;
             }
         };
         total_uncompressed_size = total_uncompressed_size.saturating_add(file.size());
         let name = file.name().to_owned();
-        if zip_entry_name_is_unsafe(&name, file.enclosed_name().is_none()) {
+        let is_symlink = file
+            .unix_mode()
+            .is_some_and(|mode| mode & 0o170000 == 0o120000);
+        if zip_entry_name_is_unsafe(&name, file.enclosed_name().is_none()) || is_symlink {
             unsafe_entry_count += 1;
             if unsafe_entry_names.len() < 5 {
                 unsafe_entry_names.push(name);
             }
+            continue;
+        }
+        let normalized_name = name.to_ascii_lowercase();
+        if !names.insert(normalized_name) {
+            duplicate_entry_count += 1;
+            if duplicate_entry_names.len() < 5 {
+                duplicate_entry_names.push(name);
+            }
+            continue;
+        }
+        if file.is_dir() {
+            continue;
+        }
+        file_count += 1;
+        if file.size() > DOCUMENT_CONTAINER_MAX_MEMBER_BYTES {
+            validation_errors.push(format!(
+                "ZIP member {name} declares {} bytes; the per-member limit is {} bytes",
+                file.size(),
+                DOCUMENT_CONTAINER_MAX_MEMBER_BYTES
+            ));
+            continue;
+        }
+        let remaining_total =
+            DOCUMENT_CONTAINER_MAX_EXTRACTED_BYTES.saturating_sub(total_extracted_size);
+        if file.size() > remaining_total {
+            validation_errors.push(format!(
+                "ZIP members exceed the {}-byte total extraction limit",
+                DOCUMENT_CONTAINER_MAX_EXTRACTED_BYTES
+            ));
+            continue;
+        }
+        let bounded_read_limit = DOCUMENT_CONTAINER_MAX_MEMBER_BYTES.min(remaining_total);
+        let mut extracted = Vec::with_capacity(usize::try_from(file.size()).unwrap_or_default());
+        match (&mut file)
+            .take(bounded_read_limit + 1)
+            .read_to_end(&mut extracted)
+        {
+            Ok(_) if extracted.len() as u64 <= bounded_read_limit => {}
+            Ok(_) => {
+                validation_errors.push(
+                    if bounded_read_limit < DOCUMENT_CONTAINER_MAX_MEMBER_BYTES {
+                        format!(
+                            "ZIP members expanded beyond the {}-byte total extraction limit",
+                            DOCUMENT_CONTAINER_MAX_EXTRACTED_BYTES
+                        )
+                    } else {
+                        format!(
+                            "ZIP member {name} expanded beyond the {}-byte per-member limit",
+                            DOCUMENT_CONTAINER_MAX_MEMBER_BYTES
+                        )
+                    },
+                );
+                continue;
+            }
+            Err(err) => {
+                validation_errors.push(format!(
+                    "ZIP member {name} could not be extracted safely: {err}"
+                ));
+                continue;
+            }
+        }
+        total_extracted_size = total_extracted_size.saturating_add(extracted.len() as u64);
+        members.push(ExtractedEvidenceMember {
+            media_type: content_type_for_embedded_member(&name, &extracted).to_owned(),
+            path: name,
+            bytes: extracted,
+        });
+    }
+
+    let report_members = members
+        .iter()
+        .map(ExtractedEvidenceMember::report)
+        .collect();
+    ZipInspection {
+        report: ZipBundleRecognitionReport {
+            is_zip: true,
+            readable: validation_errors.is_empty()
+                && unsafe_entry_count == 0
+                && duplicate_entry_count == 0,
+            entry_count: archive.len(),
+            file_count,
+            extracted_entry_count: members.len(),
+            unsafe_entry_count,
+            unsafe_entry_names,
+            duplicate_entry_count,
+            duplicate_entry_names,
+            total_uncompressed_size: Some(total_uncompressed_size),
+            total_extracted_size,
+            extraction_performed: !members.is_empty(),
+            canonical_pdfa_generated: false,
+            members: report_members,
+            validation_error: (!validation_errors.is_empty()).then(|| validation_errors.join("; ")),
+        },
+        members,
+    }
+}
+
+fn empty_zip_recognition_report(is_zip: bool) -> ZipBundleRecognitionReport {
+    ZipBundleRecognitionReport {
+        is_zip,
+        readable: false,
+        entry_count: 0,
+        file_count: 0,
+        extracted_entry_count: 0,
+        unsafe_entry_count: 0,
+        unsafe_entry_names: Vec::new(),
+        duplicate_entry_count: 0,
+        duplicate_entry_names: Vec::new(),
+        total_uncompressed_size: None,
+        total_extracted_size: 0,
+        extraction_performed: false,
+        canonical_pdfa_generated: false,
+        members: Vec::new(),
+        validation_error: None,
+    }
+}
+
+fn recognize_office_document(zip: &ZipInspection) -> OfficeDocumentRecognitionReport {
+    let member = |path: &str| zip.members.iter().find(|member| member.path == path);
+    let docx_content_types = member("[Content_Types].xml").is_some_and(|member| {
+        find_bytes(
+            &member.bytes,
+            b"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml",
+        )
+        .is_some()
+    });
+    let is_docx = docx_content_types && member("word/document.xml").is_some();
+    let is_odt = member("mimetype")
+        .is_some_and(|member| member.bytes == b"application/vnd.oasis.opendocument.text")
+        && member("content.xml").is_some();
+    let format = if is_docx {
+        Some("docx")
+    } else if is_odt {
+        Some("odt")
+    } else {
+        None
+    };
+    OfficeDocumentRecognitionReport {
+        is_office_document: format.is_some(),
+        format,
+        package_readable: zip.report.readable,
+        required_members_present: format.is_some(),
+        macro_payload_detected: zip.members.iter().any(|member| {
+            let name = member.path.to_ascii_lowercase();
+            name == "word/vbaproject.bin" || name.starts_with("scripts/")
+        }),
+        package_members_extracted_for_inspection: format.is_some()
+            && zip.report.extraction_performed,
+        conversion_performed: false,
+        canonical_pdfa_generated: false,
+    }
+}
+
+fn recognize_rtf_document(
+    bytes: &[u8],
+    declared_content_type: Option<&str>,
+    filename: Option<&str>,
+) -> RtfRecognitionReport {
+    let declared = declared_content_type
+        .map(content_type_base)
+        .is_some_and(|value| value == "application/rtf" || value == "text/rtf");
+    let extension = filename
+        .and_then(filename_extension)
+        .is_some_and(|value| value.eq_ignore_ascii_case("rtf"));
+    let trimmed = bytes
+        .iter()
+        .position(|byte| !byte.is_ascii_whitespace())
+        .map_or(bytes, |offset| &bytes[offset..]);
+    let magic = trimmed.starts_with(br#"{\rtf"#);
+    let claimed = declared || extension || magic;
+    if !claimed {
+        return RtfRecognitionReport {
+            claimed: false,
+            is_rtf: false,
+            structurally_valid: false,
+            maximum_group_depth: 0,
+            object_or_package_control_word_detected: false,
+            conversion_performed: false,
+            canonical_pdfa_generated: false,
+            validation_error: None,
+        };
+    }
+    if !magic || bytes.contains(&0) {
+        return RtfRecognitionReport {
+            claimed: true,
+            is_rtf: magic,
+            structurally_valid: false,
+            maximum_group_depth: 0,
+            object_or_package_control_word_detected: false,
+            conversion_performed: false,
+            canonical_pdfa_generated: false,
+            validation_error: Some(
+                "RTF claim does not contain a NUL-free {\\rtf document header".to_owned(),
+            ),
+        };
+    }
+    let mut depth = 0usize;
+    let mut maximum_group_depth = 0usize;
+    let mut escaped = false;
+    let mut valid = true;
+    for byte in trimmed {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if *byte == b'\\' {
+            escaped = true;
+        } else if *byte == b'{' {
+            depth = depth.saturating_add(1);
+            maximum_group_depth = maximum_group_depth.max(depth);
+            if depth > 512 {
+                valid = false;
+                break;
+            }
+        } else if *byte == b'}' {
+            let Some(next) = depth.checked_sub(1) else {
+                valid = false;
+                break;
+            };
+            depth = next;
+        }
+    }
+    valid &= depth == 0;
+    let lower = String::from_utf8_lossy(trimmed).to_ascii_lowercase();
+    RtfRecognitionReport {
+        claimed,
+        is_rtf: true,
+        structurally_valid: valid,
+        maximum_group_depth,
+        object_or_package_control_word_detected: lower.contains("\\object")
+            || lower.contains("\\objdata")
+            || lower.contains("\\package"),
+        conversion_performed: false,
+        canonical_pdfa_generated: false,
+        validation_error: (!valid)
+            .then(|| "RTF groups are unbalanced or excessively nested".to_owned()),
+    }
+}
+
+#[derive(Default)]
+struct MailParseState {
+    parts_seen: usize,
+    attachments_seen: usize,
+    total_decoded_bytes: u64,
+    decoded_attachment_bytes: u64,
+    next_part: usize,
+    extracted: Vec<ExtractedEvidenceMember>,
+}
+
+fn inspect_email_document(
+    bytes: &[u8],
+    declared_content_type: Option<&str>,
+    filename: Option<&str>,
+) -> MailInspection {
+    let explicit_claim = declared_content_type
+        .map(content_type_base)
+        .is_some_and(|value| value == "message/rfc822")
+        || filename
+            .and_then(filename_extension)
+            .is_some_and(|value| value.eq_ignore_ascii_case("eml"));
+    let header_shape = bytes
+        .get(..bytes.len().min(DOCUMENT_MAIL_MAX_HEADER_BYTES))
+        .is_some_and(|prefix| {
+            [
+                b"From:".as_slice(),
+                b"Date:".as_slice(),
+                b"Message-ID:".as_slice(),
+            ]
+            .iter()
+            .filter(|needle| find_bytes(prefix, needle).is_some())
+            .count()
+                >= 2
+        });
+    let claimed = explicit_claim || header_shape;
+    if !claimed {
+        return MailInspection {
+            report: empty_email_recognition_report(false),
+            parts: Vec::new(),
+        };
+    }
+
+    let (headers, _) = match parse_mail_headers(bytes) {
+        Ok(value) => value,
+        Err(error) => {
+            let mut report = empty_email_recognition_report(true);
+            report.is_email = header_shape;
+            report.validation_error = Some(error);
+            return MailInspection {
+                report,
+                parts: Vec::new(),
+            };
+        }
+    };
+    let header_count = headers.len();
+    let mut state = MailParseState::default();
+    let result = parse_mime_entity(bytes, 0, &mut state);
+    let attachments = state
+        .extracted
+        .iter()
+        .filter(|member| member.path.starts_with("attachment:"))
+        .map(|member| {
+            let mut report = member.report();
+            report.path = report
+                .path
+                .strip_prefix("attachment:")
+                .unwrap_or(&report.path)
+                .to_owned();
+            report
+        })
+        .collect::<Vec<_>>();
+    let internal_parts = state
+        .extracted
+        .into_iter()
+        .map(|mut member| {
+            if let Some(path) = member.path.strip_prefix("attachment:") {
+                member.path = path.to_owned();
+            }
+            member
+        })
+        .collect::<Vec<_>>();
+    MailInspection {
+        report: EmailRecognitionReport {
+            claimed: true,
+            is_email: true,
+            readable: result.is_ok(),
+            header_count,
+            mime_part_count: state.parts_seen,
+            attachment_count: state.attachments_seen,
+            decoded_attachment_bytes: state.decoded_attachment_bytes,
+            extraction_performed: !internal_parts.is_empty(),
+            canonical_pdfa_generated: false,
+            attachments,
+            validation_error: result.err(),
+        },
+        parts: internal_parts,
+    }
+}
+
+fn empty_email_recognition_report(claimed: bool) -> EmailRecognitionReport {
+    EmailRecognitionReport {
+        claimed,
+        is_email: false,
+        readable: false,
+        header_count: 0,
+        mime_part_count: 0,
+        attachment_count: 0,
+        decoded_attachment_bytes: 0,
+        extraction_performed: false,
+        canonical_pdfa_generated: false,
+        attachments: Vec::new(),
+        validation_error: None,
+    }
+}
+
+fn parse_mime_entity(bytes: &[u8], depth: usize, state: &mut MailParseState) -> Result<(), String> {
+    if depth > DOCUMENT_MAIL_MAX_DEPTH {
+        return Err(format!(
+            "MIME nesting exceeds the depth limit of {}",
+            DOCUMENT_MAIL_MAX_DEPTH
+        ));
+    }
+    state.parts_seen = state.parts_seen.saturating_add(1);
+    if state.parts_seen > DOCUMENT_MAIL_MAX_PARTS {
+        return Err(format!(
+            "email contains more than {} MIME parts",
+            DOCUMENT_MAIL_MAX_PARTS
+        ));
+    }
+    let (headers, body) = parse_mail_headers(bytes)?;
+    let content_type_value = mail_header(&headers, "content-type").unwrap_or("text/plain");
+    let media_type = content_type_base(content_type_value);
+    if media_type.starts_with("multipart/") {
+        let boundary = mime_parameter(content_type_value, "boundary")
+            .ok_or_else(|| "multipart email part has no boundary parameter".to_owned())?;
+        if boundary.is_empty() || boundary.len() > DOCUMENT_MAIL_MAX_BOUNDARY_BYTES {
+            return Err(format!(
+                "MIME boundary must contain 1 to {} bytes",
+                DOCUMENT_MAIL_MAX_BOUNDARY_BYTES
+            ));
+        }
+        let children = split_multipart_body(body, boundary.as_bytes())?;
+        if children.is_empty() {
+            return Err("multipart email contains no bounded child parts".to_owned());
+        }
+        for child in children {
+            parse_mime_entity(child, depth + 1, state)?;
+        }
+        return Ok(());
+    }
+
+    let transfer_encoding = mail_header(&headers, "content-transfer-encoding").unwrap_or("7bit");
+    let decoded = decode_mail_body(body, transfer_encoding)?;
+    if decoded.len() as u64 > DOCUMENT_CONTAINER_MAX_MEMBER_BYTES {
+        return Err(format!(
+            "decoded MIME part exceeds the {}-byte per-part limit",
+            DOCUMENT_CONTAINER_MAX_MEMBER_BYTES
+        ));
+    }
+    if state
+        .total_decoded_bytes
+        .saturating_add(decoded.len() as u64)
+        > DOCUMENT_CONTAINER_MAX_EXTRACTED_BYTES
+    {
+        return Err(format!(
+            "decoded MIME parts exceed the {}-byte total extraction limit",
+            DOCUMENT_CONTAINER_MAX_EXTRACTED_BYTES
+        ));
+    }
+    state.total_decoded_bytes = state
+        .total_decoded_bytes
+        .saturating_add(decoded.len() as u64);
+
+    if media_type == "message/rfc822" {
+        return parse_mime_entity(&decoded, depth + 1, state);
+    }
+
+    let disposition = mail_header(&headers, "content-disposition").unwrap_or("");
+    let filename = mime_parameter(disposition, "filename")
+        .or_else(|| mime_parameter(content_type_value, "name"));
+    if filename.as_deref().is_some_and(looks_path_like) {
+        return Err("email attachment filename must be a plain file name, not a path".to_owned());
+    }
+    let signature_part = signature_format_from_media_type(&media_type).is_some();
+    let is_attachment =
+        content_type_base(disposition) == "attachment" || filename.is_some() || signature_part;
+    state.next_part = state.next_part.saturating_add(1);
+    let generated = format!("mime-part-{}", state.next_part);
+    let path = filename.unwrap_or(generated);
+    if is_attachment {
+        state.attachments_seen = state.attachments_seen.saturating_add(1);
+        state.decoded_attachment_bytes = state
+            .decoded_attachment_bytes
+            .saturating_add(decoded.len() as u64);
+    }
+    state.extracted.push(ExtractedEvidenceMember {
+        path: if is_attachment {
+            format!("attachment:{path}")
+        } else {
+            path
+        },
+        media_type,
+        bytes: decoded,
+    });
+    Ok(())
+}
+
+type MailHeaders = Vec<(String, String)>;
+type ParsedMailEntity<'a> = (MailHeaders, &'a [u8]);
+
+fn parse_mail_headers(bytes: &[u8]) -> Result<ParsedMailEntity<'_>, String> {
+    let (header_end, separator_len) = find_header_separator(bytes)
+        .ok_or_else(|| "email/MIME entity has no header/body separator".to_owned())?;
+    if header_end > DOCUMENT_MAIL_MAX_HEADER_BYTES {
+        return Err(format!(
+            "email headers exceed the {}-byte limit",
+            DOCUMENT_MAIL_MAX_HEADER_BYTES
+        ));
+    }
+    let raw = std::str::from_utf8(&bytes[..header_end])
+        .map_err(|_| "email headers are not valid UTF-8/ASCII".to_owned())?;
+    let normalized = raw.replace("\r\n", "\n");
+    let mut unfolded = Vec::<String>::new();
+    for line in normalized.split('\n') {
+        if line.len() > 8 * 1024 {
+            return Err("email contains an overlong header line".to_owned());
+        }
+        if line.starts_with(' ') || line.starts_with('\t') {
+            let previous = unfolded
+                .last_mut()
+                .ok_or_else(|| "email starts with an orphan header continuation".to_owned())?;
+            previous.push(' ');
+            previous.push_str(line.trim());
+        } else if !line.is_empty() {
+            unfolded.push(line.to_owned());
+        }
+    }
+    if unfolded.len() > DOCUMENT_MAIL_MAX_HEADERS {
+        return Err(format!(
+            "email contains more than {} headers",
+            DOCUMENT_MAIL_MAX_HEADERS
+        ));
+    }
+    let mut headers = Vec::with_capacity(unfolded.len());
+    for line in unfolded {
+        let (name, value) = line
+            .split_once(':')
+            .ok_or_else(|| "email contains a malformed header without ':'".to_owned())?;
+        if name.is_empty()
+            || !name
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+        {
+            return Err("email contains an invalid header name".to_owned());
+        }
+        headers.push((name.to_ascii_lowercase(), value.trim().to_owned()));
+    }
+    Ok((headers, &bytes[header_end + separator_len..]))
+}
+
+fn find_header_separator(bytes: &[u8]) -> Option<(usize, usize)> {
+    find_bytes(bytes, b"\r\n\r\n")
+        .map(|offset| (offset, 4))
+        .or_else(|| find_bytes(bytes, b"\n\n").map(|offset| (offset, 2)))
+}
+
+fn mail_header<'a>(headers: &'a [(String, String)], name: &str) -> Option<&'a str> {
+    headers
+        .iter()
+        .find(|(candidate, _)| candidate == name)
+        .map(|(_, value)| value.as_str())
+}
+
+fn mime_parameter(value: &str, name: &str) -> Option<String> {
+    split_mime_segments(value)
+        .into_iter()
+        .skip(1)
+        .find_map(|segment| {
+            let (key, raw) = segment.split_once('=')?;
+            key.trim()
+                .eq_ignore_ascii_case(name)
+                .then(|| raw.trim().trim_matches('"').trim_matches('\'').to_owned())
+        })
+}
+
+fn split_mime_segments(value: &str) -> Vec<&str> {
+    let mut segments = Vec::new();
+    let mut start = 0usize;
+    let mut quote = None;
+    for (index, ch) in value.char_indices() {
+        if matches!(ch, '"' | '\'') {
+            if quote == Some(ch) {
+                quote = None;
+            } else if quote.is_none() {
+                quote = Some(ch);
+            }
+        } else if ch == ';' && quote.is_none() {
+            segments.push(&value[start..index]);
+            start = index + 1;
+        }
+    }
+    segments.push(&value[start..]);
+    segments
+}
+
+fn split_multipart_body<'a>(body: &'a [u8], boundary: &[u8]) -> Result<Vec<&'a [u8]>, String> {
+    let mut marker = Vec::with_capacity(boundary.len() + 2);
+    marker.extend_from_slice(b"--");
+    marker.extend_from_slice(boundary);
+    let mut parts = Vec::new();
+    let mut part_start = None;
+    let mut cursor = 0usize;
+    let mut saw_closing = false;
+    while cursor <= body.len() {
+        let line_end = body[cursor..]
+            .iter()
+            .position(|byte| *byte == b'\n')
+            .map_or(body.len(), |offset| cursor + offset);
+        let mut line = &body[cursor..line_end];
+        if line.ends_with(b"\r") {
+            line = &line[..line.len() - 1];
+        }
+        let closing = line == [marker.as_slice(), b"--"].concat();
+        if line == marker.as_slice() || closing {
+            if let Some(start) = part_start.take() {
+                let mut end = cursor;
+                while end > start && matches!(body[end - 1], b'\r' | b'\n') {
+                    end -= 1;
+                }
+                if end > start {
+                    parts.push(&body[start..end]);
+                }
+            }
+            if closing {
+                saw_closing = true;
+                break;
+            }
+            part_start = Some((line_end + usize::from(line_end < body.len())).min(body.len()));
+        }
+        if line_end == body.len() {
+            break;
+        }
+        cursor = line_end + 1;
+    }
+    if !saw_closing {
+        return Err("multipart email has no closing boundary".to_owned());
+    }
+    Ok(parts)
+}
+
+fn decode_mail_body(body: &[u8], transfer_encoding: &str) -> Result<Vec<u8>, String> {
+    match transfer_encoding.trim().to_ascii_lowercase().as_str() {
+        "" | "7bit" | "8bit" | "binary" => Ok(body.to_vec()),
+        "base64" => {
+            let compact = body
+                .iter()
+                .copied()
+                .filter(|byte| !byte.is_ascii_whitespace())
+                .collect::<Vec<_>>();
+            if compact.len() > DOCUMENT_CONTAINER_MAX_MEMBER_BYTES as usize * 2 {
+                return Err("base64 MIME part exceeds the bounded encoded-size limit".to_owned());
+            }
+            B64.decode(compact)
+                .map_err(|_| "MIME part contains invalid base64".to_owned())
+        }
+        "quoted-printable" => decode_quoted_printable(body),
+        other => Err(format!(
+            "unsupported Content-Transfer-Encoding {other:?}; attachment was not decoded"
+        )),
+    }
+}
+
+fn decode_quoted_printable(bytes: &[u8]) -> Result<Vec<u8>, String> {
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut index = 0usize;
+    while index < bytes.len() {
+        if bytes[index] != b'=' {
+            out.push(bytes[index]);
+            index += 1;
+            continue;
+        }
+        if bytes.get(index + 1..index + 3) == Some(b"\r\n") {
+            index += 3;
+            continue;
+        }
+        if bytes.get(index + 1) == Some(&b'\n') {
+            index += 2;
+            continue;
+        }
+        let Some(pair) = bytes.get(index + 1..index + 3) else {
+            return Err("quoted-printable MIME part ends with an incomplete escape".to_owned());
+        };
+        let high = hex_nibble(pair[0])
+            .ok_or_else(|| "quoted-printable MIME part contains an invalid escape".to_owned())?;
+        let low = hex_nibble(pair[1])
+            .ok_or_else(|| "quoted-printable MIME part contains an invalid escape".to_owned())?;
+        out.push(high << 4 | low);
+        index += 3;
+    }
+    Ok(out)
+}
+
+fn hex_nibble(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
+}
+
+fn document_extraction_limits() -> DocumentExtractionLimitsReport {
+    DocumentExtractionLimitsReport {
+        upload_max_bytes: DOCUMENT_IMPORT_VALIDATION_MAX_BYTES,
+        archive_max_members: DOCUMENT_CONTAINER_MAX_MEMBERS,
+        extracted_member_max_bytes: DOCUMENT_CONTAINER_MAX_MEMBER_BYTES,
+        extracted_total_max_bytes: DOCUMENT_CONTAINER_MAX_EXTRACTED_BYTES,
+        mail_header_max_bytes: DOCUMENT_MAIL_MAX_HEADER_BYTES,
+        mail_header_max_count: DOCUMENT_MAIL_MAX_HEADERS,
+        mail_part_max_count: DOCUMENT_MAIL_MAX_PARTS,
+        mail_nesting_max_depth: DOCUMENT_MAIL_MAX_DEPTH,
+    }
+}
+
+fn content_type_for_embedded_member(path: &str, bytes: &[u8]) -> &'static str {
+    let extension = filename_extension(path).map(|value| value.to_ascii_lowercase());
+    match extension.as_deref() {
+        Some("pdf") => "application/pdf",
+        Some("docx") => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        Some("odt") => "application/vnd.oasis.opendocument.text",
+        Some("rtf") => "application/rtf",
+        Some("eml") => "message/rfc822",
+        Some("p7s" | "p7m" | "cades") => "application/pkcs7-signature",
+        Some("asice") => "application/vnd.etsi.asic-e+zip",
+        Some("asics") => "application/vnd.etsi.asic-s+zip",
+        Some("xml" | "xades") => "application/xml",
+        Some("txt") => "text/plain",
+        Some("csv") => "text/csv",
+        Some("json") => "application/json",
+        Some("png") => "image/png",
+        Some("jpg" | "jpeg") => "image/jpeg",
+        _ if bytes.starts_with(b"%PDF-") => "application/pdf",
+        _ if bytes.starts_with(ZIP_MAGIC) => "application/zip",
+        _ if bytes.starts_with(br#"{\rtf"#) => "application/rtf",
+        _ => "application/octet-stream",
+    }
+}
+
+fn signature_format_from_media_type(media_type: &str) -> Option<&'static str> {
+    match content_type_base(media_type).as_str() {
+        "application/pkcs7-signature"
+        | "application/x-pkcs7-signature"
+        | "application/pkcs7-mime"
+        | "application/x-pkcs7-mime" => Some("cades"),
+        "application/vnd.etsi.asic-e+zip" => Some("asic_e"),
+        "application/vnd.etsi.asic-s+zip" => Some("asic_s"),
+        _ => None,
+    }
+}
+
+fn claimed_signature_format(
+    path: &str,
+    media_type: Option<&str>,
+    bytes: &[u8],
+) -> Option<&'static str> {
+    if let Some(format) = media_type.and_then(signature_format_from_media_type) {
+        return Some(format);
+    }
+    let extension = filename_extension(path).map(|value| value.to_ascii_lowercase());
+    if matches!(extension.as_deref(), Some("p7s" | "p7m" | "cades")) {
+        return Some("cades");
+    }
+    if extension.as_deref() == Some("asice") {
+        return Some("asic_e");
+    }
+    if extension.as_deref() == Some("asics") {
+        return Some("asic_s");
+    }
+    if bytes.starts_with(ZIP_MAGIC) && find_bytes(bytes, b"application/vnd.etsi.asic").is_some() {
+        return Some("asic");
+    }
+    if bytes.starts_with(b"%PDF-")
+        && (count_signature_markers(bytes) > 0 || count_bytes(bytes, b"/ByteRange") > 0)
+    {
+        return Some("pades");
+    }
+    let xades_marker = find_bytes(bytes, b"http://uri.etsi.org/01903").is_some()
+        && (find_bytes(bytes, b"<ds:Signature").is_some()
+            || find_bytes(bytes, b"<Signature").is_some());
+    if xades_marker
+        || (extension.as_deref() == Some("xades") && find_bytes(bytes, b"Signature").is_some())
+    {
+        return Some("xades");
+    }
+    None
+}
+
+fn is_asic_signature_format(format: &'static str) -> bool {
+    matches!(format, "asic" | "asic_e" | "asic_s")
+}
+
+fn validate_document_signature_evidence(
+    bytes: &[u8],
+    detected_content_type: &str,
+    filename: Option<&str>,
+    pades: &SignedPdfSignalReport,
+    zip_members: &[ExtractedEvidenceMember],
+    mail_parts: &[ExtractedEvidenceMember],
+) -> DocumentSignatureEvidenceReport {
+    let top_path = filename.unwrap_or("top-level-import");
+    let top_claim = claimed_signature_format(top_path, Some(detected_content_type), bytes);
+    let mut validations = Vec::new();
+    if pades.signed_pdf_signal {
+        validations.push(pades_signature_entry(top_path, pades));
+    } else if let Some(format) = top_claim {
+        validations.push(validate_signature_claim(format, top_path, bytes, None, &[]));
+    }
+
+    // A self-contained ASiC top-level import already validates every signature member as a unit.
+    // Revalidating its internal .p7s/.xml members as detached siblings would be ambiguous.
+    if !top_claim.is_some_and(is_asic_signature_format) {
+        let members = zip_members
+            .iter()
+            .chain(mail_parts.iter())
+            .collect::<Vec<_>>();
+        for member in &members {
+            let Some(format) =
+                claimed_signature_format(&member.path, Some(&member.media_type), &member.bytes)
+            else {
+                continue;
+            };
+            let signed_content = (format == "cades")
+                .then(|| find_detached_signed_content(member, &members))
+                .flatten();
+            validations.push(validate_signature_claim(
+                format,
+                &member.path,
+                &member.bytes,
+                signed_content,
+                &members,
+            ));
         }
     }
 
-    ZipBundleRecognitionReport {
-        is_zip: true,
-        readable: validation_error.is_none(),
-        entry_count: archive.len(),
-        unsafe_entry_count,
-        unsafe_entry_names,
-        total_uncompressed_size: Some(total_uncompressed_size),
-        extraction_performed: false,
-        canonical_pdfa_generated: false,
-        validation_error,
+    let claimed_signature_count = validations.len();
+    let validation_performed_count = validations
+        .iter()
+        .filter(|entry| entry.validation_performed)
+        .count();
+    let cryptographically_valid_count = validations
+        .iter()
+        .filter(|entry| entry.cryptographically_valid)
+        .count();
+    DocumentSignatureEvidenceReport {
+        signature_claim_detected: claimed_signature_count > 0,
+        claimed_signature_count,
+        validation_performed_count,
+        cryptographically_valid_count,
+        all_claimed_signatures_valid: (claimed_signature_count > 0).then_some(
+            claimed_signature_count == cryptographically_valid_count
+                && validation_performed_count == claimed_signature_count,
+        ),
+        trust_validation: "not_performed",
+        legal_validity_claimed: false,
+        validations,
+    }
+}
+
+fn pades_signature_entry(
+    path: &str,
+    report: &SignedPdfSignalReport,
+) -> DocumentSignatureValidationEntry {
+    let (status, valid) = match report.validation_status {
+        "valid_pades_b" => ("valid", true),
+        "invalid" => ("invalid", false),
+        _ => ("indeterminate", false),
+    };
+    DocumentSignatureValidationEntry {
+        format: "pades",
+        status,
+        signature_path: path.to_owned(),
+        signed_content_path: Some(path.to_owned()),
+        signed_content_sha256: report.byte_range_digest_sha256.clone(),
+        validation_performed: report.cryptographic_validation_performed,
+        cryptographically_valid: valid,
+        signer_certificate_sha256: None,
+        signing_time: None,
+        validation_error: report.validation_error.clone(),
+        trust_validation: "not_performed",
+        legal_validity_claimed: false,
+    }
+}
+
+fn validate_signature_claim(
+    format: &'static str,
+    signature_path: &str,
+    signature_bytes: &[u8],
+    signed_content: Option<&ExtractedEvidenceMember>,
+    _all_members: &[&ExtractedEvidenceMember],
+) -> DocumentSignatureValidationEntry {
+    match format {
+        "pades" => pades_signature_entry(signature_path, &recognize_signed_pdf(signature_bytes)),
+        "asic" | "asic_e" | "asic_s" => match validate_asic_container(signature_bytes) {
+            Ok(report) => {
+                let valid = report.is_valid();
+                let first = report.signatures.first();
+                DocumentSignatureValidationEntry {
+                    format,
+                    status: if valid { "valid" } else { "invalid" },
+                    signature_path: signature_path.to_owned(),
+                    signed_content_path: first
+                        .and_then(|entry| entry.covered_data_objects.first().cloned()),
+                    signed_content_sha256: None,
+                    validation_performed: true,
+                    cryptographically_valid: valid,
+                    signer_certificate_sha256: first
+                        .and_then(|entry| entry.signer_cert_der.as_deref())
+                        .map(sha256_hex),
+                    signing_time: first
+                        .and_then(|entry| entry.signing_time)
+                        .and_then(|value| value.format(&Rfc3339).ok()),
+                    validation_error: (!valid).then(|| {
+                        let mut reasons = report.failure_reasons;
+                        for signature in report.signatures {
+                            reasons.extend(signature.failure_reasons);
+                        }
+                        if reasons.is_empty() {
+                            "ASiC signature validation failed".to_owned()
+                        } else {
+                            reasons.join("; ")
+                        }
+                    }),
+                    trust_validation: "not_performed",
+                    legal_validity_claimed: false,
+                }
+            }
+            Err(error) => invalid_signature_entry(
+                format,
+                signature_path,
+                true,
+                format!("ASiC validation failed: {error}"),
+            ),
+        },
+        "xades" => match chancela_xades::validate_xades(signature_bytes) {
+            Ok(report) => {
+                let all_references_checked = report.references_checked == report.reference_count;
+                let valid = report.is_valid_b() && all_references_checked;
+                DocumentSignatureValidationEntry {
+                    format,
+                    status: if valid {
+                        "valid"
+                    } else if !all_references_checked {
+                        "indeterminate"
+                    } else {
+                        "invalid"
+                    },
+                    signature_path: signature_path.to_owned(),
+                    signed_content_path: None,
+                    signed_content_sha256: None,
+                    validation_performed: true,
+                    cryptographically_valid: valid,
+                    signer_certificate_sha256: report.signer_cert_der.as_deref().map(sha256_hex),
+                    signing_time: report
+                        .signing_time
+                        .and_then(|value| value.format(&Rfc3339).ok()),
+                    validation_error: (!valid).then(|| {
+                        if !all_references_checked {
+                            format!(
+                                "XAdES external references were unavailable; validation checked only {}/{} references",
+                                report.references_checked, report.reference_count
+                            )
+                        } else {
+                            format!(
+                                "XAdES-B requirements were not satisfied (references checked {}/{}, signed properties signed: {})",
+                                report.references_checked,
+                                report.reference_count,
+                                report.signed_properties_signed
+                            )
+                        }
+                    }),
+                    trust_validation: "not_performed",
+                    legal_validity_claimed: false,
+                }
+            }
+            Err(error) => invalid_signature_entry(
+                format,
+                signature_path,
+                true,
+                format!("XAdES validation failed: {error}"),
+            ),
+        },
+        "cades" => {
+            let Some(content) = signed_content else {
+                return invalid_signature_entry(
+                    format,
+                    signature_path,
+                    false,
+                    "detached CAdES content is unavailable or ambiguous".to_owned(),
+                );
+            };
+            let digest: [u8; 32] = Sha256::digest(&content.bytes).into();
+            let artifact = SignatureArtifact {
+                id: Uuid::nil(),
+                slot: 0,
+                family: SigningFamily::QualifiedCertificate,
+                format: SignatureFormat::CAdES,
+                profile: BaselineProfile::B_B,
+                evidentiary_level: EvidentiaryLevel::Advanced,
+                signed_at: None,
+                signature: signature_bytes.to_vec(),
+                trusted_list_status: None,
+                timestamp_token_der: None,
+            };
+            match validate_signature(&artifact, Some(&digest)) {
+                Ok(report) => DocumentSignatureValidationEntry {
+                    format,
+                    status: "valid",
+                    signature_path: signature_path.to_owned(),
+                    signed_content_path: Some(content.path.clone()),
+                    signed_content_sha256: Some(sha256_hex(&content.bytes)),
+                    validation_performed: true,
+                    cryptographically_valid: report.cryptographically_valid,
+                    signer_certificate_sha256: Some(sha256_hex(&report.signer_cert_der)),
+                    signing_time: report
+                        .signing_time
+                        .and_then(|value| value.format(&Rfc3339).ok()),
+                    validation_error: None,
+                    trust_validation: "not_performed",
+                    legal_validity_claimed: false,
+                },
+                Err(error) => invalid_signature_entry(
+                    format,
+                    signature_path,
+                    true,
+                    format!("CAdES validation failed: {error}"),
+                ),
+            }
+        }
+        _ => invalid_signature_entry(
+            format,
+            signature_path,
+            false,
+            "unsupported claimed signature format".to_owned(),
+        ),
+    }
+}
+
+fn invalid_signature_entry(
+    format: &'static str,
+    signature_path: &str,
+    performed: bool,
+    error: String,
+) -> DocumentSignatureValidationEntry {
+    DocumentSignatureValidationEntry {
+        format,
+        status: if performed {
+            "invalid"
+        } else {
+            "indeterminate"
+        },
+        signature_path: signature_path.to_owned(),
+        signed_content_path: None,
+        signed_content_sha256: None,
+        validation_performed: performed,
+        cryptographically_valid: false,
+        signer_certificate_sha256: None,
+        signing_time: None,
+        validation_error: Some(error),
+        trust_validation: "not_performed",
+        legal_validity_claimed: false,
+    }
+}
+
+fn find_detached_signed_content<'a>(
+    signature: &ExtractedEvidenceMember,
+    members: &[&'a ExtractedEvidenceMember],
+) -> Option<&'a ExtractedEvidenceMember> {
+    let lower = signature.path.to_ascii_lowercase();
+    let expected = [".p7s", ".p7m", ".cades"]
+        .iter()
+        .find_map(|suffix| lower.strip_suffix(suffix));
+    if let Some(expected) = expected
+        && let Some(member) = members
+            .iter()
+            .copied()
+            .find(|member| member.path.to_ascii_lowercase() == expected)
+    {
+        return Some(member);
+    }
+    let candidates = members
+        .iter()
+        .copied()
+        .filter(|member| member.path != signature.path)
+        .filter(|member| {
+            claimed_signature_format(&member.path, Some(&member.media_type), &member.bytes)
+                .is_none()
+        })
+        .collect::<Vec<_>>();
+    match candidates.as_slice() {
+        [only] => Some(*only),
+        _ => None,
     }
 }
 
@@ -2733,12 +4127,20 @@ fn pdf_header(bytes: &[u8]) -> Option<(usize, String)> {
     Some((offset, version))
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the ordered detector precedence is safer to audit with each recognition signal explicit"
+)]
 fn detect_candidate_content_type(
     bytes: &[u8],
     is_pdf: bool,
     legacy_word: &LegacyWordDocRecognitionReport,
     image: &ImageRecognitionReport,
     text: &TextDocumentRecognitionReport,
+    office: &OfficeDocumentRecognitionReport,
+    rtf: &RtfRecognitionReport,
+    email: &EmailRecognitionReport,
+    top_level_signature_claim: Option<&'static str>,
     zip_bundle: &ZipBundleRecognitionReport,
 ) -> &'static str {
     if legacy_word.is_legacy_word_doc {
@@ -2747,6 +4149,20 @@ fn detect_candidate_content_type(
         "application/vnd.ms-office"
     } else if is_pdf {
         "application/pdf"
+    } else if office.format == Some("docx") {
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    } else if office.format == Some("odt") {
+        "application/vnd.oasis.opendocument.text"
+    } else if rtf.is_rtf {
+        "application/rtf"
+    } else if email.is_email {
+        "message/rfc822"
+    } else if top_level_signature_claim == Some("asic_s") {
+        "application/vnd.etsi.asic-s+zip"
+    } else if matches!(top_level_signature_claim, Some("asic" | "asic_e")) {
+        "application/vnd.etsi.asic-e+zip"
+    } else if top_level_signature_claim == Some("cades") {
+        "application/pkcs7-signature"
     } else if image.format == Some("png") {
         "image/png"
     } else if image.format == Some("jpeg") {
@@ -2769,6 +4185,16 @@ fn document_evidence_classification(
         "application/pdf" => ("pdf", "imported_pdf_non_canonical_evidence"),
         "application/msword" => ("legacy_word_doc", "legacy_word_doc_non_canonical_evidence"),
         "application/vnd.ms-office" => ("ole_compound_file", "ole_cfb_non_canonical_evidence"),
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => {
+            ("docx", "docx_non_canonical_evidence")
+        }
+        "application/vnd.oasis.opendocument.text" => ("odt", "odt_non_canonical_evidence"),
+        "application/rtf" | "text/rtf" => ("rtf", "rtf_non_canonical_evidence"),
+        "message/rfc822" => ("email", "email_non_canonical_evidence"),
+        "application/vnd.etsi.asic-e+zip" | "application/vnd.etsi.asic-s+zip" => {
+            ("asic", "asic_signed_non_canonical_evidence")
+        }
+        "application/pkcs7-signature" => ("cades", "cades_signed_non_canonical_evidence"),
         "image/png" | "image/jpeg" => ("image", "image_non_canonical_evidence"),
         "application/xml" | "text/xml" => ("xml_text", "xml_text_non_canonical_evidence"),
         "text/csv" => ("csv_text", "csv_text_non_canonical_evidence"),
@@ -2793,7 +4219,13 @@ fn document_preservation_policy(
 ) -> DocumentPreservationPolicyReport {
     let base = content_type_base(detected_content_type);
     let requires_ocr_review = matches!(base.as_str(), "image/png" | "image/jpeg");
-    let is_legacy_word_doc = base == "application/msword";
+    let requires_conversion_review = matches!(
+        base.as_str(),
+        "application/msword"
+            | "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            | "application/vnd.oasis.opendocument.text"
+            | "application/rtf"
+    );
     let original_bytes_preservation_status = if original_bytes_preserved {
         "preserved_original_bytes"
     } else {
@@ -2814,7 +4246,7 @@ fn document_preservation_policy(
             "ocr_review_required",
             "preserve_original_bytes_then_operator_review_ocr_if_needed",
         )
-    } else if is_legacy_word_doc {
+    } else if requires_conversion_review {
         (
             "canonical_conversion_review_required",
             "preserve_original_bytes_then_operator_review_conversion_if_needed",
@@ -6759,9 +8191,20 @@ mod tests {
     }
 
     fn zip_bytes(entries: &[(&str, &[u8])]) -> Vec<u8> {
+        zip_bytes_with_compression(entries, CompressionMethod::Stored)
+    }
+
+    fn deflated_zip_bytes(entries: &[(&str, &[u8])]) -> Vec<u8> {
+        zip_bytes_with_compression(entries, CompressionMethod::Deflated)
+    }
+
+    fn zip_bytes_with_compression(
+        entries: &[(&str, &[u8])],
+        compression_method: CompressionMethod,
+    ) -> Vec<u8> {
         let cursor = Cursor::new(Vec::new());
         let mut zip = ZipWriter::new(cursor);
-        let opts = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+        let opts = SimpleFileOptions::default().compression_method(compression_method);
         for (name, bytes) in entries {
             zip.start_file(*name, opts).expect("start zip member");
             zip.write_all(bytes).expect("write zip member");
@@ -6866,6 +8309,144 @@ mod tests {
             },
         )
         .expect("signed pdf")
+    }
+
+    fn detached_test_rsa_identity() -> (rsa::RsaPrivateKey, Vec<u8>) {
+        const OID_SHA256_WITH_RSA: ObjectIdentifier =
+            ObjectIdentifier::new_unwrap("1.2.840.113549.1.1.11");
+        use rsa::rand_core::OsRng;
+
+        let key = rsa::RsaPrivateKey::new(&mut OsRng, 2048).expect("rsa keygen");
+        let spki =
+            SubjectPublicKeyInfoOwned::from_key(rsa::RsaPublicKey::from(&key)).expect("rsa spki");
+        let sig_alg = AlgorithmIdentifierOwned {
+            oid: OID_SHA256_WITH_RSA,
+            parameters: Some(Any::null()),
+        };
+        let name = Name::from_str("CN=Document Import Detached Test").expect("name");
+        let validity =
+            Validity::from_now(StdDuration::from_secs(365 * 24 * 3600)).expect("validity");
+        let tbs = TbsCertificate {
+            version: Version::V3,
+            serial_number: SerialNumber::new(&[2]).expect("serial"),
+            signature: sig_alg.clone(),
+            issuer: name.clone(),
+            validity,
+            subject: name,
+            subject_public_key_info: spki,
+            issuer_unique_id: None,
+            subject_unique_id: None,
+            extensions: None,
+        };
+        let tbs_der = tbs.to_der().expect("tbs der");
+        let signature = sign_test_rsa_digest(&key, &Sha256::digest(&tbs_der).into());
+        let cert = Certificate {
+            tbs_certificate: tbs,
+            signature_algorithm: sig_alg,
+            signature: BitString::from_bytes(&signature).expect("bitstring"),
+        };
+        (key, cert.to_der().expect("cert der"))
+    }
+
+    fn sign_test_rsa_digest(key: &rsa::RsaPrivateKey, digest: &[u8; 32]) -> Vec<u8> {
+        const SHA256_DIGEST_INFO_PREFIX: [u8; 19] = [
+            0x30, 0x31, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02,
+            0x01, 0x05, 0x00, 0x04, 0x20,
+        ];
+        let mut digest_info = SHA256_DIGEST_INFO_PREFIX.to_vec();
+        digest_info.extend_from_slice(digest);
+        key.sign(rsa::Pkcs1v15Sign::new_unprefixed(), &digest_info)
+            .expect("rsa sign")
+    }
+
+    fn detached_cades(content: &[u8]) -> Vec<u8> {
+        let (key, cert_der) = detached_test_rsa_identity();
+        let content_digest: [u8; 32] = Sha256::digest(content).into();
+        let signing_time =
+            OffsetDateTime::from_unix_timestamp(1_750_000_000).expect("fixed signing time");
+        let attrs = signed_attributes_digest(&content_digest, &cert_der, signing_time)
+            .expect("signed attributes");
+        let raw = RawSignature::new(
+            SignatureAlgorithm::RsaPkcs1Sha256,
+            sign_test_rsa_digest(&key, &attrs),
+            cert_der,
+            vec![],
+        );
+        assemble_cades_b(&raw, &content_digest, signing_time).expect("assemble detached CAdES")
+    }
+
+    fn enveloping_xades() -> Vec<u8> {
+        let (key, cert_der) = detached_test_rsa_identity();
+        let prepared = chancela_xades::prepare_xades(chancela_xades::XadesSignRequest {
+            signature_id: "import-xades-1".to_owned(),
+            signing_cert_der: cert_der.clone(),
+            sig_alg: SignatureAlgorithm::RsaPkcs1Sha256,
+            level: chancela_xades::XadesLevel::B,
+            context: chancela_xades::XadesContext {
+                signing_time: OffsetDateTime::from_unix_timestamp(1_750_000_000)
+                    .expect("fixed signing time"),
+            },
+            packaging: chancela_xades::SignaturePackaging::Enveloping(vec![
+                chancela_xades::EnvelopingObject {
+                    id: "minutes-object".to_owned(),
+                    content: chancela_xades::ObjectContent::Text(
+                        "Approved meeting minutes".to_owned(),
+                    ),
+                },
+            ]),
+        })
+        .expect("prepare XAdES");
+        let signed_info_digest: [u8; 32] = prepared
+            .signed_info_digest()
+            .try_into()
+            .expect("RSA XAdES uses SHA-256");
+        let raw = RawSignature::new(
+            SignatureAlgorithm::RsaPkcs1Sha256,
+            sign_test_rsa_digest(&key, &signed_info_digest),
+            cert_der,
+            vec![],
+        );
+        prepared
+            .assemble(&raw)
+            .expect("assemble XAdES")
+            .into_bytes()
+            .expect("XAdES-B bytes")
+    }
+
+    fn detached_xades(content: &[u8]) -> Vec<u8> {
+        let (key, cert_der) = detached_test_rsa_identity();
+        let prepared = chancela_xades::prepare_xades(chancela_xades::XadesSignRequest {
+            signature_id: "import-xades-detached-1".to_owned(),
+            signing_cert_der: cert_der.clone(),
+            sig_alg: SignatureAlgorithm::RsaPkcs1Sha256,
+            level: chancela_xades::XadesLevel::B,
+            context: chancela_xades::XadesContext {
+                signing_time: OffsetDateTime::from_unix_timestamp(1_750_000_000)
+                    .expect("fixed signing time"),
+            },
+            packaging: chancela_xades::SignaturePackaging::Detached(vec![
+                chancela_xades::DetachedRef {
+                    uri: "minutes.txt".to_owned(),
+                    bytes: content.to_vec(),
+                },
+            ]),
+        })
+        .expect("prepare detached XAdES");
+        let signed_info_digest: [u8; 32] = prepared
+            .signed_info_digest()
+            .try_into()
+            .expect("RSA XAdES uses SHA-256");
+        let raw = RawSignature::new(
+            SignatureAlgorithm::RsaPkcs1Sha256,
+            sign_test_rsa_digest(&key, &signed_info_digest),
+            cert_der,
+            vec![],
+        );
+        prepared
+            .assemble(&raw)
+            .expect("assemble detached XAdES")
+            .into_bytes()
+            .expect("detached XAdES-B bytes")
     }
 
     fn has_finding(report: &DocumentImportValidationReport, code: &str) -> bool {
@@ -7066,6 +8647,7 @@ mod tests {
             operator_reviewed_by: None,
             operator_review_note: None,
             operator_acknowledged_guardrail_ids: Vec::new(),
+            technical_validation_report_json: r#"{"filename":"access-code-secret.pdf"}"#.to_owned(),
         };
 
         let payload = imported_document_event_payload(&meta);
@@ -7096,6 +8678,8 @@ mod tests {
             operator_reviewed_by: None,
             operator_review_note: None,
             operator_acknowledged_guardrail_ids: Vec::new(),
+            technical_validation_report_json:
+                r#"{"filename":"medical-report-joana.pdf","sha256":"private"}"#.to_owned(),
         };
 
         let history = vec![StoredImportedDocumentReviewHistoryEntry {
@@ -7219,7 +8803,7 @@ mod tests {
     }
 
     #[test]
-    fn document_import_validation_accepts_safe_zip_bundle_without_extraction() {
+    fn document_import_validation_accepts_safe_zip_bundle_with_bounded_in_memory_extraction() {
         let zip = zip_bytes(&[
             ("manifest.json", br#"{"kind":"support"}"#),
             ("evidence/page-1.txt", b"page one"),
@@ -7237,10 +8821,15 @@ mod tests {
         assert!(report.zip_bundle.readable);
         assert_eq!(report.zip_bundle.entry_count, 2);
         assert_eq!(report.zip_bundle.unsafe_entry_count, 0);
-        assert!(!report.zip_bundle.extraction_performed);
+        assert!(report.zip_bundle.extraction_performed);
+        assert_eq!(report.zip_bundle.extracted_entry_count, 2);
+        assert_eq!(
+            report.zip_bundle.total_extracted_size,
+            (br#"{"kind":"support"}"#.len() + b"page one".len()) as u64
+        );
         assert!(report.can_accept_non_canonical_import);
         assert!(has_finding(&report, "zip_bundle_detected"));
-        assert!(has_finding(&report, "zip_not_extracted"));
+        assert!(has_finding(&report, "zip_bounded_inspection_only"));
     }
 
     #[test]
@@ -7258,6 +8847,318 @@ mod tests {
             assert!(!report.can_accept_non_canonical_import);
             assert!(has_finding(&report, "zip_unsafe_entry_name"));
         }
+    }
+
+    #[test]
+    fn document_import_validation_recognizes_docx_and_odt_without_conversion() {
+        let docx = zip_bytes(&[
+            (
+                "[Content_Types].xml",
+                br#"<Types><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+            ),
+            (
+                "word/document.xml",
+                br#"<w:document xmlns:w="urn:test"><w:body/></w:document>"#,
+            ),
+        ]);
+        let odt = zip_bytes(&[
+            ("mimetype", b"application/vnd.oasis.opendocument.text"),
+            (
+                "content.xml",
+                br#"<office:document-content xmlns:office="urn:test"/>"#,
+            ),
+        ]);
+
+        let docx_report = validate_document_candidate(
+            &docx,
+            Some("application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+            Some("minutes.docx".to_owned()),
+        );
+        let odt_report = validate_document_candidate(
+            &odt,
+            Some("application/vnd.oasis.opendocument.text"),
+            Some("minutes.odt".to_owned()),
+        );
+
+        for (report, format, detected) in [
+            (
+                docx_report,
+                "docx",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            ),
+            (odt_report, "odt", "application/vnd.oasis.opendocument.text"),
+        ] {
+            assert_eq!(report.content_type.detected, detected);
+            assert!(report.office.is_office_document);
+            assert_eq!(report.office.format, Some(format));
+            assert!(report.office.package_readable);
+            assert!(report.office.required_members_present);
+            assert!(report.office.package_members_extracted_for_inspection);
+            assert!(!report.office.conversion_performed);
+            assert!(!report.office.canonical_pdfa_generated);
+            assert!(report.can_accept_non_canonical_import);
+            assert_eq!(
+                report.preservation_policy.review_state,
+                "canonical_conversion_review_required"
+            );
+            assert!(has_finding(&report, "office_package_detected"));
+        }
+    }
+
+    #[test]
+    fn document_import_validation_screens_valid_and_malformed_rtf() {
+        let valid = br#"{\rtf1\ansi Minutes {approved} {\object opaque}}"#;
+        let malformed = br#"{\rtf1\ansi Minutes {unclosed}"#;
+
+        let valid_report = validate_document_candidate(
+            valid,
+            Some("application/rtf"),
+            Some("minutes.rtf".to_owned()),
+        );
+        let malformed_report = validate_document_candidate(
+            malformed,
+            Some("application/rtf"),
+            Some("minutes.rtf".to_owned()),
+        );
+
+        assert!(valid_report.rtf.is_rtf);
+        assert!(valid_report.rtf.structurally_valid);
+        assert!(valid_report.rtf.object_or_package_control_word_detected);
+        assert!(valid_report.can_accept_non_canonical_import);
+        assert!(!valid_report.rtf.conversion_performed);
+        assert!(has_finding(&valid_report, "rtf_detected"));
+
+        assert!(malformed_report.rtf.is_rtf);
+        assert!(!malformed_report.rtf.structurally_valid);
+        assert!(!malformed_report.can_accept_non_canonical_import);
+        assert!(has_finding(&malformed_report, "rtf_structure_invalid"));
+    }
+
+    #[test]
+    fn document_import_validation_decodes_bounded_eml_attachment_inventory() {
+        let email = concat!(
+            "From: clerk@example.test\r\n",
+            "Date: Thu, 16 Jul 2026 10:00:00 +0000\r\n",
+            "Message-ID: <minutes-1@example.test>\r\n",
+            "MIME-Version: 1.0\r\n",
+            "Content-Type: multipart/mixed; boundary=chancela-boundary\r\n",
+            "\r\n",
+            "--chancela-boundary\r\n",
+            "Content-Type: text/plain; charset=utf-8\r\n",
+            "\r\n",
+            "Please archive the attached minutes.\r\n",
+            "--chancela-boundary\r\n",
+            "Content-Type: text/plain; name=minutes.txt\r\n",
+            "Content-Disposition: attachment; filename=minutes.txt\r\n",
+            "Content-Transfer-Encoding: base64\r\n",
+            "\r\n",
+            "QXBwcm92ZWQgbWludXRlcw==\r\n",
+            "--chancela-boundary--\r\n"
+        );
+
+        let report = validate_document_candidate(
+            email.as_bytes(),
+            Some("message/rfc822"),
+            Some("minutes.eml".to_owned()),
+        );
+
+        assert_eq!(report.content_type.detected, "message/rfc822");
+        assert!(report.email.is_email);
+        assert!(report.email.readable);
+        assert_eq!(report.email.attachment_count, 1);
+        assert_eq!(report.email.decoded_attachment_bytes, 16);
+        assert_eq!(report.email.attachments[0].path, "minutes.txt");
+        assert_eq!(report.email.attachments[0].size_bytes, 16);
+        assert!(report.email.extraction_performed);
+        assert!(report.can_accept_non_canonical_import);
+        assert!(has_finding(&report, "email_evidence_extracted"));
+    }
+
+    #[test]
+    fn document_import_validation_rejects_malformed_or_traversing_eml() {
+        let missing_closing_boundary = concat!(
+            "From: clerk@example.test\r\n",
+            "Date: Thu, 16 Jul 2026 10:00:00 +0000\r\n",
+            "Message-ID: <minutes-2@example.test>\r\n",
+            "Content-Type: multipart/mixed; boundary=missing-close\r\n",
+            "\r\n",
+            "--missing-close\r\n",
+            "Content-Type: text/plain\r\n\r\nbody\r\n"
+        );
+        let traversing_attachment = concat!(
+            "From: clerk@example.test\r\n",
+            "Date: Thu, 16 Jul 2026 10:00:00 +0000\r\n",
+            "Message-ID: <minutes-3@example.test>\r\n",
+            "Content-Type: application/octet-stream; name=../secret.txt\r\n",
+            "Content-Disposition: attachment; filename=../secret.txt\r\n",
+            "\r\n",
+            "secret"
+        );
+
+        for email in [missing_closing_boundary, traversing_attachment] {
+            let report = validate_document_candidate(
+                email.as_bytes(),
+                Some("message/rfc822"),
+                Some("evidence.eml".to_owned()),
+            );
+            assert!(report.email.claimed);
+            assert!(!report.email.readable);
+            assert!(!report.can_accept_non_canonical_import);
+            assert!(has_finding(&report, "email_malformed_or_unsafe"));
+        }
+    }
+
+    #[test]
+    fn document_import_validation_rejects_zip_bombs_duplicates_and_malformed_archives() {
+        let oversized_member = vec![0u8; DOCUMENT_CONTAINER_MAX_MEMBER_BYTES as usize + 1];
+        let bomb = deflated_zip_bytes(&[("oversized.bin", &oversized_member)]);
+        let duplicate = zip_bytes(&[("same.txt", b"one"), ("SAME.TXT", b"two")]);
+        let malformed = b"PK\x03\x04not-a-complete-archive";
+
+        let bomb_report = validate_document_candidate(&bomb, Some("application/zip"), None);
+        assert!(!bomb_report.zip_bundle.readable);
+        assert_eq!(bomb_report.zip_bundle.extracted_entry_count, 0);
+        assert!(!bomb_report.can_accept_non_canonical_import);
+        assert!(has_finding(&bomb_report, "zip_unreadable"));
+
+        let duplicate_report =
+            validate_document_candidate(&duplicate, Some("application/zip"), None);
+        assert_eq!(duplicate_report.zip_bundle.duplicate_entry_count, 1);
+        assert!(!duplicate_report.can_accept_non_canonical_import);
+        assert!(has_finding(&duplicate_report, "zip_duplicate_entry_name"));
+
+        let malformed_report =
+            validate_document_candidate(malformed, Some("application/zip"), None);
+        assert!(malformed_report.zip_bundle.is_zip);
+        assert!(!malformed_report.zip_bundle.readable);
+        assert!(!malformed_report.can_accept_non_canonical_import);
+        assert!(has_finding(&malformed_report, "zip_unreadable"));
+    }
+
+    #[test]
+    fn document_import_validation_validates_detached_cades_and_rejects_tamper_or_ambiguity() {
+        let content = b"Approved minutes";
+        let cades = detached_cades(content);
+        let valid_bundle = zip_bytes(&[("minutes.txt", content), ("minutes.txt.p7s", &cades)]);
+        let tampered_bundle = zip_bytes(&[
+            ("minutes.txt", b"Tampered minutes"),
+            ("minutes.txt.p7s", &cades),
+        ]);
+        let unpaired_bundle = zip_bytes(&[("minutes.txt.p7s", &cades)]);
+
+        let valid = validate_document_candidate(
+            &valid_bundle,
+            Some("application/zip"),
+            Some("signed-evidence.zip".to_owned()),
+        );
+        assert!(valid.can_accept_non_canonical_import);
+        assert_eq!(valid.signature_evidence.claimed_signature_count, 1);
+        assert_eq!(valid.signature_evidence.validation_performed_count, 1);
+        assert_eq!(valid.signature_evidence.cryptographically_valid_count, 1);
+        assert_eq!(
+            valid.signature_evidence.all_claimed_signatures_valid,
+            Some(true)
+        );
+        assert_eq!(
+            valid.signature_evidence.validations[0]
+                .signed_content_path
+                .as_deref(),
+            Some("minutes.txt")
+        );
+
+        for candidate in [tampered_bundle, unpaired_bundle] {
+            let report = validate_document_candidate(&candidate, Some("application/zip"), None);
+            assert!(report.signature_evidence.signature_claim_detected);
+            assert!(!report.can_accept_non_canonical_import);
+            assert!(
+                has_finding(&report, "signature_evidence_invalid")
+                    || has_finding(&report, "signature_evidence_unvalidated")
+            );
+        }
+
+    }
+
+    #[test]
+    fn document_import_validation_validates_asic_s_and_rejects_tampered_payload() {
+        let content = b"Approved minutes";
+        let cades = detached_cades(content);
+        let valid_container =
+            chancela_signing::create_asic_s_container("minutes.txt", content, &cades)
+                .expect("valid ASiC-S");
+        let tampered_container =
+            chancela_signing::create_asic_s_container("minutes.txt", b"Tampered minutes", &cades)
+                .expect("structurally valid tampered ASiC-S");
+
+        let valid = validate_document_candidate(
+            &valid_container,
+            Some("application/vnd.etsi.asic-s+zip"),
+            Some("minutes.asics".to_owned()),
+        );
+        assert_eq!(
+            valid.content_type.detected,
+            "application/vnd.etsi.asic-s+zip"
+        );
+        assert!(valid.can_accept_non_canonical_import);
+        assert_eq!(valid.signature_evidence.cryptographically_valid_count, 1);
+        assert_eq!(
+            valid.signature_evidence.all_claimed_signatures_valid,
+            Some(true)
+        );
+
+        let tampered = validate_document_candidate(
+            &tampered_container,
+            Some("application/vnd.etsi.asic-s+zip"),
+            Some("minutes.asics".to_owned()),
+        );
+        assert!(!tampered.can_accept_non_canonical_import);
+        assert_eq!(
+            tampered.signature_evidence.all_claimed_signatures_valid,
+            Some(false)
+        );
+        assert!(has_finding(&tampered, "signature_evidence_invalid"));
+    }
+
+    #[test]
+    fn document_import_validation_validates_xades_and_rejects_tamper() {
+        let valid_xml = enveloping_xades();
+        let detached_xml = detached_xades(b"Approved minutes");
+        let mut tampered_xml = valid_xml.clone();
+        let offset = find_bytes(&tampered_xml, b"Approved").expect("signed object text");
+        tampered_xml[offset] = b'B';
+
+        let valid = validate_document_candidate(
+            &valid_xml,
+            Some("application/xml"),
+            Some("minutes.xades".to_owned()),
+        );
+        assert!(valid.can_accept_non_canonical_import);
+        assert_eq!(valid.signature_evidence.claimed_signature_count, 1);
+        assert_eq!(valid.signature_evidence.cryptographically_valid_count, 1);
+        assert_eq!(valid.signature_evidence.validations[0].format, "xades");
+
+        let detached = validate_document_candidate(
+            &detached_xml,
+            Some("application/xml"),
+            Some("minutes.xades".to_owned()),
+        );
+        assert!(!detached.can_accept_non_canonical_import);
+        assert_eq!(
+            detached.signature_evidence.validations[0].status,
+            "indeterminate"
+        );
+        assert!(has_finding(&detached, "signature_evidence_unvalidated"));
+
+        let tampered = validate_document_candidate(
+            &tampered_xml,
+            Some("application/xml"),
+            Some("minutes.xades".to_owned()),
+        );
+        assert!(!tampered.can_accept_non_canonical_import);
+        assert_eq!(
+            tampered.signature_evidence.all_claimed_signatures_valid,
+            Some(false)
+        );
+        assert!(has_finding(&tampered, "signature_evidence_invalid"));
     }
 
     #[test]
@@ -9219,6 +11120,7 @@ mod tests {
                 operator_reviewed_by: None,
                 operator_review_note: None,
                 operator_acknowledged_guardrail_ids: Vec::new(),
+                technical_validation_report_json: "{}".to_owned(),
             },
             bytes: imported_bytes,
         };

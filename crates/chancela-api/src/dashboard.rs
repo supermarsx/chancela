@@ -3221,6 +3221,7 @@ mod tests {
             operator_reviewed_by: Some("sensitive.reviewer".to_owned()),
             operator_review_note: Some("sensitive operator note".to_owned()),
             operator_acknowledged_guardrail_ids: Vec::new(),
+            technical_validation_report_json: "{}".to_owned(),
         }
     }
 

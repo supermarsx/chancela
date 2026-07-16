@@ -92,7 +92,10 @@
 /// - **v20** — adds tenant-local `company_groups`, named `group_template_libraries`, and immutable
 ///   `group_template_library_revisions` (ENT-C7/DAT-03/WFL-32). Membership remains an additive
 ///   optional field in `entities.json`; books, acts, and their audit chains remain entity-owned.
-pub const SCHEMA_VERSION: i64 = 20;
+/// - **v21** — persists the complete local technical validation report that admitted each
+///   non-canonical imported document. The report remains linked to the original retained bytes and
+///   carries no trust/legal-validity claim.
+pub const SCHEMA_VERSION: i64 = 21;
 
 /// `meta` — small key/value table for the `schema_version` stamp and the app version.
 pub const CREATE_META: &str = "\
@@ -338,6 +341,8 @@ pub const CREATE_PENDING_CMD_SESSIONS_ACT_IDX: &str =
 ///   metadata. These fields do not imply OCR, conversion, or legal acceptance.
 /// - `operator_acknowledged_guardrail_ids_json` — JSON list of acknowledged guardrail ids for the
 ///   latest operator review decision.
+/// - `technical_validation_report_json` — the complete bounded local import/signature report that
+///   admitted these exact bytes.
 /// - `bytes` — the retained uploaded document bytes.
 pub const CREATE_IMPORTED_DOCUMENTS: &str = "\
 CREATE TABLE IF NOT EXISTS imported_documents (
@@ -355,6 +360,7 @@ CREATE TABLE IF NOT EXISTS imported_documents (
     operator_reviewed_by  TEXT,
     operator_review_note  TEXT,
     operator_acknowledged_guardrail_ids_json TEXT NOT NULL DEFAULT '[]',
+    technical_validation_report_json TEXT NOT NULL DEFAULT '{}',
     bytes                 BLOB NOT NULL
 ) STRICT;";
 

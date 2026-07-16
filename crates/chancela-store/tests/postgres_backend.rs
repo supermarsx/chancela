@@ -408,6 +408,7 @@ fn runtime_reads_and_writes_roundtrip_on_postgres() {
             operator_reviewed_by: None,
             operator_review_note: None,
             operator_acknowledged_guardrail_ids: Vec::new(),
+            technical_validation_report_json: "{}".to_owned(),
         },
         bytes: import_bytes.to_vec(),
     };

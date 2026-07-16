@@ -104,6 +104,8 @@ pub(crate) const WRITER_ADVISORY_LOCK_KEY: i64 = 0x0C_1A_17_CE_1A_17_CE_11u64 as
 /// earlier builds before the column was folded into the fresh-table DDL.
 pub(crate) const ADD_IMPORTED_DOCUMENTS_GUARDRAIL_ACK_COLUMN: &str = "ALTER TABLE imported_documents ADD COLUMN IF NOT EXISTS \
      operator_acknowledged_guardrail_ids_json TEXT NOT NULL DEFAULT '[]';";
+pub(crate) const ADD_IMPORTED_DOCUMENTS_TECHNICAL_VALIDATION_REPORT_COLUMN: &str = "ALTER TABLE imported_documents ADD COLUMN IF NOT EXISTS \
+     technical_validation_report_json TEXT NOT NULL DEFAULT '{}';";
 
 /// wp16 P1 change-feed tail query. Kept as a named contract so tests can pin the ordering and
 /// strict `seq > after_seq` semantics the follower's fail-closed delta seam depends on.
@@ -225,6 +227,7 @@ impl PostgresBackend {
     /// stamped current.
     fn ensure_additive_columns(writer: &mut Client) -> Result<(), StoreError> {
         writer.batch_execute(ADD_IMPORTED_DOCUMENTS_GUARDRAIL_ACK_COLUMN)?;
+        writer.batch_execute(ADD_IMPORTED_DOCUMENTS_TECHNICAL_VALIDATION_REPORT_COLUMN)?;
         Ok(())
     }
 
@@ -610,7 +613,7 @@ impl PostgresBackend {
                 "SELECT id, act_id, filename, declared_content_type, detected_content_type, \
                  sha256, size_bytes, imported_at, imported_by, operator_review_status, \
                  operator_reviewed_at, operator_reviewed_by, operator_review_note, \
-                 operator_acknowledged_guardrail_ids_json \
+                 operator_acknowledged_guardrail_ids_json, technical_validation_report_json \
                  FROM imported_documents \
                  WHERE act_id = $1 ORDER BY imported_at DESC, ctid DESC",
                 &[&act_id.to_string()],
@@ -620,7 +623,7 @@ impl PostgresBackend {
                 "SELECT id, act_id, filename, declared_content_type, detected_content_type, \
                  sha256, size_bytes, imported_at, imported_by, operator_review_status, \
                  operator_reviewed_at, operator_reviewed_by, operator_review_note, \
-                 operator_acknowledged_guardrail_ids_json \
+                 operator_acknowledged_guardrail_ids_json, technical_validation_report_json \
                  FROM imported_documents \
                  ORDER BY imported_at DESC, ctid DESC",
                 &[],
@@ -638,7 +641,7 @@ impl PostgresBackend {
             "SELECT id, act_id, filename, declared_content_type, detected_content_type, sha256, \
              size_bytes, imported_at, imported_by, operator_review_status, operator_reviewed_at, \
              operator_reviewed_by, operator_review_note, operator_acknowledged_guardrail_ids_json, \
-             bytes FROM imported_documents WHERE id = $1",
+             technical_validation_report_json, bytes FROM imported_documents WHERE id = $1",
             &[&id],
         )?;
         row.as_ref().map(row_to_imported_document).transpose()
@@ -1200,6 +1203,7 @@ pub(crate) fn row_to_imported_document_meta(
         row.get(11),
         row.get(12),
         row.get(13),
+        row.get(14),
     )
 }
 
@@ -1220,8 +1224,9 @@ pub(crate) fn row_to_imported_document(row: &Row) -> Result<StoredImportedDocume
             row.get(11),
             row.get(12),
             row.get(13),
+            row.get(14),
         )?,
-        bytes: row.get(14),
+        bytes: row.get(15),
     })
 }
 
@@ -1446,6 +1451,26 @@ mod tests {
         assert!(
             ADD_IMPORTED_DOCUMENTS_GUARDRAIL_ACK_COLUMN.contains(column),
             "additive guard must add the same column contract: {ADD_IMPORTED_DOCUMENTS_GUARDRAIL_ACK_COLUMN}"
+        );
+    }
+
+    #[test]
+    fn imported_documents_technical_validation_column_is_in_fresh_and_additive_ddl() {
+        let column = "technical_validation_report_json TEXT NOT NULL DEFAULT '{}'";
+        let fresh_pg = crate::dialect::sqlite_ddl_to_pg(crate::schema::CREATE_IMPORTED_DOCUMENTS);
+
+        assert!(
+            fresh_pg.contains(column),
+            "fresh Postgres imported_documents DDL must include technical validation evidence: {fresh_pg}"
+        );
+        assert!(
+            ADD_IMPORTED_DOCUMENTS_TECHNICAL_VALIDATION_REPORT_COLUMN
+                .contains("ADD COLUMN IF NOT EXISTS"),
+            "additive guard must be idempotent: {ADD_IMPORTED_DOCUMENTS_TECHNICAL_VALIDATION_REPORT_COLUMN}"
+        );
+        assert!(
+            ADD_IMPORTED_DOCUMENTS_TECHNICAL_VALIDATION_REPORT_COLUMN.contains(column),
+            "additive guard must add the same column contract: {ADD_IMPORTED_DOCUMENTS_TECHNICAL_VALIDATION_REPORT_COLUMN}"
         );
     }
 

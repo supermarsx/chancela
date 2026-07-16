@@ -169,6 +169,7 @@ fn sample_imported_document(
             operator_reviewed_by: None,
             operator_review_note: None,
             operator_acknowledged_guardrail_ids: Vec::new(),
+            technical_validation_report_json: "{}".to_owned(),
         },
         bytes: bytes.to_vec(),
     }
@@ -1545,9 +1546,10 @@ fn schema_version_is_current() {
     // provider_credentials — wp16 P3b) landed as schema v16; the user-authored template store
     // (user_templates — wp23) landed as schema v17; the per-subject DEK-wrapping table
     // (subject_keys — wp26 GDPR crypto-erasure) landed as schema v18; the tenant aggregate table
-    // (tenants — wp26 tenancy) landed as schema v19.
+    // (tenants — wp26 tenancy) landed as schema v19; company-group template libraries landed as
+    // schema v20; persisted imported-document technical validation evidence landed as schema v21.
     // A fresh DB is stamped with the current version.
-    assert_eq!(chancela_store::schema::SCHEMA_VERSION, 19);
+    assert_eq!(chancela_store::schema::SCHEMA_VERSION, 21);
     let dir = TempDir::new();
     Store::open(dir.path()).expect("open fresh");
     let raw = rusqlite::Connection::open(dir.path().join("chancela.db")).unwrap();
@@ -1948,11 +1950,17 @@ fn imported_document_round_trips_lists_by_act_and_survives_reopen() {
         "Ata n.o 1",
         MeetingChannel::Physical,
     );
-    let linked = sample_imported_document(
+    let mut linked = sample_imported_document(
         "11111111-1111-4111-8111-111111111111",
         Some(act.id),
         FAKE_PDF,
     );
+    linked.meta.technical_validation_report_json = serde_json::json!({
+        "report_kind": "document_import_validation",
+        "sha256": hex(&Sha256::digest(FAKE_PDF)),
+        "signature_evidence": { "validation_performed_count": 1 }
+    })
+    .to_string();
     let global = sample_imported_document(
         "22222222-2222-4222-8222-222222222222",
         None,
@@ -1973,6 +1981,11 @@ fn imported_document_round_trips_lists_by_act_and_survives_reopen() {
     assert_eq!(by_id, linked);
     assert_eq!(by_id.bytes, FAKE_PDF);
     assert_eq!(by_id.meta.sha256, hex(&Sha256::digest(FAKE_PDF)));
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&by_id.meta.technical_validation_report_json)
+            .unwrap()["signature_evidence"]["validation_performed_count"],
+        1
+    );
 
     let by_act = store.imported_documents(Some(act.id)).expect("list by act");
     assert_eq!(by_act, vec![linked.meta.clone()]);
