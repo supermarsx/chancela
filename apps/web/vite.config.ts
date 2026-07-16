@@ -42,6 +42,15 @@ export default defineConfig({
     __APP_VERSION__: JSON.stringify(appVersion),
   },
   server: {
+    // Dev-only anti-clickjacking hardening so `npm run dev` (Vite :5173) matches the
+    // production posture. Prod (Rust `security_headers`) and the Tauri shell already set
+    // these on every served response; this covers the dev server too. Kept minimal —
+    // only the frame-ancestors CSP directive, not the full prod CSP, to avoid breaking
+    // Vite HMR / dev tooling.
+    headers: {
+      'X-Frame-Options': 'DENY',
+      'Content-Security-Policy': "frame-ancestors 'none'",
+    },
     // Dev-only proxy: `npm run dev` (Vite :5173) forwards the API surface to the
     // Rust server on :8080 so the SPA's relative `/v1/...` and `/health` calls work
     // in development. Production is same-origin (server serves the built dist), so
