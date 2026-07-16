@@ -973,6 +973,26 @@ pub struct SigningSettings {
     /// legacy [`tsl_url`](Self::tsl_url) compatibility field in trust refresh and qualified-signing
     /// trust-policy selection.
     pub tsl_sources: Vec<TslSourceSettings>,
+    /// PEM-encoded trust-anchor certificate(s) pinning the EU LOTL / national-scheme XML-DSig
+    /// **signing certificate** used to authenticate the Trusted List itself (SIG-11). Each entry is
+    /// one or more `-----BEGIN CERTIFICATE-----` blocks (or a single raw-DER cert). This is the
+    /// application-config surface for the same anchor otherwise loaded from
+    /// [`CHANCELA_TSL_TRUST_ANCHOR`](chancela_tsl::ENV_TSL_TRUST_ANCHOR); at runtime the settings
+    /// anchors are **unioned** with the environment ones. **Defaults to empty (fail-closed):** no
+    /// default anchor is ever baked in — an unconfigured install trusts no list. Configure several
+    /// to cover key rotation. Omitted from the serialized document when empty (the common,
+    /// fail-closed default) so the on-the-wire shape is unchanged for installs that never set one.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tsl_trust_anchor_certs: Vec<String>,
+    /// Hex SHA-256 fingerprint(s) (over the DER encoding of the signer certificate) pinning the same
+    /// Trusted-List signing anchor as [`tsl_trust_anchor_certs`](Self::tsl_trust_anchor_certs),
+    /// as an alternative to shipping the certificate bytes — the settings analogue of
+    /// [`CHANCELA_TSL_TRUST_ANCHOR_SHA256`](chancela_tsl::ENV_TSL_TRUST_ANCHOR_SHA256). Each entry is
+    /// a 64-character sha256 hex string. Unioned with the certificate anchors and the environment
+    /// anchors; **defaults to empty (fail-closed)**. Omitted from the serialized document when empty
+    /// so the on-the-wire shape is unchanged for installs that never set one.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tsl_trust_anchor_sha256: Vec<String>,
     /// Additive RFC 3161 timestamp provider configuration. The enabled default provider is
     /// considered before the legacy [`tsa_url`](Self::tsa_url) compatibility field in timestamping.
     pub tsa_providers: Vec<TsaProviderSettings>,
@@ -1187,6 +1207,10 @@ impl Default for SigningSettings {
             tsa_url: Some(DEFAULT_PT_TSA_URL.to_owned()),
             tsl_url: Some(DEFAULT_PT_TSL_URL.to_owned()),
             tsl_sources: default_tsl_sources(),
+            // Fail-closed: no trust anchor is provisioned by default. A default anchor is NEVER
+            // baked in — an operator must supply the public LOTL signing cert here or via env.
+            tsl_trust_anchor_certs: Vec::new(),
+            tsl_trust_anchor_sha256: Vec::new(),
             tsa_providers: default_tsa_providers(),
             require_qualified_for_seal: false,
             cmd: SigningCmdSettings::default(),
@@ -1658,6 +1682,10 @@ impl Settings {
             }
         }
         validate_tsl_sources(&self.signing.tsl_sources)?;
+        validate_tsl_trust_anchors(
+            &self.signing.tsl_trust_anchor_certs,
+            &self.signing.tsl_trust_anchor_sha256,
+        )?;
         validate_tsa_providers(&self.signing.tsa_providers)?;
         self.registry_auto_update.validate()?;
         self.workflow.validate()?;
@@ -1717,6 +1745,40 @@ fn validate_tsl_sources(entries: &[TslSourceSettings]) -> Result<(), ApiError> {
             &entry.scheme,
             64,
         )?;
+    }
+    Ok(())
+}
+
+/// Validate the operator-provisioned Trusted-List trust anchors (SIG-11). Each certificate entry
+/// must parse as PEM (one or more `CERTIFICATE` blocks) or raw DER via the same
+/// [`chancela_tsl::parse_anchor_certs`] used by the environment loader; each fingerprint entry must
+/// be a 64-character sha256 hex string (reusing [`validate_optional_sha256_hex`]). Both lists
+/// default to empty (fail-closed) — an empty configuration is valid and simply trusts no list.
+/// Malformed PEM or malformed hex is a client-actionable `422`.
+fn validate_tsl_trust_anchors(certs: &[String], fingerprints: &[String]) -> Result<(), ApiError> {
+    for (i, pem) in certs.iter().enumerate() {
+        let field = format!("signing.tsl_trust_anchor_certs[{i}]");
+        if pem.trim().is_empty() {
+            return Err(ApiError::Unprocessable(format!(
+                "{field} must be a non-empty PEM or DER certificate"
+            )));
+        }
+        chancela_tsl::parse_anchor_certs(pem.as_bytes()).map_err(|e| {
+            ApiError::Unprocessable(format!(
+                "{field} must be a valid PEM/DER trust-anchor certificate: {e}"
+            ))
+        })?;
+    }
+    for (i, fingerprint) in fingerprints.iter().enumerate() {
+        let field = format!("signing.tsl_trust_anchor_sha256[{i}]");
+        if fingerprint.trim().is_empty() {
+            return Err(ApiError::Unprocessable(format!(
+                "{field} must be a 64-character sha256 hex fingerprint"
+            )));
+        }
+        // Reuse the shared hex validator; unlike the env form, settings fingerprints are plain
+        // 64-hex (no `:` separators), which this rejects.
+        validate_optional_sha256_hex(&field, fingerprint)?;
     }
     Ok(())
 }
@@ -2532,6 +2594,131 @@ mod tests {
         match err {
             ApiError::Unprocessable(message) => {
                 assert!(message.contains("data_management.backup_recovery.target_rto_minutes"));
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    // A syntactically valid PEM `CERTIFICATE` block (the base64 body need only decode; anchoring is
+    // by fingerprint, so real X.509 structure is not required for shape validation).
+    const SAMPLE_ANCHOR_PEM: &str =
+        "-----BEGIN CERTIFICATE-----\naGVsbG8gdHJ1c3QgYW5jaG9y\n-----END CERTIFICATE-----";
+
+    #[test]
+    fn tsl_trust_anchors_default_is_empty_and_fail_closed() {
+        // No default anchor is ever baked in: a fresh install trusts no list.
+        let settings = Settings::default();
+        assert!(
+            settings.signing.tsl_trust_anchor_certs.is_empty(),
+            "default cert anchors must be empty (fail-closed)"
+        );
+        assert!(
+            settings.signing.tsl_trust_anchor_sha256.is_empty(),
+            "default fingerprint anchors must be empty (fail-closed)"
+        );
+        settings
+            .validate()
+            .expect("empty anchor configuration is valid (trusts nothing)");
+    }
+
+    #[test]
+    fn tsl_trust_anchor_valid_pem_is_accepted() {
+        let mut settings = Settings::default();
+        settings.signing.tsl_trust_anchor_certs = vec![SAMPLE_ANCHOR_PEM.to_owned()];
+        settings
+            .validate()
+            .expect("a valid PEM trust anchor should validate");
+    }
+
+    #[test]
+    fn tsl_trust_anchor_valid_sha256_is_accepted() {
+        let mut settings = Settings::default();
+        settings.signing.tsl_trust_anchor_sha256 = vec!["a".repeat(64)];
+        settings
+            .validate()
+            .expect("a 64-char sha256 hex fingerprint should validate");
+    }
+
+    #[test]
+    fn tsl_trust_anchor_invalid_sha256_is_rejected() {
+        // Wrong length.
+        let mut settings = Settings::default();
+        settings.signing.tsl_trust_anchor_sha256 = vec!["abc123".to_owned()];
+        match settings
+            .validate()
+            .expect_err("short fingerprint should fail")
+        {
+            ApiError::Unprocessable(message) => {
+                assert!(
+                    message.contains("signing.tsl_trust_anchor_sha256[0]"),
+                    "{message}"
+                );
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+
+        // Right length, non-hex character.
+        let mut settings = Settings::default();
+        settings.signing.tsl_trust_anchor_sha256 = vec!["z".repeat(64)];
+        match settings
+            .validate()
+            .expect_err("non-hex fingerprint should fail")
+        {
+            ApiError::Unprocessable(message) => {
+                assert!(
+                    message.contains("signing.tsl_trust_anchor_sha256[0]"),
+                    "{message}"
+                );
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn tsl_trust_anchor_invalid_pem_is_rejected() {
+        let mut settings = Settings::default();
+        // BEGIN with no END marker: malformed PEM.
+        settings.signing.tsl_trust_anchor_certs =
+            vec!["-----BEGIN CERTIFICATE-----\nAAAA".to_owned()];
+        match settings.validate().expect_err("malformed PEM should fail") {
+            ApiError::Unprocessable(message) => {
+                assert!(
+                    message.contains("signing.tsl_trust_anchor_certs[0]"),
+                    "{message}"
+                );
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn tsl_trust_anchor_blank_entries_are_rejected() {
+        let mut settings = Settings::default();
+        settings.signing.tsl_trust_anchor_certs = vec!["   ".to_owned()];
+        match settings
+            .validate()
+            .expect_err("blank cert entry should fail")
+        {
+            ApiError::Unprocessable(message) => {
+                assert!(
+                    message.contains("signing.tsl_trust_anchor_certs[0]"),
+                    "{message}"
+                );
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+
+        let mut settings = Settings::default();
+        settings.signing.tsl_trust_anchor_sha256 = vec![String::new()];
+        match settings
+            .validate()
+            .expect_err("blank fingerprint entry should fail")
+        {
+            ApiError::Unprocessable(message) => {
+                assert!(
+                    message.contains("signing.tsl_trust_anchor_sha256[0]"),
+                    "{message}"
+                );
             }
             other => panic!("unexpected error: {other:?}"),
         }
