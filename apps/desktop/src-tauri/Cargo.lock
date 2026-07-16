@@ -1202,7 +1202,7 @@ dependencies = [
  "chancela-worker",
  "chancela-xades",
  "chancela-zk",
- "ecdsa 0.16.9",
+ "ecdsa 0.17.0",
  "futures-core",
  "metrics",
  "metrics-exporter-prometheus",
@@ -1263,7 +1263,7 @@ version = "26.1.0"
 dependencies = [
  "cms",
  "der 0.7.10",
- "ecdsa 0.16.9",
+ "ecdsa 0.17.0",
  "p256 0.13.2",
  "rsa",
  "serde",
@@ -1549,7 +1549,7 @@ version = "26.1.0"
 dependencies = [
  "cms",
  "der 0.7.10",
- "ecdsa 0.16.9",
+ "ecdsa 0.17.0",
  "p256 0.13.2",
  "rand_core 0.6.4",
  "reqwest",
