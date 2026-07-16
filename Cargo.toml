@@ -130,7 +130,7 @@ rand_core = { version = "0.6", features = ["getrandom"] }   # OsRng CSPRNG for C
 p256 = "0.13"                                                # P-256 (CC v2); default features include ecdsa
 p384 = { version = "0.13", features = ["ecdsa", "pkcs8"] }  # P-384 (XAdES/XMLDSig ecdsa-sha384); RustCrypto 0.13/ecdsa 0.16
 p521 = { version = "0.13", features = ["ecdsa", "pkcs8"] }  # P-521 (XAdES/XMLDSig ecdsa-sha512); RustCrypto 0.13/ecdsa 0.16
-ecdsa = { version = "0.16", features = ["der"] }            # DER-encode ECDSA r,s for CMS
+ecdsa = { version = "0.17", features = ["der"] }            # DER-encode ECDSA r,s for CMS
 pcsc = "2.9"                                                 # PC/SC reader detection (Win/macOS/Linux)
 cryptoki = "0.12"                                            # PKCS#11 (Autenticacao.gov middleware); prebuilt bindings
 quick-xml = { version = "0.41", features = ["serialize"] }  # TSL parse + SOAP/XML emit
