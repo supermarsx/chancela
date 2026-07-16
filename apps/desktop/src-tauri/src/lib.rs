@@ -39,6 +39,15 @@ mod database_encryption;
 /// (Tauri v2, ARC-04). On desktop it is a normal function called from `main`.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Advertise local smart-card reachability before Tauri, its plugins, or the embedded API can
+    // start any worker threads. Environment mutation is unsafe in Rust 2024 because concurrent
+    // environment access is undefined on some platforms; at this process-entry boundary there
+    // are no application-created threads and this is the only write to this variable.
+    #[cfg(all(feature = "embedded-server", desktop))]
+    unsafe {
+        std::env::set_var(LOCAL_SIGNING_ENV, "1");
+    }
+
     let mut builder = tauri::Builder::default();
 
     // Single-instance guard (registered FIRST, per the plugin's guidance).
@@ -133,10 +142,8 @@ fn center_main_window_on_first_run(app: &tauri::App) {
         .map(|dir| dir.join(handle.filename()).exists())
         .unwrap_or(false);
 
-    if !state_saved {
-        if let Some(window) = app.get_webview_window("main") {
-            let _ = window.center();
-        }
+    if !state_saved && let Some(window) = app.get_webview_window("main") {
+        let _ = window.center();
     }
 }
 
@@ -194,11 +201,6 @@ fn start_embedded_server_if_enabled(app: &tauri::App) -> Result<(), Box<dyn std:
     // (browser mode) never sets this, so CC signing 409s there. Covers both the dev
     // and release paths below (both run the API in-process, co-located).
     //
-    // Setting a process env var is sound here: `setup` runs before we spawn the
-    // embedded-server thread or `build_app_state`'s CAE-refresh threads, and this is
-    // edition 2021 (`std::env::set_var` is safe, not yet `unsafe`).
-    std::env::set_var(LOCAL_SIGNING_ENV, "1");
-
     // Dev mode keeps the WebView on Vite's devUrl for hot-reload; start the API on
     // the fixed address the Vite proxy targets, but do NOT navigate the window.
     if tauri::is_dev() {
@@ -632,7 +634,7 @@ const BUNDLED_WEB_DIST_RESOURCE_DIR: &str = "web-dist";
 /// helpful landing page.
 #[cfg(feature = "embedded-server")]
 fn resolve_web_dist(app: &tauri::App) -> Option<std::path::PathBuf> {
-    use tauri::{path::BaseDirectory, Manager};
+    use tauri::{Manager, path::BaseDirectory};
 
     let bundled_resource = app
         .path()
@@ -640,10 +642,10 @@ fn resolve_web_dist(app: &tauri::App) -> Option<std::path::PathBuf> {
         .ok();
 
     let mut starts = Vec::new();
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            starts.push(dir.to_path_buf());
-        }
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(dir) = exe.parent()
+    {
+        starts.push(dir.to_path_buf());
     }
     if let Ok(cwd) = std::env::current_dir() {
         starts.push(cwd);
@@ -671,10 +673,10 @@ fn resolve_web_dist_from_candidates(
         }
     }
 
-    if let Some(dir) = bundled_resource {
-        if dir.join("index.html").is_file() {
-            return Some(dir);
-        }
+    if let Some(dir) = bundled_resource
+        && dir.join("index.html").is_file()
+    {
+        return Some(dir);
     }
 
     for start in starts {

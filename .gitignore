@@ -2,7 +2,9 @@
 /target/
 /lib*.rlib
 apps/desktop/src-tauri/target/
-apps/desktop/src-tauri/gen/
+apps/desktop/src-tauri/gen/*
+!apps/desktop/src-tauri/gen/android/
+!apps/desktop/src-tauri/gen/android/**
 
 # Node
 node_modules/

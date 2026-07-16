@@ -1,6 +1,2 @@
-# Platform icons are generated from icon-source.png via `npx tauri icon`
-# (see README.md). Regenerate locally; do not commit the derivatives.
-*
-!.gitignore
-!README.md
-!icon-source.png
+# The production platform icon set is committed so a clean checkout can build and bundle the
+# desktop app. Regenerate it from icon-source.svg with the command documented in README.md.

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Chancela application mark. Project-authored vector derived from the web favicon and the
+  established dark-green / parchment / gilt editorial tokens in apps/web/src/theme.css.
+  The C is a path, not a system-font glyph, so every platform render is deterministic offline.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="Chancela">
+  <rect width="1024" height="1024" rx="184" fill="#10241b"/>
+  <rect x="54" y="54" width="916" height="916" rx="142" fill="none" stroke="#d8b55a" stroke-width="24"/>
+  <circle cx="512" cy="512" r="344" fill="#0b1a13" stroke="#f7f3ea" stroke-width="14"/>
+  <path
+    d="M 720 308 A 282 282 0 1 0 720 716"
+    fill="none"
+    stroke="#d8b55a"
+    stroke-width="108"
+    stroke-linecap="square"
+  />
+  <path d="M 700 308 H 778" stroke="#d8b55a" stroke-width="32" stroke-linecap="square"/>
+  <path d="M 700 716 H 778" stroke="#d8b55a" stroke-width="32" stroke-linecap="square"/>
+</svg>

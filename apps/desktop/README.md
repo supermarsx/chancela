@@ -32,7 +32,7 @@ system libraries. You build the desktop app explicitly, from this directory.
 ## Prerequisites
 
 - **Rust** (stable) + Cargo — see the repo root `rust-toolchain.toml`.
-- **Node.js ≥ 20** and npm (used by `@tauri-apps/cli` and to build the web UI).
+- **Node.js ≥ 24.15.0** and **npm 12.0.1 or newer** (used by `@tauri-apps/cli` and to build the web UI).
 - **Platform WebView / build dependencies:**
   - **Windows** — [WebView2 runtime](https://developer.microsoft.com/microsoft-edge/webview2/)
     (preinstalled on Windows 11; on older Windows install the Evergreen runtime)
@@ -43,15 +43,15 @@ system libraries. You build the desktop app explicitly, from this directory.
     `libxdo-dev`, `libssl-dev`, `libayatana-appindicator3-dev`, `librsvg2-dev`.
     See the [Tauri v2 Linux prerequisites](https://v2.tauri.app/start/prerequisites/#linux).
 
-## First-time setup: generate icons
+## Refreshing the production icons
 
-A `tauri build` (and, on some platforms, `tauri dev`) needs the platform icon
-set, which is generated from a source image rather than committed. Run once:
+The reviewed platform icon set is committed, so a clean checkout is build-ready. Regenerate all
+derivatives whenever the canonical project-authored vector changes:
 
 ```bash
 cd apps/desktop
 npm install
-npx tauri icon src-tauri/icons/icon-source.png
+npx tauri icon src-tauri/icons/icon-source.svg
 ```
 
 See [`src-tauri/icons/README.md`](src-tauri/icons/README.md) for details.
@@ -221,8 +221,9 @@ apps/desktop/
    ├─ capabilities/
    │  └─ default.json        minimal core:default permissions for the main window
    ├─ icons/
-   │  ├─ icon-source.png     1024×1024 placeholder source (committed)
-   │  └─ README.md           how to generate the platform icon set
+   │  ├─ icon-source.svg     canonical production Chancela mark
+   │  ├─ icon.{png,ico,icns} reviewed platform derivatives (committed)
+   │  └─ README.md           provenance and regeneration instructions
    └─ src/
       ├─ main.rs             thin launcher → chancela_desktop_lib::run()
       └─ lib.rs              Tauri builder; embedded-server (loopback API+UI, ARC-03)

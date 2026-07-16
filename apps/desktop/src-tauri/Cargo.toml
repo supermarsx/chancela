@@ -5,8 +5,8 @@ description = "Chancela desktop shell (Tauri v2)"
 authors = ["Chancela contributors"]
 license = "MIT"
 repository = "https://github.com/chancela/chancela"
-edition = "2021"
-rust-version = "1.85"
+edition = "2024"
+rust-version = "1.97"
 
 # --- Self-contained workspace (double defense) -------------------------------
 # This empty [workspace] table makes `apps/desktop/src-tauri` its OWN Cargo
@@ -26,40 +26,40 @@ name = "chancela_desktop_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = { version = "2", features = [] }
+tauri-build = { version = "2.6.3", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2.11.5", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # Persists window position + size across launches (restore on start, save on
 # move/resize/close). Desktop-only; gated behind `#[cfg(desktop)]` in lib.rs.
-tauri-plugin-window-state = "2"
+tauri-plugin-window-state = "2.4.1"
 # Guards against a second copy of the app running against the same per-app data
 # dir (settings.json/users.json) and the shared WebView2 user-data profile
 # (bundle identifier pt.chancela.desktop is shared by debug + release). A second
 # launch focuses the existing window and exits before it starts a server or
 # WebView. Desktop-only; registered first, behind `#[cfg(desktop)]` in lib.rs.
-tauri-plugin-single-instance = "2"
+tauri-plugin-single-instance = "2.4.3"
 # Opens external http(s) links in the user's DEFAULT browser instead of navigating
 # them inside the WebView (which is pointed at the embedded server, so a `_blank`
 # would be a chrome-less in-app navigation). The web client calls the matching
 # `@tauri-apps/plugin-opener` JS API via a lazy dynamic import (see
 # apps/web/src/desktop/openExternal.ts); the `opener:allow-open-url` permission is
 # granted to the embedded-server remote origin in capabilities/default.json.
-tauri-plugin-opener = "2"
+tauri-plugin-opener = "2.5.4"
 # Restarts the app from the crash screen's "Reiniciar aplicação" action. The web client
 # calls the matching `@tauri-apps/plugin-process` `relaunch()` via a lazy dynamic import
 # (see apps/web/src/desktop/relaunch.ts); the `process:allow-restart` permission is granted
 # to the embedded-server remote origin in capabilities/default.json. Registered on all
 # targets (t26 crash handling).
-tauri-plugin-process = "2"
+tauri-plugin-process = "2.3.1"
 # Native save dialogs for generated exports. The web client calls the matching
 # `@tauri-apps/plugin-dialog` API lazily from apps/web/src/desktop/saveFile.ts.
-tauri-plugin-dialog = "2"
+tauri-plugin-dialog = "2.7.1"
 # Writes the bytes selected by the native save dialog. The dialog-selected path is
 # scoped at runtime by Tauri; the capability grants only the write_file command.
-tauri-plugin-fs = "2"
+tauri-plugin-fs = "2.5.1"
 
 # --- embedded-server feature deps (optional) ---------------------------------
 # Path deps on the workspace crates the browser client already talks to. They
@@ -82,7 +82,7 @@ chancela-cae = { path = "../../../crates/chancela-cae", optional = true }
 # depends on this crate, so this is a direct handle to two constants, not a new build.
 chancela-store = { path = "../../../crates/chancela-store", optional = true }
 # Fresh random SQLCipher key generation for the desktop encrypted-store default.
-getrandom = { version = "0.3", optional = true }
+getrandom = { version = "0.4", optional = true }
 # Windows current-user DPAPI provider for protecting the generated SQLCipher key at rest.
 windows-sys = { version = "0.61", features = [
     "Win32_Foundation",

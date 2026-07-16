@@ -3,7 +3,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use chancela_api::{
-    DatabaseEncryptionConfig, DatabaseEncryptionConfigError, DB_KEY_ENV, DB_KEY_FILE_ENV,
+    DB_KEY_ENV, DB_KEY_FILE_ENV, DatabaseEncryptionConfig, DatabaseEncryptionConfigError,
 };
 use serde::{Deserialize, Serialize};
 
@@ -428,7 +428,7 @@ fn hex_encode(bytes: &[u8]) -> String {
 }
 
 fn hex_decode(raw: &str) -> Result<Vec<u8>, String> {
-    if raw.len() % 2 != 0 {
+    if !raw.len().is_multiple_of(2) {
         return Err("protected_key_hex has odd length".to_owned());
     }
     let mut out = Vec::with_capacity(raw.len() / 2);
@@ -475,10 +475,10 @@ fn dpapi_protect(plaintext: &[u8]) -> Result<Vec<u8>, DesktopDatabaseEncryptionE
 
     use windows_sys::Win32::Foundation::LocalFree;
     use windows_sys::Win32::Security::Cryptography::{
-        CryptProtectData, CRYPTPROTECT_UI_FORBIDDEN, CRYPT_INTEGER_BLOB,
+        CRYPT_INTEGER_BLOB, CRYPTPROTECT_UI_FORBIDDEN, CryptProtectData,
     };
 
-    let mut input = CRYPT_INTEGER_BLOB {
+    let input = CRYPT_INTEGER_BLOB {
         cbData: plaintext.len().try_into().map_err(|_| {
             DesktopDatabaseEncryptionError::Provider {
                 provider: WINDOWS_DPAPI_PROVIDER,
@@ -499,7 +499,7 @@ fn dpapi_protect(plaintext: &[u8]) -> Result<Vec<u8>, DesktopDatabaseEncryptionE
 
     let ok = unsafe {
         CryptProtectData(
-            &mut input,
+            &input,
             description.as_ptr(),
             null(),
             null(),
@@ -530,10 +530,10 @@ fn dpapi_unprotect(protected: &[u8]) -> Result<Vec<u8>, DesktopDatabaseEncryptio
 
     use windows_sys::Win32::Foundation::LocalFree;
     use windows_sys::Win32::Security::Cryptography::{
-        CryptUnprotectData, CRYPTPROTECT_UI_FORBIDDEN, CRYPT_INTEGER_BLOB,
+        CRYPT_INTEGER_BLOB, CRYPTPROTECT_UI_FORBIDDEN, CryptUnprotectData,
     };
 
-    let mut input = CRYPT_INTEGER_BLOB {
+    let input = CRYPT_INTEGER_BLOB {
         cbData: protected.len().try_into().map_err(|_| {
             DesktopDatabaseEncryptionError::Provider {
                 provider: WINDOWS_DPAPI_PROVIDER,
@@ -550,7 +550,7 @@ fn dpapi_unprotect(protected: &[u8]) -> Result<Vec<u8>, DesktopDatabaseEncryptio
 
     let ok = unsafe {
         CryptUnprotectData(
-            &mut input,
+            &input,
             null_mut(),
             null(),
             null(),
