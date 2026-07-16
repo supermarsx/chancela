@@ -35,8 +35,11 @@ pub mod dialect;
 pub(crate) mod pg;
 #[cfg(feature = "postgres")]
 pub(crate) mod pg_backup;
+// `pub` (not `pub(crate)`) so chancela-api's follower change-feed can open its dedicated `LISTEN`
+// connection through the same verify-full TLS posture as the pool/writer via
+// [`pg_tls::connect_listener`]; every other item in the module stays `pub(crate)`.
 #[cfg(feature = "postgres")]
-pub(crate) mod pg_tls;
+pub mod pg_tls;
 // wp16 P0 — Postgres advisory-lock leader election / step-down / failover-handoff primitives.
 #[cfg(feature = "postgres")]
 pub(crate) mod pg_cluster;
