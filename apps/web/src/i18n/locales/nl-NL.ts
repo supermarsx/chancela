@@ -6,8 +6,10 @@
  * The minutes artifact ("ata") is rendered as "notulen" throughout.
  */
 import type { Catalog } from '../types';
+import { operationsEnglish } from '../operationsFallback';
 
 export const nlNL: Catalog = {
+  ...operationsEnglish,
   // --- Permissions / RBAC gating (t64) ------------------------------------------
   'perm.denied.action': 'U hebt geen toestemming voor deze actie',
   'perm.denied.title': 'Geen toestemming',

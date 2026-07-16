@@ -7,8 +7,10 @@
  * review). Le texte juridique/de conformité produit côté serveur ne figure pas ici (UX-21).
  */
 import type { Catalog } from '../types';
+import { operationsEnglish } from '../operationsFallback';
 
 export const frFR: Catalog = {
+  ...operationsEnglish,
   // --- Permissions / RBAC gating (t64) ------------------------------------------
   'perm.denied.action': 'Vous n’avez pas la permission pour cette action',
   'perm.denied.title': 'Aucune permission',

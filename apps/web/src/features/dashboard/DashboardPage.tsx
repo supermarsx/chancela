@@ -962,6 +962,29 @@ function DashboardStats({ data }: { data: Dashboard }) {
         />
       </ul>
 
+      <section className="dashboard-card-section" aria-labelledby="dashboard-connector-jobs-title">
+        <div className="dashboard-card-section__heading">
+          <h3 className="dashboard-card-section__title" id="dashboard-connector-jobs-title">
+            {t('dashboard.connectors.title')}
+          </h3>
+          <Link className="btn btn--secondary" to="/operacoes?view=connectors">
+            {t('dashboard.connectors.open')}
+          </Link>
+        </div>
+        <ul className="cards dashboard-metrics dashboard-activity-metrics">
+          <Metric
+            label={t('dashboard.connectors.failedSync')}
+            value={data.failed_sync_jobs}
+            note={t('dashboard.connectors.failedSync.note')}
+          />
+          <Metric
+            label={t('dashboard.connectors.pendingBackup')}
+            value={data.pending_backup_jobs}
+            note={t('dashboard.connectors.pendingBackup.note')}
+          />
+        </ul>
+      </section>
+
       <div className="row-wrap">
         <div className="chain-status">
           <span className="card__label">{t('dashboard.integrity.label')}</span>{' '}

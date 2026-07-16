@@ -507,7 +507,7 @@ const defaultSyncHandoffPreflight: SyncHandoffPreflightReport = {
   },
   no_claims: {
     active_sync_implemented: false,
-    connector_protocol_implemented: false,
+    connector_protocol_implemented: true,
     background_job_configured: false,
     upload_or_download_performed: false,
     import_performed: false,
@@ -645,6 +645,7 @@ describe('GestaoDadosSection', () => {
     expect(screen.getByText('Candidatos não validados')).toBeTruthy();
     expect(screen.getByText('chancela-backup-test.zip (1 KB)')).toBeTruthy();
     expect(screen.getByText('Evidência verificada')).toBeTruthy();
+    expect(screen.getByText(/Protocolo de conector externo implementado/)).toBeTruthy();
     expect(screen.getAllByText('missing').length).toBeGreaterThanOrEqual(1);
     expect(document.body.textContent).toContain(
       'no validated whole-instance backup manifest or verified recovery-drill evidence is available',

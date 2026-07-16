@@ -35,6 +35,7 @@ const NAV: { to: string; label: MessageKey; end?: boolean }[] = [
   { to: '/livros', label: 'nav.books' },
   { to: '/minutas', label: 'nav.templates' },
   { to: '/arquivo', label: 'nav.archive' },
+  { to: '/operacoes', label: 'nav.operations' },
   { to: '/ferramentas', label: 'nav.tools' },
   { to: '/configuracoes', label: 'nav.settings' },
 ];

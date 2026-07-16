@@ -100,6 +100,7 @@ export const routeModuleLoaders = {
   templates: () => import('../features/templates/TemplatesCatalogPage'),
   ledger: () => import('../features/ledger/LedgerPage'),
   notifications: () => import('../features/notifications/NotificationsPage'),
+  operations: () => import('../features/operations/OperationsPage'),
   ferramentas: () => import('../features/ferramentas/FerramentasPage'),
   settings: () => import('../features/settings/SettingsPage'),
   cae: () => import('../features/cae/CaePage'),
@@ -192,6 +193,10 @@ export const router = createBrowserRouter([
       {
         path: 'notificacoes',
         element: lazyRoute(routeModuleLoaders.notifications, 'NotificationsPage'),
+      },
+      {
+        path: 'operacoes',
+        element: lazyRoute(routeModuleLoaders.operations, 'OperationsPage'),
       },
       {
         path: 'ferramentas',

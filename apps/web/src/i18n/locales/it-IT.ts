@@ -8,8 +8,10 @@
  * here (UX-21). To be reviewed by a native speaker before shipping.
  */
 import type { Catalog } from '../types';
+import { operationsEnglish } from '../operationsFallback';
 
 export const itIT: Catalog = {
+  ...operationsEnglish,
   // --- Permissions / RBAC gating (t64) ------------------------------------------
   'perm.denied.action': 'Non hai il permesso per questa azione',
   'perm.denied.title': 'Nessun permesso',

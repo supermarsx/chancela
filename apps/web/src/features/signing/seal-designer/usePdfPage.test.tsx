@@ -52,7 +52,10 @@ function pdfFixture(
       width: 792 * scale,
       height: 612 * scale,
     })),
-    render: vi.fn((_options: { transform?: unknown }) => renderTask),
+    render: vi.fn((options: { transform?: unknown }) => {
+      void options;
+      return renderTask;
+    }),
   };
   const doc = {
     numPages: options.numPages ?? 2,

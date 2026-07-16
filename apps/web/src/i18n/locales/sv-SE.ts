@@ -9,8 +9,10 @@
  * the ledger until a native review.
  */
 import type { Catalog } from '../types';
+import { operationsEnglish } from '../operationsFallback';
 
 export const svSE: Catalog = {
+  ...operationsEnglish,
   // --- Permissions / RBAC gating (t64) ------------------------------------------
   'perm.denied.action': 'Du har inte behörighet för den här åtgärden',
   'perm.denied.title': 'Ingen behörighet',

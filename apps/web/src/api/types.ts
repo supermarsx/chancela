@@ -7041,7 +7041,8 @@ export interface SyncHandoffArchiveDglabEvidence {
 
 export interface SyncHandoffNoClaims {
   active_sync_implemented: false;
-  connector_protocol_implemented: false;
+  /** The connector protocol is implemented even though this preflight never executes it. */
+  connector_protocol_implemented: true;
   background_job_configured: false;
   upload_or_download_performed: false;
   import_performed: false;

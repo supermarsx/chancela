@@ -7,8 +7,10 @@
  * El compilador rechaza cualquier clave que falte o sobre respecto a la fuente pt-PT.
  */
 import type { Catalog } from '../types';
+import { operationsEnglish } from '../operationsFallback';
 
 export const esES: Catalog = {
+  ...operationsEnglish,
   // --- Permissions / RBAC gating (t64) ------------------------------------------
   'perm.denied.action': 'No tiene permiso para esta acción',
   'perm.denied.title': 'Sin permiso',

@@ -6630,7 +6630,12 @@ describe('contract fixtures parse through the real client', () => {
       },
       'SyncHandoffPreflightReport.no_claims',
     );
-    expect(Object.values(noClaims).every((value) => value === false)).toBe(true);
+    expect(noClaims.connector_protocol_implemented).toBe(true);
+    expect(
+      Object.entries(noClaims)
+        .filter(([key]) => key !== 'connector_protocol_implemented')
+        .every(([, value]) => value === false),
+    ).toBe(true);
     expect(Array.isArray(report.blockers)).toBe(true);
     expect(Array.isArray(report.missing_evidence)).toBe(true);
     expect(Array.isArray(report.operator_actions)).toBe(true);

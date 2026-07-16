@@ -14,7 +14,10 @@
  * NOTE (UX-21): backend-authored legal/compliance messages are NOT in this catalog —
  * they are rendered verbatim as received. Only client-authored UI chrome lives here.
  */
+import { operationsPtPT } from '../operationsFallback';
+
 export const ptPT = {
+  ...operationsPtPT,
   // --- Permissions / RBAC gating (t64) ------------------------------------------
   'perm.denied.action': 'Sem permissão para esta ação',
   'perm.denied.title': 'Sem permissão',

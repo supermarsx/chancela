@@ -8,8 +8,10 @@
  * using en-US as the structural template.
  */
 import type { Catalog } from '../types';
+import { operationsEnglish } from '../operationsFallback';
 
 export const deDE: Catalog = {
+  ...operationsEnglish,
   // --- Permissions / RBAC gating (t64) ------------------------------------------
   'perm.denied.action': 'Keine Berechtigung für diese Aktion',
   'perm.denied.title': 'Keine Berechtigung',

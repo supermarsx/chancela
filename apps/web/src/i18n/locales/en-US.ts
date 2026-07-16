@@ -8,8 +8,10 @@
  * "catalog"/"catalogue", "organization"/"organisation").
  */
 import type { Catalog } from '../types';
+import { operationsEnglish } from '../operationsFallback';
 
 export const enUS: Catalog = {
+  ...operationsEnglish,
   // --- Permissions / RBAC gating (t64) ------------------------------------------
   'perm.denied.action': 'You do not have permission for this action',
   'perm.denied.title': 'No permission',

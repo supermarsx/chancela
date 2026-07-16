@@ -8,8 +8,10 @@
  * placeholder is preserved. Marked `machine` in the ledger until a native review.
  */
 import type { Catalog } from '../types';
+import { operationsEnglish } from '../operationsFallback';
 
 export const plPL: Catalog = {
+  ...operationsEnglish,
   // --- Permissions / RBAC gating (t64) ------------------------------------------
   'perm.denied.action': 'Nie masz uprawnień do tej czynności',
   'perm.denied.title': 'Brak uprawnień',

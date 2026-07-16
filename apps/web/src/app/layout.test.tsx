@@ -104,7 +104,7 @@ describe('Layout', () => {
     // The masthead is gone; the brand now lives in the fixed secondary tab bar (rendered
     // once the AuthGate resolves the active session).
     expect(await screen.findByText('Chancela')).toBeTruthy();
-    // Seven pinned tabs, including Minutas and the Ferramentas tools surface.
+    // Eight pinned tabs, including the task-focused Operações surface.
     for (const label of [
       'Painel',
       'Entidades',
@@ -112,6 +112,7 @@ describe('Layout', () => {
       'Minutas',
       'Arquivo',
       'Ferramentas',
+      'Operações',
       'Configurações',
     ]) {
       expect(screen.getByRole('link', { name: label })).toBeTruthy();

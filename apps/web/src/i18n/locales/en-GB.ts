@@ -7,8 +7,10 @@
  * legal/compliance text is never here (UX-21).
  */
 import type { Catalog } from '../types';
+import { operationsEnglish } from '../operationsFallback';
 
 export const enGB: Catalog = {
+  ...operationsEnglish,
   // --- Permissions / RBAC gating (t64) ------------------------------------------
   'perm.denied.action': 'You do not have permission for this action',
   'perm.denied.title': 'No permission',

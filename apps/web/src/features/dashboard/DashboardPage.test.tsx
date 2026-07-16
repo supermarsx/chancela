@@ -270,6 +270,34 @@ describe('DashboardPage', () => {
     ]);
   });
 
+  it('surfaces connector failures and pending backups with a direct operations link', async () => {
+    vi.stubGlobal(
+      'fetch',
+      fetchTable([
+        {
+          match: '/v1/dashboard',
+          body: { ...baseDashboard, failed_sync_jobs: 3, pending_backup_jobs: 2 },
+        },
+      ]),
+    );
+    renderDashboard();
+
+    const section = (
+      await screen.findByRole('heading', {
+        name: 'Conectores e cópias externas',
+      })
+    ).closest('section');
+    if (!section) throw new Error('Connector job metrics section was not rendered');
+
+    expect(within(section).getByText('Sincronizações falhadas')).toBeTruthy();
+    expect(within(section).getByText('3')).toBeTruthy();
+    expect(within(section).getByText('Cópias pendentes')).toBeTruthy();
+    expect(within(section).getByText('2')).toBeTruthy();
+    expect(
+      within(section).getByRole('link', { name: 'Abrir operações' }).getAttribute('href'),
+    ).toBe('/operacoes?view=connectors');
+  });
+
   it('shows only the 10 most recent dashboard events, newest first', async () => {
     const dashboard: Dashboard = {
       ...baseDashboard,

@@ -991,17 +991,17 @@ function SyncHandoffPreflightReportCard({
     report.operator_actions.length > 0;
   const latestCandidate = report.backup.backup_directory.latest_candidate_file;
   const latestDrill = report.backup.latest_recovery_drill;
-  const noClaimRows = [
-    ['Sem sincronização ativa', report.no_claims.active_sync_implemented],
-    ['Sem conector externo', report.no_claims.connector_protocol_implemented],
-    ['Sem importação executada', report.no_claims.import_performed],
-    ['Sem registos alterados', report.no_claims.records_mutated],
+  const boundaryRows = [
+    ['Sem sincronização ativa', !report.no_claims.active_sync_implemented],
+    ['Protocolo de conector externo implementado', report.no_claims.connector_protocol_implemented],
+    ['Sem importação executada', !report.no_claims.import_performed],
+    ['Sem registos alterados', !report.no_claims.records_mutated],
     [
       'Sem certificação DGLAB/arquivo',
-      report.no_claims.dglab_certification_claimed ||
-        report.no_claims.archive_certification_claimed,
+      !report.no_claims.dglab_certification_claimed &&
+        !report.no_claims.archive_certification_claimed,
     ],
-    ['Sem prontidão de produção', report.no_claims.production_sync_readiness_claimed],
+    ['Sem prontidão de produção', !report.no_claims.production_sync_readiness_claimed],
   ] as const;
 
   return (
@@ -1160,11 +1160,11 @@ function SyncHandoffPreflightReportCard({
               <dt>{translateNow('uiLiteral.gestaoDadosSection.semAlegacoes')}</dt>
               <dd>
                 <ul className="plain-list">
-                  {noClaimRows.map(([label, claimed]) => (
+                  {boundaryRows.map(([label, satisfied]) => (
                     <li key={label}>
                       {label}:{' '}
-                      <Badge tone={!claimed ? 'ok' : 'warn'}>
-                        {!claimed ? t('common.yes') : t('common.no')}
+                      <Badge tone={satisfied ? 'ok' : 'warn'}>
+                        {satisfied ? t('common.yes') : t('common.no')}
                       </Badge>
                     </li>
                   ))}

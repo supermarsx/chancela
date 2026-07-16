@@ -7,22 +7,23 @@
 import { test, expect } from './fixtures';
 import { signInAt } from './auth';
 
-test('boots the SPA with the leather background and the seven-tab bar', async ({ page }) => {
+test('boots the SPA with the leather background and the eight-tab bar', async ({ page }) => {
   // The app is auth-gated (t44): onboard/sign in before the chrome renders.
   await signInAt(page, '/');
 
   // The fixed leather layer is rendered (settings default the texture on).
   await expect(page.getByTestId('leather-bg')).toBeAttached();
 
-  // The centered secondary tab bar carries exactly the seven pinned PT-PT tabs.
+  // The centered secondary tab bar carries exactly the eight pinned PT-PT tabs.
   const tabs = page.getByTestId('tab-bar').getByRole('link');
-  await expect(tabs).toHaveCount(7);
+  await expect(tabs).toHaveCount(8);
   await expect(tabs).toHaveText([
     'Painel',
     'Entidades',
     'Livros',
     'Minutas',
     'Arquivo',
+    'Operações',
     'Ferramentas',
     'Configurações',
   ]);
@@ -104,8 +105,8 @@ test('legacy /templates redirects to the Minutas catalog', async ({ page }) => {
   await signInAt(page, '/templates');
 
   await expect(page).toHaveURL(/\/minutas$/);
-  await expect(page.getByRole('heading', { name: 'Minutas' })).toBeVisible();
-  await expect(page.getByLabel('Pesquisar minutas')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Minutas', exact: true })).toBeVisible();
+  await expect(page.getByRole('searchbox', { name: 'Pesquisa', exact: true })).toBeVisible();
 });
 
 test('CAE search returns results from the catalog in Ferramentas', async ({ page }) => {

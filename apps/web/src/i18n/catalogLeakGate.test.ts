@@ -58,6 +58,13 @@ const SHARED_VALUES = new Set([
   'e-mail',
   'email',
   'E-mail',
+  'FTPS',
+  'Google Drive',
+  'Microsoft Graph',
+  'S3',
+  'SFTP',
+  'SMB',
+  'WebDAV',
 ]);
 
 function languageNeutral(value: string): boolean {

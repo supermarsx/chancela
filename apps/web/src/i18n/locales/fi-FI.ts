@@ -8,8 +8,10 @@
  * placeholder is preserved. Marked `machine` in the ledger until a native review.
  */
 import type { Catalog } from '../types';
+import { operationsEnglish } from '../operationsFallback';
 
 export const fiFI: Catalog = {
+  ...operationsEnglish,
   // --- Permissions / RBAC gating (t64) ------------------------------------------
   'perm.denied.action': 'Sinulla ei ole oikeutta tähän toimintoon',
   'perm.denied.title': 'Ei oikeutta',

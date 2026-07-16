@@ -7,8 +7,10 @@
  * A complete `Catalog`: the compiler rejects any missing/extra key against pt-PT.
  */
 import type { Catalog } from '../types';
+import { operationsEnglish } from '../operationsFallback';
 
 export const ptBR: Catalog = {
+  ...operationsEnglish,
   // --- Permissions / RBAC gating (t64) ------------------------------------------
   'perm.denied.action': 'Sem permissão para esta ação',
   'perm.denied.title': 'Sem permissão',
