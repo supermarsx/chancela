@@ -2,6 +2,7 @@ import java.util.Properties
 
 plugins {
     id("com.android.application")
+    id("org.jetbrains.kotlin.android")
     id("rust")
 }
 
@@ -13,10 +14,13 @@ val tauriProperties = Properties().apply {
 }
 
 android {
-    compileSdk = 36
+    compileSdk = 37
+    ndkVersion = "28.2.13676358"
     namespace = "pt.chancela.desktop"
     defaultConfig {
         manifestPlaceholders["usesCleartextTraffic"] = "false"
+        // This identifier is committed and must never vary between builds: Android
+        // uses it, together with the signing certificate, as the app's update identity.
         applicationId = "pt.chancela.desktop"
         minSdk = 24
         targetSdk = 36
@@ -29,7 +33,8 @@ android {
             isDebuggable = true
             isJniDebuggable = true
             isMinifyEnabled = false
-            packaging {                jniLibs.keepDebugSymbols.add("*/arm64-v8a/*.so")
+            packaging {
+                jniLibs.keepDebugSymbols.add("*/arm64-v8a/*.so")
                 jniLibs.keepDebugSymbols.add("*/armeabi-v7a/*.so")
                 jniLibs.keepDebugSymbols.add("*/x86/*.so")
                 jniLibs.keepDebugSymbols.add("*/x86_64/*.so")
@@ -55,6 +60,10 @@ android {
 
 rust {
     rootDirRel = "../../../"
+}
+
+kotlin {
+    compilerOptions.jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
 }
 
 dependencies {

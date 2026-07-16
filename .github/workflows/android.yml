@@ -1,0 +1,93 @@
+name: Android companion
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    name: Android APK (arm64 debug)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Install Java 17
+        uses: actions/setup-java@0f481fcb613427c0f801b606911222b5b6f3083a # v5.5.0
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install Rust 1.97 with Android arm64
+        uses: dtolnay/rust-toolchain@1a3a6d54512beeaffd394f8d516ca16f2c506a20 # 1.97.0
+        with:
+          targets: aarch64-linux-android
+
+      - name: Install Node 24
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            apps/desktop/package-lock.json
+
+      - name: Activate npm 12.0.1
+        run: npm install --global npm@12.0.1
+
+      - name: Install JavaScript dependencies
+        run: |
+          npm ci --no-audit --no-fund
+          npm ci --no-audit --no-fund --prefix apps/desktop
+
+      - name: Install pinned Android SDK and NDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "platforms;android-37.0" \
+            "build-tools;36.0.0" \
+            "ndk;28.2.13676358"
+
+      - name: Build real arm64 companion APK
+        working-directory: apps/desktop
+        shell: bash
+        run: |
+          set -euo pipefail
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/28.2.13676358"
+          export NDK_HOME="$ANDROID_NDK_HOME"
+          npm run android:build:ci
+
+      - name: Verify APK identity and SDK contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk="$(find apps/desktop/src-tauri/gen/android/app/build/outputs/apk -type f -name '*.apk' -print -quit)"
+          test -n "$apk"
+          badging="$($ANDROID_HOME/build-tools/36.0.0/aapt dump badging "$apk")"
+          grep -F "package: name='pt.chancela.desktop'" <<<"$badging"
+          grep -F "sdkVersion:'24'" <<<"$badging"
+          grep -F "targetSdkVersion:'36'" <<<"$badging"
+          grep -F "compileSdkVersion='37'" <<<"$badging"
+          grep -F "native-code: 'arm64-v8a'" <<<"$badging"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$apk"
+          sha256sum "$apk" | tee apps/desktop/src-tauri/gen/android/app/build/outputs/apk/SHA256SUMS
+
+      - name: Upload verified APK
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: chancela-android-arm64-debug-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            apps/desktop/src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+            apps/desktop/src-tauri/gen/android/app/build/outputs/apk/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 14

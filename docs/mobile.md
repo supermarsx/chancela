@@ -1,12 +1,10 @@
-# Mobile companion (foundation)
+# Mobile companion
 
-> **Scope honesty.** Chancela does **not** ship a store-installable mobile app today. What
-> exists in-repo is a well-architected *foundation*: the web client can be pointed at a
-> remote instance, the read surfaces reflow to phone widths, and the desktop crate is
-> already shaped for a Tauri v2 Android target. The steps that turn this into a shippable
-> app are **externally gated** (Android toolchain, signing keys, a Play account) and, more
-> fundamentally, on **backend companion-readiness** (CORS + real persistent auth) that is
-> *design-only* here. This page documents the foundation and every remaining gate exactly.
+> **Scope honesty.** The repository now contains a real Tauri v2 Android project and produces
+> an installable, debug-signed arm64 APK. It is not yet a production/store release: release
+> signing, Play Console enrollment, and the remote-server CORS/persistent-auth gates below
+> remain mandatory. The committed target is therefore buildable and testable, but must not be
+> presented as a production remote companion yet.
 
 The companion model is: a phone app that talks to the user's **existing** Chancela instance
 (their desktop app or a self-hosted `chancela-server`), reusing the **same web UI** rather
@@ -31,7 +29,7 @@ deployment) can opt into an absolute base URL through the central resolver in
 4. `''` (relative) — the current, default behaviour.
 
 A trailing slash is trimmed and absolute request paths (already carrying a scheme) are
-passed through untouched. Example: a companion build for the *Encosto Estratégico Lda*
+passed through untouched. Example: a companion build for the _Encosto Estratégico Lda_
 instance would inject `apiBaseUrl: "https://records.encosto-estrategico.example"`.
 
 Mobile-runtime detection lives in `apps/web/src/shell/mobileShell.ts` (`isMobileShell`),
@@ -51,7 +49,7 @@ force horizontal body scroll.
 
 The one genuine, universal phone breakage fixed in this foundation is the **fixed tab bar**
 (`.topbar`): its tab group is absolute-centered on wide viewports, and at phone widths that
-centered, scrolling strip painted *over* the brand (left) and the notification/session
+centered, scrolling strip painted _over_ the brand (left) and the notification/session
 controls (right), making them overlap and become un-tappable. A `@media (max-width: 640px)`
 block now drops the absolute centering and lays the bar out as a normal flex row — the
 wordmark hides (the page header already names the section), the tab strip becomes a flex
@@ -62,36 +60,51 @@ their centered layout is unchanged.
 Signing- and settings-heavy screens are intentionally **out of scope** for the mobile read
 companion and were not touched.
 
-## Building an Android target (gated)
+## Building the Android target
 
-The desktop crate is ready to grow an Android target. The remaining work is running
-`tauri android init` (once) to generate the Gradle/manifest scaffold under
-`apps/desktop/src-tauri/gen/android/`, then building. Three npm scripts wrap this in
-`apps/desktop/package.json` — note the `--no-default-features` flag, which selects the
-**bare-WebView companion** profile (no embedded server, no on-device database):
+The generated Gradle project is committed under `apps/desktop/src-tauri/gen/android/`.
+The scripts in `apps/desktop/package.json` select the **bare-WebView companion** profile
+(no embedded server and no second on-device database):
 
 ```
 npm run android:init    # tauri android init  — one-time scaffold generation
 npm run android:dev     # tauri android dev  --no-default-features
-npm run android:build   # tauri android build --no-default-features
+npm run android:build   # arm64 APK + AAB, --no-default-features
+npm run android:build:ci # debug arm64 APK used by CI
 ```
 
-These scripts are inert until the toolchain below is present; adding them changed no Rust
-code, so the existing desktop host build stays green.
+The application has a stable Android update identity (`pt.chancela.desktop`), `minSdk 24`,
+`targetSdk 36`, and `compileSdk 37`. It uses AGP 9.3.0, Gradle 9.5.0, Java/Kotlin target 17
+for the app module, Android Build Tools 36.0.0, and NDK 28.2.13676358. The direct AndroidX
+and Material dependencies are the current stable releases that satisfy this target.
 
-### External prerequisites (not satisfiable in-repo)
+### Toolchain and local evidence
 
-`tauri android init` and the APK/AAB build could **not** be run in the current environment.
-The exact, verified gaps:
+The scaffold and native target were built on Windows with Android Studio JBR 21, Rust 1.97,
+Android SDK 37, Build Tools 36.0.0, and NDK 28.2.13676358. The Tauri command completed the
+web and arm64 Rust compilation; Windows denied its final symlink creation because Developer
+Mode was disabled. Packaging the emitted `.so` through the committed Gradle project then
+produced and verified `app-arm64-debug.apk` with this metadata:
 
-| Prerequisite | Status here | How to satisfy |
-| --- | --- | --- |
-| **JDK on PATH** | Missing (`java` not found) | Install a JDK 17+; put `java` on PATH; set `JAVA_HOME`. |
-| **Rust Android targets** | None installed | `rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android` |
-| **Android SDK** | `ANDROID_HOME=C:\android-sdk` set | Present. |
-| **Android NDK** | `27.0.12077973` present under `ndk/` | Set `NDK_HOME` to the NDK dir. |
-| **Signing keystore** | None | Generate a release keystore (`keytool`); wire it into `gen/android` signing config. Keep the keystore + passwords out of the repo. |
-| **Play Console account** | None | Required only for store distribution (listing, review). |
+```
+package: pt.chancela.desktop, versionCode 26001000, versionName 26.1.0
+minSdk: 24; targetSdk: 36; compileSdk: 37; native-code: arm64-v8a
+APK signature: valid v2 Android debug certificate
+```
+
+The normal Linux CI path in `.github/workflows/android.yml` is configured to run the complete
+Tauri build without the Windows symlink restriction, check the same APK metadata and signature,
+record SHA-256, and upload the APK as a short-lived test artifact. Its first hosted run awaits a
+push.
+
+| Prerequisite             | Status here                               | How to satisfy                                                                                                                     |
+| ------------------------ | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| **JDK**                  | Verified with JBR 21; CI uses Temurin 17  | Set `JAVA_HOME` to JDK 17 or newer.                                                                                                |
+| **Rust Android target**  | `aarch64-linux-android` verified          | `rustup target add aarch64-linux-android`                                                                                          |
+| **Android SDK**          | Platform 37 + Build Tools 36.0.0 verified | Install the exact packages used by CI.                                                                                             |
+| **Android NDK**          | 28.2.13676358 verified and pinned         | Set `ANDROID_NDK_HOME` and `NDK_HOME`.                                                                                             |
+| **Signing keystore**     | None                                      | Generate a release keystore (`keytool`); wire it into `gen/android` signing config. Keep the keystore + passwords out of the repo. |
+| **Play Console account** | None                                      | Required only for store distribution (listing, review).                                                                            |
 
 Notes:
 
@@ -99,11 +112,13 @@ Notes:
 - The **embedded-server on the phone** path (`--features embedded-server`) is deliberately
   **rejected**: it would cross-compile `chancela-api` + SQLCipher/rusqlite for
   `aarch64-linux-android` (a heavy, fragile NDK link) and, semantically, would make the phone
-  a *second standalone instance with its own database* rather than a companion. The companion
+  a _second standalone instance with its own database_ rather than a companion. The companion
   profile is always `--no-default-features`.
-- When the scaffold is generated, commit `gen/android/**` **path-by-path** (it is large; the
-  desktop crate currently has no `.gitignore`) and review it for absolute paths / secrets
-  before committing.
+- Gradle caches, generated Tauri settings/source, native `.so` files, local properties,
+  keystore properties, and signing keys are ignored; only reviewed source/config is committed.
+- Tauri 2.11.5's published Android modules still use the legacy Kotlin/AGP DSL and JVM 8.
+  Kotlin 2.4.10 rejects that upstream DSL during script compilation, so the Android build
+  retains Kotlin Gradle plugin 2.2.21. The Chancela app module itself is explicitly Java/Kotlin 17. Remove this compatibility boundary when Tauri migrates its published Android modules.
 
 ## Backend companion-readiness (design-only)
 
@@ -135,8 +150,8 @@ read/approve endpoints to a remote device on this model.
 
 **Design:** replace/augment the in-memory attribution session with a **persisted,
 credentialed** session/token model — durable server-side token records with expiry and
-revocation, bound to a real sign-in. The `X-Chancela-Session` header *transport* is already
-cross-origin-friendly; the *model behind it* is the gap. No remote read/approve surface
+revocation, bound to a real sign-in. The `X-Chancela-Session` header _transport_ is already
+cross-origin-friendly; the _model behind it_ is the gap. No remote read/approve surface
 should be enabled until this lands.
 
 Until both gaps are closed, the client foundation stays default-relative / loopback and does
@@ -145,10 +160,11 @@ choice, and a production companion must not be pointed at a server that lacks A 
 
 ## Honest bottom line
 
-This foundation reaches the **starting line**, not a shippable app. Landed and verified:
+The Android build now passes the **buildable companion** milestone, not the production-store
+milestone. Landed and verified:
 a default-relative, tested base-URL indirection + mobile-detection layer (zero web/desktop
-regression), a phone-width responsive fix for the shared tab bar, and Android build scripts
-on the already-mobile-shaped desktop crate. Still gated, in order: the Android toolchain
-(JDK + Rust targets), a signing keystore, a Play account, macOS for iOS — and, before any
-remote companion is safe to expose, the backend CORS + real-auth work packaged above.
-Prod-ready mobile is several gated steps beyond this foundation.
+regression), a phone-width responsive fix for the shared tab bar, a real API-36-targeting
+Android project, a locally inspected arm64 APK, and a configured Linux CI APK gate (its first
+hosted run awaits a push). Still gated: a production upload key/Play App Signing and Play
+account; macOS/Xcode for iOS; and, before any remote companion is exposed, the backend CORS +
+persistent-auth work packaged above.
