@@ -3,7 +3,7 @@ mod common;
 use axum::body::{Body, to_bytes};
 use axum::http::{HeaderMap, Request, StatusCode};
 use chancela_api::{AppState, router};
-use chancela_core::ActId;
+use chancela_core::{ActId, ActState};
 use serde_json::{Value, json};
 use std::sync::Arc;
 use time::format_description::well_known::Rfc3339;
@@ -173,7 +173,7 @@ async fn draft_act(state: &AppState, token: &str) -> String {
     act["id"].as_str().unwrap().to_owned()
 }
 
-async fn seal_act(state: &AppState, token: &str, act_id: &str) {
+async fn prepare_signing_act(state: &AppState, token: &str, act_id: &str) {
     let (status, body) = send(
         state,
         json_req(
@@ -213,19 +213,11 @@ async fn seal_act(state: &AppState, token: &str, act_id: &str) {
         .await;
         assert_eq!(status, StatusCode::OK, "advance to {to}: {body}");
     }
-
-    let (status, sealed) = send(
-        state,
-        json_req("POST", &format!("/v1/acts/{act_id}/seal"), token, json!({ "manual_signature_original_reference": { "storage_reference": "Arquivo A / Pasta 2026 / Ata teste" } })),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "seal: {sealed}");
-    assert_eq!(sealed["ata_number"], 1);
 }
 
-async fn sealed_act(state: &AppState, token: &str) -> String {
+async fn signing_act(state: &AppState, token: &str) -> String {
     let act_id = draft_act(state, token).await;
-    seal_act(state, token, &act_id).await;
+    prepare_signing_act(state, token, &act_id).await;
     act_id
 }
 
@@ -340,7 +332,7 @@ async fn create_returns_token_once_and_list_redacts_secret() {
     let dir = TempDir::new();
     let state = AppState::with_data_dir(dir.0.clone());
     let token = bootstrap(&state).await;
-    let act_id = sealed_act(&state, &token).await;
+    let act_id = signing_act(&state, &token).await;
 
     let created = create_invite(&state, &token, &act_id).await;
     let invite_id = created["invite"]["id"].as_str().expect("invite id");
@@ -399,7 +391,7 @@ async fn linked_invite_for_second_sequential_slot_conflicts_without_token() {
     let dir = TempDir::new();
     let state = AppState::with_data_dir(dir.0.clone());
     let token = bootstrap(&state).await;
-    let act_id = sealed_act(&state, &token).await;
+    let act_id = signing_act(&state, &token).await;
     let envelope = create_two_slot_envelope(&state, &token, &act_id, "sequential").await;
     let envelope_id = envelope["id"].as_str().expect("envelope id");
     let second_slot = envelope["slots"][1]["id"].as_str().expect("second slot");
@@ -444,7 +436,7 @@ async fn linked_invite_for_first_sequential_slot_succeeds_and_initiates_slot() {
     let dir = TempDir::new();
     let state = AppState::with_data_dir(dir.0.clone());
     let token = bootstrap(&state).await;
-    let act_id = sealed_act(&state, &token).await;
+    let act_id = signing_act(&state, &token).await;
     let envelope = create_two_slot_envelope(&state, &token, &act_id, "sequential").await;
     let envelope_id = envelope["id"].as_str().expect("envelope id");
     let first_slot = envelope["slots"][0]["id"].as_str().expect("first slot");
@@ -491,7 +483,7 @@ async fn linked_invite_envelope_persist_failure_rolls_back_slot_and_invite() {
     let dir = TempDir::new();
     let mut state = AppState::with_data_dir(dir.0.clone());
     let token = bootstrap(&state).await;
-    let act_id = sealed_act(&state, &token).await;
+    let act_id = signing_act(&state, &token).await;
     let envelope = create_two_slot_envelope(&state, &token, &act_id, "parallel").await;
     let envelope_id = envelope["id"].as_str().expect("envelope id");
     let first_slot = envelope["slots"][0]["id"].as_str().expect("first slot");
@@ -538,7 +530,7 @@ async fn linked_invite_for_parallel_second_slot_succeeds() {
     let dir = TempDir::new();
     let state = AppState::with_data_dir(dir.0.clone());
     let token = bootstrap(&state).await;
-    let act_id = sealed_act(&state, &token).await;
+    let act_id = signing_act(&state, &token).await;
     let envelope = create_two_slot_envelope(&state, &token, &act_id, "parallel").await;
     let envelope_id = envelope["id"].as_str().expect("envelope id");
     let second_slot = envelope["slots"][1]["id"].as_str().expect("second slot");
@@ -571,7 +563,7 @@ async fn linked_invite_for_parallel_second_slot_succeeds() {
 }
 
 #[tokio::test]
-async fn unsealed_act_refuses_external_invite_creation() {
+async fn act_outside_signing_refuses_external_invite_creation() {
     let dir = TempDir::new();
     let state = AppState::with_data_dir(dir.0.clone());
     let token = bootstrap(&state).await;
@@ -587,10 +579,14 @@ async fn unsealed_act_refuses_external_invite_creation() {
         ),
     )
     .await;
-    assert_eq!(status, StatusCode::CONFLICT, "unsealed refused: {body}");
+    assert_eq!(
+        status,
+        StatusCode::CONFLICT,
+        "act outside Signing refused: {body}"
+    );
     assert!(
         state.external_signer_invites.read().await.is_empty(),
-        "no invite record is created for an unsealed act"
+        "no invite record is created for an act outside Signing"
     );
 }
 
@@ -599,7 +595,7 @@ async fn revoke_updates_status_and_appends_audit_event() {
     let dir = TempDir::new();
     let state = AppState::with_data_dir(dir.0.clone());
     let token = bootstrap(&state).await;
-    let act_id = sealed_act(&state, &token).await;
+    let act_id = signing_act(&state, &token).await;
     let created = create_invite(&state, &token, &act_id).await;
     let invite_id = created["invite"]["id"].as_str().expect("invite id");
 
@@ -655,7 +651,7 @@ async fn expired_status_is_visible_in_list() {
     let dir = TempDir::new();
     let state = AppState::with_data_dir(dir.0.clone());
     let token = bootstrap(&state).await;
-    let act_id = sealed_act(&state, &token).await;
+    let act_id = signing_act(&state, &token).await;
     let created = create_invite(&state, &token, &act_id).await;
     let invite_id = Uuid::parse_str(created["invite"]["id"].as_str().expect("invite id")).unwrap();
     {
@@ -682,7 +678,7 @@ async fn public_lookup_reveals_safe_metadata_only_for_live_token() {
     let dir = TempDir::new();
     let state = AppState::with_data_dir(dir.0.clone());
     let session = bootstrap(&state).await;
-    let act_id = sealed_act(&state, &session).await;
+    let act_id = signing_act(&state, &session).await;
     let created = create_invite(&state, &session, &act_id).await;
     let token = created["token"].as_str().expect("invite token");
 
@@ -706,7 +702,8 @@ async fn public_lookup_reveals_safe_metadata_only_for_live_token() {
     assert_eq!(envelope["act"]["id"], act_id);
     assert_eq!(envelope["act"]["title"], "Ata da AG anual");
     assert_eq!(envelope["act"]["entity_name"], "Encosto Estrategico, S.A.");
-    assert_eq!(envelope["act"]["ata_number"], 1);
+    assert_eq!(envelope["act"]["state"], "Signing");
+    assert_eq!(envelope["act"]["ata_number"], Value::Null);
     assert!(envelope["document"]["id"].is_string());
     assert_eq!(envelope["document"]["template_id"], "csc-ata-ag/v1");
     assert_eq!(
@@ -851,7 +848,7 @@ async fn public_lookup_for_linked_invite_redacts_secrets_and_legal_claim_fields(
     let dir = TempDir::new();
     let state = AppState::with_data_dir(dir.0.clone());
     let session = bootstrap(&state).await;
-    let act_id = sealed_act(&state, &session).await;
+    let act_id = signing_act(&state, &session).await;
     let envelope = create_two_slot_envelope(&state, &session, &act_id, "parallel").await;
     let envelope_id = envelope["id"].as_str().expect("envelope id");
     let slot_id = envelope["slots"][1]["id"].as_str().expect("slot id");
@@ -912,7 +909,7 @@ async fn public_lookup_and_working_copy_fail_closed_without_ledger_mutation() {
     let dir = TempDir::new();
     let state = AppState::with_data_dir(dir.0.clone());
     let session = bootstrap(&state).await;
-    let act_id = sealed_act(&state, &session).await;
+    let act_id = signing_act(&state, &session).await;
     let created = create_invite(&state, &session, &act_id).await;
     let token = created["token"].as_str().expect("invite token");
     let invite_id = Uuid::parse_str(created["invite"]["id"].as_str().expect("invite id")).unwrap();
@@ -988,62 +985,62 @@ async fn public_lookup_and_working_copy_fail_closed_without_ledger_mutation() {
         "expired public failures do not mutate the ledger"
     );
 
-    let unsealed_act_id = sealed_act(&state, &session).await;
-    let unsealed_created = create_invite(&state, &session, &unsealed_act_id).await;
-    let unsealed_token = unsealed_created["token"].as_str().expect("invite token");
+    let closed_act_id = signing_act(&state, &session).await;
+    let closed_created = create_invite(&state, &session, &closed_act_id).await;
+    let closed_token = closed_created["token"].as_str().expect("invite token");
     {
         let mut acts = state.acts.write().await;
-        let act_uuid = Uuid::parse_str(&unsealed_act_id).expect("act uuid");
+        let act_uuid = Uuid::parse_str(&closed_act_id).expect("act uuid");
         let act = acts.get_mut(&ActId(act_uuid)).expect("act exists");
-        act.ata_number = None;
+        act.state = ActState::Sealed;
     }
-    let before_unsealed = ledger_len(&state).await;
+    let before_closed = ledger_len(&state).await;
     let (status, _) = send(
         &state,
         public_json_req(
             "POST",
             "/v1/signature/external-invites/lookup",
-            json!({ "token": unsealed_token }),
+            json!({ "token": closed_token }),
         ),
     )
     .await;
     assert_eq!(
         status,
         StatusCode::NOT_FOUND,
-        "unsealed act lookup fails closed"
+        "sealed act lookup fails closed"
     );
     let (status, _, _) = send_raw(
         &state,
         public_json_req(
             "POST",
             "/v1/signature/external-invites/document/working-copy",
-            json!({ "token": unsealed_token }),
+            json!({ "token": closed_token }),
         ),
     )
     .await;
     assert_eq!(
         status,
         StatusCode::NOT_FOUND,
-        "unsealed act working-copy download fails closed"
+        "sealed act working-copy download fails closed"
     );
     let (status, _) = send(
         &state,
         public_json_req(
             "POST",
             "/v1/signature/external-invites/respond",
-            json!({ "token": unsealed_token, "decision": "accept" }),
+            json!({ "token": closed_token, "decision": "accept" }),
         ),
     )
     .await;
     assert_eq!(
         status,
         StatusCode::NOT_FOUND,
-        "unsealed act response fails closed"
+        "sealed act response fails closed"
     );
     assert_eq!(
         ledger_len(&state).await,
-        before_unsealed,
-        "unsealed public failures do not mutate the ledger"
+        before_closed,
+        "sealed public failures do not mutate the ledger"
     );
 }
 
@@ -1052,7 +1049,7 @@ async fn public_accept_updates_tracking_and_audit_without_signature_completion()
     let dir = TempDir::new();
     let state = AppState::with_data_dir(dir.0.clone());
     let session = bootstrap(&state).await;
-    let act_id = sealed_act(&state, &session).await;
+    let act_id = signing_act(&state, &session).await;
     let created = create_invite(&state, &session, &act_id).await;
     let token = created["token"].as_str().expect("invite token");
 
@@ -1154,7 +1151,7 @@ async fn revoked_token_cannot_be_looked_up_or_answered() {
     let dir = TempDir::new();
     let state = AppState::with_data_dir(dir.0.clone());
     let session = bootstrap(&state).await;
-    let act_id = sealed_act(&state, &session).await;
+    let act_id = signing_act(&state, &session).await;
     let created = create_invite(&state, &session, &act_id).await;
     let invite_id = created["invite"]["id"].as_str().expect("invite id");
     let token = created["token"].as_str().expect("invite token");

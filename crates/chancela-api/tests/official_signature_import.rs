@@ -1,5 +1,5 @@
-//! Official Autenticacao.gov handoff import: the operator signs the sealed PDF outside Chancela and
-//! imports the resulting signed PDF back as technical evidence only.
+//! Official Autenticacao.gov handoff import: the operator signs the immutable canonical signing PDF
+//! outside Chancela and imports the resulting signed PDF back as technical evidence only.
 
 mod common;
 
@@ -446,7 +446,7 @@ async fn create_signing_act(state: &AppState, token: &str, book_id: &str, title:
     act_id
 }
 
-async fn seal_act(state: &AppState, token: &str, act_id: &str) {
+async fn seal_manually(state: &AppState, token: &str, act_id: &str) {
     let (status, sealed) = send(
         state,
         json_req("POST", &format!("/v1/acts/{act_id}/seal"), token, json!({ "manual_signature_original_reference": { "storage_reference": "Arquivo A / Pasta 2026 / Ata teste" } })),
@@ -455,16 +455,25 @@ async fn seal_act(state: &AppState, token: &str, act_id: &str) {
     assert_eq!(status, StatusCode::OK, "seal: {sealed}");
 }
 
-async fn sealed_pdf_bytes(state: &AppState, act_id: &str) -> Vec<u8> {
+async fn signing_pdf_bytes(state: &AppState, act_id: &str) -> Vec<u8> {
     let act_id = ActId(Uuid::parse_str(act_id).expect("act uuid"));
     state
         .documents
         .read()
         .await
         .get(&act_id)
-        .expect("sealed document")
+        .expect("canonical signing document")
         .pdf_bytes
         .clone()
+}
+
+async fn seal_signed_act(state: &AppState, token: &str, act_id: &str) {
+    let (status, sealed) = send(
+        state,
+        json_req("POST", &format!("/v1/acts/{act_id}/seal"), token, json!({})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "seal signed act: {sealed}");
 }
 
 fn signed_pdf_for_import(pdf: &[u8], serial: u8) -> Vec<u8> {
@@ -551,11 +560,13 @@ fn legal_validation_json() -> Value {
 fn expected_official_import_event_digest(
     act_id: &str,
     document_id: &str,
+    signing_snapshot_digest: &str,
     signed_pdf_digest: &str,
 ) -> String {
     let payload = json!({
         "act_id": act_id,
         "document_id": document_id,
+        "signing_snapshot_digest": signing_snapshot_digest,
         "signed_pdf_digest": signed_pdf_digest,
         "family": "AutenticacaoGovOfficialHandoff",
         "evidentiary_level": "ImportedOfficialHandoffTechnicalEvidence",
@@ -618,10 +629,8 @@ async fn official_import_stores_exact_signed_pdf_as_non_qualified_evidence() {
         .require_qualified_for_seal = true;
     let book_id = seed_book(&state, &token).await;
     let act_id = create_signing_act(&state, &token, &book_id, "Ata oficial importada").await;
-    seal_act(&state, &token, &act_id).await;
-
-    let sealed_pdf = sealed_pdf_bytes(&state, &act_id).await;
-    let signed_pdf = signed_pdf_for_import(&sealed_pdf, 1);
+    let signing_pdf = signing_pdf_bytes(&state, &act_id).await;
+    let signed_pdf = signed_pdf_for_import(&signing_pdf, 1);
     validate_pdf_signature(&signed_pdf).expect("test signed PDF validates");
 
     let (status, imported) = send(&state, import_req(&act_id, &token, &signed_pdf)).await;
@@ -648,13 +657,14 @@ async fn official_import_stores_exact_signed_pdf_as_non_qualified_evidence() {
             .as_str()
             .is_some_and(|notice| notice.contains("technical signed-PDF evidence"))
     );
-    assert_eq!(imported["finalization"], "aguarda_assinatura_qualificada");
+    assert_eq!(imported["finalization"], "em_assinatura");
     assert_eq!(imported["signed_pdf_digest"], sha256_hex(&signed_pdf));
     assert_eq!(
         document_signed_event_payload_digest(&state, &act_id).await,
         expected_official_import_event_digest(
             &act_id,
             imported["document_id"].as_str().expect("document_id"),
+            &sha256_hex(&signing_pdf),
             imported["signed_pdf_digest"]
                 .as_str()
                 .expect("signed_pdf_digest")
@@ -679,7 +689,7 @@ async fn official_import_stores_exact_signed_pdf_as_non_qualified_evidence() {
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(view["status"], "signed");
-    assert_eq!(view["finalization"], "aguarda_assinatura_qualificada");
+    assert_eq!(view["finalization"], "em_assinatura");
     assert_eq!(view["signed"]["family"], "AutenticacaoGovOfficialHandoff");
     assert_eq!(
         view["signed"]["evidentiary_level"],
@@ -690,6 +700,14 @@ async fn official_import_stores_exact_signed_pdf_as_non_qualified_evidence() {
     assert_eq!(view["evidence"]["legal_b_lt_claimed"], false);
     assert_eq!(view["evidence"]["status_scope"], "technical_evidence_only");
     assert_eq!(signed_event_count(&state, &token, &act_id).await, 1);
+
+    seal_signed_act(&state, &token, &act_id).await;
+    let (_, sealed_view) = send(
+        &state,
+        get_req(&format!("/v1/acts/{act_id}/signature"), &token),
+    )
+    .await;
+    assert_eq!(sealed_view["finalization"], "finalizado");
 }
 
 #[tokio::test]
@@ -698,9 +716,7 @@ async fn official_import_requires_guardrail_acknowledgement_without_artifact_or_
     let (token, _) = bootstrap(&state).await;
     let book_id = seed_book(&state, &token).await;
     let act_id = create_signing_act(&state, &token, &book_id, "Ata acknowledge").await;
-    seal_act(&state, &token, &act_id).await;
-
-    let signed_pdf = signed_pdf_for_import(&sealed_pdf_bytes(&state, &act_id).await, 8);
+    let signed_pdf = signed_pdf_for_import(&signing_pdf_bytes(&state, &act_id).await, 8);
     let (status, body) = send(
         &state,
         import_req_without_acknowledgement(&act_id, &token, &signed_pdf),
@@ -733,11 +749,10 @@ async fn external_invite_response_upload_stores_signed_pdf_as_technical_evidence
         .require_qualified_for_seal = true;
     let book_id = seed_book(&state, &token).await;
     let act_id = create_signing_act(&state, &token, &book_id, "Ata convite externo").await;
-    seal_act(&state, &token, &act_id).await;
     let invite_token = create_external_invite(&state, &token, &act_id).await;
 
-    let sealed_pdf = sealed_pdf_bytes(&state, &act_id).await;
-    let signed_pdf = signed_pdf_for_import(&sealed_pdf, 7);
+    let signing_pdf = signing_pdf_bytes(&state, &act_id).await;
+    let signed_pdf = signed_pdf_for_import(&signing_pdf, 7);
     validate_pdf_signature(&signed_pdf).expect("test signed PDF validates");
 
     let (status, response) = send(
@@ -788,7 +803,7 @@ async fn external_invite_response_upload_stores_signed_pdf_as_technical_evidence
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(view["status"], "signed");
-    assert_eq!(view["finalization"], "aguarda_assinatura_qualificada");
+    assert_eq!(view["finalization"], "em_assinatura");
     assert_eq!(view["signed"]["family"], "ExternalSignerHandoff");
     assert_eq!(
         view["signed"]["evidentiary_level"],
@@ -815,7 +830,6 @@ async fn linked_external_invite_upload_marks_only_linked_slot_signed() {
         .require_qualified_for_seal = true;
     let book_id = seed_book(&state, &token).await;
     let act_id = create_signing_act(&state, &token, &book_id, "Ata convite ligado").await;
-    seal_act(&state, &token, &act_id).await;
     let envelope = create_external_envelope(&state, &token, &act_id, Vec::new()).await;
     let envelope_id = envelope["id"].as_str().expect("envelope id");
     let linked_slot_id = envelope["slots"][0]["id"].as_str().expect("linked slot id");
@@ -830,8 +844,8 @@ async fn linked_external_invite_upload_marks_only_linked_slot_signed() {
     )
     .await;
 
-    let sealed_pdf = sealed_pdf_bytes(&state, &act_id).await;
-    let signed_pdf = signed_pdf_for_import(&sealed_pdf, 9);
+    let signing_pdf = signing_pdf_bytes(&state, &act_id).await;
+    let signed_pdf = signed_pdf_for_import(&signing_pdf, 9);
     validate_pdf_signature(&signed_pdf).expect("test signed PDF validates");
     let signed_pdf_digest = sha256_hex(&signed_pdf);
 
@@ -927,7 +941,7 @@ async fn linked_external_invite_upload_marks_only_linked_slot_signed() {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "signature view: {signature}");
-    assert_eq!(signature["finalization"], "aguarda_assinatura_qualificada");
+    assert_eq!(signature["finalization"], "em_assinatura");
     assert_eq!(signature["signed"]["family"], "ExternalSignerHandoff");
     assert_eq!(signature["signed"]["trusted_list_status"], Value::Null);
     assert_eq!(signature["evidence"]["legal_b_lt_claimed"], false);
@@ -1001,7 +1015,6 @@ async fn linked_external_invite_upload_does_not_auto_sign_identity_required_slot
         "Ata convite ligado com identidade",
     )
     .await;
-    seal_act(&state, &token, &act_id).await;
     let envelope = create_external_envelope(&state, &token, &act_id, vec!["contact_control"]).await;
     let envelope_id = envelope["id"].as_str().expect("envelope id");
     let linked_slot_id = envelope["slots"][0]["id"].as_str().expect("linked slot id");
@@ -1015,7 +1028,7 @@ async fn linked_external_invite_upload_does_not_auto_sign_identity_required_slot
     )
     .await;
 
-    let signed_pdf = signed_pdf_for_import(&sealed_pdf_bytes(&state, &act_id).await, 10);
+    let signed_pdf = signed_pdf_for_import(&signing_pdf_bytes(&state, &act_id).await, 10);
     validate_pdf_signature(&signed_pdf).expect("test signed PDF validates");
 
     let (status, response) = send(
@@ -1105,9 +1118,7 @@ async fn official_import_client_declared_provider_source_cannot_claim_trust_or_q
         .require_qualified_for_seal = true;
     let book_id = seed_book(&state, &token).await;
     let act_id = create_signing_act(&state, &token, &book_id, "Ata metadados hostis").await;
-    seal_act(&state, &token, &act_id).await;
-
-    let signed_pdf = signed_pdf_for_import(&sealed_pdf_bytes(&state, &act_id).await, 6);
+    let signed_pdf = signed_pdf_for_import(&signing_pdf_bytes(&state, &act_id).await, 6);
     let (status, imported) = send(
         &state,
         import_req_with_metadata(
@@ -1129,12 +1140,13 @@ async fn official_import_client_declared_provider_source_cannot_claim_trust_or_q
     assert_eq!(imported["qualification_claimed"], false);
     assert_eq!(imported["client_metadata_authoritative"], false);
     assert_eq!(imported["legal_validation"], legal_validation_json());
-    assert_eq!(imported["finalization"], "aguarda_assinatura_qualificada");
+    assert_eq!(imported["finalization"], "em_assinatura");
     assert_eq!(
         document_signed_event_payload_digest(&state, &act_id).await,
         expected_official_import_event_digest(
             &act_id,
             imported["document_id"].as_str().expect("document_id"),
+            &sha256_hex(&signing_pdf_bytes(&state, &act_id).await),
             imported["signed_pdf_digest"]
                 .as_str()
                 .expect("signed_pdf_digest")
@@ -1148,8 +1160,7 @@ async fn official_import_rejects_unsigned_or_malformed_pdf_without_artifact_or_e
     let (token, _) = bootstrap(&state).await;
     let book_id = seed_book(&state, &token).await;
     let act_id = create_signing_act(&state, &token, &book_id, "Ata sem assinatura").await;
-    seal_act(&state, &token, &act_id).await;
-    let unsigned_pdf = sealed_pdf_bytes(&state, &act_id).await;
+    let unsigned_pdf = signing_pdf_bytes(&state, &act_id).await;
 
     for candidate in [unsigned_pdf, b"not a pdf".to_vec()] {
         let (status, body) = send(&state, import_req(&act_id, &token, &candidate)).await;
@@ -1168,11 +1179,9 @@ async fn official_import_rejects_signed_pdf_bound_to_different_act() {
     let (token, _) = bootstrap(&state).await;
     let book_id = seed_book(&state, &token).await;
     let source_act = create_signing_act(&state, &token, &book_id, "Ata origem").await;
-    seal_act(&state, &token, &source_act).await;
     let target_act = create_signing_act(&state, &token, &book_id, "Ata destino").await;
-    seal_act(&state, &token, &target_act).await;
 
-    let source_pdf = sealed_pdf_bytes(&state, &source_act).await;
+    let source_pdf = signing_pdf_bytes(&state, &source_act).await;
     let signed_for_source = signed_pdf_for_import(&source_pdf, 2);
     let (status, body) = send(&state, import_req(&target_act, &token, &signed_for_source)).await;
     assert_eq!(
@@ -1185,28 +1194,28 @@ async fn official_import_rejects_signed_pdf_bound_to_different_act() {
 }
 
 #[tokio::test]
-async fn official_import_rejects_unsealed_act_and_duplicate_signature() {
+async fn official_import_rejects_sealed_act_and_duplicate_signature() {
     let state = AppState::default();
     let (token, _) = bootstrap(&state).await;
     let book_id = seed_book(&state, &token).await;
-    let sealed_act = create_signing_act(&state, &token, &book_id, "Ata selada").await;
-    seal_act(&state, &token, &sealed_act).await;
-    let unsealed_act = create_signing_act(&state, &token, &book_id, "Ata ainda nao selada").await;
+    let signing_act = create_signing_act(&state, &token, &book_id, "Ata em assinatura").await;
+    let sealed_act = create_signing_act(&state, &token, &book_id, "Ata já selada").await;
+    seal_manually(&state, &token, &sealed_act).await;
 
-    let signed_pdf = signed_pdf_for_import(&sealed_pdf_bytes(&state, &sealed_act).await, 3);
-    let (status, body) = send(&state, import_req(&unsealed_act, &token, &signed_pdf)).await;
-    assert_eq!(status, StatusCode::CONFLICT, "unsealed act refused: {body}");
-    assert_no_signed_artifact_or_event(&state, &token, &unsealed_act).await;
-
-    let (status, imported) = send(&state, import_req(&sealed_act, &token, &signed_pdf)).await;
-    assert_eq!(status, StatusCode::OK, "first import succeeds: {imported}");
+    let signed_pdf = signed_pdf_for_import(&signing_pdf_bytes(&state, &signing_act).await, 3);
     let (status, body) = send(&state, import_req(&sealed_act, &token, &signed_pdf)).await;
+    assert_eq!(status, StatusCode::CONFLICT, "sealed act refused: {body}");
+    assert_no_signed_artifact_or_event(&state, &token, &sealed_act).await;
+
+    let (status, imported) = send(&state, import_req(&signing_act, &token, &signed_pdf)).await;
+    assert_eq!(status, StatusCode::OK, "first import succeeds: {imported}");
+    let (status, body) = send(&state, import_req(&signing_act, &token, &signed_pdf)).await;
     assert_eq!(
         status,
         StatusCode::CONFLICT,
         "duplicate import refused: {body}"
     );
-    assert_eq!(signed_event_count(&state, &token, &sealed_act).await, 1);
+    assert_eq!(signed_event_count(&state, &token, &signing_act).await, 1);
 }
 
 #[tokio::test]
@@ -1215,8 +1224,7 @@ async fn official_import_json_schema_denies_unknown_secret_fields() {
     let (token, _) = bootstrap(&state).await;
     let book_id = seed_book(&state, &token).await;
     let act_id = create_signing_act(&state, &token, &book_id, "Ata schema").await;
-    seal_act(&state, &token, &act_id).await;
-    let signed_pdf = signed_pdf_for_import(&sealed_pdf_bytes(&state, &act_id).await, 4);
+    let signed_pdf = signed_pdf_for_import(&signing_pdf_bytes(&state, &act_id).await, 4);
 
     for field in [
         "pin",
@@ -1264,8 +1272,7 @@ async fn official_import_requires_signing_permission() {
     let (owner, _) = bootstrap(&state).await;
     let book_id = seed_book(&state, &owner).await;
     let act_id = create_signing_act(&state, &owner, &book_id, "Ata RBAC").await;
-    seal_act(&state, &owner, &act_id).await;
-    let signed_pdf = signed_pdf_for_import(&sealed_pdf_bytes(&state, &act_id).await, 5);
+    let signed_pdf = signed_pdf_for_import(&signing_pdf_bytes(&state, &act_id).await, 5);
 
     let (status, limited) = send(
         &state,

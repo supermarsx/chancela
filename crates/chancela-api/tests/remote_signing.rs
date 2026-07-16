@@ -6,9 +6,9 @@
 //! signature over the digest the provider signs — so the produced PDF genuinely validates (SIG-24)
 //! without ever touching a live QTSP / SCMD / TSL. Covers:
 //!
-//! - a CSC QTSP round-trip over the generic path (validating signed PDF + `document.signed` event +
-//!   status flips to `finalizado_qualificado`, reported through the SAME `SignatureStatusView`
-//!   shape with `family = "QualifiedCertificate"` — no web contract drift);
+//! - a CSC QTSP round-trip over the generic path (validating signed PDF + `document.signed` event),
+//!   reported through the SAME `SignatureStatusView` shape with `family = "QualifiedCertificate"`;
+//!   it remains `em_assinatura` until the explicit seal reports `finalizado_qualificado`;
 //! - the persisted pending session carries NO PIN/OTP;
 //! - Chave Móvel Digital works over the SAME generic path (provider `"cmd"`);
 //! - `GET /v1/signature/providers` lists CMD + a configured CSC provider;
@@ -750,13 +750,16 @@ async fn seal_an_act(state: &AppState, token: &str) -> String {
         assert_eq!(status, StatusCode::OK, "advance to {to}");
     }
 
+    act_id
+}
+
+async fn seal_signed_act(state: &AppState, token: &str, act_id: &str) {
     let (status, sealed) = send(
         state,
-        json_req("POST", &format!("/v1/acts/{act_id}/seal"), token, json!({ "manual_signature_original_reference": { "storage_reference": "Arquivo A / Pasta 2026 / Ata teste" } })),
+        json_req("POST", &format!("/v1/acts/{act_id}/seal"), token, json!({})),
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "seal: {sealed}");
-    act_id
+    assert_eq!(status, StatusCode::OK, "seal signed act: {sealed}");
 }
 
 async fn signed_event_count(state: &AppState, token: &str, act_id: &str) -> usize {
@@ -928,7 +931,7 @@ async fn csc_generic_round_trip_produces_a_validating_signed_pdf() {
     assert_eq!(done["family"], "QualifiedCertificate");
     assert_eq!(done["evidentiary_level"], "Qualified");
     assert_eq!(done["trusted_list_status"], "Granted");
-    assert_eq!(done["finalization"], "finalizado_qualificado");
+    assert_eq!(done["finalization"], "em_assinatura");
     assert_eq!(
         done["signer_capacity_evidence"]["requested_provider_capacity"],
         "Administrador"
@@ -971,7 +974,7 @@ async fn csc_generic_round_trip_produces_a_validating_signed_pdf() {
         );
     }
 
-    // Chain still verifies; status flipped to signed through the SAME status shape.
+    // Chain still verifies; the signature is complete but the act is not finalized until sealed.
     let (_, verify) = send(&state, get_req("/v1/ledger/verify", &token)).await;
     assert_eq!(verify["valid"], true);
     let (_, view) = send(
@@ -980,7 +983,7 @@ async fn csc_generic_round_trip_produces_a_validating_signed_pdf() {
     )
     .await;
     assert_eq!(view["status"], "signed");
-    assert_eq!(view["finalization"], "finalizado_qualificado");
+    assert_eq!(view["finalization"], "em_assinatura");
     assert_eq!(view["signed"]["family"], "QualifiedCertificate");
     assert_eq!(view["signed"]["evidentiary_level"], "Qualified");
     assert_eq!(
@@ -1019,6 +1022,14 @@ async fn csc_generic_round_trip_produces_a_validating_signed_pdf() {
     )
     .await;
     assert_eq!(status, StatusCode::CONFLICT);
+
+    seal_signed_act(&state, &token, &act_id).await;
+    let (_, sealed_view) = send(
+        &state,
+        get_req(&format!("/v1/acts/{act_id}/signature"), &token),
+    )
+    .await;
+    assert_eq!(sealed_view["finalization"], "finalizado_qualificado");
 }
 
 #[tokio::test]
@@ -2166,7 +2177,7 @@ async fn cmd_over_generic_path_produces_a_validating_signed_pdf() {
     assert_eq!(status, StatusCode::OK, "confirm: {done}");
     assert_eq!(done["provider_id"], "cmd");
     assert_eq!(done["family"], "ChaveMovelDigital");
-    assert_eq!(done["finalization"], "finalizado_qualificado");
+    assert_eq!(done["finalization"], "em_assinatura");
 
     let (status, signed_pdf) = send_bytes(
         &state,

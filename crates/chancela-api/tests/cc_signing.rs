@@ -5,8 +5,8 @@
 //! PDF genuinely validates (SIG-24) with no reader / PKCS#11 / hardware (t58 gate). Covers:
 //!
 //! - the signed round-trip for BOTH card generations (CC v1 RSA-2048, CC v2 P-256): the signed
-//!   variant is persisted, a `document.signed` event is chained, the chain still verifies, and the
-//!   status flips to `signed` / `finalizado_qualificado` — reusing t57-S3's store row + event shape;
+//!   variant is persisted, a `document.signed` event is chained, and the chain still verifies; the
+//!   status remains `em_assinatura` until the explicit seal reports `finalizado_qualificado`;
 //! - the **co-location gate** (CC-B): `409` when `CHANCELA_LOCAL_SIGNING` is absent (a remote server);
 //! - the **RBAC gate**: `403` for a session lacking `signing.perform` at the act's book;
 //! - the **provider-error mapping**: an un-activated card signature → an honest CC `422`, distinct
@@ -467,7 +467,7 @@ async fn open_session(state: &AppState, user_id: &str) -> String {
     session["token"].as_str().expect("token").to_owned()
 }
 
-/// Seal an act (real PDF/A) as the Owner and return its id.
+/// Create an act in `Signing` with its immutable canonical PDF/A snapshot and return its id.
 async fn seal_an_act(state: &AppState, token: &str) -> String {
     let (status, entity) = send(
         state,
@@ -546,13 +546,16 @@ async fn seal_an_act(state: &AppState, token: &str) -> String {
         assert_eq!(status, StatusCode::OK, "advance to {to}");
     }
 
+    act_id
+}
+
+async fn seal_signed_act(state: &AppState, token: &str, act_id: &str) {
     let (status, sealed) = send(
         state,
-        json_req("POST", &format!("/v1/acts/{act_id}/seal"), token, json!({ "manual_signature_original_reference": { "storage_reference": "Arquivo A / Pasta 2026 / Ata teste" } })),
+        json_req("POST", &format!("/v1/acts/{act_id}/seal"), token, json!({})),
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "seal: {sealed}");
-    act_id
+    assert_eq!(status, StatusCode::OK, "seal signed act: {sealed}");
 }
 
 async fn signed_event_count(state: &AppState, token: &str, act_id: &str) -> usize {
@@ -746,7 +749,8 @@ async fn sign_with_cc_timestamp_and_attach_dss_with_validation_time(
 // --- tests ----------------------------------------------------------------------------------------
 
 /// The whole CC round trip for a card generation: sign → validating signed PDF, `document.signed`
-/// event, chain still verifies, status flips to `finalizado_qualificado` — reusing t57-S3's shape.
+/// event, chain still verifies, then the validated artifact is sealed and reported as
+/// `finalizado_qualificado` — reusing t57-S3's shape.
 async fn cc_round_trip(card: CcTestCard) {
     let dir = TempDir::new();
     let signature_cert_der = card.signature_cert_der.clone();
@@ -780,7 +784,7 @@ async fn cc_round_trip(card: CcTestCard) {
     assert_eq!(done["family"], "CartaoDeCidadao");
     assert_eq!(done["evidentiary_level"], "Qualified");
     assert_eq!(done["trusted_list_status"], "Granted");
-    assert_eq!(done["finalization"], "finalizado_qualificado");
+    assert_eq!(done["finalization"], "em_assinatura");
     assert_eq!(done["timestamp_token"], false);
     assert_eq!(
         done["signer_capacity_evidence"]["requested_provider_capacity"],
@@ -827,14 +831,14 @@ async fn cc_round_trip(card: CcTestCard) {
     let (_, verify) = send(&state, get_req("/v1/ledger/verify", &token)).await;
     assert_eq!(verify["valid"], true);
 
-    // Status flipped to signed / finalizado-qualificado, reported through the SAME status shape.
+    // The signature is complete, but finalization is never claimed before the explicit seal.
     let (_, view) = send(
         &state,
         get_req(&format!("/v1/acts/{act_id}/signature"), &token),
     )
     .await;
     assert_eq!(view["status"], "signed");
-    assert_eq!(view["finalization"], "finalizado_qualificado");
+    assert_eq!(view["finalization"], "em_assinatura");
     assert_eq!(view["signed"]["family"], "CartaoDeCidadao");
     assert_eq!(view["signed"]["evidentiary_level"], "Qualified");
     assert_eq!(
@@ -859,6 +863,15 @@ async fn cc_round_trip(card: CcTestCard) {
     )
     .await;
     assert_eq!(status, StatusCode::CONFLICT);
+
+    seal_signed_act(&state, &token, &act_id).await;
+    let (_, sealed_view) = send(
+        &state,
+        get_req(&format!("/v1/acts/{act_id}/signature"), &token),
+    )
+    .await;
+    assert_eq!(sealed_view["status"], "signed");
+    assert_eq!(sealed_view["finalization"], "finalizado_qualificado");
 }
 
 #[tokio::test]
@@ -1536,7 +1549,7 @@ async fn archive_timestamp_append_rejects_stale_token_without_digest_change_or_e
 }
 
 #[tokio::test]
-async fn archive_timestamp_append_requires_existing_signed_pdf_for_sealed_act() {
+async fn archive_timestamp_append_requires_existing_signed_pdf_in_signing() {
     let dir = TempDir::new();
     let state = state_at(&dir.0, None, true, true);
     let (token, _uid) = bootstrap(&state).await;
@@ -1555,7 +1568,7 @@ async fn archive_timestamp_append_requires_existing_signed_pdf_for_sealed_act() 
     assert_eq!(
         status,
         StatusCode::CONFLICT,
-        "sealed but unsigned act has no signed PDF to timestamp: {err}"
+        "unsigned act in Signing has no signed PDF to timestamp: {err}"
     );
     assert_no_signed_artifact_or_event(&state, &token, &act_id).await;
     assert_eq!(
@@ -1970,7 +1983,7 @@ async fn cc_sign_with_in_app_pin_signs_and_redacts_pin() {
     .await;
     assert_eq!(status, StatusCode::OK, "cc sign with in-app PIN: {done}");
     assert_eq!(done["family"], "CartaoDeCidadao");
-    assert_eq!(done["finalization"], "finalizado_qualificado");
+    assert_eq!(done["finalization"], "em_assinatura");
 
     // The in-app PIN was threaded through the signing seam to the card (and only that PIN).
     assert_eq!(observer.threaded_pins(), vec![Some(PIN.to_owned())]);

@@ -303,7 +303,7 @@ async fn open_session(state: &AppState, user_id: &str) -> String {
     session["token"].as_str().expect("token").to_owned()
 }
 
-/// Seal an act (real PDF/A) and return its id.
+/// Create an act in `Signing` with its immutable canonical PDF/A snapshot and return its id.
 async fn seal_an_act(state: &AppState, token: &str) -> String {
     let (status, entity) = send(
         state,
@@ -382,16 +382,11 @@ async fn seal_an_act(state: &AppState, token: &str) -> String {
         assert_eq!(status, StatusCode::OK, "advance to {to}");
     }
 
-    let (status, sealed) = send(
-        state,
-        json_req("POST", &format!("/v1/acts/{act_id}/seal"), token, json!({ "manual_signature_original_reference": { "storage_reference": "Arquivo A / Pasta 2026 / Ata teste" } })),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "seal: {sealed}");
     act_id
 }
 
-/// Produce a qualified CC signature over the sealed act (so an LTV round has a signed PDF to upgrade).
+/// Produce a qualified CC signature over the canonical signing snapshot so an LTV round has a
+/// signed PDF to upgrade before the final seal freezes the evidence tuple.
 async fn cc_sign(state: &AppState, token: &str, act_id: &str) {
     let (status, done) = send(
         state,

@@ -616,6 +616,15 @@ async fn seal_an_act(state: &AppState, token: &str) -> String {
     act_id
 }
 
+async fn seal_signed_act(state: &AppState, token: &str, act_id: &str) {
+    let (status, sealed) = send(
+        state,
+        json_req("POST", &format!("/v1/acts/{act_id}/seal"), token, json!({})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "seal signed act: {sealed}");
+}
+
 async fn create_user(state: &AppState, token: &str, username: &str) -> String {
     let (status, user) = send(
         state,
@@ -1732,7 +1741,7 @@ async fn wrong_otp_is_a_clean_error_and_leaves_no_signature() {
 }
 
 #[tokio::test]
-async fn require_qualified_gates_the_status_not_the_seal() {
+async fn finalization_is_reported_only_after_the_explicit_seal() {
     // Read env under a shared lock so a concurrent env-mutating test can't leak its fixture.
     let _env_guard = ENV_LOCK.read().await;
     let dir = TempDir::new();
@@ -1742,7 +1751,8 @@ async fn require_qualified_gates_the_status_not_the_seal() {
     let state = state_at(&dir.0, transport, true).await;
     let (token, _uid) = bootstrap(&state).await;
 
-    // Turn enforcement ON, then seal — the seal must still SUCCEED (enforcement gates status only).
+    // Before the explicit final seal, even a policy requesting qualified evidence reports the
+    // lifecycle honestly as still collecting signatures.
     state
         .settings
         .write()
@@ -1751,7 +1761,6 @@ async fn require_qualified_gates_the_status_not_the_seal() {
         .require_qualified_for_seal = true;
     let act_id = seal_an_act(&state, &token).await;
 
-    // With enforcement on and no qualified signature, the derived status is "awaiting qualified".
     let (_, view) = send(
         &state,
         get_req(&format!("/v1/acts/{act_id}/signature"), &token),
@@ -1759,9 +1768,9 @@ async fn require_qualified_gates_the_status_not_the_seal() {
     .await;
     assert_eq!(view["status"], "unsigned");
     assert_eq!(view["require_qualified_for_seal"], true);
-    assert_eq!(view["finalization"], "aguarda_assinatura_qualificada");
+    assert_eq!(view["finalization"], "em_assinatura");
 
-    // Sign it → the status reaches finalizado-qualificado.
+    // A qualified signature completes the signed artifact, but does not itself finalize the act.
     let (status, init) = send(
         &state,
         json_req(
@@ -1790,9 +1799,19 @@ async fn require_qualified_gates_the_status_not_the_seal() {
         get_req(&format!("/v1/acts/{act_id}/signature"), &token),
     )
     .await;
+    assert_eq!(view["status"], "signed");
+    assert_eq!(view["finalization"], "em_assinatura");
+
+    // The validated digital-evidence seal is the only transition that claims finalization.
+    seal_signed_act(&state, &token, &act_id).await;
+    let (_, view) = send(
+        &state,
+        get_req(&format!("/v1/acts/{act_id}/signature"), &token),
+    )
+    .await;
     assert_eq!(view["finalization"], "finalizado_qualificado");
 
-    // With enforcement OFF, a freshly sealed (unsigned) act is already "finalizado".
+    // The explicit manual-original path may also seal, but never claims a qualified signature.
     state
         .settings
         .write()
@@ -1805,11 +1824,32 @@ async fn require_qualified_gates_the_status_not_the_seal() {
         get_req(&format!("/v1/acts/{act2}/signature"), &token),
     )
     .await;
+    assert_eq!(view2["finalization"], "em_assinatura");
+    let (status, sealed) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act2}/seal"),
+            &token,
+            json!({
+                "manual_signature_original_reference": {
+                    "storage_reference": "Arquivo A / Pasta 2026 / Ata manual"
+                }
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "manual seal: {sealed}");
+    let (_, view2) = send(
+        &state,
+        get_req(&format!("/v1/acts/{act2}/signature"), &token),
+    )
+    .await;
     assert_eq!(view2["finalization"], "finalizado");
 }
 
 #[tokio::test]
-async fn initiate_before_seal_is_conflict() {
+async fn initiate_before_signing_is_conflict() {
     // Read env under a shared lock so a concurrent env-mutating test can't leak its fixture.
     let _env_guard = ENV_LOCK.read().await;
     let dir = TempDir::new();
@@ -1819,7 +1859,7 @@ async fn initiate_before_seal_is_conflict() {
     let state = state_at(&dir.0, transport, true).await;
     let (token, _uid) = bootstrap(&state).await;
 
-    // Create an entity/book/act but DO NOT seal.
+    // Create an entity/book/act but do not advance it to the canonical `Signing` snapshot.
     let (_, entity) = send(
         &state,
         json_req("POST", "/v1/entities", &token, json!({ "name": "Encosto Estratégico, S.A.", "nipc": "503004642", "seat": "Lisboa", "kind": "SociedadeAnonima" })),
@@ -1854,5 +1894,9 @@ async fn initiate_before_seal_is_conflict() {
         ),
     )
     .await;
-    assert_eq!(status, StatusCode::CONFLICT, "cannot sign an unsealed act");
+    assert_eq!(
+        status,
+        StatusCode::CONFLICT,
+        "cannot sign an act outside Signing"
+    );
 }

@@ -1491,6 +1491,7 @@ pub async fn lookup_external_signer_invite(
     Json(req): Json<ExternalSignerInviteTokenRequest>,
 ) -> Result<Json<ExternalSignerInvitePublicView>, ApiError> {
     let record = find_live_external_invite_by_token(&state, req.token).await?;
+    require_public_invite_signing(&state, record.act_id).await?;
     Ok(Json(public_external_invite_view(&state, &record).await?))
 }
 
@@ -1502,6 +1503,7 @@ pub async fn download_external_signer_invite_working_copy(
     Json(req): Json<ExternalSignerInviteTokenRequest>,
 ) -> Result<Response, ApiError> {
     let record = find_live_external_invite_by_token(&state, req.token).await?;
+    require_public_invite_signing(&state, record.act_id).await?;
     let context = external_invite_safe_context(&state, &record).await?;
     let document = context.document.ok_or(ApiError::NotFound)?;
     let body = external_invite_working_copy_markdown(&record, &context.act, &document);
@@ -1534,7 +1536,7 @@ pub async fn respond_external_signer_invite(
     let upload =
         signed_pdf_upload_from_invite_response(req.decision, req.signed_pdf_base64, req.filename)?;
     let mut record = find_live_external_invite_by_token(&state, req.token).await?;
-    require_act_signing(&state, record.act_id).await?;
+    require_public_invite_signing(&state, record.act_id).await?;
     let _ = external_invite_safe_context(&state, &record).await?;
     if let Some(existing) = record.response {
         if existing != req.decision {
@@ -4668,9 +4670,9 @@ fn pades_profile(has_timestamp: bool) -> &'static str {
 /// through the official Autenticação.gov app/middleware/provider UI.
 ///
 /// This is a user-mediated handoff: Chancela validates that the upload is a signed PAdES PDF and
-/// that its bytes extend this act's sealed PDF, then stores the uploaded bytes unchanged as
-/// technical imported evidence. It does not accept secrets and does not claim TSL-backed qualified
-/// or legal completion.
+/// that its bytes extend this act's immutable canonical signing PDF, then stores the uploaded bytes
+/// unchanged as technical imported evidence. It does not accept secrets and does not claim
+/// TSL-backed qualified or legal completion.
 pub async fn import_official_signature(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
@@ -4834,8 +4836,8 @@ pub async fn import_official_signature(
     }))
 }
 
-/// `POST /v1/acts/{id}/signature/local/pkcs12/sign` — sign a sealed act with a locally supplied
-/// PKCS#12/PFX software certificate.
+/// `POST /v1/acts/{id}/signature/local/pkcs12/sign` — sign an act's canonical `Signing` snapshot
+/// with a locally supplied PKCS#12/PFX software certificate.
 ///
 /// This is an explicit advanced local-signing flow. The request's encrypted PFX bytes and
 /// passphrase are transient inputs only; the persisted artifact is the resulting signed PDF plus
@@ -5712,6 +5714,15 @@ fn doc_timestamp_failure_reason(reason: chancela_pades::DocTimeStampFailureReaso
 async fn ensure_act_exists(state: &AppState, act_id: ActId) -> Result<(), ApiError> {
     let acts = state.acts.read().await;
     acts.get(&act_id).ok_or(ApiError::NotFound).map(|_| ())
+}
+
+/// Public invite endpoints deliberately collapse an inactive lifecycle into the same generic 404
+/// used for unknown, expired, and revoked tokens. A token minted during signature collection must
+/// stop exposing metadata and accepting responses as soon as the act leaves `Signing`.
+async fn require_public_invite_signing(state: &AppState, act_id: ActId) -> Result<(), ApiError> {
+    require_act_signing(state, act_id)
+        .await
+        .map_err(|_| ApiError::NotFound)
 }
 
 async fn signing_act_audit_scope(state: &AppState, act_id: ActId) -> Result<String, ApiError> {

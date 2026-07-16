@@ -367,8 +367,9 @@ async fn entity_and_book(state: &AppState, token: &str) -> (String, String) {
     (entity_id, book_id)
 }
 
-/// Draft an act in `book_id` and advance it to `Signing`, optionally sealing it. Returns its id.
-async fn make_act(state: &AppState, token: &str, book_id: &str, seal: bool) -> String {
+/// Draft an act in `book_id`; when `ready_to_sign` is true, advance it to `Signing`, otherwise
+/// leave it at `TextApproved` to exercise the per-document lifecycle guard.
+async fn make_act(state: &AppState, token: &str, book_id: &str, ready_to_sign: bool) -> String {
     let (status, act) = send(
         state,
         json_req(
@@ -400,34 +401,31 @@ async fn make_act(state: &AppState, token: &str, book_id: &str, seal: bool) -> S
     .await;
     assert_eq!(status, StatusCode::OK);
 
-    for to in [
-        "Review",
-        "Convened",
-        "Deliberated",
-        "TextApproved",
-        "Signing",
-    ] {
+    let states = if ready_to_sign {
+        &[
+            "Review",
+            "Convened",
+            "Deliberated",
+            "TextApproved",
+            "Signing",
+        ][..]
+    } else {
+        &["Review", "Convened", "Deliberated", "TextApproved"][..]
+    };
+    for to in states {
         let (status, _) = send(
             state,
             json_req(
                 "POST",
                 &format!("/v1/acts/{act_id}/advance"),
                 token,
-                json!({ "to": to }),
+                json!({ "to": *to }),
             ),
         )
         .await;
         assert_eq!(status, StatusCode::OK, "advance to {to}");
     }
 
-    if seal {
-        let (status, sealed) = send(
-            state,
-            json_req("POST", &format!("/v1/acts/{act_id}/seal"), token, json!({ "manual_signature_original_reference": { "storage_reference": "Arquivo A / Pasta 2026 / Ata teste" } })),
-        )
-        .await;
-        assert_eq!(status, StatusCode::OK, "seal: {sealed}");
-    }
     act_id
 }
 
@@ -452,10 +450,10 @@ async fn ledger_events(state: &AppState, token: &str, act_id: &str) -> Value {
 
 // --- tests ----------------------------------------------------------------------------------------
 
-/// A batch of three acts where one is not sealed: the two sealed acts sign and validate, the unsealed
-/// act is an isolated per-document error, and the batch reports honest counts + `auth_mode`.
+/// A batch of three acts where one has not entered `Signing`: the two ready acts sign and validate,
+/// the premature act is an isolated per-document error, and the batch reports honest counts.
 #[tokio::test]
-async fn batch_signs_sealed_acts_and_isolates_one_unsignable_doc() {
+async fn batch_signs_ready_acts_and_isolates_one_unsignable_doc() {
     const PIN: &str = "824193";
     let dir = TempDir::new();
     let card = KeyCard::cc_v1().requiring_pin(PIN);
@@ -468,7 +466,7 @@ async fn batch_signs_sealed_acts_and_isolates_one_unsignable_doc() {
     let (_entity, book) = entity_and_book(&state, &token).await;
 
     let act_a = make_act(&state, &token, &book, true).await;
-    let act_unsealed = make_act(&state, &token, &book, false).await; // NOT sealed → per-doc error
+    let act_not_ready = make_act(&state, &token, &book, false).await;
     let act_b = make_act(&state, &token, &book, true).await;
 
     let (status, done) = send(
@@ -478,7 +476,7 @@ async fn batch_signs_sealed_acts_and_isolates_one_unsignable_doc() {
             "/v1/signature/cc/batch-sign",
             &token,
             json!({
-                "act_ids": [act_a, act_unsealed, act_b],
+                "act_ids": [act_a, act_not_ready, act_b],
                 "capacity": "Administrador",
                 "pin": PIN,
             }),
@@ -503,19 +501,19 @@ async fn batch_signs_sealed_acts_and_isolates_one_unsignable_doc() {
     assert_eq!(results[0]["act_id"], act_a);
     assert_eq!(results[0]["status"], "signed");
     assert!(results[0]["signed_pdf_digest"].is_string());
-    assert_eq!(results[1]["act_id"], act_unsealed);
+    assert_eq!(results[1]["act_id"], act_not_ready);
     assert_eq!(results[1]["status"], "error");
     assert!(
         results[1]["error"]
             .as_str()
-            .is_some_and(|m| m.contains("selado")),
-        "unsealed act reports an honest precondition error: {}",
+            .is_some_and(|m| m.contains("Signing")),
+        "act outside Signing reports an honest precondition error: {}",
         results[1]
     );
     assert_eq!(results[2]["act_id"], act_b);
     assert_eq!(results[2]["status"], "signed");
 
-    // The two signed acts persist a validating PDF and flip to signed; the unsealed one did not.
+    // The two ready acts persist a validating PDF and flip to signed; the premature one did not.
     for act_id in [&act_a, &act_b] {
         let (status, signed_pdf) = send_bytes(
             &state,
@@ -532,7 +530,7 @@ async fn batch_signs_sealed_acts_and_isolates_one_unsignable_doc() {
         );
     }
     assert_ne!(
-        signature_status(&state, &token, &act_unsealed).await["status"],
+        signature_status(&state, &token, &act_not_ready).await["status"],
         "signed"
     );
 
