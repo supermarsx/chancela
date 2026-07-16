@@ -1,8 +1,9 @@
 /**
- * SigningPanel — signing and signed-PDF evidence on a sealed act (plans t57 + t58 + t59).
+ * SigningPanel — signing and signed-PDF evidence over the frozen `Signing` snapshot.
  *
- * A sealed act's unsigned PDF/A can be turned into a **qualified** signed PDF through a chosen
- * signing method. The panel presents a provider picker and routes each choice to the right flow:
+ * Entering `Signing` freezes the canonical PDF/A. That snapshot can then be signed through a
+ * chosen method; sealing happens only afterward. The panel presents a provider picker and routes
+ * each choice to the right flow:
  *
  *   • **Chave Móvel Digital (CMD)** — an honest two-phase flow (t57), remote-capable:
  *       1. «Assinar com Chave Móvel Digital» → collect the mobile number + signature PIN →
@@ -80,7 +81,7 @@ import { BatchSigningPanel } from './BatchSigningPanel';
 import { RemoteBatchSigningPanel } from './RemoteBatchSigningPanel';
 import { ScapAttributePicker } from './ScapAttributePicker';
 import { SealDesigner } from './seal-designer';
-import { signatureFamilyLabels } from '../../api/labels';
+import { actStateLabels, signatureFamilyLabels } from '../../api/labels';
 import {
   keys,
   useActDocumentBundle,
@@ -137,7 +138,7 @@ const FAMILY_OFFICIAL_HANDOFF = 'AutenticacaoGovOfficialHandoff';
 const CMD_PROVIDER_ID = 'cmd';
 
 /** Slugify an entity/title fragment for a filesystem-friendly download name. */
-function slug(value: string): string {
+export function signingDownloadSlug(value: string): string {
   return (
     value
       .normalize('NFD')
@@ -158,7 +159,7 @@ function useDateTime(): (iso: string) => string {
   };
 }
 
-function evidenceLevelLabel(level: string, t: TFunction): string {
+export function evidenceLevelLabel(level: string, t: TFunction): string {
   if (level === 'Unsigned') return t('signing.evidence.level.unsigned');
   if (level === 'B-B') return 'PAdES B-B';
   if (level === 'B-T') return 'PAdES B-T';
@@ -167,7 +168,7 @@ function evidenceLevelLabel(level: string, t: TFunction): string {
   return level;
 }
 
-function longTermEvidenceLabel(status: string, t: TFunction): string {
+export function longTermEvidenceLabel(status: string, t: TFunction): string {
   if (status === 'timestamped') return t('signing.evidence.longTerm.timestamped');
   if (status === 'not_configured') return t('signing.evidence.longTerm.notConfigured');
   if (status === 'lt_local_technical_evidence')
@@ -183,7 +184,7 @@ function longTermEvidenceLabel(status: string, t: TFunction): string {
   return status;
 }
 
-function renewalPlanActionLabel(action: string, t: TFunction): string {
+export function renewalPlanActionLabel(action: string, t: TFunction): string {
   if (action === 'none') return t('signing.evidence.renewal.action.none');
   if (action === 'manual_review') return t('signing.evidence.renewal.action.manualReview');
   if (action === 'add_signature_timestamp')
@@ -199,7 +200,7 @@ function renewalPlanActionLabel(action: string, t: TFunction): string {
   return action;
 }
 
-function dssEvidenceLabel(evidence: SignatureEvidenceStatus, t: TFunction): string {
+export function dssEvidenceLabel(evidence: SignatureEvidenceStatus, t: TFunction): string {
   if (evidence.dss_revocation_evidence_present) return t('signing.evidence.dss.present');
   if (evidence.dss_revocation_evidence_status === 'unsupported')
     return t('signing.evidence.dss.unsupported');
@@ -208,18 +209,18 @@ function dssEvidenceLabel(evidence: SignatureEvidenceStatus, t: TFunction): stri
   return evidence.dss_revocation_evidence_status;
 }
 
-function trustedListLabel(status: string, t: TFunction): string {
+export function trustedListLabel(status: string, t: TFunction): string {
   if (status === 'Granted') return t('signing.trustedList.granted');
   if (status === 'Withdrawn') return t('signing.trustedList.withdrawn');
   if (status === 'Unknown') return t('signing.trustedList.unknown');
   return status;
 }
 
-function trustedListTone(status: string): 'ok' | 'warn' {
+export function trustedListTone(status: string): 'ok' | 'warn' {
   return status === 'Granted' ? 'ok' : 'warn';
 }
 
-function isCcPinRejection(error: unknown): error is ApiError {
+export function isCcPinRejection(error: unknown): error is ApiError {
   return (
     error instanceof ApiError &&
     error.status === 422 &&
@@ -227,7 +228,7 @@ function isCcPinRejection(error: unknown): error is ApiError {
   );
 }
 
-function officialImportGuardrailLabel(
+export function officialImportGuardrailLabel(
   guardrail: OfficialSignatureImportGuardrail,
   t: TFunction,
 ): string {
@@ -247,48 +248,48 @@ function officialImportGuardrailLabel(
   }
 }
 
-function evidenceLevelTone(level: string): 'neutral' | 'accent' | 'ok' {
+export function evidenceLevelTone(level: string): 'neutral' | 'accent' | 'ok' {
   if (level === 'B-LT-local' || level === 'B-LTA-local') return 'ok';
   if (level === 'B-T') return 'ok';
   if (level === 'B-B') return 'accent';
   return 'neutral';
 }
 
-function evidenceTimestampLabel(evidence: SignatureEvidenceStatus, t: TFunction): string {
+export function evidenceTimestampLabel(evidence: SignatureEvidenceStatus, t: TFunction): string {
   return evidence.timestamp_evidence_present
     ? t('signing.evidence.timestamp.present')
     : t('signing.evidence.timestamp.absent');
 }
 
-function evidenceTimestampTone(evidence: SignatureEvidenceStatus): 'ok' | 'neutral' {
+export function evidenceTimestampTone(evidence: SignatureEvidenceStatus): 'ok' | 'neutral' {
   return evidence.timestamp_evidence_present ? 'ok' : 'neutral';
 }
 
-function toLocalDateTimeInput(date: Date): string {
+export function toLocalDateTimeInput(date: Date): string {
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
   return local.toISOString().slice(0, 16);
 }
 
-function defaultInviteExpiryInput(): string {
+export function defaultInviteExpiryInput(): string {
   return toLocalDateTimeInput(new Date(Date.now() + 2 * 24 * 60 * 60 * 1000));
 }
 
-function dateTimeInputToIso(value: string): string {
+export function dateTimeInputToIso(value: string): string {
   return new Date(value).toISOString();
 }
 
-function externalInviteLink(token: string): string {
+export function externalInviteLink(token: string): string {
   const path = `/assinatura-externa?token=${encodeURIComponent(token)}`;
   if (typeof window === 'undefined') return path;
   return new URL(path, window.location.origin).toString();
 }
 
-async function fileToBase64(file: File): Promise<string> {
+export async function fileToBase64(file: File): Promise<string> {
   const bytes = new Uint8Array(await file.arrayBuffer());
   return bytesToBase64(bytes);
 }
 
-function bytesToBase64(bytes: Uint8Array): string {
+export function bytesToBase64(bytes: Uint8Array): string {
   let binary = '';
   const chunkSize = 0x8000;
   for (let i = 0; i < bytes.length; i += chunkSize) {
@@ -298,7 +299,7 @@ function bytesToBase64(bytes: Uint8Array): string {
 }
 
 /** Decode a base64 payload to raw bytes for a download blob. */
-function base64ToBytes(b64: string): Uint8Array {
+export function base64ToBytes(b64: string): Uint8Array {
   const binary = atob(b64);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
@@ -1010,6 +1011,7 @@ function TechnicalComparisonPanel({
   const consistency = report?.bundle_document_consistency;
   const fixity = report?.fixity;
   const signedDocument = report?.signed_document;
+  const signingSnapshotDigest = act.seal_metadata?.signing_snapshot_digest ?? act.payload_digest;
 
   function textValue(value: string | number | null | undefined): React.ReactNode {
     if (typeof value === 'number') return value;
@@ -1174,12 +1176,12 @@ function TechnicalComparisonPanel({
       ],
     },
     {
-      key: 'payload-digest',
-      label: t('signing.technicalComparison.row.sealedPayloadDigest'),
-      kind: hasMetadata(act.payload_digest) ? 'present' : 'unavailable',
+      key: 'signing-snapshot-digest',
+      label: t('signing.technicalComparison.row.signingSnapshotDigest'),
+      kind: hasMetadata(signingSnapshotDigest) ? 'present' : 'unavailable',
       details: [
         <Detail key="act" label={t('signing.technicalComparison.detail.act')}>
-          {digestValue(act.payload_digest)}
+          {digestValue(signingSnapshotDigest)}
         </Detail>,
       ],
     },
@@ -2483,7 +2485,7 @@ function ExternalSignerInvitesSection({
               <th>{t('signing.invites.table.signer')}</th>
               <th>{t('signing.invites.table.status')}</th>
               <th>{t('signing.invites.table.workflow')}</th>
-              <th>Token</th>
+              <th>{t('uiLiteral.signingPanel.token')}</th>
               <th>{t('signing.invites.table.expiry')}</th>
               <th>{t('signing.invites.table.actions')}</th>
             </tr>
@@ -2509,11 +2511,12 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
   const toast = useToast();
   const formatDateTime = useDateTime();
 
-  const sealed = act.state === 'Sealed' || act.state === 'Archived';
-  const status = useActSignature(act.id, sealed);
-  const providers = useSignatureProviders(sealed);
+  const signingOpen = act.state === 'Signing';
+  const signatureAvailable = signingOpen || act.state === 'Sealed' || act.state === 'Archived';
+  const status = useActSignature(act.id, signatureAvailable);
+  const providers = useSignatureProviders(signingOpen);
   // The preferred signing family (for the «Recomendada» hint) is read from the already-loaded
-  // settings cache — never a fresh fetch here, so a non-sealed act triggers no request at all.
+  // settings cache — never a fresh fetch here, so a pre-Signing act triggers no request at all.
   const qc = useQueryClient();
   const initiate = useCmdInitiateSignature(act.id);
   const confirm = useCmdConfirmSignature(act.id);
@@ -2564,20 +2567,23 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
   // The chosen signing format (t67-e13). `pades` is the qualified act-signing lane (the provider
   // picker below); `xades`/`asic`/`scap` are the local technical tools over the act's PDF/A.
   const [format, setFormat] = useState<SigningFormat>('pades');
-  // Loads the sealed (pre-signature) PDF/A bytes the designer renders. Memoized on the act so the
+  // Loads the frozen canonical PDF/A bytes the designer renders. Memoized on the act so the
   // designer's render effect does not re-fetch on every parent re-render.
   const loadSealPdf = useCallback(
     () => api.fetchActDocumentPdf(act.id).then((blob) => blob.arrayBuffer()),
     [act.id],
   );
-  // Loads the act's sealed PDF/A as base64 — the content the local XAdES/ASiC/SCAP tools bind over.
+  // Loads the frozen PDF/A as base64 — the content local XAdES/ASiC/SCAP tools bind over.
   const loadContentBase64 = useCallback(
     () => api.fetchActDocumentBytes(act.id).then((buffer) => bytesToBase64(new Uint8Array(buffer))),
     [act.id],
   );
 
   const data = status.data;
-  const documentBundle = useActDocumentBundle(act.id, sealed && data?.status === 'signed');
+  const documentBundle = useActDocumentBundle(
+    act.id,
+    signatureAvailable && data?.status === 'signed',
+  );
   // Only CSC QTSPs come from the picker list — CMD + CC always have their own always-available
   // entry actions and do not depend on the list resolving (older server / no `signing.perform`).
   const cmdProviderView = (providers.data ?? []).find((p) => p.id === CMD_PROVIDER_ID);
@@ -2596,7 +2602,7 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
   // only from the neutral «view» step so a deliberate restart is never snapped back. Older status
   // responses lack provider metadata and therefore keep the legacy CMD restore path.
   useEffect(() => {
-    if (step.kind === 'view' && data?.status === 'pending' && data.pending) {
+    if (signingOpen && step.kind === 'view' && data?.status === 'pending' && data.pending) {
       const provider = providerFromPending(data.pending, providers.data ?? []);
       setStep({
         kind: 'otp',
@@ -2605,9 +2611,9 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
         hint: data.pending.activation_hint ?? data.pending.masked_phone,
       });
     }
-  }, [data, providers.data, step.kind]);
+  }, [data, providers.data, signingOpen, step.kind]);
 
-  if (!sealed) return null;
+  if (!signatureAvailable) return null;
 
   /** Enter phase 1 for a chosen provider. */
   function onPick(provider: SigningProvider) {
@@ -2823,7 +2829,7 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
   }
 
   function onDownloadSigned() {
-    const base = entityName ? `${slug(entityName)}-` : '';
+    const base = entityName ? `${signingDownloadSlug(entityName)}-` : '';
     const n = act.ata_number != null ? String(act.ata_number) : act.id;
     download.mutate(undefined, {
       onSuccess: async (blob) => {
@@ -2952,6 +2958,14 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
               formatDateTime={formatDateTime}
             />
           </div>
+        ) : !signingOpen ? (
+          <StatusSummary
+            tone="info"
+            badge={actStateLabels[act.state]}
+            title={t('signing.closed.title')}
+          >
+            <p>{t('signing.closed.body')}</p>
+          </StatusSummary>
         ) : step.kind === 'officialImport' ? (
           // --- Official app/provider handoff: upload an already-signed PDF as evidence only.
           <form className="form" onSubmit={onImportOfficialSignature}>
@@ -3601,8 +3615,10 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
           </div>
         )}
         {data?.evidence ? <SignatureEvidenceSummary evidence={data.evidence} /> : null}
-        <ExternalSigningEnvelopesSection act={act} />
-        <ExternalSignerInvitesSection act={act} formatDateTime={formatDateTime} />
+        {signingOpen ? <ExternalSigningEnvelopesSection act={act} /> : null}
+        {signingOpen ? (
+          <ExternalSignerInvitesSection act={act} formatDateTime={formatDateTime} />
+        ) : null}
       </div>
     </Card>
   );

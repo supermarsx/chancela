@@ -14,8 +14,11 @@ use axum::response::{IntoResponse, Response};
 use chancela_core::act::AiHumanVerificationStatus;
 use chancela_core::{
     Act, ActError, ActId, ActState, Book, BookId, Entity, EntityFamily, EntityKind, PresenceMode,
-    Severity, rule_pack_for, seal_act,
+    SealEvidence, Severity, rule_pack_for, seal_act_with_evidence,
 };
+use chancela_store::{StoredDocument, StoredSignedDocument};
+use serde_json::json;
+use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use chancela_authz::Permission;
@@ -93,20 +96,36 @@ pub async fn get_act(
         .ok_or(ApiError::NotFound)
 }
 
-/// `PATCH /v1/acts/{id}` — update working content. Appends **no** ledger event: the payload
-/// is frozen only at sealing, so pre-seal edits are working state, not auditable events.
+fn act_updated_event_payload(next: &Act) -> Result<Vec<u8>, ApiError> {
+    let content_bytes = serde_json::to_vec(next)?;
+    let content_digest = crate::hex::hex(&Sha256::digest(&content_bytes).into());
+    Ok(serde_json::to_vec(&json!({
+        "act_id": next.id.to_string(),
+        "book_id": next.book_id.to_string(),
+        "state": next.state,
+        "content_sha256": content_digest,
+        "content_bytes": content_bytes.len(),
+        "secrets_in_payload": false
+    }))?)
+}
+
+/// `PATCH /v1/acts/{id}` — update working content and append a content-bound `act.updated` event in
+/// the same durable transaction. The event carries digests and sizes, never the private act text.
 pub async fn patch_act(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
     actor: CurrentActor,
+    attestor: CurrentAttestor,
     Json(req): Json<PatchAct>,
 ) -> Result<Json<ActView>, ApiError> {
     // RBAC (t64-E3): editing an act's working content is `act.edit` scoped to its book.
     let scope = scope_of_act(&state, ActId(id)).await;
     require_permission(&state, &actor, Permission::ActEdit, scope).await?;
-    // books -> acts. A closed/non-open book freezes all existing acts in it too.
+    let actor_name = actor.resolve("api");
+    // books -> acts -> ledger. A closed/non-open book freezes all existing acts in it too.
     let books = state.books.read().await;
     let mut acts = state.acts.write().await;
+    let mut ledger = state.ledger.write().await;
     let act = acts.get_mut(&ActId(id)).ok_or(ApiError::NotFound)?;
     let book = books.get(&act.book_id).ok_or(ApiError::NotFound)?;
     ensure_book_open_for_act_mutation(book)?;
@@ -221,11 +240,32 @@ pub async fn patch_act(
         next.attendees = converted;
     }
 
-    if let Some(store) = &state.store {
-        store.persist(|tx| tx.upsert_act(&next)).map_err(|e| {
-            AppState::map_store_write_error("failed to persist to the durable store", e)
+    // DAT-10: bind the full updated content without copying personal act content into ledger
+    // metadata. The digest is over the exact durable Act JSON; the event and row commit together.
+    let event_payload = act_updated_event_payload(&next)?;
+    let audit_scope = format!(
+        "entity:{}/book:{}/act:{}",
+        book.entity_id, next.book_id, next.id
+    );
+    crate::try_append_event(
+        &mut ledger,
+        &actor_name,
+        &audit_scope,
+        "act.updated",
+        None,
+        &event_payload,
+    )?;
+    #[cfg(test)]
+    if next.title == "__chancela_test_fail_patch_persist__" {
+        state.persist_write_through(&mut ledger, 1, |_tx| {
+            Err(chancela_store::StoreError::BadBackup(
+                "injected patch persistence failure".to_owned(),
+            ))
         })?;
+        unreachable!("injected persistence failure must return an error");
     }
+    state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_act(&next))?;
+    state.attest_latest(&attestor, &ledger).await;
     *act = next;
 
     Ok(Json(ActView::from(&*act)))
@@ -243,7 +283,24 @@ pub async fn advance_act(
     let scope = scope_of_act(&state, ActId(id)).await;
     require_permission(&state, &actor, Permission::ActAdvance, scope).await?;
     let actor = actor.resolve(&req.actor);
-    // books → acts → ledger (books only to resolve the entity id for the event scope).
+    let target_state = req.to;
+    let template_id = req.template_id;
+
+    // A canonical Ata may only be created once, exactly as the act enters Signing. Pre-existing Ata
+    // rows are never silently replaced or reinterpreted as the new snapshot.
+    if target_state == ActState::Signing
+        && crate::documents::load_document(&state, ActId(id))
+            .await?
+            .is_some()
+    {
+        return Err(ApiError::Conflict(
+            "a canonical act document already exists; explicit invalidation is required before creating a new signing snapshot"
+                .to_owned(),
+        ));
+    }
+
+    // entities → books → acts → ledger (Signing snapshot generation needs the profile).
+    let entities = state.entities.read().await;
     let books = state.books.read().await;
     let mut acts = state.acts.write().await;
     let mut ledger = state.ledger.write().await;
@@ -252,12 +309,13 @@ pub async fn advance_act(
     let book = books.get(&act.book_id).ok_or(ApiError::NotFound)?;
     ensure_book_open_for_act_mutation(book)?;
     let entity_id = book.entity_id;
+    let entity = entities.get(&entity_id).ok_or(ApiError::NotFound)?;
 
     // Apply the transition to a clone, so the in-memory map is only mutated after the durable write
     // succeeds (nothing to roll back on a store failure). Invalid transition → 422 (contract §2.5).
     let mut next = act.clone();
     if next.state == ActState::TextApproved
-        && req.to == ActState::Signing
+        && target_state == ActState::Signing
         && next.requires_ai_human_verification()
     {
         return Err(ApiError::Conflict(
@@ -265,11 +323,26 @@ pub async fn advance_act(
                 .to_owned(),
         ));
     }
-    next.advance_to(req.to)
+    next.advance_to(target_state)
         .map_err(|e| ApiError::Unprocessable(e.to_string()))?;
 
+    let signing_snapshot = if target_state == ActState::Signing {
+        Some(
+            crate::documents::generate_for_act(&next, entity, template_id.as_deref())?.ok_or_else(
+                || {
+                    ApiError::Conflict(
+                        "no canonical Ata template is available for this act; signing cannot start"
+                            .to_owned(),
+                    )
+                },
+            )?,
+        )
+    } else {
+        None
+    };
+
     let scope = format!("entity:{}/book:{}/act:{}", entity_id, next.book_id, next.id);
-    let justification = format!("advance to {:?}", req.to);
+    let justification = format!("advance to {target_state:?}");
     let payload = serde_json::to_vec(&next)?;
     crate::try_append_event(
         &mut ledger,
@@ -279,9 +352,36 @@ pub async fn advance_act(
         Some(&justification),
         &payload,
     )?;
-    state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_act(&next))?;
+
+    if let Some(snapshot) = &signing_snapshot {
+        let snapshot_payload = serde_json::to_vec(&snapshot.event_payload)?;
+        if let Err(error) = crate::try_append_event(
+            &mut ledger,
+            &actor,
+            &scope,
+            "document.generated",
+            Some("canonical signing snapshot"),
+            &snapshot_payload,
+        ) {
+            AppState::rollback_ledger_events(&mut ledger, 1);
+            return Err(error);
+        }
+    }
+
+    let appended_events = 1 + usize::from(signing_snapshot.is_some());
+    state.persist_write_through(&mut ledger, appended_events, |tx| {
+        tx.upsert_act(&next)?;
+        if let Some(snapshot) = &signing_snapshot {
+            tx.upsert_document(&snapshot.stored)?;
+        }
+        Ok(())
+    })?;
     state.attest_latest(&attestor, &ledger).await;
     *act = next;
+
+    if let Some(snapshot) = &signing_snapshot {
+        crate::documents::publish_generated_document_read_model(&state, &snapshot.stored).await;
+    }
 
     Ok(Json(ActView::from(&*act)))
 }
@@ -437,10 +537,9 @@ fn convening_advisories_for(entity: &Entity, act: &Act) -> Vec<ConveningAdvisory
         .statute
         .as_ref()
         .and_then(|statute| statute.convocation_notice_days)
+        && let Some(advisory) = statute_notice_advisory(minimum_days, actual_days)
     {
-        if let Some(advisory) = statute_notice_advisory(minimum_days, actual_days) {
-            advisories.push(advisory);
-        }
+        advisories.push(advisory);
     }
 
     let Some(convening) = &act.convening else {
@@ -531,6 +630,112 @@ fn should_generate_condominium_absent_owner_communication(act: &Act, entity: &En
             .any(|attendee| attendee.presence == PresenceMode::Absent)
 }
 
+const SEAL_EVIDENCE_REQUIRED: &str = "seal requires either a complete validated signed PDF bound to the canonical signing snapshot, or manual_signature_original_reference for a retained manually signed original";
+
+struct ResolvedSealEvidence {
+    core: SealEvidence,
+    validation_report: Option<Vec<u8>>,
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    crate::hex::hex(&Sha256::digest(bytes).into())
+}
+
+fn validate_canonical_signing_snapshot(document: &StoredDocument) -> Result<String, ApiError> {
+    let observed = sha256_hex(&document.pdf_bytes);
+    if observed != document.pdf_digest {
+        return Err(ApiError::Conflict(
+            "canonical signing snapshot failed its stored SHA-256 fixity check".to_owned(),
+        ));
+    }
+    Ok(observed)
+}
+
+fn validate_digital_seal_evidence(
+    act_id: ActId,
+    canonical: &StoredDocument,
+    signed: &StoredSignedDocument,
+) -> Result<ResolvedSealEvidence, ApiError> {
+    let signing_snapshot_digest = validate_canonical_signing_snapshot(canonical)?;
+    if signed.act_id != act_id || signed.document_id != canonical.id {
+        return Err(ApiError::Conflict(
+            "signed PDF evidence is not bound to this act's canonical signing snapshot".to_owned(),
+        ));
+    }
+    if !signed.signed_pdf_bytes.starts_with(&canonical.pdf_bytes) {
+        return Err(ApiError::Conflict(
+            "signed PDF evidence does not extend the canonical signing snapshot byte-for-byte"
+                .to_owned(),
+        ));
+    }
+    let signed_pdf_digest = sha256_hex(&signed.signed_pdf_bytes);
+    if signed_pdf_digest != signed.signed_pdf_digest {
+        return Err(ApiError::Conflict(
+            "signed PDF evidence failed its stored SHA-256 fixity check".to_owned(),
+        ));
+    }
+    let report = crate::signature::validate_signed_pdf_with_incremental_updates(
+        &signed.signed_pdf_bytes,
+        &signed.signer_cert_der,
+    )
+    .map_err(|_| {
+        ApiError::Conflict(
+            "signed PDF evidence failed cryptographic or signer-certificate validation".to_owned(),
+        )
+    })?;
+    if !report.coverage.covers_rendered_document() {
+        return Err(ApiError::Conflict(
+            "signed PDF evidence does not cover the rendered document".to_owned(),
+        ));
+    }
+
+    let validation_report = serde_json::to_vec(&json!({
+        "schema": "chancela.signature-seal-validation/v1",
+        "act_id": act_id.to_string(),
+        "document_id": canonical.id,
+        "signing_snapshot_digest": signing_snapshot_digest,
+        "signed_pdf_digest": signed_pdf_digest,
+        "signature_family": signed.signature_family,
+        "evidentiary_level": signed.evidentiary_level,
+        "checks": {
+            "canonical_snapshot_fixity": "valid",
+            "signed_pdf_fixity": "valid",
+            "canonical_snapshot_prefix_match": true,
+            "pades_cryptographic_validation": "valid",
+            "signer_certificate_match": true,
+            "covers_signed_revision_except_contents": report.covers_signed_revision_except_contents,
+            "covers_rendered_document": true
+        },
+        "status_scope": "technical_evidence_only",
+        "qualified_status_claimed_by_report": false,
+        "legal_validity_claimed": false
+    }))?;
+    let signature_validation_report_digest = sha256_hex(&validation_report);
+    Ok(ResolvedSealEvidence {
+        core: SealEvidence::Digital {
+            signing_snapshot_digest,
+            signed_pdf_digest,
+            signature_validation_report_digest,
+        },
+        validation_report: Some(validation_report),
+    })
+}
+
+async fn latest_signed_document_for_seal(
+    state: &AppState,
+    act_id: ActId,
+) -> Result<Option<StoredSignedDocument>, ApiError> {
+    // The seal handler calls this while holding the ledger write lock, after all earlier signature
+    // transactions have committed. Prefer the durable row so a just-appended LTV revision cannot
+    // be shadowed by a briefly stale in-memory projection.
+    if let Some(store) = &state.store {
+        return store
+            .signed_document_for_act(act_id)
+            .map_err(|error| ApiError::Internal(format!("signed document read failed: {error}")));
+    }
+    Ok(state.signed_documents.read().await.get(&act_id).cloned())
+}
+
 /// `POST /v1/acts/{id}/seal` — compliance-gated seal (WFL-20). On refusal the compliance
 /// variants return structured `issues`/`warnings` (contract §2.5).
 pub async fn seal_act_handler(
@@ -551,9 +756,25 @@ pub async fn seal_act_handler(
     } = body.map(|Json(b)| b).unwrap_or_default();
     let actor = actor.resolve(&requested_actor);
     let manual_signature_original_reference = manual_signature_original_reference
-        .ok_or(chancela_core::SealError::MissingManualSignatureOriginalReference)
-        .map_err(ApiError::from)?
-        .into_core()?;
+        .map(|reference| reference.into_core())
+        .transpose()?;
+    let canonical = crate::documents::load_document(&state, ActId(id))
+        .await?
+        .ok_or_else(|| {
+            ApiError::Conflict(
+                "canonical signing snapshot is missing; advance the act to Signing first"
+                    .to_owned(),
+            )
+        })?;
+    if let Some(asserted_template_id) = template_id.as_deref()
+        && asserted_template_id != canonical.template_id
+    {
+        return Err(ApiError::Conflict(format!(
+            "seal template_id {asserted_template_id:?} does not match frozen signing snapshot template {:?}",
+            canonical.template_id
+        )));
+    }
+    validate_canonical_signing_snapshot(&canonical)?;
 
     // entities → books → acts → ledger (the full order; seal touches all four).
     let entities = state.entities.read().await;
@@ -565,6 +786,28 @@ pub async fn seal_act_handler(
     let book = books.get_mut(&act.book_id).ok_or(ApiError::NotFound)?;
     ensure_book_open_for_act_mutation(book)?;
     let entity = entities.get(&book.entity_id).ok_or(ApiError::NotFound)?;
+    if act.state != ActState::Signing {
+        return Err(ApiError::Conflict(format!(
+            "seal requires act state Signing, found {:?}",
+            act.state
+        )));
+    }
+
+    let signed = latest_signed_document_for_seal(&state, ActId(id)).await?;
+    let evidence = match (signed.as_ref(), manual_signature_original_reference) {
+        (Some(_), Some(_)) => {
+            return Err(ApiError::Conflict(
+                "seal evidence is ambiguous; choose the validated signed-PDF path or the explicit manual-original path"
+                    .to_owned(),
+            ));
+        }
+        (Some(signed), None) => validate_digital_seal_evidence(ActId(id), &canonical, signed)?,
+        (None, Some(original_reference)) => ResolvedSealEvidence {
+            core: SealEvidence::Manual { original_reference },
+            validation_report: None,
+        },
+        (None, None) => return Err(ApiError::Conflict(SEAL_EVIDENCE_REQUIRED.to_owned())),
+    };
 
     // Per-family dispatch (R4): seal against the pack selected from the entity's profile.
     let pack = rule_pack_for(entity);
@@ -574,14 +817,14 @@ pub async fn seal_act_handler(
     // seal never touches the ledger, so the error paths below see the original act/book).
     let mut book_next = book.clone();
     let mut act_next = act.clone();
-    match seal_act(
+    match seal_act_with_evidence(
         &mut book_next,
         &mut act_next,
         entity,
         &*pack,
         &actor,
         acknowledge_warnings,
-        Some(manual_signature_original_reference),
+        evidence.core,
         &mut ledger,
     ) {
         Ok(outcome) => {
@@ -589,45 +832,45 @@ pub async fn seal_act_handler(
             // it before the `.await` below so the handler future stays `Send` (axum's bound).
             drop(pack);
 
-            // Document production (t48 / D4): render the sealed ata → PDF/A-2u → persist the row +
-            // a `document.generated` event **inside the SAME durable commit** as `act.sealed`. A
-            // render/write failure rolls the just-appended `act.sealed` event back out of the
-            // in-memory ledger so a failed seal leaves no trace (the seal transaction is atomic).
-            // A family without a template yet yields `None`: the seal proceeds without a document
-            // (documented fallback), never blocking the seal.
-            let generated =
-                match crate::documents::generate_for_act(&act_next, entity, template_id.as_deref())
-                {
-                    Ok(g) => g,
-                    Err(e) => {
-                        AppState::rollback_ledger_events(&mut ledger, 1);
-                        return Err(e);
-                    }
-                };
-            let mut generated_docs = Vec::new();
-            if let Some(made) = generated {
-                generated_docs.push(made);
+            // Digital seals retain the exact deterministic technical validation report whose digest
+            // is frozen in `seal_metadata`. It is appended after `act.sealed`, but both events and
+            // every row below commit atomically.
+            let mut base_events = 1usize;
+            if let Some(validation_report) = evidence.validation_report.as_deref() {
+                let scope = format!(
+                    "entity:{}/book:{}/act:{}",
+                    entity.id, act_next.book_id, act_next.id
+                );
+                if let Err(error) = crate::try_append_event(
+                    &mut ledger,
+                    &actor,
+                    &scope,
+                    "document.signature.validated_for_seal",
+                    Some("technical evidence only"),
+                    validation_report,
+                ) {
+                    AppState::rollback_ledger_events(&mut ledger, 1);
+                    return Err(error);
+                }
+                base_events += 1;
             }
+
+            // The canonical Ata was generated and persisted before signing. Seal-time generation is
+            // limited to separate post-act instruments; it can never replace the signed snapshot.
+            let mut generated_docs = Vec::new();
             if should_generate_condominium_absent_owner_communication(&act_next, entity) {
                 match crate::documents::generate_condominium_absent_owner_communication(
                     &act_next, &book_next, entity,
                 ) {
                     Ok(made) => generated_docs.push(made),
                     Err(e) => {
-                        AppState::rollback_ledger_events(&mut ledger, 1);
+                        AppState::rollback_ledger_events(&mut ledger, base_events);
                         return Err(e);
                     }
                 }
             }
 
-            let document = if generated_docs.is_empty() {
-                // No template bound for this family yet — persist the seal as before (1 event).
-                state.persist_write_through(&mut ledger, 1, |tx| {
-                    tx.upsert_book(&book_next)?;
-                    tx.upsert_act(&act_next)
-                })?;
-                None
-            } else {
+            if !generated_docs.is_empty() {
                 // Bind all generated documents into the tamper-evident chain (TPL-02 / §3.4) and
                 // persist them with the sealed act + book counter in one commit.
                 let scope = format!(
@@ -646,31 +889,31 @@ pub async fn seal_act_handler(
                         None,
                         &payload,
                     ) {
-                        AppState::rollback_ledger_events(&mut ledger, 1 + appended_doc_events);
+                        AppState::rollback_ledger_events(
+                            &mut ledger,
+                            base_events + appended_doc_events,
+                        );
                         return Err(e);
                     }
                 }
-                state.persist_write_through(&mut ledger, 1 + generated_docs.len(), |tx| {
-                    tx.upsert_book(&book_next)?;
-                    tx.upsert_act(&act_next)?;
-                    for made in &generated_docs {
-                        tx.upsert_document(&made.stored)?;
-                    }
-                    Ok(())
-                })?;
+            }
+            state.persist_write_through(&mut ledger, base_events + generated_docs.len(), |tx| {
+                tx.upsert_book(&book_next)?;
+                tx.upsert_act(&act_next)?;
                 for made in &generated_docs {
-                    crate::documents::publish_generated_document_read_model(&state, &made.stored)
-                        .await;
+                    tx.upsert_document(&made.stored)?;
                 }
-                generated_docs
-                    .iter()
-                    .find(|made| crate::documents::is_ata_template(&made.stored.template_id))
-                    .map(|made| crate::dto::SealDocument {
-                        id: made.stored.id.clone(),
-                        pdf_digest: made.stored.pdf_digest.clone(),
-                        template_id: made.stored.template_id.clone(),
-                    })
-            };
+                Ok(())
+            })?;
+            for made in &generated_docs {
+                crate::documents::publish_generated_document_read_model(&state, &made.stored).await;
+            }
+
+            let document = Some(crate::dto::SealDocument {
+                id: canonical.id.clone(),
+                pdf_digest: canonical.pdf_digest.clone(),
+                template_id: canonical.template_id.clone(),
+            });
 
             state.attest_latest(&attestor, &ledger).await;
             *book = book_next;
@@ -726,6 +969,8 @@ pub async fn archive_act(
     require_permission(&state, &actor, Permission::ActArchive, scope).await?;
     let req = body.map(|Json(b)| b).unwrap_or_default();
     let actor = actor.resolve(&req.actor);
+    let canonical = crate::documents::load_document(&state, ActId(id)).await?;
+    let signed = crate::signature::load_signed(&state, ActId(id)).await?;
 
     // books → acts → ledger (books only to resolve the entity id for the event scope).
     let books = state.books.read().await;
@@ -736,6 +981,50 @@ pub async fn archive_act(
     let book = books.get(&act.book_id).ok_or(ApiError::NotFound)?;
     ensure_book_open_for_act_mutation(book)?;
     let entity_id = book.entity_id;
+
+    let metadata = act.seal_metadata.as_ref().ok_or_else(|| {
+        ApiError::Conflict(
+            "legacy incomplete sealed act has no immutable seal evidence metadata; archive is refused pending explicit evidence remediation"
+                .to_owned(),
+        )
+    })?;
+    if metadata.manual_signature_original_reference.is_none() {
+        if !metadata.has_complete_digital_signature_evidence() {
+            return Err(ApiError::Conflict(
+                "sealed act has incomplete digital signature evidence metadata; archive is refused"
+                    .to_owned(),
+            ));
+        }
+        let canonical = canonical.as_ref().ok_or_else(|| {
+            ApiError::Conflict(
+                "sealed act's canonical signing snapshot is missing; archive is refused".to_owned(),
+            )
+        })?;
+        let signed = signed.as_ref().ok_or_else(|| {
+            ApiError::Conflict(
+                "sealed act's signed PDF evidence is missing; archive is refused".to_owned(),
+            )
+        })?;
+        let resolved = validate_digital_seal_evidence(ActId(id), canonical, signed)?;
+        let SealEvidence::Digital {
+            signing_snapshot_digest,
+            signed_pdf_digest,
+            signature_validation_report_digest,
+        } = resolved.core
+        else {
+            unreachable!("digital validator only returns digital seal evidence")
+        };
+        if metadata.signing_snapshot_digest.as_deref() != Some(&signing_snapshot_digest)
+            || metadata.signed_pdf_digest.as_deref() != Some(&signed_pdf_digest)
+            || metadata.signature_validation_report_digest.as_deref()
+                != Some(&signature_validation_report_digest)
+        {
+            return Err(ApiError::Conflict(
+                "sealed act evidence no longer matches its immutable seal digest tuple; archive is refused"
+                    .to_owned(),
+            ));
+        }
+    }
 
     // Archive a clone (Sealed→Archived), committing to the map only after the durable write. Only a
     // sealed act can be archived, else 409.
@@ -951,6 +1240,32 @@ mod tests {
         book
     }
 
+    fn text_approved_act(book: &Book) -> Act {
+        let mut act = Act::draft(book.id, "Ata de aprovação", MeetingChannel::Physical);
+        act.meeting_date = Some(
+            time::Date::from_calendar_date(2026, time::Month::March, 30).expect("meeting date"),
+        );
+        act.meeting_time = Some(time::Time::from_hms(10, 0, 0).expect("meeting time"));
+        act.place = Some("Sede social".to_owned());
+        act.mesa.presidente = Some("Ana Presidente".to_owned());
+        act.mesa.secretarios = vec!["Rui Secretário".to_owned()];
+        act.agenda = vec![AgendaItem {
+            number: 1,
+            text: "Aprovação das contas".to_owned(),
+        }];
+        act.attendance_reference = Some("Lista de presenças".to_owned());
+        act.deliberations = "A deliberação foi aprovada.".to_owned();
+        for state in [
+            ActState::Review,
+            ActState::Convened,
+            ActState::Deliberated,
+            ActState::TextApproved,
+        ] {
+            act.advance_to(state).expect("valid lifecycle step");
+        }
+        act
+    }
+
     async fn seed_owner(state: &AppState) -> CurrentActor {
         {
             let mut roles = state.roles.write().await;
@@ -979,13 +1294,39 @@ mod tests {
         CurrentActor::from_session_username(Some(username))
     }
 
+    async fn seed_opened_book_ledger(state: &AppState, entity: &Entity, book: &Book) {
+        let mut ledger = state.ledger.write().await;
+        crate::try_append_event(
+            &mut ledger,
+            "patch.owner",
+            &format!("entity:{}", entity.id),
+            "entity.created",
+            None,
+            b"entity",
+        )
+        .expect("entity genesis");
+        crate::try_append_event(
+            &mut ledger,
+            "patch.owner",
+            &format!("entity:{}/book:{}", entity.id, book.id),
+            "book.opened",
+            None,
+            b"book",
+        )
+        .expect("book genesis");
+        state
+            .persist_write_through(&mut ledger, 2, |_tx| Ok(()))
+            .expect("ledger genesis persists");
+    }
+
     #[tokio::test]
-    async fn patch_act_writes_working_state_through_without_ledger_event() {
+    async fn patch_act_persists_content_bound_audit_event() {
         let tmp = TempDir::new();
         let state = AppState::with_data_dir(tmp.path());
         let actor = seed_owner(&state).await;
         let entity = entity_of(EntityKind::SociedadePorQuotas);
         let book = opened_book(&entity, BookKind::AssembleiaGeral);
+        seed_opened_book_ledger(&state, &entity, &book).await;
         let act = Act::draft(book.id, "Draft title", MeetingChannel::Physical);
 
         state
@@ -1008,12 +1349,38 @@ mod tests {
             "deliberations": "Working text persisted before sealing."
         }))
         .expect("patch body");
-        let Json(view) = patch_act(State(state.clone()), Path(act.id.0), actor, Json(req))
-            .await
-            .expect("patch succeeds");
+        let Json(view) = patch_act(
+            State(state.clone()),
+            Path(act.id.0),
+            actor,
+            CurrentAttestor::default(),
+            Json(req),
+        )
+        .await
+        .expect("patch succeeds");
 
         assert_eq!(view.title, "Draft edit survives restart");
-        assert_eq!(state.ledger.read().await.len(), before_events);
+        let updated = state
+            .acts
+            .read()
+            .await
+            .get(&act.id)
+            .cloned()
+            .expect("updated act");
+        let expected_event_payload = act_updated_event_payload(&updated).expect("event payload");
+        let expected_digest: [u8; 32] = Sha256::digest(&expected_event_payload).into();
+        let ledger = state.ledger.read().await;
+        assert_eq!(ledger.len(), before_events + 1);
+        let event = ledger.events().last().expect("act.updated event");
+        assert_eq!(event.kind, "act.updated");
+        assert_eq!(event.payload_digest, expected_digest);
+        let payload: serde_json::Value =
+            serde_json::from_slice(&expected_event_payload).expect("audit payload JSON");
+        assert_eq!(payload["act_id"], act.id.to_string());
+        assert_eq!(payload["content_sha256"].as_str().map(str::len), Some(64));
+        assert_eq!(payload["secrets_in_payload"], false);
+        assert!(payload.get("title").is_none());
+        drop(ledger);
 
         let restarted = AppState::with_data_dir(tmp.path());
         let acts = restarted.acts.read().await;
@@ -1026,12 +1393,203 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn patch_act_persistence_failure_rolls_back_event_and_read_model() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.path());
+        let actor = seed_owner(&state).await;
+        let entity = entity_of(EntityKind::SociedadePorQuotas);
+        let book = opened_book(&entity, BookKind::AssembleiaGeral);
+        seed_opened_book_ledger(&state, &entity, &book).await;
+        let act = Act::draft(book.id, "Original title", MeetingChannel::Physical);
+
+        state
+            .store
+            .as_ref()
+            .expect("store")
+            .persist(|tx| {
+                tx.upsert_entity(&entity)?;
+                tx.upsert_book(&book)?;
+                tx.upsert_act(&act)
+            })
+            .expect("seed persisted");
+        state.entities.write().await.insert(entity.id, entity);
+        state.books.write().await.insert(book.id, book);
+        state.acts.write().await.insert(act.id, act.clone());
+
+        let before_events = state.ledger.read().await.len();
+        let request: PatchAct = serde_json::from_value(json!({
+            "title": "__chancela_test_fail_patch_persist__"
+        }))
+        .expect("patch body");
+        let error = match patch_act(
+            State(state.clone()),
+            Path(act.id.0),
+            actor,
+            CurrentAttestor::default(),
+            Json(request),
+        )
+        .await
+        {
+            Ok(_) => panic!("injected persistence failure must reject the patch"),
+            Err(error) => error,
+        };
+        assert!(matches!(error, ApiError::Internal(_)));
+        assert_eq!(state.ledger.read().await.len(), before_events);
+        assert_eq!(
+            state
+                .acts
+                .read()
+                .await
+                .get(&act.id)
+                .map(|row| row.title.as_str()),
+            Some("Original title")
+        );
+
+        let restarted = AppState::with_data_dir(tmp.path());
+        assert_eq!(
+            restarted
+                .acts
+                .read()
+                .await
+                .get(&act.id)
+                .map(|row| row.title.as_str()),
+            Some("Original title")
+        );
+    }
+
+    #[tokio::test]
+    async fn signing_snapshot_precedes_seal_and_manual_evidence_can_archive() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.path());
+        let actor = seed_owner(&state).await;
+        let entity = entity_of(EntityKind::SociedadePorQuotas);
+        let book = opened_book(&entity, BookKind::AssembleiaGeral);
+        seed_opened_book_ledger(&state, &entity, &book).await;
+        let act = text_approved_act(&book);
+        let act_id = act.id;
+
+        state
+            .store
+            .as_ref()
+            .expect("store")
+            .persist(|tx| {
+                tx.upsert_entity(&entity)?;
+                tx.upsert_book(&book)?;
+                tx.upsert_act(&act)
+            })
+            .expect("seed persisted");
+        state.entities.write().await.insert(entity.id, entity);
+        state.books.write().await.insert(book.id, book);
+        state.acts.write().await.insert(act_id, act);
+
+        let advance: AdvanceAct =
+            serde_json::from_value(json!({ "to": "Signing" })).expect("advance body");
+        let _ = advance_act(
+            State(state.clone()),
+            Path(act_id.0),
+            actor.clone(),
+            CurrentAttestor::default(),
+            Json(advance),
+        )
+        .await
+        .expect("enter Signing and create snapshot");
+        assert_eq!(
+            state.acts.read().await.get(&act_id).map(|row| row.state),
+            Some(ActState::Signing)
+        );
+        let canonical = crate::documents::load_document(&state, act_id)
+            .await
+            .expect("document read")
+            .expect("canonical signing snapshot");
+        assert_eq!(sha256_hex(&canonical.pdf_bytes), canonical.pdf_digest);
+
+        let edit: PatchAct =
+            serde_json::from_value(json!({ "title": "Late replacement" })).expect("patch body");
+        let edit_error = match patch_act(
+            State(state.clone()),
+            Path(act_id.0),
+            actor.clone(),
+            CurrentAttestor::default(),
+            Json(edit),
+        )
+        .await
+        {
+            Ok(_) => panic!("Signing content must be immutable"),
+            Err(error) => error,
+        };
+        assert!(matches!(edit_error, ApiError::Conflict(_)));
+
+        let before_unsigned_seal = state.ledger.read().await.len();
+        let unsigned_error = seal_act_handler(
+            State(state.clone()),
+            Path(act_id.0),
+            actor.clone(),
+            CurrentAttestor::default(),
+            None,
+        )
+        .await
+        .expect_err("unsigned digital seal must be rejected");
+        assert!(
+            matches!(unsigned_error, ApiError::Conflict(message) if message == SEAL_EVIDENCE_REQUIRED)
+        );
+        assert_eq!(state.ledger.read().await.len(), before_unsigned_seal);
+        assert_eq!(
+            state.acts.read().await.get(&act_id).map(|row| row.state),
+            Some(ActState::Signing)
+        );
+
+        let manual: SealAct = serde_json::from_value(json!({
+            "manual_signature_original_reference": {
+                "storage_reference": "Arquivo A / Pasta 2026 / original assinado",
+                "custodian": "Secretariado"
+            }
+        }))
+        .expect("manual seal body");
+        let response = seal_act_handler(
+            State(state.clone()),
+            Path(act_id.0),
+            actor.clone(),
+            CurrentAttestor::default(),
+            Some(Json(manual)),
+        )
+        .await
+        .expect("manual evidence seal");
+        assert_eq!(response.status(), StatusCode::OK);
+        let sealed = state
+            .acts
+            .read()
+            .await
+            .get(&act_id)
+            .cloned()
+            .expect("sealed act");
+        assert_eq!(sealed.state, ActState::Sealed);
+        let metadata = sealed.seal_metadata.expect("seal metadata");
+        assert!(metadata.manual_signature_original_reference.is_some());
+        assert!(metadata.signed_pdf_digest.is_none());
+
+        let _ = archive_act(
+            State(state.clone()),
+            Path(act_id.0),
+            actor,
+            CurrentAttestor::default(),
+            None,
+        )
+        .await
+        .expect("manual-evidence act archives");
+        assert_eq!(
+            state.acts.read().await.get(&act_id).map(|row| row.state),
+            Some(ActState::Archived)
+        );
+    }
+
+    #[tokio::test]
     async fn patch_act_written_resolution_evidence_round_trips_and_persists() {
         let tmp = TempDir::new();
         let state = AppState::with_data_dir(tmp.path());
         let actor = seed_owner(&state).await;
         let entity = entity_of(EntityKind::SociedadePorQuotas);
         let book = opened_book(&entity, BookKind::AssembleiaGeral);
+        seed_opened_book_ledger(&state, &entity, &book).await;
         let act = Act::draft(
             book.id,
             "Written resolution",
@@ -1093,6 +1651,7 @@ mod tests {
             State(state.clone()),
             Path(act_id.0),
             actor.clone(),
+            CurrentAttestor::default(),
             Json(req),
         )
         .await
@@ -1148,7 +1707,15 @@ mod tests {
             "written_resolution_evidence": null
         }))
         .expect("clear body");
-        let err = match patch_act(State(state), Path(act_id.0), actor, Json(clear_req)).await {
+        let err = match patch_act(
+            State(state),
+            Path(act_id.0),
+            actor,
+            CurrentAttestor::default(),
+            Json(clear_req),
+        )
+        .await
+        {
             Ok(_) => panic!("receipt history cannot be cleared"),
             Err(err) => err,
         };
@@ -1167,6 +1734,7 @@ mod tests {
         let actor = seed_owner(&state).await;
         let entity = entity_of(EntityKind::SociedadePorQuotas);
         let book = opened_book(&entity, BookKind::AssembleiaGeral);
+        seed_opened_book_ledger(&state, &entity, &book).await;
         let act = Act::draft(
             book.id,
             "Written resolution",
@@ -1195,7 +1763,15 @@ mod tests {
         }))
         .expect("patch body");
 
-        let err = match patch_act(State(state), Path(act_id.0), actor, Json(req)).await {
+        let err = match patch_act(
+            State(state),
+            Path(act_id.0),
+            actor,
+            CurrentAttestor::default(),
+            Json(req),
+        )
+        .await
+        {
             Ok(_) => panic!("proof/legal claims are rejected"),
             Err(err) => err,
         };
@@ -1349,6 +1925,7 @@ mod tests {
         let actor = seed_owner(&state).await;
         let entity = entity_of(EntityKind::Condominio);
         let book = opened_book(&entity, BookKind::AssembleiaGeral);
+        seed_opened_book_ledger(&state, &entity, &book).await;
         let act = Act::draft(book.id, "Ata", MeetingChannel::Physical);
         let act_id = act.id;
 
@@ -1368,6 +1945,7 @@ mod tests {
             State(state.clone()),
             Path(act_id.0),
             actor.clone(),
+            CurrentAttestor::default(),
             Json(zero_req),
         )
         .await
@@ -1387,6 +1965,7 @@ mod tests {
             State(state.clone()),
             Path(act_id.0),
             actor.clone(),
+            CurrentAttestor::default(),
             Json(attendee_zero_req),
         )
         .await
@@ -1408,6 +1987,7 @@ mod tests {
             State(state.clone()),
             Path(act_id.0),
             actor.clone(),
+            CurrentAttestor::default(),
             Json(too_high_req),
         )
         .await
@@ -1435,6 +2015,7 @@ mod tests {
             State(state.clone()),
             Path(act_id.0),
             actor,
+            CurrentAttestor::default(),
             Json(too_high_attendee_req),
         )
         .await
@@ -1469,6 +2050,7 @@ mod tests {
         let actor = seed_owner(&state).await;
         let entity = entity_of(EntityKind::SociedadePorQuotas);
         let book = opened_book(&entity, BookKind::AssembleiaGeral);
+        seed_opened_book_ledger(&state, &entity, &book).await;
         let act = Act::draft(book.id, "Ata", MeetingChannel::Physical);
         let act_id = act.id;
 
@@ -1489,6 +2071,7 @@ mod tests {
             State(state.clone()),
             Path(act_id.0),
             actor.clone(),
+            CurrentAttestor::default(),
             Json(valid_req),
         )
         .await
@@ -1510,6 +2093,7 @@ mod tests {
             State(state.clone()),
             Path(act_id.0),
             actor,
+            CurrentAttestor::default(),
             Json(invalid_req),
         )
         .await

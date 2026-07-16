@@ -24,6 +24,88 @@ use crate::entity::Entity;
 use crate::error::{ActError, BookError, SealError};
 use crate::rules::{ComplianceIssue, RulePack, Severity};
 
+/// Evidence accepted by the final seal gate.
+///
+/// A digital seal binds the immutable signing snapshot, the completed signed PDF, and the
+/// deterministic technical validation report. A manual seal instead records where the signed
+/// original is retained. Neither variant is itself a legal-validity or qualification claim.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SealEvidence {
+    /// Complete digital signed-PDF evidence.
+    Digital {
+        /// SHA-256 of the canonical PDF snapshot presented to the signer.
+        signing_snapshot_digest: String,
+        /// SHA-256 of the completed signed PDF.
+        signed_pdf_digest: String,
+        /// SHA-256 of the technical validation report used by the gate.
+        signature_validation_report_digest: String,
+    },
+    /// Explicit reference to a manually signed original retained outside this digital flow.
+    Manual {
+        /// Custody/location metadata for the original.
+        original_reference: ManualSignatureOriginalReference,
+    },
+}
+
+impl SealEvidence {
+    fn validate(&self) -> Result<(), SealError> {
+        match self {
+            Self::Digital {
+                signing_snapshot_digest,
+                signed_pdf_digest,
+                signature_validation_report_digest,
+            } => {
+                for (field, value) in [
+                    ("signing_snapshot_digest", signing_snapshot_digest),
+                    ("signed_pdf_digest", signed_pdf_digest),
+                    (
+                        "signature_validation_report_digest",
+                        signature_validation_report_digest,
+                    ),
+                ] {
+                    if value.len() != 64
+                        || !value
+                            .bytes()
+                            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+                    {
+                        return Err(SealError::InvalidSignatureEvidence(format!(
+                            "{field} must be a lowercase SHA-256 hex digest"
+                        )));
+                    }
+                }
+                Ok(())
+            }
+            Self::Manual { original_reference } => {
+                if original_reference.storage_reference.trim().is_empty() {
+                    return Err(SealError::InvalidSignatureEvidence(
+                        "manual signature storage reference must not be empty".to_owned(),
+                    ));
+                }
+                Ok(())
+            }
+        }
+    }
+
+    fn seal_metadata(&self, rule_pack_id: &str, entity: &Entity) -> SealMetadata {
+        let metadata = SealMetadata::new(rule_pack_id, entity.family, entity.kind);
+        match self {
+            Self::Digital {
+                signing_snapshot_digest,
+                signed_pdf_digest,
+                signature_validation_report_digest,
+            } => metadata.with_digital_signature_evidence(
+                signing_snapshot_digest.clone(),
+                signed_pdf_digest.clone(),
+                signature_validation_report_digest.clone(),
+            ),
+            Self::Manual { original_reference } => {
+                metadata.with_manual_signature_original_reference(Some(original_reference.clone()))
+            }
+        }
+    }
+}
+
 /// Result of successfully sealing an act.
 #[derive(Debug, Clone)]
 pub struct SealOutcome {
@@ -168,6 +250,37 @@ pub fn seal_act(
     let manual_signature_original_reference = manual_signature_original_reference
         .ok_or(SealError::MissingManualSignatureOriginalReference)?;
 
+    seal_act_with_evidence(
+        book,
+        act,
+        entity,
+        rule_pack,
+        actor,
+        acknowledge_warnings,
+        SealEvidence::Manual {
+            original_reference: manual_signature_original_reference,
+        },
+        ledger,
+    )
+}
+
+/// Seal an act using either validated digital evidence or an explicit manual-original reference.
+///
+/// This is the canonical `Signing -> Sealed` operation. The older [`seal_act`] entry point remains
+/// as the manual-signature compatibility wrapper.
+#[allow(clippy::too_many_arguments)]
+pub fn seal_act_with_evidence(
+    book: &mut Book,
+    act: &mut Act,
+    entity: &Entity,
+    rule_pack: &dyn RulePack,
+    actor: &str,
+    acknowledge_warnings: bool,
+    evidence: SealEvidence,
+    ledger: &mut Ledger,
+) -> Result<SealOutcome, SealError> {
+    evidence.validate()?;
+
     // The act must belong to this book.
     if act.book_id != book.id {
         return Err(SealError::Book(BookError::WrongBook {
@@ -197,10 +310,21 @@ pub fn seal_act(
         return Err(SealError::WarningsNotAcknowledged(render_issues(&warnings)));
     }
 
-    // Freeze the payload before mutating anything (a serialize failure must not burn a
-    // number or append an event).
-    let payload = serde_json::to_vec(&ActPayload::of(act))
-        .map_err(|e| SealError::Serialize(e.to_string()))?;
+    let seal_metadata = evidence.seal_metadata(rule_pack.id(), entity);
+
+    // Freeze the content and the evidence tuple before mutating anything (a serialize failure must
+    // not burn a number or append an event). The evidence is embedded in the ledger preimage so a
+    // later store edit cannot substitute a different signing snapshot or signed artifact.
+    #[derive(Serialize)]
+    struct SealedActPayload<'a> {
+        act: ActPayload<'a>,
+        seal_metadata: &'a SealMetadata,
+    }
+    let payload = serde_json::to_vec(&SealedActPayload {
+        act: ActPayload::of(act),
+        seal_metadata: &seal_metadata,
+    })
+    .map_err(|e| SealError::Serialize(e.to_string()))?;
 
     // Assign the sequential ata number (WFL-12); refuses unless the book is open (WFL-14).
     let ata_number = book.assign_next_ata_number()?;
@@ -211,9 +335,6 @@ pub fn seal_act(
     let event = ledger.append(actor, &scope, "act.sealed", Some(&justification), &payload);
     let event_seq = event.seq;
     let payload_digest = event.payload_digest;
-    let seal_metadata = SealMetadata::new(rule_pack.id(), entity.family, entity.kind)
-        .with_manual_signature_original_reference(Some(manual_signature_original_reference));
-
     // Freeze the act (Signing → Sealed).
     act.mark_sealed(ata_number, payload_digest, event_seq, seal_metadata.clone())?;
 
@@ -407,6 +528,92 @@ mod tests {
                 .and_then(|metadata| metadata.manual_signature_original_reference.as_ref()),
             Some(&reference)
         );
+    }
+
+    #[test]
+    fn digital_signature_evidence_is_bound_and_frozen_before_seal() {
+        let e = entity();
+        let mut ledger = Ledger::default();
+        ledger.append(
+            "sec@encosto",
+            &e.id.to_string(),
+            "entity.created",
+            None,
+            b"entity",
+        );
+        let mut book = Book::new(e.id, BookKind::AssembleiaGeral);
+        open_and_seal_book(&mut book, &e, abertura(&e), "sec@encosto", &mut ledger).unwrap();
+
+        let snapshot = "11".repeat(32);
+        let signed = "22".repeat(32);
+        let validation = "33".repeat(32);
+        let mut act = ready_act(&book);
+        let outcome = seal_act_with_evidence(
+            &mut book,
+            &mut act,
+            &e,
+            &CscArt63RulePack,
+            "sec@encosto",
+            false,
+            SealEvidence::Digital {
+                signing_snapshot_digest: snapshot.clone(),
+                signed_pdf_digest: signed.clone(),
+                signature_validation_report_digest: validation.clone(),
+            },
+            &mut ledger,
+        )
+        .unwrap();
+
+        assert_eq!(act.state, ActState::Sealed);
+        assert!(
+            outcome
+                .seal_metadata
+                .manual_signature_original_reference
+                .is_none()
+        );
+        assert_eq!(
+            outcome.seal_metadata.signing_snapshot_digest,
+            Some(snapshot)
+        );
+        assert_eq!(outcome.seal_metadata.signed_pdf_digest, Some(signed));
+        assert_eq!(
+            outcome.seal_metadata.signature_validation_report_digest,
+            Some(validation)
+        );
+        assert!(outcome.seal_metadata.has_complete_signature_evidence());
+        assert_eq!(act.seal_metadata, Some(outcome.seal_metadata));
+        assert_eq!(ledger.verify().unwrap(), 3);
+    }
+
+    #[test]
+    fn malformed_digital_evidence_rolls_back_without_number_or_event() {
+        let e = entity();
+        let mut ledger = Ledger::default();
+        let mut book = Book::new(e.id, BookKind::AssembleiaGeral);
+        open_and_seal_book(&mut book, &e, abertura(&e), "sec@encosto", &mut ledger).unwrap();
+        let mut act = ready_act(&book);
+
+        let error = seal_act_with_evidence(
+            &mut book,
+            &mut act,
+            &e,
+            &CscArt63RulePack,
+            "sec@encosto",
+            false,
+            SealEvidence::Digital {
+                signing_snapshot_digest: "not-a-digest".to_owned(),
+                signed_pdf_digest: "22".repeat(32),
+                signature_validation_report_digest: "33".repeat(32),
+            },
+            &mut ledger,
+        )
+        .unwrap_err();
+
+        assert!(matches!(error, SealError::InvalidSignatureEvidence(_)));
+        assert_eq!(book.last_ata_number, 0);
+        assert_eq!(act.state, ActState::Signing);
+        assert!(act.seal_metadata.is_none());
+        assert_eq!(ledger.len(), 1);
     }
 
     #[test]

@@ -1,6 +1,6 @@
 /**
- * ActDocumentPanel tests (t48-e6): the download action only appears once the act is sealed
- * AND a document exists (the DOC-03 bundle resolves), and the live preview degrades to an
+ * ActDocumentPanel tests (t48-e6): the download action appears once the act enters Signing
+ * AND its frozen document exists (the DOC-03 bundle resolves), and the live preview degrades to an
  * honest "sem modelo disponível" state when the family has no template (the endpoint 422s)
  * rather than surfacing an error.
  */
@@ -759,7 +759,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('ActDocumentPanel — download only post-seal', () => {
+describe('ActDocumentPanel — frozen Signing document', () => {
   it('hides the download while the act is a draft', async () => {
     vi.stubGlobal('fetch', ((input: RequestInfo | URL) => {
       const url = input.toString();
@@ -787,7 +787,34 @@ describe('ActDocumentPanel — download only post-seal', () => {
     expect(screen.queryByRole('button', { name: 'Descarregar DOCX' })).toBeNull();
   });
 
-  it('shows the PDF and working-copy downloads + digest once sealed and a document exists', async () => {
+  it('shows the frozen canonical bundle in Signing and no longer offers template selection', async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.includes('/document/bundle')) return json(bundle);
+      const imports = emptyImports(url);
+      if (imports) return imports;
+      return Promise.reject(new Error(`no stub for ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock as typeof fetch);
+
+    renderWithProviders(
+      <ActDocumentPanel
+        act={{ ...baseAct, state: 'Signing' }}
+        entityName="Encosto Estratégico Lda"
+        family="CommercialCompany"
+      />,
+    );
+
+    expect(await screen.findByRole('button', { name: 'Descarregar PDF' })).toBeTruthy();
+    expect(
+      fetchMock.mock.calls.some(([input]) => {
+        const url = new URL(input.toString(), 'http://chancela.test');
+        return url.pathname.endsWith('/templates') && url.searchParams.get('stage') === 'Ata';
+      }),
+    ).toBe(false);
+  });
+
+  it('keeps the PDF and working-copy downloads + digest after sealing', async () => {
     vi.stubGlobal('fetch', ((input: RequestInfo | URL) => {
       const url = input.toString();
       if (url.includes('/document/bundle')) return json(bundle);

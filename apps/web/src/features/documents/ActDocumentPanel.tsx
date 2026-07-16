@@ -2,19 +2,19 @@
  * ActDocumentPanel — the document surface mounted on the ata editor (plan t48-e6).
  *
  * Composes the three deliverables into one card on the act screen:
- *   • the template picker (which model applies — informational, pre-seal);
+ *   • the template picker (which model applies — informational, before the Signing snapshot);
  *   • the live draft preview ("Pré-visualizar") that renders the server `DocumentModel`
  *     so the operator sees the document as they fill the record — including an HONEST
  *     "sem modelo disponível" state when the family has no template (the endpoint 422s);
- *   • the post-seal PDF/A download, gated on the DOC-03 bundle actually existing (so a
- *     sealed act whose family has no template shows an honest "não gerado" note, not a
+ *   • the frozen Signing PDF/A download, gated on the DOC-03 bundle actually existing (so an
+ *     act whose family has no template shows an honest "não gerado" note, not a
  *     broken download), with the pdf digest surfaced as an integrity note.
  *
  * Reads render inline errors only; the one mutation here (the download) follows the toast
  * idiom (success + error) per CONVENTIONS §2/§3.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { DISPATCH_CHANNELS } from '../../api/types';
 import type {
   ActView,
@@ -88,12 +88,12 @@ export interface ActDocumentPanelTarget {
 }
 
 /** A 422/404 from the document endpoints is the "family has no template" signal. */
-function isNoTemplate(error: unknown): boolean {
+export function isNoDocumentTemplate(error: unknown): boolean {
   return error instanceof ApiError && (error.status === 422 || error.status === 404);
 }
 
 /** Slugify an entity/title fragment for a filesystem-friendly download name. */
-function slug(value: string): string {
+export function documentDownloadSlug(value: string): string {
   return (
     value
       .normalize('NFD')
@@ -104,7 +104,7 @@ function slug(value: string): string {
   );
 }
 
-async function listImportedDocumentsForAct(actId: string): Promise<ImportedDocumentView[]> {
+export async function listImportedDocumentsForAct(actId: string): Promise<ImportedDocumentView[]> {
   try {
     return await api.listImportedDocuments({ act_id: actId });
   } catch (e) {
@@ -113,7 +113,7 @@ async function listImportedDocumentsForAct(actId: string): Promise<ImportedDocum
   }
 }
 
-async function validateImportedDocument(
+export async function validateImportedDocument(
   body: ImportDocumentBody,
 ): Promise<DocumentImportValidationReport> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -128,7 +128,7 @@ async function validateImportedDocument(
   return parseResponse<DocumentImportValidationReport>(res, '/v1/documents/import/validate');
 }
 
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
+export function documentArrayBufferToBase64(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
   let binary = '';
   const chunk = 0x8000;
@@ -138,9 +138,9 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return btoa(binary);
 }
 
-function readFileAsBase64(file: File, t: TFunction): Promise<string> {
+export function readDocumentFileAsBase64(file: File, t: TFunction): Promise<string> {
   if (typeof FileReader === 'undefined') {
-    return file.arrayBuffer().then(arrayBufferToBase64);
+    return file.arrayBuffer().then(documentArrayBufferToBase64);
   }
 
   return new Promise((resolve, reject) => {
@@ -159,11 +159,11 @@ function readFileAsBase64(file: File, t: TFunction): Promise<string> {
   });
 }
 
-function metadataText(value: unknown): string | null {
+export function documentMetadataText(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
 }
 
-function formatBytes(value: number, t: TFunction): string {
+export function formatDocumentBytes(value: number, t: TFunction): string {
   if (!Number.isFinite(value) || value < 0) return t('documents.import.sizeUnknown');
   if (value < 1024) return `${value} bytes`;
   const units = ['KB', 'MB', 'GB', 'TB'];
@@ -178,12 +178,15 @@ function formatBytes(value: number, t: TFunction): string {
   return `${amount.toFixed(decimals)} ${unit}`;
 }
 
-function importedDisplayName(document: ImportedDocumentView, t: TFunction): string {
-  return metadataText(document.filename) ?? t('documents.import.unnamed');
+export function importedDisplayName(document: ImportedDocumentView, t: TFunction): string {
+  return documentMetadataText(document.filename) ?? t('documents.import.unnamed');
 }
 
-function importedDownloadName(document: ImportedDocumentView): string {
-  return metadataText(document.filename) ?? `documento-importado-${slug(document.id)}.bin`;
+export function importedDownloadName(document: ImportedDocumentView): string {
+  return (
+    documentMetadataText(document.filename) ??
+    `documento-importado-${documentDownloadSlug(document.id)}.bin`
+  );
 }
 
 const IMPORTED_DOCUMENT_REVIEW_NOTE_LIMIT = 2000;
@@ -194,7 +197,7 @@ const FALLBACK_IMPORTED_DOCUMENT_REVIEW_GUARDRAILS: ImportedDocumentReviewGuardr
   'ocr_or_conversion_output_is_not_promoted_to_canonical_records',
 ];
 
-function buildImportedDocumentReviewOptions(t: TFunction): {
+export function buildImportedDocumentReviewOptions(t: TFunction): {
   value: ImportedDocumentReviewPatchStatus;
   label: string;
 }[] {
@@ -213,7 +216,7 @@ function buildImportedDocumentReviewOptions(t: TFunction): {
 const DISPATCH_EVIDENCE_NOTE_LIMIT = 2000;
 const EMPTY_GENERATED_RECIPIENTS: string[] = [];
 
-function generatedDispatchStatusLabel(
+export function generatedDispatchStatusLabel(
   status: GeneratedDocumentDispatchEvidenceStatus | null | undefined,
   t: TFunction,
 ): string {
@@ -229,7 +232,7 @@ function generatedDispatchStatusLabel(
   }
 }
 
-function generatedDispatchStatusTone(
+export function generatedDispatchStatusTone(
   status: GeneratedDocumentDispatchEvidenceStatus | null | undefined,
 ): 'neutral' | 'warn' | 'error' | 'ok' {
   if (status?.status === 'operator_evidence_covered') return 'ok';
@@ -239,7 +242,7 @@ function generatedDispatchStatusTone(
   return 'neutral';
 }
 
-function dispatchChannelLabel(channel: string | null | undefined, t: TFunction): string {
+export function dispatchChannelLabel(channel: string | null | undefined, t: TFunction): string {
   if (!channel) return t('documents.generated.evidence.notIndicated');
   switch (channel) {
     case 'RegisteredLetter':
@@ -259,33 +262,33 @@ function dispatchChannelLabel(channel: string | null | undefined, t: TFunction):
   }
 }
 
-function lifecycleStageLabel(stage: LifecycleStage, t: TFunction) {
+export function lifecycleStageLabel(stage: LifecycleStage, t: TFunction) {
   return t(`enum.lifecycleStage.${stage}` as Parameters<TFunction>[0]);
 }
 
-function localDateTimeInputValue(date = new Date()): string {
+export function localDateTimeInputValue(date = new Date()): string {
   const pad = (value: number) => String(value).padStart(2, '0');
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(
     date.getHours(),
   )}:${pad(date.getMinutes())}`;
 }
 
-function localDateTimeToRfc3339(value: string): string {
+export function localDateTimeToRfc3339(value: string): string {
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? value : parsed.toISOString();
 }
 
-function trimOrNull(value: string): string | null {
+export function trimDocumentTextOrNull(value: string): string | null {
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
 }
 
-function generatedDocumentDownloadName(document: GeneratedDocumentView): string {
-  return `generated-${slug(document.template_id)}-${slug(document.id)}.pdf`;
+export function generatedDocumentDownloadName(document: GeneratedDocumentView): string {
+  return `generated-${documentDownloadSlug(document.template_id)}-${documentDownloadSlug(document.id)}.pdf`;
 }
 
-function importedReviewStatusLabel(status: unknown, t: TFunction): string {
-  switch (metadataText(status)) {
+export function importedReviewStatusLabel(status: unknown, t: TFunction): string {
+  switch (documentMetadataText(status)) {
     case 'operator_review_required':
       return t('documents.import.review.status.operatorRequired');
     case 'ocr_review_required':
@@ -297,12 +300,12 @@ function importedReviewStatusLabel(status: unknown, t: TFunction): string {
     case 'rejected_non_canonical_evidence':
       return t('documents.import.review.status.rejected');
     default:
-      return metadataText(status) ?? t('documents.import.review.status.notIndicated');
+      return documentMetadataText(status) ?? t('documents.import.review.status.notIndicated');
   }
 }
 
-function importedReviewStatusTone(status: unknown): 'neutral' | 'warn' | 'error' | 'ok' {
-  switch (metadataText(status)) {
+export function importedReviewStatusTone(status: unknown): 'neutral' | 'warn' | 'error' | 'ok' {
+  switch (documentMetadataText(status)) {
     case 'reviewed_non_canonical_original_only':
       return 'ok';
     case 'rejected_non_canonical_evidence':
@@ -316,41 +319,41 @@ function importedReviewStatusTone(status: unknown): 'neutral' | 'warn' | 'error'
   }
 }
 
-function importedCanonicalRecordStatusLabel(status: unknown, t: TFunction): string | null {
-  switch (metadataText(status)) {
+export function importedCanonicalRecordStatusLabel(status: unknown, t: TFunction): string | null {
+  switch (documentMetadataText(status)) {
     case 'not_canonical_record':
       return t('documents.import.guardrails.canonical.notCanonical');
     case null:
       return null;
     default:
-      return metadataText(status);
+      return documentMetadataText(status);
   }
 }
 
-function importedSignedArtifactStatusLabel(status: unknown, t: TFunction): string | null {
-  switch (metadataText(status)) {
+export function importedSignedArtifactStatusLabel(status: unknown, t: TFunction): string | null {
+  switch (documentMetadataText(status)) {
     case 'not_signed_artifact':
       return t('documents.import.guardrails.signed.notSigned');
     case null:
       return null;
     default:
-      return metadataText(status);
+      return documentMetadataText(status);
   }
 }
 
-function importedGuardrailChecklist(value: unknown): string[] {
+export function importedGuardrailChecklist(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((item) => {
-    const text = metadataText(item);
+    const text = documentMetadataText(item);
     return text ? [text] : [];
   });
 }
 
-function uniqueImportedGuardrails(guardrails: string[]): ImportedDocumentReviewGuardrail[] {
+export function uniqueImportedGuardrails(guardrails: string[]): ImportedDocumentReviewGuardrail[] {
   return Array.from(new Set(guardrails)) as ImportedDocumentReviewGuardrail[];
 }
 
-function importedRequiredReviewGuardrails(
+export function importedRequiredReviewGuardrails(
   document: ImportedDocumentView,
 ): ImportedDocumentReviewGuardrail[] {
   const checklist = importedGuardrailChecklist(document.review_guardrail_checklist);
@@ -364,7 +367,7 @@ function importedRequiredReviewGuardrails(
   return FALLBACK_IMPORTED_DOCUMENT_REVIEW_GUARDRAILS;
 }
 
-function importedGuardrailLabel(guardrail: string, t: TFunction): string {
+export function importedGuardrailLabel(guardrail: string, t: TFunction): string {
   switch (guardrail) {
     case 'preserved_original_bytes_remain_non_canonical_evidence':
       return t('documents.import.guardrails.checklist.originalBytes');
@@ -379,14 +382,14 @@ function importedGuardrailLabel(guardrail: string, t: TFunction): string {
   }
 }
 
-function importedAcknowledgedReviewGuardrails(
+export function importedAcknowledgedReviewGuardrails(
   document: ImportedDocumentView,
 ): ImportedDocumentReviewGuardrail[] {
   return uniqueImportedGuardrails(importedGuardrailChecklist(document.acknowledged_guardrail_ids));
 }
 
-function importedDocumentHasReviewReceipt(document: ImportedDocumentView): boolean {
-  const status = metadataText(document.operator_review_status);
+export function importedDocumentHasReviewReceipt(document: ImportedDocumentView): boolean {
+  const status = documentMetadataText(document.operator_review_status);
   if (
     status === 'reviewed_non_canonical_original_only' ||
     status === 'rejected_non_canonical_evidence'
@@ -395,14 +398,14 @@ function importedDocumentHasReviewReceipt(document: ImportedDocumentView): boole
   }
 
   return (
-    metadataText(document.operator_reviewed_at) != null ||
-    metadataText(document.operator_reviewed_by) != null ||
-    metadataText(document.operator_review_note) != null ||
+    documentMetadataText(document.operator_reviewed_at) != null ||
+    documentMetadataText(document.operator_reviewed_by) != null ||
+    documentMetadataText(document.operator_review_note) != null ||
     importedAcknowledgedReviewGuardrails(document).length > 0
   );
 }
 
-function reviewPatchStatusFromDocument(
+export function reviewPatchStatusFromDocument(
   status: ImportedDocumentView['operator_review_status'] | undefined,
 ): ImportedDocumentReviewPatchStatus {
   return status === 'rejected_non_canonical_evidence'
@@ -410,7 +413,7 @@ function reviewPatchStatusFromDocument(
     : 'reviewed_non_canonical_original_only';
 }
 
-function mergeImportedDocument(
+export function mergeImportedDocument(
   current: ImportedDocumentView[] | undefined,
   document: ImportedDocumentView,
 ): ImportedDocumentView[] {
@@ -418,24 +421,24 @@ function mergeImportedDocument(
   return [document, ...existing.filter((item) => item.id !== document.id)];
 }
 
-function yesNo(value: boolean, t: TFunction): string {
+export function documentYesNo(value: boolean, t: TFunction): string {
   return value ? t('common.yes') : t('common.no');
 }
 
-function shouldShowCanonicalConversionPreflight(
+export function shouldShowCanonicalConversionPreflight(
   preflight: DocumentImportValidationReport['canonical_conversion_preflight'] | undefined,
 ): boolean {
   if (!preflight) return false;
-  const source = metadataText(preflight.source_format);
+  const source = documentMetadataText(preflight.source_format);
   return (
     source === 'legacy_word_doc' ||
     source === 'ole_compound_file' ||
-    metadataText(preflight.status) === 'blocked'
+    documentMetadataText(preflight.status) === 'blocked'
   );
 }
 
-function canonicalConversionPreflightStatusLabel(status: unknown, t: TFunction): string {
-  switch (metadataText(status)) {
+export function canonicalConversionPreflightStatusLabel(status: unknown, t: TFunction): string {
+  switch (documentMetadataText(status)) {
     case 'blocked':
       return t('documents.import.preflight.status.blocked');
     case 'not_attempted':
@@ -443,12 +446,12 @@ function canonicalConversionPreflightStatusLabel(status: unknown, t: TFunction):
     case null:
       return t('documents.import.preflight.notIndicated');
     default:
-      return metadataText(status) ?? t('documents.import.preflight.notIndicated');
+      return documentMetadataText(status) ?? t('documents.import.preflight.notIndicated');
   }
 }
 
-function canonicalConversionPreflightSourceLabel(source: unknown, t: TFunction): string {
-  switch (metadataText(source)) {
+export function canonicalConversionPreflightSourceLabel(source: unknown, t: TFunction): string {
+  switch (documentMetadataText(source)) {
     case 'legacy_word_doc':
       return t('documents.import.preflight.source.legacyDoc');
     case 'ole_compound_file':
@@ -458,7 +461,7 @@ function canonicalConversionPreflightSourceLabel(source: unknown, t: TFunction):
     case null:
       return t('documents.import.preflight.notIndicated');
     default:
-      return metadataText(source) ?? t('documents.import.preflight.notIndicated');
+      return documentMetadataText(source) ?? t('documents.import.preflight.notIndicated');
   }
 }
 
@@ -499,35 +502,35 @@ function CanonicalConversionPreflightEvidence({
         </div>
         <div>
           <dt>{t('documents.import.preflight.field.originalBytes')}</dt>
-          <dd>{yesNo(Boolean(preflight?.original_bytes_preserved), t)}</dd>
+          <dd>{documentYesNo(Boolean(preflight?.original_bytes_preserved), t)}</dd>
         </div>
         <div>
           <dt>{t('documents.import.preflight.field.conversion')}</dt>
-          <dd>{yesNo(Boolean(preflight?.canonical_conversion_performed), t)}</dd>
+          <dd>{documentYesNo(Boolean(preflight?.canonical_conversion_performed), t)}</dd>
         </div>
         <div>
           <dt>{t('documents.import.preflight.field.pdfa')}</dt>
-          <dd>{yesNo(Boolean(preflight?.canonical_pdfa_generated), t)}</dd>
+          <dd>{documentYesNo(Boolean(preflight?.canonical_pdfa_generated), t)}</dd>
         </div>
         <div>
           <dt>{t('documents.import.preflight.field.signatureValidation')}</dt>
-          <dd>{yesNo(Boolean(preflight?.signature_validation_performed), t)}</dd>
+          <dd>{documentYesNo(Boolean(preflight?.signature_validation_performed), t)}</dd>
         </div>
         <div>
           <dt>{t('documents.import.preflight.field.ocr')}</dt>
-          <dd>{yesNo(Boolean(preflight?.ocr_performed), t)}</dd>
+          <dd>{documentYesNo(Boolean(preflight?.ocr_performed), t)}</dd>
         </div>
         <div>
           <dt>{t('documents.import.preflight.field.legalAcceptance')}</dt>
-          <dd>{yesNo(Boolean(preflight?.legal_acceptance_claimed), t)}</dd>
+          <dd>{documentYesNo(Boolean(preflight?.legal_acceptance_claimed), t)}</dd>
         </div>
         <div>
           <dt>{t('documents.import.preflight.field.externalProvider')}</dt>
-          <dd>{yesNo(Boolean(preflight?.external_provider_contacted), t)}</dd>
+          <dd>{documentYesNo(Boolean(preflight?.external_provider_contacted), t)}</dd>
         </div>
         <div>
           <dt>{t('documents.import.preflight.field.recordReplaced')}</dt>
-          <dd>{yesNo(Boolean(preflight?.canonical_record_replaced), t)}</dd>
+          <dd>{documentYesNo(Boolean(preflight?.canonical_record_replaced), t)}</dd>
         </div>
       </dl>
       {preflight?.evidence_basis?.length ? (
@@ -604,23 +607,23 @@ function DocumentImportValidationEvidence({
               </div>
               <div>
                 <dt>{t('documents.import.legacyWord.oleCfb')}</dt>
-                <dd>{yesNo(legacyWord.is_ole_cfb, t)}</dd>
+                <dd>{documentYesNo(legacyWord.is_ole_cfb, t)}</dd>
               </div>
               <div>
                 <dt>{t('documents.import.legacyWord.legacyDoc')}</dt>
-                <dd>{yesNo(legacyWord.is_legacy_word_doc, t)}</dd>
+                <dd>{documentYesNo(legacyWord.is_legacy_word_doc, t)}</dd>
               </div>
               <div>
                 <dt>{t('documents.import.legacyWord.macrosExecuted')}</dt>
-                <dd>{yesNo(legacyWord.macro_execution_performed, t)}</dd>
+                <dd>{documentYesNo(legacyWord.macro_execution_performed, t)}</dd>
               </div>
               <div>
                 <dt>{t('documents.import.legacyWord.conversion')}</dt>
-                <dd>{yesNo(legacyWord.conversion_performed, t)}</dd>
+                <dd>{documentYesNo(legacyWord.conversion_performed, t)}</dd>
               </div>
               <div>
                 <dt>{t('documents.import.legacyWord.canonicalPdfa')}</dt>
-                <dd>{yesNo(legacyWord.canonical_pdfa_generated, t)}</dd>
+                <dd>{documentYesNo(legacyWord.canonical_pdfa_generated, t)}</dd>
               </div>
             </dl>
           ) : null}
@@ -684,9 +687,9 @@ function ImportedDocumentReviewReceipt({
   const hasReceipt = importedDocumentHasReviewReceipt(document);
   const requiredGuardrails = importedRequiredReviewGuardrails(document);
   const acknowledgedGuardrails = importedAcknowledgedReviewGuardrails(document);
-  const reviewedAt = metadataText(document.operator_reviewed_at);
-  const reviewedBy = metadataText(document.operator_reviewed_by);
-  const reviewNote = metadataText(document.operator_review_note);
+  const reviewedAt = documentMetadataText(document.operator_reviewed_at);
+  const reviewedBy = documentMetadataText(document.operator_reviewed_by);
+  const reviewNote = documentMetadataText(document.operator_review_note);
   const receiptStatus = hasReceipt
     ? importedReviewStatusLabel(document.operator_review_status, t)
     : t('documents.import.receipt.none');
@@ -816,9 +819,9 @@ function ImportedDocumentReviewHistory({
       ) : (
         <ol className="stack--tight">
           {history.map((entry) => {
-            const reviewedAt = metadataText(entry.reviewed_at);
-            const reviewedBy = metadataText(entry.reviewed_by);
-            const reviewNote = metadataText(entry.review_note);
+            const reviewedAt = documentMetadataText(entry.reviewed_at);
+            const reviewedBy = documentMetadataText(entry.reviewed_by);
+            const reviewNote = documentMetadataText(entry.review_note);
             const acknowledgedGuardrails = uniqueImportedGuardrails(
               importedGuardrailChecklist(entry.acknowledged_guardrail_ids),
             );
@@ -893,8 +896,8 @@ function ImportedDocumentReviewDepthSummary({
   document: ImportedDocumentView;
   t: TFunction;
 }) {
-  const reviewNote = metadataText(document.operator_review_note);
-  const originalBytesStatus = metadataText(
+  const reviewNote = documentMetadataText(document.operator_review_note);
+  const originalBytesStatus = documentMetadataText(
     document.preservation_policy?.original_bytes_preservation_status,
   );
   const originalBytesSummary = originalBytesStatus
@@ -961,7 +964,7 @@ function ImportedDocumentReviewDepthSummary({
 }
 
 function MetadataValue({ value, missing }: { value: unknown; missing: string }) {
-  const text = metadataText(value);
+  const text = documentMetadataText(value);
   if (!text) return <span className="muted">{missing}</span>;
   return <Truncate text={text} mono />;
 }
@@ -989,7 +992,7 @@ function pdfAccessibilityBlockers(
     ? report.pdf_ua_blockers
     : (index?.pdf_ua_blockers ?? []);
   return values.flatMap((value) => {
-    const text = metadataText(value);
+    const text = documentMetadataText(value);
     return text ? [text] : [];
   });
 }
@@ -1005,14 +1008,15 @@ function DocumentPdfAccessibilityEvidence({
   const index = validationReport?.evidence_index?.pdf_accessibility;
   if (!report && !index) return null;
 
-  const status = metadataText(report?.evidence_status) ?? metadataText(index?.evidence_status);
-  const source = metadataText(report?.report_source);
+  const status =
+    documentMetadataText(report?.evidence_status) ?? documentMetadataText(index?.evidence_status);
+  const source = documentMetadataText(report?.report_source);
   const version = typeof report?.report_version === 'number' ? String(report.report_version) : null;
   const pdfUaClaimed = report?.pdf_ua_claimed ?? index?.pdf_ua_claimed ?? false;
   const blockers = pdfAccessibilityBlockers(report, index);
   const unavailableReason =
     status === 'pdf_accessibility_report_unavailable'
-      ? metadataText(report?.unavailable_reason)
+      ? documentMetadataText(report?.unavailable_reason)
       : null;
 
   return (
@@ -1104,7 +1108,7 @@ function ActDocumentMetadata({
   };
   t: TFunction;
 }) {
-  const createdAt = metadataText(document.created_at);
+  const createdAt = documentMetadataText(document.created_at);
   return (
     <div className="stack--tight" role="group" aria-label={t('documents.metadata.aria')}>
       <p className="card__label">{t('documents.metadata.title')}</p>
@@ -1187,7 +1191,7 @@ function GeneratedDispatchStatusSummary({
         </div>
         <div>
           <dt>{t('documents.generated.status.evidenceAttached')}</dt>
-          <dd>{yesNo(Boolean(status?.evidence_attached), t)}</dd>
+          <dd>{documentYesNo(Boolean(status?.evidence_attached), t)}</dd>
         </div>
         <div>
           <dt>{t('documents.generated.status.dispatchCompleted')}</dt>
@@ -1399,9 +1403,9 @@ function GeneratedDispatchEvidenceForm({
   const controlId = 'generated-dispatch-evidence';
   const requiredRecipients = status?.required_recipients ?? [];
   const hasLocator =
-    trimOrNull(reference) != null ||
-    trimOrNull(evidenceReference) != null ||
-    trimOrNull(importedDocumentId) != null;
+    trimDocumentTextOrNull(reference) != null ||
+    trimDocumentTextOrNull(evidenceReference) != null ||
+    trimDocumentTextOrNull(importedDocumentId) != null;
   const hasRecipients = requiredRecipients.length === 0 || recipients.length > 0;
   const canSubmit = dispatchedAt.trim().length > 0 && hasLocator && hasRecipients && !isPending;
   const channelOptions = [
@@ -1553,17 +1557,18 @@ function ImportedDocumentDetails({
   if (isLoading && !document) return <Skeleton height="7rem" />;
   if (!document) return null;
 
-  const filename = metadataText(document.filename);
-  const importedAt = metadataText(document.imported_at);
-  const declaredType = metadataText(document.declared_content_type);
-  const detectedType = metadataText(document.detected_content_type);
-  const importedBy = metadataText(document.imported_by);
-  const legalNotice = metadataText(document.legal_notice) ?? t('documents.import.notice');
+  const filename = documentMetadataText(document.filename);
+  const importedAt = documentMetadataText(document.imported_at);
+  const declaredType = documentMetadataText(document.declared_content_type);
+  const detectedType = documentMetadataText(document.detected_content_type);
+  const importedBy = documentMetadataText(document.imported_by);
+  const legalNotice = documentMetadataText(document.legal_notice) ?? t('documents.import.notice');
   const reviewNotice =
-    metadataText(document.operator_review_notice) ?? t('documents.import.review.noticeFallback');
-  const reviewedAt = metadataText(document.operator_reviewed_at);
-  const reviewedBy = metadataText(document.operator_reviewed_by);
-  const reviewNote = metadataText(document.operator_review_note);
+    documentMetadataText(document.operator_review_notice) ??
+    t('documents.import.review.noticeFallback');
+  const reviewedAt = documentMetadataText(document.operator_reviewed_at);
+  const reviewedBy = documentMetadataText(document.operator_reviewed_by);
+  const reviewNote = documentMetadataText(document.operator_review_note);
 
   return (
     <div className="stack--tight">
@@ -1598,7 +1603,7 @@ function ImportedDocumentDetails({
           </div>
           <div>
             <dt>{t('documents.import.size')}</dt>
-            <dd>{formatBytes(document.size_bytes, t)}</dd>
+            <dd>{formatDocumentBytes(document.size_bytes, t)}</dd>
           </div>
           <div>
             <dt>{t('documents.import.declaredType')}</dt>
@@ -1699,9 +1704,11 @@ function ImportedDocumentGuardrails({
 }) {
   const policy = document.preservation_policy;
   const canonicalRecordStatus =
-    metadataText(document.canonical_record_status) ?? metadataText(policy?.canonical_record_status);
+    documentMetadataText(document.canonical_record_status) ??
+    documentMetadataText(policy?.canonical_record_status);
   const signedArtifactStatus =
-    metadataText(document.signed_artifact_status) ?? metadataText(policy?.signed_artifact_status);
+    documentMetadataText(document.signed_artifact_status) ??
+    documentMetadataText(policy?.signed_artifact_status);
   const checklist = importedGuardrailChecklist(document.review_guardrail_checklist);
   const policyChecklist = importedGuardrailChecklist(policy?.review_guardrail_checklist);
   const guardrails = checklist.length > 0 ? checklist : policyChecklist;
@@ -1765,7 +1772,7 @@ function ImportedDocumentReviewForm({
   scope: ReturnType<typeof scopeBook>;
   status: ImportedDocumentReviewPatchStatus;
 }) {
-  const controlId = `import-review-${slug(document.id)}`;
+  const controlId = `import-review-${documentDownloadSlug(document.id)}`;
   const t = useT();
   const requiredGuardrails = importedRequiredReviewGuardrails(document);
   return (
@@ -1778,7 +1785,7 @@ function ImportedDocumentReviewForm({
       }}
     >
       <InlineWarning tone="info" title={t('documents.import.review.conservativeTitle')}>
-        {metadataText(document.operator_review_notice) ??
+        {documentMetadataText(document.operator_review_notice) ??
           t('documents.import.review.noticeFallback')}
       </InlineWarning>
       <Field label={t('documents.import.review.statusLabel')} htmlFor={`${controlId}-status`}>
@@ -1895,10 +1902,12 @@ export function ActDocumentPanel({
   const [dispatchRecipients, setDispatchRecipients] = useState<string[]>([]);
   const [dispatchOperatorNote, setDispatchOperatorNote] = useState('');
 
+  const signingSnapshotAvailable =
+    act.state === 'Signing' || act.state === 'Sealed' || act.state === 'Archived';
   const sealed = act.state === 'Sealed' || act.state === 'Archived';
   const reviewScope = scopeBook(act.book_id);
   const preview = useActDocumentPreview(act.id, open);
-  const bundle = useActDocumentBundle(act.id, sealed);
+  const bundle = useActDocumentBundle(act.id, signingSnapshotAvailable);
   const generatedDocuments = useGeneratedDocuments(act.id, !!act.id);
   const convocatoriaTemplates = useTemplates(family, 'Convocatoria', !!family);
   const certidaoTemplates = useTemplates(family, 'Certidao', sealed && !!family);
@@ -1944,8 +1953,11 @@ export function ActDocumentPanel({
     target?.focus === 'dispatch-evidence' ? 'dispatch-evidence' : null;
   const importedDocumentTargetId = target?.importedDocumentId?.trim() || null;
   const importedDocumentFocusTarget = target?.focus === 'import-review' ? 'import-review' : null;
-  const importList = importedDocuments.data ?? [];
-  const generatedDocumentList = generatedDocuments.data ?? [];
+  const importList = useMemo(() => importedDocuments.data ?? [], [importedDocuments.data]);
+  const generatedDocumentList = useMemo(
+    () => generatedDocuments.data ?? [],
+    [generatedDocuments.data],
+  );
   const generatedTemplateQueries = sealed
     ? [convocatoriaTemplates, certidaoTemplates, extratoTemplates]
     : [convocatoriaTemplates];
@@ -1985,7 +1997,7 @@ export function ActDocumentPanel({
   useEffect(() => {
     if (!selectedImportReviewId) return;
     setReviewStatus(reviewPatchStatusFromDocument(selectedImportReviewStatus));
-    setReviewNote(metadataText(selectedImportReviewNote) ?? '');
+    setReviewNote(documentMetadataText(selectedImportReviewNote) ?? '');
     setReviewGuardrailsAcknowledged(false);
   }, [selectedImportReviewId, selectedImportReviewStatus, selectedImportReviewNote]);
 
@@ -2069,7 +2081,7 @@ export function ActDocumentPanel({
 
     const focusTarget = () => {
       const control = target
-        ? document.getElementById(`import-review-${slug(target.id)}-status`)
+        ? document.getElementById(`import-review-${documentDownloadSlug(target.id)}-status`)
         : null;
       const fallback = document.getElementById('imported-documents');
       const node = control ?? fallback;
@@ -2108,7 +2120,7 @@ export function ActDocumentPanel({
   }, [selectedGeneratedDocument?.id]);
 
   function downloadBaseName() {
-    const base = entityName ? `${slug(entityName)}-` : '';
+    const base = entityName ? `${documentDownloadSlug(entityName)}-` : '';
     const n = act.ata_number != null ? String(act.ata_number) : act.id;
     return `${base}ata-${n}`;
   }
@@ -2226,11 +2238,11 @@ export function ActDocumentPanel({
     setImportValidationReport(null);
     setImportValidationPending(true);
     try {
-      const content_base64 = await readFileAsBase64(file, t);
+      const content_base64 = await readDocumentFileAsBase64(file, t);
       const body: ImportDocumentBody = {
         content_base64,
-        content_type: metadataText(file.type),
-        filename: metadataText(file.name),
+        content_type: documentMetadataText(file.type),
+        filename: documentMetadataText(file.name),
         act_id: act.id,
       };
       const report = await validateImportedDocument(body);
@@ -2306,11 +2318,11 @@ export function ActDocumentPanel({
       actor: 'web-operator',
       dispatched_at: localDateTimeToRfc3339(dispatchEvidenceAt),
       channel: dispatchEvidenceChannel || null,
-      reference: trimOrNull(dispatchReference),
+      reference: trimDocumentTextOrNull(dispatchReference),
       recipients: dispatchRecipients,
-      evidence_reference: trimOrNull(dispatchEvidenceReference),
-      imported_document_id: trimOrNull(dispatchImportedDocumentId),
-      operator_note: trimOrNull(dispatchOperatorNote),
+      evidence_reference: trimDocumentTextOrNull(dispatchEvidenceReference),
+      imported_document_id: trimDocumentTextOrNull(dispatchImportedDocumentId),
+      operator_note: trimDocumentTextOrNull(dispatchOperatorNote),
     };
     recordGeneratedDispatchEvidence.mutate(
       { documentId: selectedGeneratedDocument.id, body },
@@ -2330,10 +2342,12 @@ export function ActDocumentPanel({
   return (
     <Card title={t('documents.title')}>
       <div className="stack--tight">
-        {!sealed && family ? <TemplatePicker family={family} stage="Ata" /> : null}
+        {!signingSnapshotAvailable && family ? (
+          <TemplatePicker family={family} stage="Ata" />
+        ) : null}
 
-        {/* Post-seal download, gated on the DOC-03 bundle actually existing. */}
-        {sealed ? (
+        {/* Frozen Signing snapshot/download, gated on the DOC-03 bundle actually existing. */}
+        {signingSnapshotAvailable ? (
           bundle.isLoading ? (
             <Skeleton height="2.4rem" />
           ) : bundle.data ? (
@@ -2432,23 +2446,26 @@ export function ActDocumentPanel({
                 <Digest value={bundle.data.document.pdf_digest} />
               </p>
             </div>
-          ) : isNoTemplate(bundle.error) || bundle.error ? (
+          ) : isNoDocumentTemplate(bundle.error) || bundle.error ? (
             <InlineWarning tone="info" title={t('documents.download.noneTitle')}>
               {t('documents.download.noneBody')}
             </InlineWarning>
           ) : null
         ) : null}
 
-        {family || generatedDocumentList.length > 0 || generatedDocuments.isLoading || generatedDocuments.error ? (
+        {family ||
+        generatedDocumentList.length > 0 ||
+        generatedDocuments.isLoading ||
+        generatedDocuments.error ? (
           <section className="stack--tight" aria-label={t('documents.generated.sectionAria')}>
             {family ? (
               <div className="stack--tight">
                 <div className="section-head">
                   <div className="stack--tight">
-                    <p className="card__label">Minutas geradas</p>
+                    <p className="card__label">{t('uiLiteral.actDocumentPanel.minutasGeradas')}</p>
                     <p className="field__hint">
-                      Gere convocatórias e, após o selo, certidões e extratos sem substituir o
-                      PDF/A canónico.
+                      {' '}
+                      {t('uiLiteral.actDocumentPanel.gereConvocatoriasEAposOSeloCertidoesE')}{' '}
                     </p>
                   </div>
                 </div>
@@ -2679,8 +2696,8 @@ export function ActDocumentPanel({
             <ul className="plain-list" aria-label={t('documents.import.listAria')}>
               {importList.map((document) => {
                 const displayName = importedDisplayName(document, t);
-                const detectedType = metadataText(document.detected_content_type);
-                const importedAt = metadataText(document.imported_at);
+                const detectedType = documentMetadataText(document.detected_content_type);
+                const importedAt = documentMetadataText(document.imported_at);
                 const selected = selectedImportId === document.id;
                 return (
                   <li className="chainrow" key={document.id} aria-current={selected || undefined}>
@@ -2698,7 +2715,7 @@ export function ActDocumentPanel({
                           <Truncate text={displayName} />
                         </p>
                         <p className="chainrow__meta">
-                          {formatBytes(document.size_bytes, t)}
+                          {formatDocumentBytes(document.size_bytes, t)}
                           {detectedType ? ` · ${detectedType}` : ''}
                           {importedAt ? (
                             <>
@@ -2783,7 +2800,7 @@ export function ActDocumentPanel({
             <p className="field__hint">{t('documents.preview.hint')}</p>
             {preview.isLoading ? (
               <Skeleton height="12rem" />
-            ) : isNoTemplate(preview.error) ? (
+            ) : isNoDocumentTemplate(preview.error) ? (
               <InlineWarning tone="info" title={t('documents.preview.noTemplate.title')}>
                 {t('documents.preview.noTemplate.body')}
               </InlineWarning>

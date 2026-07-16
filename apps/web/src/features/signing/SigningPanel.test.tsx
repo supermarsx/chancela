@@ -72,7 +72,7 @@ const sealedAct: ActView = {
   telematic_evidence: null,
   attachments: [],
   signatories: [],
-  state: 'Sealed',
+  state: 'Signing',
   ata_number: 1,
   payload_digest: null,
   seal_event_seq: null,
@@ -82,7 +82,7 @@ const sealedAct: ActView = {
 
 const unsignedStatus: SignatureStatusView = {
   status: 'unsigned',
-  finalization: 'finalizado',
+  finalization: 'em_assinatura',
   require_qualified_for_seal: false,
   evidence: evidence('Unsigned', false, [
     'not_configured',
@@ -93,7 +93,7 @@ const unsignedStatus: SignatureStatusView = {
 
 const signedStatus: SignatureStatusView = {
   status: 'signed',
-  finalization: 'finalizado_qualificado',
+  finalization: 'em_assinatura',
   require_qualified_for_seal: false,
   signed: {
     family: 'ChaveMovelDigital',
@@ -366,12 +366,29 @@ afterEach(() => {
 });
 
 describe('SigningPanel — gating', () => {
-  it('renders nothing while the act is a draft (signing is post-seal)', () => {
+  it('renders nothing before the act enters Signing', () => {
     vi.stubGlobal('fetch', (() => Promise.reject(new Error('no fetch expected'))) as typeof fetch);
     const { container } = renderWithProviders(
       <SigningPanel act={{ ...sealedAct, state: 'Draft', ata_number: null }} />,
     );
     expect(container.querySelector('.panel')).toBeNull();
+  });
+
+  it('keeps existing evidence readable but closes signing actions after sealing', async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.endsWith('/signature')) return json(unsignedStatus);
+      return Promise.reject(new Error(`no stub for ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock as typeof fetch);
+
+    renderWithProviders(<SigningPanel act={{ ...sealedAct, state: 'Sealed' }} />);
+
+    expect(await screen.findByText('Assinatura encerrada')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Assinar com/ })).toBeNull();
+    expect(fetchMock.mock.calls.some(([input]) => input.toString().endsWith('/providers'))).toBe(
+      false,
+    );
   });
 });
 
@@ -603,11 +620,11 @@ describe('SigningPanel — signed status + download', () => {
     renderWithProviders(<SigningPanel act={signedAct()} />);
 
     const panel = await screen.findByLabelText(
-      'Comparação técnica local entre ato selado e PDF assinado',
+      'Comparação técnica local entre a cópia canónica e o PDF assinado',
     );
     expect(within(panel).getByText('Só metadados locais')).toBeTruthy();
     expect(within(panel).getByText('Sem reivindicação')).toBeTruthy();
-    expect(within(panel).getByText('Digest do payload selado')).toBeTruthy();
+    expect(within(panel).getByText('Digest da cópia canónica congelada')).toBeTruthy();
 
     const signedDigestRow = within(panel).getAllByText('Digest do PDF assinado')[0].closest('div');
     expect(signedDigestRow).toBeTruthy();
@@ -644,7 +661,7 @@ describe('SigningPanel — signed status + download', () => {
     renderWithProviders(<SigningPanel act={signedAct()} />);
 
     const panel = await screen.findByLabelText(
-      'Comparação técnica local entre ato selado e PDF assinado',
+      'Comparação técnica local entre a cópia canónica e o PDF assinado',
     );
     const signedDigestRow = within(panel).getAllByText('Digest do PDF assinado')[0].closest('div');
     expect(signedDigestRow).toBeTruthy();
@@ -691,7 +708,7 @@ describe('SigningPanel — signed status + download', () => {
     renderWithProviders(<SigningPanel act={signedAct()} />);
 
     const panel = await screen.findByLabelText(
-      'Comparação técnica local entre ato selado e PDF assinado',
+      'Comparação técnica local entre a cópia canónica e o PDF assinado',
     );
     const signedDocumentRow = within(panel).getByText('Documento assinado').closest('div');
     expect(signedDocumentRow).toBeTruthy();

@@ -185,12 +185,12 @@ impl SmartCmdTransport {
     }
 
     fn assert_expected_application_id(&self, soap_body: &str) -> Result<(), CmdError> {
-        if let Some(expected) = &self.expected_application_id_b64 {
-            if !soap_body.contains(expected) {
-                return Err(CmdError::Transport(
-                    "unexpected CMD application id source".to_owned(),
-                ));
-            }
+        if let Some(expected) = &self.expected_application_id_b64
+            && !soap_body.contains(expected)
+        {
+            return Err(CmdError::Transport(
+                "unexpected CMD application id source".to_owned(),
+            ));
         }
         Ok(())
     }
@@ -534,7 +534,7 @@ async fn open_session(state: &AppState, user_id: &str) -> String {
     session["token"].as_str().expect("token").to_owned()
 }
 
-/// Seal an act (real PDF/A) and return its id. `require_qualified` sets the enforcement setting first.
+/// Create an act in `Signing` with its immutable canonical PDF/A snapshot and return its id.
 async fn seal_an_act(state: &AppState, token: &str) -> String {
     let (status, entity) = send(
         state,
@@ -613,13 +613,6 @@ async fn seal_an_act(state: &AppState, token: &str) -> String {
         assert_eq!(status, StatusCode::OK, "advance to {to}");
     }
 
-    let (status, sealed) = send(
-        state,
-        json_req("POST", &format!("/v1/acts/{act_id}/seal"), token, json!({ "manual_signature_original_reference": { "storage_reference": "Arquivo A / Pasta 2026 / Ata teste" } })),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "seal: {sealed}");
-    assert_eq!(sealed["ata_number"], 1);
     act_id
 }
 
@@ -1015,7 +1008,7 @@ async fn cmd_signing_round_trip_produces_a_validating_signed_pdf() {
     assert_eq!(done["family"], "ChaveMovelDigital");
     assert_eq!(done["evidentiary_level"], "Qualified");
     assert_eq!(done["trusted_list_status"], "Granted");
-    assert_eq!(done["finalization"], "finalizado_qualificado");
+    assert_eq!(done["finalization"], "em_assinatura");
     assert_eq!(
         done["signer_capacity_evidence"]["requested_provider_capacity"],
         "Administrador"
@@ -1085,7 +1078,7 @@ async fn cmd_signing_round_trip_produces_a_validating_signed_pdf() {
     )
     .await;
     assert_eq!(view["status"], "signed");
-    assert_eq!(view["finalization"], "finalizado_qualificado");
+    assert_eq!(view["finalization"], "em_assinatura");
     assert_eq!(view["signed"]["evidentiary_level"], "Qualified");
     assert_eq!(
         view["signed"]["signer_capacity_evidence"]["requested_provider_capacity"],
@@ -1492,7 +1485,7 @@ async fn pending_session_survives_a_restart_and_confirms() {
     // Note: the pending session records the ORIGINAL initiating actor; the reboot's fresh session is
     // the SAME first user (amelia.marques), so the actor-gating passes and confirm succeeds.
     assert_eq!(status, StatusCode::OK, "confirm after restart: {done}");
-    assert_eq!(done["finalization"], "finalizado_qualificado");
+    assert_eq!(done["finalization"], "em_assinatura");
     let (status, signed_pdf) = send_bytes(
         &state2,
         get_req(&format!("/v1/acts/{act_id}/document/signed"), &token),

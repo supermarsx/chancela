@@ -6,20 +6,22 @@
  * deliberations editor with a read-only preview, a structured per-item deliberations
  * editor (text + VoteResult + member statements), act-scoped follow-up tooling, referenced
  * documents, signatories and attachments panels, a lifecycle stepper, a live CompliancePanel, and a SealAction that
- * stays disabled until `seal_allowed`. Once the act is Sealed/Archived it is read-only.
+ * stays disabled until `seal_allowed`. Entering `Signing` freezes the canonical snapshot, so the
+ * editor becomes read-only before any electronic or explicit manual-original signing evidence.
  *
  * The mesa presidente is the seal-unblocker: the CSC pack (csc-art63/v2) raises a blocking
  * `CSC-63/mesa-presidente` Error until it is filled, so the input below is what lets a
  * commercial-company ata reach «Conforme». The free-text `deliberations` field stays a
  * valid substance path alongside `deliberation_items` (plan R1/R3 — additive coexistence).
- * The SIG-03 manual-signature warning (UX-41) shows during signing because there is no
- * qualified-signature backend yet — sealing attests a manual signature.
+ * The SIG-03 manual-original path remains an explicit alternative when no accepted signed PDF is
+ * present; it never claims to validate the manual signature or certify the archive.
  */
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import {
   useAct,
+  useActSignature,
   useAdvanceAct,
   useArchiveAct,
   useBook,
@@ -229,12 +231,6 @@ const WRITTEN_RESOLUTION_FALSE_CLAIM_FLAGS = {
   authority_certified_claimed: false,
 } as const;
 
-const CONVOCATION_NOTICE_ADVISORY_TITLE = 'Aviso local da convocatória estatutária';
-const CONVOCATION_NOTICE_NO_CLAIMS =
-  'Apenas metadados locais; não afirma suficiência jurídica, entrega externa válida nem conclusão do workflow.';
-const CONVENING_DISPATCH_LOCAL_EVIDENCE_COPY =
-  'Regista apenas evidência local de expedição e proveniência no ledger. Não envia email/SMS, não confirma entrega externa, não afirma suficiência legal, conclusão do workflow, aceitação por registo/DRE nem aceitação por prestador.';
-
 const emptyConveningRecipient = (): ActConveningRecipient => ({
   name: '',
   contact: null,
@@ -402,7 +398,7 @@ function DeliberationsPreview({ text }: { text: string }) {
 
 // --- Mesa (bureau) --------------------------------------------------------------
 
-function MesaEditor({
+export function MesaEditor({
   mesa,
   disabled,
   onChange,
@@ -480,7 +476,7 @@ function MesaEditor({
 
 // --- Agenda (ordem de trabalhos) ------------------------------------------------
 
-function AgendaEditor({
+export function AgendaEditor({
   agenda,
   disabled,
   onChange,
@@ -565,7 +561,7 @@ function voteMode(vote: ActVoteResult | null): VoteMode {
   return vote === null ? 'none' : vote.type;
 }
 
-function VoteEditor({
+export function VoteEditor({
   vote,
   disabled,
   onChange,
@@ -647,7 +643,7 @@ function VoteEditor({
 
 // --- Member statements (declarações) --------------------------------------------
 
-function StatementsEditor({
+export function StatementsEditor({
   statements,
   disabled,
   onChange,
@@ -710,7 +706,7 @@ function StatementsEditor({
 
 // --- Structured deliberations ---------------------------------------------------
 
-function DeliberationItemsEditor({
+export function DeliberationItemsEditor({
   items,
   agenda,
   disabled,
@@ -803,7 +799,7 @@ function DeliberationItemsEditor({
 
 // --- Referenced documents -------------------------------------------------------
 
-function ReferencedDocumentsEditor({
+export function ReferencedDocumentsEditor({
   documents,
   disabled,
   onChange,
@@ -872,7 +868,7 @@ function ReferencedDocumentsEditor({
   );
 }
 
-function SignatoriesEditor({
+export function SignatoriesEditor({
   signatories,
   disabled,
   onChange,
@@ -980,7 +976,7 @@ function SignatoriesEditor({
   );
 }
 
-function AttachmentsEditor({
+export function AttachmentsEditor({
   attachments,
   disabled,
   onChange,
@@ -1304,23 +1300,18 @@ function ConvocationNoticeAdvisoryCue({
   meetingDate: string;
   convening: DraftConvening;
 }) {
+  const t = useT();
   const missingMeetingDate = meetingDate.trim() === '';
   const missingEvidence = convocationNoticeEvidenceMissing(convening);
   if (!missingMeetingDate && !missingEvidence) return null;
 
   return (
-    <InlineWarning tone="info" title={CONVOCATION_NOTICE_ADVISORY_TITLE}>
+    <InlineWarning tone="info" title={t('acts.convening.advisory.title')}>
       <ul className="stack--tight">
-        {missingMeetingDate ? (
-          <li>Registe a data da reunião para calcular a data local de aviso.</li>
-        ) : null}
-        {missingEvidence ? (
-          <li>
-            Registe data/meio de expedição, antecedência efetiva e referência da prova conservada.
-          </li>
-        ) : null}
+        {missingMeetingDate ? <li>{t('acts.convening.advisory.missingMeetingDate')}</li> : null}
+        {missingEvidence ? <li>{t('acts.convening.advisory.missingEvidence')}</li> : null}
       </ul>
-      <p className="muted">{CONVOCATION_NOTICE_NO_CLAIMS}</p>
+      <p className="muted">{t('acts.convening.advisory.noClaims')}</p>
     </InlineWarning>
   );
 }
@@ -1416,12 +1407,9 @@ function ConveningEditor({
         <div className="rowline">
           <div>
             <p className="field__label" id="ed-convening-recipients-title">
-              Destinatários da convocatória
+              {t('acts.convening.recipients.title')}
             </p>
-            <p className="field__hint">
-              Registos locais usados para evidência de expedição. Linhas sem nome não são
-              guardadas.
-            </p>
+            <p className="field__hint">{t('acts.convening.recipients.hint')}</p>
           </div>
           <Button
             type="button"
@@ -1430,17 +1418,14 @@ function ConveningEditor({
             disabled={disabled}
             onClick={addRecipient}
           >
-            Adicionar destinatário
+            {t('acts.convening.recipients.add')}
           </Button>
         </div>
         {convening.recipients.length === 0 ? (
-          <p className="muted">
-            Sem destinatários registados. Adicione pelo menos um destinatário antes de registar
-            evidência local de expedição.
-          </p>
+          <p className="muted">{t('acts.convening.recipients.empty')}</p>
         ) : (
           convening.recipients.map((recipient, index) => {
-            const rowLabel = `Destinatário ${index + 1}`;
+            const rowLabel = t('acts.convening.recipients.rowLabel', { number: index + 1 });
             const nameId = `ed-convening-recipient-${index}-name`;
             const contactId = `ed-convening-recipient-${index}-contact`;
             const channelId = `ed-convening-recipient-${index}-channel`;
@@ -1449,7 +1434,7 @@ function ConveningEditor({
             return (
               <div className="form" role="group" aria-label={rowLabel} key={index}>
                 <div className="rowline">
-                  <Field label="Nome" htmlFor={nameId}>
+                  <Field label={t('acts.convening.recipients.name')} htmlFor={nameId}>
                     <Input
                       id={nameId}
                       value={recipient.name}
@@ -1457,25 +1442,24 @@ function ConveningEditor({
                       onChange={(e) => updateRecipient(index, { name: e.target.value })}
                     />
                   </Field>
-                  <Field label="Contacto" htmlFor={contactId}>
+                  <Field label={t('acts.convening.recipients.contact')} htmlFor={contactId}>
                     <Input
                       id={contactId}
                       value={recipient.contact ?? ''}
                       disabled={disabled}
-                      placeholder="Ex.: email, morada, conta ou contacto interno"
-                      onChange={(e) =>
-                        updateRecipient(index, { contact: orNull(e.target.value) })
-                      }
+                      placeholder={t('acts.convening.recipients.contactPlaceholder')}
+                      onChange={(e) => updateRecipient(index, { contact: orNull(e.target.value) })}
                     />
                   </Field>
-                  <Field label="Meio" htmlFor={channelId}>
+                  <Field label={t('acts.convening.recipients.channel')} htmlFor={channelId}>
                     <Select
                       id={channelId}
                       value={recipient.channel ?? ''}
                       disabled={disabled}
                       onChange={(e) =>
                         updateRecipient(index, {
-                          channel: e.target.value === '' ? null : (e.target.value as DispatchChannel),
+                          channel:
+                            e.target.value === '' ? null : (e.target.value as DispatchChannel),
                         })
                       }
                       options={channelOptions}
@@ -1483,7 +1467,10 @@ function ConveningEditor({
                   </Field>
                 </div>
                 <div className="rowline">
-                  <Field label="Expedido em" htmlFor={dispatchedAtId}>
+                  <Field
+                    label={t('acts.convening.recipients.dispatchedAt')}
+                    htmlFor={dispatchedAtId}
+                  >
                     <Input
                       id={dispatchedAtId}
                       type="date"
@@ -1494,12 +1481,12 @@ function ConveningEditor({
                       }
                     />
                   </Field>
-                  <Field label="Referência de expedição" htmlFor={referenceId}>
+                  <Field label={t('acts.convening.recipients.reference')} htmlFor={referenceId}>
                     <Input
                       id={referenceId}
                       value={recipient.reference ?? ''}
                       disabled={disabled}
-                      placeholder="Ex.: RR123456789PT, recibo, id de mensagem"
+                      placeholder={t('acts.convening.recipients.referencePlaceholder')}
                       onChange={(e) =>
                         updateRecipient(index, { reference: orNull(e.target.value) })
                       }
@@ -1512,7 +1499,7 @@ function ConveningEditor({
                     disabled={disabled}
                     onClick={() => removeRecipient(index)}
                   >
-                    Remover destinatário
+                    {t('acts.convening.recipients.remove')}
                   </Button>
                 </div>
               </div>
@@ -1532,9 +1519,7 @@ function conveningRecipientNames(recipients: ActConveningRecipient[]): string[] 
   return normalizedConveningRecipients(recipients).map((recipient) => recipient.name);
 }
 
-function conveningDispatchEvidenceBody(
-  convening: DraftConvening,
-): DispatchActConveningBody | null {
+function conveningDispatchEvidenceBody(convening: DraftConvening): DispatchActConveningBody | null {
   const dispatchedAt = convening.dispatch_date.trim();
   const recipients = conveningDispatchRecipientNames(convening);
   if (dispatchedAt === '' || recipients.length === 0) return null;
@@ -1566,6 +1551,7 @@ function ConveningDispatchEvidenceAction({
   scope: CanScope;
   onRecord: () => void;
 }) {
+  const t = useT();
   const recipients = conveningDispatchRecipientNames(convening);
   const recipientCount = recipients.length;
   const persistedRecipientSet = new Set(conveningRecipientNames(persistedRecipients));
@@ -1575,23 +1561,15 @@ function ConveningDispatchEvidenceAction({
   const ready = !disabled && !pending && hasDispatchDate && recipientsPersisted;
 
   return (
-    <div className="stack--tight" aria-label="Evidência local de expedição da convocatória">
+    <div className="stack--tight" aria-label={t('acts.convening.evidence.aria')}>
       {error ? <ErrorNote error={error} /> : null}
-      <p className="field__hint">{CONVENING_DISPATCH_LOCAL_EVIDENCE_COPY}</p>
+      <p className="field__hint">{t('acts.convening.evidence.boundary')}</p>
       {hasDispatchDate && recipientsPersisted ? (
-        <p className="muted">
-          Marca {recipientCount} destinatário(s) existente(s) com a data indicada e, se
-          preenchidos, o meio e a referência local.
-        </p>
+        <p className="muted">{t('acts.convening.evidence.ready', { count: recipientCount })}</p>
       ) : hasDispatchDate && recipientCount > 0 ? (
-        <p className="muted">
-          Guarde a ata para persistir os destinatários antes de registar evidência local de
-          expedição.
-        </p>
+        <p className="muted">{t('acts.convening.evidence.saveRecipients')}</p>
       ) : (
-        <p className="muted">
-          Requer destinatários já existentes na convocatória e uma data de expedição preenchida.
-        </p>
+        <p className="muted">{t('acts.convening.evidence.requirements')}</p>
       )}
       <GateButton
         perm="act.edit"
@@ -1602,7 +1580,7 @@ function ConveningDispatchEvidenceAction({
         disabled={!ready}
         onClick={onRecord}
       >
-        {pending ? 'A registar evidência local' : 'Registar expedição local'}
+        {pending ? t('acts.convening.evidence.recording') : t('acts.convening.evidence.record')}
       </GateButton>
     </div>
   );
@@ -2241,6 +2219,7 @@ function SealWarningAcknowledgementModal({
   warnings,
   warningCount,
   checked,
+  signedEvidence,
   reference,
   pending,
   onCheckedChange,
@@ -2252,6 +2231,7 @@ function SealWarningAcknowledgementModal({
   warnings: SealWarningItem[];
   warningCount: number;
   checked: boolean;
+  signedEvidence: boolean;
   reference: ManualSignatureOriginalReferenceDraft;
   pending: boolean;
   onCheckedChange: (checked: boolean) => void;
@@ -2285,7 +2265,7 @@ function SealWarningAcknowledgementModal({
     reference.storage_reference,
     t,
   );
-  const ready = checked && referenceReady && !pending;
+  const ready = checked && (signedEvidence || referenceReady) && !pending;
   const warningLabel =
     warningCount === 1
       ? t('compliance.warnings.one', { count: warningCount })
@@ -2313,12 +2293,14 @@ function SealWarningAcknowledgementModal({
       >
         <header className="modal__head">
           <h2 className="modal__title" id={titleId}>
-            {t('acts.sealing.warningAck.title')}
+            {t(signedEvidence ? 'acts.sealing.signedAck.title' : 'acts.sealing.warningAck.title')}
           </h2>
         </header>
         <form className="modal__body" onSubmit={submit}>
           <div className="modal__intro">
-            <p>{t('acts.sealing.warningAck.body')}</p>
+            <p>
+              {t(signedEvidence ? 'acts.sealing.signedAck.body' : 'acts.sealing.warningAck.body')}
+            </p>
             {warningCount > 0 ? <p className="muted">{warningLabel}</p> : null}
           </div>
 
@@ -2336,51 +2318,55 @@ function SealWarningAcknowledgementModal({
             </ul>
           ) : null}
 
-          <Field
-            label={t('acts.manualSignature.originalReference.label')}
-            htmlFor={storageReferenceId}
-            hint={t('acts.manualSignature.originalReference.hint')}
-            error={storageReferenceError}
-          >
-            <Input
-              id={storageReferenceId}
-              value={reference.storage_reference}
-              maxLength={MANUAL_SIGNATURE_ORIGINAL_REFERENCE_LIMIT}
-              disabled={pending}
-              onChange={(e) =>
-                onReferenceChange({ ...reference, storage_reference: e.target.value })
-              }
-            />
-          </Field>
+          {!signedEvidence ? (
+            <>
+              <Field
+                label={t('acts.manualSignature.originalReference.label')}
+                htmlFor={storageReferenceId}
+                hint={t('acts.manualSignature.originalReference.hint')}
+                error={storageReferenceError}
+              >
+                <Input
+                  id={storageReferenceId}
+                  value={reference.storage_reference}
+                  maxLength={MANUAL_SIGNATURE_ORIGINAL_REFERENCE_LIMIT}
+                  disabled={pending}
+                  onChange={(e) =>
+                    onReferenceChange({ ...reference, storage_reference: e.target.value })
+                  }
+                />
+              </Field>
 
-          <Field
-            label={t('acts.manualSignature.custodian.label')}
-            htmlFor={custodianId}
-            hint={t('acts.manualSignature.custodian.hint')}
-          >
-            <Input
-              id={custodianId}
-              value={reference.custodian}
-              maxLength={MANUAL_SIGNATURE_ORIGINAL_CUSTODIAN_LIMIT}
-              disabled={pending}
-              onChange={(e) => onReferenceChange({ ...reference, custodian: e.target.value })}
-            />
-          </Field>
+              <Field
+                label={t('acts.manualSignature.custodian.label')}
+                htmlFor={custodianId}
+                hint={t('acts.manualSignature.custodian.hint')}
+              >
+                <Input
+                  id={custodianId}
+                  value={reference.custodian}
+                  maxLength={MANUAL_SIGNATURE_ORIGINAL_CUSTODIAN_LIMIT}
+                  disabled={pending}
+                  onChange={(e) => onReferenceChange({ ...reference, custodian: e.target.value })}
+                />
+              </Field>
 
-          <Field
-            label={t('acts.manualSignature.note.label')}
-            htmlFor={noteId}
-            hint={t('acts.manualSignature.note.hint')}
-          >
-            <TextArea
-              id={noteId}
-              value={reference.note}
-              maxLength={MANUAL_SIGNATURE_ORIGINAL_NOTE_LIMIT}
-              disabled={pending}
-              rows={3}
-              onChange={(e) => onReferenceChange({ ...reference, note: e.target.value })}
-            />
-          </Field>
+              <Field
+                label={t('acts.manualSignature.note.label')}
+                htmlFor={noteId}
+                hint={t('acts.manualSignature.note.hint')}
+              >
+                <TextArea
+                  id={noteId}
+                  value={reference.note}
+                  maxLength={MANUAL_SIGNATURE_ORIGINAL_NOTE_LIMIT}
+                  disabled={pending}
+                  rows={3}
+                  onChange={(e) => onReferenceChange({ ...reference, note: e.target.value })}
+                />
+              </Field>
+            </>
+          ) : null}
 
           <label className="checkline">
             <input
@@ -2390,9 +2376,13 @@ function SealWarningAcknowledgementModal({
               onChange={(e) => onCheckedChange(e.target.checked)}
             />
             {t(
-              warningCount > 0
-                ? 'acts.sealing.warningAck.checkboxWithWarnings'
-                : 'acts.sealing.warningAck.checkbox',
+              signedEvidence
+                ? warningCount > 0
+                  ? 'acts.sealing.signedAck.checkboxWithWarnings'
+                  : 'acts.sealing.signedAck.checkbox'
+                : warningCount > 0
+                  ? 'acts.sealing.warningAck.checkboxWithWarnings'
+                  : 'acts.sealing.warningAck.checkbox',
             )}
           </label>
 
@@ -2421,6 +2411,10 @@ export function AtaEditorPage() {
   const book = useBook(act.data?.book_id ?? '');
   const entity = useEntity(book.data?.entity_id ?? '');
   const compliance = useCompliance(id);
+  const signature = useActSignature(
+    id,
+    act.data?.state === 'Signing' || act.data?.state === 'Sealed' || act.data?.state === 'Archived',
+  );
   const update = useUpdateAct(id);
   const dispatchConvening = useDispatchActConvening(id);
   const advance = useAdvanceAct(id);
@@ -2496,7 +2490,9 @@ export function AtaEditorPage() {
   if (!act.data) return null;
 
   const a = act.data;
-  const readOnly = a.state === 'Sealed' || a.state === 'Archived';
+  const signing = a.state === 'Signing';
+  const sealedOrArchived = a.state === 'Sealed' || a.state === 'Archived';
+  const readOnly = signing || sealedOrArchived;
   // Every act lifecycle mutation is gated at the act's BOOK scope (the server resolves the
   // same scope from the act's book_id, t64-E3).
   const bookScope = scopeBook(a.book_id);
@@ -2546,7 +2542,7 @@ export function AtaEditorPage() {
               : current,
           );
         }
-        toast.success('Evidência local de expedição registada.');
+        toast.success(t('acts.convening.evidence.recorded'));
       },
       onError: (e) => toast.error(e),
     });
@@ -2580,13 +2576,22 @@ export function AtaEditorPage() {
   }
 
   function submitSeal(acknowledgeWarnings: boolean) {
-    if (!manualSignatureOriginalReferenceReady(manualSignatureOriginalReference)) return;
+    if (
+      !hasSignedEvidence &&
+      !manualSignatureOriginalReferenceReady(manualSignatureOriginalReference)
+    ) {
+      return;
+    }
     seal.mutate(
       {
         ...(acknowledgeWarnings ? { acknowledge_warnings: true } : {}),
-        manual_signature_original_reference: manualSignatureOriginalReferenceFromDraft(
-          manualSignatureOriginalReference,
-        ),
+        ...(!hasSignedEvidence
+          ? {
+              manual_signature_original_reference: manualSignatureOriginalReferenceFromDraft(
+                manualSignatureOriginalReference,
+              ),
+            }
+          : {}),
       },
       {
         onSuccess: () => {
@@ -2617,7 +2622,8 @@ export function AtaEditorPage() {
   }
 
   const sealAllowed = compliance.data?.seal_allowed ?? false;
-  const canSeal = a.state === 'Signing' && sealAllowed;
+  const hasSignedEvidence = signature.data?.status === 'signed';
+  const canSeal = signing && sealAllowed;
   const aiHumanVerificationStatus = a.ai_provenance?.human_verification.status ?? null;
   const warningCount = complianceWarningCount(compliance.data);
   const hasComplianceWarnings = warningCount > 0;
@@ -2655,7 +2661,11 @@ export function AtaEditorPage() {
         }
       />
 
-      {readOnly ? (
+      {signing ? (
+        <InlineWarning tone="info" title={t('acts.signingSnapshot.title')}>
+          {t('acts.signingSnapshot.body')}
+        </InlineWarning>
+      ) : sealedOrArchived ? (
         <InlineWarning tone="info" title={t('acts.sealed.title')}>
           {t('acts.sealed.bodyPrefix')}{' '}
           {a.payload_digest ? <Digest value={a.payload_digest} /> : <span className="mono">—</span>}
@@ -2990,23 +3000,24 @@ export function AtaEditorPage() {
 
           <Card title={t('acts.sealing.title')}>
             <div className="stack--tight">
-              {a.state === 'Signing' ? (
+              {signing && !hasSignedEvidence ? (
                 <InlineWarning tone="warn" title={t('acts.manualSignature.title')}>
                   {t('acts.manualSignature.body')}
                 </InlineWarning>
               ) : null}
               {seal.error ? <ErrorNote error={seal.error} /> : null}
-              {!readOnly ? (
+              {signing ? (
                 <>
                   <p className="muted">
-                    {a.state !== 'Signing'
-                      ? t('acts.sealing.unavailableState')
-                      : sealAllowed && hasComplianceWarnings
-                        ? t('acts.sealing.readyWithWarnings')
-                        : sealAllowed
-                          ? t('acts.sealing.ready')
-                          : t('acts.sealing.fixErrors')}
+                    {!sealAllowed
+                      ? t('acts.sealing.fixErrors')
+                      : hasSignedEvidence
+                        ? t('acts.sealing.signedReady')
+                        : t('acts.sealing.signatureRequired')}
                   </p>
+                  {sealAllowed && hasComplianceWarnings ? (
+                    <p className="muted">{t('acts.sealing.readyWithWarnings')}</p>
+                  ) : null}
                   <GateButton
                     perm="signing.perform"
                     scope={bookScope}
@@ -3035,8 +3046,10 @@ export function AtaEditorPage() {
                   </GateButton>
                   {archive.error ? <ErrorNote error={archive.error} /> : null}
                 </>
-              ) : (
+              ) : a.state === 'Archived' ? (
                 <p className="muted">{t('acts.archived')}</p>
+              ) : (
+                <p className="muted">{t('acts.sealing.unavailableState')}</p>
               )}
             </div>
           </Card>
@@ -3047,6 +3060,7 @@ export function AtaEditorPage() {
         warnings={warningItems}
         warningCount={warningCount}
         checked={sealWarningsAcknowledged}
+        signedEvidence={hasSignedEvidence}
         reference={manualSignatureOriginalReference}
         pending={seal.isPending}
         onCheckedChange={setSealWarningsAcknowledged}

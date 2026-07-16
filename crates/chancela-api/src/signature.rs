@@ -1,24 +1,24 @@
-//! Qualified Chave Móvel Digital signing endpoints (t57-S3): the async two-phase state machine
-//! that turns a sealed act's unsigned PDF/A into a **qualified** CMD-signed PDF, its status/read
-//! surface, and the `require_qualified_for_seal` enforcement semantics.
+//! Chave Móvel Digital signing endpoints (t57-S3): the async two-phase state machine that signs an
+//! act's immutable canonical PDF while the act is in `Signing`, its status/read surface, and the
+//! `require_qualified_for_seal` status semantics.
 //!
 //! ## Why two phases
 //!
 //! A CMD signature is interactive: the citizen receives an OTP by SMS *between* starting the
 //! signature and confirming it. That round-trip cannot live inside one HTTP request, so signing is a
-//! **distinct post-seal step** split across two requests (t57 ruling 1):
+//! **distinct pre-seal step** split across two requests (t57 ruling 1):
 //!
 //! ```text
-//! [act SEALED, unsigned PDF/A persisted]                      (existing seal flow, unchanged)
+//! [act SIGNING, canonical PDF/A snapshot persisted]
 //!        │  POST /v1/acts/{id}/signature/cmd/initiate  { phone, pin }
 //!        ▼
-//!   prepare_signature(sealed PDF) → cmd_initiate (GetCertificate → TSL gate → CCMovelSign;
+//!   prepare_signature(canonical PDF) → cmd_initiate (GetCertificate → TSL gate → CCMovelSign;
 //!   dispatches the OTP) → persist a PENDING session (no PIN) → { session_id, masked_phone }
 //!        │  [citizen receives the SMS OTP]
 //!        │  POST /v1/acts/{id}/signature/cmd/confirm   { session_id, otp }
 //!        ▼
 //!   cmd_confirm (ValidateOtp → CMS) → embed_signature → validate (SIG-24) → persist the SIGNED
-//!   variant + a chained `document.signed` event → the act reaches finalizado-qualificado
+//!   variant + a chained `document.signed` event → the act remains in Signing until sealed
 //! ```
 //!
 //! ## Secret discipline (t57 ruling 4 / §6)
@@ -32,12 +32,9 @@
 //!
 //! ## Enforcement (t57 ruling 6 / deliverable D)
 //!
-//! `signing.require_qualified_for_seal` gates the **finalizado-qualificado STATUS**, not the seal.
-//! Sealing always succeeds and always produces the unsigned PDF/A. With the setting on, an act stays
-//! `aguarda_assinatura_qualificada` until a genuine qualified signature is present; with it off, a
-//! sealed act is `finalizado` on the non-qualified path. No endpoint sets the qualified status
-//! directly — it is *derived* from the presence of a validated `Qualified` signed variant, so it is
-//! unbypassable.
+//! Before sealing, every unsigned, pending, or signed act reports `em_assinatura`. After sealing,
+//! the finalization label is derived from the validated stored evidence; signing endpoints never
+//! claim finalization while the act is still mutable for signature collection.
 
 use axum::Json;
 use axum::body::{Body, Bytes};
@@ -83,7 +80,7 @@ use uuid::Uuid;
 use zeroize::Zeroizing;
 
 use chancela_authz::{Permission, Scope};
-use chancela_core::{ActId, ExternalSignatureEnvelopeId, ExternalSignerSlotId};
+use chancela_core::{ActId, ActState, ExternalSignatureEnvelopeId, ExternalSignerSlotId};
 
 use crate::AppState;
 use crate::actor::CurrentActor;
@@ -440,8 +437,8 @@ pub struct CmdConfirmResponse {
 pub struct SignatureStatusView {
     /// `"unsigned"` | `"pending"` | `"signed"`.
     pub status: &'static str,
-    /// The derived finalization status (see module docs): `rascunho` | `finalizado` |
-    /// `aguarda_assinatura_qualificada` | `finalizado_qualificado`.
+    /// The derived finalization status (see module docs): `em_assinatura` | `finalizado` |
+    /// `finalizado_qualificado`.
     pub finalization: &'static str,
     /// Whether `require_qualified_for_seal` is on (so the UI can explain the pending state).
     pub require_qualified_for_seal: bool,
@@ -1253,7 +1250,7 @@ pub async fn create_external_signer_invite(
     let scope = scope_of_act(&state, act_id).await;
     require_permission(&state, &actor, Permission::SigningPerform, scope).await?;
     let actor_name = actor.resolve(req.actor.as_deref().unwrap_or("api"));
-    let audit_scope = sealed_act_audit_scope(&state, act_id).await?;
+    let audit_scope = signing_act_audit_scope(&state, act_id).await?;
 
     let recipient_name = required_trimmed(req.recipient_name, "recipient_name")?;
     let recipient_email = required_trimmed(req.recipient_email, "recipient_email")?;
@@ -1537,6 +1534,7 @@ pub async fn respond_external_signer_invite(
     let upload =
         signed_pdf_upload_from_invite_response(req.decision, req.signed_pdf_base64, req.filename)?;
     let mut record = find_live_external_invite_by_token(&state, req.token).await?;
+    require_act_signing(&state, record.act_id).await?;
     let _ = external_invite_safe_context(&state, &record).await?;
     if let Some(existing) = record.response {
         if existing != req.decision {
@@ -1615,23 +1613,8 @@ pub async fn initiate_cmd_signature(
     }
     let act_id = ActId(id);
 
-    // Resolve the act's sealed unsigned document, refusing a not-sealed act. Read locks only
-    // (books → acts, plus entity presence); the durable write happens at confirm.
-    {
-        let acts = state.acts.read().await;
-        let act = acts.get(&act_id).ok_or(ApiError::NotFound)?;
-        if act.ata_number.is_none() {
-            return Err(ApiError::Conflict(
-                "o ato ainda não foi selado; a assinatura qualificada é um passo posterior ao selo"
-                    .to_owned(),
-            ));
-        }
-    }
-    let unsigned = crate::documents::load_document(&state, act_id)
-        .await?
-        .ok_or_else(|| {
-            ApiError::Conflict("o ato selado não tem documento para assinar".to_owned())
-        })?;
+    // Signing is performed over the immutable canonical snapshot created on entry to Signing.
+    let unsigned = load_signing_document(&state, act_id).await?;
 
     // Reject a second signature over an already-signed act (single qualified artifact per act).
     if load_signed(&state, act_id).await?.is_some() {
@@ -1708,6 +1691,9 @@ pub async fn initiate_cmd_signature(
         created_at: signing_time,
         expires_at,
     };
+    let acts = state.acts.read().await;
+    let act = acts.get(&act_id).ok_or(ApiError::NotFound)?;
+    ensure_signing_state(act.state)?;
     if let Some(store) = &state.store {
         store
             .persist(|tx| tx.upsert_pending_cmd_session(&pending))
@@ -1718,6 +1704,7 @@ pub async fn initiate_cmd_signature(
         .write()
         .await
         .insert(session_id.clone(), pending);
+    drop(acts);
 
     Ok(Json(CmdInitiateResponse {
         session_id,
@@ -1777,6 +1764,8 @@ pub async fn confirm_cmd_signature(
         .map_err(|e| ApiError::Internal(format!("corrupt pending session: {e}")))?;
     let prepared: PreparedSignature = serde_json::from_str(&pending.prepared_json)
         .map_err(|e| ApiError::Internal(format!("corrupt prepared signature: {e}")))?;
+    let unsigned = load_signing_document(&state, act_id).await?;
+    ensure_prepared_signature_binds_document(&unsigned, &prepared)?;
 
     let cmd_cfg = resolve_cmd_config(&state).await?;
     // ValidateOtp → assemble the detached CMS. The OTP is consumed here.
@@ -1788,6 +1777,7 @@ pub async fn confirm_cmd_signature(
         .map_err(|e| ApiError::Internal(format!("failed to embed the CMS signature: {e}")))?;
 
     let final_pdf = finalize_signed_pdf(&state, signed_pdf, &session.signing_cert_der).await?;
+    ensure_signed_pdf_binds_document(&unsigned, &final_pdf.bytes)?;
 
     // Resolve the ledger scope from the live act (re-checking it is still sealed + unsigned).
     let scope = {
@@ -1805,10 +1795,8 @@ pub async fn confirm_cmd_signature(
     let signed_at = OffsetDateTime::now_utc();
     let trusted_list_status = session.trusted_list_status.map(status_label);
     // The source unsigned document id (for provenance in the event + row).
-    let document_id = crate::documents::load_document(&state, act_id)
-        .await?
-        .map(|d| d.id)
-        .unwrap_or_default();
+    let document_id = unsigned.id;
+    let signing_snapshot_digest = unsigned.pdf_digest;
     let stored = StoredSignedDocument {
         act_id,
         document_id: document_id.clone(),
@@ -1831,6 +1819,7 @@ pub async fn confirm_cmd_signature(
     let event_payload = json!({
         "act_id": act_id.to_string(),
         "document_id": document_id,
+        "signing_snapshot_digest": signing_snapshot_digest,
         "signed_pdf_digest": signed_pdf_digest,
         "family": FAMILY_CMD,
         "evidentiary_level": EVIDENTIARY_QUALIFIED,
@@ -1843,6 +1832,11 @@ pub async fn confirm_cmd_signature(
     let payload = serde_json::to_vec(&event_payload)?;
     let session_id = pending.session_id.clone();
     {
+        // Hold an act-state read guard through the durable write. Sealing needs the matching write
+        // guard, so it cannot race this signature into persistence after the evidence tuple freezes.
+        let acts = state.acts.read().await;
+        let act = acts.get(&act_id).ok_or(ApiError::NotFound)?;
+        ensure_signing_state(act.state)?;
         let mut ledger = state.ledger.write().await;
         crate::try_append_event(
             &mut ledger,
@@ -1856,6 +1850,7 @@ pub async fn confirm_cmd_signature(
             tx.upsert_signed_document(&stored)?;
             tx.delete_pending_cmd_session(&session_id)
         })?;
+        drop(acts);
         state.attest_latest(&attestor, &ledger).await;
     }
     // Publish to the live read models (GET source; the store is durability).
@@ -1875,7 +1870,7 @@ pub async fn confirm_cmd_signature(
         signed_at: rfc3339(signed_at),
         signed_pdf_digest,
         timestamp_token: final_pdf.report.has_signature_timestamp,
-        finalization: "finalizado_qualificado",
+        finalization: "em_assinatura",
         signer_capacity_evidence: signer_capacity_evidence_from_json(
             stored.signer_capacity_evidence_json.as_deref(),
         ),
@@ -2127,22 +2122,7 @@ pub async fn sign_cc_signature(
     // it. Absent / invisible keeps the invisible locked widget.
     let appearance = seal_appearance_from_request(req.seal)?;
 
-    // Resolve the act's sealed unsigned document, refusing a not-sealed act (signing is post-seal).
-    {
-        let acts = state.acts.read().await;
-        let act = acts.get(&act_id).ok_or(ApiError::NotFound)?;
-        if act.ata_number.is_none() {
-            return Err(ApiError::Conflict(
-                "o ato ainda não foi selado; a assinatura qualificada é um passo posterior ao selo"
-                    .to_owned(),
-            ));
-        }
-    }
-    let unsigned = crate::documents::load_document(&state, act_id)
-        .await?
-        .ok_or_else(|| {
-            ApiError::Conflict("o ato selado não tem documento para assinar".to_owned())
-        })?;
+    let unsigned = load_signing_document(&state, act_id).await?;
 
     // One qualified artifact per act (whether produced by CC or CMD).
     if load_signed(&state, act_id).await?.is_some() {
@@ -2224,7 +2204,7 @@ pub async fn sign_cc_signature(
         signed_at: rfc3339(persisted.signed_at),
         signed_pdf_digest: persisted.signed_pdf_digest,
         timestamp_token: persisted.timestamp_token,
-        finalization: "finalizado_qualificado",
+        finalization: "em_assinatura",
         signer_capacity_evidence,
     }))
 }
@@ -2246,6 +2226,7 @@ pub async fn attach_dss_evidence(
     let act_id = ActId(id);
     let scope = scope_of_act(&state, act_id).await;
     require_permission(&state, &actor, Permission::SigningPerform, scope).await?;
+    let signing_document = load_signing_document(&state, act_id).await?;
     let actor = actor.resolve(req.actor.as_deref().unwrap_or("api"));
 
     let mut stored = load_signed(&state, act_id)
@@ -2269,6 +2250,7 @@ pub async fn attach_dss_evidence(
 
     let report =
         validate_signed_pdf_with_incremental_updates(&updated_pdf, &stored.signer_cert_der)?;
+    ensure_signed_pdf_binds_document(&signing_document, &updated_pdf)?;
     let signed_pdf_digest = sha256_hex(&updated_pdf);
     stored.signed_pdf_digest = signed_pdf_digest.clone();
     stored.signed_pdf_bytes = updated_pdf;
@@ -2278,6 +2260,7 @@ pub async fn attach_dss_evidence(
     let event_payload = json!({
         "act_id": act_id.to_string(),
         "document_id": stored.document_id.clone(),
+        "signing_snapshot_digest": signing_document.pdf_digest,
         "signed_pdf_digest": signed_pdf_digest.clone(),
         "evidentiary_level": evidence_status.current_level,
         "status_scope": TECHNICAL_EVIDENCE_ONLY,
@@ -2288,6 +2271,9 @@ pub async fn attach_dss_evidence(
     });
     let payload = serde_json::to_vec(&event_payload)?;
     {
+        let acts = state.acts.read().await;
+        let act = acts.get(&act_id).ok_or(ApiError::NotFound)?;
+        ensure_signing_state(act.state)?;
         let mut ledger = state.ledger.write().await;
         crate::try_append_event(
             &mut ledger,
@@ -2298,6 +2284,7 @@ pub async fn attach_dss_evidence(
             &payload,
         )?;
         state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_signed_document(&stored))?;
+        drop(acts);
         state.attest_latest(&attestor, &ledger).await;
     }
     state
@@ -2336,6 +2323,7 @@ pub async fn collect_revocation_evidence(
     let act_id = ActId(id);
     let scope = scope_of_act(&state, act_id).await;
     require_permission(&state, &actor, Permission::SigningPerform, scope).await?;
+    let signing_document = load_signing_document(&state, act_id).await?;
     let actor = actor.resolve(req.actor.as_deref().unwrap_or("api"));
 
     let mut stored = load_signed(&state, act_id)
@@ -2367,6 +2355,7 @@ pub async fn collect_revocation_evidence(
 
     let report =
         validate_signed_pdf_with_incremental_updates(&updated_pdf, &stored.signer_cert_der)?;
+    ensure_signed_pdf_binds_document(&signing_document, &updated_pdf)?;
     let signed_pdf_digest = sha256_hex(&updated_pdf);
     stored.signed_pdf_digest = signed_pdf_digest.clone();
     stored.signed_pdf_bytes = updated_pdf;
@@ -2377,6 +2366,7 @@ pub async fn collect_revocation_evidence(
     let event_payload = json!({
         "act_id": act_id.to_string(),
         "document_id": stored.document_id.clone(),
+        "signing_snapshot_digest": signing_document.pdf_digest,
         "signed_pdf_digest": signed_pdf_digest.clone(),
         "evidentiary_level": evidence_status.current_level,
         "status_scope": TECHNICAL_EVIDENCE_ONLY,
@@ -2388,6 +2378,9 @@ pub async fn collect_revocation_evidence(
     });
     let payload = serde_json::to_vec(&event_payload)?;
     {
+        let acts = state.acts.read().await;
+        let act = acts.get(&act_id).ok_or(ApiError::NotFound)?;
+        ensure_signing_state(act.state)?;
         let mut ledger = state.ledger.write().await;
         crate::try_append_event(
             &mut ledger,
@@ -2398,6 +2391,7 @@ pub async fn collect_revocation_evidence(
             &payload,
         )?;
         state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_signed_document(&stored))?;
+        drop(acts);
         state.attest_latest(&attestor, &ledger).await;
     }
     state
@@ -2437,6 +2431,7 @@ pub async fn append_archive_timestamp(
     let act_id = ActId(id);
     let scope = scope_of_act(&state, act_id).await;
     require_permission(&state, &actor, Permission::SigningPerform, scope).await?;
+    let signing_document = load_signing_document(&state, act_id).await?;
     let actor = actor.resolve(req.actor.as_deref().unwrap_or("api"));
 
     let mut stored = load_signed(&state, act_id)
@@ -2459,6 +2454,7 @@ pub async fn append_archive_timestamp(
 
     let report =
         validate_signed_pdf_with_incremental_updates(&updated_pdf, &stored.signer_cert_der)?;
+    ensure_signed_pdf_binds_document(&signing_document, &updated_pdf)?;
     require_appended_doc_timestamp_evidence(
         &before_report.doc_timestamps,
         &report.doc_timestamps,
@@ -2475,6 +2471,7 @@ pub async fn append_archive_timestamp(
     let event_payload = json!({
         "act_id": act_id.to_string(),
         "document_id": stored.document_id.clone(),
+        "signing_snapshot_digest": signing_document.pdf_digest,
         "signed_pdf_digest": signed_pdf_digest.clone(),
         "evidentiary_level": evidence_status.current_level,
         "status_scope": TECHNICAL_EVIDENCE_ONLY,
@@ -2486,6 +2483,9 @@ pub async fn append_archive_timestamp(
     });
     let payload = serde_json::to_vec(&event_payload)?;
     {
+        let acts = state.acts.read().await;
+        let act = acts.get(&act_id).ok_or(ApiError::NotFound)?;
+        ensure_signing_state(act.state)?;
         let mut ledger = state.ledger.write().await;
         crate::try_append_event(
             &mut ledger,
@@ -2496,6 +2496,7 @@ pub async fn append_archive_timestamp(
             &payload,
         )?;
         state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_signed_document(&stored))?;
+        drop(acts);
         state.attest_latest(&attestor, &ledger).await;
     }
     state
@@ -2781,23 +2782,13 @@ pub(crate) async fn resolve_cc_batch_doc(
     capacity: Option<&str>,
     signer_capacity_evidence_json: Option<String>,
 ) -> Result<CcBatchDocInput, String> {
-    {
-        let acts = state.acts.read().await;
-        let act = acts
-            .get(&act_id)
-            .ok_or_else(|| "ato não encontrado".to_owned())?;
-        if act.ata_number.is_none() {
-            return Err(
-                "o ato ainda não foi selado; a assinatura qualificada é um passo \
-                 posterior ao selo"
-                    .to_owned(),
-            );
-        }
-    }
-    let unsigned = crate::documents::load_document(state, act_id)
+    let unsigned = load_signing_document(state, act_id)
         .await
-        .map_err(|_| "não foi possível carregar o documento do ato".to_owned())?
-        .ok_or_else(|| "o ato selado não tem documento para assinar".to_owned())?;
+        .map_err(|error| match error {
+            ApiError::NotFound => "ato não encontrado".to_owned(),
+            ApiError::Conflict(message) => message,
+            _ => "não foi possível carregar o documento do ato".to_owned(),
+        })?;
     if load_signed(state, act_id)
         .await
         .map_err(|_| "não foi possível verificar assinaturas existentes".to_owned())?
@@ -2857,7 +2848,9 @@ pub(crate) async fn persist_cc_signed_pdf(
     signing_time: OffsetDateTime,
     signer_capacity_evidence_json: Option<String>,
 ) -> Result<PersistedCcSignature, ApiError> {
+    let unsigned = load_signing_document(state, act_id).await?;
     let final_pdf = finalize_signed_pdf(state, signed_pdf, signing_cert_der).await?;
+    ensure_signed_pdf_binds_document(&unsigned, &final_pdf.bytes)?;
 
     // Resolve the ledger scope from the live act (re-checking presence).
     let scope = {
@@ -2874,10 +2867,8 @@ pub(crate) async fn persist_cc_signed_pdf(
     let signed_pdf_digest = crate::hex::hex(&digest);
     let signed_at = OffsetDateTime::now_utc();
     let trusted_list_status = trusted_list_status.map(status_label);
-    let document_id = crate::documents::load_document(state, act_id)
-        .await?
-        .map(|d| d.id)
-        .unwrap_or_default();
+    let document_id = unsigned.id;
+    let signing_snapshot_digest = unsigned.pdf_digest;
     // Reuse t57-S3's F4 signed-document store row unchanged (family-agnostic columns).
     let stored = StoredSignedDocument {
         act_id,
@@ -2901,6 +2892,7 @@ pub(crate) async fn persist_cc_signed_pdf(
     let event_payload = json!({
         "act_id": act_id.to_string(),
         "document_id": document_id,
+        "signing_snapshot_digest": signing_snapshot_digest,
         "signed_pdf_digest": signed_pdf_digest,
         "family": FAMILY_CC,
         "evidentiary_level": EVIDENTIARY_QUALIFIED,
@@ -2912,6 +2904,9 @@ pub(crate) async fn persist_cc_signed_pdf(
     });
     let payload = serde_json::to_vec(&event_payload)?;
     {
+        let acts = state.acts.read().await;
+        let act = acts.get(&act_id).ok_or(ApiError::NotFound)?;
+        ensure_signing_state(act.state)?;
         let mut ledger = state.ledger.write().await;
         crate::try_append_event(
             &mut ledger,
@@ -2922,6 +2917,7 @@ pub(crate) async fn persist_cc_signed_pdf(
             &payload,
         )?;
         state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_signed_document(&stored))?;
+        drop(acts);
         state.attest_latest(attestor, &ledger).await;
     }
     state
@@ -3479,22 +3475,7 @@ pub async fn initiate_remote_signature(
         ));
     }
 
-    // Resolve the act's sealed unsigned document, refusing a not-sealed act (signing is post-seal).
-    {
-        let acts = state.acts.read().await;
-        let act = acts.get(&act_id).ok_or(ApiError::NotFound)?;
-        if act.ata_number.is_none() {
-            return Err(ApiError::Conflict(
-                "o ato ainda não foi selado; a assinatura qualificada é um passo posterior ao selo"
-                    .to_owned(),
-            ));
-        }
-    }
-    let unsigned = crate::documents::load_document(&state, act_id)
-        .await?
-        .ok_or_else(|| {
-            ApiError::Conflict("o ato selado não tem documento para assinar".to_owned())
-        })?;
+    let unsigned = load_signing_document(&state, act_id).await?;
 
     // One qualified artifact per act (whether produced by CMD, CC, or a CSC QTSP).
     if load_signed(&state, act_id).await?.is_some() {
@@ -3576,6 +3557,9 @@ pub async fn initiate_remote_signature(
         created_at: signing_time,
         expires_at,
     };
+    let acts = state.acts.read().await;
+    let act = acts.get(&act_id).ok_or(ApiError::NotFound)?;
+    ensure_signing_state(act.state)?;
     if let Some(store) = &state.store {
         store
             .persist(|tx| tx.upsert_pending_cmd_session(&pending))
@@ -3586,6 +3570,7 @@ pub async fn initiate_remote_signature(
         .write()
         .await
         .insert(session_id.clone(), pending);
+    drop(acts);
 
     Ok(Json(RemoteInitiateResponse {
         session_id,
@@ -3751,6 +3736,11 @@ pub async fn initiate_remote_batch_signature(
         }
     }
 
+    let acts = state.acts.read().await;
+    for pending in &pending_rows {
+        let act = acts.get(&pending.act_id).ok_or(ApiError::NotFound)?;
+        ensure_signing_state(act.state)?;
+    }
     if let Some(store) = &state.store
         && !pending_rows.is_empty()
     {
@@ -3771,6 +3761,7 @@ pub async fn initiate_remote_batch_signature(
             pending_signatures.insert(pending.session_id.clone(), pending);
         }
     }
+    drop(acts);
 
     let results: Vec<RemoteBatchInitiateResult> = results.into_iter().flatten().collect();
     let pending = results.iter().filter(|r| r.status == "pending").count();
@@ -3843,6 +3834,8 @@ pub async fn confirm_remote_signature(
         .map_err(|e| ApiError::Internal(format!("corrupt pending session: {e}")))?;
     let prepared: PreparedSignature = serde_json::from_str(&pending.prepared_json)
         .map_err(|e| ApiError::Internal(format!("corrupt prepared signature: {e}")))?;
+    let unsigned = load_signing_document(&state, act_id).await?;
+    ensure_prepared_signature_binds_document(&unsigned, &prepared)?;
 
     if session.provider_id != provider {
         return Err(ApiError::Conflict(
@@ -3863,6 +3856,7 @@ pub async fn confirm_remote_signature(
         .map_err(|e| ApiError::Internal(format!("failed to embed the CMS signature: {e}")))?;
 
     let final_pdf = finalize_signed_pdf(&state, signed_pdf, &session.signing_cert_der).await?;
+    ensure_signed_pdf_binds_document(&unsigned, &final_pdf.bytes)?;
 
     // Resolve the ledger scope from the live act (re-checking presence).
     let scope = {
@@ -3879,10 +3873,8 @@ pub async fn confirm_remote_signature(
     let signed_pdf_digest = crate::hex::hex(&digest);
     let signed_at = OffsetDateTime::now_utc();
     let trusted_list_status = session.trusted_list_status.map(status_label);
-    let document_id = crate::documents::load_document(&state, act_id)
-        .await?
-        .map(|d| d.id)
-        .unwrap_or_default();
+    let document_id = unsigned.id;
+    let signing_snapshot_digest = unsigned.pdf_digest;
     // Reuse t57-S3's family-agnostic signed-document store row unchanged.
     let stored = StoredSignedDocument {
         act_id,
@@ -3907,6 +3899,7 @@ pub async fn confirm_remote_signature(
     let event_payload = json!({
         "act_id": act_id.to_string(),
         "document_id": document_id,
+        "signing_snapshot_digest": signing_snapshot_digest,
         "signed_pdf_digest": signed_pdf_digest,
         "family": family,
         "provider_id": provider_id,
@@ -3920,6 +3913,9 @@ pub async fn confirm_remote_signature(
     let payload = serde_json::to_vec(&event_payload)?;
     let session_id = pending.session_id.clone();
     {
+        let acts = state.acts.read().await;
+        let act = acts.get(&act_id).ok_or(ApiError::NotFound)?;
+        ensure_signing_state(act.state)?;
         let mut ledger = state.ledger.write().await;
         crate::try_append_event(
             &mut ledger,
@@ -3933,6 +3929,7 @@ pub async fn confirm_remote_signature(
             tx.upsert_signed_document(&stored)?;
             tx.delete_pending_cmd_session(&session_id)
         })?;
+        drop(acts);
         state.attest_latest(&attestor, &ledger).await;
     }
     state
@@ -3952,7 +3949,7 @@ pub async fn confirm_remote_signature(
         signed_at: rfc3339(signed_at),
         signed_pdf_digest,
         timestamp_token: final_pdf.report.has_signature_timestamp,
-        finalization: "finalizado_qualificado",
+        finalization: "em_assinatura",
         signer_capacity_evidence: signer_capacity_evidence_from_json(
             stored.signer_capacity_evidence_json.as_deref(),
         ),
@@ -4693,23 +4690,7 @@ pub async fn import_official_signature(
     )?;
     let actor = actor.resolve(candidate.actor.as_deref().unwrap_or("api"));
 
-    let sealed = {
-        let acts = state.acts.read().await;
-        let act = acts.get(&act_id).ok_or(ApiError::NotFound)?;
-        act.ata_number.is_some()
-    };
-    if !sealed {
-        return Err(ApiError::Conflict(
-            "o ato ainda não foi selado; a importação de assinatura oficial é posterior ao selo"
-                .to_owned(),
-        ));
-    }
-
-    let unsigned = crate::documents::load_document(&state, act_id)
-        .await?
-        .ok_or_else(|| {
-            ApiError::Conflict("o ato selado não tem documento para assinar".to_owned())
-        })?;
+    let unsigned = load_signing_document(&state, act_id).await?;
 
     if load_signed(&state, act_id).await?.is_some() {
         return Err(ApiError::Conflict(
@@ -4732,11 +4713,7 @@ pub async fn import_official_signature(
     }
 
     let report = validate_imported_signed_pdf(&signed_pdf)?;
-    if !signed_pdf.starts_with(&unsigned.pdf_bytes) {
-        return Err(ApiError::Conflict(
-            "o PDF assinado não corresponde ao PDF selado deste ato".to_owned(),
-        ));
-    }
+    ensure_signed_pdf_binds_document(&unsigned, &signed_pdf)?;
 
     let signed_pdf_digest = sha256_hex(&signed_pdf);
     let signed_at = OffsetDateTime::now_utc();
@@ -4751,7 +4728,7 @@ pub async fn import_official_signature(
             .await
             .signing
             .require_qualified_for_seal;
-        finalization_status(true, false, require_qualified)
+        finalization_status(false, false, require_qualified)
     };
 
     let stored = StoredSignedDocument {
@@ -4775,6 +4752,7 @@ pub async fn import_official_signature(
     let event_payload = json!({
         "act_id": act_id.to_string(),
         "document_id": unsigned.id,
+        "signing_snapshot_digest": unsigned.pdf_digest,
         "signed_pdf_digest": signed_pdf_digest,
         "family": FAMILY_OFFICIAL_HANDOFF,
         "evidentiary_level": EVIDENTIARY_IMPORTED_OFFICIAL,
@@ -4813,6 +4791,9 @@ pub async fn import_official_signature(
     });
     let payload = serde_json::to_vec(&event_payload)?;
     {
+        let acts = state.acts.read().await;
+        let act = acts.get(&act_id).ok_or(ApiError::NotFound)?;
+        ensure_signing_state(act.state)?;
         let mut ledger = state.ledger.write().await;
         crate::try_append_event(
             &mut ledger,
@@ -4823,6 +4804,7 @@ pub async fn import_official_signature(
             &payload,
         )?;
         state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_signed_document(&stored))?;
+        drop(acts);
         state.attest_latest(&attestor, &ledger).await;
     }
     state
@@ -4883,22 +4865,7 @@ pub async fn sign_local_pkcs12_signature(
     // locked widget.
     let appearance = seal_appearance_from_request(req.seal)?;
 
-    {
-        let acts = state.acts.read().await;
-        let act = acts.get(&act_id).ok_or(ApiError::NotFound)?;
-        if act.ata_number.is_none() {
-            return Err(ApiError::Conflict(
-                "o ato ainda não foi selado; a assinatura local é um passo posterior ao selo"
-                    .to_owned(),
-            ));
-        }
-    }
-
-    let unsigned = crate::documents::load_document(&state, act_id)
-        .await?
-        .ok_or_else(|| {
-            ApiError::Conflict("o ato selado não tem documento para assinar".to_owned())
-        })?;
+    let unsigned = load_signing_document(&state, act_id).await?;
 
     if load_signed(&state, act_id).await?.is_some() {
         return Err(ApiError::Conflict(
@@ -4985,6 +4952,7 @@ pub async fn sign_local_pkcs12_signature(
 
     let final_pdf =
         finalize_signed_pdf(&state, signed_pdf, &identity.signing_certificate_der).await?;
+    ensure_signed_pdf_binds_document(&unsigned, &final_pdf.bytes)?;
     let signed_pdf_digest = sha256_hex(&final_pdf.bytes);
     let signed_at = OffsetDateTime::now_utc();
     let signer_cert_subject = subject_dn(&identity.signing_certificate_der);
@@ -4996,7 +4964,7 @@ pub async fn sign_local_pkcs12_signature(
             .await
             .signing
             .require_qualified_for_seal;
-        finalization_status(true, false, require_qualified)
+        finalization_status(false, false, require_qualified)
     };
 
     let stored = StoredSignedDocument {
@@ -5020,6 +4988,7 @@ pub async fn sign_local_pkcs12_signature(
     let event_payload = json!({
         "act_id": act_id.to_string(),
         "document_id": unsigned.id,
+        "signing_snapshot_digest": unsigned.pdf_digest,
         "signed_pdf_digest": signed_pdf_digest,
         "family": FAMILY_LOCAL_PKCS12,
         "evidentiary_level": EVIDENTIARY_ADVANCED_LOCAL,
@@ -5049,6 +5018,9 @@ pub async fn sign_local_pkcs12_signature(
     });
     let payload = serde_json::to_vec(&event_payload)?;
     {
+        let acts = state.acts.read().await;
+        let act = acts.get(&act_id).ok_or(ApiError::NotFound)?;
+        ensure_signing_state(act.state)?;
         let mut ledger = state.ledger.write().await;
         crate::try_append_event(
             &mut ledger,
@@ -5059,6 +5031,7 @@ pub async fn sign_local_pkcs12_signature(
             &payload,
         )?;
         state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_signed_document(&stored))?;
+        drop(acts);
         state.attest_latest(&attestor, &ledger).await;
     }
     state
@@ -5212,24 +5185,22 @@ pub async fn get_signed_document_pdf(
 
 // --- enforcement (deliverable D) --------------------------------------------------------------
 
-/// Derive the finalization status from the seal + qualified-signature state and the enforcement
-/// setting (t57 ruling 6). `signed` here means a validated `Qualified` signed variant exists.
+/// Derive the finalization status from the seal + qualified-signature state. `signed` here means a
+/// validated `Qualified` signed variant exists. The legacy setting remains observable in the API,
+/// but cannot leave a sealed immutable act claiming it still awaits a signature.
 ///
-/// - a qualified signature present ⇒ `finalizado_qualificado`
-/// - not sealed ⇒ `rascunho`
-/// - sealed, `require_qualified` ON, no qualified signature ⇒ `aguarda_assinatura_qualificada`
-/// - sealed, `require_qualified` OFF ⇒ `finalizado` (the non-qualified path stays usable)
+/// - not sealed ⇒ `em_assinatura` (even when signed evidence is already present)
+/// - sealed with a qualified signature present ⇒ `finalizado_qualificado`
+/// - sealed without qualified evidence ⇒ `finalizado` (including the explicit manual-original path)
 pub(crate) fn finalization_status(
     sealed: bool,
     signed: bool,
-    require_qualified: bool,
+    _require_qualified: bool,
 ) -> &'static str {
-    if signed {
+    if !sealed {
+        "em_assinatura"
+    } else if signed {
         "finalizado_qualificado"
-    } else if !sealed {
-        "rascunho"
-    } else if require_qualified {
-        "aguarda_assinatura_qualificada"
     } else {
         "finalizado"
     }
@@ -5743,16 +5714,9 @@ async fn ensure_act_exists(state: &AppState, act_id: ActId) -> Result<(), ApiErr
     acts.get(&act_id).ok_or(ApiError::NotFound).map(|_| ())
 }
 
-async fn sealed_act_audit_scope(state: &AppState, act_id: ActId) -> Result<String, ApiError> {
+async fn signing_act_audit_scope(state: &AppState, act_id: ActId) -> Result<String, ApiError> {
     let scope = act_audit_scope(state, act_id).await?;
-    let acts = state.acts.read().await;
-    let act = acts.get(&act_id).ok_or(ApiError::NotFound)?;
-    if act.ata_number.is_none() {
-        return Err(ApiError::Conflict(
-            "o ato ainda não foi selado; convites de assinatura externa só acompanham atos selados"
-                .to_owned(),
-        ));
-    }
+    require_act_signing(state, act_id).await?;
     Ok(scope)
 }
 
@@ -5856,6 +5820,7 @@ struct ExternalSignedPdfUpload {
 
 struct PreparedExternalSignedPdfEvidence {
     stored: StoredSignedDocument,
+    signing_snapshot_digest: String,
     signed_pdf_digest: String,
     timestamp_token: bool,
 }
@@ -5902,23 +5867,7 @@ async fn prepare_external_signed_pdf_evidence(
         )));
     }
 
-    let sealed = {
-        let acts = state.acts.read().await;
-        let act = acts.get(&act_id).ok_or(ApiError::NotFound)?;
-        act.ata_number.is_some()
-    };
-    if !sealed {
-        return Err(ApiError::Conflict(
-            "o ato ainda não foi selado; o upload de PDF assinado externo é posterior ao selo"
-                .to_owned(),
-        ));
-    }
-
-    let unsigned = crate::documents::load_document(state, act_id)
-        .await?
-        .ok_or_else(|| {
-            ApiError::Conflict("o ato selado não tem documento para assinar".to_owned())
-        })?;
+    let unsigned = load_signing_document(state, act_id).await?;
 
     if load_signed(state, act_id).await?.is_some() {
         return Err(ApiError::Conflict(
@@ -5927,11 +5876,7 @@ async fn prepare_external_signed_pdf_evidence(
     }
 
     let report = validate_imported_signed_pdf(&signed_pdf)?;
-    if !signed_pdf.starts_with(&unsigned.pdf_bytes) {
-        return Err(ApiError::Conflict(
-            "o PDF assinado não corresponde ao PDF selado deste ato".to_owned(),
-        ));
-    }
+    ensure_signed_pdf_binds_document(&unsigned, &signed_pdf)?;
 
     let signed_pdf_digest = sha256_hex(&signed_pdf);
     let signed_at = OffsetDateTime::now_utc();
@@ -5957,6 +5902,7 @@ async fn prepare_external_signed_pdf_evidence(
 
     Ok(PreparedExternalSignedPdfEvidence {
         stored,
+        signing_snapshot_digest: unsigned.pdf_digest,
         signed_pdf_digest,
         timestamp_token,
     })
@@ -5999,6 +5945,7 @@ async fn store_external_invite_signed_pdf_evidence(
     let event_payload = json!({
         "act_id": record.act_id.to_string(),
         "document_id": document_id,
+        "signing_snapshot_digest": prepared.signing_snapshot_digest,
         "signed_pdf_digest": signed_pdf_digest,
         "family": FAMILY_EXTERNAL_SIGNER_HANDOFF,
         "evidentiary_level": EVIDENTIARY_EXTERNAL_SIGNED_PDF,
@@ -6022,6 +5969,9 @@ async fn store_external_invite_signed_pdf_evidence(
     });
     let payload = serde_json::to_vec(&event_payload)?;
     {
+        let acts = state.acts.read().await;
+        let act = acts.get(&record.act_id).ok_or(ApiError::NotFound)?;
+        ensure_signing_state(act.state)?;
         let mut ledger = state.ledger.write().await;
         crate::try_append_event(
             &mut ledger,
@@ -6034,6 +5984,7 @@ async fn store_external_invite_signed_pdf_evidence(
         state.persist_write_through(&mut ledger, 1, |tx| {
             tx.upsert_signed_document(&prepared.stored)
         })?;
+        drop(acts);
         state.attest_latest(attestor, &ledger).await;
     }
     state
@@ -6148,9 +6099,6 @@ async fn external_invite_safe_context(
     let books = state.books.read().await;
     let acts = state.acts.read().await;
     let act = acts.get(&record.act_id).ok_or(ApiError::NotFound)?;
-    if act.ata_number.is_none() {
-        return Err(ApiError::NotFound);
-    }
     let book = books.get(&act.book_id).ok_or(ApiError::NotFound)?;
     let entity = entities.get(&book.entity_id).ok_or(ApiError::NotFound)?;
 
@@ -7044,7 +6992,7 @@ fn timestamp_trust_report_json(
     serde_json::to_string(&report).ok()
 }
 
-fn validate_signed_pdf(
+pub(crate) fn validate_signed_pdf(
     signed_pdf: &[u8],
     expected_signer_cert_der: &[u8],
 ) -> Result<chancela_pades::PdfSignatureReport, ApiError> {
@@ -7326,6 +7274,73 @@ pub(crate) async fn load_signed(
     Ok(None)
 }
 
+/// Require the only mutable signature-collection state. Signature creation and every operation
+/// that changes signed bytes are refused after sealing so the digest tuple frozen at seal cannot
+/// become stale.
+pub(crate) async fn require_act_signing(state: &AppState, act_id: ActId) -> Result<(), ApiError> {
+    let acts = state.acts.read().await;
+    let act = acts.get(&act_id).ok_or(ApiError::NotFound)?;
+    ensure_signing_state(act.state)
+}
+
+fn ensure_signing_state(state: ActState) -> Result<(), ApiError> {
+    if state != ActState::Signing {
+        return Err(ApiError::Conflict(format!(
+            "signature operation requires act state Signing, found {:?}",
+            state
+        )));
+    }
+    Ok(())
+}
+
+/// Resolve and fixity-check the immutable canonical PDF snapshot for a signing operation.
+pub(crate) async fn load_signing_document(
+    state: &AppState,
+    act_id: ActId,
+) -> Result<StoredDocument, ApiError> {
+    require_act_signing(state, act_id).await?;
+    let document = crate::documents::load_document(state, act_id)
+        .await?
+        .ok_or_else(|| {
+            ApiError::Conflict(
+                "canonical signing snapshot is missing; advance the act to Signing first"
+                    .to_owned(),
+            )
+        })?;
+    let observed = sha256_hex(&document.pdf_bytes);
+    if observed != document.pdf_digest {
+        return Err(ApiError::Conflict(
+            "canonical signing snapshot failed its stored SHA-256 fixity check".to_owned(),
+        ));
+    }
+    Ok(document)
+}
+
+fn ensure_signed_pdf_binds_document(
+    document: &StoredDocument,
+    signed_pdf: &[u8],
+) -> Result<(), ApiError> {
+    if !signed_pdf.starts_with(&document.pdf_bytes) {
+        return Err(ApiError::Conflict(
+            "signed PDF does not extend the canonical signing snapshot byte-for-byte".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn ensure_prepared_signature_binds_document(
+    document: &StoredDocument,
+    prepared: &PreparedSignature,
+) -> Result<(), ApiError> {
+    if !prepared.prepared_pdf().starts_with(&document.pdf_bytes) {
+        return Err(ApiError::Conflict(
+            "pending signature session is not bound to the current canonical signing snapshot"
+                .to_owned(),
+        ));
+    }
+    Ok(())
+}
+
 /// Load one pending session by id (in-memory, falling back to the store after a restart).
 async fn load_pending(
     state: &AppState,
@@ -7362,13 +7377,13 @@ async fn find_pending_for_act(state: &AppState, act_id: ActId) -> Option<Pending
 /// Delete a pending session (durable + in-memory): consumed / expired / cancelled.
 async fn consume_pending(state: &AppState, session_id: &str) {
     let mut remove_memory = true;
-    if let Some(store) = &state.store {
-        if let Err(e) = store.persist(|tx| tx.delete_pending_cmd_session(session_id)) {
-            if matches!(e, StoreError::NotLeader) {
-                remove_memory = false;
-            } else {
-                eprintln!("chancela-api: failed to persist pending session deletion: {e}");
-            }
+    if let Some(store) = &state.store
+        && let Err(e) = store.persist(|tx| tx.delete_pending_cmd_session(session_id))
+    {
+        if matches!(e, StoreError::NotLeader) {
+            remove_memory = false;
+        } else {
+            eprintln!("chancela-api: failed to persist pending session deletion: {e}");
         }
     }
     if remove_memory {

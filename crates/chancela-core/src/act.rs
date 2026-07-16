@@ -746,6 +746,18 @@ pub struct SealMetadata {
     /// Operator-supplied manual-signature original reference, present only for manual sealing.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub manual_signature_original_reference: Option<ManualSignatureOriginalReference>,
+    /// Lowercase SHA-256 of the immutable canonical PDF snapshot presented for signing.
+    /// Absent for manual-signature seals and legacy rows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signing_snapshot_digest: Option<String>,
+    /// Lowercase SHA-256 of the validated signed PDF frozen by this seal. Absent for
+    /// manual-signature seals and legacy rows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signed_pdf_digest: Option<String>,
+    /// Lowercase SHA-256 of the deterministic technical validation report used by the seal gate.
+    /// The report is technical evidence only; this field does not assert legal validity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signature_validation_report_digest: Option<String>,
 }
 
 impl SealMetadata {
@@ -759,6 +771,9 @@ impl SealMetadata {
             family,
             profile,
             manual_signature_original_reference: None,
+            signing_snapshot_digest: None,
+            signed_pdf_digest: None,
+            signature_validation_report_digest: None,
         }
     }
 
@@ -769,6 +784,34 @@ impl SealMetadata {
     ) -> Self {
         self.manual_signature_original_reference = reference;
         self
+    }
+
+    /// Attach the immutable digest tuple for a digitally signed seal.
+    pub fn with_digital_signature_evidence(
+        mut self,
+        signing_snapshot_digest: impl Into<String>,
+        signed_pdf_digest: impl Into<String>,
+        signature_validation_report_digest: impl Into<String>,
+    ) -> Self {
+        self.signing_snapshot_digest = Some(signing_snapshot_digest.into());
+        self.signed_pdf_digest = Some(signed_pdf_digest.into());
+        self.signature_validation_report_digest = Some(signature_validation_report_digest.into());
+        self
+    }
+
+    /// Whether this row carries a complete digital-evidence tuple.
+    #[must_use]
+    pub fn has_complete_digital_signature_evidence(&self) -> bool {
+        self.signing_snapshot_digest.is_some()
+            && self.signed_pdf_digest.is_some()
+            && self.signature_validation_report_digest.is_some()
+    }
+
+    /// Whether this row carries one of the two seal evidence paths accepted by the lifecycle.
+    #[must_use]
+    pub fn has_complete_signature_evidence(&self) -> bool {
+        self.manual_signature_original_reference.is_some()
+            || self.has_complete_digital_signature_evidence()
     }
 }
 
@@ -896,9 +939,15 @@ impl Act {
         }
     }
 
-    /// Whether the act's content may still be edited (i.e., it is not yet sealed).
+    /// Whether the act's content may still be edited.
+    ///
+    /// Entry into `Signing` freezes the exact content and signatory set that produced the
+    /// canonical signing snapshot. No implicit edit or replacement is allowed after that point.
     pub fn is_mutable(&self) -> bool {
-        !matches!(self.state, ActState::Sealed | ActState::Archived)
+        !matches!(
+            self.state,
+            ActState::Signing | ActState::Sealed | ActState::Archived
+        )
     }
 
     fn ensure_mutable(&self) -> Result<(), ActError> {
@@ -1132,6 +1181,38 @@ mod tests {
             }),
             Err(ActError::Sealed)
         ));
+    }
+
+    #[test]
+    fn signing_act_freezes_content_and_signatory_set() {
+        let mut act = draft();
+        for state in [
+            ActState::Review,
+            ActState::Convened,
+            ActState::Deliberated,
+            ActState::TextApproved,
+            ActState::Signing,
+        ] {
+            act.advance_to(state).unwrap();
+        }
+
+        assert!(!act.is_mutable());
+        assert_eq!(
+            act.set_deliberations("replacement after snapshot"),
+            Err(ActError::Sealed)
+        );
+        assert_eq!(
+            act.add_signatory(SignatorySlot {
+                name: "Late signer".to_owned(),
+                email: None,
+                capacity: SignatoryCapacity::Member,
+                signed: false,
+                permilage: None,
+            }),
+            Err(ActError::Sealed)
+        );
+        assert!(act.deliberations.is_empty());
+        assert!(act.signatories.is_empty());
     }
 
     #[test]

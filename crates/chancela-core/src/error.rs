@@ -79,6 +79,9 @@ pub enum SealError {
     /// Manual-signature sealing must preserve where the signed original is held (WFL-23).
     #[error("manual_signature_original_reference is required for manual-signature sealing")]
     MissingManualSignatureOriginalReference,
+    /// The digital/manual evidence supplied to the seal gate was absent or malformed.
+    #[error("invalid signature evidence for sealing: {0}")]
+    InvalidSignatureEvidence(String),
     /// The payload could not be serialized for digesting.
     #[error("failed to serialize act payload for digest: {0}")]
     Serialize(String),

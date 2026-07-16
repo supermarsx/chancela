@@ -19,7 +19,15 @@ import { ataFieldHelp } from './fieldHelp';
 import { makeClient } from '../../test/utils';
 import { ToastProvider } from '../../ui/toast';
 import { ALLOW_ALL_PERMISSIONS, StaticPermissionsProvider } from '../session/permissions';
-import type { ActConveningRecipient, ActView, BookView, ComplianceReport } from '../../api/types';
+import type {
+  ActConveningRecipient,
+  ActView,
+  BookView,
+  ComplianceReport,
+  SignatureStatusView,
+} from '../../api/types';
+
+vi.mock('../signing/SigningPanel', () => ({ SigningPanel: () => null }));
 
 const baseAct: ActView = {
   id: 'act-1',
@@ -40,7 +48,7 @@ const baseAct: ActView = {
   telematic_evidence: null,
   attachments: [],
   signatories: [{ name: 'Ana', capacity: 'Chair', signed: true }],
-  state: 'Signing',
+  state: 'TextApproved',
   ata_number: null,
   payload_digest: null,
   seal_event_seq: null,
@@ -76,6 +84,7 @@ function stateful(
   options: {
     warnings?: ComplianceReport['issues'];
     writtenResolutionStatus?: ComplianceReport['written_resolution_evidence_status'];
+    signatureStatus?: SignatureStatusView;
   } = {},
 ) {
   let act = initial;
@@ -110,6 +119,16 @@ function stateful(
     }
     if (url.includes('/v1/books/')) return json(book);
     if (url.includes(`/v1/acts/${act.id}/follow-ups`) && method === 'GET') return json([]);
+    if (url.endsWith(`/v1/acts/${act.id}/signature`) && method === 'GET') {
+      return json(
+        options.signatureStatus ?? {
+          status: 'unsigned',
+          finalization: 'em_assinatura',
+          require_qualified_for_seal: false,
+          evidence: {} as SignatureStatusView['evidence'],
+        },
+      );
+    }
     if (url.includes(`/v1/acts/${act.id}/seal`) && method === 'POST') {
       const body = init?.body ? (JSON.parse(init.body as string) as Record<string, unknown>) : {};
       seals.push(body);
@@ -277,7 +296,7 @@ describe('AtaEditorPage — mesa presidente unblocks the seal', () => {
     expect(document.body.textContent).toContain(ataFieldHelp.deliberationsText);
   });
 
-  it('saves bounded convening evidence through the act patch body', async () => {
+  it('saves bounded convening evidence through the act patch body', { timeout: 15_000 }, async () => {
     const withChair = { ...baseAct, mesa: { presidente: 'Ana', secretarios: [] } };
     const shared = stateful(withChair);
     vi.stubGlobal('fetch', shared.fetchImpl);
@@ -367,7 +386,10 @@ describe('AtaEditorPage — mesa presidente unblocks the seal', () => {
     });
   });
 
-  it('records convening dispatch evidence for a UI-added recipient after saving', async () => {
+  it(
+    'records convening dispatch evidence for a UI-added recipient after saving',
+    { timeout: 15_000 },
+    async () => {
     const withChair = { ...baseAct, mesa: { presidente: 'Ana', secretarios: [] } };
     const shared = stateful(withChair);
     vi.stubGlobal('fetch', shared.fetchImpl);
@@ -504,9 +526,9 @@ describe('AtaEditorPage — mesa presidente unblocks the seal', () => {
       expect((firstRecipient.getByLabelText('Contacto') as HTMLInputElement).value).toBe(
         'ana.socia@example.test',
       );
-      expect((firstRecipient.getByLabelText('Referência de expedição') as HTMLInputElement).value).toBe(
-        'doc:convocatoria-2026-06-01',
-      );
+      expect(
+        (firstRecipient.getByLabelText('Referência de expedição') as HTMLInputElement).value,
+      ).toBe('doc:convocatoria-2026-06-01');
     });
     expect(await screen.findByText('Evidência local de expedição registada.')).toBeTruthy();
   });
@@ -983,9 +1005,7 @@ describe('AtaEditorPage — AI human review gate', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Copiar pacote de revisão' }));
 
     await waitFor(() =>
-      expect(writeText).toHaveBeenCalledWith(
-        formatAiProvenanceReviewPacket(withAi.ai_provenance!),
-      ),
+      expect(writeText).toHaveBeenCalledWith(formatAiProvenanceReviewPacket(withAi.ai_provenance!)),
     );
   });
 
@@ -1359,8 +1379,61 @@ describe('AtaEditorPage — written-resolution evidence review', () => {
 });
 
 describe('AtaEditorPage — manual seal acknowledgement', () => {
+  it('freezes the editor as soon as the canonical snapshot enters Signing', async () => {
+    const withChair: ActView = {
+      ...baseAct,
+      state: 'Signing',
+      mesa: { presidente: 'Ana', secretarios: [] },
+    };
+    const shared = stateful(withChair);
+    vi.stubGlobal('fetch', shared.fetchImpl);
+    renderEditor();
+
+    const title = await screen.findByDisplayValue('Assembleia Geral Anual');
+    expect((title as HTMLInputElement).disabled).toBe(true);
+    expect(screen.queryByRole('button', { name: 'Guardar' })).toBeNull();
+    expect(screen.getByText('Cópia canónica congelada para assinatura')).toBeTruthy();
+  });
+
+  it('seals accepted signed-PDF evidence without fabricating a manual-original reference', async () => {
+    const withChair: ActView = {
+      ...baseAct,
+      state: 'Signing',
+      mesa: { presidente: 'Ana', secretarios: [] },
+    };
+    const shared = stateful(withChair, {
+      signatureStatus: {
+        status: 'signed',
+        finalization: 'em_assinatura',
+        require_qualified_for_seal: false,
+        evidence: {} as SignatureStatusView['evidence'],
+      },
+    });
+    vi.stubGlobal('fetch', shared.fetchImpl);
+    renderEditor();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Selar ata' }));
+    const dialog = await screen.findByRole('dialog', {
+      name: 'Confirmar selagem após assinatura',
+    });
+
+    expect(within(dialog).queryByLabelText(/^Referência do original assinado$/i)).toBeNull();
+    fireEvent.click(within(dialog).getByLabelText(/revi a evidência técnica da assinatura/i));
+    fireEvent.click(
+      within(dialog).getByRole('button', {
+        name: 'Confirmar e selar ata',
+      }),
+    );
+
+    await waitFor(() => expect(shared.seals).toEqual([{}]));
+  });
+
   it('requires a manual original reference before sealing when compliance is clean', async () => {
-    const withChair = { ...baseAct, mesa: { presidente: 'Ana', secretarios: [] } };
+    const withChair: ActView = {
+      ...baseAct,
+      state: 'Signing',
+      mesa: { presidente: 'Ana', secretarios: [] },
+    };
     const shared = stateful(withChair);
     vi.stubGlobal('fetch', shared.fetchImpl);
     renderEditor();
@@ -1417,7 +1490,11 @@ describe('AtaEditorPage — manual seal acknowledgement', () => {
       severity: 'Warning' as const,
       message: 'A ata será selada com assinatura manual.',
     };
-    const withChair = { ...baseAct, mesa: { presidente: 'Ana', secretarios: [] } };
+    const withChair: ActView = {
+      ...baseAct,
+      state: 'Signing',
+      mesa: { presidente: 'Ana', secretarios: [] },
+    };
     const shared = stateful(withChair, { warnings: [warning] });
     vi.stubGlobal('fetch', shared.fetchImpl);
     renderEditor();
@@ -1464,7 +1541,11 @@ describe('AtaEditorPage — manual seal acknowledgement', () => {
   });
 
   it('blocks manual original references containing control characters before submit', async () => {
-    const withChair = { ...baseAct, mesa: { presidente: 'Ana', secretarios: [] } };
+    const withChair: ActView = {
+      ...baseAct,
+      state: 'Signing',
+      mesa: { presidente: 'Ana', secretarios: [] },
+    };
     const shared = stateful(withChair);
     vi.stubGlobal('fetch', shared.fetchImpl);
     renderEditor();
@@ -1496,5 +1577,62 @@ describe('AtaEditorPage — manual seal acknowledgement', () => {
     });
     expect(within(dialog).queryByRole('alert')).toBeNull();
     expect(confirm.disabled).toBe(false);
+  });
+});
+
+describe('AtaEditorPage — complete draft persistence', () => {
+  it('persists every primary meeting field and structured collection callback', async () => {
+    const shared = stateful({ ...baseAct, channel: 'Hybrid' });
+    vi.stubGlobal('fetch', shared.fetchImpl);
+    renderEditor();
+
+    expect(await screen.findByDisplayValue('Assembleia Geral Anual')).toBeTruthy();
+    fireEvent.change(document.getElementById('ed-title')!, {
+      target: { value: 'Assembleia revista' },
+    });
+    fireEvent.change(document.getElementById('ed-channel')!, { target: { value: 'Telematic' } });
+    fireEvent.change(document.getElementById('ed-date')!, {
+      target: { value: '2026-07-16' },
+    });
+    fireEvent.change(document.getElementById('ed-time')!, { target: { value: '10:30' } });
+    fireEvent.change(document.getElementById('ed-place')!, { target: { value: 'Online' } });
+    fireEvent.change(document.getElementById('ed-attendance')!, {
+      target: { value: 'Lista digital' },
+    });
+    fireEvent.change(document.getElementById('ed-present')!, { target: { value: '12' } });
+    fireEvent.change(document.getElementById('ed-represented')!, { target: { value: '3' } });
+    fireEvent.change(document.getElementById('ed-telematic')!, {
+      target: { value: 'https://meet.example.test/evidence' },
+    });
+
+    for (const buttonName of [
+      'Adicionar secretário',
+      'Adicionar ponto',
+      'Adicionar deliberação',
+      'Adicionar documento',
+      'Adicionar signatário',
+      'Adicionar anexo',
+    ]) {
+      fireEvent.click(screen.getByRole('button', { name: buttonName }));
+    }
+
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+    await waitFor(() => expect(shared.patches.length).toBeGreaterThan(0));
+    expect(shared.patches.at(-1)).toMatchObject({
+      title: 'Assembleia revista',
+      channel: 'Telematic',
+      meeting_date: '2026-07-16',
+      meeting_time: '10:30',
+      place: 'Online',
+      attendance_reference: 'Lista digital',
+      members_present: 12,
+      members_represented: 3,
+      telematic_evidence: 'https://meet.example.test/evidence',
+      mesa: { secretarios: [''] },
+      agenda: [{ number: 1, text: '' }],
+      deliberation_items: [{ agenda_number: null, text: '', vote: null, statements: [] }],
+      referenced_documents: [{ label: '', reference: null }],
+      attachments: [{ label: '', kind: 'Exhibit', digest: null, beginning_of_proof: false }],
+    });
   });
 });

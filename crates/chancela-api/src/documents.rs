@@ -212,6 +212,21 @@ pub(crate) fn registry() -> &'static Registry {
     &REGISTRY
 }
 
+/// Whether `id` names a currently available built-in or durable user-authored template. Group
+/// library revisions validate every reference through this shared source of truth before append.
+pub(crate) fn template_id_exists(state: &AppState, id: &str) -> Result<bool, ApiError> {
+    if registry().get(id).is_some() {
+        return Ok(true);
+    }
+    let Some(store) = &state.store else {
+        return Ok(false);
+    };
+    store
+        .user_template(id)
+        .map(|value| value.is_some())
+        .map_err(|e| ApiError::Internal(format!("user template store read failed: {e}")))
+}
+
 pub(crate) fn generated_dispatch_evidence_profile_for_template(
     template_id: &str,
 ) -> Option<GeneratedDispatchEvidenceProfile> {
@@ -575,21 +590,18 @@ pub(crate) fn generate_for_act_template(
     let mut made = generate(spec, &ctx, act.id, OffsetDateTime::now_utc())?;
     if let Some(required_recipients) =
         generated_dispatch_required_recipient_names(act, &made.stored.template_id)
+        && !required_recipients.is_empty()
+        && let Some(status) = dispatch_evidence_status_for_template(
+            &made.stored.template_id,
+            &required_recipients,
+            &[],
+        )
+        && let Some(obj) = made.event_payload.as_object_mut()
     {
-        if !required_recipients.is_empty() {
-            if let Some(status) = dispatch_evidence_status_for_template(
-                &made.stored.template_id,
-                &required_recipients,
-                &[],
-            ) {
-                if let Some(obj) = made.event_payload.as_object_mut() {
-                    obj.insert(
-                        "dispatch_evidence_status".to_owned(),
-                        serde_json::to_value(status)?,
-                    );
-                }
-            }
-        }
+        obj.insert(
+            "dispatch_evidence_status".to_owned(),
+            serde_json::to_value(status)?,
+        );
     }
     Ok(made)
 }
@@ -1498,10 +1510,10 @@ pub async fn list_imported_documents(
     };
     require_permission(&state, &actor, Permission::ActRead, scope).await?;
     let redaction = read_redaction_for_actor(&state, &actor).await?;
-    if let Some(act_id) = act_id {
-        if !state.acts.read().await.contains_key(&act_id) {
-            return Err(ApiError::NotFound);
-        }
+    if let Some(act_id) = act_id
+        && !state.acts.read().await.contains_key(&act_id)
+    {
+        return Err(ApiError::NotFound);
     }
     let Some(store) = &state.store else {
         return Ok(Json(Vec::new()));
@@ -3015,7 +3027,6 @@ pub async fn preview_document(
     let act = acts.get(&ActId(id)).ok_or(ApiError::NotFound)?;
     let book = books.get(&act.book_id).ok_or(ApiError::NotFound)?;
     let entity = entities.get(&book.entity_id).ok_or(ApiError::NotFound)?;
-
     let spec = match &q.template_id {
         Some(tid) => registry().get(tid).ok_or(ApiError::NotFound)?,
         None => default_spec(entity.family, LifecycleStage::Ata).ok_or_else(|| {
@@ -3292,6 +3303,12 @@ pub async fn generate_document(
     let act = acts.get(&ActId(id)).ok_or(ApiError::NotFound)?;
     let book = books.get(&act.book_id).ok_or(ApiError::NotFound)?;
     let entity = entities.get(&book.entity_id).ok_or(ApiError::NotFound)?;
+    if is_ata_template(&q.template_id) {
+        return Err(ApiError::Conflict(
+            "Ata templates become the canonical signing snapshot only through POST /v1/acts/{id}/advance with to=Signing and optional template_id; ad-hoc generation cannot create or replace that snapshot"
+                .to_owned(),
+        ));
+    }
 
     // Render + write PDF/A before appending anything to the ledger, so a render/write failure returns
     // cleanly with no ledger mutation to roll back.
