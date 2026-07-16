@@ -246,6 +246,32 @@ import type {
   StartOverInstanceView,
   SetBookLegalHoldBody,
   UserDsrExport,
+  AppendGroupTemplateLibraryRevisionBody,
+  CompanyGroupView,
+  ConnectorJobListView,
+  ConnectorJobView,
+  ConnectorProbeView,
+  ConnectorTargetView,
+  CreateCompanyGroupBody,
+  CreateConnectorTargetBody,
+  CreateGroupTemplateLibraryBody,
+  CreateRepositoryBody,
+  GroupDashboardView,
+  GroupTemplateLibraryRevision,
+  GroupTemplateLibraryView,
+  ListConnectorJobsParams,
+  OpaqueBlobManifest,
+  PatchCompanyGroupBody,
+  PatchConnectorTargetBody,
+  PatchGroupTemplateLibraryBody,
+  PatchRepositoryBody,
+  PendingZkUploadView,
+  PutTenantRepositoryPolicyBody,
+  ReadabilityPackageBody,
+  RunConnectorTargetBody,
+  StoredRepositoryPolicy,
+  TenantRepositoryPolicy,
+  ZkObjectVersionView,
 } from './types';
 import { clearSessionToken, getSessionToken } from './session';
 import { resolveApiUrl } from './baseUrl';
@@ -566,6 +592,43 @@ export async function postBytes<T>(path: string, bytes: ArrayBuffer | Blob): Pro
   return parseResponse<T>(res, path);
 }
 
+/** PUT opaque bytes and parse the endpoint's JSON response without ever JSON-encoding the bytes. */
+export async function putOpaqueBytes<T>(path: string, bytes: ArrayBuffer | Blob): Promise<T> {
+  const token = getSessionToken();
+  const headers: Record<string, string> = { 'Content-Type': 'application/octet-stream' };
+  if (token) headers[SESSION_HEADER] = token;
+  const res = await fetch(resolveApiUrl(path), { method: 'PUT', headers, body: bytes });
+  if (res.status === 401) clearSessionToken();
+  return parseResponse<T>(res, path);
+}
+
+/** POST JSON and return an attachment body plus response headers. */
+export async function postJsonBlob(
+  path: string,
+  body: unknown,
+): Promise<{ blob: Blob; headers: Headers }> {
+  const token = getSessionToken();
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers[SESSION_HEADER] = token;
+  const res = await fetch(resolveApiUrl(path), {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+  });
+  if (res.status === 401) clearSessionToken();
+  if (!res.ok) {
+    let message = t('error.requestFailed', { status: res.status });
+    try {
+      const parsed = (await res.json()) as { error?: string };
+      if (parsed.error) message = parsed.error;
+    } catch {
+      // Preserve the bounded status-only message for non-JSON error bodies.
+    }
+    throw new ApiError(res.status, { error: message });
+  }
+  return { blob: await res.blob(), headers: res.headers };
+}
+
 /**
  * The provider path segment for a credential record. Single-instance providers (CMD/SCAP)
  * are keyed by the empty provider id and use the literal `_` sentinel; CSC/PKCS#12 carry a
@@ -643,6 +706,179 @@ export const api = {
   // Statute overlay (ENT-03, t31). Omit `statute` to leave it untouched, `null` to
   // clear it, or an object to set it; appends an `entity.statute_updated` ledger event.
   updateEntity: (id: string, body: UpdateEntityBody) => patch<Entity>(`/v1/entities/${id}`, body),
+
+  // Tenant-local company groups and immutable shared-template-library revisions.
+  listCompanyGroups: (tenantId: string) =>
+    get<CompanyGroupView[]>(`/v1/tenants/${encodeURIComponent(tenantId)}/groups`),
+  createCompanyGroup: (tenantId: string, body: CreateCompanyGroupBody) =>
+    post<CompanyGroupView>(`/v1/tenants/${encodeURIComponent(tenantId)}/groups`, body),
+  getCompanyGroup: (tenantId: string, groupId: string) =>
+    get<CompanyGroupView>(
+      `/v1/tenants/${encodeURIComponent(tenantId)}/groups/${encodeURIComponent(groupId)}`,
+    ),
+  patchCompanyGroup: (tenantId: string, groupId: string, body: PatchCompanyGroupBody) =>
+    patch<CompanyGroupView>(
+      `/v1/tenants/${encodeURIComponent(tenantId)}/groups/${encodeURIComponent(groupId)}`,
+      body,
+    ),
+  archiveCompanyGroup: (tenantId: string, groupId: string) =>
+    del<void>(`/v1/tenants/${encodeURIComponent(tenantId)}/groups/${encodeURIComponent(groupId)}`),
+  assignEntityToGroup: (tenantId: string, groupId: string, entityId: string) =>
+    put<Entity>(
+      `/v1/tenants/${encodeURIComponent(tenantId)}/groups/${encodeURIComponent(groupId)}/entities/${encodeURIComponent(entityId)}`,
+      undefined,
+    ),
+  removeEntityFromGroup: (tenantId: string, groupId: string, entityId: string) =>
+    del<Entity>(
+      `/v1/tenants/${encodeURIComponent(tenantId)}/groups/${encodeURIComponent(groupId)}/entities/${encodeURIComponent(entityId)}`,
+    ),
+  getGroupDashboard: (tenantId: string, groupId: string) =>
+    get<GroupDashboardView>(
+      `/v1/tenants/${encodeURIComponent(tenantId)}/groups/${encodeURIComponent(groupId)}/dashboard`,
+    ),
+  listGroupTemplateLibraries: (tenantId: string, groupId: string) =>
+    get<GroupTemplateLibraryView[]>(
+      `/v1/tenants/${encodeURIComponent(tenantId)}/groups/${encodeURIComponent(groupId)}/template-libraries`,
+    ),
+  createGroupTemplateLibrary: (
+    tenantId: string,
+    groupId: string,
+    body: CreateGroupTemplateLibraryBody,
+  ) =>
+    post<GroupTemplateLibraryView>(
+      `/v1/tenants/${encodeURIComponent(tenantId)}/groups/${encodeURIComponent(groupId)}/template-libraries`,
+      body,
+    ),
+  patchGroupTemplateLibrary: (
+    tenantId: string,
+    groupId: string,
+    libraryId: string,
+    body: PatchGroupTemplateLibraryBody,
+  ) =>
+    patch<GroupTemplateLibraryView>(
+      `/v1/tenants/${encodeURIComponent(tenantId)}/groups/${encodeURIComponent(groupId)}/template-libraries/${encodeURIComponent(libraryId)}`,
+      body,
+    ),
+  archiveGroupTemplateLibrary: (tenantId: string, groupId: string, libraryId: string) =>
+    del<void>(
+      `/v1/tenants/${encodeURIComponent(tenantId)}/groups/${encodeURIComponent(groupId)}/template-libraries/${encodeURIComponent(libraryId)}`,
+    ),
+  appendGroupTemplateLibraryRevision: (
+    tenantId: string,
+    groupId: string,
+    libraryId: string,
+    body: AppendGroupTemplateLibraryRevisionBody,
+  ) =>
+    post<GroupTemplateLibraryRevision>(
+      `/v1/tenants/${encodeURIComponent(tenantId)}/groups/${encodeURIComponent(groupId)}/template-libraries/${encodeURIComponent(libraryId)}/revisions`,
+      body,
+    ),
+  listGroupTemplateLibraryHistory: (tenantId: string, groupId: string, libraryId: string) =>
+    get<GroupTemplateLibraryRevision[]>(
+      `/v1/tenants/${encodeURIComponent(tenantId)}/groups/${encodeURIComponent(groupId)}/template-libraries/${encodeURIComponent(libraryId)}/history`,
+    ),
+
+  // Tenant-scoped connector targets and durable operator jobs. Configuration contains
+  // credential references only; actual secret material is never accepted by this client.
+  listConnectorTargets: (tenantId: string) =>
+    get<ConnectorTargetView[]>(`/v1/tenants/${encodeURIComponent(tenantId)}/connector-targets`),
+  createConnectorTarget: (tenantId: string, body: CreateConnectorTargetBody) =>
+    post<ConnectorTargetView>(
+      `/v1/tenants/${encodeURIComponent(tenantId)}/connector-targets`,
+      body,
+    ),
+  patchConnectorTarget: (tenantId: string, targetId: string, body: PatchConnectorTargetBody) =>
+    patch<ConnectorTargetView>(
+      `/v1/tenants/${encodeURIComponent(tenantId)}/connector-targets/${encodeURIComponent(targetId)}`,
+      body,
+    ),
+  archiveConnectorTarget: (tenantId: string, targetId: string) =>
+    del<void>(
+      `/v1/tenants/${encodeURIComponent(tenantId)}/connector-targets/${encodeURIComponent(targetId)}`,
+    ),
+  probeConnectorTarget: (tenantId: string, targetId: string) =>
+    post<ConnectorProbeView>(
+      `/v1/tenants/${encodeURIComponent(tenantId)}/connector-targets/${encodeURIComponent(targetId)}/probe`,
+    ),
+  runConnectorTarget: (tenantId: string, targetId: string, body: RunConnectorTargetBody) =>
+    post<ConnectorJobView>(
+      `/v1/tenants/${encodeURIComponent(tenantId)}/connector-targets/${encodeURIComponent(targetId)}/run`,
+      body,
+    ),
+  listConnectorJobs: (tenantId: string, params: ListConnectorJobsParams = {}) =>
+    get<ConnectorJobListView>(
+      `/v1/tenants/${encodeURIComponent(tenantId)}/connector-jobs${query({
+        limit: params.limit,
+        before_created_unix_millis: params.before_created_unix_millis,
+      })}`,
+    ),
+  getConnectorJob: (tenantId: string, jobId: string) =>
+    get<ConnectorJobView>(
+      `/v1/tenants/${encodeURIComponent(tenantId)}/connector-jobs/${encodeURIComponent(jobId)}`,
+    ),
+  cancelConnectorJob: (tenantId: string, jobId: string) =>
+    post<ConnectorJobView>(
+      `/v1/tenants/${encodeURIComponent(tenantId)}/connector-jobs/${encodeURIComponent(jobId)}/cancel`,
+    ),
+  retryConnectorJob: (tenantId: string, jobId: string) =>
+    post<ConnectorJobView>(
+      `/v1/tenants/${encodeURIComponent(tenantId)}/connector-jobs/${encodeURIComponent(jobId)}/retry`,
+    ),
+
+  // Opt-in zero-knowledge repository policy, opaque ciphertext, and readability handoff.
+  getTenantRepositoryPolicy: (tenantId: string) =>
+    get<TenantRepositoryPolicy>(`/v1/tenants/${encodeURIComponent(tenantId)}/repository-policy`),
+  putTenantRepositoryPolicy: (tenantId: string, body: PutTenantRepositoryPolicyBody) =>
+    put<TenantRepositoryPolicy>(
+      `/v1/tenants/${encodeURIComponent(tenantId)}/repository-policy`,
+      body,
+    ),
+  deleteTenantRepositoryPolicy: (tenantId: string) =>
+    del<void>(`/v1/tenants/${encodeURIComponent(tenantId)}/repository-policy`),
+  listRepositories: (tenantId: string) =>
+    get<StoredRepositoryPolicy[]>(`/v1/tenants/${encodeURIComponent(tenantId)}/repositories`),
+  createRepository: (tenantId: string, body: CreateRepositoryBody) =>
+    post<StoredRepositoryPolicy>(`/v1/tenants/${encodeURIComponent(tenantId)}/repositories`, body),
+  patchRepository: (tenantId: string, repositoryId: string, body: PatchRepositoryBody) =>
+    patch<StoredRepositoryPolicy>(
+      `/v1/tenants/${encodeURIComponent(tenantId)}/repositories/${encodeURIComponent(repositoryId)}`,
+      body,
+    ),
+  deleteRepository: (tenantId: string, repositoryId: string) =>
+    del<void>(
+      `/v1/tenants/${encodeURIComponent(tenantId)}/repositories/${encodeURIComponent(repositoryId)}`,
+    ),
+  listZkObjectVersions: (tenantId: string, repositoryId: string) =>
+    get<ZkObjectVersionView[]>(
+      `/v1/tenants/${encodeURIComponent(tenantId)}/repositories/${encodeURIComponent(repositoryId)}/objects`,
+    ),
+  createZkObjectUpload: (tenantId: string, repositoryId: string, manifest: OpaqueBlobManifest) =>
+    post<PendingZkUploadView>(
+      `/v1/tenants/${encodeURIComponent(tenantId)}/repositories/${encodeURIComponent(repositoryId)}/uploads`,
+      { manifest },
+    ),
+  commitZkObjectCiphertext: (uploadUrl: string, ciphertext: ArrayBuffer | Blob) =>
+    putOpaqueBytes<ZkObjectVersionView>(uploadUrl, ciphertext),
+  fetchZkObjectCiphertext: (
+    tenantId: string,
+    repositoryId: string,
+    objectId: string,
+    version: number,
+  ) =>
+    fetchArrayBuffer(
+      `/v1/tenants/${encodeURIComponent(tenantId)}/repositories/${encodeURIComponent(repositoryId)}/objects/${encodeURIComponent(objectId)}/versions/${version}/ciphertext`,
+    ),
+  createZkReadabilityPackage: (
+    tenantId: string,
+    repositoryId: string,
+    objectId: string,
+    version: number,
+    body: ReadabilityPackageBody,
+  ) =>
+    postJsonBlob(
+      `/v1/tenants/${encodeURIComponent(tenantId)}/repositories/${encodeURIComponent(repositoryId)}/objects/${encodeURIComponent(objectId)}/versions/${version}/readability-package`,
+      body,
+    ),
 
   // Books (§2.4)
   listBooks: (entityId?: string) => get<BookView[]>(`/v1/books${query({ entity_id: entityId })}`),

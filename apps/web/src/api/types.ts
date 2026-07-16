@@ -2032,6 +2032,451 @@ export interface Dashboard {
   recent_events: LedgerEventView[];
 }
 
+// --- Tenant operator surfaces --------------------------------------------------
+
+/** A tenant-local company group. Groups organise entities; they are not authorization scopes. */
+export interface CompanyGroupView {
+  id: string;
+  tenant_id: string;
+  name: string;
+  description?: string;
+  created_at: string;
+  updated_at: string;
+  archived_at?: string;
+  member_count: number;
+  template_library_count: number;
+}
+
+export interface CreateCompanyGroupBody {
+  name: string;
+  description?: string;
+}
+
+export interface PatchCompanyGroupBody {
+  name?: string;
+  description?: string | null;
+}
+
+/** An immutable revision of one group-owned shared template library. */
+export interface GroupTemplateLibraryRevision {
+  group_id: string;
+  library_id: string;
+  tenant_id: string;
+  revision: number;
+  template_ids: string[];
+  created_at: string;
+  created_by: string;
+}
+
+export interface GroupTemplateLibraryView {
+  id: string;
+  group_id: string;
+  tenant_id: string;
+  name: string;
+  description?: string;
+  created_at: string;
+  updated_at: string;
+  archived_at?: string;
+  current_revision: GroupTemplateLibraryRevision | null;
+}
+
+export interface CreateGroupTemplateLibraryBody {
+  name: string;
+  description?: string;
+  template_ids: string[];
+}
+
+export interface PatchGroupTemplateLibraryBody {
+  name?: string;
+  description?: string | null;
+}
+
+export interface AppendGroupTemplateLibraryRevisionBody {
+  template_ids: string[];
+}
+
+export interface GroupReminderView {
+  id: string;
+  act_id: string;
+  title: string;
+  due_date: string | null;
+  overdue: boolean;
+  assignee: string | null;
+}
+
+export interface GroupDashboardView {
+  group: CompanyGroupView;
+  member_entities: Entity[];
+  books_total: number;
+  books_by_state: Record<string, number>;
+  acts_total: number;
+  acts_by_state: Record<string, number>;
+  reminders_open: number;
+  reminders_overdue: number;
+  reminders: GroupReminderView[];
+  recent_audit_events: LedgerEventView[];
+}
+
+export type ConnectorJobPurpose = 'sync' | 'backup';
+export type ConnectorKind =
+  'web_dav' | 'microsoft_graph' | 'google_drive' | 'sftp' | 'ftps' | 'smb' | 's3';
+export type ConnectorSecretReference = `CHANCELA_CONNECTOR_SECRET_${string}`;
+
+export interface WebDavTargetConfig {
+  kind: 'web_dav';
+  id: string;
+  base_url: string;
+  auth:
+    | { mode: 'basic'; username: string; password_ref: ConnectorSecretReference }
+    | { mode: 'bearer'; token_ref: ConnectorSecretReference };
+  timeout_seconds: number;
+  allow_insecure_http: boolean;
+}
+
+export interface MicrosoftGraphTargetConfig {
+  kind: 'microsoft_graph';
+  id: string;
+  drive_id: string;
+  parent_item_id: string;
+  token_ref: ConnectorSecretReference;
+  api_base_url: string;
+  timeout_seconds: number;
+  allow_insecure_http: boolean;
+}
+
+export interface GoogleDriveTargetConfig {
+  kind: 'google_drive';
+  id: string;
+  parent_folder_id: string;
+  token_ref: ConnectorSecretReference;
+  api_base_url: string;
+  timeout_seconds: number;
+  allow_insecure_http: boolean;
+}
+
+export interface SftpTargetConfig {
+  kind: 'sftp';
+  id: string;
+  host: string;
+  port: number;
+  username: string;
+  password_ref: ConnectorSecretReference;
+  host_key_sha256: string;
+  root: string;
+  timeout_seconds: number;
+}
+
+export interface FtpsTargetConfig {
+  kind: 'ftps';
+  id: string;
+  host: string;
+  port: number;
+  username: string;
+  password_ref: ConnectorSecretReference;
+  root: string;
+  timeout_seconds: number;
+}
+
+export interface SmbTargetConfig {
+  kind: 'smb';
+  id: string;
+  host: string;
+  port: number;
+  share: string;
+  username: string;
+  domain: string;
+  password_ref: ConnectorSecretReference;
+  root: string;
+  timeout_seconds: number;
+  allow_unencrypted: boolean;
+}
+
+export interface S3TargetConfig {
+  kind: 's3';
+  id: string;
+  bucket: string;
+  prefix: string;
+  region: string;
+  endpoint_url: string | null;
+  force_path_style: boolean;
+  access_key_ref: ConnectorSecretReference;
+  secret_key_ref: ConnectorSecretReference;
+  session_token_ref: ConnectorSecretReference | null;
+  timeout_seconds: number;
+  allow_insecure_http: boolean;
+}
+
+export type ConnectorTargetConfig =
+  | WebDavTargetConfig
+  | MicrosoftGraphTargetConfig
+  | GoogleDriveTargetConfig
+  | SftpTargetConfig
+  | FtpsTargetConfig
+  | SmbTargetConfig
+  | S3TargetConfig;
+
+export interface ConnectorTargetView {
+  schema_version: number;
+  id: string;
+  repository_id: string;
+  tenant_id: string;
+  name: string;
+  enabled: boolean;
+  purposes: ConnectorJobPurpose[];
+  kind: ConnectorKind;
+  config: ConnectorTargetConfig;
+  credential_storage: 'environment_or_confined_file_reference';
+  created_at: string;
+  updated_at: string;
+  archived_at: string | null;
+}
+
+export interface CreateConnectorTargetBody {
+  name: string;
+  enabled: boolean;
+  purposes: ConnectorJobPurpose[];
+  config: ConnectorTargetConfig;
+}
+
+export interface PatchConnectorTargetBody {
+  name?: string;
+  enabled?: boolean;
+  purposes?: ConnectorJobPurpose[];
+  config?: ConnectorTargetConfig;
+}
+
+export type ConnectorProbeState = 'ready' | 'degraded' | 'unavailable';
+export type ConnectorCapability =
+  | 'upload'
+  | 'download'
+  | 'list'
+  | 'search'
+  | 'create_folder'
+  | 'revisions'
+  | 'multipart_upload'
+  | 'atomic_replace'
+  | 'resumable_upload'
+  | 'source_checksum'
+  | 'remote_checksum'
+  | 'offline';
+export type ConnectorErrorClass =
+  | 'cancelled'
+  | 'configuration'
+  | 'authentication'
+  | 'not_found'
+  | 'conflict'
+  | 'rate_limited'
+  | 'transient'
+  | 'permanent'
+  | 'integrity';
+
+export interface ConnectorStatusView {
+  target_id: string;
+  kind: ConnectorKind;
+  state: ConnectorProbeState;
+  capabilities: ConnectorCapability[];
+  detail: string;
+}
+
+export interface ConnectorProbeView {
+  target_id: string;
+  checked_at: string;
+  status: ConnectorStatusView | null;
+  error_class: ConnectorErrorClass | null;
+  error: string | null;
+}
+
+export type ConnectorJobState =
+  'queued' | 'running' | 'retry_scheduled' | 'recovered' | 'succeeded' | 'failed' | 'cancelled';
+export type ConnectorChecksumEvidence = 'source_only' | 'sent_to_provider' | 'remote_confirmed';
+
+export interface ConnectorJobReceiptView {
+  completed_unix_millis: number;
+  connector: ConnectorKind;
+  provider_object_id: string | null;
+  provider_revision: string | null;
+  etag: string | null;
+  remote_bytes: number;
+  checksum_evidence: ConnectorChecksumEvidence;
+}
+
+export interface ConnectorJobView {
+  id: string;
+  tenant_id: string;
+  target_id: string;
+  repository_id: string;
+  purpose: ConnectorJobPurpose;
+  destination: string;
+  content_type: string;
+  source_sha256: string;
+  bytes: number;
+  created_unix_millis: number;
+  state: ConnectorJobState;
+  attempt: number;
+  not_before_unix_millis: number | null;
+  error_class: ConnectorErrorClass | null;
+  detail: string;
+  receipt: ConnectorJobReceiptView | null;
+}
+
+export interface ConnectorJobListView {
+  jobs: ConnectorJobView[];
+  next_before_created_unix_millis: number | null;
+}
+
+export interface ListConnectorJobsParams {
+  limit?: number;
+  before_created_unix_millis?: number;
+}
+
+export type ConnectorRunArtifact =
+  | { kind: 'act_document'; act_id: string; variant: 'canonical' | 'signed' }
+  | { kind: 'latest_instance_backup' };
+
+export interface RunConnectorTargetBody {
+  request_id: string;
+  purpose: ConnectorJobPurpose;
+  artifact: ConnectorRunArtifact;
+  destination: string;
+}
+
+export type RepositoryEncryptionMode = 'standard' | 'zero_knowledge';
+
+export interface SplitKeyRecoveryPolicy {
+  threshold: number;
+  share_count: number;
+  /** Public custodian labels only. Recovery shares never cross the API boundary. */
+  custodian_labels: string[];
+}
+
+export interface KeyCustodyPolicy {
+  bring_your_own_key: boolean;
+  webauthn_prf_unsealing: boolean;
+  split_key_recovery: SplitKeyRecoveryPolicy | null;
+}
+
+export type ZeroKnowledgeScope =
+  { kind: 'tenant'; tenant_id: string } | { kind: 'repository'; repository_id: string };
+
+export interface RepositoryPolicy {
+  repository_id: string;
+  tenant_id: string;
+  name: string;
+  encryption_mode: RepositoryEncryptionMode;
+  zk_scope: ZeroKnowledgeScope | null;
+  custody: KeyCustodyPolicy;
+  gdpr_obligations_remain: true;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TenantRepositoryPolicy {
+  tenant_id: string;
+  encryption_mode: RepositoryEncryptionMode;
+  custody: KeyCustodyPolicy;
+  gdpr_obligations_remain: true;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StoredRepositoryPolicy {
+  policy: RepositoryPolicy;
+  policy_source: 'tenant' | 'repository';
+}
+
+export interface PutTenantRepositoryPolicyBody {
+  encryption_mode: RepositoryEncryptionMode;
+  custody: KeyCustodyPolicy;
+  gdpr_obligations_remain: true;
+}
+
+export interface CreateRepositoryBody {
+  name: string;
+  inherit_tenant_policy: boolean;
+  encryption_mode?: RepositoryEncryptionMode;
+  custody?: KeyCustodyPolicy;
+  gdpr_obligations_remain?: true;
+}
+
+export interface PatchRepositoryBody {
+  name?: string;
+  inherit_tenant_policy?: boolean;
+  encryption_mode?: RepositoryEncryptionMode;
+  custody?: KeyCustodyPolicy;
+  gdpr_obligations_remain?: true;
+}
+
+export type ContentEncryptionAlgorithm = 'aes256_gcm';
+export type KeyWrappingAlgorithm =
+  | 'aes256_kw_byok'
+  | 'hkdf_sha256_aes256_kw_webauthn_prf'
+  | 'aes256_kw_split_recovery'
+  | 'rsa_oaep_sha256_recipient';
+export type KeyRecipientKind =
+  'bring_your_own_key' | 'webauthn_credential' | 'split_recovery_plan' | 'external_recipient';
+
+export interface WrappedContentEncryptionKey {
+  slot_id: string;
+  recipient_kind: KeyRecipientKind;
+  recipient_id: string;
+  algorithm: KeyWrappingAlgorithm;
+  key_reference: string;
+  wrapped_cek_base64: string;
+  created_at: string;
+}
+
+export interface EncryptedMetadataEnvelope {
+  algorithm: ContentEncryptionAlgorithm;
+  nonce_base64: string;
+  ciphertext_base64: string;
+  ciphertext_sha256: string;
+}
+
+export interface OpaqueBlobManifest {
+  schema_version: 1;
+  associated_data: { repository_id: string; object_id: string; version: number };
+  algorithm: ContentEncryptionAlgorithm;
+  nonce_base64: string;
+  ciphertext_sha256: string;
+  ciphertext_len: number;
+  encrypted_metadata: EncryptedMetadataEnvelope | null;
+  wrapped_keys: WrappedContentEncryptionKey[];
+  created_at: string;
+}
+
+export interface PendingZkUploadView {
+  upload_id: string;
+  repository_id: string;
+  object_id: string;
+  version: number;
+  ciphertext_upload_url: string;
+  created_at: string;
+}
+
+export interface ZkObjectVersionView {
+  archive_id: string;
+  tenant_id: string;
+  manifest: OpaqueBlobManifest;
+  ciphertext_url: string;
+  committed_at: string;
+}
+
+export type ReadabilityPackageBody =
+  | {
+      mode: 'client_decrypted_archive';
+      book_id: string;
+      archive_base64: string;
+      archive_sha256: string;
+      reauth: ReAuth;
+    }
+  | {
+      mode: 'encrypted_archive_with_portable_key_package';
+      book_id: string;
+      portable_key_package_jwe: string;
+      recipient_instructions: string;
+      reauth: ReAuth;
+    };
+
 export type NotificationTriageStatus = 'unread' | 'read' | 'dismissed' | 'acknowledged';
 
 export interface NotificationTriageEntry {

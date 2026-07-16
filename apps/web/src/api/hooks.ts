@@ -133,6 +133,26 @@ import type {
   TsaCatalogSearchParams,
   TemplateSummary,
   TemplateImportVerdict,
+  AppendGroupTemplateLibraryRevisionBody,
+  CompanyGroupView,
+  ConnectorJobListView,
+  ConnectorJobView,
+  ConnectorTargetView,
+  CreateCompanyGroupBody,
+  CreateConnectorTargetBody,
+  CreateGroupTemplateLibraryBody,
+  CreateRepositoryBody,
+  GroupTemplateLibraryView,
+  ListConnectorJobsParams,
+  OpaqueBlobManifest,
+  PatchCompanyGroupBody,
+  PatchConnectorTargetBody,
+  PatchGroupTemplateLibraryBody,
+  PatchRepositoryBody,
+  PutTenantRepositoryPolicyBody,
+  ReadabilityPackageBody,
+  RunConnectorTargetBody,
+  StoredRepositoryPolicy,
 } from './types';
 import { api, type ActDocumentWorkingCopyFormat } from './client';
 import { clearSessionToken, onSessionCleared, setSessionToken } from './session';
@@ -239,6 +259,24 @@ export const keys = {
   privacyRetentionCandidateResolutions: ['privacy', 'retention-candidate-resolutions'] as const,
   privacyRetentionExecutions: (status: RetentionExecutionStatus | 'all' = 'all') =>
     ['privacy', 'retention-executions', status] as const,
+  companyGroups: (tenantId: string) => ['tenants', tenantId, 'groups'] as const,
+  companyGroup: (tenantId: string, groupId: string) =>
+    ['tenants', tenantId, 'groups', groupId] as const,
+  groupDashboard: (tenantId: string, groupId: string) =>
+    ['tenants', tenantId, 'groups', groupId, 'dashboard'] as const,
+  groupTemplateLibraries: (tenantId: string, groupId: string) =>
+    ['tenants', tenantId, 'groups', groupId, 'template-libraries'] as const,
+  groupTemplateLibraryHistory: (tenantId: string, groupId: string, libraryId: string) =>
+    ['tenants', tenantId, 'groups', groupId, 'template-libraries', libraryId, 'history'] as const,
+  connectorTargets: (tenantId: string) => ['tenants', tenantId, 'connector-targets'] as const,
+  connectorJobs: (tenantId: string, params: ListConnectorJobsParams = {}) =>
+    ['tenants', tenantId, 'connector-jobs', params] as const,
+  connectorJob: (tenantId: string, jobId: string) =>
+    ['tenants', tenantId, 'connector-jobs', jobId] as const,
+  tenantRepositoryPolicy: (tenantId: string) => ['tenants', tenantId, 'repository-policy'] as const,
+  repositories: (tenantId: string) => ['tenants', tenantId, 'repositories'] as const,
+  zkObjects: (tenantId: string, repositoryId: string) =>
+    ['tenants', tenantId, 'repositories', repositoryId, 'objects'] as const,
 };
 
 // --- Entities -------------------------------------------------------------------
@@ -3012,5 +3050,557 @@ export function useReorderProviderCredentialEntries() {
       void qc.invalidateQueries({ queryKey: keys.providerCredentials });
       void qc.invalidateQueries({ queryKey: ['ledger'] });
     },
+  });
+}
+
+// --- Tenant company groups -----------------------------------------------------
+
+export function useCompanyGroups(tenantId: string) {
+  return useQuery({
+    queryKey: keys.companyGroups(tenantId),
+    queryFn: () => api.listCompanyGroups(tenantId),
+    enabled: tenantId.length > 0,
+    retry: false,
+  });
+}
+
+export function useCompanyGroup(tenantId: string, groupId: string) {
+  return useQuery({
+    queryKey: keys.companyGroup(tenantId, groupId),
+    queryFn: () => api.getCompanyGroup(tenantId, groupId),
+    enabled: tenantId.length > 0 && groupId.length > 0,
+    retry: false,
+  });
+}
+
+export function useCreateCompanyGroup() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ tenantId, body }: { tenantId: string; body: CreateCompanyGroupBody }) =>
+      api.createCompanyGroup(tenantId, body),
+    onSuccess: (created) => {
+      qc.setQueryData<CompanyGroupView[]>(keys.companyGroups(created.tenant_id), (current = []) => [
+        ...current,
+        created,
+      ]);
+      void qc.invalidateQueries({ queryKey: keys.companyGroups(created.tenant_id) });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+export function usePatchCompanyGroup() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      tenantId,
+      groupId,
+      body,
+    }: {
+      tenantId: string;
+      groupId: string;
+      body: PatchCompanyGroupBody;
+    }) => api.patchCompanyGroup(tenantId, groupId, body),
+    onSuccess: (updated) => {
+      qc.setQueryData<CompanyGroupView[]>(keys.companyGroups(updated.tenant_id), (current = []) =>
+        current.map((group) => (group.id === updated.id ? updated : group)),
+      );
+      qc.setQueryData(keys.companyGroup(updated.tenant_id, updated.id), updated);
+      void qc.invalidateQueries({ queryKey: keys.groupDashboard(updated.tenant_id, updated.id) });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+export function useArchiveCompanyGroup() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ tenantId, groupId }: { tenantId: string; groupId: string }) =>
+      api.archiveCompanyGroup(tenantId, groupId),
+    onSuccess: (_, variables) => {
+      qc.removeQueries({ queryKey: keys.companyGroup(variables.tenantId, variables.groupId) });
+      void qc.invalidateQueries({ queryKey: keys.companyGroups(variables.tenantId) });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+export function useAssignEntityToGroup() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      tenantId,
+      groupId,
+      entityId,
+    }: {
+      tenantId: string;
+      groupId: string;
+      entityId: string;
+    }) => api.assignEntityToGroup(tenantId, groupId, entityId),
+    onSuccess: (entity, variables) => {
+      qc.setQueryData(keys.entity(entity.id), entity);
+      void qc.invalidateQueries({ queryKey: keys.entities });
+      void qc.invalidateQueries({
+        queryKey: keys.groupDashboard(variables.tenantId, variables.groupId),
+      });
+      void qc.invalidateQueries({ queryKey: keys.companyGroups(variables.tenantId) });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+export function useRemoveEntityFromGroup() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      tenantId,
+      groupId,
+      entityId,
+    }: {
+      tenantId: string;
+      groupId: string;
+      entityId: string;
+    }) => api.removeEntityFromGroup(tenantId, groupId, entityId),
+    onSuccess: (entity, variables) => {
+      qc.setQueryData(keys.entity(entity.id), entity);
+      void qc.invalidateQueries({ queryKey: keys.entities });
+      void qc.invalidateQueries({
+        queryKey: keys.groupDashboard(variables.tenantId, variables.groupId),
+      });
+      void qc.invalidateQueries({ queryKey: keys.companyGroups(variables.tenantId) });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+export function useGroupDashboard(tenantId: string, groupId: string) {
+  return useQuery({
+    queryKey: keys.groupDashboard(tenantId, groupId),
+    queryFn: () => api.getGroupDashboard(tenantId, groupId),
+    enabled: tenantId.length > 0 && groupId.length > 0,
+    retry: false,
+  });
+}
+
+export function useGroupTemplateLibraries(tenantId: string, groupId: string) {
+  return useQuery({
+    queryKey: keys.groupTemplateLibraries(tenantId, groupId),
+    queryFn: () => api.listGroupTemplateLibraries(tenantId, groupId),
+    enabled: tenantId.length > 0 && groupId.length > 0,
+    retry: false,
+  });
+}
+
+export function useCreateGroupTemplateLibrary() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      tenantId,
+      groupId,
+      body,
+    }: {
+      tenantId: string;
+      groupId: string;
+      body: CreateGroupTemplateLibraryBody;
+    }) => api.createGroupTemplateLibrary(tenantId, groupId, body),
+    onSuccess: (created) => {
+      qc.setQueryData<GroupTemplateLibraryView[]>(
+        keys.groupTemplateLibraries(created.tenant_id, created.group_id),
+        (current = []) => [...current, created],
+      );
+      void qc.invalidateQueries({
+        queryKey: keys.companyGroups(created.tenant_id),
+      });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+export function usePatchGroupTemplateLibrary() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      tenantId,
+      groupId,
+      libraryId,
+      body,
+    }: {
+      tenantId: string;
+      groupId: string;
+      libraryId: string;
+      body: PatchGroupTemplateLibraryBody;
+    }) => api.patchGroupTemplateLibrary(tenantId, groupId, libraryId, body),
+    onSuccess: (updated) => {
+      qc.setQueryData<GroupTemplateLibraryView[]>(
+        keys.groupTemplateLibraries(updated.tenant_id, updated.group_id),
+        (current = []) => current.map((item) => (item.id === updated.id ? updated : item)),
+      );
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+export function useArchiveGroupTemplateLibrary() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      tenantId,
+      groupId,
+      libraryId,
+    }: {
+      tenantId: string;
+      groupId: string;
+      libraryId: string;
+    }) => api.archiveGroupTemplateLibrary(tenantId, groupId, libraryId),
+    onSuccess: (_, variables) => {
+      void qc.invalidateQueries({
+        queryKey: keys.groupTemplateLibraries(variables.tenantId, variables.groupId),
+      });
+      void qc.invalidateQueries({ queryKey: keys.companyGroups(variables.tenantId) });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+export function useAppendGroupTemplateLibraryRevision() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      tenantId,
+      groupId,
+      libraryId,
+      body,
+    }: {
+      tenantId: string;
+      groupId: string;
+      libraryId: string;
+      body: AppendGroupTemplateLibraryRevisionBody;
+    }) => api.appendGroupTemplateLibraryRevision(tenantId, groupId, libraryId, body),
+    onSuccess: (revision) => {
+      void qc.invalidateQueries({
+        queryKey: keys.groupTemplateLibraries(revision.tenant_id, revision.group_id),
+      });
+      void qc.invalidateQueries({
+        queryKey: keys.groupTemplateLibraryHistory(
+          revision.tenant_id,
+          revision.group_id,
+          revision.library_id,
+        ),
+      });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+export function useGroupTemplateLibraryHistory(
+  tenantId: string,
+  groupId: string,
+  libraryId: string,
+) {
+  return useQuery({
+    queryKey: keys.groupTemplateLibraryHistory(tenantId, groupId, libraryId),
+    queryFn: () => api.listGroupTemplateLibraryHistory(tenantId, groupId, libraryId),
+    enabled: tenantId.length > 0 && groupId.length > 0 && libraryId.length > 0,
+    retry: false,
+  });
+}
+
+// --- Connector targets and durable jobs ---------------------------------------
+
+export function useConnectorTargets(tenantId: string) {
+  return useQuery({
+    queryKey: keys.connectorTargets(tenantId),
+    queryFn: () => api.listConnectorTargets(tenantId),
+    enabled: tenantId.length > 0,
+    retry: false,
+  });
+}
+
+export function useCreateConnectorTarget() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ tenantId, body }: { tenantId: string; body: CreateConnectorTargetBody }) =>
+      api.createConnectorTarget(tenantId, body),
+    onSuccess: (created) => {
+      qc.setQueryData<ConnectorTargetView[]>(
+        keys.connectorTargets(created.tenant_id),
+        (current = []) => [...current, created],
+      );
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+export function usePatchConnectorTarget() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      tenantId,
+      targetId,
+      body,
+    }: {
+      tenantId: string;
+      targetId: string;
+      body: PatchConnectorTargetBody;
+    }) => api.patchConnectorTarget(tenantId, targetId, body),
+    onSuccess: (updated) => {
+      qc.setQueryData<ConnectorTargetView[]>(
+        keys.connectorTargets(updated.tenant_id),
+        (current = []) => current.map((item) => (item.id === updated.id ? updated : item)),
+      );
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+export function useArchiveConnectorTarget() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ tenantId, targetId }: { tenantId: string; targetId: string }) =>
+      api.archiveConnectorTarget(tenantId, targetId),
+    onSuccess: (_, variables) => {
+      void qc.invalidateQueries({ queryKey: keys.connectorTargets(variables.tenantId) });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+export function useProbeConnectorTarget() {
+  return useMutation({
+    mutationFn: ({ tenantId, targetId }: { tenantId: string; targetId: string }) =>
+      api.probeConnectorTarget(tenantId, targetId),
+  });
+}
+
+export function useRunConnectorTarget() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      tenantId,
+      targetId,
+      body,
+    }: {
+      tenantId: string;
+      targetId: string;
+      body: RunConnectorTargetBody;
+    }) => api.runConnectorTarget(tenantId, targetId, body),
+    onSuccess: (created) => {
+      qc.setQueryData<ConnectorJobListView>(keys.connectorJobs(created.tenant_id), (current) => ({
+        jobs: [created, ...(current?.jobs ?? [])],
+        next_before_created_unix_millis: current?.next_before_created_unix_millis ?? null,
+      }));
+      void qc.invalidateQueries({ queryKey: ['tenants', created.tenant_id, 'connector-jobs'] });
+      void qc.invalidateQueries({ queryKey: keys.dashboard });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+export function useConnectorJobs(tenantId: string, params: ListConnectorJobsParams = {}) {
+  return useQuery({
+    queryKey: keys.connectorJobs(tenantId, params),
+    queryFn: () => api.listConnectorJobs(tenantId, params),
+    enabled: tenantId.length > 0,
+    retry: false,
+    refetchInterval: 10_000,
+  });
+}
+
+export function useConnectorJob(tenantId: string, jobId: string) {
+  return useQuery({
+    queryKey: keys.connectorJob(tenantId, jobId),
+    queryFn: () => api.getConnectorJob(tenantId, jobId),
+    enabled: tenantId.length > 0 && jobId.length > 0,
+    retry: false,
+    refetchInterval: 5_000,
+  });
+}
+
+function updateConnectorJobCaches(
+  qc: ReturnType<typeof useQueryClient>,
+  updated: ConnectorJobView,
+) {
+  qc.setQueryData(keys.connectorJob(updated.tenant_id, updated.id), updated);
+  qc.setQueriesData<ConnectorJobListView>(
+    { queryKey: ['tenants', updated.tenant_id, 'connector-jobs'] },
+    (current) => {
+      // The prefix also matches the single-job detail key. Only paged list DTOs carry `jobs`.
+      if (!current || !Array.isArray(current.jobs)) return current;
+      return {
+        ...current,
+        jobs: current.jobs.map((job) => (job.id === updated.id ? updated : job)),
+      };
+    },
+  );
+  void qc.invalidateQueries({ queryKey: keys.dashboard });
+  void qc.invalidateQueries({ queryKey: ['ledger'] });
+}
+
+export function useCancelConnectorJob() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ tenantId, jobId }: { tenantId: string; jobId: string }) =>
+      api.cancelConnectorJob(tenantId, jobId),
+    onSuccess: (updated) => updateConnectorJobCaches(qc, updated),
+  });
+}
+
+export function useRetryConnectorJob() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ tenantId, jobId }: { tenantId: string; jobId: string }) =>
+      api.retryConnectorJob(tenantId, jobId),
+    onSuccess: (updated) => updateConnectorJobCaches(qc, updated),
+  });
+}
+
+// --- Opt-in zero-knowledge repositories ---------------------------------------
+
+export function useTenantRepositoryPolicy(tenantId: string) {
+  return useQuery({
+    queryKey: keys.tenantRepositoryPolicy(tenantId),
+    queryFn: () => api.getTenantRepositoryPolicy(tenantId),
+    enabled: tenantId.length > 0,
+    retry: false,
+  });
+}
+
+export function usePutTenantRepositoryPolicy() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ tenantId, body }: { tenantId: string; body: PutTenantRepositoryPolicyBody }) =>
+      api.putTenantRepositoryPolicy(tenantId, body),
+    onSuccess: (updated) => {
+      qc.setQueryData(keys.tenantRepositoryPolicy(updated.tenant_id), updated);
+      void qc.invalidateQueries({ queryKey: keys.repositories(updated.tenant_id) });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+export function useDeleteTenantRepositoryPolicy() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (tenantId: string) => api.deleteTenantRepositoryPolicy(tenantId),
+    onSuccess: (_, tenantId) => {
+      qc.removeQueries({ queryKey: keys.tenantRepositoryPolicy(tenantId) });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+export function useRepositories(tenantId: string) {
+  return useQuery({
+    queryKey: keys.repositories(tenantId),
+    queryFn: () => api.listRepositories(tenantId),
+    enabled: tenantId.length > 0,
+    retry: false,
+  });
+}
+
+export function useCreateRepository() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ tenantId, body }: { tenantId: string; body: CreateRepositoryBody }) =>
+      api.createRepository(tenantId, body),
+    onSuccess: (created) => {
+      qc.setQueryData<StoredRepositoryPolicy[]>(
+        keys.repositories(created.policy.tenant_id),
+        (current = []) => [...current, created],
+      );
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+export function usePatchRepository() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      tenantId,
+      repositoryId,
+      body,
+    }: {
+      tenantId: string;
+      repositoryId: string;
+      body: PatchRepositoryBody;
+    }) => api.patchRepository(tenantId, repositoryId, body),
+    onSuccess: (updated) => {
+      qc.setQueryData<StoredRepositoryPolicy[]>(
+        keys.repositories(updated.policy.tenant_id),
+        (current = []) =>
+          current.map((item) =>
+            item.policy.repository_id === updated.policy.repository_id ? updated : item,
+          ),
+      );
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+export function useDeleteRepository() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ tenantId, repositoryId }: { tenantId: string; repositoryId: string }) =>
+      api.deleteRepository(tenantId, repositoryId),
+    onSuccess: (_, variables) => {
+      void qc.invalidateQueries({ queryKey: keys.repositories(variables.tenantId) });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+export function useZkObjectVersions(tenantId: string, repositoryId: string) {
+  return useQuery({
+    queryKey: keys.zkObjects(tenantId, repositoryId),
+    queryFn: () => api.listZkObjectVersions(tenantId, repositoryId),
+    enabled: tenantId.length > 0 && repositoryId.length > 0,
+    retry: false,
+  });
+}
+
+export function useUploadZkObject() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      tenantId,
+      repositoryId,
+      manifest,
+      ciphertext,
+    }: {
+      tenantId: string;
+      repositoryId: string;
+      manifest: OpaqueBlobManifest;
+      ciphertext: ArrayBuffer | Blob;
+    }) => {
+      const pending = await api.createZkObjectUpload(tenantId, repositoryId, manifest);
+      return api.commitZkObjectCiphertext(pending.ciphertext_upload_url, ciphertext);
+    },
+    onSuccess: (created) => {
+      void qc.invalidateQueries({
+        queryKey: keys.zkObjects(created.tenant_id, created.manifest.associated_data.repository_id),
+      });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+export function useCreateZkReadabilityPackage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      tenantId,
+      repositoryId,
+      objectId,
+      version,
+      body,
+    }: {
+      tenantId: string;
+      repositoryId: string;
+      objectId: string;
+      version: number;
+      body: ReadabilityPackageBody;
+    }) => api.createZkReadabilityPackage(tenantId, repositoryId, objectId, version, body),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['ledger'] }),
   });
 }
