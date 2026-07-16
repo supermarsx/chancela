@@ -100,6 +100,7 @@ mod cache;
 mod cae;
 mod chronology;
 mod connector_jobs;
+mod cors;
 pub use connector_jobs::{ConnectorTargetMap, ConnectorTargetRecord};
 // wp16 P0: Postgres-advisory-lock leader election / step-down / failover handoff (active-passive HA).
 // Compiled in every build; inert unless the durable backend is an electing one (Postgres).
@@ -213,6 +214,8 @@ pub use authz::{
     scope_of_book, scope_of_entity, scope_of_template_library,
 };
 pub use backup_recovery::{BackupRecoveryDrillManifestEvidence, BackupRecoveryDrillReceipt};
+#[doc(hidden)]
+pub use cors::CorsConfig;
 pub use database::{
     AppStateInitError, DATABASE_URL_ENV, DATABASE_URL_FILE_ENV, DB_BACKEND_ENV, DB_KEY_ENV,
     DB_KEY_FILE_ENV, DB_KEY_SOURCE_ENV, DatabaseBackendConfigError, DatabaseEncryptionConfig,
@@ -241,6 +244,8 @@ pub use secretstore_persist::{
     Pkcs12CredentialFields, ProviderCredentialError, ProviderCredentialStore, ScapCredentialFields,
     StoredCredentialField,
 };
+#[doc(hidden)]
+pub use session::DurableSessionRegistry;
 pub use settings::{
     AiSettings, AppearanceSettings, CaeSourceEntry, CatalogSettings, CmdEnvSetting,
     DEFAULT_BACKUP_RECOVERY_MAX_DRILL_AGE_DAYS, DEFAULT_BACKUP_RECOVERY_TARGET_RPO_MINUTES,
@@ -282,13 +287,26 @@ pub async fn seed_e2e_sessions_from_data_dir(state: &AppState) {
             "e2e session seed references an absent or inactive user: {user_id}"
         );
     }
+    let now = time::OffsetDateTime::now_utc();
+    let expires_at = now + time::Duration::seconds(actor::SESSION_TTL_SECS);
+    if state.durable_sessions.is_durable() {
+        state
+            .durable_sessions
+            .insert(&seed.token, user_id.0, now, expires_at)
+            .await
+            .unwrap_or_else(|e| panic!("persist e2e session seed: {e:?}"));
+    }
+    state
+        .session_issued_at
+        .write()
+        .await
+        .insert(seed.token.clone(), now);
     state.sessions.write().await.insert(
         seed.token,
         session::SessionEntry {
             user_id,
             unlocked_key: None,
-            expires_at: time::OffsetDateTime::now_utc()
-                + time::Duration::seconds(actor::SESSION_TTL_SECS),
+            expires_at,
         },
     );
     std::fs::remove_file(&path)
@@ -515,6 +533,10 @@ pub struct AppState {
     /// decrypted signing key held for the life of the session. Reset on restart; the unlocked key
     /// never persists and never leaves the process (plan t29 §4.4).
     pub sessions: Arc<RwLock<HashMap<String, session::SessionEntry>>>,
+    /// Digest-only, reload-safe session registry for a durable single-node data directory. Pure
+    /// in-memory states keep the explicit no-op default; clustered Postgres uses Redis instead.
+    #[doc(hidden)]
+    pub durable_sessions: session::DurableSessionRegistry,
     /// Short-lived server-bound previews for destructive retained-export cleanup. In-memory only:
     /// previews bind the token to the canonical data directory, request policy, and server-selected
     /// candidate manifest, and reset on restart.
@@ -714,10 +736,14 @@ pub struct AppState {
     /// regardless of the 24h idle/sliding renewal. `Default` is 7 days; the running server overrides
     /// it from `CHANCELA_SESSION_MAX_LIFETIME` in [`AppState::try_from_env`].
     pub session_max_lifetime: SessionMaxLifetime,
-    /// wp25-sec — per-token session issued-at timestamps backing the absolute-lifetime cap. Recorded
-    /// on first sight of a token (recovered from the pre-slide expiry on the minting node) and
-    /// consulted by [`actor::resolve_session_actor`]. In-memory, reset on restart.
+    /// wp25-sec — in-process cache of exact per-token issue timestamps backing the absolute-lifetime
+    /// cap. The durable digest registry / Redis record is authoritative across restart or node
+    /// change; this map is repopulated on resolution and never contains persisted secret material.
     pub session_issued_at: Arc<RwLock<HashMap<String, time::OffsetDateTime>>>,
+    /// Exact, opt-in cross-origin allowlist for remote companion clients. Empty by default, which
+    /// preserves the desktop/browser same-origin posture and emits no CORS grants.
+    #[doc(hidden)]
+    pub cors: cors::CorsConfig,
 }
 
 impl AppState {
@@ -1052,6 +1078,15 @@ impl AppState {
         // (Redis-backed only with the `redis` feature AND REDIS_URL/REDIS_URL_FILE set; otherwise every
         // backend stays a local no-op and single-node behaviour is byte-identical).
         state.cluster_shared = cluster_shared_state::SharedClusterState::from_env();
+        if sidecars_db_backed && state.cluster_shared.sessions.kind() != "redis" {
+            return Err(AppStateInitError::SharedSessionsRequired);
+        }
+        // A durable single-node store writes session identity/expiry through to a digest-only JSON
+        // registry. Postgres/HA must use the shared Redis authority and never a node-local file.
+        if state.store.is_some() && !sidecars_db_backed {
+            state.durable_sessions =
+                session::DurableSessionRegistry::load(dir.join(session::SESSIONS_FILE));
+        }
         // Signature-provider credential store (t77 S2): read the encrypted sidecar now (no key file
         // is created at boot — resolution is deferred to the first store), fail-closed on a missing
         // key source or a corrupt sidecar. Strict mode defaults off; the `credential_storage_strict`
@@ -1341,6 +1376,7 @@ impl AppState {
             self.rate_limit_buckets.write().await.clear();
             self.sessions.write().await.clear();
             self.session_issued_at.write().await.clear();
+            self.durable_sessions.clear().await?;
             self.attestations.write().await.clear();
             *self.cae.write().await = chancela_cae::load_catalog(Some(&dir));
             *self.law_store.write().await = law::load_law_store(&dir.join(law::LAWS_DIR));
@@ -1376,6 +1412,29 @@ impl AppState {
         }
     }
 
+    /// Invalidate all authenticated sessions before a whole-instance restore/factory reset. Redis
+    /// advances an authority epoch atomically, so every old digest becomes invalid without scanning
+    /// keys; a shared-store failure aborts the destructive operation before it mutates durable data.
+    pub(crate) async fn invalidate_all_sessions(&self) -> Result<(), ApiError> {
+        match self.cluster_shared.sessions.clear_all() {
+            cluster_shared_state::SessionMutation::NotShared
+            | cluster_shared_state::SessionMutation::Stored => {}
+            cluster_shared_state::SessionMutation::Unavailable => {
+                return Err(ApiError::Unavailable(
+                    "não foi possível invalidar as sessões partilhadas; operação cancelada"
+                        .to_owned(),
+                ));
+            }
+        }
+        self.durable_sessions.clear().await?;
+        self.sessions.write().await.clear();
+        self.session_issued_at.write().await.clear();
+        self.cluster_shared
+            .invalidation
+            .publish(&cluster_shared_state::InvalidationEvent::AllSessionsRevoked);
+        Ok(())
+    }
+
     /// Clear ALL in-memory state to a blank first-run instance, to match a `BackendFactory` reset
     /// (which also blanked the ledger + removed the sidecar files on disk): the domain read-models,
     /// the user profiles, every live session + unlocked key, the attestation sidecar, and the
@@ -1393,6 +1452,11 @@ impl AppState {
         self.notification_triage.write().await.clear();
         self.sessions.write().await.clear();
         self.session_issued_at.write().await.clear();
+        if let Err(error) = self.durable_sessions.clear().await {
+            eprintln!(
+                "warning: failed to invalidate durable sessions during factory reset: {error:?}"
+            );
+        }
         self.attestations.write().await.clear();
         self.api_keys.write().await.clear();
         self.external_signing_envelopes.write().await.clear();
@@ -1458,6 +1522,11 @@ impl AppState {
         // the per-IP rate limiter is ON by default here, and the absolute session cap is applied.
         state.rate_limit = rate_limit_config_from_env();
         state.session_max_lifetime = session_max_lifetime_from_env();
+        if state.persist_path.is_none() {
+            state.cluster_shared = cluster_shared_state::SharedClusterState::from_env();
+        }
+        state.cors = cors::CorsConfig::from_env()
+            .map_err(|error| AppStateInitError::CorsConfiguration(error.to_string()))?;
         Ok(state)
     }
 
@@ -1500,6 +1569,7 @@ pub fn router(state: AppState) -> Router {
     // wp25 observability: install the process-wide Prometheus recorder once (idempotent) so the
     // per-request metrics middleware records into a live recorder from the first request.
     observability::install_recorder();
+    let cors_layer = state.cors.layer();
     let api = Router::new()
         .route("/health", get(health))
         // wp25 observability probes. `/metrics` = Prometheus exposition; `/livez` = cheap liveness
@@ -2331,6 +2401,13 @@ pub fn router(state: AppState) -> Router {
         // and raw URL paths with ids/secrets are never logged.
         .layer(middleware::from_fn(observability::observe))
         .with_state(state);
+    // CORS is outermost so valid preflights never fall into auth/write gates, while an ordinary
+    // error response still receives the exact configured origin grant. Empty means no layer and
+    // therefore the existing same-origin behavior.
+    let api = match cors_layer {
+        Some(layer) => api.layer(layer),
+        None => api,
+    };
 
     Router::new()
         .merge(api.clone())

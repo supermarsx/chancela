@@ -33,8 +33,9 @@
 //!
 //! The in-memory `sessions` map entry can hold a *decrypted* attestation signing key for the session
 //! lifetime. That key **must never** leave the process. So the shared [`SessionStore`] carries only
-//! the session **identity + expiry** (`token → user_id`, with TTL); the unlocked key remains in the
-//! node-local `sessions` map on the authenticating node, and attestation signing stays pinned there.
+//! the session **identity + expiry** (`sha256(token) → user_id + issued_at`, with TTL); the unlocked
+//! key remains in the node-local `sessions` map on the authenticating node, and attestation signing
+//! stays pinned there.
 //! A follower resolving a leader-minted session gets a valid *actor identity* (it can act on behalf
 //! of the user) but not the unlocked key — exactly the split the plan calls for.
 
@@ -65,6 +66,8 @@ pub enum SessionLookup {
     Found {
         /// The principal the token authenticates.
         user_id: Uuid,
+        /// Exact creation time retained across nodes/restarts for the absolute lifetime cap.
+        issued_at_unix: i64,
     },
     /// The shared store authoritatively has no live session for this token.
     NotFound,
@@ -72,21 +75,37 @@ pub enum SessionLookup {
     Unavailable,
 }
 
-/// A cluster-shared session identity store (`token → user_id`, with expiry). **Identity + expiry
+/// Result of a shared-session mutation. Redis-backed HA callers fail closed on [`Unavailable`];
+/// single-node callers receive [`NotShared`] and use their local/durable authority.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SessionMutation {
+    NotShared,
+    Stored,
+    Unavailable,
+}
+
+/// A cluster-shared session identity store (`sha256(token) → user_id + issued_at`, with expiry). **Identity + expiry
 /// only** — never the unlocked signing key (see the module docs).
 ///
 /// The [`Default`]/local impl is a no-op: [`SessionStore::resolve`] returns
 /// [`SessionLookup::NotShared`] so the caller uses its node-local map unchanged. Only the Redis impl
 /// makes sessions cluster-wide.
 pub trait SessionStore: Send + Sync + fmt::Debug {
-    /// Record `token → user_id` with a TTL. Best-effort for the shared layer (the node-local map is
-    /// the authority on the minting node); errors are swallowed after logging.
-    fn put(&self, token: &str, user_id: Uuid, ttl: Duration);
+    /// Record the digest-keyed identity and exact issue time with a TTL.
+    fn put(
+        &self,
+        token: &str,
+        user_id: Uuid,
+        issued_at_unix: i64,
+        ttl: Duration,
+    ) -> SessionMutation;
     /// Resolve `token`, sliding its TTL forward by `ttl` on a hit. **FAIL-CLOSED** on any backend
     /// error ([`SessionLookup::Unavailable`]).
     fn resolve(&self, token: &str, ttl: Duration) -> SessionLookup;
-    /// Revoke `token` cluster-wide (so a follower stops recognising it). Best-effort.
-    fn revoke(&self, token: &str);
+    /// Revoke `token` cluster-wide (so a follower stops recognising it).
+    fn revoke(&self, token: &str) -> SessionMutation;
+    /// Invalidate every session generation, used before restore/factory reset.
+    fn clear_all(&self) -> SessionMutation;
     /// A short label for logs / diagnostics (`"local"`, `"redis"`).
     fn kind(&self) -> &'static str;
 }
@@ -97,11 +116,24 @@ pub trait SessionStore: Send + Sync + fmt::Debug {
 pub struct LocalOnlySessionStore;
 
 impl SessionStore for LocalOnlySessionStore {
-    fn put(&self, _token: &str, _user_id: Uuid, _ttl: Duration) {}
+    fn put(
+        &self,
+        _token: &str,
+        _user_id: Uuid,
+        _issued_at_unix: i64,
+        _ttl: Duration,
+    ) -> SessionMutation {
+        SessionMutation::NotShared
+    }
     fn resolve(&self, _token: &str, _ttl: Duration) -> SessionLookup {
         SessionLookup::NotShared
     }
-    fn revoke(&self, _token: &str) {}
+    fn revoke(&self, _token: &str) -> SessionMutation {
+        SessionMutation::NotShared
+    }
+    fn clear_all(&self) -> SessionMutation {
+        SessionMutation::NotShared
+    }
     fn kind(&self) -> &'static str {
         "local"
     }
@@ -237,9 +269,11 @@ pub enum InvalidationEvent {
     /// A session was revoked (signed out / expired-and-dropped). Other nodes should evict any
     /// node-local copy of `token`.
     SessionRevoked {
-        /// The revoked opaque session token.
-        token: String,
+        /// SHA-256 digest of the revoked opaque session token; the bearer itself never enters pub/sub.
+        token_sha256: String,
     },
+    /// A whole-instance restore/factory reset invalidated every session generation.
+    AllSessionsRevoked,
     /// A user's roles / delegations changed. Other nodes should drop any permission-derived cache
     /// for `user_id` (and, conservatively, the shared catalog projections).
     RoleChanged {
@@ -252,7 +286,10 @@ impl InvalidationEvent {
     /// The stable wire payload published on the pub/sub channel.
     pub fn encode(&self) -> String {
         match self {
-            InvalidationEvent::SessionRevoked { token } => format!("session-revoked:{token}"),
+            InvalidationEvent::SessionRevoked { token_sha256 } => {
+                format!("session-revoked:{token_sha256}")
+            }
+            InvalidationEvent::AllSessionsRevoked => "sessions-revoked:all".to_owned(),
             InvalidationEvent::RoleChanged { user_id } => format!("role-changed:{user_id}"),
         }
     }
@@ -260,10 +297,17 @@ impl InvalidationEvent {
     /// Parse a wire payload back into an event; `None` for an unrecognised / malformed message (an
     /// unknown message is ignored, never a hard error — forward-compatible with newer publishers).
     pub fn parse(payload: &str) -> Option<Self> {
-        if let Some(token) = payload.strip_prefix("session-revoked:") {
-            let token = token.trim();
-            return (!token.is_empty()).then(|| InvalidationEvent::SessionRevoked {
-                token: token.to_owned(),
+        if payload == "sessions-revoked:all" {
+            return Some(InvalidationEvent::AllSessionsRevoked);
+        }
+        if let Some(token_sha256) = payload.strip_prefix("session-revoked:") {
+            let token_sha256 = token_sha256.trim();
+            return (token_sha256.len() == 64
+                && token_sha256
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)))
+            .then(|| InvalidationEvent::SessionRevoked {
+                token_sha256: token_sha256.to_owned(),
             });
         }
         if let Some(uid) = payload.strip_prefix("role-changed:") {
@@ -351,8 +395,14 @@ impl crate::AppState {
     #[cfg(feature = "redis")]
     pub(crate) async fn apply_invalidation(&self, event: &InvalidationEvent) {
         match event {
-            InvalidationEvent::SessionRevoked { token } => {
-                self.sessions.write().await.remove(token);
+            InvalidationEvent::SessionRevoked { token_sha256 } => {
+                self.sessions.write().await.retain(|token, _| {
+                    crate::session::session_token_digest(token) != *token_sha256
+                });
+            }
+            InvalidationEvent::AllSessionsRevoked => {
+                self.sessions.write().await.clear();
+                self.session_issued_at.write().await.clear();
             }
             InvalidationEvent::RoleChanged { .. } => {
                 // Permission grants are derived from the role catalog + delegation table (file
@@ -451,17 +501,21 @@ mod redis_backed {
 
     use super::{
         INVALIDATION_CHANNEL, InvalidationBus, InvalidationEvent, RateLimitOutcome, RateLimiter,
-        SessionLookup, SessionStore,
+        SessionLookup, SessionMutation, SessionStore,
     };
 
     /// Bound on how long any single op may block on the network, so a slow/unreachable Redis fails
     /// closed *fast* (a session lookup that times out is `Unavailable` ⇒ unauthenticated) rather than
     /// stalling a request.
     const OP_TIMEOUT: Duration = Duration::from_millis(200);
+    const SESSION_EPOCH_KEY: &str = "chancela:v2:session-epoch";
 
     /// Namespaced Redis keys, versioned so multiple app versions can share one Redis safely.
     fn session_key(token: &str) -> String {
-        format!("chancela:v1:session:{token}")
+        format!(
+            "chancela:v2:session:{}",
+            crate::session::session_token_digest(token)
+        )
     }
     fn ratelimit_key(key: &str) -> String {
         format!("chancela:v1:ratelimit:{key}")
@@ -517,7 +571,7 @@ mod redis_backed {
         }
     }
 
-    /// Redis-backed shared session identity store (token → user_id, with TTL).
+    /// Redis-backed shared session identity store (digest-keyed user id + issue time, with TTL).
     #[derive(Clone)]
     pub(super) struct RedisSessionStore(RedisClusterState);
 
@@ -528,31 +582,71 @@ mod redis_backed {
     }
 
     impl SessionStore for RedisSessionStore {
-        fn put(&self, token: &str, user_id: Uuid, ttl: Duration) {
+        fn put(
+            &self,
+            token: &str,
+            user_id: Uuid,
+            issued_at_unix: i64,
+            ttl: Duration,
+        ) -> SessionMutation {
             let secs = ttl.as_secs().max(1);
-            let _ = self.0.with_conn("session put", |conn| {
+            let epoch = match self.0.with_conn("session epoch", |conn| {
+                redis::cmd("GET")
+                    .arg(SESSION_EPOCH_KEY)
+                    .query::<Option<i64>>(conn)
+            }) {
+                Ok(epoch) => epoch.unwrap_or(0),
+                Err(()) => return SessionMutation::Unavailable,
+            };
+            let value = serde_json::json!({
+                "user_id": user_id,
+                "issued_at_unix": issued_at_unix,
+                "epoch": epoch,
+            })
+            .to_string();
+            match self.0.with_conn("session put", |conn| {
                 redis::cmd("SET")
                     .arg(session_key(token))
-                    .arg(user_id.to_string())
+                    .arg(value)
                     .arg("EX")
                     .arg(secs)
                     .query::<()>(conn)
-            });
+            }) {
+                Ok(()) => SessionMutation::Stored,
+                Err(()) => SessionMutation::Unavailable,
+            }
         }
 
         fn resolve(&self, token: &str, ttl: Duration) -> SessionLookup {
             // FAIL-CLOSED: a connection/command error is `Unavailable`, NOT a miss that could be
             // retried as open. Only an authoritative nil reply is `NotFound`.
-            let value: Option<String> = match self.0.with_conn("session resolve", |conn| {
-                redis::cmd("GET")
-                    .arg(session_key(token))
-                    .query::<Option<String>>(conn)
-            }) {
-                Ok(v) => v,
-                Err(()) => return SessionLookup::Unavailable,
-            };
-            match value.as_deref().map(str::trim).map(Uuid::parse_str) {
-                Some(Ok(user_id)) => {
+            let (value, epoch): (Option<String>, Option<i64>) =
+                match self.0.with_conn("session resolve", |conn| {
+                    redis::cmd("MGET")
+                        .arg(session_key(token))
+                        .arg(SESSION_EPOCH_KEY)
+                        .query(conn)
+                }) {
+                    Ok(values) => values,
+                    Err(()) => return SessionLookup::Unavailable,
+                };
+            let epoch = epoch.unwrap_or(0);
+            #[derive(serde::Deserialize)]
+            #[serde(deny_unknown_fields)]
+            struct Value {
+                user_id: Uuid,
+                issued_at_unix: i64,
+                epoch: i64,
+            }
+            match value
+                .as_deref()
+                .map(str::trim)
+                .map(serde_json::from_str::<Value>)
+            {
+                Some(Ok(value)) if value.epoch != epoch => SessionLookup::NotFound,
+                Some(Ok(value))
+                    if time::OffsetDateTime::from_unix_timestamp(value.issued_at_unix).is_ok() =>
+                {
                     // Slide the TTL forward on a hit (best-effort; a failure here does not un-auth).
                     let secs = ttl.as_secs().max(1);
                     let _ = self.0.with_conn("session slide", |conn| {
@@ -561,18 +655,33 @@ mod redis_backed {
                             .arg(secs)
                             .query::<()>(conn)
                     });
-                    SessionLookup::Found { user_id }
+                    SessionLookup::Found {
+                        user_id: value.user_id,
+                        issued_at_unix: value.issued_at_unix,
+                    }
                 }
                 // A stored-but-unparseable value is corrupt ⇒ fail-closed rather than trust it.
-                Some(Err(_)) => SessionLookup::Unavailable,
+                Some(Ok(_)) | Some(Err(_)) => SessionLookup::Unavailable,
                 None => SessionLookup::NotFound,
             }
         }
 
-        fn revoke(&self, token: &str) {
-            let _ = self.0.with_conn("session revoke", |conn| {
+        fn revoke(&self, token: &str) -> SessionMutation {
+            match self.0.with_conn("session revoke", |conn| {
                 redis::cmd("DEL").arg(session_key(token)).query::<()>(conn)
-            });
+            }) {
+                Ok(()) => SessionMutation::Stored,
+                Err(()) => SessionMutation::Unavailable,
+            }
+        }
+
+        fn clear_all(&self) -> SessionMutation {
+            match self.0.with_conn("invalidate all sessions", |conn| {
+                redis::cmd("INCR").arg(SESSION_EPOCH_KEY).query::<i64>(conn)
+            }) {
+                Ok(_) => SessionMutation::Stored,
+                Err(()) => SessionMutation::Unavailable,
+            }
         }
 
         fn kind(&self) -> &'static str {
@@ -764,12 +873,15 @@ mod tests {
         let uid = Uuid::new_v4();
         // put / revoke are no-ops; resolve always says "not shared" so the caller uses its local map
         // — byte-identical to today's single-node behaviour.
-        store.put("tok", uid, Duration::from_secs(60));
+        assert_eq!(
+            store.put("tok", uid, 1_700_000_000, Duration::from_secs(60)),
+            SessionMutation::NotShared
+        );
         assert_eq!(
             store.resolve("tok", Duration::from_secs(60)),
             SessionLookup::NotShared
         );
-        store.revoke("tok");
+        assert_eq!(store.revoke("tok"), SessionMutation::NotShared);
         assert_eq!(
             store.resolve("tok", Duration::from_secs(60)),
             SessionLookup::NotShared
@@ -791,20 +903,38 @@ mod tests {
     /// Redis impl provides, without a server.
     #[derive(Debug, Clone, Default)]
     struct FakeSharedSessions {
-        map: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, Uuid>>>,
+        map: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, (Uuid, i64)>>>,
     }
     impl SessionStore for FakeSharedSessions {
-        fn put(&self, token: &str, user_id: Uuid, _ttl: Duration) {
-            self.map.lock().unwrap().insert(token.to_owned(), user_id);
+        fn put(
+            &self,
+            token: &str,
+            user_id: Uuid,
+            issued_at_unix: i64,
+            _ttl: Duration,
+        ) -> SessionMutation {
+            self.map
+                .lock()
+                .unwrap()
+                .insert(token.to_owned(), (user_id, issued_at_unix));
+            SessionMutation::Stored
         }
         fn resolve(&self, token: &str, _ttl: Duration) -> SessionLookup {
             match self.map.lock().unwrap().get(token) {
-                Some(user_id) => SessionLookup::Found { user_id: *user_id },
+                Some((user_id, issued_at_unix)) => SessionLookup::Found {
+                    user_id: *user_id,
+                    issued_at_unix: *issued_at_unix,
+                },
                 None => SessionLookup::NotFound,
             }
         }
-        fn revoke(&self, token: &str) {
+        fn revoke(&self, token: &str) -> SessionMutation {
             self.map.lock().unwrap().remove(token);
+            SessionMutation::Stored
+        }
+        fn clear_all(&self) -> SessionMutation {
+            self.map.lock().unwrap().clear();
+            SessionMutation::Stored
         }
         fn kind(&self) -> &'static str {
             "fake"
@@ -819,16 +949,31 @@ mod tests {
         let uid = Uuid::new_v4();
 
         // Node A mints a session.
-        node_a.put("tok", uid, Duration::from_secs(60));
+        node_a.put("tok", uid, 1_700_000_000, Duration::from_secs(60));
         // Node B recognises it (session minted on the leader valid on a follower).
         assert_eq!(
             node_b.resolve("tok", Duration::from_secs(60)),
-            SessionLookup::Found { user_id: uid }
+            SessionLookup::Found {
+                user_id: uid,
+                issued_at_unix: 1_700_000_000,
+            }
         );
         // Node A revokes → cluster-wide: node B no longer recognises it.
         node_a.revoke("tok");
         assert_eq!(
             node_b.resolve("tok", Duration::from_secs(60)),
+            SessionLookup::NotFound
+        );
+
+        node_a.put("one", uid, 1_700_000_000, Duration::from_secs(60));
+        node_b.put("two", uid, 1_700_000_001, Duration::from_secs(60));
+        assert_eq!(node_a.clear_all(), SessionMutation::Stored);
+        assert_eq!(
+            node_b.resolve("one", Duration::from_secs(60)),
+            SessionLookup::NotFound
+        );
+        assert_eq!(
+            node_b.resolve("two", Duration::from_secs(60)),
             SessionLookup::NotFound
         );
     }
@@ -837,11 +982,18 @@ mod tests {
     #[derive(Debug)]
     struct FailingSessions;
     impl SessionStore for FailingSessions {
-        fn put(&self, _t: &str, _u: Uuid, _ttl: Duration) {}
+        fn put(&self, _t: &str, _u: Uuid, _issued_at_unix: i64, _ttl: Duration) -> SessionMutation {
+            SessionMutation::Unavailable
+        }
         fn resolve(&self, _t: &str, _ttl: Duration) -> SessionLookup {
             SessionLookup::Unavailable
         }
-        fn revoke(&self, _t: &str) {}
+        fn revoke(&self, _t: &str) -> SessionMutation {
+            SessionMutation::Unavailable
+        }
+        fn clear_all(&self) -> SessionMutation {
+            SessionMutation::Unavailable
+        }
         fn kind(&self) -> &'static str {
             "failing"
         }
@@ -861,6 +1013,80 @@ mod tests {
             store.resolve("tok", Duration::from_secs(60)),
             SessionLookup::Found { .. }
         ));
+        assert_eq!(store.clear_all(), SessionMutation::Unavailable);
+    }
+
+    #[tokio::test]
+    async fn whole_instance_invalidation_clears_shared_and_local_sessions_fail_closed() {
+        let backend = FakeSharedSessions::default();
+        let uid = Uuid::new_v4();
+        backend.put("tok", uid, 1_700_000_000, Duration::from_secs(60));
+        let mut state = crate::AppState::default();
+        state.cluster_shared.sessions = SharedSessionStore::new(backend.clone());
+        state.sessions.write().await.insert(
+            "tok".to_owned(),
+            crate::session::SessionEntry {
+                user_id: crate::users::UserId(uid),
+                unlocked_key: None,
+                expires_at: time::OffsetDateTime::now_utc() + time::Duration::hours(1),
+            },
+        );
+
+        state.invalidate_all_sessions().await.unwrap();
+        assert!(state.sessions.read().await.is_empty());
+        assert_eq!(
+            backend.resolve("tok", Duration::from_secs(60)),
+            SessionLookup::NotFound
+        );
+
+        let failing = FailingSessions;
+        let mut state = crate::AppState::default();
+        state.cluster_shared.sessions = SharedSessionStore::new(failing);
+        state.sessions.write().await.insert(
+            "must-remain-until-authority-clears".to_owned(),
+            crate::session::SessionEntry {
+                user_id: crate::users::UserId(uid),
+                unlocked_key: None,
+                expires_at: time::OffsetDateTime::now_utc() + time::Duration::hours(1),
+            },
+        );
+        assert!(matches!(
+            state.invalidate_all_sessions().await,
+            Err(crate::ApiError::Unavailable(_))
+        ));
+        assert!(
+            state
+                .sessions
+                .read()
+                .await
+                .contains_key("must-remain-until-authority-clears")
+        );
+    }
+
+    #[cfg(feature = "redis")]
+    #[tokio::test]
+    async fn all_sessions_pubsub_event_evicts_node_local_cache() {
+        let uid = Uuid::new_v4();
+        let state = crate::AppState::default();
+        state.sessions.write().await.insert(
+            "cached-token".to_owned(),
+            crate::session::SessionEntry {
+                user_id: crate::users::UserId(uid),
+                unlocked_key: None,
+                expires_at: time::OffsetDateTime::now_utc() + time::Duration::hours(1),
+            },
+        );
+        state
+            .session_issued_at
+            .write()
+            .await
+            .insert("cached-token".to_owned(), time::OffsetDateTime::now_utc());
+
+        state
+            .apply_invalidation(&InvalidationEvent::AllSessionsRevoked)
+            .await;
+        assert!(state.sessions.read().await.is_empty());
+        assert!(state.session_issued_at.read().await.is_empty());
     }
 
     // ── Rate-limit: shared counter increments across nodes; fail-closed fallback ──────────────────
@@ -964,8 +1190,9 @@ mod tests {
         let uid = Uuid::new_v4();
         for event in [
             InvalidationEvent::SessionRevoked {
-                token: "abc-123".to_owned(),
+                token_sha256: crate::session::session_token_digest("abc-123"),
             },
+            InvalidationEvent::AllSessionsRevoked,
             InvalidationEvent::RoleChanged { user_id: uid },
         ] {
             let wire = event.encode();
@@ -1008,7 +1235,7 @@ mod tests {
         let bus = RecordingBus::default();
         let uid = Uuid::new_v4();
         bus.publish(&InvalidationEvent::SessionRevoked {
-            token: "tok".to_owned(),
+            token_sha256: crate::session::session_token_digest("tok"),
         });
         bus.publish(&InvalidationEvent::RoleChanged { user_id: uid });
         let published = bus.published.lock().unwrap();
@@ -1016,7 +1243,7 @@ mod tests {
         assert_eq!(
             published[0],
             InvalidationEvent::SessionRevoked {
-                token: "tok".to_owned()
+                token_sha256: crate::session::session_token_digest("tok")
             }
         );
         assert_eq!(
@@ -1065,16 +1292,28 @@ mod tests {
             let ttl = Duration::from_secs(60);
 
             // Minted on "node A".
-            node_a.sessions.put(&token, uid, ttl);
+            let issued_at_unix = time::OffsetDateTime::now_utc().unix_timestamp();
+            node_a.sessions.put(&token, uid, issued_at_unix, ttl);
             // Visible on "node B" (a session minted on the leader is recognised on a follower).
             assert_eq!(
                 node_b.sessions.resolve(&token, ttl),
-                SessionLookup::Found { user_id: uid }
+                SessionLookup::Found {
+                    user_id: uid,
+                    issued_at_unix,
+                }
             );
             // Delete revokes cluster-wide.
             node_a.sessions.revoke(&token);
             assert_eq!(
                 node_b.sessions.resolve(&token, ttl),
+                SessionLookup::NotFound
+            );
+
+            let replacement = format!("wp16-p3a-replacement-{}", Uuid::new_v4());
+            node_a.sessions.put(&replacement, uid, issued_at_unix, ttl);
+            assert_eq!(node_a.sessions.clear_all(), SessionMutation::Stored);
+            assert_eq!(
+                node_b.sessions.resolve(&replacement, ttl),
                 SessionLookup::NotFound
             );
         }

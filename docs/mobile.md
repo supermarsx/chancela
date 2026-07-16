@@ -2,9 +2,9 @@
 
 > **Scope honesty.** The repository now contains a real Tauri v2 Android project and produces
 > an installable, debug-signed arm64 APK. It is not yet a production/store release: release
-> signing, Play Console enrollment, and the remote-server CORS/persistent-auth gates below
-> remain mandatory. The committed target is therefore buildable and testable, but must not be
-> presented as a production remote companion yet.
+> signing and Play Console enrollment remain mandatory. The backend companion-readiness controls
+> are implemented, but an operator must still configure an exact CORS origin, durable sessions,
+> HTTPS, and a protected data directory/Redis deployment before exposing a remote instance.
 
 The companion model is: a phone app that talks to the user's **existing** Chancela instance
 (their desktop app or a self-hosted `chancela-server`), reusing the **same web UI** rather
@@ -120,43 +120,58 @@ Notes:
   Kotlin 2.4.10 rejects that upstream DSL during script compilation, so the Android build
   retains Kotlin Gradle plugin 2.2.21. The Chancela app module itself is explicitly Java/Kotlin 17. Remove this compatibility boundary when Tauri migrates its published Android modules.
 
-## Backend companion-readiness (design-only)
+## Backend companion-readiness
 
-A companion talks to the instance **cross-origin, over the network**. The server today is
-built for the desktop's in-process loopback model and is **not yet safe to expose** to a
-remote device. Two backend gaps must be closed in a **follow-on work package** — they are
-specified here but intentionally **not implemented** in this foundation (the live
-`crates/chancela-api/src/lib.rs` is owned by other tracks and is not touched here).
+A companion talks to the instance **cross-origin, over the network**. The server keeps its
+same-origin desktop posture by default and exposes the following opt-in controls for a remote
+companion.
 
-### Gap A — CORS
+### Exact-origin CORS
 
-`grep -i cors` over `crates/` returns nothing: there is **no CORS layer**. The desktop app
-never needs one (the WebView is navigated to the loopback origin, so `/v1/*` calls are
-same-origin). A remote mobile origin cannot call `/v1/*` cross-origin without it.
+Set `CHANCELA_CORS_ALLOWED_ORIGINS` to a comma-separated list of exact HTTP(S) origins. For the
+standard Tauri mobile WebView origin:
 
-**Design:** an opt-in `tower_http::cors::CorsLayer`, scoped to an explicit allow-list of
-companion origins read from configuration, wrapped around the `/v1` router. It must default
-to **off** (empty allow-list) so the desktop loopback and existing deployments are unchanged,
-and it must echo only configured origins (never `*`) because requests carry the
-`X-Chancela-Session` credential header. Preflight (`OPTIONS`) must allow the
-`X-Chancela-Session` and `Content-Type` request headers.
+```sh
+CHANCELA_CORS_ALLOWED_ORIGINS=http://tauri.localhost
+```
 
-### Gap B — real persistent auth
+A hosted shell can instead use, for example,
+`CHANCELA_CORS_ALLOWED_ORIGINS=https://companion.example`. Multiple exact origins are separated
+by commas. Unset/blank means **no cross-origin grant** and leaves relative desktop/browser calls
+unchanged. Startup rejects `*`, `null`, non-HTTP(S) schemes, credentials, paths, queries,
+fragments, empty entries, and oversized lists. The CORS layer permits only the API's bounded
+methods and request headers (`Accept`, `Authorization`, `Content-Type`, and
+`X-Chancela-Session`); it does not enable credentialed cookies. Valid preflight requests are
+answered before authentication/write middleware, and ordinary API errors carry the same exact
+origin grant.
 
-Sessions today are **in-memory, reset on server restart, and attribution-only, not access
-control** (see the `apps/web/src/api/session.ts` docblock and the 401→clear-token handling in
-`client.ts`). That is fine for a co-located desktop; it is **not acceptable** to expose
-read/approve endpoints to a remote device on this model.
+CORS is a browser boundary, not network access control. A remote API still needs HTTPS, a
+firewall/reverse proxy, and normal Chancela authentication/RBAC.
 
-**Design:** replace/augment the in-memory attribution session with a **persisted,
-credentialed** session/token model — durable server-side token records with expiry and
-revocation, bound to a real sign-in. The `X-Chancela-Session` header _transport_ is already
-cross-origin-friendly; the _model behind it_ is the gap. No remote read/approve surface
-should be enabled until this lands.
+### Reload-safe authenticated sessions
 
-Until both gaps are closed, the client foundation stays default-relative / loopback and does
-**not** itself open this exposure — configuring an absolute base URL is an explicit operator
-choice, and a production companion must not be pointed at a server that lacks A and B.
+`POST /v1/session` remains a password-authenticated sign-in and the shown-once bearer still travels
+in `X-Chancela-Session`. Its server-side identity, exact issue time, idle expiry, and revocation now
+survive API restarts in durable mode:
+
+- SQLite/data-directory deployments atomically maintain `<CHANCELA_DATA_DIR>/sessions.json`.
+  It stores only a SHA-256 token digest, user UUID, issue time, and expiry — never the bearer,
+  password, or an unlocked attestation signing key.
+- Pure in-memory deployments remain explicitly ephemeral and lose sessions on restart.
+- Postgres/HA deployments use Redis as the shared authority. Redis keys are token digests and
+  values contain only user UUID plus exact issue time; every authenticated request verifies the
+  shared record and fails closed on an outage or revoke. Restore/factory reset advances a shared
+  session epoch before touching durable data, invalidating all earlier records without a key scan.
+- Idle expiry slides durably, the absolute lifetime stays anchored to the original issue time, and
+  `DELETE /v1/session` persists revocation. Whole-instance restore/factory reset invalidates live
+  sessions; the registry is deliberately excluded from backups so an old token cannot be
+  resurrected by restoring an older snapshot.
+
+The decrypted per-user attestation key remains process memory only. A session restored after a
+restart can authenticate and pass RBAC, but the user must sign in again on that process before an
+operation can use their unlocked attestation signer. Protect the data directory with an
+operator-only ACL; on Unix the registry itself is written with mode `0600`, while Windows inherits
+the data directory's ACL.
 
 ## Honest bottom line
 
@@ -165,6 +180,7 @@ milestone. Landed and verified:
 a default-relative, tested base-URL indirection + mobile-detection layer (zero web/desktop
 regression), a phone-width responsive fix for the shared tab bar, a real API-36-targeting
 Android project, a locally inspected arm64 APK, and a configured Linux CI APK gate (its first
-hosted run awaits a push). Still gated: a production upload key/Play App Signing and Play
-account; macOS/Xcode for iOS; and, before any remote companion is exposed, the backend CORS +
-persistent-auth work packaged above.
+hosted run awaits a push), plus exact-origin CORS and reload-safe authenticated sessions. Still
+gated: a production upload key/Play App Signing and Play account; macOS/Xcode for iOS; and an
+operator deployment with HTTPS, an exact companion origin, protected durable storage, and Redis
+for HA before any remote companion is exposed.

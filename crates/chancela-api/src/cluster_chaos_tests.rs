@@ -453,28 +453,46 @@ fn a_write_mid_failover_with_no_known_leader_is_503_never_a_local_write() {
 // failover (shared store, from P3a). Modeled with a shared-backend fake (two nodes, one Redis).
 // ================================================================================================
 
-use crate::cluster_shared_state::{SessionLookup, SessionStore};
+use crate::cluster_shared_state::{SessionLookup, SessionMutation, SessionStore};
 use std::collections::HashMap;
 use std::time::Duration;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Default)]
 struct SharedSessionBackend {
-    map: Arc<Mutex<HashMap<String, Uuid>>>,
+    map: Arc<Mutex<HashMap<String, (Uuid, i64)>>>,
 }
 
 impl SessionStore for SharedSessionBackend {
-    fn put(&self, token: &str, user_id: Uuid, _ttl: Duration) {
-        self.map.lock().unwrap().insert(token.to_owned(), user_id);
+    fn put(
+        &self,
+        token: &str,
+        user_id: Uuid,
+        issued_at_unix: i64,
+        _ttl: Duration,
+    ) -> SessionMutation {
+        self.map
+            .lock()
+            .unwrap()
+            .insert(token.to_owned(), (user_id, issued_at_unix));
+        SessionMutation::Stored
     }
     fn resolve(&self, token: &str, _ttl: Duration) -> SessionLookup {
         match self.map.lock().unwrap().get(token) {
-            Some(uid) => SessionLookup::Found { user_id: *uid },
+            Some((uid, issued_at_unix)) => SessionLookup::Found {
+                user_id: *uid,
+                issued_at_unix: *issued_at_unix,
+            },
             None => SessionLookup::NotFound,
         }
     }
-    fn revoke(&self, token: &str) {
+    fn revoke(&self, token: &str) -> SessionMutation {
         self.map.lock().unwrap().remove(token);
+        SessionMutation::Stored
+    }
+    fn clear_all(&self) -> SessionMutation {
+        self.map.lock().unwrap().clear();
+        SessionMutation::Stored
     }
     fn kind(&self) -> &'static str {
         "shared-fake"
@@ -490,11 +508,15 @@ fn a_session_minted_on_the_old_leader_is_honored_after_failover() {
     let ttl = Duration::from_secs(60);
 
     // A user signs in on the OLD leader.
-    old_leader.put("session-tok", uid, ttl);
+    let issued_at_unix = 1_700_000_000;
+    old_leader.put("session-tok", uid, issued_at_unix, ttl);
     // Failover happens; the client's next request lands on the NEW leader — the session is still valid.
     assert_eq!(
         new_leader.resolve("session-tok", ttl),
-        SessionLookup::Found { user_id: uid },
+        SessionLookup::Found {
+            user_id: uid,
+            issued_at_unix,
+        },
         "a session set before failover is honored on the node that took over"
     );
     // A revoke on either node is cluster-wide (the throttle/auth stays coherent post-failover).

@@ -98,7 +98,7 @@ time = { version = "0.3", features = ["serde", "formatting", "parsing", "macros"
 axum = "0.8"
 tokio = { version = "1", features = ["full"] }
 tower = "0.5"
-tower-http = { version = "0.7", features = ["fs"] }
+tower-http = { version = "0.7", features = ["cors", "fs"] }
 # minijinja (t48 D1): runtime text-interpolation for the template catalog. Templates are shippable,
 # per-locale *content* (not compile-time askama structs); minijinja renders directly from any
 # serde::Serialize record. Apache-2.0, serde-only (no new transitive-dep risk to the der-0.7 pins).

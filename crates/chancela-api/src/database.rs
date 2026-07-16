@@ -262,6 +262,10 @@ pub enum AppStateInitError {
     DatabaseEncryptionRequiresDataDir,
     /// A key was configured without compiling SQLCipher support into this crate.
     SqlcipherFeatureUnavailable,
+    /// The explicit cross-origin allowlist is malformed or unsafe.
+    CorsConfiguration(String),
+    /// Postgres/HA was selected without the Redis session authority required across nodes.
+    SharedSessionsRequired,
     /// The encrypted store could not be opened.
     StoreOpen {
         /// The data directory whose database was being opened.
@@ -292,6 +296,15 @@ impl fmt::Display for AppStateInitError {
                 f,
                 "database encryption was configured, but this build was not compiled with the \
                  sqlcipher feature"
+            ),
+            Self::CorsConfiguration(message) => write!(
+                f,
+                "invalid {} configuration: {message}",
+                crate::cors::CORS_ALLOWED_ORIGINS_ENV
+            ),
+            Self::SharedSessionsRequired => write!(
+                f,
+                "the Postgres/HA backend requires Redis-backed shared sessions; compile the redis feature and configure REDIS_URL or REDIS_URL_FILE"
             ),
             Self::StoreOpen { data_dir, source } => write!(
                 f,

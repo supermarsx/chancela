@@ -16,12 +16,19 @@
 //! argon2 verify so concurrent requests cannot all read "no backoff" and then each spend ~100 ms in
 //! argon2.
 
+use std::collections::{HashMap, HashSet};
+use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
 use axum::Json;
 use axum::extract::State;
 use axum::http::StatusCode;
 use p256::ecdsa::SigningKey;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use time::{Duration, OffsetDateTime};
+use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use crate::AppState;
@@ -38,6 +45,361 @@ pub struct SessionEntry {
     pub user_id: UserId,
     pub unlocked_key: Option<SigningKey>,
     pub expires_at: OffsetDateTime,
+}
+
+/// Digest-only session registry used by durable, single-node data-dir deployments.
+///
+/// The plaintext bearer token and optional unlocked attestation key remain process-local. The file
+/// contains only a SHA-256 token digest, principal id, exact issue time, and idle expiry, which is
+/// enough to re-authenticate a presented token after a clean or unclean API restart without turning
+/// the registry itself into a bearer-token database.
+pub(crate) const SESSIONS_FILE: &str = "sessions.json";
+const SESSION_REGISTRY_SCHEMA_VERSION: u32 = 1;
+const MAX_DURABLE_SESSIONS: usize = 10_000;
+const MAX_SESSION_REGISTRY_BYTES: u64 = 8 * 1024 * 1024;
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DurableSessionRecord {
+    token_sha256: String,
+    pub(crate) user_id: Uuid,
+    pub(crate) issued_at_unix: i64,
+    pub(crate) expires_at_unix: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DurableSessionDocument {
+    schema_version: u32,
+    sessions: Vec<DurableSessionRecord>,
+}
+
+#[derive(Debug)]
+struct DurableSessionRegistryInner {
+    path: Option<PathBuf>,
+    records: RwLock<HashMap<String, DurableSessionRecord>>,
+}
+
+/// Cloneable handle to the durable session registry. [`Default`] is explicitly ephemeral.
+#[derive(Clone, Debug)]
+pub struct DurableSessionRegistry(Arc<DurableSessionRegistryInner>);
+
+impl Default for DurableSessionRegistry {
+    fn default() -> Self {
+        Self(Arc::new(DurableSessionRegistryInner {
+            path: None,
+            records: RwLock::new(HashMap::new()),
+        }))
+    }
+}
+
+impl DurableSessionRegistry {
+    pub(crate) fn load(path: PathBuf) -> Self {
+        let records = load_durable_sessions(&path).unwrap_or_else(|error| {
+            eprintln!(
+                "warning: {} is not a valid durable session registry ({error}); all persisted sessions are invalidated",
+                path.display()
+            );
+            HashMap::new()
+        });
+        Self(Arc::new(DurableSessionRegistryInner {
+            path: Some(path),
+            records: RwLock::new(records),
+        }))
+    }
+
+    pub(crate) fn is_durable(&self) -> bool {
+        self.0.path.is_some()
+    }
+
+    pub(crate) async fn insert(
+        &self,
+        token: &str,
+        user_id: Uuid,
+        issued_at: OffsetDateTime,
+        expires_at: OffsetDateTime,
+    ) -> Result<(), ApiError> {
+        let digest = session_token_digest(token);
+        let record = DurableSessionRecord {
+            token_sha256: digest.clone(),
+            user_id,
+            issued_at_unix: issued_at.unix_timestamp(),
+            expires_at_unix: expires_at.unix_timestamp(),
+        };
+        let mut records = self.0.records.write().await;
+        let mut next = records.clone();
+        next.retain(|_, existing| issued_at.unix_timestamp() < existing.expires_at_unix);
+        if next.len() >= MAX_DURABLE_SESSIONS && !next.contains_key(&digest) {
+            return Err(ApiError::Unavailable(
+                "limite de sessões duráveis atingido; termine uma sessão e tente novamente"
+                    .to_owned(),
+            ));
+        }
+        next.insert(digest, record);
+        self.persist(&next)?;
+        *records = next;
+        Ok(())
+    }
+
+    /// Resolve a token digest and atomically persist its new sliding idle expiry.
+    pub(crate) async fn resolve_and_slide(
+        &self,
+        token: &str,
+        now: OffsetDateTime,
+        new_expires_at: OffsetDateTime,
+    ) -> Result<Option<DurableSessionRecord>, ApiError> {
+        let digest = session_token_digest(token);
+        let mut records = self.0.records.write().await;
+        let Some(mut record) = records.get(&digest).cloned() else {
+            return Ok(None);
+        };
+        let mut next = records.clone();
+        if now.unix_timestamp() >= record.expires_at_unix {
+            next.remove(&digest);
+            self.persist(&next)?;
+            *records = next;
+            return Ok(None);
+        }
+        record.expires_at_unix = new_expires_at.unix_timestamp();
+        next.insert(digest, record.clone());
+        self.persist(&next)?;
+        *records = next;
+        Ok(Some(record))
+    }
+
+    /// Slide a record only when it belongs to this registry. This keeps manually injected test/e2e
+    /// sessions working while every session minted through the production handler is write-through.
+    pub(crate) async fn slide_if_present(
+        &self,
+        token: &str,
+        now: OffsetDateTime,
+        new_expires_at: OffsetDateTime,
+    ) -> Result<Option<DurableSessionRecord>, ApiError> {
+        if !self.is_durable() {
+            return Ok(None);
+        }
+        self.resolve_and_slide(token, now, new_expires_at).await
+    }
+
+    pub(crate) async fn revoke(&self, token: &str) -> Result<(), ApiError> {
+        if !self.is_durable() {
+            return Ok(());
+        }
+        let digest = session_token_digest(token);
+        let mut records = self.0.records.write().await;
+        if !records.contains_key(&digest) {
+            return Ok(());
+        }
+        let mut next = records.clone();
+        next.remove(&digest);
+        self.persist(&next)?;
+        *records = next;
+        Ok(())
+    }
+
+    pub(crate) async fn clear(&self) -> Result<(), ApiError> {
+        if !self.is_durable() {
+            return Ok(());
+        }
+        let mut records = self.0.records.write().await;
+        let next = HashMap::new();
+        self.persist(&next)?;
+        *records = next;
+        Ok(())
+    }
+
+    fn persist(&self, records: &HashMap<String, DurableSessionRecord>) -> Result<(), ApiError> {
+        let Some(path) = &self.0.path else {
+            return Ok(());
+        };
+        write_durable_sessions_atomic(path, records).map_err(|error| {
+            ApiError::Internal(format!(
+                "failed to persist durable session registry {}: {error}",
+                path.display()
+            ))
+        })
+    }
+}
+
+pub(crate) fn session_token_digest(token: &str) -> String {
+    crate::hex::hex(&<[u8; 32]>::from(Sha256::digest(token.as_bytes())))
+}
+
+fn load_durable_sessions(path: &Path) -> Result<HashMap<String, DurableSessionRecord>, String> {
+    recover_interrupted_session_replace(path).map_err(|error| error.to_string())?;
+    let metadata = match std::fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(HashMap::new()),
+        Err(error) => return Err(error.to_string()),
+    };
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Err("registry path is not a regular file".to_owned());
+    }
+    if metadata.len() > MAX_SESSION_REGISTRY_BYTES {
+        return Err(format!(
+            "registry exceeds {MAX_SESSION_REGISTRY_BYTES} bytes"
+        ));
+    }
+    let bytes = std::fs::read(path).map_err(|error| error.to_string())?;
+    let document: DurableSessionDocument =
+        serde_json::from_slice(&bytes).map_err(|error| error.to_string())?;
+    if document.schema_version != SESSION_REGISTRY_SCHEMA_VERSION {
+        return Err(format!(
+            "unsupported schema version {}",
+            document.schema_version
+        ));
+    }
+    if document.sessions.len() > MAX_DURABLE_SESSIONS {
+        return Err(format!(
+            "registry contains more than {MAX_DURABLE_SESSIONS} sessions"
+        ));
+    }
+
+    let now = OffsetDateTime::now_utc().unix_timestamp();
+    let mut seen = HashSet::with_capacity(document.sessions.len());
+    let mut records = HashMap::with_capacity(document.sessions.len());
+    for record in document.sessions {
+        if !is_lower_hex_digest(&record.token_sha256)
+            || record.issued_at_unix > record.expires_at_unix
+            || OffsetDateTime::from_unix_timestamp(record.issued_at_unix).is_err()
+            || OffsetDateTime::from_unix_timestamp(record.expires_at_unix).is_err()
+        {
+            return Err("registry contains an invalid session record".to_owned());
+        }
+        if !seen.insert(record.token_sha256.clone()) {
+            return Err("registry contains a duplicate token digest".to_owned());
+        }
+        if now < record.expires_at_unix {
+            records.insert(record.token_sha256.clone(), record);
+        }
+    }
+    Ok(records)
+}
+
+fn is_lower_hex_digest(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+fn write_durable_sessions_atomic(
+    path: &Path,
+    records: &HashMap<String, DurableSessionRecord>,
+) -> std::io::Result<()> {
+    recover_interrupted_session_replace(path)?;
+    if let Ok(metadata) = std::fs::symlink_metadata(path)
+        && metadata.file_type().is_symlink()
+    {
+        return Err(std::io::Error::other(
+            "refusing to replace a symlinked session registry",
+        ));
+    }
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent)?;
+    }
+    let mut sessions: Vec<DurableSessionRecord> = records.values().cloned().collect();
+    sessions.sort_by(|a, b| {
+        a.issued_at_unix
+            .cmp(&b.issued_at_unix)
+            .then(a.token_sha256.cmp(&b.token_sha256))
+    });
+    let document = DurableSessionDocument {
+        schema_version: SESSION_REGISTRY_SCHEMA_VERSION,
+        sessions,
+    };
+    let json = serde_json::to_vec_pretty(&document).map_err(std::io::Error::other)?;
+    let mut name = path
+        .file_name()
+        .map(|name| name.to_os_string())
+        .unwrap_or_else(|| SESSIONS_FILE.into());
+    name.push(format!(".{}.tmp", Uuid::new_v4()));
+    let tmp = path.with_file_name(name);
+    let result = (|| {
+        let mut options = std::fs::OpenOptions::new();
+        options.create_new(true).write(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let mut file = options.open(&tmp)?;
+        file.write_all(&json)?;
+        file.sync_all()?;
+
+        #[cfg(not(windows))]
+        {
+            std::fs::rename(&tmp, path)?;
+        }
+
+        // Windows cannot rename over an existing destination. Preserve the previous complete
+        // document as a rollback file until the replacement has been published, mirroring the ZK
+        // index writer's crash-recovery protocol.
+        #[cfg(windows)]
+        {
+            let backup = session_registry_backup_path(path);
+            if backup.exists() {
+                std::fs::remove_file(&backup)?;
+            }
+            if path.exists() {
+                std::fs::rename(path, &backup)?;
+            }
+            if let Err(error) = std::fs::rename(&tmp, path) {
+                let _ = if backup.exists() {
+                    std::fs::rename(&backup, path)
+                } else {
+                    Ok(())
+                };
+                return Err(error);
+            }
+            if backup.exists() {
+                std::fs::remove_file(backup)?;
+            }
+        }
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+            if let Some(parent) = path.parent() {
+                std::fs::File::open(parent)?.sync_all()?;
+            }
+        }
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    result
+}
+
+#[cfg(windows)]
+fn session_registry_backup_path(path: &Path) -> PathBuf {
+    let mut name = path
+        .file_name()
+        .map(|name| name.to_os_string())
+        .unwrap_or_else(|| SESSIONS_FILE.into());
+    name.push(".replace-backup");
+    path.with_file_name(name)
+}
+
+/// Complete or roll back an interrupted Windows replace. On other platforms no backup protocol is
+/// needed because rename-over-existing is atomic.
+fn recover_interrupted_session_replace(path: &Path) -> std::io::Result<()> {
+    #[cfg(windows)]
+    {
+        let backup = session_registry_backup_path(path);
+        match (path.exists(), backup.exists()) {
+            (false, true) => std::fs::rename(backup, path)?,
+            (true, true) => std::fs::remove_file(backup)?,
+            _ => {}
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = path;
+    Ok(())
 }
 
 /// Per-user sign-in backoff state (plan t29 §4.5).
@@ -311,22 +673,43 @@ pub async fn create_session(
 
     let token = Uuid::new_v4().to_string();
     let now = OffsetDateTime::now_utc();
+    let expires_at = now + Duration::seconds(SESSION_TTL_SECS);
+    if state.durable_sessions.is_durable() {
+        state
+            .durable_sessions
+            .insert(&token, uid.0, now, expires_at)
+            .await?;
+    }
+    // Redis is the authority in HA. Do not return a node-local token if the shared write could not
+    // be proven; otherwise a token could work on the minting node but disappear after failover.
+    match state.cluster_shared.sessions.put(
+        &token,
+        uid.0,
+        now.unix_timestamp(),
+        std::time::Duration::from_secs(SESSION_TTL_SECS.max(0) as u64),
+    ) {
+        cluster_shared_state::SessionMutation::NotShared
+        | cluster_shared_state::SessionMutation::Stored => {}
+        cluster_shared_state::SessionMutation::Unavailable => {
+            let _ = state.durable_sessions.revoke(&token).await;
+            return Err(ApiError::Unavailable(
+                "serviço de sessões partilhadas indisponível; tente novamente".to_owned(),
+            ));
+        }
+    }
     state.sessions.write().await.insert(
         token.clone(),
         SessionEntry {
             user_id: uid,
             unlocked_key,
-            expires_at: now + Duration::seconds(SESSION_TTL_SECS),
+            expires_at,
         },
     );
-    // wp16 P3a — mirror the session IDENTITY (token → user_id, with TTL) into the cluster-shared store
-    // so a follower recognises this leader-minted session. The unlocked signing key stays node-local
-    // (never written to Redis, plan §5.3). A no-op single-node ⇒ byte-identical.
-    state.cluster_shared.sessions.put(
-        &token,
-        uid.0,
-        std::time::Duration::from_secs(SESSION_TTL_SECS.max(0) as u64),
-    );
+    state
+        .session_issued_at
+        .write()
+        .await
+        .insert(token.clone(), now);
 
     Ok(Json(SessionCreated {
         token,
@@ -470,14 +853,231 @@ pub async fn delete_session(
         .filter(|t| !t.is_empty())
     {
         state.sessions.write().await.remove(token);
-        // wp16 P3a — revoke cluster-wide (so a follower stops recognising the token) and broadcast the
-        // revoke so other nodes evict any node-local copy. Both are no-ops single-node ⇒ byte-identical.
-        state.cluster_shared.sessions.revoke(token);
+        state.session_issued_at.write().await.remove(token);
+        state.durable_sessions.revoke(token).await?;
+        // wp16 P3a — revoke cluster-wide and publish only the digest so the bearer token never enters
+        // Redis pub/sub. A shared-store failure is reported as 503 after the local copy is cleared.
+        let shared_revoke = state.cluster_shared.sessions.revoke(token);
         state.cluster_shared.invalidation.publish(
             &cluster_shared_state::InvalidationEvent::SessionRevoked {
-                token: token.to_owned(),
+                token_sha256: session_token_digest(token),
             },
         );
+        if shared_revoke == cluster_shared_state::SessionMutation::Unavailable {
+            return Err(ApiError::Unavailable(
+                "não foi possível confirmar o fim da sessão partilhada; tente novamente".to_owned(),
+            ));
+        }
     }
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[cfg(test)]
+mod durable_tests {
+    use axum::body::{Body, to_bytes};
+    use axum::http::header::CONTENT_TYPE;
+    use axum::http::{Method, Request, StatusCode};
+    use serde_json::{Value, json};
+    use tower::ServiceExt;
+
+    use super::*;
+
+    struct TempDir {
+        path: PathBuf,
+    }
+
+    impl TempDir {
+        fn new() -> Self {
+            let path =
+                std::env::temp_dir().join(format!("chancela-durable-sessions-{}", Uuid::new_v4()));
+            std::fs::create_dir_all(&path).expect("create temp data dir");
+            Self { path }
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.path);
+        }
+    }
+
+    async fn json_response(response: axum::response::Response) -> (StatusCode, Value) {
+        let status = response.status();
+        let bytes = to_bytes(response.into_body(), 1024 * 1024)
+            .await
+            .expect("read response body");
+        let value = if bytes.is_empty() {
+            Value::Null
+        } else {
+            serde_json::from_slice(&bytes).expect("JSON response")
+        };
+        (status, value)
+    }
+
+    fn json_request(method: Method, uri: &str, body: Value) -> Request<Body> {
+        Request::builder()
+            .method(method)
+            .uri(uri)
+            .header(CONTENT_TYPE, "application/json")
+            .body(Body::from(serde_json::to_vec(&body).unwrap()))
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn registry_supports_repeated_windows_replacement_revoke_and_corrupt_recovery() {
+        let temp = TempDir::new();
+        let path = temp.path.join(SESSIONS_FILE);
+        let registry = DurableSessionRegistry::load(path.clone());
+        let token = "plaintext-bearer-must-never-be-written";
+        let uid = Uuid::new_v4();
+        let issued_at = OffsetDateTime::now_utc();
+
+        registry
+            .insert(token, uid, issued_at, issued_at + Duration::hours(1))
+            .await
+            .unwrap();
+        for minutes in [2, 3, 4] {
+            let record = registry
+                .resolve_and_slide(token, issued_at, issued_at + Duration::minutes(minutes))
+                .await
+                .unwrap()
+                .expect("record survives repeated replacements");
+            assert_eq!(record.issued_at_unix, issued_at.unix_timestamp());
+        }
+        let persisted = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            !persisted.contains(token),
+            "plaintext token must never persist"
+        );
+        assert!(persisted.contains(&session_token_digest(token)));
+
+        #[cfg(windows)]
+        {
+            let backup = session_registry_backup_path(&path);
+            std::fs::rename(&path, &backup).unwrap();
+            let after_interrupted_replace = DurableSessionRegistry::load(path.clone());
+            assert!(
+                after_interrupted_replace
+                    .resolve_and_slide(token, issued_at, issued_at + Duration::minutes(5))
+                    .await
+                    .unwrap()
+                    .is_some(),
+                "a missing destination with a complete backup rolls back on startup"
+            );
+        }
+
+        registry.revoke(token).await.unwrap();
+        drop(registry);
+        let reloaded = DurableSessionRegistry::load(path.clone());
+        assert!(
+            reloaded
+                .resolve_and_slide(token, issued_at, issued_at + Duration::hours(1))
+                .await
+                .unwrap()
+                .is_none()
+        );
+
+        // A malformed registry invalidates every old session, but the next successful login can
+        // replace it; corruption never makes the durable mode permanently unwritable.
+        std::fs::write(&path, b"{ definitely not valid json").unwrap();
+        let recovered = DurableSessionRegistry::load(path.clone());
+        recovered
+            .insert("new-token", uid, issued_at, issued_at + Duration::hours(1))
+            .await
+            .unwrap();
+        let document: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(document["schema_version"], SESSION_REGISTRY_SCHEMA_VERSION);
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(&path).unwrap().permissions().mode() & 0o077,
+                0
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn authenticated_session_survives_restart_and_revocation_survives_another_restart() {
+        let temp = TempDir::new();
+        let state = crate::AppState::with_data_dir(temp.path.clone());
+        let (status, user) = json_response(
+            crate::router(state.clone())
+                .oneshot(json_request(
+                    Method::POST,
+                    "/v1/users",
+                    json!({
+                        "username": "mobile.operator",
+                        "password": "Cavalo-Certo9!"
+                    }),
+                ))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+
+        let (status, session) = json_response(
+            crate::router(state)
+                .oneshot(json_request(
+                    Method::POST,
+                    "/v1/session",
+                    json!({
+                        "user_id": user["id"],
+                        "password": "Cavalo-Certo9!"
+                    }),
+                ))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let token = session["token"].as_str().unwrap().to_owned();
+        assert!(
+            !std::fs::read_to_string(temp.path.join(SESSIONS_FILE))
+                .unwrap()
+                .contains(&token)
+        );
+
+        let restarted = crate::AppState::with_data_dir(temp.path.clone());
+        let request = Request::builder()
+            .uri("/v1/session")
+            .header(SESSION_HEADER, &token)
+            .body(Body::empty())
+            .unwrap();
+        let (status, view) = json_response(
+            crate::router(restarted.clone())
+                .oneshot(request)
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(view["user"]["username"], "mobile.operator");
+
+        let logout = Request::builder()
+            .method(Method::DELETE)
+            .uri("/v1/session")
+            .header(SESSION_HEADER, &token)
+            .body(Body::empty())
+            .unwrap();
+        let response = crate::router(restarted).oneshot(logout).await.unwrap();
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+
+        let restarted_again = crate::AppState::with_data_dir(temp.path.clone());
+        let request = Request::builder()
+            .uri("/v1/session")
+            .header(SESSION_HEADER, &token)
+            .body(Body::empty())
+            .unwrap();
+        let (_, signed_out) = json_response(
+            crate::router(restarted_again)
+                .oneshot(request)
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert!(signed_out["user"].is_null());
+    }
 }

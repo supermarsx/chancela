@@ -19,6 +19,33 @@ are baked into an image.
 | `CHANCELA_ZK_SHARED_OBJECT_ROOT` | Required before zero-knowledge repository routes are enabled with PostgreSQL/HA. It must resolve exactly to the shared-mounted `<CHANCELA_DATA_DIR>/zk-repositories` directory on every node so backup/restore addresses the same opaque-object root. It is not an encryption key. |
 | `CHANCELA_HOST_PORT` | Host port the compose file publishes on `127.0.0.1` (default `8080`). |
 | `CHANCELA_WEB_DIST` | Path to the built web UI assets (set by the image). |
+| `CHANCELA_CORS_ALLOWED_ORIGINS` | Optional comma-separated exact HTTP(S) origins allowed to call the API from a companion WebView/browser. Blank/unset keeps same-origin only; wildcards and malformed origins fail startup closed. |
+| `CHANCELA_SESSION_MAX_LIFETIME` | Absolute session lifetime in seconds (default seven days), independent of the sliding 24-hour idle expiry. A non-positive value disables the absolute cap. |
+
+### Remote companion and session durability
+
+The companion CORS policy is deliberately narrow. A typical Tauri Android shell uses
+`CHANCELA_CORS_ALLOWED_ORIGINS=http://tauri.localhost`; a hosted shell uses its exact HTTPS origin.
+Do not include a path or a wildcard, and do not treat CORS as a substitute for HTTPS, firewalling,
+or RBAC. The allowlist permits the API's bounded methods and `Accept`, `Authorization`,
+`Content-Type`, and `X-Chancela-Session` request headers. Cookie credentials are not enabled.
+
+With a successfully opened SQLite data directory, password-authenticated sessions survive API
+restart through `<CHANCELA_DATA_DIR>/sessions.json`. The file contains only token SHA-256 digests,
+user ids, issue times, and expiries; plaintext bearer tokens, passwords, and unlocked attestation
+keys never persist. Writes are atomic with Windows rollback recovery, and Unix files are mode
+`0600`. On Windows, secure `CHANCELA_DATA_DIR` with an operator/service-account-only ACL because
+new files inherit that directory ACL. The file is excluded from backups, and restore/factory-reset
+flows invalidate it so restoring a snapshot cannot resurrect an old session. Without a durable
+store, sessions are intentionally memory-only and disappear on restart.
+
+Postgres/HA uses Redis rather than a node-local session file. `REDIS_URL`/`REDIS_URL_FILE` is
+load-bearing for multi-node authentication: session keys are token digests, the exact issue time is
+shared, revocation is cluster-wide, and lookup fails closed while Redis is unavailable. A restore
+or factory reset first advances a shared session epoch and aborts before durable mutation if Redis
+cannot confirm it, so old sessions cannot reappear against restored data. An unlocked attestation
+signing key always remains local process memory, so a restart or node change requires a fresh
+sign-in before attested signing even though the restored session can still authenticate.
 
 ## Connector worker
 
@@ -47,7 +74,7 @@ target schemas, RBAC, and the outbound-network boundary.
 | `CHANCELA_DB_BACKEND` | `sqlite` (default) or `postgres`. |
 | `DATABASE_URL` / `DATABASE_URL_FILE` | libpq connection string for the Postgres backend (the `_FILE` form reads a docker secret). |
 | `CHANCELA_DB_KEY` / `CHANCELA_DB_KEY_FILE` / `CHANCELA_DB_KEY_SOURCE` | SQLCipher database key (and its source) for the encrypted SQLite store. |
-| `CHANCELA_CACHE` / `REDIS_URL` | Optional Redis cache-aside. Fail-open on SQLite/single-node; **required** in multi-node for shared sessions + rate-limits. |
+| `CHANCELA_CACHE` / `REDIS_URL` / `REDIS_URL_FILE` | Optional Redis cache-aside on SQLite/single-node; **required** in multi-node for shared sessions, session-reset epochs, and rate-limits. |
 
 ## Provider-credential store
 

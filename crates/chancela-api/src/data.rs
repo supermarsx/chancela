@@ -206,6 +206,12 @@ pub async fn reset_data(
     let export_first = !factory_skip;
     let sidecars = state.instance_sidecars()?;
 
+    // A factory reset must never leave an old bearer valid against the new first-run instance.
+    // In HA the Redis epoch advance is fail-closed and happens before the store transaction.
+    if matches!(scope, ResetScope::BackendFactory) {
+        state.invalidate_all_sessions().await?;
+    }
+
     let outcome = {
         let mut ledger = state.ledger.write().await;
         let at = OffsetDateTime::now_utc();

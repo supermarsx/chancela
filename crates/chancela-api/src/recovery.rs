@@ -429,6 +429,10 @@ pub async fn restore_store(
     let sidecars = state.instance_sidecars()?;
     let passphrase = req.passphrase;
 
+    // Do this before swapping durable state. If the shared Redis authority is unavailable, abort
+    // the restore rather than let pre-restore sessions become valid again after recovery.
+    state.invalidate_all_sessions().await?;
+
     let outcome = {
         let mut ledger = state.ledger.write().await;
         let at = OffsetDateTime::now_utc();

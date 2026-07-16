@@ -27,9 +27,8 @@
 //! renewed indefinitely. The session's issued-at is recorded on first sight (recovered from the
 //! pre-slide expiry on the minting node) in [`AppState::session_issued_at`]; once
 //! `now >= issued_at + cap` the session is rejected (401) and evicted. A non-positive cap disables
-//! the check. Enforcement is node-local with exact creation time on the minting node; cluster-wide
-//! exact enforcement would need the issued-at carried in the shared session record (Redis) — a
-//! documented follow-up.
+//! the check. The exact issue time is retained in the durable digest registry (single-node) or the
+//! shared Redis record (HA), so restarts and node changes cannot reset the cap.
 
 use axum::extract::FromRequestParts;
 use axum::http::request::Parts;
@@ -146,66 +145,124 @@ impl FromRequestParts<AppState> for CurrentActor {
 /// expiry forward. Returns `Ok(Some(username))` for a valid session, `Ok(None)` when the token
 /// is unknown/expired/inactive.
 ///
-/// **wp16 P3a (multi-node):** the node-local `sessions` map is the fast path (it also holds the
-/// unlocked signing key). On a *local* miss/expiry the resolver consults the cluster-shared session
-/// store so a session minted on the leader is recognised on a follower. That lookup is **FAIL-CLOSED**:
-/// [`SessionLookup::Unavailable`] (Redis errored / unreachable) and [`SessionLookup::NotFound`] both
-/// yield "unauthenticated" — a session that cannot be verified is never granted access. Single-node
-/// the shared store is a no-op ([`SessionLookup::NotShared`]), so this is byte-identical to before:
-/// a local miss ⇒ `Ok(None)`.
+/// Redis is authoritative whenever configured: every request checks it even when this node has an
+/// unlocked-key cache entry, so a revoke or outage cannot be bypassed by a stale node-local hit.
+/// Without Redis, the live map is checked first and a miss falls through to the digest-only durable
+/// registry. All successful paths retain the exact original issue time while sliding idle expiry.
 pub async fn resolve_session_actor(
     state: &AppState,
     token: &str,
 ) -> Result<Option<String>, ApiError> {
     let std_ttl = std::time::Duration::from_secs(SESSION_TTL_SECS.max(0) as u64);
     let now = OffsetDateTime::now_utc();
-    // 1. Node-local fast path (authoritative on the minting node; holds the unlocked key + expiry).
-    // Capture the session's *creation* time (recoverable as the pre-slide expiry minus the TTL) so
-    // the absolute-lifetime cap can be evaluated before the idle expiry is slid forward.
-    let local = {
-        let mut sessions = state.sessions.write().await;
-        match sessions.get(token) {
-            Some(entry) if now < entry.expires_at => {
-                let created_at = entry.expires_at - time::Duration::seconds(SESSION_TTL_SECS);
-                let user_id = entry.user_id;
-                let entry = sessions.get_mut(token).expect("entry was just present");
-                entry.expires_at = now + time::Duration::seconds(SESSION_TTL_SECS);
-                Some((user_id, created_at))
-            }
-            _ => {
-                // Drop an expired local entry (idempotent for an absent token), then fall through to
-                // the cluster-shared store below.
-                sessions.remove(token);
-                None
-            }
-        }
-    };
-    let user_id = match local {
-        // Local hit: enforce the absolute cap, then refresh the shared TTL too so a follower's copy
-        // stays alive while this node uses the session (a no-op single-node).
-        Some((uid, created_at)) => {
-            if session_absolute_cap_exceeded(state, token, now, created_at).await {
+    let new_expires_at = now + time::Duration::seconds(SESSION_TTL_SECS);
+
+    let user_id = match state.cluster_shared.sessions.resolve(token, std_ttl) {
+        SessionLookup::Found {
+            user_id,
+            issued_at_unix,
+        } => {
+            let Ok(issued_at) = OffsetDateTime::from_unix_timestamp(issued_at_unix) else {
+                evict_local_session(state, token).await;
+                return Ok(None);
+            };
+            if session_absolute_cap_exceeded(state, token, now, issued_at).await {
                 evict_session(state, token).await;
                 return Ok(None);
             }
-            state.cluster_shared.sessions.put(token, uid.0, std_ttl);
+            let uid = UserId(user_id);
+            let mut sessions = state.sessions.write().await;
+            match sessions.get_mut(token) {
+                Some(entry) if entry.user_id == uid => entry.expires_at = new_expires_at,
+                _ => {
+                    // A follower/restarted node reconstructs identity only. The unlocked signing key
+                    // is intentionally unavailable until the user signs in on this process again.
+                    sessions.insert(
+                        token.to_owned(),
+                        crate::session::SessionEntry {
+                            user_id: uid,
+                            unlocked_key: None,
+                            expires_at: new_expires_at,
+                        },
+                    );
+                }
+            }
             uid
         }
-        // Local miss/expiry: drop any orphan issued-at, then consult the cluster-shared store.
-        // FAIL-CLOSED — anything other than a verified `Found` is treated as unauthenticated
-        // (`NotShared` single-node ⇒ today's `None`).
-        None => {
-            state.session_issued_at.write().await.remove(token);
-            match state.cluster_shared.sessions.resolve(token, std_ttl) {
-                // No local creation time here; pin issued-at at first cross-node sight.
-                SessionLookup::Found { user_id } => {
-                    if session_absolute_cap_exceeded(state, token, now, now).await {
+        SessionLookup::NotFound | SessionLookup::Unavailable => {
+            evict_local_session(state, token).await;
+            return Ok(None);
+        }
+        SessionLookup::NotShared => {
+            let local = {
+                let mut sessions = state.sessions.write().await;
+                match sessions.get(token) {
+                    Some(entry) if now < entry.expires_at => Some((
+                        entry.user_id,
+                        entry.expires_at - time::Duration::seconds(SESSION_TTL_SECS),
+                    )),
+                    _ => {
+                        sessions.remove(token);
+                        None
+                    }
+                }
+            };
+
+            match local {
+                Some((uid, derived_issued_at)) => {
+                    let durable = state
+                        .durable_sessions
+                        .slide_if_present(token, now, new_expires_at)
+                        .await?;
+                    if durable
+                        .as_ref()
+                        .is_some_and(|record| record.user_id != uid.0)
+                    {
+                        evict_session(state, token).await;
                         return Ok(None);
                     }
-                    UserId(user_id)
+                    let issued_at = durable
+                        .and_then(|record| {
+                            OffsetDateTime::from_unix_timestamp(record.issued_at_unix).ok()
+                        })
+                        .unwrap_or(derived_issued_at);
+                    if session_absolute_cap_exceeded(state, token, now, issued_at).await {
+                        evict_session(state, token).await;
+                        return Ok(None);
+                    }
+                    if let Some(entry) = state.sessions.write().await.get_mut(token) {
+                        entry.expires_at = new_expires_at;
+                    }
+                    uid
                 }
-                SessionLookup::NotShared | SessionLookup::NotFound | SessionLookup::Unavailable => {
-                    return Ok(None);
+                None => {
+                    state.session_issued_at.write().await.remove(token);
+                    let Some(record) = state
+                        .durable_sessions
+                        .resolve_and_slide(token, now, new_expires_at)
+                        .await?
+                    else {
+                        return Ok(None);
+                    };
+                    let Ok(issued_at) = OffsetDateTime::from_unix_timestamp(record.issued_at_unix)
+                    else {
+                        let _ = state.durable_sessions.revoke(token).await;
+                        return Ok(None);
+                    };
+                    if session_absolute_cap_exceeded(state, token, now, issued_at).await {
+                        evict_session(state, token).await;
+                        return Ok(None);
+                    }
+                    let uid = UserId(record.user_id);
+                    state.sessions.write().await.insert(
+                        token.to_owned(),
+                        crate::session::SessionEntry {
+                            user_id: uid,
+                            unlocked_key: None,
+                            expires_at: new_expires_at,
+                        },
+                    );
+                    uid
                 }
             }
         }
@@ -217,6 +274,9 @@ pub async fn resolve_session_actor(
             .filter(|u| u.active)
             .map(|u| u.username.clone())
     };
+    if username.is_none() {
+        evict_session(state, token).await;
+    }
     Ok(username)
 }
 
@@ -246,10 +306,23 @@ async fn session_absolute_cap_exceeded(
     now >= issued_at + time::Duration::seconds(cap_secs)
 }
 
-/// Evict a session both from the node-local map and from the issued-at cap tracker.
-async fn evict_session(state: &AppState, token: &str) {
+/// Evict a node-local cache entry without mutating the authoritative durable/shared record.
+async fn evict_local_session(state: &AppState, token: &str) {
     state.sessions.write().await.remove(token);
     state.session_issued_at.write().await.remove(token);
+}
+
+/// Evict a session from every configured authority. Failures remain fail-closed because the current
+/// request is denied and the exact issued-at cap is still enforced by every future resolver.
+async fn evict_session(state: &AppState, token: &str) {
+    evict_local_session(state, token).await;
+    let _ = state.durable_sessions.revoke(token).await;
+    let _ = state.cluster_shared.sessions.revoke(token);
+    state.cluster_shared.invalidation.publish(
+        &crate::cluster_shared_state::InvalidationEvent::SessionRevoked {
+            token_sha256: crate::session::session_token_digest(token),
+        },
+    );
 }
 
 /// Read the raw session token from request headers (without validation).
@@ -293,41 +366,17 @@ impl FromRequestParts<AppState> for CurrentAttestor {
             None => return Ok(CurrentAttestor::default()),
         };
 
-        let now = OffsetDateTime::now_utc();
-        let entry = {
-            let sessions = state.sessions.read().await;
-            sessions.get(token).map(|e| {
-                (
-                    e.user_id,
-                    e.unlocked_key.clone(),
-                    e.expires_at,
-                    e.expires_at - time::Duration::seconds(SESSION_TTL_SECS),
-                )
-            })
+        // Reuse the authoritative resolver first. In HA this checks Redis even when the node has a
+        // cached unlocked key, preventing a stale cache from bypassing revocation or an outage.
+        let Some(username) = resolve_session_actor(state, token).await.ok().flatten() else {
+            return Ok(CurrentAttestor::default());
         };
-        let signer = match entry {
-            Some((uid, key, expires_at, created_at)) => {
-                let should_evict = if now >= expires_at {
-                    true
-                } else {
-                    session_absolute_cap_exceeded(state, token, now, created_at).await
-                };
-                if should_evict {
-                    evict_session(state, token).await;
-                    None
-                } else if let Some(key) = key {
-                    state
-                        .users
-                        .read()
-                        .await
-                        .get(&uid)
-                        .filter(|u| u.active)
-                        .map(|u| (u.username.clone(), key))
-                } else {
-                    None
-                }
-            }
-            _ => None,
+        let signer = {
+            let sessions = state.sessions.read().await;
+            sessions
+                .get(token)
+                .and_then(|entry| entry.unlocked_key.clone())
+                .map(|key| (username, key))
         };
 
         Ok(CurrentAttestor { signer })
