@@ -109,17 +109,16 @@ pub(crate) async fn require_step_up(
 
     // The acting user HAS at least one credential — they must actually prove it (unchanged).
     // Prove the current password …
-    if let (Some(pw), Some(phc)) = (reauth.password.as_deref(), password_hash.as_deref()) {
-        if verify_secret(pw, phc) {
-            return Ok(());
-        }
+    if let (Some(pw), Some(phc)) = (reauth.password.as_deref(), password_hash.as_deref())
+        && verify_secret(pw, phc)
+    {
+        return Ok(());
     }
     // … or a valid recovery phrase.
     if let (Some(phrase), Some(phc)) = (reauth.recovery_phrase.as_deref(), recovery_hash.as_deref())
+        && verify_secret(phrase, phc)
     {
-        if verify_secret(phrase, phc) {
-            return Ok(());
-        }
+        return Ok(());
     }
     Err(ApiError::Forbidden(STEP_UP_REQUIRED.to_owned()))
 }
@@ -205,7 +204,7 @@ pub async fn reset_data(
     let factory_skip =
         !req.export_first && matches!(scope, ResetScope::BackendFactory) && req.skip_export_confirm;
     let export_first = !factory_skip;
-    let sidecars = state.instance_sidecars();
+    let sidecars = state.instance_sidecars()?;
 
     let outcome = {
         let mut ledger = state.ledger.write().await;
@@ -302,7 +301,7 @@ pub async fn start_over_instance(
     let data_dir = state
         .data_dir()
         .ok_or_else(|| ApiError::Internal("durable store without a data directory".to_owned()))?;
-    let sidecars = state.instance_sidecars();
+    let sidecars = state.instance_sidecars()?;
 
     let outcome = {
         let mut ledger = state.ledger.write().await;

@@ -50,7 +50,7 @@ pub async fn create_backup(
 
     // The sidecars bundled alongside the SQLite snapshot. A missing path is skipped by the store's
     // archiver, so an absent cache/laws/api-key file is fine.
-    let sidecars = state.instance_sidecars();
+    let sidecars = state.instance_sidecars()?;
     let passphrase = req.passphrase;
 
     // VACUUM INTO + zip are synchronous and can be non-trivial; run them off the async runtime.

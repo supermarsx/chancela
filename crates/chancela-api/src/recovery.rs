@@ -426,7 +426,7 @@ pub async fn restore_store(
         .ok_or_else(|| ApiError::Internal("durable store without a data directory".to_owned()))?;
 
     let archive = resolve_restore_archive(&data_dir, &req.archive)?;
-    let sidecars = state.instance_sidecars();
+    let sidecars = state.instance_sidecars()?;
     let passphrase = req.passphrase;
 
     let outcome = {

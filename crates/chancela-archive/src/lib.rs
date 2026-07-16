@@ -24,8 +24,12 @@ pub const LOCAL_DGLAB_INTERCHANGE_MANIFEST_PROFILE: &str = LOCAL_DGLAB_INTERCHAN
 pub const DEFAULT_PACKAGE_TYPE: &str = "chancela-internal-preservation-package";
 pub const DEFAULT_PACKAGE_VERSION: &str = "1";
 const EVIDENCE_INDEX_PATH: &str = "evidence/index.json";
+pub const READABILITY_DOCUMENTATION_PATH: &str = "readability/README.md";
+pub const READABILITY_KEY_PACKAGE_PATH: &str = "readability/decryption-material.jwe";
 const DEFAULT_PRODUCER_NAME: &str = "Chancela";
 const DEFAULT_PRODUCER_SYSTEM: &str = "chancela-archive";
+const MAX_READABILITY_JWE_BYTES: usize = 65_536;
+const MAX_READABILITY_INSTRUCTIONS_BYTES: usize = 8_192;
 
 /// A checksum over one packaged file (DOC-20 checksums).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -49,6 +53,10 @@ pub enum PackageFileRole {
     EvidenceReport,
     /// Structured metadata sidecar.
     Metadata,
+    /// Human-readable instructions for a portable legal-archive transfer (ARC-32).
+    ReadabilityDocumentation,
+    /// Client-produced, encrypted portable key package. Never an unwrapped/raw key.
+    EncryptedDecryptionMaterial,
     /// Other caller-supplied content.
     Other,
 }
@@ -295,24 +303,59 @@ pub enum LegalArchiveReadabilityMode {
     /// Manifest-only metadata: no decryption material, import proof, or legal-archive claim.
     #[default]
     ManifestOnly,
+    /// A trusted client decrypted the archive before transfer and included transfer documentation.
+    ClientDecryptedTransfer,
+    /// Ciphertext travels with a portable encrypted key package and transfer documentation.
+    EncryptedTransferWithPortableKeyPackage,
 }
 
-/// Manifest-only readability and ZK/GDPR caveat metadata.
+/// Readability and ZK/GDPR caveat metadata. Claim-like flags remain fail-closed: external import
+/// verification and legal-archive certification cannot be asserted by this package builder, and ZK
+/// never removes GDPR obligations (ARC-33 / LEG-13).
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct ReadabilityCaveatMetadata {
     /// Conservative readability mode for this internal package manifest.
     pub legal_archive_readability_mode: LegalArchiveReadabilityMode,
-    /// Must remain false: this package does not include keys or decryption material.
+    /// True only for `encrypted_transfer_with_portable_key_package`, where the declared member is
+    /// encrypted material rather than a raw key.
     pub decryption_material_included: bool,
     /// Must remain false: no import by an external DMS/archive has been verified.
     pub external_import_verified: bool,
     /// Must remain false: this package does not certify a legal archive.
     pub legal_archive_certified: bool,
-    /// Must remain false: this manifest does not claim the source repository is in ZK mode.
+    /// True only for one of the two explicit client-produced ZK transfer modes.
     pub zk_repository_mode: bool,
     /// Must remain false: ZK does not remove GDPR obligations (LEG-13).
     pub zk_removes_gdpr_obligations: bool,
+    /// Source repository for an explicit ZK readability transfer.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_repository_id: Option<uuid::Uuid>,
+    /// Required human-readable transfer instructions for explicit readability modes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub documentation_path: Option<String>,
+    /// Required encrypted JWE material path for the encrypted transfer mode only.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub decryption_material_path: Option<String>,
+}
+
+/// Client-side readability export selection (ARC-32). The server-safe default remains
+/// [`ManifestOnly`](ReadabilityExport::ManifestOnly). Explicit variants are intended to be called
+/// inside a trusted desktop/browser boundary after user re-authentication.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum ReadabilityExport {
+    /// No decryption material or transfer instructions.
+    #[default]
+    ManifestOnly,
+    /// A trusted client has already decrypted the archive bytes being packaged.
+    ClientDecryptedTransfer { source_repository_id: uuid::Uuid },
+    /// The archive remains encrypted. `portable_key_package_jwe` is a compact JWE produced by the
+    /// trusted client; the recipient secret/private key must travel out-of-band.
+    EncryptedTransferWithPortableKeyPackage {
+        source_repository_id: uuid::Uuid,
+        portable_key_package_jwe: String,
+        recipient_instructions: String,
+    },
 }
 
 /// Internal archival interchange metadata aligned with DGLAB concepts.
@@ -536,6 +579,8 @@ pub struct PackageBuildInput {
     pub retention: RetentionInstructions,
     /// Targeted preservation level.
     pub preservation_level: PreservationLevel,
+    /// Optional trusted-client readability transfer. Defaults to metadata-only/no-key mode.
+    pub readability: ReadabilityExport,
     /// Files to package.
     pub files: Vec<PackageFileInput>,
 }
@@ -564,6 +609,7 @@ impl PackageBuildInput {
             languages: Vec::new(),
             retention: RetentionInstructions::default(),
             preservation_level: PreservationLevel::Managed,
+            readability: ReadabilityExport::ManifestOnly,
             files: Vec::new(),
         }
     }
@@ -621,7 +667,8 @@ pub fn build_package(manifest: PackageManifest) -> Result<ExportPackage, Archive
 }
 
 /// Build a deterministic ZIP preservation package from explicit content inputs.
-pub fn build_archive_package(input: PackageBuildInput) -> Result<ExportPackage, ArchiveError> {
+pub fn build_archive_package(mut input: PackageBuildInput) -> Result<ExportPackage, ArchiveError> {
+    let readability_caveats = prepare_readability_export(&input.readability, &mut input.files)?;
     let mut member_bytes = BTreeMap::new();
     let mut files = Vec::with_capacity(input.files.len());
     let mut act_ids = input.act_ids;
@@ -692,6 +739,7 @@ pub fn build_archive_package(input: PackageBuildInput) -> Result<ExportPackage, 
             files: &files,
             rights: rights.clone(),
             languages: languages.clone(),
+            readability_caveats,
         });
 
     let manifest = PackageManifest {
@@ -776,6 +824,8 @@ pub fn validate_package(package_bytes: &[u8]) -> Result<PackageManifest, Archive
             });
         }
     }
+
+    validate_readability_member_bytes(&manifest, &members)?;
 
     Ok(manifest)
 }
@@ -1066,6 +1116,7 @@ struct PreservationInterchangeInput<'a> {
     files: &'a [PackageFile],
     rights: RightsMetadata,
     languages: Vec<String>,
+    readability_caveats: ReadabilityCaveatMetadata,
 }
 
 fn preservation_interchange_metadata(
@@ -1077,7 +1128,7 @@ fn preservation_interchange_metadata(
         profile: PRESERVATION_INTERCHANGE_PROFILE.to_owned(),
         official_dglab_interchange: false,
         dglab_certification_claimed: false,
-        readability_caveats: ReadabilityCaveatMetadata::default(),
+        readability_caveats: input.readability_caveats,
         producer: ProducerMetadata {
             name: producer_name,
             system: producer_system.clone(),
@@ -1107,6 +1158,147 @@ fn preservation_interchange_metadata(
     }
 }
 
+fn prepare_readability_export(
+    export: &ReadabilityExport,
+    files: &mut Vec<PackageFileInput>,
+) -> Result<ReadabilityCaveatMetadata, ArchiveError> {
+    let explicit = |source_repository_id: uuid::Uuid,
+                    mode: LegalArchiveReadabilityMode,
+                    decryption_material_included: bool|
+     -> Result<ReadabilityCaveatMetadata, ArchiveError> {
+        if source_repository_id.is_nil() {
+            return Err(ArchiveError::InvalidManifest(
+                "readability source_repository_id must not be nil".to_owned(),
+            ));
+        }
+        Ok(ReadabilityCaveatMetadata {
+            legal_archive_readability_mode: mode,
+            decryption_material_included,
+            external_import_verified: false,
+            legal_archive_certified: false,
+            zk_repository_mode: true,
+            zk_removes_gdpr_obligations: false,
+            source_repository_id: Some(source_repository_id),
+            documentation_path: Some(READABILITY_DOCUMENTATION_PATH.to_owned()),
+            decryption_material_path: decryption_material_included
+                .then(|| READABILITY_KEY_PACKAGE_PATH.to_owned()),
+        })
+    };
+
+    match export {
+        ReadabilityExport::ManifestOnly => Ok(ReadabilityCaveatMetadata::default()),
+        ReadabilityExport::ClientDecryptedTransfer {
+            source_repository_id,
+        } => {
+            files.push(PackageFileInput::new(
+                READABILITY_DOCUMENTATION_PATH,
+                PackageFileRole::ReadabilityDocumentation,
+                "text/markdown; charset=utf-8",
+                readability_documentation(
+                    *source_repository_id,
+                    LegalArchiveReadabilityMode::ClientDecryptedTransfer,
+                    None,
+                )
+                .into_bytes(),
+            ));
+            explicit(
+                *source_repository_id,
+                LegalArchiveReadabilityMode::ClientDecryptedTransfer,
+                false,
+            )
+        }
+        ReadabilityExport::EncryptedTransferWithPortableKeyPackage {
+            source_repository_id,
+            portable_key_package_jwe,
+            recipient_instructions,
+        } => {
+            validate_compact_jwe(portable_key_package_jwe)?;
+            validate_readability_instructions(recipient_instructions)?;
+            files.push(PackageFileInput::new(
+                READABILITY_DOCUMENTATION_PATH,
+                PackageFileRole::ReadabilityDocumentation,
+                "text/markdown; charset=utf-8",
+                readability_documentation(
+                    *source_repository_id,
+                    LegalArchiveReadabilityMode::EncryptedTransferWithPortableKeyPackage,
+                    Some(recipient_instructions),
+                )
+                .into_bytes(),
+            ));
+            files.push(PackageFileInput::new(
+                READABILITY_KEY_PACKAGE_PATH,
+                PackageFileRole::EncryptedDecryptionMaterial,
+                "application/jose",
+                portable_key_package_jwe.as_bytes().to_vec(),
+            ));
+            explicit(
+                *source_repository_id,
+                LegalArchiveReadabilityMode::EncryptedTransferWithPortableKeyPackage,
+                true,
+            )
+        }
+    }
+}
+
+fn readability_documentation(
+    repository_id: uuid::Uuid,
+    mode: LegalArchiveReadabilityMode,
+    recipient_instructions: Option<&str>,
+) -> String {
+    let mode = match mode {
+        LegalArchiveReadabilityMode::ManifestOnly => "manifest-only",
+        LegalArchiveReadabilityMode::ClientDecryptedTransfer => "client-decrypted transfer",
+        LegalArchiveReadabilityMode::EncryptedTransferWithPortableKeyPackage => {
+            "encrypted transfer with a portable encrypted key package"
+        }
+    };
+    let instructions = recipient_instructions
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("No encrypted key package is included; the trusted client decrypted the archive before transfer.");
+    format!(
+        "# Chancela legal archive readability transfer\n\nSource repository: `{repository_id}`\n\nTransfer mode: {mode}.\n\n{instructions}\n\nThe recipient must verify every SHA-256 digest in `manifest.json` before import. This package does not certify a legal archive or prove an external import. Zero-knowledge encryption reduces exposure but does not remove GDPR obligations.\n"
+    )
+}
+
+fn validate_readability_instructions(value: &str) -> Result<(), ArchiveError> {
+    let trimmed = value.trim();
+    if trimmed.is_empty()
+        || trimmed.len() > MAX_READABILITY_INSTRUCTIONS_BYTES
+        || trimmed.contains('\0')
+    {
+        return Err(ArchiveError::InvalidManifest(
+            "readability recipient_instructions must be non-empty and bounded".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_compact_jwe(value: &str) -> Result<(), ArchiveError> {
+    if value.is_empty()
+        || value.len() > MAX_READABILITY_JWE_BYTES
+        || value.bytes().any(|byte| byte.is_ascii_whitespace())
+    {
+        return Err(ArchiveError::InvalidManifest(
+            "portable key package must be a bounded compact JWE".to_owned(),
+        ));
+    }
+    let segments: Vec<_> = value.split('.').collect();
+    if segments.len() != 5
+        || segments.iter().any(|segment| {
+            segment.is_empty()
+                || !segment
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
+        })
+    {
+        return Err(ArchiveError::InvalidManifest(
+            "portable key package must have five non-empty base64url JWE segments".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
 fn local_dglab_file_entries(files: &[PackageFile]) -> Vec<LocalDglabInterchangeFileEntry> {
     files
         .iter()
@@ -1131,17 +1323,10 @@ fn validate_false_claim_flag(label: &str, value: bool) -> Result<(), ArchiveErro
     Ok(())
 }
 
-fn validate_readability_caveats(caveats: &ReadabilityCaveatMetadata) -> Result<(), ArchiveError> {
-    if caveats.legal_archive_readability_mode != LegalArchiveReadabilityMode::ManifestOnly {
-        return Err(ArchiveError::InvalidManifest(
-            "preservation_interchange.readability_caveats.legal_archive_readability_mode must be manifest_only"
-                .to_owned(),
-        ));
-    }
-    validate_false_claim_flag(
-        "preservation_interchange.readability_caveats.decryption_material_included",
-        caveats.decryption_material_included,
-    )?;
+fn validate_readability_caveats(
+    caveats: &ReadabilityCaveatMetadata,
+    files: &[PackageFile],
+) -> Result<(), ArchiveError> {
     validate_false_claim_flag(
         "preservation_interchange.readability_caveats.external_import_verified",
         caveats.external_import_verified,
@@ -1151,14 +1336,140 @@ fn validate_readability_caveats(caveats: &ReadabilityCaveatMetadata) -> Result<(
         caveats.legal_archive_certified,
     )?;
     validate_false_claim_flag(
-        "preservation_interchange.readability_caveats.zk_repository_mode",
-        caveats.zk_repository_mode,
-    )?;
-    validate_false_claim_flag(
         "preservation_interchange.readability_caveats.zk_removes_gdpr_obligations",
         caveats.zk_removes_gdpr_obligations,
     )?;
+
+    let reserved_file = |path: &str| files.iter().find(|file| file.path == path);
+    let no_explicit_metadata = || {
+        caveats.source_repository_id.is_none()
+            && caveats.documentation_path.is_none()
+            && caveats.decryption_material_path.is_none()
+    };
+    match caveats.legal_archive_readability_mode {
+        LegalArchiveReadabilityMode::ManifestOnly => {
+            if caveats.decryption_material_included {
+                return Err(ArchiveError::InvalidManifest(
+                    "preservation_interchange.readability_caveats.decryption_material_included must be false in manifest_only mode"
+                        .to_owned(),
+                ));
+            }
+            if caveats.zk_repository_mode {
+                return Err(ArchiveError::InvalidManifest(
+                    "preservation_interchange.readability_caveats.zk_repository_mode must be false in manifest_only mode"
+                        .to_owned(),
+                ));
+            }
+            if !no_explicit_metadata()
+                || reserved_file(READABILITY_DOCUMENTATION_PATH).is_some()
+                || reserved_file(READABILITY_KEY_PACKAGE_PATH).is_some()
+            {
+                return Err(ArchiveError::InvalidManifest(
+                    "manifest_only readability cannot declare ZK transfer members or material"
+                        .to_owned(),
+                ));
+            }
+            Ok(())
+        }
+        LegalArchiveReadabilityMode::ClientDecryptedTransfer => {
+            if caveats.decryption_material_included
+                || !caveats.zk_repository_mode
+                || caveats.source_repository_id.is_none()
+                || caveats.documentation_path.as_deref() != Some(READABILITY_DOCUMENTATION_PATH)
+                || caveats.decryption_material_path.is_some()
+                || reserved_file(READABILITY_KEY_PACKAGE_PATH).is_some()
+            {
+                return Err(ArchiveError::InvalidManifest(
+                    "client_decrypted_transfer readability metadata is inconsistent".to_owned(),
+                ));
+            }
+            validate_readability_file(
+                reserved_file(READABILITY_DOCUMENTATION_PATH),
+                PackageFileRole::ReadabilityDocumentation,
+                "readability documentation",
+            )
+        }
+        LegalArchiveReadabilityMode::EncryptedTransferWithPortableKeyPackage => {
+            if !caveats.decryption_material_included
+                || !caveats.zk_repository_mode
+                || caveats.source_repository_id.is_none()
+                || caveats.documentation_path.as_deref() != Some(READABILITY_DOCUMENTATION_PATH)
+                || caveats.decryption_material_path.as_deref() != Some(READABILITY_KEY_PACKAGE_PATH)
+            {
+                return Err(ArchiveError::InvalidManifest(
+                    "encrypted readability transfer metadata is inconsistent".to_owned(),
+                ));
+            }
+            validate_readability_file(
+                reserved_file(READABILITY_DOCUMENTATION_PATH),
+                PackageFileRole::ReadabilityDocumentation,
+                "readability documentation",
+            )?;
+            validate_readability_file(
+                reserved_file(READABILITY_KEY_PACKAGE_PATH),
+                PackageFileRole::EncryptedDecryptionMaterial,
+                "encrypted decryption material",
+            )
+        }
+    }
+}
+
+fn validate_readability_file(
+    file: Option<&PackageFile>,
+    role: PackageFileRole,
+    label: &str,
+) -> Result<(), ArchiveError> {
+    let file = file.ok_or_else(|| ArchiveError::MissingArtifact(label.to_owned()))?;
+    if file.role != role {
+        return Err(ArchiveError::InvalidManifest(format!(
+            "{label} has the wrong package role"
+        )));
+    }
     Ok(())
+}
+
+fn validate_readability_member_bytes(
+    manifest: &PackageManifest,
+    members: &BTreeMap<String, Vec<u8>>,
+) -> Result<(), ArchiveError> {
+    let caveats = &manifest.preservation_interchange.readability_caveats;
+    match caveats.legal_archive_readability_mode {
+        LegalArchiveReadabilityMode::ManifestOnly => Ok(()),
+        LegalArchiveReadabilityMode::ClientDecryptedTransfer
+        | LegalArchiveReadabilityMode::EncryptedTransferWithPortableKeyPackage => {
+            let documentation = members.get(READABILITY_DOCUMENTATION_PATH).ok_or_else(|| {
+                ArchiveError::MissingArtifact(READABILITY_DOCUMENTATION_PATH.to_owned())
+            })?;
+            let documentation = std::str::from_utf8(documentation).map_err(|_| {
+                ArchiveError::InvalidPackage(
+                    "readability documentation must be valid UTF-8".to_owned(),
+                )
+            })?;
+            if !documentation.contains(
+                "Zero-knowledge encryption reduces exposure but does not remove GDPR obligations.",
+            ) || !documentation.contains("does not certify a legal archive")
+            {
+                return Err(ArchiveError::InvalidPackage(
+                    "readability documentation is missing mandatory no-overclaim caveats"
+                        .to_owned(),
+                ));
+            }
+            if caveats.legal_archive_readability_mode
+                == LegalArchiveReadabilityMode::EncryptedTransferWithPortableKeyPackage
+            {
+                let jwe = members.get(READABILITY_KEY_PACKAGE_PATH).ok_or_else(|| {
+                    ArchiveError::MissingArtifact(READABILITY_KEY_PACKAGE_PATH.to_owned())
+                })?;
+                let jwe = std::str::from_utf8(jwe).map_err(|_| {
+                    ArchiveError::InvalidPackage(
+                        "portable key package must be UTF-8 compact JWE".to_owned(),
+                    )
+                })?;
+                validate_compact_jwe(jwe)?;
+            }
+            Ok(())
+        }
+    }
 }
 
 fn validate_local_dglab_file_entries(
@@ -1221,7 +1532,7 @@ fn validate_interchange_metadata(manifest: &PackageManifest) -> Result<(), Archi
             "preservation_interchange.dglab_certification_claimed must be false".to_owned(),
         ));
     }
-    validate_readability_caveats(&metadata.readability_caveats)?;
+    validate_readability_caveats(&metadata.readability_caveats, &manifest.files)?;
     validate_required_text(
         "preservation_interchange.producer.name",
         &metadata.producer.name,
@@ -1531,6 +1842,7 @@ mod tests {
                 files: &files,
                 rights: rights.clone(),
                 languages: languages.clone(),
+                readability_caveats: ReadabilityCaveatMetadata::default(),
             });
         PackageManifest {
             package_id: id(1),
@@ -1742,6 +2054,124 @@ mod tests {
                 "zk_removes_gdpr_obligations": false
             })
         );
+    }
+
+    #[test]
+    fn client_decrypted_readability_transfer_includes_bounded_documentation_only() {
+        let repository_id = id(900);
+        let mut input = sample_input();
+        input.readability = ReadabilityExport::ClientDecryptedTransfer {
+            source_repository_id: repository_id,
+        };
+
+        let package = build_archive_package(input).unwrap();
+        let manifest = validate_package(&package.bytes).unwrap();
+        let caveats = &manifest.preservation_interchange.readability_caveats;
+        assert_eq!(
+            caveats.legal_archive_readability_mode,
+            LegalArchiveReadabilityMode::ClientDecryptedTransfer
+        );
+        assert!(caveats.zk_repository_mode);
+        assert!(!caveats.decryption_material_included);
+        assert!(!caveats.zk_removes_gdpr_obligations);
+        assert_eq!(caveats.source_repository_id, Some(repository_id));
+        assert_eq!(
+            caveats.documentation_path.as_deref(),
+            Some(READABILITY_DOCUMENTATION_PATH)
+        );
+        assert!(caveats.decryption_material_path.is_none());
+        assert!(manifest.files.iter().any(|file| {
+            file.path == READABILITY_DOCUMENTATION_PATH
+                && file.role == PackageFileRole::ReadabilityDocumentation
+        }));
+        assert!(
+            !manifest
+                .files
+                .iter()
+                .any(|file| file.path == READABILITY_KEY_PACKAGE_PATH)
+        );
+        let members = read_zip_members(&package.bytes).unwrap();
+        let documentation =
+            std::str::from_utf8(members.get(READABILITY_DOCUMENTATION_PATH).unwrap()).unwrap();
+        assert!(documentation.contains(&repository_id.to_string()));
+        assert!(documentation.contains("does not remove GDPR obligations"));
+        assert!(documentation.contains("does not certify a legal archive"));
+    }
+
+    #[test]
+    fn encrypted_readability_transfer_tracks_compact_jwe_without_raw_key_fields() {
+        let repository_id = id(901);
+        let compact_jwe = "eyJhbGciOiJQQkVTMi1IUzUxMitBMjU2S1ciLCJlbmMiOiJBMjU2R0NNIn0.ZW5jcnlwdGVkLWtleQ.aXY.Y2lwaGVydGV4dA.dGFn";
+        let mut input = sample_input();
+        input.readability = ReadabilityExport::EncryptedTransferWithPortableKeyPackage {
+            source_repository_id: repository_id,
+            portable_key_package_jwe: compact_jwe.to_owned(),
+            recipient_instructions:
+                "Obtain the recipient passphrase through the separately controlled custody channel."
+                    .to_owned(),
+        };
+
+        let package = build_archive_package(input).unwrap();
+        let manifest = validate_package(&package.bytes).unwrap();
+        let caveats = &manifest.preservation_interchange.readability_caveats;
+        assert_eq!(
+            caveats.legal_archive_readability_mode,
+            LegalArchiveReadabilityMode::EncryptedTransferWithPortableKeyPackage
+        );
+        assert!(caveats.zk_repository_mode);
+        assert!(caveats.decryption_material_included);
+        assert!(!caveats.external_import_verified);
+        assert!(!caveats.legal_archive_certified);
+        assert!(!caveats.zk_removes_gdpr_obligations);
+        assert_eq!(caveats.source_repository_id, Some(repository_id));
+        assert_eq!(
+            caveats.decryption_material_path.as_deref(),
+            Some(READABILITY_KEY_PACKAGE_PATH)
+        );
+        let key_file = manifest
+            .files
+            .iter()
+            .find(|file| file.path == READABILITY_KEY_PACKAGE_PATH)
+            .unwrap();
+        assert_eq!(key_file.role, PackageFileRole::EncryptedDecryptionMaterial);
+        assert_eq!(key_file.content_type, "application/jose");
+        let members = read_zip_members(&package.bytes).unwrap();
+        assert_eq!(
+            members.get(READABILITY_KEY_PACKAGE_PATH).unwrap(),
+            compact_jwe.as_bytes()
+        );
+        let serialized = serde_json::to_string(&manifest).unwrap();
+        for forbidden in ["raw_key", "plaintext_key", "private_key", "recovery_share"] {
+            assert!(!serialized.contains(forbidden));
+        }
+    }
+
+    #[test]
+    fn encrypted_readability_transfer_rejects_raw_or_malformed_material_and_reserved_paths() {
+        let mut raw = sample_input();
+        raw.readability = ReadabilityExport::EncryptedTransferWithPortableKeyPackage {
+            source_repository_id: id(902),
+            portable_key_package_jwe: "this-is-a-raw-key-not-a-jwe".to_owned(),
+            recipient_instructions: "Out-of-band secret delivery.".to_owned(),
+        };
+        assert!(
+            matches!(build_archive_package(raw), Err(ArchiveError::InvalidManifest(message)) if message.contains("JWE"))
+        );
+
+        let mut collision = sample_input();
+        collision.readability = ReadabilityExport::ClientDecryptedTransfer {
+            source_repository_id: id(903),
+        };
+        collision.files.push(PackageFileInput::new(
+            READABILITY_DOCUMENTATION_PATH,
+            PackageFileRole::Other,
+            "text/plain",
+            b"caller collision".to_vec(),
+        ));
+        assert!(matches!(
+            build_archive_package(collision),
+            Err(ArchiveError::DuplicatePath(path)) if path == READABILITY_DOCUMENTATION_PATH
+        ));
     }
 
     #[test]

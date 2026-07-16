@@ -1,0 +1,31 @@
+{
+  "archive_id": "a2c00000-0000-4000-8000-000000000001",
+  "tenant_id": "74656e61-6e74-0000-0000-000000000001",
+  "manifest": {
+    "schema_version": 1,
+    "associated_data": {
+      "repository_id": "2e900000-0000-4000-8000-000000000001",
+      "object_id": "0b1ec700-0000-4000-8000-000000000001",
+      "version": 1
+    },
+    "algorithm": "aes256_gcm",
+    "nonce_base64": "AQEBAQEBAQEBAQEB",
+    "ciphertext_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "ciphertext_len": 4096,
+    "encrypted_metadata": null,
+    "wrapped_keys": [
+      {
+        "slot_id": "ce000000-0000-4000-8000-000000000001",
+        "recipient_kind": "bring_your_own_key",
+        "recipient_id": "board-key",
+        "algorithm": "aes256_kw_byok",
+        "key_reference": "sha256:public-key-fingerprint",
+        "wrapped_cek_base64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+        "created_at": "2026-07-16T10:10:00Z"
+      }
+    ],
+    "created_at": "2026-07-16T10:10:00Z"
+  },
+  "ciphertext_url": "/v1/tenants/74656e61-6e74-0000-000000000001/repositories/2e900000-0000-4000-8000-000000000001/objects/0b1ec700-0000-4000-8000-000000000001/versions/1/ciphertext",
+  "committed_at": "2026-07-16T10:11:00Z"
+}
