@@ -42,6 +42,8 @@
 //!   DGLAB/legal-archive certification claim.
 //! - `GET /v1/sync/handoff-preflight` — read-only local sync/handoff preflight readiness report
 //!   composed from local evidence only; no active sync, connector, provider, or certification claim.
+//! - `/v1/tenants/{tenant_id}/connector-targets[/...]` and `connector-jobs[/...]` — tenant-scoped,
+//!   audited target CRUD/probe plus durable run/list/status/cancel/retry operator control (ARC-20/21).
 //! - `GET /v1/dashboard` — WFL-40 counts and recent events (§2.7).
 //! - `GET|PUT /v1/settings` — the typed, versioned application settings document (§2.8).
 //! - `GET /v1/platform/services`, `POST /v1/platform/services/{id}/actions/{action}` —
@@ -97,6 +99,8 @@ mod bundles;
 mod cache;
 mod cae;
 mod chronology;
+mod connector_jobs;
+pub use connector_jobs::{ConnectorTargetMap, ConnectorTargetRecord};
 // wp16 P0: Postgres-advisory-lock leader election / step-down / failover handoff (active-passive HA).
 // Compiled in every build; inert unless the durable backend is an electing one (Postgres).
 mod cluster;
@@ -133,6 +137,7 @@ mod error;
 mod external_signing;
 mod external_validator_evidence;
 mod followups;
+mod groups;
 mod hex;
 mod law;
 mod ledger;
@@ -167,6 +172,7 @@ mod sync_handoff;
 mod trust;
 mod users;
 mod xades_signature;
+mod zk_repository;
 
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
@@ -185,7 +191,8 @@ use chancela_cae::{CaeCatalog, CaeSource, CaeSourceChain};
 use chancela_cmd::ScmdTransport;
 use chancela_core::external_signing::{ExternalSignatureEnvelope, ExternalSignatureEnvelopeId};
 use chancela_core::{
-    Act, ActId, Book, BookId, DEFAULT_TENANT_ID, Entity, EntityId, Tenant, TenantId,
+    Act, ActId, Book, BookId, CompanyGroup, DEFAULT_TENANT_ID, Entity, EntityId, GroupId,
+    GroupTemplateLibrary, GroupTemplateLibraryRevision, TemplateLibraryId, Tenant, TenantId,
 };
 use chancela_csc::{CscConfig, CscTransport};
 use chancela_ledger::{Event, Ledger, LedgerError};
@@ -203,7 +210,7 @@ pub use actor::{CurrentActor, CurrentAttestor};
 pub use attestation::VerifierSeed;
 pub use authz::{
     Authorizer, authorizer, require_permission, require_permission_with, scope_of_act,
-    scope_of_book, scope_of_entity,
+    scope_of_book, scope_of_entity, scope_of_template_library,
 };
 pub use backup_recovery::{BackupRecoveryDrillManifestEvidence, BackupRecoveryDrillReceipt};
 pub use database::{
@@ -220,6 +227,8 @@ pub use roles::{
     count_owner_admins, effective_permissions_for, effective_permissions_for_actor,
     last_owner_guard_ok, resolve_principal_id,
 };
+#[doc(hidden)]
+pub use zk_repository::ZkRepositoryStore;
 // Signature-provider credential model + encrypted sidecar (t77 S2). Re-exported so the credential
 // API/assembly slices (S3/S4) can name these and so the crypto core's consumers are reachable from
 // the crate root (the crate-private `CredentialSecretStore` itself stays internal).
@@ -300,8 +309,9 @@ pub const DATA_DIR_ENV: &str = "CHANCELA_DATA_DIR";
 ///
 /// Every field is `Arc<RwLock<..>>` so the state is cheap to clone into each handler and safe
 /// to mutate concurrently. Cloning an [`AppState`] shares the same underlying maps and ledger.
-/// Handlers that take several locks acquire them in the fixed order **entities → books → acts
-/// → follow_ups → registry_extracts → registry_auto_updates → users → dsr_requests → processor_records →
+/// Handlers that take several locks acquire them in the fixed order **company_groups →
+/// group_template_libraries → group_template_library_revisions → entities → books → acts →
+/// follow_ups → registry_extracts → registry_auto_updates → users → dsr_requests → processor_records →
 /// dpia_records → breach_playbooks → transfer_controls → retention_policies →
 /// retention_execution_records → retention_candidate_resolutions → ledger** to avoid deadlock. The `cae` and `sessions` locks
 /// are independent, short-lived locks not part of that chain (a handler acquires and releases one
@@ -334,6 +344,10 @@ fn hydrate_tenants(store: &Store) -> HashMap<TenantId, Tenant> {
     map
 }
 
+/// In-memory append-only revision projection keyed by `(group, library, revision)`.
+pub type GroupTemplateLibraryRevisionMap =
+    HashMap<(GroupId, TemplateLibraryId, u64), GroupTemplateLibraryRevision>;
+
 #[derive(Clone, Default)]
 pub struct AppState {
     /// All known tenants (isolation boundaries above entities, wp26 tenancy), keyed by their
@@ -342,6 +356,23 @@ pub struct AppState {
     /// deadlock lock-order chain: tenancy enforcement reads the entity→tenant relation from
     /// `entities` (each entity's `tenant_id`), so this map is a directory, not an authz input.
     pub tenants: Arc<RwLock<HashMap<TenantId, Tenant>>>,
+    /// Tenant-local company groups. Groups are convenience views, never authz scopes.
+    pub company_groups: Arc<RwLock<HashMap<GroupId, CompanyGroup>>>,
+    /// Multiple named shared template libraries per group.
+    pub group_template_libraries: Arc<RwLock<HashMap<TemplateLibraryId, GroupTemplateLibrary>>>,
+    /// Append-only library snapshots keyed by `(group, library, revision)`.
+    pub group_template_library_revisions: Arc<RwLock<GroupTemplateLibraryRevisionMap>>,
+    /// Opt-in zero-knowledge repository policy/index projection. Opaque immutable ciphertext lives
+    /// under `<data_dir>/zk-repositories/`; this lock serializes manifest/index publication and feeds
+    /// the Repository/Archive authorization parent graph.
+    pub zk_repositories: Arc<RwLock<ZkRepositoryStore>>,
+    /// Tenant-scoped connector targets. Records contain credential references only and are
+    /// persisted atomically in `connector-targets.json` when a data directory is configured.
+    pub connector_targets: Arc<RwLock<ConnectorTargetMap>>,
+    pub connector_targets_path: Option<Arc<PathBuf>>,
+    /// Fixed server-derived worker roots. HTTP callers never choose either path.
+    pub worker_queue_root: Option<Arc<PathBuf>>,
+    pub worker_source_root: Option<Arc<PathBuf>>,
     /// All known entities, keyed by their [`EntityId`].
     pub entities: Arc<RwLock<HashMap<EntityId, Entity>>>,
     /// All books (livros de atas), keyed by their [`BookId`].
@@ -748,18 +779,18 @@ impl AppState {
         // rewritten to disk exactly once, only when the load actually changed it.
         let roles_path = dir.join(roles::ROLES_FILE);
         let mut roles_catalog = roles::load_roles(&roles_path).unwrap_or_default();
-        if roles::ensure_seeded_defaults(&mut roles_catalog) {
-            if let Err(e) = roles::write_roles_atomic(&roles_path, &roles_catalog) {
-                eprintln!("warning: failed to seed {} ({e})", roles_path.display());
-            }
+        if roles::ensure_seeded_defaults(&mut roles_catalog)
+            && let Err(e) = roles::write_roles_atomic(&roles_path, &roles_catalog)
+        {
+            eprintln!("warning: failed to seed {} ({e})", roles_path.display());
         }
-        if roles::migrate_roles(&mut loaded_users) {
-            if let Err(e) = users::write_users_atomic(&users_path, &loaded_users) {
-                eprintln!(
-                    "warning: failed to persist the role migration to {} ({e})",
-                    users_path.display()
-                );
-            }
+        if roles::migrate_roles(&mut loaded_users)
+            && let Err(e) = users::write_users_atomic(&users_path, &loaded_users)
+        {
+            eprintln!(
+                "warning: failed to persist the role migration to {} ({e})",
+                users_path.display()
+            );
         }
         let delegations_path = dir.join(delegations::DELEGATIONS_FILE);
         let loaded_delegations =
@@ -809,6 +840,9 @@ impl AppState {
             dir.join(external_signing::EXTERNAL_SIGNING_ENVELOPES_FILE);
         let loaded_external_signing_envelopes =
             external_signing::load_envelopes(&external_signing_envelopes_path).unwrap_or_default();
+        let connector_targets_path = dir.join(connector_jobs::CONNECTOR_TARGETS_FILE);
+        let loaded_connector_targets = connector_jobs::load_targets(&connector_targets_path);
+        let worker_root = dir.join("worker");
         let external_validator_report_metadata_dir =
             dir.join(external_validator_evidence::EXTERNAL_VALIDATOR_REPORT_METADATA_DIR);
         let loaded_external_validator_report_metadata =
@@ -864,6 +898,10 @@ impl AppState {
             api_keys_path: Some(Arc::new(api_keys_path)),
             external_signing_envelopes: Arc::new(RwLock::new(loaded_external_signing_envelopes)),
             external_signing_envelopes_path: Some(Arc::new(external_signing_envelopes_path)),
+            connector_targets: Arc::new(RwLock::new(loaded_connector_targets)),
+            connector_targets_path: Some(Arc::new(connector_targets_path)),
+            worker_queue_root: Some(Arc::new(worker_root.join("queue"))),
+            worker_source_root: Some(Arc::new(worker_root.join("sources"))),
             external_validator_report_metadata: Arc::new(RwLock::new(
                 loaded_external_validator_report_metadata,
             )),
@@ -900,6 +938,10 @@ impl AppState {
         #[cfg(not(feature = "postgres"))]
         let sidecars_db_backed = false;
         state.sidecars_db_backed = sidecars_db_backed;
+        state.zk_repositories = Arc::new(RwLock::new(zk_repository::ZkRepositoryStore::open(
+            &dir,
+            sidecars_db_backed,
+        )));
         match Store::open_backend(resolved_backend.selection) {
             Ok(store) => match store.load() {
                 Ok(loaded) => {
@@ -916,6 +958,11 @@ impl AppState {
                         );
                     }
                     state.entities = Arc::new(RwLock::new(loaded.entities));
+                    state.company_groups = Arc::new(RwLock::new(loaded.company_groups));
+                    state.group_template_libraries =
+                        Arc::new(RwLock::new(loaded.group_template_libraries));
+                    state.group_template_library_revisions =
+                        Arc::new(RwLock::new(loaded.group_template_library_revisions));
                     state.books = Arc::new(RwLock::new(loaded.books));
                     state.acts = Arc::new(RwLock::new(loaded.acts));
                     // wp26 tenancy: hydrate the tenant directory from the `tenants` table (v19) and
@@ -979,15 +1026,13 @@ impl AppState {
         // (replacing the file-derived defaults) and seed/migrate the role catalog back into the DB.
         // A store error here fails startup closed (Postgres already requires durability). No-op on
         // SQLite (`sidecars_db_backed == false`), keeping single-node byte-identical.
-        if sidecars_db_backed {
-            if let Some(store) = state.store.clone() {
-                sidecar_store::hydrate_from_store(&mut state, &store).map_err(|source| {
-                    AppStateInitError::StoreLoad {
-                        data_dir: dir.clone(),
-                        source,
-                    }
-                })?;
-            }
+        if sidecars_db_backed && let Some(store) = state.store.clone() {
+            sidecar_store::hydrate_from_store(&mut state, &store).map_err(|source| {
+                AppStateInitError::StoreLoad {
+                    data_dir: dir.clone(),
+                    source,
+                }
+            })?;
         }
 
         // Resolve the CC co-location signal (t58-e2 / CC-B) from the environment the desktop shell
@@ -1152,34 +1197,44 @@ impl AppState {
     /// seed config, user/RBAC/privacy/API sidecars, the CAE cache, and the `laws/` archive. Mirrors
     /// [`backup::create_backup`]'s list.
     /// Empty when in-memory.
-    pub(crate) fn instance_sidecars(&self) -> Vec<PathBuf> {
+    pub(crate) fn instance_sidecars(&self) -> Result<Vec<PathBuf>, ApiError> {
         match self.data_dir() {
-            Some(dir) => vec![
-                dir.join(crate::settings::SETTINGS_FILE),
-                dir.join(crate::platform_logs::PLATFORM_LOGS_FILE),
-                dir.join(crate::attestation::VERIFIER_SEED_FILE),
-                dir.join(crate::users::USERS_FILE),
-                dir.join(crate::roles::ROLES_FILE),
-                dir.join(crate::delegations::DELEGATIONS_FILE),
-                dir.join(crate::privacy::DSR_REQUESTS_FILE),
-                dir.join(crate::privacy::PROCESSORS_FILE),
-                dir.join(crate::privacy::DPIAS_FILE),
-                dir.join(crate::privacy::BREACH_PLAYBOOKS_FILE),
-                dir.join(crate::privacy::TRANSFER_CONTROLS_FILE),
-                dir.join(crate::privacy::RETENTION_POLICIES_FILE),
-                dir.join(crate::privacy::RETENTION_EXECUTIONS_FILE),
-                dir.join(crate::privacy::RETENTION_CANDIDATE_RESOLUTIONS_FILE),
-                dir.join(crate::backup_recovery::BACKUP_RECOVERY_DRILLS_FILE),
-                dir.join(crate::notifications::NOTIFICATION_TRIAGE_FILE),
-                dir.join(crate::apikeys::API_KEYS_FILE),
-                dir.join(crate::external_signing::EXTERNAL_SIGNING_ENVELOPES_FILE),
-                dir.join(
-                    crate::external_validator_evidence::EXTERNAL_VALIDATOR_REPORT_METADATA_DIR,
-                ),
-                dir.join(chancela_cae::CACHE_FILE),
-                dir.join(crate::law::LAWS_DIR),
-            ],
-            None => Vec::new(),
+            Some(dir) => {
+                // Backup/restore must never follow a malicious intermediate symlink inside the
+                // opaque-object root. Validate the full tree before handing recursive paths to the
+                // generic archive layer.
+                zk_repository::validate_object_root_path(
+                    &dir.join(zk_repository::ZK_REPOSITORY_DIR),
+                )?;
+                Ok(vec![
+                    dir.join(crate::settings::SETTINGS_FILE),
+                    dir.join(crate::platform_logs::PLATFORM_LOGS_FILE),
+                    dir.join(crate::attestation::VERIFIER_SEED_FILE),
+                    dir.join(crate::users::USERS_FILE),
+                    dir.join(crate::roles::ROLES_FILE),
+                    dir.join(crate::delegations::DELEGATIONS_FILE),
+                    dir.join(crate::privacy::DSR_REQUESTS_FILE),
+                    dir.join(crate::privacy::PROCESSORS_FILE),
+                    dir.join(crate::privacy::DPIAS_FILE),
+                    dir.join(crate::privacy::BREACH_PLAYBOOKS_FILE),
+                    dir.join(crate::privacy::TRANSFER_CONTROLS_FILE),
+                    dir.join(crate::privacy::RETENTION_POLICIES_FILE),
+                    dir.join(crate::privacy::RETENTION_EXECUTIONS_FILE),
+                    dir.join(crate::privacy::RETENTION_CANDIDATE_RESOLUTIONS_FILE),
+                    dir.join(crate::backup_recovery::BACKUP_RECOVERY_DRILLS_FILE),
+                    dir.join(crate::notifications::NOTIFICATION_TRIAGE_FILE),
+                    dir.join(crate::apikeys::API_KEYS_FILE),
+                    dir.join(crate::external_signing::EXTERNAL_SIGNING_ENVELOPES_FILE),
+                    dir.join(crate::connector_jobs::CONNECTOR_TARGETS_FILE),
+                    dir.join(
+                        crate::external_validator_evidence::EXTERNAL_VALIDATOR_REPORT_METADATA_DIR,
+                    ),
+                    dir.join(chancela_cae::CACHE_FILE),
+                    dir.join(crate::law::LAWS_DIR),
+                    dir.join(crate::zk_repository::ZK_REPOSITORY_DIR),
+                ])
+            }
+            None => Ok(Vec::new()),
         }
     }
 
@@ -1194,6 +1249,10 @@ impl AppState {
             .load()
             .map_err(|e| ApiError::Internal(format!("reload after restore failed: {e}")))?;
         *self.entities.write().await = loaded.entities;
+        *self.company_groups.write().await = loaded.company_groups;
+        *self.group_template_libraries.write().await = loaded.group_template_libraries;
+        *self.group_template_library_revisions.write().await =
+            loaded.group_template_library_revisions;
         *self.books.write().await = loaded.books;
         *self.acts.write().await = loaded.acts;
         *self.follow_ups.write().await = loaded.follow_ups;
@@ -1272,6 +1331,8 @@ impl AppState {
                 &dir.join(external_signing::EXTERNAL_SIGNING_ENVELOPES_FILE),
             )
             .unwrap_or_default();
+            *self.connector_targets.write().await =
+                connector_jobs::load_targets(&dir.join(connector_jobs::CONNECTOR_TARGETS_FILE));
             *self.external_validator_report_metadata.write().await =
                 external_validator_evidence::load_external_validator_report_metadata(
                     &dir.join(external_validator_evidence::EXTERNAL_VALIDATOR_REPORT_METADATA_DIR),
@@ -1283,6 +1344,7 @@ impl AppState {
             self.attestations.write().await.clear();
             *self.cae.write().await = chancela_cae::load_catalog(Some(&dir));
             *self.law_store.write().await = law::load_law_store(&dir.join(law::LAWS_DIR));
+            self.zk_repositories.write().await.reload()?;
         }
         Ok(())
     }
@@ -1291,6 +1353,9 @@ impl AppState {
     /// documents) to match a `BackendDomain` wipe or a whole-instance start-over (the ledger is
     /// preserved / re-seeded by the store, never touched here).
     pub(crate) async fn clear_domain_memory(&self) {
+        self.company_groups.write().await.clear();
+        self.group_template_libraries.write().await.clear();
+        self.group_template_library_revisions.write().await.clear();
         self.entities.write().await.clear();
         self.books.write().await.clear();
         self.acts.write().await.clear();
@@ -1302,6 +1367,13 @@ impl AppState {
         self.pending_signatures.write().await.clear();
         self.external_signer_invites.write().await.clear();
         self.external_signing_envelopes.write().await.clear();
+        // ZK repositories are domain data. Removing the sidecar here prevents a successful domain
+        // wipe/start-over from resurrecting opaque objects on the next process restart.
+        if let Err(error) = self.zk_repositories.write().await.clear_persisted()
+            && !matches!(error, ApiError::Unprocessable(_))
+        {
+            eprintln!("warning: failed to clear zero-knowledge repository storage: {error:?}");
+        }
     }
 
     /// Clear ALL in-memory state to a blank first-run instance, to match a `BackendFactory` reset
@@ -1324,6 +1396,7 @@ impl AppState {
         self.attestations.write().await.clear();
         self.api_keys.write().await.clear();
         self.external_signing_envelopes.write().await.clear();
+        self.connector_targets.write().await.clear();
         self.external_validator_report_metadata
             .write()
             .await
@@ -1391,10 +1464,10 @@ impl AppState {
     /// The data directory `from_env` would use, or `None` for in-memory. Exposed so a binary can
     /// report the resolved path in its startup banner.
     pub fn resolve_data_dir() -> Option<PathBuf> {
-        if let Ok(raw) = std::env::var(DATA_DIR_ENV) {
-            if !raw.trim().is_empty() {
-                return Some(PathBuf::from(raw));
-            }
+        if let Ok(raw) = std::env::var(DATA_DIR_ENV)
+            && !raw.trim().is_empty()
+        {
+            return Some(PathBuf::from(raw));
         }
         let start = std::env::current_dir().ok()?;
         for base in start.ancestors() {
@@ -1461,6 +1534,89 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/v1/entities/{id}/chronology",
             get(chronology::get_entity_chronology),
+        )
+        .route(
+            "/v1/tenants/{tenant_id}/groups",
+            get(groups::list_groups).post(groups::create_group),
+        )
+        .route(
+            "/v1/tenants/{tenant_id}/groups/{group_id}",
+            get(groups::get_group)
+                .patch(groups::patch_group)
+                .delete(groups::archive_group),
+        )
+        .route(
+            "/v1/tenants/{tenant_id}/groups/{group_id}/entities/{entity_id}",
+            put(groups::assign_entity).delete(groups::remove_entity),
+        )
+        .route(
+            "/v1/tenants/{tenant_id}/groups/{group_id}/dashboard",
+            get(groups::group_dashboard),
+        )
+        .route(
+            "/v1/tenants/{tenant_id}/groups/{group_id}/template-libraries",
+            get(groups::list_template_libraries).post(groups::create_template_library),
+        )
+        .route(
+            "/v1/tenants/{tenant_id}/groups/{group_id}/template-libraries/{library_id}",
+            get(groups::get_template_library)
+                .patch(groups::patch_template_library)
+                .delete(groups::archive_template_library),
+        )
+        .route(
+            "/v1/tenants/{tenant_id}/groups/{group_id}/template-libraries/{library_id}/revisions",
+            post(groups::append_template_library_revision),
+        )
+        .route(
+            "/v1/tenants/{tenant_id}/groups/{group_id}/template-libraries/{library_id}/history",
+            get(groups::template_library_history),
+        )
+        .route(
+            "/v1/tenants/{tenant_id}/groups/{group_id}/template-libraries/{library_id}/revisions/{revision}",
+            get(groups::get_template_library_revision),
+        )
+        .route(
+            "/v1/tenants/{tenant_id}/repository-policy",
+            get(zk_repository::get_tenant_repository_policy)
+                .put(zk_repository::put_tenant_repository_policy)
+                .delete(zk_repository::delete_tenant_repository_policy),
+        )
+        .route(
+            "/v1/tenants/{tenant_id}/repositories",
+            get(zk_repository::list_repositories).post(zk_repository::create_repository),
+        )
+        .route(
+            "/v1/tenants/{tenant_id}/repositories/{repository_id}",
+            get(zk_repository::get_repository)
+                .patch(zk_repository::patch_repository)
+                .delete(zk_repository::delete_repository),
+        )
+        .route(
+            "/v1/tenants/{tenant_id}/repositories/{repository_id}/uploads",
+            post(zk_repository::create_object_upload),
+        )
+        .route(
+            "/v1/tenants/{tenant_id}/repositories/{repository_id}/uploads/{upload_id}/ciphertext",
+            put(zk_repository::upload_object_ciphertext)
+                .layer(DefaultBodyLimit::max(zk_repository::ZK_BLOB_MAX_BYTES)),
+        )
+        .route(
+            "/v1/tenants/{tenant_id}/repositories/{repository_id}/objects",
+            get(zk_repository::list_object_versions),
+        )
+        .route(
+            "/v1/tenants/{tenant_id}/repositories/{repository_id}/objects/{object_id}/versions/{version}/manifest",
+            get(zk_repository::get_object_manifest),
+        )
+        .route(
+            "/v1/tenants/{tenant_id}/repositories/{repository_id}/objects/{object_id}/versions/{version}/ciphertext",
+            get(zk_repository::get_object_ciphertext),
+        )
+        .route(
+            "/v1/tenants/{tenant_id}/repositories/{repository_id}/objects/{object_id}/versions/{version}/readability-package",
+            post(zk_repository::create_readability_package).layer(DefaultBodyLimit::max(
+                zk_repository::ZK_READABILITY_REQUEST_MAX_BYTES,
+            )),
         )
         .route(
             "/v1/registry/lookup",
@@ -1856,6 +2012,49 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/v1/sync/handoff-preflight",
             get(sync_handoff::get_sync_handoff_preflight),
+        )
+        .route(
+            "/v1/tenants/{tenant_id}/connector-targets",
+            get(connector_jobs::list_targets)
+                .post(connector_jobs::create_target)
+                .layer(DefaultBodyLimit::max(
+                    connector_jobs::CONNECTOR_REQUEST_BYTES,
+                )),
+        )
+        .route(
+            "/v1/tenants/{tenant_id}/connector-targets/{target_id}",
+            get(connector_jobs::get_target)
+                .patch(connector_jobs::patch_target)
+                .delete(connector_jobs::archive_target)
+                .layer(DefaultBodyLimit::max(
+                    connector_jobs::CONNECTOR_REQUEST_BYTES,
+                )),
+        )
+        .route(
+            "/v1/tenants/{tenant_id}/connector-targets/{target_id}/probe",
+            post(connector_jobs::probe_target),
+        )
+        .route(
+            "/v1/tenants/{tenant_id}/connector-targets/{target_id}/run",
+            post(connector_jobs::run_target).layer(DefaultBodyLimit::max(
+                connector_jobs::CONNECTOR_REQUEST_BYTES,
+            )),
+        )
+        .route(
+            "/v1/tenants/{tenant_id}/connector-jobs",
+            get(connector_jobs::list_jobs),
+        )
+        .route(
+            "/v1/tenants/{tenant_id}/connector-jobs/{job_id}",
+            get(connector_jobs::get_job),
+        )
+        .route(
+            "/v1/tenants/{tenant_id}/connector-jobs/{job_id}/cancel",
+            post(connector_jobs::cancel_job),
+        )
+        .route(
+            "/v1/tenants/{tenant_id}/connector-jobs/{job_id}/retry",
+            post(connector_jobs::retry_job),
         )
         .route("/v1/books/{id}/export", post(bundles::export_book))
         .route(
@@ -2483,10 +2682,8 @@ fn rate_limit_client_ip(
     request: &axum::http::Request<axum::body::Body>,
     trust_forwarded_for: bool,
 ) -> IpAddr {
-    if trust_forwarded_for {
-        if let Some(ip) = forwarded_client_ip(request.headers()) {
-            return ip;
-        }
+    if trust_forwarded_for && let Some(ip) = forwarded_client_ip(request.headers()) {
+        return ip;
     }
     request
         .extensions()
@@ -2498,10 +2695,10 @@ fn rate_limit_client_ip(
 /// Extract a client IP from the proxy forwarding headers (`X-Real-IP`, then the left-most
 /// `X-Forwarded-For` entry). Only consulted when the proxy is explicitly trusted.
 fn forwarded_client_ip(headers: &axum::http::HeaderMap) -> Option<IpAddr> {
-    if let Some(real) = headers.get("x-real-ip").and_then(|v| v.to_str().ok()) {
-        if let Ok(ip) = real.trim().parse::<IpAddr>() {
-            return Some(ip);
-        }
+    if let Some(real) = headers.get("x-real-ip").and_then(|v| v.to_str().ok())
+        && let Ok(ip) = real.trim().parse::<IpAddr>()
+    {
+        return Some(ip);
     }
     let forwarded = headers
         .get("x-forwarded-for")

@@ -182,33 +182,6 @@ pub(crate) async fn observe(
     response
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn metric_method_label_preserves_common_methods() {
-        assert_eq!(metric_method_label(&Method::GET), "GET");
-        assert_eq!(metric_method_label(&Method::POST), "POST");
-        assert_eq!(metric_method_label(&Method::PUT), "PUT");
-        assert_eq!(metric_method_label(&Method::DELETE), "DELETE");
-        assert_eq!(metric_method_label(&Method::PATCH), "PATCH");
-        assert_eq!(metric_method_label(&Method::HEAD), "HEAD");
-        assert_eq!(metric_method_label(&Method::OPTIONS), "OPTIONS");
-        assert_eq!(metric_method_label(&Method::TRACE), "TRACE");
-        assert_eq!(metric_method_label(&Method::CONNECT), "CONNECT");
-    }
-
-    #[test]
-    fn metric_method_label_collapses_extension_methods() {
-        let first = Method::from_bytes(b"M000001").expect("valid extension method");
-        let second = Method::from_bytes(b"M000002").expect("valid extension method");
-
-        assert_eq!(metric_method_label(&first), "OTHER");
-        assert_eq!(metric_method_label(&second), "OTHER");
-    }
-}
-
 /// `GET /metrics` — Prometheus text exposition (v0.0.4).
 ///
 /// Refreshes a few cheap application gauges from live state on every scrape — reusing exactly the
@@ -224,10 +197,10 @@ pub(crate) async fn metrics_endpoint(State(state): State<AppState>) -> Response 
     let degraded = *state.degraded.read().await;
     gauge!("chancela_ledger_length").set(ledger_length);
     gauge!("chancela_degraded").set(if degraded { 1.0 } else { 0.0 });
-    if let Some(lag) = state.cluster_read_lag().await {
-        if let Some(events_behind) = lag.lag {
-            gauge!("chancela_cluster_follower_lag_events").set(events_behind as f64);
-        }
+    if let Some(lag) = state.cluster_read_lag().await
+        && let Some(events_behind) = lag.lag
+    {
+        gauge!("chancela_cluster_follower_lag_events").set(events_behind as f64);
     }
 
     (
@@ -264,5 +237,32 @@ pub(crate) async fn readyz(State(state): State<AppState>) -> impl IntoResponse {
         )
     } else {
         (StatusCode::OK, "ready")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn metric_method_label_preserves_common_methods() {
+        assert_eq!(metric_method_label(&Method::GET), "GET");
+        assert_eq!(metric_method_label(&Method::POST), "POST");
+        assert_eq!(metric_method_label(&Method::PUT), "PUT");
+        assert_eq!(metric_method_label(&Method::DELETE), "DELETE");
+        assert_eq!(metric_method_label(&Method::PATCH), "PATCH");
+        assert_eq!(metric_method_label(&Method::HEAD), "HEAD");
+        assert_eq!(metric_method_label(&Method::OPTIONS), "OPTIONS");
+        assert_eq!(metric_method_label(&Method::TRACE), "TRACE");
+        assert_eq!(metric_method_label(&Method::CONNECT), "CONNECT");
+    }
+
+    #[test]
+    fn metric_method_label_collapses_extension_methods() {
+        let first = Method::from_bytes(b"M000001").expect("valid extension method");
+        let second = Method::from_bytes(b"M000002").expect("valid extension method");
+
+        assert_eq!(metric_method_label(&first), "OTHER");
+        assert_eq!(metric_method_label(&second), "OTHER");
     }
 }

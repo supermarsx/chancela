@@ -16,7 +16,8 @@
 //! - **The leader is strongly consistent** — it is the sole writer and serves reads from the exact
 //!   chain it just extended.
 //! - **A follower serves covered read models from a verified prefix.** This phase covers the ledger,
-//!   entities, books, acts, follow-ups, registry extracts, and signed-document projection. It does
+//!   company groups/template libraries, entities, books, acts, follow-ups, registry extracts, and
+//!   the signed-document projection. It does
 //!   **not** refresh file-backed sidecars such as settings, users, roles, delegations, privacy
 //!   registers, or law-cache state; `/health.cluster.read_model_scope` says this explicitly. When the
 //!   database is reachable and the aggregate snapshot/reload succeeds, observed lag is normally
@@ -52,7 +53,8 @@
 //! - **Extends the ledger incrementally** on success (no full `store.load`) by adopting the already-
 //!   persisted, hash-bearing tail events and re-verifying (the seam plus the whole chain).
 //!
-//! Core aggregate read-models (`entities`/`books`/`acts`/…) are hydrated from their own tables, not
+//! Core aggregate read-models (`company_groups`/`entities`/`books`/`acts`/…) are hydrated from
+//! their own tables, not
 //! from ledger events, so before publishing a verified ledger tail the follower also fetches them via
 //! [`chancela_store::Store::cluster_load_aggregates`] — the plan's sanctioned **simple v1** refresh
 //! (`O(aggregates)`, events-free). If that refresh fails, the candidate ledger is not published; the
@@ -330,7 +332,8 @@ impl AppState {
 
     /// wp16 P1 — fetch the bounded aggregate read-models that must move forward with an accepted
     /// ledger delta (plan §2.3 simple v1): events-free re-read of
-    /// `entities`/`books`/`acts`/`registry_extracts`/`follow_ups` plus the signed-document read model.
+    /// groups/template libraries plus `entities`/`books`/`acts`/`registry_extracts`/`follow_ups`
+    /// and the signed-document read model.
     /// The caller publishes nothing if this fails; it falls back to a full durable reload instead.
     #[cfg(feature = "postgres")]
     async fn cluster_load_feed_snapshot(
@@ -367,6 +370,10 @@ impl AppState {
     /// advanced by this feed while the aggregate maps are still from the prior head.
     #[cfg(feature = "postgres")]
     async fn cluster_swap_delta_state(&self, ledger: Ledger, snapshot: FeedSnapshot) {
+        let mut company_groups = self.company_groups.write().await;
+        let mut group_template_libraries = self.group_template_libraries.write().await;
+        let mut group_template_library_revisions =
+            self.group_template_library_revisions.write().await;
         let mut entities = self.entities.write().await;
         let mut books = self.books.write().await;
         let mut acts = self.acts.write().await;
@@ -375,6 +382,9 @@ impl AppState {
         let mut signed_documents = self.signed_documents.write().await;
         let mut live_ledger = self.ledger.write().await;
 
+        *company_groups = snapshot.aggregates.company_groups;
+        *group_template_libraries = snapshot.aggregates.group_template_libraries;
+        *group_template_library_revisions = snapshot.aggregates.group_template_library_revisions;
         *entities = snapshot.aggregates.entities;
         *books = snapshot.aggregates.books;
         *acts = snapshot.aggregates.acts;
@@ -433,6 +443,10 @@ impl AppState {
         loaded: chancela_store::LoadedState,
         signed_documents_snapshot: HashMap<ActId, StoredSignedDocument>,
     ) {
+        let mut company_groups = self.company_groups.write().await;
+        let mut group_template_libraries = self.group_template_libraries.write().await;
+        let mut group_template_library_revisions =
+            self.group_template_library_revisions.write().await;
         let mut entities = self.entities.write().await;
         let mut books = self.books.write().await;
         let mut acts = self.acts.write().await;
@@ -441,6 +455,9 @@ impl AppState {
         let mut signed_documents = self.signed_documents.write().await;
         let mut ledger = self.ledger.write().await;
 
+        *company_groups = loaded.company_groups;
+        *group_template_libraries = loaded.group_template_libraries;
+        *group_template_library_revisions = loaded.group_template_library_revisions;
         *entities = loaded.entities;
         *books = loaded.books;
         *acts = loaded.acts;

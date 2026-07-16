@@ -657,9 +657,10 @@ impl CredentialSecretStore {
             .try_fill_bytes(&mut nonce)
             .map_err(|e| SecretStoreError::Random(rng_error(e)))?;
         let aad = build_aad(mode, provider_id, entry_id, field_name, version);
+        let aead_nonce = XNonce::from(nonce);
         let ciphertext = cipher
             .encrypt(
-                XNonce::from_slice(&nonce),
+                &aead_nonce,
                 Payload {
                     msg: plaintext,
                     aad: &aad,
@@ -701,6 +702,8 @@ impl CredentialSecretStore {
         if nonce.len() != NONCE_BYTES {
             return Err(SecretStoreError::Crypto("credential nonce is not 24 bytes"));
         }
+        let nonce = <&XNonce>::try_from(nonce.as_slice())
+            .map_err(|_| SecretStoreError::Crypto("credential nonce is not 24 bytes"))?;
         let ciphertext = B64
             .decode(&envelope.ciphertext_b64)
             .map_err(|_| SecretStoreError::Crypto("credential ciphertext is not valid base64"))?;
@@ -714,7 +717,7 @@ impl CredentialSecretStore {
         );
         let mut plaintext = cipher
             .decrypt(
-                XNonce::from_slice(&nonce),
+                nonce,
                 Payload { msg: &ciphertext, aad: &aad },
             )
             .map_err(|_| {
@@ -1039,14 +1042,14 @@ fn write_root_envelope(
     path: &Path,
     envelope: &SealedRootEnvelope,
 ) -> Result<bool, SecretStoreError> {
-    if let Some(parent) = path.parent() {
-        if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent).map_err(|source| SecretStoreError::Io {
-                action: "create directory for",
-                path: path.to_path_buf(),
-                source,
-            })?;
-        }
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent).map_err(|source| SecretStoreError::Io {
+            action: "create directory for",
+            path: path.to_path_buf(),
+            source,
+        })?;
     }
 
     let bytes =
@@ -1469,9 +1472,10 @@ impl SubjectDekCrypto {
             .try_fill_bytes(&mut nonce)
             .map_err(|e| SubjectDekError::Random(rng_error(e)))?;
         let aad = build_subject_aad(subject_id, SUBJECT_DEK_FIELD, version);
+        let aead_nonce = XNonce::from(nonce);
         let ciphertext = cipher
             .encrypt(
-                XNonce::from_slice(&nonce),
+                &aead_nonce,
                 Payload {
                     msg: &dek[..],
                     aad: &aad,
@@ -1511,6 +1515,8 @@ impl SubjectDekCrypto {
         }
         let version = u32::from_be_bytes([wrapped[0], wrapped[1], wrapped[2], wrapped[3]]);
         let nonce = &wrapped[4..4 + NONCE_BYTES];
+        let nonce = <&XNonce>::try_from(nonce)
+            .map_err(|_| SubjectDekError::Malformed("subject nonce is not 24 bytes"))?;
         let ciphertext = &wrapped[4 + NONCE_BYTES..];
 
         let wrap_key = self.subject_wrap_key(subject_id);
@@ -1519,7 +1525,7 @@ impl SubjectDekCrypto {
         let aad = build_subject_aad(subject_id, SUBJECT_DEK_FIELD, version);
         let mut plaintext = cipher
             .decrypt(
-                XNonce::from_slice(nonce),
+                nonce,
                 Payload {
                     msg: ciphertext,
                     aad: &aad,
@@ -1562,9 +1568,10 @@ impl SubjectDekCrypto {
             .try_fill_bytes(&mut nonce)
             .map_err(|e| SubjectDekError::Random(rng_error(e)))?;
         let aad = build_subject_aad(subject_id, field, version);
+        let aead_nonce = XNonce::from(nonce);
         let ciphertext = cipher
             .encrypt(
-                XNonce::from_slice(&nonce),
+                &aead_nonce,
                 Payload {
                     msg: plaintext,
                     aad: &aad,
@@ -1598,6 +1605,8 @@ impl SubjectDekCrypto {
         if nonce.len() != NONCE_BYTES {
             return Err(SubjectDekError::Malformed("subject nonce is not 24 bytes"));
         }
+        let nonce = <&XNonce>::try_from(nonce.as_slice())
+            .map_err(|_| SubjectDekError::Malformed("subject nonce is not 24 bytes"))?;
         let ciphertext = B64
             .decode(&env.ciphertext_b64)
             .map_err(|_| SubjectDekError::Malformed("subject ciphertext is not valid base64"))?;
@@ -1605,7 +1614,7 @@ impl SubjectDekCrypto {
         let aad = build_subject_aad(subject_id, field, env.key_version);
         let plaintext = cipher
             .decrypt(
-                XNonce::from_slice(&nonce),
+                nonce,
                 Payload {
                     msg: &ciphertext,
                     aad: &aad,

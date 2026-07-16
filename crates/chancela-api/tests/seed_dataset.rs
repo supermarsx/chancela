@@ -482,16 +482,15 @@ async fn fill_act(state: &AppState, token: &str, act_id: &str, channel: &str, co
     });
 
     // Merge the condominium permilagem into the second signatory slot.
-    if condominium {
-        if let (Some(sigs), Some(extra)) = (
+    if condominium
+        && let (Some(sigs), Some(extra)) = (
             patch["signatories"].as_array_mut(),
             signatory_extra.as_object(),
-        ) {
-            if let Some(slot) = sigs.get_mut(1).and_then(|s| s.as_object_mut()) {
-                for (k, v) in extra {
-                    slot.insert(k.clone(), v.clone());
-                }
-            }
+        )
+        && let Some(slot) = sigs.get_mut(1).and_then(|s| s.as_object_mut())
+    {
+        for (k, v) in extra {
+            slot.insert(k.clone(), v.clone());
         }
     }
 

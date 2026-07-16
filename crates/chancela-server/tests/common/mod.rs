@@ -244,10 +244,10 @@ impl ServerHarness {
                 json!({ "user_id": user_id, "password": password }),
             )
             .await;
-        if status == 200 {
-            if let Some(t) = s["token"].as_str() {
-                self.set_default_token(t);
-            }
+        if status == 200
+            && let Some(t) = s["token"].as_str()
+        {
+            self.set_default_token(t);
         }
     }
 
@@ -274,10 +274,9 @@ impl ServerHarness {
                 .get(format!("{}/health", self.base_url))
                 .send()
                 .await
+                && resp.status().is_success()
             {
-                if resp.status().is_success() {
-                    return;
-                }
+                return;
             }
             if Instant::now() >= deadline {
                 panic!("server at {} not ready within 20s", self.base_url);

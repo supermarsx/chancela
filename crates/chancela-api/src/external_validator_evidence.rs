@@ -507,10 +507,10 @@ fn parse_declared_raw_report(
         external_validator_raw_report_archive_path(case_id, validator_family, &content_type)?;
     let suggested_path = optional_text(object.get("suggested_path"))
         .or_else(|| optional_text(object.get("archive_path")));
-    if let Some(path) = suggested_path.as_deref() {
-        if !valid_raw_report_archive_path(path, case_id, validator_family, &content_type) {
-            return None;
-        }
+    if let Some(path) = suggested_path.as_deref()
+        && !valid_raw_report_archive_path(path, case_id, validator_family, &content_type)
+    {
+        return None;
     }
     let bytes = match optional_text(object.get("content_base64")) {
         Some(encoded) => {
@@ -946,10 +946,10 @@ fn write_external_validator_report_metadata_atomic(
     path: &Path,
     bytes: &[u8],
 ) -> std::io::Result<()> {
-    if let Some(parent) = path.parent() {
-        if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent)?;
-        }
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent)?;
     }
     let tmp = tmp_path(path);
     std::fs::write(&tmp, bytes)?;

@@ -299,6 +299,7 @@ impl From<SealError> for ApiError {
                 "manual_signature_original_reference is required for manual-signature sealing"
                     .to_owned(),
             ),
+            SealError::InvalidSignatureEvidence(msg) => ApiError::Unprocessable(msg),
             SealError::Serialize(msg) => ApiError::Internal(msg),
         }
     }

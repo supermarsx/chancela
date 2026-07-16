@@ -2303,10 +2303,10 @@ fn neutral_logical_usage(sqlite_usage: &[ConcernUsage]) -> Vec<ConcernUsage> {
             if let Some(stats) = concern.payload_stats.as_mut() {
                 stats.estimate_basis = UsageBasis::LogicalPayload;
             }
-            if concern.kind == Some(UsageConcernKind::SqliteLogicalTable) {
-                if let Some(table) = concern.relative_roots.first() {
-                    concern.label = format!("Database table: {table}");
-                }
+            if concern.kind == Some(UsageConcernKind::SqliteLogicalTable)
+                && let Some(table) = concern.relative_roots.first()
+            {
+                concern.label = format!("Database table: {table}");
             }
             concern
         })

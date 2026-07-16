@@ -254,7 +254,7 @@ pub async fn create_envelope(
     let act_id = ActId(id);
     let scope = scope_of_act(&state, act_id).await;
     require_permission(&state, &actor, Permission::SigningPerform, scope).await?;
-    ensure_act_exists(&state, act_id).await?;
+    crate::signature::require_act_signing(&state, act_id).await?;
     let actor_name = actor.resolve(req.actor.as_deref().unwrap_or("api"));
 
     let slots = req
@@ -335,6 +335,7 @@ pub async fn get_envelope(
     let envelope = find_envelope(&state, ExternalSignatureEnvelopeId(id)).await?;
     let scope = scope_of_act(&state, envelope.act_id).await;
     require_permission(&state, &actor, Permission::SigningPerform, scope).await?;
+    crate::signature::require_act_signing(&state, envelope.act_id).await?;
     Ok(Json(EnvelopeView::from(&envelope)))
 }
 
@@ -422,6 +423,7 @@ pub(crate) async fn prepare_envelope_slot_for_external_invite(
     envelope_id: ExternalSignatureEnvelopeId,
     slot_id: ExternalSignerSlotId,
 ) -> Result<PreparedExternalInviteSlotInitiation, ApiError> {
+    crate::signature::require_act_signing(state, act_id).await?;
     let previous = find_envelope(state, envelope_id).await?;
     if previous.act_id != act_id || previous.slot(slot_id).is_none() {
         return Err(ApiError::NotFound);
@@ -489,6 +491,7 @@ pub(crate) async fn sign_linked_external_invite_slot_from_signed_pdf(
     state: &AppState,
     req: LinkedExternalInviteSlotSignedPdfEvidence<'_>,
 ) -> Result<LinkedExternalInviteSlotSignOutcome, ApiError> {
+    crate::signature::require_act_signing(state, req.act_id).await?;
     let digest = crate::hex::parse_hex32(req.signed_pdf_digest).ok_or_else(|| {
         ApiError::Internal("stored signed PDF digest is not a SHA-256 hex digest".to_owned())
     })?;
@@ -602,10 +605,10 @@ pub(crate) fn write_envelopes_atomic(
     path: &FsPath,
     envelopes: &HashMap<ExternalSignatureEnvelopeId, ExternalSignatureEnvelope>,
 ) -> std::io::Result<()> {
-    if let Some(parent) = path.parent() {
-        if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent)?;
-        }
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent)?;
     }
     let mut list: Vec<&ExternalSignatureEnvelope> = envelopes.values().collect();
     list.sort_by(|a, b| a.act_id.0.cmp(&b.act_id.0).then(a.id.0.cmp(&b.id.0)));

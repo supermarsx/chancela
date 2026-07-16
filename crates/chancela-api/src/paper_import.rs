@@ -2133,12 +2133,12 @@ fn validate_candidate(
     let source_filename = optional_plain_ref(req.source_filename, "source_filename")?;
     let digest = optional_digest(req.digest)?;
     let notes = optional_text(req.notes, "notes")?;
-    if let Some(notes) = notes.as_ref() {
-        if notes.chars().count() > MAX_NOTES_CHARS {
-            return Err(ApiError::Unprocessable(format!(
-                "notes must be at most {MAX_NOTES_CHARS} characters"
-            )));
-        }
+    if let Some(notes) = notes.as_ref()
+        && notes.chars().count() > MAX_NOTES_CHARS
+    {
+        return Err(ApiError::Unprocessable(format!(
+            "notes must be at most {MAX_NOTES_CHARS} characters"
+        )));
     }
 
     let fields = [
@@ -2756,12 +2756,12 @@ fn validate_ocr_page_spans(
 }
 
 fn validate_confidence(confidence: Option<f64>) -> Result<Option<f64>, ApiError> {
-    if let Some(value) = confidence {
-        if !value.is_finite() || !(0.0..=1.0).contains(&value) {
-            return Err(ApiError::Unprocessable(
-                "OCR draft confidence must be between 0 and 1".to_owned(),
-            ));
-        }
+    if let Some(value) = confidence
+        && (!value.is_finite() || !(0.0..=1.0).contains(&value))
+    {
+        return Err(ApiError::Unprocessable(
+            "OCR draft confidence must be between 0 and 1".to_owned(),
+        ));
     }
     Ok(confidence)
 }
@@ -3495,16 +3495,16 @@ fn parse_args_template_env(raw: &str) -> Vec<String> {
     if raw.is_empty() {
         return vec![DEFAULT_OCR_ARGS_TEMPLATE.to_owned()];
     }
-    if raw.starts_with('[') {
-        if let Ok(args) = serde_json::from_str::<Vec<String>>(raw) {
-            let args: Vec<String> = args
-                .into_iter()
-                .map(|arg| arg.trim().to_owned())
-                .filter(|arg| !arg.is_empty())
-                .collect();
-            if !args.is_empty() {
-                return args;
-            }
+    if raw.starts_with('[')
+        && let Ok(args) = serde_json::from_str::<Vec<String>>(raw)
+    {
+        let args: Vec<String> = args
+            .into_iter()
+            .map(|arg| arg.trim().to_owned())
+            .filter(|arg| !arg.is_empty())
+            .collect();
+        if !args.is_empty() {
+            return args;
         }
     }
     raw.split_whitespace().map(str::to_owned).collect()

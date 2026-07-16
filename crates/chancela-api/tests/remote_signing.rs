@@ -215,15 +215,15 @@ impl SmartCscTransport {
     }
 
     fn assert_expected_auth(&self, path: &str, auth: CscAuthHeader<'_>) -> Result<(), CscError> {
-        if let Some(expected) = &self.expected_basic_client_id {
-            if path == rest::PATH_OAUTH2_TOKEN {
-                match auth {
-                    CscAuthHeader::Basic { client_id, .. } if client_id == expected => {}
-                    _ => {
-                        return Err(CscError::Transport(
-                            "unexpected CSC client credential source".to_owned(),
-                        ));
-                    }
+        if let Some(expected) = &self.expected_basic_client_id
+            && path == rest::PATH_OAUTH2_TOKEN
+        {
+            match auth {
+                CscAuthHeader::Basic { client_id, .. } if client_id == expected => {}
+                _ => {
+                    return Err(CscError::Transport(
+                        "unexpected CSC client credential source".to_owned(),
+                    ));
                 }
             }
         }

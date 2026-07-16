@@ -425,7 +425,7 @@ pub fn assemble_pkcs12_input(
 /// Decode a lower/upper-case hex string into bytes, or `None` if it is malformed (odd length or a
 /// non-hex digit).
 fn decode_hex(hex: &str) -> Option<Vec<u8>> {
-    if hex.len() % 2 != 0 {
+    if !hex.len().is_multiple_of(2) {
         return None;
     }
     let mut out = Vec::with_capacity(hex.len() / 2);

@@ -130,6 +130,7 @@ pub async fn sign_local_pkcs12_stored_signature(
     // RBAC first, before any store access, for a clean 403.
     let scope = scope_of_act(&state, ActId(id)).await;
     require_permission(&state, &actor, Permission::SigningPerform, scope).await?;
+    signature::require_act_signing(&state, ActId(id)).await?;
 
     // Cheap parity with the upload path: local software-certificate signing is a desktop-only flow.
     if !state.local_signing {
@@ -550,17 +551,21 @@ mod tests {
         let bmp = bmp_password(password);
         let encrypted_certs =
             p12::EncryptedData::from_safe_bags(&cert_bags, &bmp).expect("encrypt merged cert bags");
+        // `p12` 0.6.3 (the latest release) still uses yasna 0.5 internally. Obtain its complete
+        // SafeContents DER through the public encrypt/decrypt helpers, then embed complete DER
+        // objects with current yasna. This avoids coupling the fixture to p12's private writer type.
+        let key_safe_contents = p12::EncryptedData::from_safe_bags(&key_bags, &bmp)
+            .and_then(|encrypted| encrypted.data(&bmp))
+            .expect("encode merged key bags");
+        let content_infos = [
+            p12::ContentInfo::EncryptedData(encrypted_certs).to_der(),
+            p12::ContentInfo::Data(key_safe_contents).to_der(),
+        ];
         let contents = yasna::construct_der(|w| {
             w.write_sequence_of(|w| {
-                p12::ContentInfo::EncryptedData(encrypted_certs).write(w.next());
-                p12::ContentInfo::Data(yasna::construct_der(|w| {
-                    w.write_sequence_of(|w| {
-                        for bag in &key_bags {
-                            bag.write(w.next());
-                        }
-                    })
-                }))
-                .write(w.next());
+                for content_info in &content_infos {
+                    w.next().write_der(content_info);
+                }
             });
         });
         let mac_data = p12::MacData::new(&contents, &bmp);

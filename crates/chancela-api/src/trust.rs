@@ -1251,13 +1251,13 @@ pub(crate) fn validate_outbound_http_url_metadata(raw_url: &str) -> Result<(), S
             url.scheme()
         ));
     }
-    if let Ok(ip) = host.parse::<IpAddr>() {
-        if is_disallowed_ip(ip) {
-            return Err(format!(
-                "unsafe outbound URL: host '{}' is a disallowed address",
-                strip_url_host_for_error(host)
-            ));
-        }
+    if let Ok(ip) = host.parse::<IpAddr>()
+        && is_disallowed_ip(ip)
+    {
+        return Err(format!(
+            "unsafe outbound URL: host '{}' is a disallowed address",
+            strip_url_host_for_error(host)
+        ));
     }
     Ok(())
 }
@@ -2083,20 +2083,20 @@ fn service_matches_filters(
             return None;
         }
     }
-    if let Some(status) = &filters.status {
-        if !status_matches_filter(&service.status, status) {
-            return None;
-        }
+    if let Some(status) = &filters.status
+        && !status_matches_filter(&service.status, status)
+    {
+        return None;
     }
-    if let Some(history) = &filters.history {
-        if !history_matches_filter(service, history) {
-            return None;
-        }
+    if let Some(history) = &filters.history
+        && !history_matches_filter(service, history)
+    {
+        return None;
     }
-    if let Some(supply_point) = &filters.supply_point {
-        if !supply_point_matches_filter(service, supply_point) {
-            return None;
-        }
+    if let Some(supply_point) = &filters.supply_point
+        && !supply_point_matches_filter(service, supply_point)
+    {
+        return None;
     }
     Some(identifier_match)
 }

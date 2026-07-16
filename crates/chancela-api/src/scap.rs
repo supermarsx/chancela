@@ -227,12 +227,12 @@ pub(crate) fn signer_capacity_evidence_from_request(
                 .to_owned(),
         ));
     }
-    if let Some(capacity) = declared_capacity.map(str::trim).filter(|v| !v.is_empty()) {
-        if capacity != attribute_name {
-            return Err(ApiError::Unprocessable(format!(
-                "capacity '{capacity}' does not match SCAP attribute '{attribute_name}'"
-            )));
-        }
+    if let Some(capacity) = declared_capacity.map(str::trim).filter(|v| !v.is_empty())
+        && capacity != attribute_name
+    {
+        return Err(ApiError::Unprocessable(format!(
+            "capacity '{capacity}' does not match SCAP attribute '{attribute_name}'"
+        )));
     }
 
     let environment = match req.environment {

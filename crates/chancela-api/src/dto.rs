@@ -298,6 +298,8 @@ impl EntityRegistrySummaryView {
 #[derive(Serialize)]
 pub struct EntityView {
     pub id: String,
+    pub tenant_id: String,
+    pub group_id: Option<String>,
     pub name: String,
     pub nipc: String,
     pub nipc_validated: bool,
@@ -377,6 +379,8 @@ impl From<&Entity> for EntityView {
     fn from(e: &Entity) -> Self {
         EntityView {
             id: e.id.to_string(),
+            tenant_id: e.tenant_id.to_string(),
+            group_id: e.group_id.map(|id| id.to_string()),
             name: e.name.clone(),
             nipc: e.nipc.as_str().to_owned(),
             nipc_validated: e.nipc.is_validated(),
@@ -739,6 +743,12 @@ pub struct SealMetadataView {
     pub profile: EntityKind,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub manual_signature_original_reference: Option<ManualSignatureOriginalReferenceView>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signing_snapshot_digest: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signed_pdf_digest: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signature_validation_report_digest: Option<String>,
 }
 
 impl From<&SealMetadata> for SealMetadataView {
@@ -752,6 +762,9 @@ impl From<&SealMetadata> for SealMetadataView {
                 .manual_signature_original_reference
                 .as_ref()
                 .map(ManualSignatureOriginalReferenceView::from),
+            signing_snapshot_digest: metadata.signing_snapshot_digest.clone(),
+            signed_pdf_digest: metadata.signed_pdf_digest.clone(),
+            signature_validation_report_digest: metadata.signature_validation_report_digest.clone(),
         }
     }
 }
@@ -2269,6 +2282,11 @@ pub struct AdvanceAct {
     pub to: ActState,
     #[serde(default = "default_actor")]
     pub actor: String,
+    /// Optional versioned Ata template selected when entering `Signing`. The canonical signing
+    /// snapshot is created exactly once during that transition; later seal requests cannot replace
+    /// it with another template.
+    #[serde(default)]
+    pub template_id: Option<String>,
 }
 
 /// Body of `POST /v1/acts/{id}/human-verification`.
@@ -2384,10 +2402,9 @@ pub struct SealAct {
     /// This is immutable reference metadata only; it carries no validation/certification claim.
     #[serde(default)]
     pub manual_signature_original_reference: Option<ManualSignatureOriginalReferenceInput>,
-    /// Optional ata-subtype override (t53): the specific `Ata`-stage template id to generate for
-    /// this seal instead of the family's spine ata (e.g. `"csc-ata-aprovacao-contas/v1"`). Additive;
-    /// absent ⇒ the deterministic spine default. An unknown or non-`Ata`/cross-family id is rejected
-    /// (`422`), never silently defaulted.
+    /// Optional ata-subtype assertion retained for wire compatibility. The canonical Ata is now
+    /// selected and generated when the act enters `Signing`; when this field is present at seal it
+    /// must match that frozen snapshot and never causes regeneration or replacement.
     #[serde(default)]
     pub template_id: Option<String>,
 }
@@ -2575,6 +2592,10 @@ pub struct DashboardResponse {
     pub acts_awaiting_signature: usize,
     pub acts_sealed: usize,
     pub unresolved_compliance: usize,
+    /// Failed durable connector sync jobs visible to this globally authorized dashboard reader.
+    pub failed_sync_jobs: usize,
+    /// Queued/running/retryable durable backup jobs visible to this globally authorized reader.
+    pub pending_backup_jobs: usize,
     pub ledger_length: u64,
     pub ledger_valid: bool,
     pub current_work: DashboardCurrentWork,

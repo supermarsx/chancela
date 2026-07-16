@@ -423,12 +423,12 @@ async fn select_all_filtered_ledger_events(
             },
         )
         .await?;
-        if let Some(cap) = record_cap {
-            if events.len().saturating_add(page.events.len()) > cap {
-                return Err(ApiError::Unprocessable(format!(
-                    "all_filtered PDF/A ledger archive exports are capped at {cap} records to bound memory use; narrow the filters or export JSON, CSV, TXT, or HTML for a streamed all-filtered audit/interchange file. No records were truncated."
-                )));
-            }
+        if let Some(cap) = record_cap
+            && events.len().saturating_add(page.events.len()) > cap
+        {
+            return Err(ApiError::Unprocessable(format!(
+                "all_filtered PDF/A ledger archive exports are capped at {cap} records to bound memory use; narrow the filters or export JSON, CSV, TXT, or HTML for a streamed all-filtered audit/interchange file. No records were truncated."
+            )));
         }
         events.extend(page.events);
         if !page.has_more {

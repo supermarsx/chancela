@@ -797,15 +797,15 @@ async fn build_book_archive_package(
             JSON_CONTENT_TYPE,
             attachment.bytes.clone(),
         ));
-        if let Some(raw_report) = &attachment.raw_report {
-            if let (Some(path), Some(bytes)) = (&raw_report.archive_path, &raw_report.bytes) {
-                files.push(PackageFileInput::new(
-                    path.clone(),
-                    PackageFileRole::EvidenceReport,
-                    raw_report.content_type.clone(),
-                    bytes.clone(),
-                ));
-            }
+        if let Some(raw_report) = &attachment.raw_report
+            && let (Some(path), Some(bytes)) = (&raw_report.archive_path, &raw_report.bytes)
+        {
+            files.push(PackageFileInput::new(
+                path.clone(),
+                PackageFileRole::EvidenceReport,
+                raw_report.content_type.clone(),
+                bytes.clone(),
+            ));
         }
     }
     for entry in &generated_dispatch_evidence {

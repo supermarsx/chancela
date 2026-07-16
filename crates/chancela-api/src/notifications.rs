@@ -102,10 +102,10 @@ pub(crate) fn write_notification_triage_atomic(
     path: &Path,
     table: &NotificationTriageTable,
 ) -> std::io::Result<()> {
-    if let Some(parent) = path.parent() {
-        if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent)?;
-        }
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent)?;
     }
     let mut list: Vec<&NotificationTriageEntry> = table
         .values()

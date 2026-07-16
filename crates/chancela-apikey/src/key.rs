@@ -139,7 +139,7 @@ impl ApiKey {
     ///
     /// `creator_effective` is the creator's *current* authority (the API computes it via
     /// `chancela_authz::effective_permissions`); `roles` resolves a role grant; `books` supplies the
-    /// book→entity relation for scoped coverage.
+    /// authoritative resource-parent relation for scoped coverage.
     pub fn issue(
         creator_effective: &chancela_authz::ScopedPermissionSet,
         roles: &chancela_authz::RoleCatalog,

@@ -2840,10 +2840,10 @@ pub(crate) fn write_dsr_requests_atomic(
     path: &FsPath,
     requests: &HashMap<DsrRequestId, DsrRequest>,
 ) -> std::io::Result<()> {
-    if let Some(parent) = path.parent() {
-        if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent)?;
-        }
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent)?;
     }
     let mut list: Vec<&DsrRequest> = requests.values().collect();
     list.sort_by(|a, b| a.created_at.cmp(&b.created_at).then(a.id.0.cmp(&b.id.0)));
@@ -2863,10 +2863,10 @@ pub(crate) fn write_processor_records_atomic(
     path: &FsPath,
     records: &HashMap<ProcessorRecordId, ProcessorRecord>,
 ) -> std::io::Result<()> {
-    if let Some(parent) = path.parent() {
-        if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent)?;
-        }
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent)?;
     }
     let mut list: Vec<&ProcessorRecord> = records.values().collect();
     list.sort_by(|a, b| a.created_at.cmp(&b.created_at).then(a.id.0.cmp(&b.id.0)));
@@ -2886,10 +2886,10 @@ pub(crate) fn write_dpia_records_atomic(
     path: &FsPath,
     records: &HashMap<DpiaRecordId, DpiaRecord>,
 ) -> std::io::Result<()> {
-    if let Some(parent) = path.parent() {
-        if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent)?;
-        }
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent)?;
     }
     let mut list: Vec<&DpiaRecord> = records.values().collect();
     list.sort_by(|a, b| a.created_at.cmp(&b.created_at).then(a.id.0.cmp(&b.id.0)));
@@ -2909,10 +2909,10 @@ pub(crate) fn write_breach_playbooks_atomic(
     path: &FsPath,
     records: &HashMap<BreachPlaybookId, BreachPlaybookRecord>,
 ) -> std::io::Result<()> {
-    if let Some(parent) = path.parent() {
-        if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent)?;
-        }
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent)?;
     }
     let mut list: Vec<&BreachPlaybookRecord> = records.values().collect();
     list.sort_by(|a, b| a.created_at.cmp(&b.created_at).then(a.id.0.cmp(&b.id.0)));
@@ -2932,10 +2932,10 @@ pub(crate) fn write_transfer_controls_atomic(
     path: &FsPath,
     records: &HashMap<TransferControlId, TransferControlRecord>,
 ) -> std::io::Result<()> {
-    if let Some(parent) = path.parent() {
-        if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent)?;
-        }
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent)?;
     }
     let mut list: Vec<&TransferControlRecord> = records.values().collect();
     list.sort_by(|a, b| a.created_at.cmp(&b.created_at).then(a.id.0.cmp(&b.id.0)));
@@ -2955,10 +2955,10 @@ pub(crate) fn write_retention_policies_atomic(
     path: &FsPath,
     records: &HashMap<RetentionPolicyId, RetentionPolicyRecord>,
 ) -> std::io::Result<()> {
-    if let Some(parent) = path.parent() {
-        if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent)?;
-        }
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent)?;
     }
     let mut list: Vec<&RetentionPolicyRecord> = records.values().collect();
     list.sort_by(|a, b| a.created_at.cmp(&b.created_at).then(a.id.0.cmp(&b.id.0)));
@@ -2978,10 +2978,10 @@ pub(crate) fn write_retention_execution_records_atomic(
     path: &FsPath,
     records: &HashMap<String, RetentionExecutionRecord>,
 ) -> std::io::Result<()> {
-    if let Some(parent) = path.parent() {
-        if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent)?;
-        }
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent)?;
     }
     let mut list: Vec<&RetentionExecutionRecord> = records.values().collect();
     list.sort_by(|a, b| a.requested_at.cmp(&b.requested_at).then(a.id.cmp(&b.id)));
@@ -3001,10 +3001,10 @@ pub(crate) fn write_retention_candidate_resolution_records_atomic(
     path: &FsPath,
     records: &HashMap<String, RetentionCandidateResolutionRecord>,
 ) -> std::io::Result<()> {
-    if let Some(parent) = path.parent() {
-        if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent)?;
-        }
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent)?;
     }
     let mut list: Vec<&RetentionCandidateResolutionRecord> = records.values().collect();
     list.sort_by(|a, b| a.recorded_at.cmp(&b.recorded_at).then(a.id.cmp(&b.id)));
@@ -6145,35 +6145,35 @@ fn retention_execution_decision(
             },
         );
     }
-    if let Some(action) = requested_policy.disposal_action {
-        if execution_intent == RetentionExecutionIntent::ExecuteSupported {
-            if prior_execution_id.is_some() {
-                return (
-                    RetentionExecutionOutcome::AlreadyExecuted,
-                    "bounded retention action was already recorded for this target and policy",
-                );
-            }
-            return match action {
-                RetentionDisposalAction::Archive => (
-                    RetentionExecutionOutcome::BoundedArchiveRecorded,
-                    "bounded archive evidence recorded for the retention target",
-                ),
-                RetentionDisposalAction::NoAction => (
-                    RetentionExecutionOutcome::BoundedNoActionRecorded,
-                    "bounded no-action evidence recorded for the retention target",
-                ),
-                RetentionDisposalAction::Review => (
-                    RetentionExecutionOutcome::ManualReviewRequired,
-                    "retention policy requires manual review before any separate operational action",
-                ),
-                RetentionDisposalAction::LegalHold
-                | RetentionDisposalAction::Delete
-                | RetentionDisposalAction::Anonymize => (
-                    RetentionExecutionOutcome::BlockedDestructiveAction,
-                    "retention action is not executable in this guarded slice",
-                ),
-            };
+    if let Some(action) = requested_policy.disposal_action
+        && execution_intent == RetentionExecutionIntent::ExecuteSupported
+    {
+        if prior_execution_id.is_some() {
+            return (
+                RetentionExecutionOutcome::AlreadyExecuted,
+                "bounded retention action was already recorded for this target and policy",
+            );
         }
+        return match action {
+            RetentionDisposalAction::Archive => (
+                RetentionExecutionOutcome::BoundedArchiveRecorded,
+                "bounded archive evidence recorded for the retention target",
+            ),
+            RetentionDisposalAction::NoAction => (
+                RetentionExecutionOutcome::BoundedNoActionRecorded,
+                "bounded no-action evidence recorded for the retention target",
+            ),
+            RetentionDisposalAction::Review => (
+                RetentionExecutionOutcome::ManualReviewRequired,
+                "retention policy requires manual review before any separate operational action",
+            ),
+            RetentionDisposalAction::LegalHold
+            | RetentionDisposalAction::Delete
+            | RetentionDisposalAction::Anonymize => (
+                RetentionExecutionOutcome::BlockedDestructiveAction,
+                "retention action is not executable in this guarded slice",
+            ),
+        };
     }
     (
         RetentionExecutionOutcome::ManualReviewRequired,
@@ -6392,15 +6392,15 @@ fn retention_execution_result(
         targets_skipped.push(target);
     }
 
-    if matches!(ctx.outcome, RetentionExecutionOutcome::AlreadyExecuted) {
-        if let Some(prior_execution_id) = ctx.prior_execution_id {
-            reason_codes.push("prior_bounded_execution_found".to_owned());
-            blocker_metadata.push(RetentionExecutionBlockerMetadata {
-                code: "prior_bounded_execution".to_owned(),
-                detail: format!("prior execution record {prior_execution_id} already acted"),
-                policy_id: ctx.requested_policy.id.clone(),
-            });
-        }
+    if matches!(ctx.outcome, RetentionExecutionOutcome::AlreadyExecuted)
+        && let Some(prior_execution_id) = ctx.prior_execution_id
+    {
+        reason_codes.push("prior_bounded_execution_found".to_owned());
+        blocker_metadata.push(RetentionExecutionBlockerMetadata {
+            code: "prior_bounded_execution".to_owned(),
+            detail: format!("prior execution record {prior_execution_id} already acted"),
+            policy_id: ctx.requested_policy.id.clone(),
+        });
     }
 
     if ctx.requested_policy.destructive_action && ctx.approval.is_none() {
@@ -7702,13 +7702,13 @@ pub fn provision_subject_dek(
     if let Some(row) = store
         .get_subject_key(subject_id)
         .map_err(|e| ApiError::Internal(format!("subject key read failed: {e}")))?
+        && row.erased_at.is_none()
+        && !row.wrapped_dek.is_empty()
     {
-        if row.erased_at.is_none() && !row.wrapped_dek.is_empty() {
-            let dek = crypto
-                .unwrap_dek(subject_id, &row.wrapped_dek)
-                .map_err(|e| ApiError::Internal(format!("subject DEK unwrap failed: {e}")))?;
-            return Ok(dek);
-        }
+        let dek = crypto
+            .unwrap_dek(subject_id, &row.wrapped_dek)
+            .map_err(|e| ApiError::Internal(format!("subject DEK unwrap failed: {e}")))?;
+        return Ok(dek);
     }
     let (wrapped, dek) = crypto
         .wrap_new_dek(subject_id)

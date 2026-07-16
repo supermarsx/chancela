@@ -81,6 +81,54 @@ async fn live_responses_match_the_canonical_contracts() {
     assert_eq!(status, 201);
     assert_shape("entity", &entity, &contract("entity.json"));
     let entity_id = entity["id"].as_str().expect("entity id").to_owned();
+    let tenant_id = entity["tenant_id"]
+        .as_str()
+        .expect("entity tenant id")
+        .to_owned();
+
+    // Tenant-local company group + its first named, versioned shared-template library.
+    let groups_path = format!("/v1/tenants/{tenant_id}/groups");
+    let (status, group) = h
+        .post_json_auth(
+            &groups_path,
+            json!({
+                "name": "Grupo Encosto",
+                "description": "Empresas do Grupo Encosto"
+            }),
+            &token,
+        )
+        .await;
+    assert_eq!(status, 201, "create group: {group}");
+    assert_shape("group", &group, &contract("group.json"));
+    let group_id = group["id"].as_str().expect("group id").to_owned();
+    let (status, grouped_entity) = h
+        .put_json_auth(
+            &format!("{groups_path}/{group_id}/entities/{entity_id}"),
+            json!({}),
+            &token,
+        )
+        .await;
+    assert_eq!(status, 200, "assign entity to group: {grouped_entity}");
+    assert_eq!(grouped_entity["group_id"], group_id);
+
+    let libraries_path = format!("{groups_path}/{group_id}/template-libraries");
+    let (status, library) = h
+        .post_json_auth(
+            &libraries_path,
+            json!({
+                "name": "Atas comuns",
+                "description": "Modelos partilhados entre as empresas do grupo",
+                "template_ids": ["csc-ata-ag/v1"]
+            }),
+            &token,
+        )
+        .await;
+    assert_eq!(status, 201, "create group template library: {library}");
+    assert_shape(
+        "group.template-library",
+        &library,
+        &contract("group.template-library.json"),
+    );
 
     // A book (book.json).
     let (status, book) = h
@@ -272,6 +320,16 @@ async fn live_responses_match_the_canonical_contracts() {
     let (status, dashboard) = h.get_json("/v1/dashboard").await;
     assert_eq!(status, 200);
     assert_shape("dashboard", &dashboard, &contract("dashboard.json"));
+
+    let (status, group_dashboard) = h
+        .get_json(&format!("{groups_path}/{group_id}/dashboard"))
+        .await;
+    assert_eq!(status, 200, "group dashboard: {group_dashboard}");
+    assert_shape(
+        "group.dashboard",
+        &group_dashboard,
+        &contract("group.dashboard.json"),
+    );
 
     // A hot backup manifest (backup.manifest.json). The e2e server is data-dir-backed, so the
     // durable store snapshots and the manifest returns 200 (t30 §3.2).

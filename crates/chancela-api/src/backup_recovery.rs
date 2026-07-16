@@ -474,10 +474,10 @@ pub(crate) fn write_backup_recovery_drill_receipts_atomic(
     path: &Path,
     receipts: &[BackupRecoveryDrillReceipt],
 ) -> std::io::Result<()> {
-    if let Some(parent) = path.parent() {
-        if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent)?;
-        }
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent)?;
     }
     let mut list = receipts.to_vec();
     list.sort_by(|a, b| a.created_at.cmp(&b.created_at).then(a.id.cmp(&b.id)));

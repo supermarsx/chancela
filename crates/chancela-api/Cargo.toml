@@ -28,6 +28,9 @@ redis = ["dep:redis"]
 chancela-apikey = { workspace = true }
 chancela-archive = { workspace = true }
 chancela-authz = { workspace = true }
+chancela-zk = { workspace = true }
+chancela-connectors = { workspace = true }
+chancela-worker = { workspace = true }
 chancela-core = { workspace = true }
 chancela-ledger = { workspace = true }
 chancela-registry = { workspace = true }
@@ -92,6 +95,6 @@ spki = { workspace = true }
 rsa = { workspace = true }
 p12 = "0.6.3"
 # Test-only: assemble a genuine multi-identity PFX (merge two single-identity PFXes' bags) to exercise
-# the H1 wrong-identity fail-safe. `yasna` is p12's own ASN.1 backend (already in the lock via p12), so
-# this pins no new transitive version.
-yasna = "0.5"
+# the H1 wrong-identity fail-safe. Keep the fixture encoder on current yasna; p12 still uses 0.5
+# internally, so fixture code exchanges complete DER blobs rather than p12's version-specific writer.
+yasna = "0.6"

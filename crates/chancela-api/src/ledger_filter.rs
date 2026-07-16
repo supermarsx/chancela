@@ -121,33 +121,33 @@ impl LedgerEventFilters {
     }
 
     pub(crate) fn matches(&self, event: &Event) -> bool {
-        if let Some(query) = &self.query {
-            if !event_matches_query(event, query) {
-                return false;
-            }
+        if let Some(query) = &self.query
+            && !event_matches_query(event, query)
+        {
+            return false;
         }
-        if let Some(scope) = &self.scope {
-            if !event.scope.contains(scope) {
-                return false;
-            }
+        if let Some(scope) = &self.scope
+            && !event.scope.contains(scope)
+        {
+            return false;
         }
         if !self.kinds.is_empty() && !self.kinds.contains(&event.kind) {
             return false;
         }
-        if let Some(actor) = &self.actor {
-            if &event.actor != actor {
-                return false;
-            }
+        if let Some(actor) = &self.actor
+            && &event.actor != actor
+        {
+            return false;
         }
-        if let Some(from) = self.from {
-            if event.timestamp < from {
-                return false;
-            }
+        if let Some(from) = self.from
+            && event.timestamp < from
+        {
+            return false;
         }
-        if let Some(to) = &self.to {
-            if !to.contains(event.timestamp) {
-                return false;
-            }
+        if let Some(to) = &self.to
+            && !to.contains(event.timestamp)
+        {
+            return false;
         }
         true
     }

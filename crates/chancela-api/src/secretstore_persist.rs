@@ -562,14 +562,14 @@ fn load_sidecar(path: &Path) -> Result<RecordMap, String> {
 /// Serialize `records` and atomically install them at `path` (temp file + rename, matching
 /// `attestation::write_seed_file`).
 fn write_sidecar_atomic(path: &Path, records: &RecordMap) -> Result<(), ProviderCredentialError> {
-    if let Some(parent) = path.parent() {
-        if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent).map_err(|source| ProviderCredentialError::Io {
-                action: "create directory for",
-                path: path.to_path_buf(),
-                source,
-            })?;
-        }
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent).map_err(|source| ProviderCredentialError::Io {
+            action: "create directory for",
+            path: path.to_path_buf(),
+            source,
+        })?;
     }
     let file = CredentialSidecarFile {
         schema_version: SIDECAR_SCHEMA_VERSION,

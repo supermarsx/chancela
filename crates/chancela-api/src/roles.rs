@@ -27,15 +27,17 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 use chancela_authz::{
-    BookId as AuthzBookId, Delegation, EntityId as AuthzEntityId, GESTOR_ROLE_ID, OWNER_ROLE_ID,
-    Permission, Role, RoleAssignment, RoleCatalog, RoleId, Scope, ScopedPermissionSet,
-    TenantId as AuthzTenantId, UserId as AuthzUserId, count_owner_admin_holders,
-    effective_permissions, last_owner_guard,
+    ActId as AuthzActId, ArchiveId as AuthzArchiveId, BookId as AuthzBookId, Delegation,
+    EntityId as AuthzEntityId, FolderId as AuthzFolderId, GESTOR_ROLE_ID,
+    IntegrationId as AuthzIntegrationId, OWNER_ROLE_ID, Permission,
+    RepositoryId as AuthzRepositoryId, Role, RoleAssignment, RoleCatalog, RoleId, Scope,
+    ScopedPermissionSet, TemplateLibraryId as AuthzTemplateLibraryId, TenantId as AuthzTenantId,
+    UserId as AuthzUserId, count_owner_admin_holders, effective_permissions, last_owner_guard,
 };
 
 use crate::AppState;
 use crate::actor::{CurrentActor, CurrentAttestor};
-use crate::authz::{authorizer, forbidden};
+use crate::authz::{authorizer, forbidden, scope_relations};
 use crate::error::ApiError;
 use crate::session::{RoleAssignmentView, ScopeView};
 use crate::users::{User, UserId};
@@ -95,10 +97,10 @@ pub(crate) fn ensure_seeded_defaults(catalog: &mut RoleCatalog) -> bool {
 /// Atomically write the catalog to `roles.json` (tmp file + rename), roles sorted by id for a
 /// deterministic document. Mirrors [`crate::users::write_users_atomic`].
 pub(crate) fn write_roles_atomic(path: &Path, catalog: &RoleCatalog) -> std::io::Result<()> {
-    if let Some(parent) = path.parent() {
-        if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent)?;
-        }
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent)?;
     }
     let mut list: Vec<&Role> = catalog.iter().collect();
     list.sort_by_key(|r| r.id.0);
@@ -206,7 +208,7 @@ pub(crate) fn bootstrap_assignment(bootstrap: bool) -> RoleAssignment {
 /// **Fail-closed:** an unknown or **inactive** principal yields an EMPTY [`ScopedPermissionSet`]
 /// (no authority anywhere), never an error — matching the t65 "pass an empty set if the creator is
 /// gone/inactive" contract. Callers that need a check compose the result with
-/// [`chancela_authz::has_permission`] (E3), supplying the book→entity relation there.
+/// [`chancela_authz::has_permission`] (E3), supplying the complete live resource-parent graph there.
 pub async fn effective_permissions_for(
     state: &AppState,
     principal: UserId,
@@ -235,8 +237,7 @@ pub async fn effective_permissions_for(
         table.values().map(|d| d.authz().clone()).collect()
     };
 
-    let book_relation = current_book_relation(state).await;
-    let books = |b: AuthzBookId| book_relation.get(&b).copied();
+    let relations = scope_relations(state).await;
     let roles = state.roles.read().await;
     let grantor_role_authority: HashMap<AuthzUserId, ScopedPermissionSet> = grantor_assignments
         .iter()
@@ -252,7 +253,7 @@ pub async fn effective_permissions_for(
         .filter(|d| {
             grantor_role_authority
                 .get(&d.from)
-                .is_some_and(|eff| eff.has_via_role(d.permission, d.scope, &books))
+                .is_some_and(|eff| eff.has_via_role(d.permission, d.scope, &relations))
         })
         .collect();
 
@@ -263,14 +264,6 @@ pub async fn effective_permissions_for(
         &delegations,
         now,
     )
-}
-
-async fn current_book_relation(state: &AppState) -> HashMap<AuthzBookId, AuthzEntityId> {
-    let books = state.books.read().await;
-    books
-        .values()
-        .map(|b| (AuthzBookId(b.id.0), AuthzEntityId(b.entity_id.0)))
-        .collect()
 }
 
 /// **FROZEN (t64-E2).** Resolve the session user behind a [`CurrentActor`] to their [`UserId`].
@@ -347,7 +340,7 @@ pub async fn last_owner_guard_ok(state: &AppState) -> bool {
 /// [`ScopeView`](crate::session::ScopeView): `{"kind":"global"}` / `{"kind":"entity","id":".."}` /
 /// `{"kind":"book","id":".."}`. FROZEN for E6/t62.
 #[derive(Debug, Clone, Copy, Deserialize)]
-#[serde(tag = "kind", rename_all = "lowercase")]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ScopeInput {
     Global,
     /// A tenant scope (wp26 tenancy): `{"kind":"tenant","id":".."}`. Lets an operator assign/delegate
@@ -361,6 +354,24 @@ pub enum ScopeInput {
     Book {
         id: Uuid,
     },
+    Act {
+        id: Uuid,
+    },
+    Folder {
+        id: Uuid,
+    },
+    TemplateLibrary {
+        id: Uuid,
+    },
+    Archive {
+        id: Uuid,
+    },
+    Integration {
+        id: Uuid,
+    },
+    Repository {
+        id: Uuid,
+    },
 }
 
 impl From<ScopeInput> for Scope {
@@ -370,6 +381,14 @@ impl From<ScopeInput> for Scope {
             ScopeInput::Tenant { id } => Scope::Tenant(AuthzTenantId(id)),
             ScopeInput::Entity { id } => Scope::Entity(AuthzEntityId(id)),
             ScopeInput::Book { id } => Scope::Book(AuthzBookId(id)),
+            ScopeInput::Act { id } => Scope::Act(AuthzActId(id)),
+            ScopeInput::Folder { id } => Scope::Folder(AuthzFolderId(id)),
+            ScopeInput::TemplateLibrary { id } => {
+                Scope::TemplateLibrary(AuthzTemplateLibraryId(id))
+            }
+            ScopeInput::Archive { id } => Scope::Archive(AuthzArchiveId(id)),
+            ScopeInput::Integration { id } => Scope::Integration(AuthzIntegrationId(id)),
+            ScopeInput::Repository { id } => Scope::Repository(AuthzRepositoryId(id)),
         }
     }
 }

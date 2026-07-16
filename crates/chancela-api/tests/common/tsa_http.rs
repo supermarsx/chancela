@@ -344,12 +344,11 @@ fn digest_and_nonce(der_req: &[u8]) -> ([u8; 32], [u8; 8]) {
 fn tst_info_range(response: &[u8]) -> Range<usize> {
     let anchor = find_bytes(response, TST_INFO_ANCHOR).expect("fixture TSTInfo anchor");
     for start in (0..anchor).rev() {
-        if response[start] == 0x30 {
-            if let Some(end) = der_item_end(response, start) {
-                if end > anchor {
-                    return start..end;
-                }
-            }
+        if response[start] == 0x30
+            && let Some(end) = der_item_end(response, start)
+            && end > anchor
+        {
+            return start..end;
         }
     }
     panic!("fixture TSTInfo range not found");

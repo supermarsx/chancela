@@ -19,9 +19,10 @@
 //!   Owner assignment.
 //!
 //! **Purity / fail-closed.** No clock, no network, no store: the caller supplies `now` and the
-//! book→entity relation ([`BookScope`]). Unknown books, missing roles and empty authority all resolve
-//! to *deny*. The invariants are enforced by construction (a delegated grant is kept in a separate
-//! bucket that the delegation check never reads), not merely spot-checked.
+//! authoritative scope-parent relation ([`BookScope`], retained under its source-compatible name).
+//! Unknown resources, missing roles and empty authority all resolve to *deny*. The invariants are
+//! enforced by construction (a delegated grant is kept in a separate bucket that the delegation
+//! check never reads), not merely spot-checked.
 
 mod assignment;
 mod delegation;
@@ -42,7 +43,10 @@ pub use role::{
     PLATFORM_ADMIN_ROLE_ID, RECORDS_MANAGER_ROLE_ID, REVIEWER_ROLE_ID, Role, RoleCatalog, RoleId,
     SIGNATARIO_ROLE_ID, SIGNATORY_ROLE_ID, TENANT_ADMIN_ROLE_ID, default_roles,
 };
-pub use scope::{BookId, BookScope, EntityId, NoBooks, Scope, TenantId, scope_covers};
+pub use scope::{
+    ActId, ArchiveId, BookId, BookScope, CompanyId, EntityId, FolderId, IntegrationId, NoBooks,
+    RepositoryId, Scope, TemplateLibraryId, TenantId, scope_covers,
+};
 
 /// A principal's resolved authority: the set of `(permission, scope)` grants, partitioned by whether
 /// each grant arrived **via a role** or **via a delegation**.

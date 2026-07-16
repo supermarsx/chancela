@@ -80,12 +80,18 @@ pub struct SessionView {
 /// client can switch on `kind` and read the id: `{"kind":"global"}` / `{"kind":"entity","id":..}` /
 /// `{"kind":"book","id":..}`.
 #[derive(Serialize)]
-#[serde(tag = "kind", rename_all = "lowercase")]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ScopeView {
     Global,
     Tenant { id: String },
     Entity { id: String },
     Book { id: String },
+    Act { id: String },
+    Folder { id: String },
+    TemplateLibrary { id: String },
+    Archive { id: String },
+    Integration { id: String },
+    Repository { id: String },
 }
 
 impl From<chancela_authz::Scope> for ScopeView {
@@ -100,6 +106,24 @@ impl From<chancela_authz::Scope> for ScopeView {
             },
             chancela_authz::Scope::Book(b) => ScopeView::Book {
                 id: b.0.to_string(),
+            },
+            chancela_authz::Scope::Act(a) => ScopeView::Act {
+                id: a.0.to_string(),
+            },
+            chancela_authz::Scope::Folder(folder) => ScopeView::Folder {
+                id: folder.0.to_string(),
+            },
+            chancela_authz::Scope::TemplateLibrary(library) => ScopeView::TemplateLibrary {
+                id: library.0.to_string(),
+            },
+            chancela_authz::Scope::Archive(archive) => ScopeView::Archive {
+                id: archive.0.to_string(),
+            },
+            chancela_authz::Scope::Integration(integration) => ScopeView::Integration {
+                id: integration.0.to_string(),
+            },
+            chancela_authz::Scope::Repository(repository) => ScopeView::Repository {
+                id: repository.0.to_string(),
             },
         }
     }

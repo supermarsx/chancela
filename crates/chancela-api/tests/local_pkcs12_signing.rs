@@ -378,13 +378,14 @@ async fn create_signing_act(state: &AppState, token: &str, book_id: &str) -> Str
     act_id
 }
 
-async fn seal_act(state: &AppState, token: &str, act_id: &str) {
+async fn seal_digitally_signed_act(state: &AppState, token: &str, act_id: &str) -> Value {
     let (status, sealed) = send(
         state,
-        json_req("POST", &format!("/v1/acts/{act_id}/seal"), token, json!({ "manual_signature_original_reference": { "storage_reference": "Arquivo A / Pasta 2026 / Ata teste" } })),
+        json_req("POST", &format!("/v1/acts/{act_id}/seal"), token, json!({})),
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "seal: {sealed}");
+    assert_eq!(status, StatusCode::OK, "digital evidence seal: {sealed}");
+    sealed
 }
 
 async fn disable_timestamping(state: &AppState) {
@@ -495,10 +496,8 @@ fn local_sign_req_with_body(act_id: &str, token: &str, body: Value) -> Request<B
 
 #[tokio::test]
 async fn local_pkcs12_signs_as_advanced_technical_evidence_only() {
-    let state = AppState {
-        local_signing: true,
-        ..AppState::default()
-    };
+    let mut state = AppState::default();
+    state.local_signing = true;
     let (token, _) = bootstrap(&state).await;
     state
         .settings
@@ -513,7 +512,6 @@ async fn local_pkcs12_signs_as_advanced_technical_evidence_only() {
     }
     let book_id = seed_book(&state, &token).await;
     let act_id = create_signing_act(&state, &token, &book_id).await;
-    seal_act(&state, &token, &act_id).await;
 
     let pfx = local_pfx();
     let (status, signed) = send(&state, local_sign_req(&act_id, &token, &pfx, PASSWORD)).await;
@@ -527,7 +525,7 @@ async fn local_pkcs12_signs_as_advanced_technical_evidence_only() {
     assert_eq!(signed["qualification_claimed"], false);
     assert_eq!(signed["legal_status_claimed"], false);
     assert_eq!(signed["status_scope"], "local_technical_evidence_only");
-    assert_eq!(signed["finalization"], "aguarda_assinatura_qualificada");
+    assert_eq!(signed["finalization"], "em_assinatura");
     assert_eq!(
         signed["signer_capacity_evidence"]["requested_provider_capacity"],
         "Administrador"
@@ -562,7 +560,7 @@ async fn local_pkcs12_signs_as_advanced_technical_evidence_only() {
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(view["status"], "signed");
-    assert_eq!(view["finalization"], "aguarda_assinatura_qualificada");
+    assert_eq!(view["finalization"], "em_assinatura");
     assert_eq!(view["signed"]["family"], "LocalPkcs12SoftwareCertificate");
     assert_eq!(
         view["signed"]["evidentiary_level"],
@@ -580,6 +578,46 @@ async fn local_pkcs12_signs_as_advanced_technical_evidence_only() {
         "declared_capacity_evidence_only"
     );
     assert_eq!(signed_event_count(&state, &token, &act_id).await, 1);
+
+    let sealed = seal_digitally_signed_act(&state, &token, &act_id).await;
+    assert_eq!(sealed["act"]["state"], "Sealed");
+    let metadata = &sealed["act"]["seal_metadata"];
+    assert_eq!(
+        metadata["signing_snapshot_digest"],
+        sealed["document"]["pdf_digest"]
+    );
+    assert_eq!(metadata["signed_pdf_digest"], signed["signed_pdf_digest"]);
+    assert_eq!(
+        metadata["signature_validation_report_digest"]
+            .as_str()
+            .map(str::len),
+        Some(64)
+    );
+    assert_eq!(metadata["manual_signature_original_reference"], Value::Null);
+
+    let (status, after_seal) = send(&state, local_sign_req(&act_id, &token, &pfx, PASSWORD)).await;
+    assert_eq!(
+        status,
+        StatusCode::CONFLICT,
+        "signing after seal must be refused: {after_seal}"
+    );
+
+    let (status, archived) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/archive"),
+            &token,
+            json!({}),
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "digital evidence archive: {archived}"
+    );
+    assert_eq!(archived["state"], "Archived");
 
     let stored = state
         .signed_documents
@@ -603,15 +641,12 @@ async fn local_pkcs12_signs_as_advanced_technical_evidence_only() {
 
 #[tokio::test]
 async fn local_pkcs12_scap_capacity_preprod_is_provider_declared_only() {
-    let state = AppState {
-        local_signing: true,
-        ..AppState::default()
-    };
+    let mut state = AppState::default();
+    state.local_signing = true;
     let (token, _) = bootstrap(&state).await;
     disable_timestamping(&state).await;
     let book_id = seed_book(&state, &token).await;
     let act_id = create_signing_act(&state, &token, &book_id).await;
-    seal_act(&state, &token, &act_id).await;
 
     let pfx = local_pfx();
     let (status, signed) = send(
@@ -677,15 +712,12 @@ async fn local_pkcs12_persists_verified_scap_capacity_evidence_from_prod_fixture
         std::env::set_var("CHANCELA_SCAP_SECRET", "local-pkcs12-scap-secret");
     }
 
-    let state = AppState {
-        local_signing: true,
-        ..AppState::default()
-    };
+    let mut state = AppState::default();
+    state.local_signing = true;
     let (token, _) = bootstrap(&state).await;
     disable_timestamping(&state).await;
     let book_id = seed_book(&state, &token).await;
     let act_id = create_signing_act(&state, &token, &book_id).await;
-    seal_act(&state, &token, &act_id).await;
 
     let pfx = local_pfx();
     let (status, signed) = send(
@@ -783,14 +815,11 @@ async fn local_pkcs12_persists_verified_scap_capacity_evidence_from_prod_fixture
 
 #[tokio::test]
 async fn local_pkcs12_rejects_mismatched_capacity_and_scap_attribute() {
-    let state = AppState {
-        local_signing: true,
-        ..AppState::default()
-    };
+    let mut state = AppState::default();
+    state.local_signing = true;
     let (token, _) = bootstrap(&state).await;
     let book_id = seed_book(&state, &token).await;
     let act_id = create_signing_act(&state, &token, &book_id).await;
-    seal_act(&state, &token, &act_id).await;
 
     let pfx = local_pfx();
     let (status, err) = send(
@@ -827,14 +856,11 @@ async fn local_pkcs12_rejects_mismatched_capacity_and_scap_attribute() {
 
 #[tokio::test]
 async fn local_pkcs12_wrong_passphrase_leaves_no_artifact() {
-    let state = AppState {
-        local_signing: true,
-        ..AppState::default()
-    };
+    let mut state = AppState::default();
+    state.local_signing = true;
     let (token, _) = bootstrap(&state).await;
     let book_id = seed_book(&state, &token).await;
     let act_id = create_signing_act(&state, &token, &book_id).await;
-    seal_act(&state, &token, &act_id).await;
 
     let pfx = local_pfx();
     let (status, err) = send(
@@ -863,7 +889,6 @@ async fn local_pkcs12_requires_local_signing_capability() {
     let (token, _) = bootstrap(&state).await;
     let book_id = seed_book(&state, &token).await;
     let act_id = create_signing_act(&state, &token, &book_id).await;
-    seal_act(&state, &token, &act_id).await;
 
     let pfx = local_pfx();
     let (status, err) = send(&state, local_sign_req(&act_id, &token, &pfx, PASSWORD)).await;

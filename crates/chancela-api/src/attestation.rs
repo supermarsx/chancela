@@ -381,10 +381,10 @@ fn decode_fixed<const N: usize>(b64: &str) -> Option<[u8; N]> {
 }
 
 fn write_seed_file(path: &Path, seed: &VerifierSeed) -> Result<(), AttestationError> {
-    if let Some(parent) = path.parent() {
-        if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent).map_err(crypto)?;
-        }
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent).map_err(crypto)?;
     }
     let file = VerifierSeedFile {
         schema_version: 1,
@@ -510,9 +510,8 @@ impl AttestationKeyBlob {
         let cipher = XChaCha20Poly1305::new_from_slice(&kek).map_err(crypto)?;
         let mut nonce_bytes = [0u8; 24];
         OsRng.fill_bytes(&mut nonce_bytes);
-        let ciphertext = cipher
-            .encrypt(XNonce::from_slice(&nonce_bytes), scalar)
-            .map_err(crypto)?;
+        let nonce = XNonce::from(nonce_bytes);
+        let ciphertext = cipher.encrypt(&nonce, scalar).map_err(crypto)?;
         Ok(AttestationKeyBlob {
             public_key_sec1: B64.encode(sec1),
             fingerprint: fingerprint.to_owned(),
@@ -533,9 +532,11 @@ impl AttestationKeyBlob {
         if nonce_bytes.len() != 24 {
             return Err(AttestationError("stored nonce is not 24 bytes".to_owned()));
         }
+        let nonce = <&XNonce>::try_from(nonce_bytes.as_slice())
+            .map_err(|_| AttestationError("stored nonce is not 24 bytes".to_owned()))?;
         let ciphertext = B64.decode(&self.ciphertext).map_err(crypto)?;
         let scalar = cipher
-            .decrypt(XNonce::from_slice(&nonce_bytes), ciphertext.as_slice())
+            .decrypt(nonce, ciphertext.as_slice())
             .map_err(crypto)?;
         SigningKey::from_slice(&scalar).map_err(crypto)
     }

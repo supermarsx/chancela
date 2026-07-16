@@ -15,10 +15,7 @@ use chancela_apikey::{
     ApiKey, ApiKeyGrant, ApiKeyId, KeySpec, NewApiKey, RateLimit, RateLimitOutcome, RateLimitState,
     RequestPrincipal, extract_prefix,
 };
-use chancela_authz::{
-    BookId as AuthzBookId, EntityId as AuthzEntityId, Permission, RoleId, Scope,
-    UserId as AuthzUserId,
-};
+use chancela_authz::{Permission, RoleId, Scope, UserId as AuthzUserId};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
@@ -26,7 +23,7 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::actor::{CurrentActor, CurrentAttestor};
-use crate::authz::{authorizer, forbidden};
+use crate::authz::{authorizer, forbidden, scope_relations};
 use crate::error::ApiError;
 use crate::roles::{ScopeInput, effective_permissions_for};
 use crate::session::ScopeView;
@@ -57,10 +54,10 @@ pub(crate) fn load_api_keys(path: &Path) -> Option<ApiKeyRegistry> {
 }
 
 pub(crate) fn write_api_keys_atomic(path: &Path, keys: &ApiKeyRegistry) -> std::io::Result<()> {
-    if let Some(parent) = path.parent() {
-        if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent)?;
-        }
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent)?;
     }
     let mut list: Vec<&ApiKey> = keys.values().collect();
     list.sort_by(|a, b| a.created_at.cmp(&b.created_at).then(a.id.0.cmp(&b.id.0)));
@@ -124,7 +121,7 @@ pub(crate) fn read_bearer_api_key(headers: &HeaderMap) -> Result<Option<&str>, A
 }
 
 /// Resolve a presented bearer key into a `chancela-apikey` principal, attenuated by the creator's
-/// current live authority and the current book→entity relation.
+/// current live authority and the complete current resource-parent graph.
 pub(crate) async fn resolve_bearer_principal(
     state: &AppState,
     presented: &str,
@@ -148,15 +145,14 @@ pub(crate) async fn resolve_bearer_principal(
 
     let creator_effective = effective_permissions_for(state, UserId(key.created_by.0), now).await;
     let roles = state.roles.read().await.clone();
-    let relation = book_relation(state).await;
-    let books = move |b: AuthzBookId| relation.get(&b).copied();
+    let relations = scope_relations(state).await;
 
     Ok(chancela_apikey::resolve(
         &key,
         &creator_effective,
         &roles,
         now,
-        &books,
+        &relations,
     ))
 }
 
@@ -181,14 +177,6 @@ async fn enforce_rate_limit(
             )))
         }
     }
-}
-
-async fn book_relation(state: &AppState) -> HashMap<AuthzBookId, AuthzEntityId> {
-    let books = state.books.read().await;
-    books
-        .values()
-        .map(|b| (AuthzBookId(b.id.0), AuthzEntityId(b.entity_id.0)))
-        .collect()
 }
 
 // =================================================================================================
@@ -337,13 +325,12 @@ pub async fn create_api_key(
     let now = OffsetDateTime::now_utc();
     let creator_effective = effective_permissions_for(&state, creator, now).await;
     let roles = state.roles.read().await.clone();
-    let relation = book_relation(&state).await;
-    let books = move |b: AuthzBookId| relation.get(&b).copied();
+    let relations = scope_relations(&state).await;
 
     let NewApiKey { plaintext, api_key } = ApiKey::issue(
         &creator_effective,
         &roles,
-        &books,
+        &relations,
         KeySpec {
             name,
             principal_grant: grant,
@@ -464,8 +451,7 @@ pub async fn rotate_api_key(
     let creator_effective =
         effective_permissions_for(&state, UserId(existing.created_by.0), now).await;
     let roles = state.roles.read().await.clone();
-    let relation = book_relation(&state).await;
-    let books = move |b: AuthzBookId| relation.get(&b).copied();
+    let relations = scope_relations(&state).await;
 
     let NewApiKey {
         plaintext,
@@ -473,7 +459,7 @@ pub async fn rotate_api_key(
     } = ApiKey::issue(
         &creator_effective,
         &roles,
-        &books,
+        &relations,
         KeySpec {
             name: existing.name.clone(),
             principal_grant: existing.principal_grant.clone(),

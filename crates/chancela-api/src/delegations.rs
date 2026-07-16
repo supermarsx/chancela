@@ -110,10 +110,10 @@ pub(crate) fn write_delegations_atomic(
     path: &Path,
     delegations: &HashMap<DelegationId, StoredDelegation>,
 ) -> std::io::Result<()> {
-    if let Some(parent) = path.parent() {
-        if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent)?;
-        }
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent)?;
     }
     let mut list: Vec<&StoredDelegation> = delegations.values().collect();
     list.sort_by(|a, b| a.granted_at.cmp(&b.granted_at).then(a.id.0.cmp(&b.id.0)));

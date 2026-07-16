@@ -30,6 +30,7 @@ pub mod document_model;
 pub mod entity;
 pub mod error;
 pub mod external_signing;
+pub mod group;
 pub mod profile;
 pub mod rules;
 pub mod seal;
@@ -59,6 +60,9 @@ pub use external_signing::{
     ExternalSignatureEvidence, ExternalSignerSlot, ExternalSignerSlotId, ExternalSignerSlotStatus,
     ExternalSigningError, ExternalSigningOrderPolicy,
 };
+pub use group::{
+    CompanyGroup, GroupId, GroupTemplateLibrary, GroupTemplateLibraryRevision, TemplateLibraryId,
+};
 pub use profile::{
     CalendarPreset, DEFAULT_PROFILE_CALENDAR_FISCAL_YEAR_END, EntityProfile, FiscalYearEnd,
     ProfileCalendarDueBasis, ProfileCalendarDueRule, ProfileCalendarEvaluationContext,
@@ -74,5 +78,5 @@ pub use rules::{
     AssociacaoRulePack, ComplianceIssue, CondominioRulePack, CooperativaRulePack, CscArt63RulePack,
     FundacaoRulePack, LegalBasis, LegalBasisVerification, RulePack, Severity, statute_findings,
 };
-pub use seal::{SealOutcome, open_and_seal_book, seal_act};
+pub use seal::{SealEvidence, SealOutcome, open_and_seal_book, seal_act, seal_act_with_evidence};
 pub use tenant::{DEFAULT_TENANT_ID, Tenant, TenantId, default_tenant_id};

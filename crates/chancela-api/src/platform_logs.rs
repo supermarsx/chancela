@@ -213,10 +213,10 @@ pub(crate) fn write_platform_logs_atomic(
     path: &Path,
     logs: &PlatformLogRing,
 ) -> std::io::Result<()> {
-    if let Some(parent) = path.parent() {
-        if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent)?;
-        }
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent)?;
     }
     let file = PlatformLogFile {
         schema_version: PLATFORM_LOG_SCHEMA_VERSION,
@@ -422,13 +422,13 @@ pub(crate) async fn record_platform_log(
         input.message,
         input.context,
     )?;
-    if let Some(path) = &state.platform_logs_path {
-        if let Err(e) = write_platform_logs_atomic(path, &logs) {
-            *logs = before;
-            return Err(ApiError::Internal(format!(
-                "failed to persist platform logs: {e}"
-            )));
-        }
+    if let Some(path) = &state.platform_logs_path
+        && let Err(e) = write_platform_logs_atomic(path, &logs)
+    {
+        *logs = before;
+        return Err(ApiError::Internal(format!(
+            "failed to persist platform logs: {e}"
+        )));
     }
     Ok(Some(entry))
 }

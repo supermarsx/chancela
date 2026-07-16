@@ -3,16 +3,18 @@
 //!
 //! [`require_permission`] resolves the acting principal's effective scoped authority (via the frozen
 //! E2 seam [`effective_permissions_for_actor`]) and checks it against a `(permission, scope)` pair
-//! with [`chancela_authz::has_permission`], building the book→entity relation ([`BookScope`]) from
-//! `state.books` at check time. A missing permission is a **403** ([`ApiError::Forbidden`]) — honest,
+//! with [`chancela_authz::has_permission`], building the live resource-parent graph
+//! ([`BookScope`]) from application state at check time. A missing permission is a **403**
+//! ([`ApiError::Forbidden`]) — honest,
 //! generic, and non-enumerating (it never reveals whether the addressed resource exists).
 //!
 //! ## Scope resolution (plan §3.3)
 //!
 //! The handler resolves the **target scope** from the request before the check:
 //! - entity ops → `Entity(id)`; book ops → `Book(id)` (its entity is resolved via [`BookScope`]);
-//! - act / document / signature ops → the act's owning `Book` ([`scope_of_act`], with a `Global`
-//!   fallback for an unknown act so a missing act is indistinguishable from one in an unseen scope);
+//! - act / document / signature ops → first-class `Act(id)` ([`scope_of_act`]); its live Act→Book
+//!   parent lets existing Book/Entity/Tenant grants narrow to it, while unknown acts fail closed;
+//! - shared-library ops → first-class `TemplateLibrary(id)` with a live Tenant parent;
 //! - ledger-recovery / data / settings / reference / users / roles / delegations → `Global`.
 //!
 //! ## 401 vs 403 reconciliation
@@ -35,10 +37,12 @@ use std::collections::HashMap;
 use time::OffsetDateTime;
 
 use chancela_authz::{
-    BookId as AuthzBookId, BookScope, EntityId as AuthzEntityId, Permission, Role, Scope,
-    ScopedPermissionSet, TenantId as AuthzTenantId, has_permission,
+    ActId as AuthzActId, ArchiveId as AuthzArchiveId, BookId as AuthzBookId, BookScope,
+    EntityId as AuthzEntityId, IntegrationId as AuthzIntegrationId, Permission,
+    RepositoryId as AuthzRepositoryId, Role, Scope, ScopedPermissionSet,
+    TemplateLibraryId as AuthzTemplateLibraryId, TenantId as AuthzTenantId, has_permission,
 };
-use chancela_core::{ActId, BookId, EntityId};
+use chancela_core::{ActId, BookId, EntityId, TemplateLibraryId};
 
 use crate::AppState;
 use crate::actor::CurrentActor;
@@ -81,25 +85,139 @@ async fn tenant_relation(state: &AppState) -> HashMap<AuthzEntityId, AuthzTenant
         .collect()
 }
 
-/// The concrete [`BookScope`] the API feeds to `scope_covers`: book→entity via `books` and
-/// entity→tenant via `tenants` (wp26). Borrows the snapshotted relations so a resolved [`Authorizer`]
-/// answers many per-row checks without re-locking or re-allocating.
-struct ScopeRel<'a> {
-    books: &'a HashMap<AuthzBookId, AuthzEntityId>,
-    tenants: &'a HashMap<AuthzEntityId, AuthzTenantId>,
+/// Snapshot the live act→book relation. Unknown acts have no parent and therefore cannot be reached
+/// by a Book/Entity/Tenant grant; Global or an exact Act grant is still evaluated normally.
+async fn act_relation(state: &AppState) -> HashMap<AuthzActId, AuthzBookId> {
+    let acts = state.acts.read().await;
+    acts.values()
+        .map(|act| (AuthzActId(act.id.0), AuthzBookId(act.book_id.0)))
+        .collect()
 }
 
-impl BookScope for ScopeRel<'_> {
+/// Snapshot the live template-library→tenant relation (DAT-03/WFL-32). A group is a convenience
+/// aggregate, not an authorization scope, so shared libraries narrow directly from their tenant.
+async fn template_library_relation(
+    state: &AppState,
+) -> HashMap<AuthzTemplateLibraryId, AuthzTenantId> {
+    let libraries = state.group_template_libraries.read().await;
+    libraries
+        .values()
+        .map(|library| {
+            (
+                AuthzTemplateLibraryId(library.id.0),
+                AuthzTenantId(library.tenant_id.0),
+            )
+        })
+        .collect()
+}
+
+/// Snapshot the ZK repository→tenant and immutable archive→repository graph from the same durable
+/// index projection. Reading both under one lock prevents a permission decision from observing an
+/// archive without its repository parent during index replacement.
+async fn repository_archive_relations(
+    state: &AppState,
+) -> (
+    HashMap<AuthzRepositoryId, AuthzTenantId>,
+    HashMap<AuthzArchiveId, AuthzRepositoryId>,
+) {
+    let store = state.zk_repositories.read().await;
+    let mut repositories: HashMap<AuthzRepositoryId, AuthzTenantId> = store
+        .repository_parents()
+        .into_iter()
+        .map(|(repository, tenant)| (AuthzRepositoryId(repository), AuthzTenantId(tenant)))
+        .collect();
+    let archives = store
+        .archive_parents()
+        .into_iter()
+        .map(|(archive, repository)| (AuthzArchiveId(archive), AuthzRepositoryId(repository)))
+        .collect();
+    drop(store);
+    let targets = state.connector_targets.read().await;
+    let (_, connector_repositories) = crate::connector_jobs::scope_parents(&targets);
+    for (repository, tenant) in connector_repositories {
+        match repositories.get(&repository) {
+            Some(existing) if *existing != tenant => {
+                // A UUID collision across authoritative stores is ambiguous. Remove the relation so
+                // narrow authorization fails closed instead of selecting either tenant.
+                repositories.remove(&repository);
+            }
+            _ => {
+                repositories.insert(repository, tenant);
+            }
+        }
+    }
+    (repositories, archives)
+}
+
+async fn integration_relation(state: &AppState) -> HashMap<AuthzIntegrationId, AuthzTenantId> {
+    let targets = state.connector_targets.read().await;
+    crate::connector_jobs::scope_parents(&targets).0
+}
+
+/// A point-in-time snapshot of every authoritative parent relation currently represented by the
+/// API stores. This is deliberately shared by request authorization, delegation validation, and
+/// API-key attenuation: using one graph prevents those security boundaries from disagreeing about
+/// whether a narrow scope is contained by a wider one.
+pub(crate) struct ScopeRelations {
+    books: HashMap<AuthzBookId, AuthzEntityId>,
+    tenants: HashMap<AuthzEntityId, AuthzTenantId>,
+    acts: HashMap<AuthzActId, AuthzBookId>,
+    template_libraries: HashMap<AuthzTemplateLibraryId, AuthzTenantId>,
+    integrations: HashMap<AuthzIntegrationId, AuthzTenantId>,
+    repositories: HashMap<AuthzRepositoryId, AuthzTenantId>,
+    archives: HashMap<AuthzArchiveId, AuthzRepositoryId>,
+}
+
+impl BookScope for ScopeRelations {
     fn entity_of(&self, book: AuthzBookId) -> Option<AuthzEntityId> {
         self.books.get(&book).copied()
     }
     fn tenant_of(&self, entity: AuthzEntityId) -> Option<AuthzTenantId> {
         self.tenants.get(&entity).copied()
     }
+    fn book_of_act(&self, act: AuthzActId) -> Option<AuthzBookId> {
+        self.acts.get(&act).copied()
+    }
+    fn parent_of_template_library(&self, library: AuthzTemplateLibraryId) -> Option<Scope> {
+        self.template_libraries
+            .get(&library)
+            .copied()
+            .map(Scope::Tenant)
+    }
+    fn parent_of_integration(&self, integration: AuthzIntegrationId) -> Option<Scope> {
+        self.integrations
+            .get(&integration)
+            .copied()
+            .map(Scope::Tenant)
+    }
+    fn parent_of_repository(&self, repository: AuthzRepositoryId) -> Option<Scope> {
+        self.repositories
+            .get(&repository)
+            .copied()
+            .map(Scope::Tenant)
+    }
+    fn parent_of_archive(&self, archive: AuthzArchiveId) -> Option<Scope> {
+        self.archives.get(&archive).copied().map(Scope::Repository)
+    }
+}
+
+/// Snapshot the complete live scope graph without retaining any store locks. Callers that perform
+/// several checks should build this once and reuse it for the duration of their decision.
+pub(crate) async fn scope_relations(state: &AppState) -> ScopeRelations {
+    let (repositories, archives) = repository_archive_relations(state).await;
+    ScopeRelations {
+        books: book_relation(state).await,
+        tenants: tenant_relation(state).await,
+        acts: act_relation(state).await,
+        template_libraries: template_library_relation(state).await,
+        integrations: integration_relation(state).await,
+        repositories,
+        archives,
+    }
 }
 
 /// **Core gate (principal-source-agnostic).** Does `eff` satisfy `perm` at `scope`, given the live
-/// book→entity relation? `403` if not. t65's api-key principals call this with the api-key's
+/// authoritative resource-parent graph? `403` if not. t65's api-key principals call this with the api-key's
 /// resolved [`ScopedPermissionSet`]; the session path uses [`require_permission`].
 pub async fn require_permission_with(
     state: &AppState,
@@ -107,13 +225,8 @@ pub async fn require_permission_with(
     perm: Permission,
     scope: Scope,
 ) -> Result<(), ApiError> {
-    let relation = book_relation(state).await;
-    let tenant_relation = tenant_relation(state).await;
-    let rel = ScopeRel {
-        books: &relation,
-        tenants: &tenant_relation,
-    };
-    if has_permission(eff, perm, scope, &rel) {
+    let relations = scope_relations(state).await;
+    if has_permission(eff, perm, scope, &relations) {
         Ok(())
     } else {
         Err(forbidden())
@@ -134,25 +247,19 @@ pub async fn require_permission(
     authorizer(state, actor).await?.require(perm, scope)
 }
 
-/// A resolved principal's authority plus the book→entity relation, snapshotted once so a handler can
+/// A resolved principal's authority plus the resource-parent graph, snapshotted once so a handler can
 /// run **many** checks (notably the per-row list filtering of note²) without re-resolving the stores
 /// or re-locking `state.books` for each row.
 pub struct Authorizer {
     principal: Option<UserId>,
     eff: ScopedPermissionSet,
-    relation: HashMap<AuthzBookId, AuthzEntityId>,
-    /// The entity→tenant relation (wp26), snapshotted alongside `relation` so `Scope::Tenant`
-    /// narrowing is enforced on every per-row check without re-locking `state.entities`.
-    tenant_relation: HashMap<AuthzEntityId, AuthzTenantId>,
+    relations: ScopeRelations,
 }
 
 impl Authorizer {
-    /// Build the concrete [`BookScope`] (book→entity + entity→tenant) for a `scope_covers` check.
-    fn rel(&self) -> ScopeRel<'_> {
-        ScopeRel {
-            books: &self.relation,
-            tenants: &self.tenant_relation,
-        }
+    /// Borrow the exact live relation snapshot used for every check in this authorization decision.
+    fn rel(&self) -> &ScopeRelations {
+        &self.relations
     }
 }
 
@@ -169,7 +276,7 @@ impl Authorizer {
     /// Does the principal hold `perm` covering `scope`?
     #[must_use]
     pub fn permits(&self, perm: Permission, scope: Scope) -> bool {
-        has_permission(&self.eff, perm, scope, &self.rel())
+        has_permission(&self.eff, perm, scope, self.rel())
     }
 
     /// Require `perm` at `scope`, `403` otherwise.
@@ -191,7 +298,7 @@ impl Authorizer {
         &self,
         permission_set: impl IntoIterator<Item = &'a Permission>,
     ) -> bool {
-        chancela_authz::can_define_role(&self.eff, permission_set, &self.rel())
+        chancela_authz::can_define_role(&self.eff, permission_set, self.rel())
     }
 
     /// **Subset invariant (role assignment, t64-E4).** May the principal *assign* `role` at `scope`?
@@ -200,7 +307,7 @@ impl Authorizer {
     /// `role.assign` does **not** exempt this.
     #[must_use]
     pub fn can_assign_role(&self, role: &Role, scope: Scope) -> bool {
-        chancela_authz::can_assign_role(&self.eff, role, scope, &self.rel())
+        chancela_authz::can_assign_role(&self.eff, role, scope, self.rel())
     }
 
     /// **Delegation invariant (t64-E4).** May the principal *delegate* `perm` at `scope`? True iff
@@ -208,34 +315,28 @@ impl Authorizer {
     /// requirement forbids re-delegation structurally (a received permission is never a role grant).
     #[must_use]
     pub fn can_delegate(&self, perm: Permission, scope: Scope) -> bool {
-        chancela_authz::can_delegate(&self.eff, perm, scope, &self.rel())
+        chancela_authz::can_delegate(&self.eff, perm, scope, self.rel())
     }
 }
 
-/// Resolve the session actor into an [`Authorizer`] (its effective authority + the live book→entity
-/// relation). `401` without a session, `403` if the session names no active user. Used by the list
+/// Resolve the session actor into an [`Authorizer`] (its effective authority + the live
+/// resource-parent graph). `401` without a session, `403` if the session names no active user. Used by the list
 /// endpoints for per-row filtering (note²) and available to any handler running several checks.
 pub async fn authorizer(state: &AppState, actor: &CurrentActor) -> Result<Authorizer, ApiError> {
     if let Some(principal) = actor.api_key_principal() {
-        let relation = book_relation(state).await;
-        let tenant_relation = tenant_relation(state).await;
         return Ok(Authorizer {
             principal: None,
             eff: principal.effective_permissions.clone(),
-            relation,
-            tenant_relation,
+            relations: scope_relations(state).await,
         });
     }
 
     let now = OffsetDateTime::now_utc();
     let (principal, eff) = effective_permissions_for_actor(state, actor, now).await?;
-    let relation = book_relation(state).await;
-    let tenant_relation = tenant_relation(state).await;
     Ok(Authorizer {
         principal: Some(principal),
         eff,
-        relation,
-        tenant_relation,
+        relations: scope_relations(state).await,
     })
 }
 
@@ -263,26 +364,24 @@ pub fn scope_of_book(id: BookId) -> Scope {
     Scope::Book(AuthzBookId(id.0))
 }
 
-/// The target [`Scope`] for an operation on an **act**: the act's owning book, resolved from state.
-///
-/// When the act is unknown the scope falls back to `Global` (there is no book to name). This keeps a
-/// missing act indistinguishable from one in a scope the caller cannot see: a caller lacking the
-/// verb globally gets `403` either way, while a caller who holds it globally proceeds and receives
-/// the handler's own honest `404`.
-pub async fn scope_of_act(state: &AppState, act: ActId) -> Scope {
-    let acts = state.acts.read().await;
-    match acts.get(&act) {
-        Some(a) => Scope::Book(AuthzBookId(a.book_id.0)),
-        None => Scope::Global,
-    }
+/// The target [`Scope`] for an operation on an **act**. Kept async for call-site compatibility; the
+/// live act→book relation is supplied by [`Authorizer`] during the permission check.
+pub async fn scope_of_act(_state: &AppState, act: ActId) -> Scope {
+    Scope::Act(AuthzActId(act.0))
+}
+
+/// The target [`Scope`] for a shared template library.
+#[must_use]
+pub fn scope_of_template_library(id: TemplateLibraryId) -> Scope {
+    Scope::TemplateLibrary(AuthzTemplateLibraryId(id.0))
 }
 
 /// The target [`Scope`] for an operation on a follow-up row: the owning act's book, resolved
 /// through the stored `follow_up.act_id`.
 ///
-/// Unknown follow-ups fall back to `Global`, matching [`scope_of_act`]'s non-enumerating missing
-/// resource behaviour. The follow-up lock is released before resolving the act scope so callers do
-/// not take locks in `follow_ups -> acts` order.
+/// Unknown follow-ups fall back to `Global`: only a genuinely global grant may proceed to the
+/// handler's honest not-found response, while scoped callers receive the same generic forbidden
+/// result. The follow-up lock is released before resolving the act scope.
 pub async fn scope_of_follow_up(state: &AppState, follow_up: &str) -> Scope {
     let act_id = {
         let follow_ups = state.follow_ups.read().await;
@@ -361,6 +460,74 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/entities/{id}/registry/import", RouteClass::Gated), // POST entity.registry.import@Entity
     ("/v1/entities/{id}/chronology", RouteClass::Gated), // GET entity.read@Entity
     ("/v1/registry/lookup", RouteClass::Gated), // POST entity.read@Global
+    // --- Company groups + shared versioned template libraries ---------------------------------
+    ("/v1/tenants/{tenant_id}/groups", RouteClass::Gated),
+    (
+        "/v1/tenants/{tenant_id}/groups/{group_id}",
+        RouteClass::Gated,
+    ),
+    (
+        "/v1/tenants/{tenant_id}/groups/{group_id}/entities/{entity_id}",
+        RouteClass::Gated,
+    ),
+    (
+        "/v1/tenants/{tenant_id}/groups/{group_id}/dashboard",
+        RouteClass::Gated,
+    ),
+    (
+        "/v1/tenants/{tenant_id}/groups/{group_id}/template-libraries",
+        RouteClass::Gated,
+    ),
+    (
+        "/v1/tenants/{tenant_id}/groups/{group_id}/template-libraries/{library_id}",
+        RouteClass::Gated,
+    ),
+    (
+        "/v1/tenants/{tenant_id}/groups/{group_id}/template-libraries/{library_id}/revisions",
+        RouteClass::Gated,
+    ),
+    (
+        "/v1/tenants/{tenant_id}/groups/{group_id}/template-libraries/{library_id}/history",
+        RouteClass::Gated,
+    ),
+    (
+        "/v1/tenants/{tenant_id}/groups/{group_id}/template-libraries/{library_id}/revisions/{revision}",
+        RouteClass::Gated,
+    ),
+    // --- Opt-in zero-knowledge repositories ---------------------------------------------------
+    (
+        "/v1/tenants/{tenant_id}/repository-policy",
+        RouteClass::Gated,
+    ), // settings.read/manage@Tenant
+    ("/v1/tenants/{tenant_id}/repositories", RouteClass::Gated), // settings.read/manage@Tenant
+    (
+        "/v1/tenants/{tenant_id}/repositories/{repository_id}",
+        RouteClass::Gated,
+    ), // settings.read/manage@Repository
+    (
+        "/v1/tenants/{tenant_id}/repositories/{repository_id}/uploads",
+        RouteClass::Gated,
+    ), // data.backup@Repository
+    (
+        "/v1/tenants/{tenant_id}/repositories/{repository_id}/uploads/{upload_id}/ciphertext",
+        RouteClass::Gated,
+    ), // data.backup@Repository
+    (
+        "/v1/tenants/{tenant_id}/repositories/{repository_id}/objects",
+        RouteClass::Gated,
+    ), // data.export@Repository
+    (
+        "/v1/tenants/{tenant_id}/repositories/{repository_id}/objects/{object_id}/versions/{version}/manifest",
+        RouteClass::Gated,
+    ), // data.export@Archive
+    (
+        "/v1/tenants/{tenant_id}/repositories/{repository_id}/objects/{object_id}/versions/{version}/ciphertext",
+        RouteClass::Gated,
+    ), // data.export@Archive
+    (
+        "/v1/tenants/{tenant_id}/repositories/{repository_id}/objects/{object_id}/versions/{version}/readability-package",
+        RouteClass::Gated,
+    ), // data.export@Archive + book.export@Book + step-up
     // --- Books ----------------------------------------------------------------------------------
     ("/v1/books", RouteClass::Gated), // GET book.read@Global · POST book.open@Entity
     ("/v1/books/{id}", RouteClass::Gated), // GET book.read@Book
@@ -546,9 +713,38 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/backup", RouteClass::Gated),                      // POST data.backup@Global
     ("/v1/backup/recovery-drills", RouteClass::Gated), // GET/POST ledger.recover@Global (preflight-only receipt)
     ("/v1/sync/handoff-preflight", RouteClass::Gated), // GET ledger.recover@Global (read-only local evidence report)
-    ("/v1/dashboard", RouteClass::Gated),              // GET act.read@Global
-    ("/v1/notifications/triage", RouteClass::Gated),   // GET act.read@Global
-    ("/v1/notifications/triage/{id}", RouteClass::Gated), // PATCH act.read@Global
+    (
+        "/v1/tenants/{tenant_id}/connector-targets",
+        RouteClass::Gated,
+    ), // GET settings.read@Tenant · POST settings.manage@Tenant
+    (
+        "/v1/tenants/{tenant_id}/connector-targets/{target_id}",
+        RouteClass::Gated,
+    ), // GET settings.read@Integration · PATCH/DELETE settings.manage@Integration
+    (
+        "/v1/tenants/{tenant_id}/connector-targets/{target_id}/probe",
+        RouteClass::Gated,
+    ), // POST settings.read@Integration + outbound allowlist
+    (
+        "/v1/tenants/{tenant_id}/connector-targets/{target_id}/run",
+        RouteClass::Gated,
+    ), // POST data.export|data.backup@Repository
+    ("/v1/tenants/{tenant_id}/connector-jobs", RouteClass::Gated), // GET data.export|data.backup@Repository (filtered)
+    (
+        "/v1/tenants/{tenant_id}/connector-jobs/{job_id}",
+        RouteClass::Gated,
+    ), // GET data.export|data.backup@Repository
+    (
+        "/v1/tenants/{tenant_id}/connector-jobs/{job_id}/cancel",
+        RouteClass::Gated,
+    ), // POST data.export|data.backup@Repository
+    (
+        "/v1/tenants/{tenant_id}/connector-jobs/{job_id}/retry",
+        RouteClass::Gated,
+    ), // POST data.export|data.backup@Repository
+    ("/v1/dashboard", RouteClass::Gated),                          // GET act.read@Global
+    ("/v1/notifications/triage", RouteClass::Gated),               // GET act.read@Global
+    ("/v1/notifications/triage/{id}", RouteClass::Gated),          // PATCH act.read@Global
     // --- Settings -------------------------------------------------------------------------------
     ("/v1/settings", RouteClass::Gated), // GET settings.read@Global · PUT settings.manage@Global
     ("/v1/platform/services", RouteClass::Gated), // GET settings.read@Global
@@ -668,6 +864,17 @@ fn classify(path: &str) -> Option<RouteClass> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeSet;
+
+    use chancela_apikey::{ApiKey, ApiKeyGrant, KeySpec};
+    use chancela_authz::{
+        RoleAssignment, RoleCatalog, RoleId, UserId as AuthzUserId, effective_permissions,
+    };
+    use serde_json::json;
+    use uuid::Uuid;
+
+    use crate::roles::ScopeInput;
+    use crate::session::ScopeView;
 
     /// Extract every `.route("<path>", ...)` path literal from the router source. A tiny hand parser
     /// (no regex dep): find each `.route(`, skip to the next `"`, read to the closing `"`.
@@ -693,6 +900,180 @@ mod tests {
             rest = &after[close + 1..];
         }
         paths
+    }
+
+    #[test]
+    fn complete_scope_graph_attenuates_api_keys_to_live_leaf_resources() {
+        let tenant_a = AuthzTenantId(Uuid::from_u128(1));
+        let tenant_b = AuthzTenantId(Uuid::from_u128(2));
+        let entity_a = AuthzEntityId(Uuid::from_u128(10));
+        let entity_b = AuthzEntityId(Uuid::from_u128(20));
+        let book_a = AuthzBookId(Uuid::from_u128(100));
+        let book_b = AuthzBookId(Uuid::from_u128(200));
+        let act_a = AuthzActId(Uuid::from_u128(1_000));
+        let act_b = AuthzActId(Uuid::from_u128(2_000));
+        let library_a = AuthzTemplateLibraryId(Uuid::from_u128(10_000));
+        let repository_a = AuthzRepositoryId(Uuid::from_u128(20_000));
+        let repository_b = AuthzRepositoryId(Uuid::from_u128(20_001));
+        let archive_a = AuthzArchiveId(Uuid::from_u128(30_000));
+
+        let relations = ScopeRelations {
+            books: HashMap::from([(book_a, entity_a), (book_b, entity_b)]),
+            tenants: HashMap::from([(entity_a, tenant_a), (entity_b, tenant_b)]),
+            acts: HashMap::from([(act_a, book_a), (act_b, book_b)]),
+            template_libraries: HashMap::from([(library_a, tenant_a)]),
+            integrations: HashMap::new(),
+            repositories: HashMap::from([(repository_a, tenant_a), (repository_b, tenant_b)]),
+            archives: HashMap::from([(archive_a, repository_a)]),
+        };
+
+        let role_id = RoleId(Uuid::from_u128(42));
+        let creator_id = AuthzUserId(Uuid::from_u128(43));
+        let mut roles = RoleCatalog::new();
+        roles.insert(Role {
+            id: role_id,
+            name: "tenant operator".to_owned(),
+            permission_set: BTreeSet::from([
+                Permission::ActRead,
+                Permission::TemplateManage,
+                Permission::DataExport,
+            ]),
+            protected: false,
+        });
+        let creator = effective_permissions(
+            creator_id,
+            &[RoleAssignment::new(role_id, Scope::Tenant(tenant_a))],
+            &roles,
+            &[],
+            OffsetDateTime::UNIX_EPOCH,
+        );
+        let spec = |name: &str, grant| KeySpec {
+            name: name.to_owned(),
+            principal_grant: grant,
+            created_by: creator_id,
+            created_at: OffsetDateTime::UNIX_EPOCH,
+            expires_at: None,
+            rate_limit: None,
+        };
+
+        assert!(
+            ApiKey::issue(
+                &creator,
+                &roles,
+                &relations,
+                spec(
+                    "act-a",
+                    ApiKeyGrant::perms([Permission::ActRead], Scope::Act(act_a)),
+                ),
+            )
+            .is_ok(),
+            "a tenant-scoped creator may attenuate a key to an act in that tenant"
+        );
+        assert!(
+            ApiKey::issue(
+                &creator,
+                &roles,
+                &relations,
+                spec(
+                    "library-a",
+                    ApiKeyGrant::perms(
+                        [Permission::TemplateManage],
+                        Scope::TemplateLibrary(library_a),
+                    ),
+                ),
+            )
+            .is_ok(),
+            "a tenant-scoped creator may attenuate a key to its shared template library"
+        );
+        assert!(
+            ApiKey::issue(
+                &creator,
+                &roles,
+                &relations,
+                spec(
+                    "archive-a",
+                    ApiKeyGrant::perms([Permission::DataExport], Scope::Archive(archive_a)),
+                ),
+            )
+            .is_ok(),
+            "a tenant-scoped creator may attenuate through Repository to its Archive leaf"
+        );
+        assert!(
+            ApiKey::issue(
+                &creator,
+                &roles,
+                &relations,
+                spec(
+                    "repository-b",
+                    ApiKeyGrant::perms([Permission::DataExport], Scope::Repository(repository_b),),
+                ),
+            )
+            .is_err(),
+            "cross-tenant repository attenuation must fail closed"
+        );
+        assert!(
+            ApiKey::issue(
+                &creator,
+                &roles,
+                &relations,
+                spec(
+                    "act-b",
+                    ApiKeyGrant::perms([Permission::ActRead], Scope::Act(act_b)),
+                ),
+            )
+            .is_err(),
+            "cross-tenant leaf attenuation must fail closed"
+        );
+    }
+
+    #[test]
+    fn scope_wire_accepts_and_renders_every_preserved_and_additive_kind() {
+        let id = Uuid::from_u128(99);
+        let cases = [
+            (json!({"kind": "global"}), Scope::Global),
+            (
+                json!({"kind": "tenant", "id": id}),
+                Scope::Tenant(AuthzTenantId(id)),
+            ),
+            (
+                json!({"kind": "entity", "id": id}),
+                Scope::Entity(AuthzEntityId(id)),
+            ),
+            (
+                json!({"kind": "book", "id": id}),
+                Scope::Book(AuthzBookId(id)),
+            ),
+            (json!({"kind": "act", "id": id}), Scope::Act(AuthzActId(id))),
+            (
+                json!({"kind": "folder", "id": id}),
+                Scope::Folder(chancela_authz::FolderId(id)),
+            ),
+            (
+                json!({"kind": "template_library", "id": id}),
+                Scope::TemplateLibrary(AuthzTemplateLibraryId(id)),
+            ),
+            (
+                json!({"kind": "archive", "id": id}),
+                Scope::Archive(chancela_authz::ArchiveId(id)),
+            ),
+            (
+                json!({"kind": "integration", "id": id}),
+                Scope::Integration(chancela_authz::IntegrationId(id)),
+            ),
+            (
+                json!({"kind": "repository", "id": id}),
+                Scope::Repository(chancela_authz::RepositoryId(id)),
+            ),
+        ];
+
+        for (wire, expected) in cases {
+            let input: ScopeInput = serde_json::from_value(wire.clone()).unwrap();
+            assert_eq!(Scope::from(input), expected);
+            assert_eq!(
+                serde_json::to_value(ScopeView::from(expected)).unwrap(),
+                wire
+            );
+        }
     }
 
     /// **Fail-closed router walk (E8 guard).** Every route the router serves must be classified in

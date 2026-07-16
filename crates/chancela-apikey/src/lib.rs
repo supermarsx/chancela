@@ -20,7 +20,7 @@
 //! - **Rate limiting** — [`RateLimit`] policy + a pure [`RateLimit::check`] token-bucket transition.
 //!
 //! **Purity / fail-closed.** No clock, no network, no store: the caller supplies `now`, the
-//! [`RoleCatalog`](chancela_authz::RoleCatalog), the creator's authority, and the book→entity relation
+//! [`RoleCatalog`](chancela_authz::RoleCatalog), the creator's authority, and the authoritative resource-parent relation
 //! ([`BookScope`](chancela_authz::BookScope)). Every uncertain case (unknown/expired/revoked key,
 //! missing role, gone creator, malformed hash) resolves to *deny*.
 

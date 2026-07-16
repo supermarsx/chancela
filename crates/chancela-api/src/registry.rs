@@ -203,10 +203,10 @@ fn import_warnings(extract: &RegistryExtract) -> Vec<String> {
     let mut warnings = Vec::new();
     let today = OffsetDateTime::now_utc().date();
     let valid_until = extract.provenance.valid_until.as_deref();
-    if compute_expired(valid_until, today) == Some(true) {
-        if let Some(vu) = valid_until {
-            warnings.push(format!("certidão expirada em {vu}"));
-        }
+    if compute_expired(valid_until, today) == Some(true)
+        && let Some(vu) = valid_until
+    {
+        warnings.push(format!("certidão expirada em {vu}"));
     }
     warnings
 }
@@ -552,19 +552,19 @@ fn cross_check(
     }
 
     // Kind via legal_form → EntityKind; an unmapped natureza jurídica is not cross-checked.
-    if let Some(incoming) = extract.legal_form.as_ref().and_then(legal_form_to_kind) {
-        if incoming != entity.kind {
-            if overwrite {
-                entity.kind = incoming;
-                entity.family = incoming.family();
-                applied.push("kind".to_owned());
-            } else {
-                conflicts.push(RegistryConflict {
-                    field: "kind".to_owned(),
-                    current: Some(kind_name(entity.kind).to_owned()),
-                    incoming: Some(kind_name(incoming).to_owned()),
-                });
-            }
+    if let Some(incoming) = extract.legal_form.as_ref().and_then(legal_form_to_kind)
+        && incoming != entity.kind
+    {
+        if overwrite {
+            entity.kind = incoming;
+            entity.family = incoming.family();
+            applied.push("kind".to_owned());
+        } else {
+            conflicts.push(RegistryConflict {
+                field: "kind".to_owned(),
+                current: Some(kind_name(entity.kind).to_owned()),
+                incoming: Some(kind_name(incoming).to_owned()),
+            });
         }
     }
 
@@ -764,24 +764,24 @@ pub async fn request_registry_auto_update(
                 }),
             ));
         }
-        if let Some(next_allowed_at) = current_state.next_allowed_at {
-            if next_allowed_at > now {
-                return Ok((
-                    StatusCode::OK,
-                    Json(RegistryAutoUpdateAttemptView {
-                        accepted: false,
-                        entity_id: eid.to_string(),
-                        status: current_state.status,
-                        generated_at,
-                        dry_run_only: true,
-                        reason: "registry auto-update is in backoff".to_owned(),
-                        last_attempt_at: current_state.last_attempt_at.map(format_ts),
-                        next_allowed_at: current_state.next_allowed_at.map(format_ts),
-                        failure_count: current_state.failure_count,
-                        audit_event_seq: current_state.last_audit_event_seq,
-                    }),
-                ));
-            }
+        if let Some(next_allowed_at) = current_state.next_allowed_at
+            && next_allowed_at > now
+        {
+            return Ok((
+                StatusCode::OK,
+                Json(RegistryAutoUpdateAttemptView {
+                    accepted: false,
+                    entity_id: eid.to_string(),
+                    status: current_state.status,
+                    generated_at,
+                    dry_run_only: true,
+                    reason: "registry auto-update is in backoff".to_owned(),
+                    last_attempt_at: current_state.last_attempt_at.map(format_ts),
+                    next_allowed_at: current_state.next_allowed_at.map(format_ts),
+                    failure_count: current_state.failure_count,
+                    audit_event_seq: current_state.last_audit_event_seq,
+                }),
+            ));
         }
         if !is_stale_initial {
             return Ok((
